@@ -116,6 +116,26 @@ app.get("/tasks", async (req, res) => {
   }
 });
 
+// delete a task
+app.delete("/tasks/:id", async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: "Database not connected" });
+    }
+
+    const task = await Task.findByIdAndDelete(req.params.id);
+
+    if (!task) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    res.json({ success: true, message: "Task deleted" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+
 // ================================
 // 4) START SERVER
 // ================================
