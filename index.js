@@ -7,7 +7,7 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// try to connect to MongoDB, but don't crash the app if it fails
+// 1) connect to MongoDB (but don't crash app if it fails)
 const mongoUri = process.env.MONGO_URI;
 
 if (!mongoUri) {
@@ -19,9 +19,24 @@ if (!mongoUri) {
     .catch((err) => console.error("❌ MongoDB connection error:", err.message));
 }
 
-// simple route so we can test Render
+// root route
 app.get("/", (req, res) => {
   res.send("🎉 Curriculate server is running on Render.");
+});
+
+// 2) simple DB-check route
+app.get("/db-check", async (req, res) => {
+  const state = mongoose.connection.readyState;
+  // 1 = connected, 2 = connecting, 0 = disconnected
+  res.json({
+    status:
+      state === 1
+        ? "✅ MongoDB connected"
+        : state === 2
+        ? "⏳ MongoDB connecting"
+        : "❌ MongoDB not connected",
+    readyState: state,
+  });
 });
 
 app.listen(port, () => {
