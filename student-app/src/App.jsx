@@ -11,7 +11,7 @@ export default function App() {
     fetch(`${API_URL}/db-check`)
       .then(r => r.json())
       .then(d => setStatus("API OK"))
-      .catch(() => setStatus("API unreachable"));
+      .catch(() => setStatus("❌ cannot reach API"));
   }, []);
 
   return (
