@@ -1,64 +1,71 @@
+// backend/index.js
 import express from "express";
+import cors from "cors";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 
-import tasksRouter from "./routes/tasks.js";
-import tasksetsRouter from "./routes/tasksets.js";
+dotenv.config(); // Load .env if running locally
 
+// Initialize Express app
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// --------------------
+//  MONGODB CONNECTION
+// --------------------
 const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
 
 if (!uri) {
-  console.error("❌ No Mongo URI found in env");
+  console.error("❌ No Mongo URI found in environment variables.");
   process.exit(1);
 }
 
 mongoose
   .connect(uri)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => console.error("❌ MongoDB connection error:", err));
-
-
-dotenv.config();
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-app.use(express.json());
-
-// connect to Mongo
-const mongoUri = process.env.MONGO_URI;
-let lastMongoError = null;
-
-mongoose
-  .connect(mongoUri)
-  .then(() => console.log("✅ Connected to MongoDB Atlas"))
   .catch((err) => {
-    console.error("❌ MongoDB connection error:", err.message);
-    lastMongoError = err.message;
+    console.error("❌ MongoDB connection error:", err);
   });
 
-// basic routes
-app.get("/", (req, res) => {
-  res.send("🎉 Curriculate server is running on Render.");
-});
+// --------------------
+//  BASIC ROUTES
+// --------------------
 
+// Health check endpoint for Render
 app.get("/db-check", (req, res) => {
-  const state = mongoose.connection.readyState;
+  const mongoStatus = mongoose.connection.readyState;
+  const statusMap = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
   res.json({
     status:
-      state === 1
+      mongoStatus === 1
         ? "✅ MongoDB connected"
-        : state === 2
-        ? "⏳ MongoDB connecting"
-        : "❌ MongoDB not connected",
-    readyState: state,
-    lastError: lastMongoError,
+        : "⚠️ MongoDB not fully connected",
+    readyState: mongoStatus,
+    stateText: statusMap[mongoStatus],
   });
 });
 
-// 👇 this is where all your earlier code plugs in
-app.use("/tasks", tasksRouter);
+// Example: simple root route
+app.get("/", (req, res) => {
+  res.send("Curriculate API is running ✅");
+});
 
-app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
+// Example: tasks route placeholder
+// You can import routes from /routes/tasks.js later
+// import tasksRouter from "./routes/tasks.js";
+// app.use("/tasks", tasksRouter);
+
+// --------------------
+//  SERVER START
+// --------------------
+const PORT = process.env.PORT || 10000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 API listening on port ${PORT}`);
 });
