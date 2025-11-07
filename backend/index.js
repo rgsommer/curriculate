@@ -5,6 +5,19 @@ import dotenv from "dotenv";
 import tasksRouter from "./routes/tasks.js";
 import tasksetsRouter from "./routes/tasksets.js";
 
+const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+
+if (!uri) {
+  console.error("❌ No Mongo URI found in env");
+  process.exit(1);
+}
+
+mongoose
+  .connect(uri)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => console.error("❌ MongoDB connection error:", err));
+
+
 dotenv.config();
 
 const app = express();
