@@ -1,71 +1,41 @@
-// backend/index.js
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 
-dotenv.config(); // Load .env if running locally
+dotenv.config();
 
-// Initialize Express app
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --------------------
-//  MONGODB CONNECTION
-// --------------------
+// grab from either name
 const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
 
+// 1) fail immediately if no URI
 if (!uri) {
-  console.error("❌ No Mongo URI found in environment variables.");
-  process.exit(1);
+  console.error("❌ No Mongo URI found. Set MONGODB_URI or MONGO_URI in Render.");
 }
 
 mongoose
   .connect(uri)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => {
-    console.error("❌ MongoDB connection error:", err);
+    console.error("❌ MongoDB connection error:", err.message);
   });
 
-// --------------------
-//  BASIC ROUTES
-// --------------------
-
-// Health check endpoint for Render
 app.get("/db-check", (req, res) => {
-  const mongoStatus = mongoose.connection.readyState;
-  const statusMap = {
-    0: "disconnected",
-    1: "connected",
-    2: "connecting",
-    3: "disconnecting",
-  };
+  const state = mongoose.connection.readyState;
+  const map = { 0: "disconnected", 1: "connected", 2: "connecting", 3: "disconnecting" };
   res.json({
-    status:
-      mongoStatus === 1
-        ? "✅ MongoDB connected"
-        : "⚠️ MongoDB not fully connected",
-    readyState: mongoStatus,
-    stateText: statusMap[mongoStatus],
+    status: state === 1 ? "✅ MongoDB connected" : "⚠️ MongoDB not fully connected",
+    readyState: state,
+    stateText: map[state],
+    // this line helps you see which env var name is actually populated
+    hasMONGODB_URI: Boolean(process.env.MONGODB_URI),
+    hasMONGO_URI: Boolean(process.env.MONGO_URI),
   });
 });
 
-// Example: simple root route
-app.get("/", (req, res) => {
-  res.send("Curriculate API is running ✅");
-});
-
-// Example: tasks route placeholder
-// You can import routes from /routes/tasks.js later
-// import tasksRouter from "./routes/tasks.js";
-// app.use("/tasks", tasksRouter);
-
-// --------------------
-//  SERVER START
-// --------------------
 const PORT = process.env.PORT || 10000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 API listening on port ${PORT}`);
-});
+app.listen(PORT, () => console.log("🚀 API listening on port", PORT));
