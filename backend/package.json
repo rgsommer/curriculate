@@ -1,6 +1,15 @@
 {
-  "name": "curriculate-teacher",
+  "name": "curriculate-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "build": "vite build"
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongoose": "^8.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
   }
 }
