@@ -9,7 +9,8 @@ export default function App() {
   useEffect(() => {
     fetch(`${API_URL}/db-check`)
       .then(r => r.json())
-      .then(d => setStatus(JSON.stringify(d)))
+      //.then(d => setStatus(JSON.stringify(d)))
+      .then(d => setStatus("API OK"))
       .catch(() => setStatus("❌ cannot reach API"));
   }, []);
 
