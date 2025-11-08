@@ -1,39 +1,58 @@
+// dashboard/src/App.jsx (shortened to show the idea)
 import React, { useEffect, useState } from "react";
+import { io } from "socket.io-client";
 
 const API_URL = import.meta.env.VITE_API_URL;
+const socket = io(API_URL);
 
 export default function App() {
-  const [roomCode, setRoomCode] = useState("");
-  const [joined, setJoined] = useState(false);
-  const [status, setStatus] = useState("Checking backend...");
+  const [roomCode, setRoomCode] = useState("GRADE8A");
+  const [taskSets, setTaskSets] = useState([]);
+  const [selectedTaskSet, setSelectedTaskSet] = useState(null);
 
+  // fetch task sets the teacher owns
   useEffect(() => {
-    fetch(`${API_URL}/db-check`)
+    // TODO: add auth header when you have login
+    fetch(`${API_URL}/tasksets/mine`)
       .then(r => r.json())
-      .then(d => setStatus("API OK"))
-      .catch(() => setStatus("❌ cannot reach API"));
+      .then(data => setTaskSets(data))
+      .catch(() => setTaskSets([]));
   }, []);
 
+  const launchTask = (task) => {
+    socket.emit("teacherLaunchTask", {
+      roomCode,
+      task
+    });
+  };
+
   return (
-    <div style={{ maxWidth: 480, margin: "30px auto", fontFamily: "system-ui" }}>
-      <h1>Curriculate — Student</h1>
-      <p style={{ fontSize: "0.8rem" }}>Backend: {status}</p>
-      {!joined ? (
-        <div style={{ background: "#fff", padding: 16, borderRadius: 8, border: "1px solid #e2e8f0" }}>
-          <label>Room code</label>
-          <input value={roomCode} onChange={e => setRoomCode(e.target.value)}
-            placeholder="e.g. GRADE8A"
-            style={{ display: "block", marginTop: 6, marginBottom: 12, padding: 6, width: "100%" }} />
-          <button onClick={() => setJoined(true)}
-            style={{ background: "#0f766e", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 6 }}>
-            Join
-          </button>
-        </div>
-      ) : (
-        <div style={{ background: "#fff", padding: 16, borderRadius: 8, border: "1px solid #e2e8f0" }}>
-          <h2>Waiting for teacher…</h2>
-          <p>You joined room <strong>{roomCode}</strong>. When the teacher launches a task, it will appear here.</p>
-        </div>
+    <div style={{ padding: 20 }}>
+      <h1>Teacher Live</h1>
+      <label>Room code</label>
+      <input value={roomCode} onChange={e => setRoomCode(e.target.value.toUpperCase())} />
+
+      <h2>Your task sets</h2>
+      <select onChange={e => {
+        const ts = taskSets.find(t => t._id === e.target.value);
+        setSelectedTaskSet(ts);
+      }}>
+        <option value="">Choose…</option>
+        {taskSets.map(ts => (
+          <option key={ts._id} value={ts._id}>{ts.title}</option>
+        ))}
+      </select>
+
+      {selectedTaskSet && (
+        <>
+          <h3>Tasks in this set</h3>
+          {selectedTaskSet.tasks.map((t, idx) => (
+            <div key={idx} style={{ border: "1px solid #eee", padding: 8, marginBottom: 6 }}>
+              <p><strong>{t.prompt}</strong></p>
+              <button onClick={() => launchTask(t)}>Launch this task</button>
+            </div>
+          ))}
+        </>
       )}
     </div>
   );
