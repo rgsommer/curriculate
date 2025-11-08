@@ -1,6 +1,10 @@
 import React from "react";
-import LiveSession from "./pages/LiveSession.jsx";
 
 export default function App() {
-  return <LiveSession />;
+  return (
+    <div style={{ padding: 20, fontFamily: "system-ui" }}>
+      <h1>Hello from Curriculate Teacher 👋</h1>
+      <p>If you can see this, Vercel is serving the right build.</p>
+    </div>
+  );
 }
