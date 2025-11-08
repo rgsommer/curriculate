@@ -27,14 +27,22 @@ const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
 mongoose
   .connect(uri)
   .then(() => console.log("✅ MongoDB connected"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err.message));
+  .catch((err) =>
+    console.error("❌ MongoDB connection error:", err.message)
+  );
 
 // Health check endpoint
 app.get("/db-check", (req, res) => {
   const state = mongoose.connection.readyState;
-  const map = { 0: "disconnected", 1: "connected", 2: "connecting", 3: "disconnecting" };
+  const map = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
   res.json({
-    status: state === 1 ? "✅ MongoDB connected" : "⚠️ MongoDB not fully connected",
+    status:
+      state === 1 ? "✅ MongoDB connected" : "⚠️ MongoDB not fully connected",
     readyState: state,
     stateText: map[state],
     hasMONGODB_URI: Boolean(process.env.MONGODB_URI),
@@ -52,32 +60,77 @@ app.use("/admin", adminRoutes);
 // Socket.IO setup
 // -----------------------------
 const server = http.createServer(app);
+
+// ✅ declare rooms ONCE
+const rooms = {}; // { "GRADE8A": { students: [ {id, name} ] } }
+
 const io = new Server(server, {
   cors: {
-    origin: ["https://dashboard.curriculate.net", "https://play.curriculate.net"],
+    origin: [
+      "http://localhost:5173", // student local
+      "http://localhost:5174", // teacher local
+      "https://dashboard.curriculate.net",
+      "https://play.curriculate.net",
+    ],
     methods: ["GET", "POST"],
   },
 });
 
 io.on("connection", (socket) => {
-  const sessions = {}; // ideally move this outside
+  console.log("🔌 socket connected:", socket.id);
 
   socket.on("joinRoom", ({ roomCode, name }) => {
-    socket.join(roomCode);
-    socket.data.roomCode = roomCode;
-    socket.data.name = name;
+    const code = (roomCode || "").toUpperCase();
+    const playerName = name || "Anonymous";
+
+    console.log("👤 joinRoom:", code, playerName);
+
+    socket.join(code);
+    socket.data.roomCode = code;
+    socket.data.name = playerName;
+
+    // init room
+    if (!rooms[code]) {
+      rooms[code] = { students: [] };
+    }
+
+    // add/update this student
+    const existing = rooms[code].students.find((s) => s.id === socket.id);
+    if (!existing) {
+      rooms[code].students.push({ id: socket.id, name: playerName });
+    } else {
+      existing.name = playerName;
+    }
+
+    // 🔥 tell everyone in that room
+    io.to(code).emit("roomRoster", rooms[code].students);
   });
 
+  socket.on("disconnect", () => {
+    const code = socket.data?.roomCode;
+    if (!code) return;
+    if (!rooms[code]) return;
+
+    // remove this student
+    rooms[code].students = rooms[code].students.filter(
+      (s) => s.id !== socket.id
+    );
+
+    // broadcast updated list
+    io.to(code).emit("roomRoster", rooms[code].students);
+  });
+
+  // you can keep other socket handlers here, e.g. teacherLaunchTask, submitTask, etc.
   socket.on("teacherLaunchTask", ({ roomCode, task }) => {
-    io.to(roomCode).emit("taskUpdate", task);
-  });
-
-  socket.on("submitTask", ({ roomCode, correct, elapsedMs, basePoints = 10 }) => {
-    // update scores and emit leaderboardUpdate
+    io.to(roomCode.toUpperCase()).emit("taskUpdate", task);
   });
 
   socket.on("teacherSpawnBonus", ({ roomCode, points, durationMs }) => {
-    io.to(roomCode).emit("bonusEvent", { id: "bonus-"+Date.now(), points, durationMs });
+    io.to(roomCode.toUpperCase()).emit("bonusEvent", {
+      id: "bonus-" + Date.now(),
+      points,
+      durationMs,
+    });
   });
 });
 
@@ -85,4 +138,6 @@ io.on("connection", (socket) => {
 // Start server
 // -----------------------------
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log(`🚀 API + sockets listening on port ${PORT}`));
+server.listen(PORT, () =>
+  console.log(`🚀 API + sockets listening on port ${PORT}`)
+);
