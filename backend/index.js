@@ -51,4 +51,5 @@ const io = new Server(server, {
 // ... socket code from above ...
 
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log("🚀 API + sockets listening on", PORT));
+app.listen(PORT, () => console.log(`🚀 API listening on port ${PORT}`));
+
