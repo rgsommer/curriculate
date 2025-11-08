@@ -1,30 +1,26 @@
-// backend/models/TaskSet.js
+// models/TaskSet.js
 import mongoose from "mongoose";
 
-const taskSchema = new mongoose.Schema({
-  stationId: Number,
-  type: String, // mcq, speakPrompt, matchImage, matchText, performanceTask, experimentStep, physical, openResponse
-  prompt: String,
-  subject: String,
-  data: mongoose.Schema.Types.Mixed, // choices, imageUrl, audioUrl, recordMode, etc.
-  scoring: mongoose.Schema.Types.Mixed, // { mode, points, minConfidence }
+const TaskSchema = new mongoose.Schema({
+  taskId: String,
+  title: String,
+  prompt: { type: String, required: true },
+  taskType: { type: String, required: true }, // mcq, true_false, sequence, physical, record_audio, image_prompt, open_text
+  options: [String],           // for mcq, true_false, image choices, sequence candidates
+  answer: mongoose.Schema.Types.Mixed, // string or array depending on type
+  mediaUrl: String,
+  timeLimitSeconds: Number,
+  points: { type: Number, default: 10 },
 });
 
-const taskSetSchema = new mongoose.Schema(
+const TaskSetSchema = new mongoose.Schema(
   {
-    owner: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    title: String,
-    description: String,
+    name: { type: String, required: true },
+    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    tasks: [TaskSchema],
     isPublic: { type: Boolean, default: false },
-    tasks: [taskSchema],
-    usageStats: {
-      lastPlayedAt: Date,
-      totalPlays: { type: Number, default: 0 },
-      totalStudents: { type: Number, default: 0 },
-      rating: { type: Number, default: 0 },
-    }
   },
   { timestamps: true }
 );
 
-export default mongoose.model("TaskSet", taskSetSchema);
+export default mongoose.model("TaskSet", TaskSetSchema);
