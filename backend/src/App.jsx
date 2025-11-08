@@ -36,7 +36,7 @@ export default function App() {
 
           {/* later this button will emit socket.io "launchSet" */}
           <button style={{ background: "#2b6cb0", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 6 }}>
-            Launch (not wired yet)
+            Launch (not not wired yet)
           </button>
         </div>
       </div>
