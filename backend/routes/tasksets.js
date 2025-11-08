@@ -14,6 +14,23 @@ function auth(req, res, next) {
   next();
 }
 
+// Enforce plan limits
+const owner = await User.findById(req.userId);
+if (owner.plan.tier === "free") {
+  const start = new Date();
+  start.setDate(1); // beginning of month
+  const createdThisMonth = await TaskSet.countDocuments({
+    owner: req.userId,
+    createdAt: { $gte: start },
+  });
+  if (createdThisMonth >= owner.plan.taskLimitPerMonth) {
+    return res.status(403).json({ error: "Plan limit reached" });
+  }
+  if (req.body.tasks.length > owner.plan.questionLimitPerSet) {
+    return res.status(403).json({ error: "Too many questions for free plan" });
+  }
+}
+
 // create from JSON (UI)
 router.post("/", auth, async (req, res) => {
   const ts = await TaskSet.create({
