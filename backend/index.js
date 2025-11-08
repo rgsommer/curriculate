@@ -1,3 +1,4 @@
+// backend/index.js
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
@@ -12,16 +13,23 @@ import adminRoutes from "./routes/admin.js";
 
 dotenv.config();
 
+// -----------------------------
+// Express app setup
+// -----------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// -----------------------------
+// MongoDB connection
+// -----------------------------
 const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
 mongoose
   .connect(uri)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ MongoDB connection error:", err.message));
 
+// Health check endpoint
 app.get("/db-check", (req, res) => {
   const state = mongoose.connection.readyState;
   const map = { 0: "disconnected", 1: "connected", 2: "connecting", 3: "disconnecting" };
@@ -34,44 +42,37 @@ app.get("/db-check", (req, res) => {
   });
 });
 
+// API routes
 app.use("/auth", authRoutes);
 app.use("/tasksets", tasksetRoutes);
 app.use("/upload-csv", uploadCsvRoutes);
 app.use("/admin", adminRoutes);
 
-// SOCKET SERVER
+// -----------------------------
+// Socket.IO setup
+// -----------------------------
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: ["https://dashboard.curriculate.net", "https://play.curriculate.net"],
-    methods: ["GET", "POST"]
-  }
-});
-
-// ... socket code from above ...
-
-import http from "http";
-import { Server } from "socket.io";
-
-// Create HTTP server around Express
-const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: {
-    origin: [
-      "https://dashboard.curriculate.net",
-      "https://play.curriculate.net",
-    ],
     methods: ["GET", "POST"],
   },
 });
 
-// --- put the socket logic here (joinRoom, teacherLaunchTask, etc.) ---
 io.on("connection", (socket) => {
   console.log("🔌 connected:", socket.id);
-  // all that “joinRoom / submitTask / leaderboardUpdate” code
+
+  socket.on("joinRoom", ({ roomCode, name }) => {
+    socket.join(roomCode);
+    socket.data.name = name;
+    console.log(`${name} joined ${roomCode}`);
+  });
+
+  // add other socket events here (teacherLaunchTask, submitTask, etc.)
 });
 
-// start server
+// -----------------------------
+// Start server
+// -----------------------------
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log("🚀 API + sockets listening on", PORT));
+server.listen(PORT, () => console.log(`🚀 API + sockets listening on port ${PORT}`));
