@@ -1,91 +1,110 @@
-// dashboard/src/pages/LiveSession.jsx
+// teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 
-const socket = io(import.meta.env.VITE_API_URL);
+const SOCKET_URL = import.meta.env.VITE_API_URL;
+const socket = io(SOCKET_URL);
 
 export default function LiveSession() {
-  const [roomCode, setRoomCode] = useState(() =>
-    Math.random().toString(36).substring(2, 6).toUpperCase()
-  );
-  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState("Checking backend…");
+  const [roomCode, setRoomCode] = useState("GRADE8A");
+  const [prompt, setPrompt] = useState("");
   const [leaderboard, setLeaderboard] = useState({});
-  const [taskPrompt, setTaskPrompt] = useState("");
-  const [timer, setTimer] = useState(null);
 
+  // HTTP health check
   useEffect(() => {
-    socket.on("connect", () => setConnected(true));
-    socket.on("leaderboardUpdate", (scores) => setLeaderboard(scores));
+    fetch(`${SOCKET_URL}/db-check`)
+      .then((r) => r.json())
+      .then(() => setStatus("✅ Backend A-OK"))
+      .catch(() => setStatus("❌ cannot reach API"));
+  }, []);
+
+  // socket listeners
+  useEffect(() => {
+    socket.on("leaderboardUpdate", (scores) => {
+      setLeaderboard(scores);
+    });
+
     return () => {
-      socket.off("connect");
       socket.off("leaderboardUpdate");
     };
   }, []);
 
-  const launchTask = () => {
-    if (!taskPrompt) return;
-    socket.emit("teacherLaunchTask", { roomCode, task: { prompt: taskPrompt } });
+  const handleLaunch = () => {
+    if (!prompt.trim()) return;
+    socket.emit("teacherLaunchTask", {
+      roomCode,
+      task: { prompt },
+    });
   };
 
-  const spawnBonus = () => {
-    socket.emit("teacherSpawnBonus", { roomCode, points: 5, durationMs: 8000 });
-  };
-
-  const endSession = () => {
-    socket.disconnect();
-    setConnected(false);
+  const handleBonus = () => {
+    socket.emit("teacherSpawnBonus", {
+      roomCode,
+      points: 5,
+      durationMs: 8000,
+    });
   };
 
   return (
-    <div className="p-8 max-w-3xl mx-auto text-center">
-      <h1 className="text-3xl font-bold mb-4">Live Session</h1>
-      <p className="text-gray-600 mb-4">
-        Room Code: <strong>{roomCode}</strong>
-      </p>
+    <div style={{ padding: 20, fontFamily: "system-ui" }}>
+      <h1>Curriculate — Teacher</h1>
+      <p>{status}</p>
 
-      <div className="mb-6">
-        <textarea
-          className="border p-2 w-full rounded"
-          placeholder="Enter your task or question prompt here..."
-          value={taskPrompt}
-          onChange={(e) => setTaskPrompt(e.target.value)}
-        />
-        <button
-          className="bg-blue-600 text-white px-4 py-2 rounded mt-2"
-          onClick={launchTask}
-        >
-          Launch Task
-        </button>
-        <button
-          className="bg-green-600 text-white px-4 py-2 rounded mt-2 ml-2"
-          onClick={spawnBonus}
-        >
-          Spawn Bonus Event
-        </button>
-      </div>
+      <label>Room code</label>
+      <input
+        value={roomCode}
+        onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+        style={{ display: "block", marginBottom: 12 }}
+      />
 
-      <h2 className="text-xl font-semibold mb-2">Leaderboard</h2>
-      <div className="bg-gray-100 p-4 rounded shadow">
-        {Object.entries(leaderboard).length === 0 && <p>No scores yet.</p>}
-        {Object.entries(leaderboard)
-          .sort((a, b) => b[1] - a[1])
-          .map(([name, score], i) => (
-            <p key={name} className="text-lg">
-              {i + 1}. {name} — {score} pts
-            </p>
-          ))}
-      </div>
+      <label>Task to send</label>
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        style={{ display: "block", width: "100%", minHeight: 70, marginBottom: 12 }}
+        placeholder="Ask the question or describe the station…"
+      />
 
       <button
-        className="bg-red-500 text-white px-4 py-2 rounded mt-6"
-        onClick={endSession}
+        onClick={handleLaunch}
+        style={{
+          background: "#2563eb",
+          color: "#fff",
+          border: "none",
+          padding: "8px 14px",
+          borderRadius: 6,
+        }}
       >
-        End Session
+        Launch
       </button>
 
-      <p className="mt-4 text-sm text-gray-500">
-        {connected ? "🟢 Connected" : "🔴 Disconnected"}
-      </p>
+      <button
+        onClick={handleBonus}
+        style={{
+          background: "#f97316",
+          color: "#fff",
+          border: "none",
+          padding: "8px 14px",
+          borderRadius: 6,
+          marginLeft: 10,
+        }}
+      >
+        Trigger Bonus
+      </button>
+
+      <h2 style={{ marginTop: 24 }}>Leaderboard</h2>
+      {Object.entries(leaderboard).length === 0 ? (
+        <p>No scores yet.</p>
+      ) : (
+        Object.entries(leaderboard)
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, score], i) => (
+            <p key={name}>
+              {i + 1}. {name} — {score} pts
+            </p>
+          ))
+      )}
     </div>
   );
 }
