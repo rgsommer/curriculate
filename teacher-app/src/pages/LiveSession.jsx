@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 
 const SOCKET_URL = import.meta.env.VITE_API_URL;
-const socket = io(SOCKET_URL);
+const socket = io(SOCKET_URL); // if VITE_API_URL is set in Vercel, this is fine
 
 export default function LiveSession() {
   const [status, setStatus] = useState("Checking backend…");
@@ -10,7 +10,7 @@ export default function LiveSession() {
   const [prompt, setPrompt] = useState("");
   const [leaderboard, setLeaderboard] = useState({});
 
-  // HTTP health check
+  // health check
   useEffect(() => {
     fetch(`${SOCKET_URL}/db-check`)
       .then((r) => r.json())
@@ -18,14 +18,12 @@ export default function LiveSession() {
       .catch(() => setStatus("❌ cannot reach API"));
   }, []);
 
-  // socket listeners
+  // socket leaderboard
   useEffect(() => {
     socket.on("leaderboardUpdate", (scores) => {
       setLeaderboard(scores);
     });
-    return () => {
-      socket.off("leaderboardUpdate");
-    };
+    return () => socket.off("leaderboardUpdate");
   }, []);
 
   const handleLaunch = () => {
@@ -61,18 +59,11 @@ export default function LiveSession() {
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         style={{ display: "block", width: "100%", minHeight: 70, marginBottom: 12 }}
-        placeholder="Ask the question or describe the station…"
       />
 
       <button
         onClick={handleLaunch}
-        style={{
-          background: "#2563eb",
-          color: "#fff",
-          border: "none",
-          padding: "8px 14px",
-          borderRadius: 6,
-        }}
+        style={{ background: "#2563eb", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 6 }}
       >
         Launch
       </button>
