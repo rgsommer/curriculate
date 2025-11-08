@@ -1,31 +1,41 @@
+// backend/routes/tasksets.js
 import express from "express";
-import Task from "../models/Task.js";
+import TaskSet from "../models/TaskSet.js";
+import jwt from "jsonwebtoken";
 
 const router = express.Router();
 
-// create a whole set of tasks at once
-router.post("/generate", async (req, res) => {
-  const { stationCount = 8, linear = false, subject = "general" } = req.body;
+function auth(req, res, next) {
+  const h = req.headers.authorization;
+  if (!h) return res.status(401).json({ error: "No token" });
+  const token = h.split(" ")[1];
+  const payload = jwt.verify(token, process.env.JWT_SECRET || "devsecret");
+  req.userId = payload.id;
+  next();
+}
 
-  try {
-    const tasks = [];
+// create from JSON (UI)
+router.post("/", auth, async (req, res) => {
+  const ts = await TaskSet.create({
+    owner: req.userId,
+    title: req.body.title,
+    description: req.body.description,
+    tasks: req.body.tasks,
+    isPublic: req.body.isPublic || false
+  });
+  res.json(ts);
+});
 
-    for (let i = 1; i <= stationCount; i++) {
-      tasks.push({
-        title: `Station ${i}`,
-        description: `Auto-generated station ${i} for ${subject}`,
-        points: 5,
-        stationNumber: i,
-        isLinear: linear,
-        subject,
-      });
-    }
+// list mine
+router.get("/mine", auth, async (req, res) => {
+  const sets = await TaskSet.find({ owner: req.userId }).sort({ updatedAt: -1 });
+  res.json(sets);
+});
 
-    const created = await Task.insertMany(tasks);
-    res.status(201).json(created);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
+// public library
+router.get("/public", async (req, res) => {
+  const sets = await TaskSet.find({ isPublic: true }).sort({ "usageStats.totalPlays": -1 });
+  res.json(sets);
 });
 
 export default router;
