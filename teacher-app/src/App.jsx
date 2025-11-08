@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import LiveSession from ".pages/LiveSession.jsx";
 import { io } from "socket.io-client";
 
 const SOCKET_URL = import.meta.env.VITE_API_URL;
