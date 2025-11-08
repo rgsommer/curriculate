@@ -1,16 +1,24 @@
+// teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 
+// one shared socket for this app
 const SOCKET_URL = import.meta.env.VITE_API_URL;
-const socket = io(SOCKET_URL); // if VITE_API_URL is set in Vercel, this is fine
+const socket = io(SOCKET_URL);
 
 export default function LiveSession() {
   const [status, setStatus] = useState("Checking backend…");
   const [roomCode, setRoomCode] = useState("GRADE8A");
   const [prompt, setPrompt] = useState("");
   const [leaderboard, setLeaderboard] = useState({});
+  const [students, setStudents] = useState([]);
 
-  // health check
+  // sound for a new student
+  const joinSound = new Audio(
+    "https://actions.google.com/sounds/v1/cartoon/pop.ogg"
+  );
+
+  // check API
   useEffect(() => {
     fetch(`${SOCKET_URL}/db-check`)
       .then((r) => r.json())
@@ -18,12 +26,31 @@ export default function LiveSession() {
       .catch(() => setStatus("❌ cannot reach API"));
   }, []);
 
-  // socket leaderboard
+  // socket listeners
   useEffect(() => {
-    socket.on("leaderboardUpdate", (scores) => {
+    const handleLeaderboard = (scores) => {
       setLeaderboard(scores);
-    });
-    return () => socket.off("leaderboardUpdate");
+    };
+
+    const handleRoster = (list) => {
+      // debug
+      console.log("roomRoster received:", list);
+      setStudents((prev) => {
+        if (list.length > prev.length) {
+          // play on join
+          joinSound.play().catch(() => {});
+        }
+        return list;
+      });
+    };
+
+    socket.on("leaderboardUpdate", handleLeaderboard);
+    socket.on("roomRoster", handleRoster);
+
+    return () => {
+      socket.off("leaderboardUpdate", handleLeaderboard);
+      socket.off("roomRoster", handleRoster);
+    };
   }, []);
 
   const handleLaunch = () => {
@@ -59,6 +86,7 @@ export default function LiveSession() {
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         style={{ display: "block", width: "100%", minHeight: 70, marginBottom: 12 }}
+        placeholder="Ask the question or describe the station…"
       />
 
       <button
@@ -82,6 +110,17 @@ export default function LiveSession() {
         Trigger Bonus
       </button>
 
+      {/* Students list */}
+      <h2 style={{ marginTop: 24 }}>Students in room</h2>
+      {students.length === 0 ? (
+        <p>No one joined yet.</p>
+      ) : (
+        students.map((s) => (
+          <p key={s.id}>{s.name || "Unnamed"}</p>
+        ))
+      )}
+
+      {/* Leaderboard */}
       <h2 style={{ marginTop: 24 }}>Leaderboard</h2>
       {Object.entries(leaderboard).length === 0 ? (
         <p>No scores yet.</p>
