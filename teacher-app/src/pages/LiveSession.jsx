@@ -1,4 +1,3 @@
-// teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 
@@ -15,7 +14,7 @@ export default function LiveSession() {
   useEffect(() => {
     fetch(`${SOCKET_URL}/db-check`)
       .then((r) => r.json())
-      .then(() => setStatus("✅ Backend A-OK"))
+      .then(() => setStatus("✅ Backend OK"))
       .catch(() => setStatus("❌ cannot reach API"));
   }, []);
 
@@ -24,7 +23,6 @@ export default function LiveSession() {
     socket.on("leaderboardUpdate", (scores) => {
       setLeaderboard(scores);
     });
-
     return () => {
       socket.off("leaderboardUpdate");
     };
