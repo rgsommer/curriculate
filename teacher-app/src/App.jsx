@@ -13,7 +13,7 @@ export default function LiveOrApp() {
   useEffect(() => {
     fetch(`${SOCKET_URL}/db-check`)
       .then((r) => r.json())
-      .then(() => setStatus("✅ Backend OK"))
+      .then(() => setStatus("✅ Backend A-OK"))
       .catch(() => setStatus("❌ cannot reach API"));
   }, []);
 
