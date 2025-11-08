@@ -5,6 +5,10 @@ import { io } from "socket.io-client";
 const SOCKET_URL = import.meta.env.VITE_API_URL;
 const socket = io(SOCKET_URL);
 
+export default function App() {
+  return <LiveSession />;
+}
+
 export default function LiveOrApp() {
   const [status, setStatus] = useState("Checking backend…");
   const [roomCode, setRoomCode] = useState("GRADE8A");
