@@ -1,64 +1,56 @@
-// backend/routes/uploadCsv.js
 import express from "express";
-import csv from "csv-parser";
-import { Readable } from "stream";
+import Papa from "papaparse";
 import TaskSet from "../models/TaskSet.js";
-import jwt from "jsonwebtoken";
 
 const router = express.Router();
 
-function auth(req, res, next) {
-  const h = req.headers.authorization;
-  if (!h) return res.status(401).json({ error: "No token" });
-  const token = h.split(" ")[1];
-  const payload = jwt.verify(token, process.env.JWT_SECRET || "devsecret");
-  req.userId = payload.id;
-  next();
-}
+router.post("/from-csv", async (req, res) => {
+  try {
+    const { csvText, name, ownerId } = req.body;
+    if (!csvText) return res.status(400).json({ error: "csvText required" });
 
-// expect CSV text in body.csv
-router.post("/", auth, async (req, res) => {
-  const { csvText, title, description } = req.body;
+    // parse CSV
+    const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
 
-  const rows = [];
-  const stream = Readable.from([csvText]);
-  stream
-    .pipe(csv())
-    .on("data", (row) => rows.push(row))
-    .on("end", async () => {
-      const tasks = rows.map((r) => {
-        return {
-          stationId: Number(r.station_id),
-          type: r.type,
-          prompt: r.prompt,
-          subject: r.subject || null,
-          data: {
-            option1: r.option1,
-            option2: r.option2,
-            option3: r.option3,
-            option4: r.option4,
-            answer: r.answer,
-            imageUrl: r.image_url,
-            audioUrl: r.audio_url,
-            recordMode: r.record_mode,
-            evaluationMode: r.evaluation_mode,
-          },
-          scoring: {
-            mode: r.scoring_mode || "timedRace",
-            points: Number(r.points) || 10,
-          },
-        };
-      });
+    const tasks = parsed.data.map((row, idx) => {
+      const taskType = (row.task_type || "").trim();
+      const options =
+        row.options && typeof row.options === "string"
+          ? row.options.split("|").map((s) => s.trim()).filter(Boolean)
+          : [];
 
-      const taskSet = await TaskSet.create({
-        owner: req.userId,
-        title: title || "Imported Task Set",
-        description: description || "",
-        tasks,
-      });
+      // normalize answer depending on type
+      let answer = row.answer;
+      if (taskType === "sequence" && typeof answer === "string") {
+        answer = answer.split(">").map((s) => s.trim());
+      }
 
-      res.json(taskSet);
+      return {
+        taskId: row.task_id || `task_${idx + 1}`,
+        title: row.title || `Task ${idx + 1}`,
+        prompt: row.prompt?.trim(),
+        taskType,
+        options,
+        answer,
+        mediaUrl: row.media_url?.trim() || null,
+        timeLimitSeconds: row.time_limit_seconds
+          ? Number(row.time_limit_seconds)
+          : null,
+        points: row.points ? Number(row.points) : 10,
+      };
     });
+
+    const taskset = await TaskSet.create({
+      name: name || "Uploaded Task Set",
+      ownerId: ownerId || null,
+      tasks,
+    });
+
+    res.json({ ok: true, tasksetId: taskset._id });
+  } catch (err) {
+    console.error("CSV upload failed:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;
