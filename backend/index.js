@@ -50,6 +50,28 @@ const io = new Server(server, {
 
 // ... socket code from above ...
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 API listening on port ${PORT}`));
+import http from "http";
+import { Server } from "socket.io";
 
+// Create HTTP server around Express
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "https://dashboard.curriculate.net",
+      "https://play.curriculate.net",
+    ],
+    methods: ["GET", "POST"],
+  },
+});
+
+// --- put the socket logic here (joinRoom, teacherLaunchTask, etc.) ---
+io.on("connection", (socket) => {
+  console.log("🔌 connected:", socket.id);
+  // all that “joinRoom / submitTask / leaderboardUpdate” code
+});
+
+// start server
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => console.log("🚀 API + sockets listening on", PORT));
