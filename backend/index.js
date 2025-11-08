@@ -60,15 +60,25 @@ const io = new Server(server, {
 });
 
 io.on("connection", (socket) => {
-  console.log("🔌 connected:", socket.id);
+  const sessions = {}; // ideally move this outside
 
   socket.on("joinRoom", ({ roomCode, name }) => {
     socket.join(roomCode);
+    socket.data.roomCode = roomCode;
     socket.data.name = name;
-    console.log(`${name} joined ${roomCode}`);
   });
 
-  // add other socket events here (teacherLaunchTask, submitTask, etc.)
+  socket.on("teacherLaunchTask", ({ roomCode, task }) => {
+    io.to(roomCode).emit("taskUpdate", task);
+  });
+
+  socket.on("submitTask", ({ roomCode, correct, elapsedMs, basePoints = 10 }) => {
+    // update scores and emit leaderboardUpdate
+  });
+
+  socket.on("teacherSpawnBonus", ({ roomCode, points, durationMs }) => {
+    io.to(roomCode).emit("bonusEvent", { id: "bonus-"+Date.now(), points, durationMs });
+  });
 });
 
 // -----------------------------
