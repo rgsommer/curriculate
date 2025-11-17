@@ -46,7 +46,10 @@ async function main() {
       { name: 'Team C', color: '#43a047', score: 0 },
     ],
   });
-
+  const out = { code, taskSetId: taskSet._id.toString(), sessionId: session._id.toString() };
+  const fs = require('fs');
+  const infoPath = path.resolve(__dirname, 'session-info.json');
+  fs.writeFileSync(infoPath, JSON.stringify(out, null, 2));
   console.log(code);
   await mongoose.disconnect();
 }

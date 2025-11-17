@@ -49,3 +49,19 @@ test('teacher and multiple students can load and join', async ({ browser }) => {
   await Promise.all(studentPages.map((p) => p.close()));
   await teacherPage.close();
 });
+
+test.afterAll(async () => {
+  // If setup wrote session-info.json, run teardown
+  const fs = require('fs');
+  const path = require('path');
+  const infoPath = path.resolve(__dirname, '../session-info.json');
+  if (fs.existsSync(infoPath)) {
+    try {
+      const { execSync } = require('child_process');
+      execSync('node ./dev/e2e/teardownSession.js', { stdio: 'inherit' });
+      console.log('E2E teardown ran');
+    } catch (err) {
+      console.error('E2E teardown failed', err);
+    }
+  }
+});
