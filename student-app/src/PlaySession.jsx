@@ -1,3 +1,64 @@
+import React, { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+
+export default function PlaySession({ server = 'http://localhost:4000', code, teamId }) {
+  const [socket, setSocket] = useState(null);
+  const [task, setTask] = useState(null);
+  const [answer, setAnswer] = useState('');
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    const s = io(server, { transports: ['websocket'] });
+    setSocket(s);
+
+    s.on('connect', () => {
+      s.emit('joinRoom', { code, role: 'student', teamId });
+    });
+
+    s.on('task:started', (payload) => {
+      setTask(payload.task);
+      setStatus('task started');
+    });
+
+    s.on('submission:received', (payload) => {
+      setStatus(payload.isCorrect ? 'correct' : 'received');
+    });
+
+    s.on('room:error', (e) => setStatus(`error: ${e.message}`));
+
+    return () => s.disconnect();
+  }, [server, code, teamId]);
+
+  function submit() {
+    if (!socket || task == null) return;
+    setStatus('submitting');
+    socket.emit('student:submitAnswer', {
+      code,
+      teamId,
+      taskIndex: task.index ?? 0,
+      answer,
+      responseTimeMs: 0,
+    });
+  }
+
+  return (
+    <div>
+      <h2>Play Session</h2>
+      <div>Code: {code}</div>
+      <div>Team: {teamId}</div>
+      {task ? (
+        <div>
+          <div><strong>{task.title || task.prompt || 'Task'}</strong></div>
+          <input value={answer} onChange={(e) => setAnswer(e.target.value)} />
+          <button onClick={submit}>Submit</button>
+        </div>
+      ) : (
+        <div>Waiting for task...</div>
+      )}
+      <div>Status: {status}</div>
+    </div>
+  );
+}
 // student-app/src/PlaySession.jsx
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";

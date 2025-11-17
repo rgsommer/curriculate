@@ -1,3 +1,68 @@
+import React, { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+
+export default function LiveSession({ server = 'http://localhost:4000', code }) {
+  const [socket, setSocket] = useState(null);
+  const [teams, setTeams] = useState([]);
+  const [task, setTask] = useState(null);
+
+  useEffect(() => {
+    const s = io(server, { transports: ['websocket'] });
+    setSocket(s);
+
+    s.on('connect', () => {
+      s.emit('joinRoom', { code, role: 'host' });
+    });
+
+    s.on('session:started', (payload) => {
+      setTask(payload.task);
+      setTeams(payload.teams || []);
+    });
+
+    s.on('task:started', (payload) => setTask(payload.task));
+
+    s.on('scores:updated', (payload) => {
+      setTeams(payload.teams || []);
+    });
+
+    return () => s.disconnect();
+  }, [server, code]);
+
+  function startSession() {
+    socket && socket.emit('host:startSession', { code });
+  }
+
+  function nextTask() {
+    socket && socket.emit('host:nextTask', { code });
+  }
+
+  function scoreTask() {
+    if (!task) return;
+    socket && socket.emit('host:scoreTask', { code, taskIndex: task.index ?? 0 });
+  }
+
+  return (
+    <div>
+      <h2>Live Session</h2>
+      <div>Code: {code}</div>
+      <button onClick={startSession}>Start Session</button>
+      <button onClick={nextTask}>Next Task</button>
+      <button onClick={scoreTask}>Score Task</button>
+      <div>
+        <h3>Current task</h3>
+        <div>{task ? (task.title || task.prompt) : 'No current task'}</div>
+      </div>
+      <div>
+        <h3>Teams</h3>
+        <ul>
+          {teams.map((t) => (
+            <li key={t._id}>{t.name || t._id}: {t.score || 0}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
