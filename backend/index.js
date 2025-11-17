@@ -288,42 +288,27 @@ io.on("connection", (socket) => {
         taskIndex: idx,
       });
 
-      const BASE_POINTS = 10;
-      const SPEED_BONUSES = [5, 3, 2];
+      // Use pure scoring util to compute adds and update session teams
+      try {
+        const { computeScores } = await import("./lib/scoring.js");
+        const { scoresToAdd } = computeScores(session, submissions);
 
-      const correctSubs = submissions
-        .filter((s) => s.isCorrect)
-        .sort((a, b) => a.responseTimeMs - b.responseTimeMs);
+        session.teams.forEach((team) => {
+          const key = team._id.toString();
+          const add = scoresToAdd[key] || 0;
+          team.score += add;
+        });
 
-      const scoresToAdd = new Map();
+        await session.save();
 
-      for (const s of submissions) {
-        if (!s.isCorrect) {
-          scoresToAdd.set(s.teamId.toString(), 0);
-        } else {
-          scoresToAdd.set(s.teamId.toString(), BASE_POINTS);
-        }
+        io.to(upperCode).emit("scores:updated", {
+          taskIndex: idx,
+          teams: session.teams,
+          scoresAdded: scoresToAdd,
+        });
+      } catch (err) {
+        console.error("scoreTask compute error:", err);
       }
-
-      correctSubs.forEach((s, index) => {
-        const bonus = SPEED_BONUSES[index] || 0;
-        const key = s.teamId.toString();
-        scoresToAdd.set(key, (scoresToAdd.get(key) || 0) + bonus);
-      });
-
-      session.teams.forEach((team) => {
-        const key = team._id.toString();
-        const add = scoresToAdd.get(key) || 0;
-        team.score += add;
-      });
-
-      await session.save();
-
-      io.to(upperCode).emit("scores:updated", {
-        taskIndex: idx,
-        teams: session.teams,
-        scoresAdded: Object.fromEntries(scoresToAdd),
-      });
     } catch (err) {
       console.error("host:scoreTask error:", err);
     }
