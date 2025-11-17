@@ -1,0 +1,50 @@
+name: Generate changes summary
+
+on:
+  push:
+    branches:
+      - main
+      - 'session-sync/**'
+      - 'feature/**'
+  pull_request:
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch main for diff
+        run: |
+          git fetch origin main --depth=1 || true
+
+      - name: Generate JSON summary
+        run: |
+          mkdir -p dev
+          git log -n 10 --pretty=format:'%h|%an|%ad|%s' > dev/last-commits.txt || true
+          git diff --name-status origin/main...HEAD > dev/changes-files.txt || true
+          python3 - <<'PY'
+import json, os
+commits = []
+try:
+    with open('dev/last-commits.txt') as f:
+        commits = f.read().splitlines()
+except Exception:
+    commits = []
+files = []
+try:
+    with open('dev/changes-files.txt') as f:
+        files = f.read().splitlines()
+except Exception:
+    files = []
+out = {'commits': commits, 'files': files, 'branch': os.getenv('GITHUB_REF')}
+with open('dev/changes-summary.json','w') as f:
+    json.dump(out, f, indent=2)
+PY
+
+      - name: Upload changes summary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changes-summary
+          path: dev/changes-summary.json
