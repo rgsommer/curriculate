@@ -89,3 +89,56 @@ PY
                 body,
               });
             }
+
+  socket-smoke:
+    runs-on: ubuntu-latest
+    needs: backend-tests
+    services:
+      mongo:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongo --eval 'db.adminCommand(\"ping\")' || exit 1"
+          --health-interval 5s
+          --health-timeout 2s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Start backend
+        working-directory: ./backend
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017/curriculate_test
+          PORT: 4000
+        run: |
+          npm ci
+          node index.js &
+          echo $! > /tmp/backend.pid
+
+      - name: Wait for backend to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -sS http://localhost:4000/db-check | grep -q "MongoDB connected"; then
+              echo "backend ready"; exit 0;
+            fi
+            sleep 2
+          done
+          echo "backend failed to start"; exit 1
+
+      - name: Run socket smoke test
+        working-directory: ./backend
+        run: |
+          node scripts/socket_test.js
+
+      - name: Stop backend
+        if: always()
+        run: |
+          kill $(cat /tmp/backend.pid) || true
+
