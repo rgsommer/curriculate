@@ -1,0 +1,822 @@
+// backend/index.js old working
+import express from "express";
+import cors from "cors";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import http from "http";
+import { Server } from "socket.io";
+
+import authRoutes from "./routes/auth.js";
+import tasksetRoutes from "./routes/tasksets.js";
+import adminRoutes from "./routes/admin.js";
+import Taskset from "./models/Taskset.js";
+
+dotenv.config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+if (mongoUri) {
+  mongoose
+    .connect(mongoUri)
+    .then(() => console.log("✅ MongoDB connected"))
+    .catch((err) =>
+      console.error("❌ MongoDB connection error:", err.message)
+    );
+} else {
+  console.warn("⚠️ No Mongo URI set — running socket-only mode");
+}
+
+app.get("/db-check", (req, res) => {
+  const s = mongoose.connection.readyState;
+  const map = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
+  res.json({
+    status:
+      s === 1 ? "✅ MongoDB connected" : "⚠️ MongoDB not fully connected",
+    readyState: s,
+    stateText: map[s],
+  });
+});
+
+app.use("/auth", authRoutes);
+app.use("/tasksets", tasksetRoutes);
+app.use("/admin", adminRoutes);
+
+const server = http.createServer(app);
+
+// room shape:
+// rooms[code] = {
+//   stations: [...],
+//   teams: {...},
+//   scores: {...},
+//   roundPlan: {...},
+//   currentTask: { prompt, correctAnswer, at }
+// }
+const rooms = {};
+
+function ensureRoom(code) {
+  if (!rooms[code]) {
+    rooms[code] = {
+      stations: Array.from({ length: 8 }, (_, i) => ({
+        id: `station-${i + 1}`,
+        assignedTeamId: null,
+        nextTeamId: null,
+      })),
+      teams: {},
+      scores: {},
+      roundPlan: null,
+      currentTask: null,
+    };
+  }
+}
+
+function broadcastRoom(code) {
+  const room = rooms[code];
+  if (!room) return;
+  io.to(code).emit("roomState", room);
+}
+
+function derangeIndexes(n) {
+  if (n <= 1) return Array.from({ length: n }, (_, i) => i);
+  let tries = 0;
+  while (tries < 50) {
+    const arr = Array.from({ length: n }, (_, i) => i);
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    let ok = true;
+    for (let i = 0; i < n; i++) {
+      if (arr[i] === i) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return arr;
+    tries++;
+  }
+  // fallback
+  return Array.from({ length: n }, (_, i) => (i + 1) % n);
+}
+
+// recursive placement to avoid “one team didn’t move”
+function placeTeamOnStation(room, teamId, stationId, plan, depth = 0) {
+  if (!room || !teamId || !stationId || !plan) return;
+  if (depth > 20) return;
+
+  const station = room.stations.find((s) => s.id === stationId);
+  if (!station) return;
+
+  if (!station.assignedTeamId) {
+    station.assignedTeamId = teamId;
+    station.nextTeamId = null;
+    if (room.teams[teamId]) {
+      room.teams[teamId].currentStationId = stationId;
+    }
+    return;
+  }
+
+  if (station.assignedTeamId === teamId) {
+    if (room.teams[teamId]) {
+      room.teams[teamId].currentStationId = stationId;
+    }
+    station.nextTeamId = null;
+    return;
+  }
+
+  const occupant = station.assignedTeamId;
+  station.assignedTeamId = teamId;
+  station.nextTeamId = null;
+  if (room.teams[teamId]) {
+    room.teams[teamId].currentStationId = stationId;
+  }
+
+  const occupantNext = plan.teamToStation[occupant];
+  if (occupantNext) {
+    placeTeamOnStation(room, occupant, occupantNext, plan, depth + 1);
+  } else {
+    if (room.teams[occupant]) {
+      room.teams[occupant].currentStationId = null;
+    }
+  }
+}
+
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://dashboard.curriculate.net",
+      "https://play.curriculate.net",
+    ],
+    methods: ["GET", "POST"],
+  },
+});
+
+async function advanceToNextRound(room, code) {
+  if (!room || !room.taskset) return;
+  const ts = room.taskset;
+  const tasks = ts.tasks || [];
+  if (!tasks.length) return;
+
+  const idx = typeof ts.curIdx === "number" ? ts.curIdx : 0;
+  const task = tasks[idx];
+
+  const prompt = (task?.prompt || "").trim();
+  const correctAnswer = (task?.correctAnswer || "").trim();
+
+  room.currentTask = {
+    prompt,
+    correctAnswer,
+    options: task?.options || [],
+    taskType: task?.taskType || task?.type || "short-answer",
+    points: task?.points || 10,
+    at: Date.now(),
+    submissions: [],
+  };
+
+  ts.curIdx = (idx + 1) % tasks.length;
+
+  broadcastRoom(code);
+  io.to(code).emit("taskLaunched", { task: room.currentTask, at: Date.now() });
+  io.to(code).emit("taskUpdate", room.currentTask);
+  io.to(code).emit("roundStarted", room.currentTask);
+}
+
+io.on("connection", (socket) => {
+  console.log("🔌 socket connected", socket.id);
+
+  socket.on("peekRoom", ({ roomCode }) => {
+    const code = (roomCode || "").toUpperCase();
+    ensureRoom(code);
+    broadcastRoom(code);
+  });
+
+  socket.on(
+    "joinRoom",
+    ({ roomCode, name, role, teamName, members, teamColor }) => {
+      const code = (roomCode || "").toUpperCase();
+      if (!code) return;
+      ensureRoom(code);
+      const room = rooms[code];
+
+      socket.join(code);
+      socket.data.roomCode = code;
+      socket.data.role = role || "student";
+
+      if (
+        socket.data.role === "teacher" ||
+        socket.data.role === "host" ||
+        socket.data.role === "viewer"
+      ) {
+        broadcastRoom(code);
+        return;
+      }
+
+      if (teamColor) {
+        const taken = Object.values(room.teams).some(
+          (t) => t.teamColor === teamColor
+        );
+        if (taken) {
+          socket.emit("colorTaken", teamColor);
+          return;
+        }
+      }
+
+      const finalTeamName =
+        teamName?.trim() || `Team-${socket.id.slice(-4)}`;
+      const finalMembers = Array.isArray(members)
+        ? members.filter((m) => m && m.trim())
+        : name
+        ? [name]
+        : [];
+
+      room.teams[socket.id] = {
+        teamId: socket.id,
+        teamName: finalTeamName,
+        teamColor: teamColor || null,
+        members: finalMembers,
+        currentStationId: null,
+        currentStep: 0,
+        perMemberDone: {},
+      };
+
+      const free = room.stations.find((s) => !s.assignedTeamId);
+      if (free) {
+        free.assignedTeamId = socket.id;
+        free.nextTeamId = null;
+        room.teams[socket.id].currentStationId = free.id;
+      }
+
+      broadcastRoom(code);
+    }
+  );
+
+  // --- Load a saved taskset into the room ---
+  socket.on("loadTaskset", async ({ roomCode, tasksetId }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    if (mongoose.connection.readyState !== 1) {
+      socket.emit("error", { msg: "DB not connected" });
+      return;
+    }
+
+    try {
+      const ts = await Taskset.findById(tasksetId).lean();
+      if (!ts) return socket.emit("error", { msg: "Taskset not found" });
+
+      room.taskset = {
+        _id: ts._id,
+        name: ts.name,
+        tasks: ts.tasks,
+        curIdx: 0,
+        mode: ts.tasks.every((t) => t.linear) ? "linear" : "mixed",
+      };
+
+      // Reset round state
+      room.currentTask = null;
+      room.submissions = [];
+      room.roundPlan = null;
+
+      io.to(code).emit("tasksetLoaded", {
+        name: ts.name,
+        numTasks: ts.tasks.length,
+        tasksetId: ts._id,
+      });
+      broadcastRoom(code);
+    } catch (err) {
+      socket.emit("error", { msg: "Load failed" });
+    }
+  });
+
+  // --- Launch the loaded taskset ---
+  socket.on("launchTaskset", async ({ roomCode }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.taskset) return;
+
+    await advanceToNextRound(room, code);
+  });
+
+  // --- Optional: Save current live 1-off as a taskset ---
+  socket.on("saveLiveTaskset", async ({ roomCode, name, ownerId }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.currentTask) return;
+
+    if (mongoose.connection.readyState !== 1) {
+      return socket.emit("error", { msg: "DB not connected" });
+    }
+
+    try {
+      const ts = await Taskset.create({
+        name,
+        ownerId: ownerId || null,
+        tasks: [room.currentTask],
+        numTasks: 1,
+        isPublic: false,
+      });
+
+      socket.emit("liveTasksetSaved", {
+        tasksetId: ts._id,
+        name: ts.name,
+      });
+    } catch (err) {
+      socket.emit("error", { msg: "Save failed" });
+    }
+  });
+
+  // change team color
+  socket.on("changeTeamColor", ({ roomCode, color }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+    const team = room.teams[socket.id];
+    if (!team) return;
+
+    const taken = Object.values(room.teams).some(
+      (t) => t.teamColor === color && t.teamId !== socket.id
+    );
+    if (taken) {
+      socket.emit("colorTaken", color);
+      return;
+    }
+
+    team.teamColor = color;
+    broadcastRoom(code);
+  });
+
+  // teacher launches task (quick or from taskset)
+  socket.on("teacherLaunchTask", (payload = {}) => {
+    const { roomCode } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+    if (socket.data.role !== "teacher") return;
+
+    // support both shapes: { roomCode, task: {...} } and { roomCode, prompt, correctAnswer }
+    const task = payload.task || {};
+    const prompt = (payload.prompt ?? task.prompt ?? "").trim();
+    const correctAnswer = (payload.correctAnswer ?? task.correctAnswer ?? "").trim();
+
+    room.currentTask = {
+      prompt,
+      correctAnswer,
+      options: [],
+      taskType: "short-answer",
+      points: 10,
+      at: Date.now(),
+      submissions: [],
+    };
+
+    // plan rotation for stations (if more than one active station)
+    const activeStations = room.stations.filter((s) => s.assignedTeamId);
+    const n = activeStations.length;
+
+    if (n > 1) {
+      const perm = derangeIndexes(n);
+      const stationToTeam = {};
+      const teamToStation = {};
+
+      for (let i = 0; i < n; i++) {
+        const fromStation = activeStations[i];
+        const toStation = activeStations[perm[i]];
+        const teamLeaving = fromStation.assignedTeamId;
+        const teamComing = toStation.assignedTeamId;
+
+        stationToTeam[fromStation.id] = teamComing;
+        teamToStation[teamLeaving] = toStation.id;
+      }
+
+      room.roundPlan = { stationToTeam, teamToStation };
+    } else {
+      room.roundPlan = null;
+    }
+
+    broadcastRoom(code);
+
+    io.to(code).emit("taskLaunched", {
+      task: room.currentTask,
+      at: Date.now(),
+    });
+    io.to(code).emit("taskUpdate", room.currentTask);
+    io.to(code).emit("roundStarted", room.currentTask);
+  });
+
+  socket.on(
+    "submitTask",
+    ({ roomCode, correct, timeMs, memberName, teamId, answerText }) => {
+      const code = (roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) return;
+
+      const tid = teamId || socket.id;
+      const team = room.teams[tid];
+      if (!team) return;
+
+      // 1) determine correctness (auto-check against teacher answer)
+      let isCorrect = !!correct;
+      if (!isCorrect && room.currentTask?.correctAnswer) {
+        const expected = room.currentTask.correctAnswer
+          .trim()
+          .toLowerCase();
+        const got = (answerText || "").trim().toLowerCase();
+        if (expected && got && expected === got) {
+          isCorrect = true;
+        }
+      }
+
+      // 2) per-member done
+      if (memberName) {
+        team.perMemberDone[memberName] = true;
+      }
+
+      // 3) make sure currentTask has submissions array
+      if (!room.currentTask) {
+        room.currentTask = { submissions: [] };
+      }
+      if (!room.currentTask.submissions) {
+        room.currentTask.submissions = [];
+      }
+
+      // 4) only first submission from this team for this task
+      const already = room.currentTask.submissions.find(
+        (s) => s.teamId === tid
+      );
+      if (!already) {
+        room.currentTask.submissions.push({
+          teamId: tid,
+          timeMs: timeMs || 999999,
+          correct: isCorrect,
+        });
+      }
+
+      // 5) base scoring
+      const label = team.teamName;
+      if (!room.scores[label]) room.scores[label] = 0;
+      if (isCorrect) {
+        room.scores[label] += 10; // base for correct
+      }
+
+      // 6) relative speed bonus — BUT ONLY FOR CORRECT TEAMS
+      // filter to correct ones first
+      const correctSubs = room.currentTask.submissions
+        .filter((s) => s.correct)
+        .sort(
+          (a, b) =>
+            (a.timeMs || 999999) - (b.timeMs || 999999)
+        );
+
+      const speedBonusByTeam = {};
+      correctSubs.forEach((entry, idx) => {
+        if (idx === 0) speedBonusByTeam[entry.teamId] = 5;
+        else if (idx === 1) speedBonusByTeam[entry.teamId] = 3;
+        else if (idx === 2) speedBonusByTeam[entry.teamId] = 2;
+        else speedBonusByTeam[entry.teamId] = 0;
+      });
+
+      const bonus = isCorrect ? speedBonusByTeam[tid] ?? 0 : 0;
+      room.scores[label] += bonus;
+
+      // 7) rotation: progressive move as teams submit
+      const currentStation = room.stations.find(
+        (s) => s.assignedTeamId === tid
+      );
+      const plan = room.roundPlan;
+
+      if (plan && currentStation) {
+        // Leave the current station
+        currentStation.assignedTeamId = null;
+
+        // If there's a team waiting to enter this station, assign it now
+        if (currentStation.nextTeamId) {
+          const waitingTeamId = currentStation.nextTeamId;
+          currentStation.assignedTeamId = waitingTeamId;
+          currentStation.nextTeamId = null;
+          if (room.teams[waitingTeamId]) {
+            room.teams[waitingTeamId].currentStationId =
+              currentStation.id;
+          }
+        }
+
+        // Move this team to its planned destination
+        const destStationId = plan.teamToStation[tid];
+        if (destStationId) {
+          const destStation = room.stations.find(
+            (s) => s.id === destStationId
+          );
+          if (destStation) {
+            if (!destStation.assignedTeamId) {
+              // Destination is free, assign this team
+              destStation.assignedTeamId = tid;
+              destStation.nextTeamId = null;
+              team.currentStationId = destStation.id;
+            } else {
+              // Destination busy, queue as next
+              destStation.nextTeamId = tid;
+              team.currentStationId = null;
+            }
+          } else {
+            team.currentStationId = null;
+          }
+        } else {
+          team.currentStationId = null;
+        }
+      } else {
+        // no plan → leave them
+        if (currentStation) {
+          currentStation.assignedTeamId = tid;
+          currentStation.nextTeamId = null;
+          team.currentStationId = currentStation.id;
+        }
+      }
+
+      team.currentStep++;
+
+      // 8) broadcast
+      io.to(code).emit("leaderboardUpdate", room.scores);
+      io.to(code).emit("roomState", room);
+
+      io.to(code).emit("taskSubmission", {
+        teamId: team.teamId,
+        teamName: team.teamName,
+        correct: isCorrect,
+        timeMs: timeMs || 0,
+        memberName,
+        answerText: answerText || "",
+        at: Date.now(),
+      });
+    }
+  );
+
+  socket.on(
+    "hostScoreSubmission",
+    ({ roomCode, teamId, points = 0, correct = null }) => {
+      const code = (roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) return;
+      const team = room.teams[teamId];
+      if (!team) return;
+      const label = team.teamName;
+      if (!room.scores[label]) room.scores[label] = 0;
+      room.scores[label] += Number(points) || 0;
+
+      io.to(code).emit("leaderboardUpdate", room.scores);
+      io.to(code).emit("taskSubmissionScored", {
+        teamId,
+        teamName: team.teamName,
+        points: Number(points) || 0,
+        correct,
+        at: Date.now(),
+      });
+    }
+  );
+
+  socket.on("disconnect", () => {
+    const code = socket.data?.roomCode;
+    if (!code || !rooms[code]) return;
+    const room = rooms[code];
+
+    if (room.teams[socket.id]) {
+      delete room.teams[socket.id];
+      room.stations.forEach((st) => {
+        if (st.assignedTeamId === socket.id) st.assignedTeamId = null;
+        if (st.nextTeamId === socket.id) st.nextTeamId = null;
+      });
+    }
+
+    broadcastRoom(code);
+  });
+});
+
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => {
+  console.log(`🚀 API + sockets listening on http://localhost:${PORT}`);
+});
+
+//this is what made the scoring work properly
+// index.js (only the socket-related part)
+
+import http from "http";
+import { Server } from "socket.io";
+// ... your other imports (express, mongoose, etc.)
+
+// after you create `app`:
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
+
+// ------------------ ROOM STATE ------------------
+
+const rooms = {}; // roomCode -> { teams, scores, currentTask, ... }
+
+function getOrCreateRoom(code) {
+  if (!rooms[code]) {
+    rooms[code] = {
+      code,
+      createdAt: Date.now(),
+      teams: {},    // teamId -> { teamId, teamName, teamColor, members }
+      scores: {},   // label (usually teamName) -> number
+      currentTask: null,
+    };
+  }
+  return rooms[code];
+}
+
+function broadcastRoom(code) {
+  const room = rooms[code];
+  if (!room) return;
+  io.to(code).emit("roomState", {
+    stations: [],           // you can expand this later
+    teams: room.teams,
+    scores: room.scores,
+  });
+}
+
+// ------------------ SOCKET HANDLERS ------------------
+
+io.on("connection", (socket) => {
+  console.log("socket connected", socket.id);
+
+  // JOIN ROOM
+  socket.on("joinRoom", ({ roomCode, name, role }) => {
+    const code = (roomCode || "").toUpperCase();
+    if (!code) return;
+
+    const room = getOrCreateRoom(code);
+
+    socket.join(code);
+    socket.data.roomCode = code;
+    socket.data.role = role || "student";
+
+    if (role === "student") {
+      const teamId = socket.id;
+      const teamName =
+        name || `T${Object.keys(room.teams).length + 1}`;
+
+      // simple random pastel color
+      const colors = ["#ef4444", "#3b82f6", "#10b981", "#f59e0b"];
+      const teamColor =
+        colors[
+          Object.keys(room.teams).length % colors.length
+        ];
+
+      room.teams[teamId] = {
+        teamId,
+        teamName,
+        teamColor,
+        members: [],
+      };
+
+      socket.data.teamId = teamId;
+    }
+
+    broadcastRoom(code);
+  });
+
+  // TEACHER LAUNCHES TASK (quick task)
+  socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+    if (socket.data.role !== "teacher") return;
+
+    const trimmedPrompt = (prompt || "").trim();
+    const trimmedAnswer = (correctAnswer || "").trim();
+
+    room.currentTask = {
+      prompt: trimmedPrompt,
+      correctAnswer: trimmedAnswer,
+      options: [],
+      taskType: "short-answer",
+      points: 10,
+      at: Date.now(),
+      submissions: [],
+    };
+
+    io.to(code).emit("roundStarted", room.currentTask);
+    broadcastRoom(code);
+  });
+
+  // STUDENT SUBMITS ANSWER
+  socket.on("submitTask", ({ roomCode, answerText }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.currentTask) return;
+
+    const teamId = socket.data.teamId;
+    const team = room.teams[teamId];
+    if (!team) return;
+
+    const now = Date.now();
+    const timeMs = now - room.currentTask.at;
+
+    const answer = (answerText || "").trim();
+    const expected = (room.currentTask.correctAnswer || "")
+      .trim()
+      .toLowerCase();
+
+    let isCorrect = false;
+    if (expected) {
+      isCorrect =
+        answer &&
+        answer.toLowerCase() === expected;
+    }
+
+    // store submission
+    const submission = {
+      teamId,
+      teamName: team.teamName,
+      answerText: answer,
+      correct: isCorrect,
+      timeMs,
+    };
+    room.currentTask.submissions.push(submission);
+
+    // calculate speed rank among correct submissions
+    let speedRank = null;
+    if (isCorrect) {
+      const correctSubs = room.currentTask.submissions.filter(
+        (s) => s.correct
+      );
+      speedRank = correctSubs.length; // 1 = first, 2 = second, etc.
+    }
+
+    // scoring label (what appears on leaderboard)
+    const label = team.teamName || `Team ${teamId}`;
+
+    if (!room.scores[label]) room.scores[label] = 0;
+    if (isCorrect) {
+      // base points
+      room.scores[label] += 10;
+
+      // speed bonus
+      if (speedRank === 1) room.scores[label] += 5;
+      else if (speedRank === 2) room.scores[label] += 3;
+      else if (speedRank === 3) room.scores[label] += 2;
+    }
+
+    // notify host/teacher
+    io.to(code).emit("taskSubmission", submission);
+    // update leaderboard
+    io.to(code).emit("leaderboardUpdate", room.scores);
+    broadcastRoom(code);
+  });
+
+  // HOST MANUAL SCORING (optional override / bonus)
+  socket.on("hostScoreSubmission", ({ roomCode, teamId, points }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+    if (socket.data.role !== "host" && socket.data.role !== "teacher") {
+      return;
+    }
+
+    const team = room.teams[teamId];
+    if (!team) return;
+
+    const label = team.teamName || `Team ${teamId}`;
+    const pts = Number(points || 0);
+
+    if (!room.scores[label]) room.scores[label] = 0;
+    room.scores[label] += pts;
+
+    io.to(code).emit("leaderboardUpdate", room.scores);
+    broadcastRoom(code);
+  });
+
+  // DISCONNECT
+  socket.on("disconnect", () => {
+    const code = socket.data.roomCode;
+    const role = socket.data.role;
+    if (!code || !rooms[code]) return;
+
+    const room = rooms[code];
+
+    if (role === "student" && socket.data.teamId) {
+      delete room.teams[socket.data.teamId];
+    }
+
+    broadcastRoom(code);
+  });
+});
+
+// and at the bottom of index.js:
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log("Server listening on port", PORT);
+});

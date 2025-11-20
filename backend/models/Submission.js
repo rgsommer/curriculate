@@ -1,19 +1,33 @@
 // backend/models/Submission.js
 import mongoose from "mongoose";
 
-const submissionSchema = new mongoose.Schema(
+const { Schema, models, model } = mongoose;
+
+const SubmissionSchema = new Schema(
   {
-    session: { type: mongoose.Schema.Types.ObjectId, ref: "Session", required: true },
-    taskIndex: { type: Number, required: true },
-    teamId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    answer: mongoose.Schema.Types.Mixed,
+    session: {
+      type: Schema.Types.ObjectId,
+      ref: "Session",
+      required: true,
+      index: true,
+    },
+    taskIndex: { type: Number, required: true },   // index into TaskSet.tasks[]
+    teamId: {
+      type: Schema.Types.ObjectId,                 // _id of Session.teams subdoc
+      required: true,
+    },
+    answer: { type: Schema.Types.Mixed },          // string, number, etc.
     isCorrect: { type: Boolean, default: false },
     responseTimeMs: { type: Number, default: null },
   },
   { timestamps: true }
 );
 
-// Prevent duplicate submissions from the same team for the same session+task
-submissionSchema.index({ session: 1, taskIndex: 1, teamId: 1 }, { unique: true });
+// one submission per team per task per session
+SubmissionSchema.index(
+  { session: 1, taskIndex: 1, teamId: 1 },
+  { unique: true }
+);
 
-export default mongoose.model("Submission", submissionSchema);
+const Submission = models.Submission || model("Submission", SubmissionSchema);
+export default Submission;
