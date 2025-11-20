@@ -217,7 +217,7 @@ export default function App() {
   /* ---------------- API health ---------------- */
 
   useEffect(() => {
-    fetch(`${SOCKET_URL}/db-check`)
+    fetch(`${API_BASE_URL}/db-check`)
       .then((r) => r.json())
       .then(() => setApiStatus("✅ API OK"))
       .catch(() => setApiStatus("❌ cannot reach API"));
