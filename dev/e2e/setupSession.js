@@ -1,60 +1,112 @@
 // dev/e2e/setupSession.js
-// Creates a TaskSet and Session in the configured MongoDB for e2e tests.
+// Create a TaskSet and Session by calling the backend REST API. This avoids
+// requiring a local MongoDB instance during e2e runs.
 
-const mongoose = require('mongoose');
+const fs = require('fs');
 const path = require('path');
 
-async function main() {
-  const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/curriculate';
-  // load models from backend
-  const modelsPath = path.resolve(__dirname, '../../backend/models');
-  // adjust NODE_PATH to include backend
-  process.env.NODE_PATH = `${process.env.NODE_PATH || ''}:${modelsPath}`;
-  require('module').Module._initPaths();
+(async function main() {
+  const BACKEND = process.env.BACKEND_URL || 'http://localhost:4000';
 
-  // import models using relative paths
-  const TaskSet = require(path.resolve(__dirname, '../../backend/models/TaskSet.js'));
-  const Session = require(path.resolve(__dirname, '../../backend/models/Session.js'));
+  // deterministic-ish session code unless overridden
+  const code = process.env.SESSION_CODE || `E2E${Date.now().toString().slice(-4)}`;
 
-  await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+  // 1) create a TaskSet via the upload-csv endpoint (no auth required)
+  const csvText =
+    'task_id,title,prompt,task_type,answer,points\n' +
+    't1,Multiplication,What is 6 x 7?,open_text,42,10';
 
-  const taskSet = await TaskSet.create({
-    name: 'E2E Test Set',
-    tasks: [
-      {
-        title: 'Multiplication',
-        prompt: 'What is 6 x 7?',
-        taskType: 'open_text',
-        answer: '42',
-        correctAnswer: '42',
-        points: 10,
-      },
-    ],
+  const createTsResp = await fetch(`${BACKEND}/upload-csv/from-csv`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csvText, name: 'E2E Test Set' }),
   });
 
-  // generate deterministic code
-  const code = `E2E${Date.now().toString().slice(-4)}`;
+  if (!createTsResp.ok) {
+    const txt = await createTsResp.text().catch(() => '<no body>');
+    throw new Error(`Failed to create TaskSet: ${createTsResp.status} ${txt}`);
+  }
 
-  const session = await Session.create({
-    code,
-    taskSet: taskSet._id,
-    state: 'lobby',
-    currentTaskIndex: -1,
-    teams: [
-      { name: 'Team A', color: '#e53935', score: 0 },
-      { name: 'Team B', color: '#1e88e5', score: 0 },
-      { name: 'Team C', color: '#43a047', score: 0 },
-    ],
+  const tsBody = await createTsResp.json();
+  const taskSetId = tsBody.tasksetId;
+
+  // 2) create a Session using the new TaskSet
+  const createSessionResp = await fetch(`${BACKEND}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskSetId, code }),
   });
-  const out = { code, taskSetId: taskSet._id.toString(), sessionId: session._id.toString() };
-  const fs = require('fs');
+
+  if (!createSessionResp.ok) {
+    const txt = await createSessionResp.text().catch(() => '<no body>');
+    throw new Error(`Failed to create Session: ${createSessionResp.status} ${txt}`);
+  }
+
+  const sessionBody = await createSessionResp.json();
+
+  const out = { code: sessionBody.code || code, taskSetId, sessionId: sessionBody._id };
   const infoPath = path.resolve(__dirname, 'session-info.json');
   fs.writeFileSync(infoPath, JSON.stringify(out, null, 2));
-  console.log(code);
-  await mongoose.disconnect();
-}
-
-main().catch((err) => {
-  console.error(err);
+  console.log(out.code);
+})().catch((err) => {
+  console.error(err && err.message ? err.message : err);
   process.exit(1);
 });
+        ```javascript
+        // dev/e2e/setupSession.js
+        // Create a TaskSet and Session by calling the backend REST API. This avoids
+        // requiring a local MongoDB instance during e2e runs.
+
+        const fs = require('fs');
+        const path = require('path');
+
+        async function main() {
+          const BACKEND = process.env.BACKEND_URL || 'http://localhost:4000';
+
+          // deterministic-ish session code unless overridden
+          const code = process.env.SESSION_CODE || `E2E${Date.now().toString().slice(-4)}`;
+
+          // 1) create a TaskSet via the upload-csv endpoint (no auth required)
+          const csvText = `task_id,title,prompt,task_type,answer,points\n` +
+            `t1,Multiplication,What is 6 x 7?,open_text,42,10`;
+
+          const createTsResp = await fetch(`${BACKEND}/upload-csv/from-csv`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csvText, name: 'E2E Test Set' }),
+          });
+
+          if (!createTsResp.ok) {
+            const txt = await createTsResp.text().catch(() => '<no body>');
+            throw new Error(`Failed to create TaskSet: ${createTsResp.status} ${txt}`);
+          }
+
+          const tsBody = await createTsResp.json();
+          const taskSetId = tsBody.tasksetId;
+
+          // 2) create a Session using the new TaskSet
+          const createSessionResp = await fetch(`${BACKEND}/sessions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskSetId, code }),
+          });
+
+          if (!createSessionResp.ok) {
+            const txt = await createSessionResp.text().catch(() => '<no body>');
+            throw new Error(`Failed to create Session: ${createSessionResp.status} ${txt}`);
+          }
+
+          const sessionBody = await createSessionResp.json();
+
+          const out = { code: sessionBody.code || code, taskSetId, sessionId: sessionBody._id };
+          const infoPath = path.resolve(__dirname, 'session-info.json');
+          fs.writeFileSync(infoPath, JSON.stringify(out, null, 2));
+          console.log(out.code);
+        }
+
+        main().catch((err) => {
+          console.error(err && err.message ? err.message : err);
+          process.exit(1);
+        });
+
+        ```

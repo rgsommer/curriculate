@@ -28,8 +28,11 @@ import {
 const app = express();
 const server = http.createServer(app);
 const ALLOWED_ORIGINS = [
-  "http://localhost:5173", // teacher app
-  "http://localhost:5174", // student app
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://curriculate-teacher.vercel.app",
+  "https://curriculate-student.vercel.app",
+  "https://play.curriculate.net",       // 👈 new
 ];
 
 const io = new SocketIOServer(server, {
