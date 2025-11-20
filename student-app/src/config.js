@@ -1,2 +1,10 @@
-// src/config.js
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:10000";
+// student-app/src/config.js
+
+// Decide backend URL based on where the app is running.
+const isLocalHost =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+
+export const API_BASE_URL = isLocalHost
+  ? "http://localhost:10000"          // local dev backend
+  : "https://api.curriculate.net";    // Render backend in production
