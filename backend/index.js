@@ -33,8 +33,9 @@ const ALLOWED_ORIGINS = [
   "https://curriculate-teacher.vercel.app",
   "https://curriculate-student.vercel.app",
   "https://play.curriculate.net",       // 👈 new
+  "https://set.curriculate.net",       // 👈 new
+  "https://dashboard.curriculate.net",       // 👈 new
   "https://student-aocdgkcck-richard-sommers-projects.vercel.app", // 👈 add this
-
 ];
 
 const io = new SocketIOServer(server, {
