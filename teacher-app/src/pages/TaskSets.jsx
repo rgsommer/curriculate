@@ -1,7 +1,7 @@
 // teacher-app/src/TaskSets.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_BASE_URL } from "./config";
+import { API_BASE_URL } from "../config";
 const API_BASE = API_BASE_URL;
 
 export default function TaskSets() {
