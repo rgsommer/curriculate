@@ -7,6 +7,8 @@ import React, {
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
 
+console.log("API_BASE_URL (student) =", API_BASE_URL);
+
 import { API_BASE_URL } from "./config";
 //const SOCKET_URL = import.meta.env.VITE_API_URL;
 //const socket = io(SOCKET_URL);
