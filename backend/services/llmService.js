@@ -16,7 +16,7 @@ async function callLLM(prompt) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'gpt-4.1-mini',
+      model: 'gpt-5',
       messages: [
         { role: 'system', content: 'You are an AI that outputs ONLY valid JSON.' },
         { role: 'user', content: prompt }
