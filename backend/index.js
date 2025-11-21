@@ -9,6 +9,8 @@ console.log("OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY);
 
 import tasksRouter from "./routes/tasks.js";
 import tasksetRouter from "./routes/tasksets.js";
+import tasksetRoutes from "./routes/tasksetRoutes.js";
+import aiTasksetsRouter from "./routes/aiTasksets.js";
 import sessionsRouter from "./routes/sessions.js";
 
 import TaskSet from "./models/TaskSet.js";
@@ -18,8 +20,6 @@ import uploadCsvRouter from "./routes/uploadCsv.js";
 import analyticsRouter from "./routes/analytics.js";
 import { updateTasksetAnalytics } from "./services/tasksetAnalyticsService.js";
 import teacherProfileRoutes from "./routes/teacherProfileRoutes.js";
-import tasksetRoutes from "./routes/tasksetRoutes.js";
-import aiTasksetsRouter from "./routes/aiTasksets.js";
 
 import {
   allTeamsSubmitted,
