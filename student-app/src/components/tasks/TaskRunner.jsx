@@ -12,6 +12,7 @@ import SequenceTask from "./types/SequenceTask";
 import ShortAnswerTask from "./types/ShortAnswerTask";
 import SortTask from "./types/SortTask";
 import TrueFalseTask from "./types/TrueFalseTask";
+import DrawMimeTask from "./types/DrawMimeTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -137,7 +138,11 @@ export default function TaskRunner({ task, onSubmit, disabled }) {
       content = <MakeAndSnapTask {...commonProps} />;
       break;
 
-    case TASK_TYPES.BODY_BREAK:
+    case TASK_TYPES.DRAW_MIME:                  // 👈 NEW
+      return <DrawMimeTask {...commonProps} />;
+      break;
+
+      case TASK_TYPES.BODY_BREAK:
       content = <BodyBreakTask {...commonProps} />;
       break;
 

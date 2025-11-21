@@ -82,12 +82,12 @@ export const TASK_TYPE_META = {
   // Planned
   [TASK_TYPES.DRAW]: {
     label: "Draw",
-    implemented: false,
+    implemented: true,
     category: "creative",
   },
   [TASK_TYPES.MIME]: {
     label: "Mime / Act It Out",
-    implemented: false,
+    implemented: true,
     category: "physical",
   },
   [TASK_TYPES.SCAVENGER]: {
