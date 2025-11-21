@@ -51,6 +51,23 @@ const TaskSetSchema = new Schema(
     name: { type: String, required: true }, // display name for list page
     ownerId: { type: Schema.Types.ObjectId, ref: "User" },
 
+    // 🔐 Location binding for QR codes and station sets
+    //
+    // locationKey: lowercase logical key used by backend ("classroom", "hallway", "room-206")
+    // locationCode: proper-case code used in QR URLs ("Classroom", "Hallway", "Room-206")
+    //
+    // Example QR: https://api.curriculate.net/Classroom/red
+    //   → rawLocationCode = "Classroom"
+    //   → must match taskset.locationCode exactly (case-sensitive)
+    locationKey: {
+      type: String,
+      default: "classroom", // logical type
+    },
+    locationCode: {
+      type: String,
+      default: "Classroom", // what actually appears in the QR path segment
+    },
+
     // New: physical / anchored displays for this task set
     displays: [DisplaySchema],
 

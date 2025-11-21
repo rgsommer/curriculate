@@ -90,8 +90,17 @@ function App() {
       setCurrentDisplay(null);
     });
 
+    // 🔐 New: show friendly errors when scanning wrong location etc.
+    const handleScanError = (payload) => {
+      if (!payload || !payload.message) return;
+      alert(payload.message);
+    };
+    s.on("scan-error", handleScanError);
+
     setSocket(s);
+
     return () => {
+      s.off("scan-error", handleScanError);
       s.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

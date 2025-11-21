@@ -95,6 +95,78 @@ app.use("/analytics", analyticsRouter);
 
 const rooms = {};
 
+// Fixed colour order: station-1 → red, station-2 → blue, etc.
+const STATION_COLORS = [
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "purple",
+  "orange",
+  "teal",
+  "pink",
+];
+
+function stationIdToColor(id) {
+  if (!id) return null;
+  const m = /^station-(\d+)$/.exec(id);
+  if (!m) return null;
+  const idx = parseInt(m[1], 10) - 1;
+  return STATION_COLORS[idx] || null;
+}
+
+/**
+ * Parse a QR URL like:
+ *   https://api.curriculate.net/Classroom/red
+ *   https://api.curriculate.net/Hallway/blue
+ *
+ * Returns { rawLocationCode, color } or null if not a URL.
+ */
+function parseStationUrl(str) {
+  if (!str) return null;
+  try {
+    const u = new URL(str);
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return null;
+    const rawLocationCode = parts[0]; // keep exact case: "Classroom", "Hallway", "Room-206"
+    const color = parts[1].toLowerCase();
+    return { rawLocationCode, color };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve location information from a TaskSet document.
+ * We support a few variants for backwards-compat:
+ *  - ts.locationCode (case-sensitive, used in QR, e.g. "Classroom")
+ *  - ts.locationKey or ts.locationGroup (lowercase, e.g. "classroom")
+ */
+function resolveTasksetLocation(ts) {
+  const fallbackKey = "classroom";
+  const fallbackCode = "Classroom";
+
+  if (!ts) {
+    return { locationKey: fallbackKey, locationCode: fallbackCode };
+  }
+
+  const rawCode =
+    ts.locationCode ||
+    ts.locationName ||
+    (typeof ts.locationGroup === "string" && ts.locationGroup.length
+      ? ts.locationGroup.charAt(0).toUpperCase() +
+        ts.locationGroup.slice(1)
+      : null);
+
+  const locationCode = rawCode || fallbackCode;
+
+  const locationKey =
+    ts.locationKey ||
+    (ts.locationGroup || locationCode).toString().trim().toLowerCase();
+
+  return { locationKey, locationCode };
+}
+
 /**
  * Ensure a room exists with station / team / score structure.
  * Stations are station-1 … station-8.
@@ -112,7 +184,7 @@ function ensureRoom(code) {
       scores: {}, // teamName -> score
       roundPlan: null, // { teamToStation: { teamId -> stationId } }
       currentTask: null, // { prompt, correctAnswer, ... }
-      taskset: null, // { _id, name, tasks, mode, displays }
+      taskset: null, // { _id, name, tasks, mode, displays, locationKey, locationCode }
       currentTaskIndex: null,
       submissions: [],
     };
@@ -280,7 +352,9 @@ io.on("connection", (socket) => {
 
   /**
    * QR station scan.
-   * Payload: { roomCode, teamId, stationId }
+   *
+   * Legacy payload: { roomCode, teamId, stationId: "station-1" }
+   * New payload:    { roomCode, teamId, stationId: "https://api.curriculate.net/Classroom/red" }
    */
   socket.on("station:scan", ({ roomCode, teamId, stationId }) => {
     const code = (roomCode || "").toUpperCase();
@@ -293,29 +367,108 @@ io.on("connection", (socket) => {
 
     const assignedId = team.currentStationId || null;
 
-    // Only accept a scan if it matches the team’s assigned station
-    if (!assignedId || assignedId !== stationId) {
+    // Try to interpret stationId as a QR URL first
+    const parsed = parseStationUrl(stationId);
+
+    // ------------------------------
+    // Case 1: New URL-based QR codes
+    // ------------------------------
+    if (parsed) {
+      const { rawLocationCode, color } = parsed;
+
+      const taskset = room.taskset;
+      // If there is a taskset loaded, enforce location protection
+      if (taskset) {
+        const { locationKey, locationCode } = resolveTasksetLocation(taskset);
+
+        // Case-sensitive match on the QR location vs the taskset locationCode
+        if (rawLocationCode !== locationCode) {
+          const msg = `Wrong location. This task set is for "${locationCode}" but you scanned "${rawLocationCode}".`;
+          console.log(
+            `Rejecting scan: team=${team.teamName}, expectedLocation=${locationCode}, scannedLocation=${rawLocationCode}`
+          );
+          socket.emit("scan-error", {
+            message: msg,
+            scannedLocation: rawLocationCode,
+            expectedLocation: locationCode,
+          });
+          return;
+        }
+
+        // (Optional) If in future you want wildcards like "Classroom" → any "Room-206",
+        // you can use locationKey here. For now, we keep strict code match.
+        console.log(
+          `Location OK for scan: team=${team.teamName}, locationCode=${locationCode}, key=${locationKey}`
+        );
+      }
+
+      if (!assignedId) {
+        console.log(
+          `Ignoring scan with URL but no assigned station: team=${team.teamName}, url=${stationId}`
+        );
+        return;
+      }
+
+      const assignedColor = stationIdToColor(assignedId);
+      if (!assignedColor || assignedColor.toLowerCase() !== color) {
+        console.log(
+          `Ignoring scan for wrong colour: team=${team.teamName}, assignedStation=${assignedId}(${assignedColor}), scannedColour=${color}`
+        );
+        return;
+      }
+
+      // ✅ Valid scan for this assignment & location
+      team.lastScannedStationId = assignedId;
+
+      const event = {
+        roomCode: code,
+        teamId: tid,
+        teamName: team.teamName,
+        stationId: assignedId,
+        assignedStationId: assignedId,
+        scannedUrl: stationId,
+        scannedLocation: rawLocationCode,
+        scannedColor: color,
+        timestamp: Date.now(),
+      };
+
       console.log(
-        `Ignoring scan for wrong station: team=${team.teamName}, assigned=${assignedId}, scanned=${stationId}`
+        `Team ${team.teamName} scanned correct station (colour=${color}) via URL in room ${code}`
+      );
+
+      io.to(code).emit("scanEvent", event);
+      broadcastRoom(code);
+      return;
+    }
+
+    // ------------------------------
+    // Case 2: Legacy behaviour (station-1, station-2, ...)
+    // ------------------------------
+    const legacyStationId = stationId;
+
+    // Only accept a scan if it matches the team’s assigned station
+    if (!assignedId || assignedId !== legacyStationId) {
+      console.log(
+        `Ignoring legacy scan for wrong station: team=${team.teamName}, assigned=${assignedId}, scanned=${legacyStationId}`
       );
       // Do NOT change lastScannedStationId or broadcast
       return;
     }
 
-    // ✅ Valid scan for this assignment
-    team.lastScannedStationId = stationId;
+    // ✅ Valid legacy scan for this assignment
+    team.lastScannedStationId = legacyStationId;
 
     const event = {
       roomCode: code,
       teamId: tid,
       teamName: team.teamName,
-      stationId,
+      stationId: legacyStationId,
       assignedStationId: assignedId,
       timestamp: Date.now(),
     };
 
     console.log(
-      `Team ${team.teamName} scanned correct station ${stationId} in room ${code}`
+      `Team ${team.teamName} scanned correct station ${legacyStationId} in room ${code}`
     );
 
     // Broadcast a scan event just for teacher/host UIs to display
@@ -403,6 +556,8 @@ io.on("connection", (socket) => {
       const ts = await TaskSet.findById(tasksetId).lean();
       if (!ts) return socket.emit("error", { msg: "Taskset not found" });
 
+      const { locationKey, locationCode } = resolveTasksetLocation(ts);
+
       room.taskset = {
         _id: ts._id,
         name: ts.name,
@@ -411,6 +566,8 @@ io.on("connection", (socket) => {
         mode: (ts.tasks || []).every((t) => t.linear)
           ? "linear"
           : "mixed",
+        locationKey,
+        locationCode,
       };
 
       room.currentTask = null;
@@ -422,6 +579,8 @@ io.on("connection", (socket) => {
         name: ts.name,
         numTasks: (ts.tasks || []).length,
         tasksetId: ts._id,
+        locationKey,
+        locationCode,
       });
       broadcastRoom(code);
     } catch (err) {
