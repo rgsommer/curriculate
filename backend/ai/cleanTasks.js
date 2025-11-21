@@ -201,7 +201,11 @@ export function cleanTask(rawTask, context = {}) {
     }
   }
 
-  return {
+    return {
+    // keep everything the route/AI already set
+    ...rawTask,
+
+    // then overwrite with our cleaned/normalized values
     title,
     prompt,
     taskType,
@@ -210,6 +214,7 @@ export function cleanTask(rawTask, context = {}) {
     timeLimitSeconds,
     points,
   };
+
 }
 
 /**

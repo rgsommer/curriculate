@@ -88,13 +88,18 @@ export default function AiTasksetGenerator() {
           .map(w => w.trim())
           .filter(Boolean),
         learningGoal: form.learningGoal,
-        allowMovementTasks: form.allowMovementTasks,
-        allowDrawingMimeTasks: form.allowDrawingMimeTasks,
-        curriculumLenses: profile?.curriculumLenses || []
+
+        // NEW: matches backend lenses format
+        lenses: {
+          includePhysicalMovement: form.allowMovementTasks,
+          includeCreative: form.allowDrawingMimeTasks,
+          includeAnalytical: true,
+          includeInputTasks: true
+        }
       };
 
       const data = await generateAiTaskset(payload);
-      setResult(data.taskset);
+      setResult(data.taskset); // keep the same
     } catch (err) {
       console.error(err);
       setError(err.message || 'Failed to generate TaskSet');
@@ -245,24 +250,20 @@ export default function AiTasksetGenerator() {
       {result && (
         <section className="border rounded p-4 bg-gray-50">
           <h2 className="font-semibold mb-2">
-            Generated Task Set: {result.title || '(untitled)'}
+            Generated Task Set: {result.name || '(untitled)'}
           </h2>
-          <p className="text-sm text-gray-700 mb-2">
-            Grade {result.gradeLevel} • {result.subject} • Difficulty {result.difficulty} •{' '}
-            {result.durationMinutes} min
+          <p className="text-sm text-gray-700 mb-4">
+            Grade {result.gradeLevel} • {result.subject} • Difficulty{' '}
+            {result.difficulty} • {result.durationMinutes} min
           </p>
-          <p className="text-sm text-gray-500 mb-4">
-            Saved to your account. You can now edit it in the Task Sets section.
-          </p>
-          <ol className="space-y-2 list-decimal pl-5">
+
+          <ol className="space-y-4 list-decimal pl-5">
             {result.tasks.map(t => (
-              <li key={t.order} className="bg-white border rounded p-2">
+              <li key={t.orderIndex} className="bg-white border rounded p-3">
                 <div className="text-xs text-gray-500 mb-1">
-                  {t.taskType} • ~{t.timeMinutes} min •{' '}
-                  {t.movement ? 'Movement' : 'Non-movement'} •{' '}
-                  {t.requiresDrawing ? 'Drawing' : 'No drawing'}
+                  {t.taskType} • {t.timeLimitSeconds}s • {t.points} pts
                 </div>
-                <div className="font-medium">{t.prompt}</div>
+                <div className="font-medium whitespace-pre-wrap">{t.prompt}</div>
               </li>
             ))}
           </ol>
