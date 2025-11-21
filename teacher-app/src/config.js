@@ -6,4 +6,4 @@ const isLocalHost =
 
 export const API_BASE_URL = isLocalHost
   ? "http://localhost:10002"          // local dev backend
-  : "https://api.curriculate.net";    // Render backend in production
+  : "https://api.curriculate.net/api";    // Render backend in production
