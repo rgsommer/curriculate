@@ -5,7 +5,7 @@ import OpenAI from "openai";
 import {
   TASK_TYPES,
   TASK_TYPE_LABELS,
-} from "../shared/taskTypes.js";
+} from "../../shared/taskTypes.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,

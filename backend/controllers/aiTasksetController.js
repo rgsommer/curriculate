@@ -5,7 +5,7 @@ import TaskSet from "../models/TaskSet.js";
 import UserSubscription from "../models/UserSubscription.js";
 import SubscriptionPlan from "../models/SubscriptionPlan.js";
 
-import { TASK_TYPES } from "../shared/taskTypes.js";
+import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { planTaskTypes } from "../ai/planTaskTypes.js";
 import { createAiTasks } from "../ai/createAiTasks.js";
 import { cleanTaskList } from "../ai/cleanTasks.js";

@@ -1,7 +1,7 @@
 // src/pages/AiTasksetGenerator.jsx
 import { useEffect, useState } from 'react';
 import { fetchMyProfile } from '../api/profile';
-import { generateAiTaskset } from '../api/tasksets';
+import { generateAiTaskset } from '../api/tasksets.js';
 
 const DIFFICULTIES = ['EASY', 'MEDIUM', 'HARD'];
 const LEARNING_GOALS = ['REVIEW', 'INTRODUCTION', 'ENRICHMENT', 'ASSESSMENT'];
