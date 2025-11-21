@@ -9,6 +9,7 @@ const ALL_LENSES = [
   { value: 'SECULAR_NEUTRAL', label: 'Secular / Neutral' }
 ];
 
+
 const DIFFICULTIES = ['EASY', 'MEDIUM', 'HARD'];
 const LEARNING_GOALS = ['REVIEW', 'INTRODUCTION', 'ENRICHMENT', 'ASSESSMENT'];
 
