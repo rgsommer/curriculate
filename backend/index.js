@@ -20,7 +20,6 @@ import { updateTasksetAnalytics } from "./services/tasksetAnalyticsService.js";
 import teacherProfileRoutes from "./routes/teacherProfileRoutes.js";
 import tasksetRoutes from "./routes/tasksetRoutes.js";
 import aiTasksetsRouter from "./routes/aiTasksets.js";
-import { TASK_TYPES } from "../../shared/taskTypes";
 
 import {
   allTeamsSubmitted,

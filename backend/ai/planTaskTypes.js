@@ -2,7 +2,7 @@
 // Stage 1: Decide which taskType to use for each concept.
 
 import OpenAI from "openai";
-import { TASK_TYPE_LABELS } from "../../shared/taskTypes.js";
+import { TASK_TYPE_LABELS } from "../shared/taskTypes.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
