@@ -1,5 +1,6 @@
 // teacher-app/src/pages/LiveSession.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 import { socket } from "../socket";
 
 // Station colours in order: station-1 → red, station-2 → blue, etc.
@@ -21,7 +22,11 @@ function stationIdToColor(id) {
   return COLORS[idx] || null;
 }
 
-export default function LiveSession({ roomCode }) {
+export default function LiveSession({ roomCode: roomCodeProp }) {
+  const params = useParams();
+  // Prefer explicit prop, then URL param, otherwise empty string
+  const roomCode = (roomCodeProp || params.roomCode || "").toUpperCase();
+
   const [status, setStatus] = useState("Checking connection…");
   const [roomState, setRoomState] = useState({
     stations: [],
@@ -50,7 +55,7 @@ export default function LiveSession({ roomCode }) {
     }
   });
 
-  // If TaskSets asked us to "launch now"
+  // If TaskSets OR the button here asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
 
   // View mode: 'live' = normal view, 'setup' = room setup checklist
@@ -66,7 +71,7 @@ export default function LiveSession({ roomCode }) {
     setStatus("Joining room…");
 
     socket.emit("joinRoom", {
-      roomCode: roomCode.toUpperCase(),
+      roomCode,
       name: "Teacher",
       role: "teacher",
     });
@@ -83,33 +88,29 @@ export default function LiveSession({ roomCode }) {
     }
   }, []);
 
-  // If auto-launch is requested, load + launch the active taskset
+  // If auto-launch is requested, load + then launch the active taskset
   useEffect(() => {
     if (!autoLaunchRequested) return;
     if (!roomCode || !activeTasksetMeta?._id) return;
 
-    const code = roomCode.toUpperCase();
+    const desiredId = activeTasksetMeta._id;
 
     // If the correct taskset isn't loaded yet, load it first.
-    if (loadedTasksetId !== activeTasksetMeta._id) {
+    if (loadedTasksetId !== desiredId) {
+      setStatus(`Loading taskset "${activeTasksetMeta.name}"…`);
       socket.emit("loadTaskset", {
-        roomCode: code,
-        tasksetId: activeTasksetMeta._id,
+        roomCode,
+        tasksetId: desiredId,
       });
-      // When the backend emits "tasksetLoaded", loadedTasksetId will update
-      // and this effect will run again.
+      // Wait for "tasksetLoaded" to fire and update loadedTasksetId.
       return;
     }
 
     // At this point, the correct taskset is loaded in this room — launch it.
-    socket.emit("launchTaskset", { roomCode: code });
+    setStatus(`Launching "${activeTasksetMeta.name}"…`);
+    socket.emit("launchTaskset", { roomCode });
     setAutoLaunchRequested(false);
-  }, [
-    autoLaunchRequested,
-    roomCode,
-    activeTasksetMeta?._id,
-    loadedTasksetId,
-  ]);
+  }, [autoLaunchRequested, roomCode, activeTasksetMeta?._id, loadedTasksetId]);
 
   // Socket listeners
   useEffect(() => {
@@ -150,6 +151,10 @@ export default function LiveSession({ roomCode }) {
           );
           return meta;
         });
+
+        setStatus(
+          `Taskset "${info.name || "Taskset"}" loaded into room ${roomCode}.`
+        );
       }
     };
 
@@ -162,7 +167,6 @@ export default function LiveSession({ roomCode }) {
     };
 
     const handleScanEvent = (ev) => {
-      // ev: { roomCode, teamId, teamName, stationId, assignedStationId, timestamp }
       setScanEvents((prev) => {
         const next = [ev, ...prev];
         return next.slice(0, 30); // keep last 30
@@ -182,23 +186,26 @@ export default function LiveSession({ roomCode }) {
       socket.off("taskSubmission", handleSubmission);
       socket.off("scanEvent", handleScanEvent);
     };
-  }, []);
+  }, [roomCode]);
 
   const handleLaunchQuickTask = () => {
     if (!roomCode || !prompt.trim()) return;
     socket.emit("teacherLaunchTask", {
-      roomCode: roomCode.toUpperCase(),
+      roomCode,
       prompt: prompt.trim(),
       correctAnswer: correctAnswer.trim(),
     });
     setPrompt("");
     setCorrectAnswer("");
+    setStatus("Quick task launched.");
   };
 
+  // ✅ NEW: one-click launch that uses the autoLaunch effect
   const handleLaunchTaskset = () => {
-    if (!roomCode) return;
-
-    const code = roomCode.toUpperCase();
+    if (!roomCode) {
+      alert("No room selected for this live session.");
+      return;
+    }
 
     if (!activeTasksetMeta?._id) {
       alert(
@@ -207,20 +214,13 @@ export default function LiveSession({ roomCode }) {
       return;
     }
 
-    // If the room doesn't yet have this taskset loaded, load it first.
-    if (loadedTasksetId !== activeTasksetMeta._id) {
-      socket.emit("loadTaskset", {
-        roomCode: code,
-        tasksetId: activeTasksetMeta._id,
-      });
-      alert(
-        `Loading "${activeTasksetMeta.name}" into room ${code}.\n\nWhen you see "Taskset loaded" (and students are ready), click "Launch from taskset" again to send the first task.`
-      );
-      return;
-    }
-
-    // If it IS already loaded, just launch the next task
-    socket.emit("launchTaskset", { roomCode: code });
+    // This triggers the effect above, which will:
+    // 1) loadTaskset if needed
+    // 2) launchTaskset once loaded
+    setAutoLaunchRequested(true);
+    setStatus(
+      `Preparing to launch "${activeTasksetMeta.name}" to room ${roomCode}…`
+    );
   };
 
   // Derived helpers
@@ -275,8 +275,7 @@ export default function LiveSession({ roomCode }) {
     const assignedStationId = team.currentStationId || stationId;
     const assignedColor = stationIdToColor(assignedStationId);
 
-    // Last station they scanned (from QR) – backend ensures this only
-    // matches correct assignments
+    // Last station they scanned (from QR)
     const scannedStationId = team.lastScannedStationId || null;
     const hasScanForThisAssignment =
       scannedStationId && scannedStationId === assignedStationId;
@@ -408,7 +407,7 @@ export default function LiveSession({ roomCode }) {
                 : "1px solid rgba(148,163,184,0.4)",
               fontSize: "0.8rem",
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent: "space_between",
               gap: 8,
               alignItems: "center",
             }}
@@ -457,7 +456,7 @@ export default function LiveSession({ roomCode }) {
   };
 
   // Group displays by station colour for the setup tab
-  const groupedDisplays = React.useMemo(() => {
+  const groupedDisplays = useMemo(() => {
     const grouped = {};
     (tasksetDisplays || []).forEach((d) => {
       const key = (d.stationColor || "Unassigned").toLowerCase();
@@ -467,7 +466,7 @@ export default function LiveSession({ roomCode }) {
     return grouped;
   }, [tasksetDisplays]);
 
-  const orderedDisplayGroups = React.useMemo(() => {
+  const orderedDisplayGroups = useMemo(() => {
     const keys = Object.keys(groupedDisplays);
     if (!keys.length) return [];
     const colorOrder = [...COLORS, "unassigned"];
@@ -935,9 +934,7 @@ export default function LiveSession({ roomCode }) {
               color: "#4b5563",
             }}
           >
-            {roomCode
-              ? `Room: ${roomCode.toUpperCase()}`
-              : "No room selected."}
+            {roomCode ? `Room: ${roomCode}` : "No room selected."}
           </p>
           <p
             style={{
