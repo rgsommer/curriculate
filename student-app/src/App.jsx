@@ -44,10 +44,12 @@ function App() {
       setStationLabel(null);
       setCurrentTask(null);
       setAnswered(false);
+      setTasksetDisplays([]);
+      setCurrentDisplay(null);
     });
 
     // When host assigns station / color
-    s.on("station-assigned", (payload) => {
+    s.on("station-assigned", (payload = {}) => {
       // payload might look like:
       // {
       //   color: "RED",
@@ -57,7 +59,7 @@ function App() {
       setAssignedColor(payload.color || null);
       setStationLabel(payload.stationLabel || null);
       setTasksetDisplays(payload.displays || []);
-      // recompute currentDisplay when we also have a task
+
       if (currentTask && payload.displays) {
         const disp = payload.displays.find(
           (d) => d.key === currentTask.displayKey
@@ -92,6 +94,7 @@ function App() {
     return () => {
       s.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------
@@ -167,7 +170,9 @@ function App() {
     : !joined
     ? "Enter the room code and your team name to join."
     : assignedColor
-    ? `Joined as ${teamName || "your team"} at ${stationLabel || assignedColor} station.`
+    ? `Joined as ${teamName || "your team"} at ${
+        stationLabel || assignedColor
+      } station.`
     : `Joined as ${teamName || "your team"}. Waiting for station…`;
 
   // ---------------------------------------------------------
@@ -176,173 +181,179 @@ function App() {
   return (
     <div
       style={{
-        maxWidth: 520,
-        margin: "30px auto",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
         fontFamily: "system-ui",
-        // 👇 Key: extra space so you can always scroll task content above the bottom band
-        paddingBottom: "40vh",
+        background: "#ffffff",
       }}
     >
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: "1.6rem" }}>Curriculate</h1>
-        <p
-          style={{
-            margin: "4px 0 0",
-            fontSize: "0.85rem",
-            color: "#4b5563",
-          }}
-        >
-          Student station
-        </p>
-      </header>
-
-      {/* Connection status */}
-      <p
+      {/* MAIN SCROLLABLE CONTENT */}
+      <main
         style={{
-          fontSize: "0.9rem",
-          marginBottom: 16,
-          color: connected ? "#16a34a" : "#b91c1c",
+          flex: 1,
+          maxWidth: 520,
+          width: "100%",
+          margin: "0 auto",
+          padding: "24px 16px 32px",
         }}
       >
-        {connected ? "Connected" : "Not connected"}
-      </p>
+        <header style={{ marginBottom: 16 }}>
+          <h1 style={{ margin: 0, fontSize: "1.6rem" }}>Curriculate</h1>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: "0.85rem",
+              color: "#4b5563",
+            }}
+          >
+            Student station
+          </p>
+        </header>
 
-      {/* Join form (if not joined yet) */}
-      {!joined && (
-        <form
-          onSubmit={handleJoin}
+        {/* Connection status */}
+        <p
           style={{
-            marginBottom: 24,
-            padding: 12,
-            borderRadius: 10,
-            border: "1px solid #e5e7eb",
-            background: "#f9fafb",
+            fontSize: "0.9rem",
+            marginBottom: 16,
+            color: connected ? "#16a34a" : "#b91c1c",
           }}
         >
+          {connected ? "Connected" : "Not connected"}
+        </p>
+
+        {/* Join form (if not joined yet) */}
+        {!joined && (
+          <form
+            onSubmit={handleJoin}
+            style={{
+              marginBottom: 24,
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              background: "#f9fafb",
+            }}
+          >
+            <div
+              style={{
+                marginBottom: 8,
+                fontSize: "0.9rem",
+                color: "#111827",
+              }}
+            >
+              {statusLine}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input
+                type="text"
+                placeholder="Room code"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                style={{
+                  flex: 0.6,
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: "6px 8px",
+                  fontSize: "0.95rem",
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Team name"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                style={{
+                  flex: 1,
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: "6px 8px",
+                  fontSize: "0.95rem",
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={!connected || !roomCode.trim() || !teamName.trim()}
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "none",
+                background:
+                  !connected || !roomCode.trim() || !teamName.trim()
+                    ? "#9ca3af"
+                    : "#2563eb",
+                color: "#fff",
+                fontWeight: 600,
+                cursor:
+                  !connected || !roomCode.trim() || !teamName.trim()
+                    ? "default"
+                    : "pointer",
+              }}
+            >
+              Join
+            </button>
+          </form>
+        )}
+
+        {/* Status when joined */}
+        {joined && (
           <div
             style={{
-              marginBottom: 8,
+              marginBottom: 16,
+              padding: 10,
+              borderRadius: 10,
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
               fontSize: "0.9rem",
-              color: "#111827",
+              color: "#1e3a8a",
             }}
           >
             {statusLine}
           </div>
+        )}
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input
-              type="text"
-              placeholder="Room code"
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-              style={{
-                flex: 0.6,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: "6px 8px",
-                fontSize: "0.95rem",
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Team name"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              style={{
-                flex: 1,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: "6px 8px",
-                fontSize: "0.95rem",
-              }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={!connected || !roomCode.trim() || !teamName.trim()}
-            style={{
-              width: "100%",
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: "none",
-              background:
-                !connected || !roomCode.trim() || !teamName.trim()
-                  ? "#9ca3af"
-                  : "#2563eb",
-              color: "#fff",
-              fontWeight: 600,
-              cursor:
-                !connected || !roomCode.trim() || !teamName.trim()
-                  ? "default"
-                  : "pointer",
-            }}
-          >
-            Join
-          </button>
-        </form>
-      )}
-
-      {/* Status when joined */}
-      {joined && (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 10,
-            borderRadius: 10,
-            background: "#eff6ff",
-            border: "1px solid #bfdbfe",
-            fontSize: "0.9rem",
-            color: "#1e3a8a",
-          }}
-        >
-          {statusLine}
-        </div>
-      )}
-
-      {/* Task area */}
-      <section>
-        {joined ? (
-          currentTask ? (
-            <TaskRunner
-              task={currentTask}
-              onSubmit={handleSubmit}
-              disabled={answered}
-              answered={answered}
-              stationColor={bandColor}
-              currentDisplay={currentDisplay}
-            />
+        {/* Task area */}
+        <section>
+          {joined ? (
+            currentTask ? (
+              <TaskRunner
+                task={currentTask}
+                onSubmit={handleSubmit}
+                disabled={answered}
+                answered={answered}
+                stationColor={bandColor}
+                currentDisplay={currentDisplay}
+              />
+            ) : (
+              <p
+                style={{
+                  fontSize: "1rem",
+                  color: "#4b5563",
+                }}
+              >
+                Waiting for task…
+              </p>
+            )
           ) : (
             <p
               style={{
-                fontSize: "1rem",
-                color: "#4b5563",
+                fontSize: "0.9rem",
+                color: "#6b7280",
               }}
             >
-              Waiting for task…
+              Once you join a room, tasks from your teacher will appear here.
             </p>
-          )
-        ) : (
-          <p
-            style={{
-              fontSize: "0.9rem",
-              color: "#6b7280",
-            }}
-          >
-            Once you join a room, tasks from your teacher will appear here.
-          </p>
-        )}
-      </section>
+          )}
+        </section>
+      </main>
 
-      {/* Fixed coloured band at bottom */}
-      <div
+      {/* COLOUR BAND FOOTER (NO LONGER FIXED / OVERLAYING) */}
+      <footer
         style={{
-          position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          // 👇 Reduced height so it’s less intrusive
-          height: "24vh",
+          minHeight: 96,
           background: bandColor,
           display: "flex",
           alignItems: "center",
@@ -366,7 +377,7 @@ function App() {
             </div>
           )}
         </div>
-      </div>
+      </footer>
     </div>
   );
 }
