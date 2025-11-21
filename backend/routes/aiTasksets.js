@@ -5,7 +5,7 @@ import { cleanTaskList } from "../ai/cleanTasks.js";
 import {
   IMPLEMENTED_TASK_TYPES,
   TASK_TYPES,
-} from "../shared/taskTypes.js";
+} from "../../shared/taskTypes.js";
 
 import { planTaskTypes } from "../ai/planTaskTypes.js";
 import { createAiTasks } from "../ai/createAiTasks.js";
