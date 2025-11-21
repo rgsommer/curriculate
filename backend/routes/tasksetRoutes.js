@@ -1,28 +1,44 @@
 // backend/routes/tasksetRoutes.js
 import express from "express";
 import {
-  createTaskSet,
   getAllTaskSets,
   getTaskSetById,
+  createTaskSet,
   updateTaskSet,
   deleteTaskSet,
 } from "../controllers/tasksetController.js";
-//import { authRequired } from "../middleware/authRequired.js";
 
 const router = express.Router();
 
-//router.get("/", authRequired, getAllTaskSets);
-//router.get("/:id", authRequired, getTaskSetById);
-//router.post("/", authRequired, createTaskSet);
-//router.put("/:id", authRequired, updateTaskSet);
-//router.delete("/:id", authRequired, deleteTaskSet);
-
-// DEV / single-teacher mode: no authRequired yet
+/**
+ * GET /api/tasksets
+ * Returns all task sets (currently no auth, so this will return all TaskSets;
+ * later you can filter by owner from req.user).
+ */
 router.get("/", getAllTaskSets);
+
+/**
+ * GET /api/tasksets/:id
+ * Returns a single task set by id.
+ */
 router.get("/:id", getTaskSetById);
+
+/**
+ * POST /api/tasksets
+ * Creates a new task set.
+ */
 router.post("/", createTaskSet);
+
+/**
+ * PUT /api/tasksets/:id
+ * Updates an existing task set.
+ */
 router.put("/:id", updateTaskSet);
+
+/**
+ * DELETE /api/tasksets/:id
+ * Deletes a task set.
+ */
 router.delete("/:id", deleteTaskSet);
 
-// IMPORTANT: ES module default export
 export default router;
