@@ -5,6 +5,7 @@ import http from "http";
 import cors from "cors";
 import mongoose from "mongoose";
 import { Server as SocketIOServer } from "socket.io";
+console.log("OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY);
 
 import tasksRouter from "./routes/tasks.js";
 import tasksetRouter from "./routes/tasksets.js";
@@ -19,6 +20,7 @@ import { updateTasksetAnalytics } from "./services/tasksetAnalyticsService.js";
 import teacherProfileRoutes from "./routes/teacherProfileRoutes.js";
 import tasksetRoutes from "./routes/tasksetRoutes.js";
 import aiTasksetsRouter from "./routes/aiTasksets.js";
+import { TASK_TYPES } from "../../shared/taskTypes";
 
 import {
   allTeamsSubmitted,
@@ -32,10 +34,10 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5174",
   "https://curriculate-teacher.vercel.app",
   "https://curriculate-student.vercel.app",
-  "https://play.curriculate.net",       // 👈 new
-  "https://set.curriculate.net",       // 👈 new
-  "https://dashboard.curriculate.net",       // 👈 new
-  "https://student-aocdgkcck-richard-sommers-projects.vercel.app", // 👈 add this
+  "https://play.curriculate.net",
+  "https://set.curriculate.net",
+  "https://dashboard.curriculate.net",
+  "https://student-aocdgkcck-richard-sommers-projects.vercel.app",
 ];
 
 const io = new SocketIOServer(server, {
@@ -111,7 +113,7 @@ function ensureRoom(code) {
       scores: {}, // teamName -> score
       roundPlan: null, // { teamToStation: { teamId -> stationId } }
       currentTask: null, // { prompt, correctAnswer, ... }
-      taskset: null, // { _id, name, tasks, mode }
+      taskset: null, // { _id, name, tasks, mode, displays }
       currentTaskIndex: null,
       submissions: [],
     };
@@ -378,7 +380,10 @@ io.on("connection", (socket) => {
       t.perMemberDone = t.perMemberDone || {};
     });
 
-    io.to(code).emit("taskUpdate", room.currentTask);
+    io.to(code).emit("taskUpdate", {
+      ...room.currentTask,
+      displays: room.taskset?.displays || [],
+    });
     io.to(code).emit("roundStarted", room.currentTask);
   });
 
@@ -403,6 +408,7 @@ io.on("connection", (socket) => {
         _id: ts._id,
         name: ts.name,
         tasks: ts.tasks || [],
+        displays: ts.displays || [],
         mode: (ts.tasks || []).every((t) => t.linear)
           ? "linear"
           : "mixed",

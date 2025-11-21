@@ -9,6 +9,7 @@ import TaskSetEditor from "./pages/TaskSetEditor.jsx";
 import TeacherProfile from "./pages/TeacherProfile.jsx";
 import AiTasksetGenerator from "./pages/AiTasksetGenerator.jsx";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
+import { TASK_TYPES } from "../../shared/taskTypes";
 
 function generateRoomCode() {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";

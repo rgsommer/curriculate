@@ -67,6 +67,8 @@ export async function createTaskSet(req, res) {
     const {
       name,
       tasks = [],
+      // NEW: allow displays to come from the client
+      displays = [],
       gradeLevel,
       subject,
       difficulty,
@@ -83,6 +85,8 @@ export async function createTaskSet(req, res) {
       name,
       ownerId: userId || null,
       tasks,
+      // NEW: actually persist displays
+      displays,
       gradeLevel,
       subject,
       difficulty,
@@ -123,7 +127,9 @@ export async function updateTaskSet(req, res) {
     );
 
     if (!updated) {
-      return res.status(404).json({ error: "TaskSet not found or not owned by you" });
+      return res
+        .status(404)
+        .json({ error: "TaskSet not found or not owned by you" });
     }
 
     res.json(updated);
@@ -153,7 +159,9 @@ export async function deleteTaskSet(req, res) {
     });
 
     if (!deleted) {
-      return res.status(404).json({ error: "TaskSet not found or not owned by you" });
+      return res
+        .status(404)
+        .json({ error: "TaskSet not found or not owned by you" });
     }
 
     res.json({ success: true });

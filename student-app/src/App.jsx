@@ -6,6 +6,7 @@ import React, {
 } from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
+import { TASK_TYPES } from "../../shared/taskTypes";
 
 import { API_BASE_URL } from "./config";
 

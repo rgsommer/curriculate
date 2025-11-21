@@ -2,6 +2,13 @@
 import express from "express";
 import TaskSet from "../models/TaskSet.js";
 import { cleanTaskList } from "../ai/cleanTasks.js";
+import {
+  IMPLEMENTED_TASK_TYPES,
+  TASK_TYPES,
+} from "../../shared/taskTypes.js";
+
+import { planTaskTypes } from "../ai/planTaskTypes.js";
+import { createAiTasks } from "../ai/createAiTasks.js";
 
 const router = express.Router();
 
@@ -14,15 +21,15 @@ const router = express.Router();
  *   difficulty,
  *   durationMinutes,
  *   topicTitle,
- *   wordConceptList = [],
- *   lenses: {
+ *   wordConceptList?: string[],
+ *   lenses?: {
  *     includePhysicalMovement?: boolean,
- *     includeDrawingMime?: boolean,
- *     includeBodyBreaks?: boolean,
- *     includeScavengerHunts?: boolean,
+ *     includeCreative?: boolean,
+ *     includeAnalytical?: boolean,
+ *     includeInputTasks?: boolean
  *   },
- *   learningGoal?,
- *   curriculumLenses?
+ *   learningGoal?: string,
+ *   approxTaskCount?: number
  * }
  */
 router.post("/", async (req, res) => {
@@ -36,128 +43,147 @@ router.post("/", async (req, res) => {
       wordConceptList = [],
       lenses = {},
       learningGoal,
-      curriculumLenses,
+      approxTaskCount,
     } = req.body || {};
 
-    const ownerId = req.user?.id || null;
-    const name =
-      (topicTitle && String(topicTitle).trim()) ||
-      `AI Taskset – ${subject || "General"} (${gradeLevel || "All"})`;
-
-    const {
-      includePhysicalMovement: allowMovementTasks = true,
-      includeDrawingMime: allowDrawingMimeTasks = true,
-      includeBodyBreaks: allowBodyBreaks = true,
-      includeScavengerHunts: allowScavengerHunts = true,
-    } = lenses;
-
-    const tasks = [];
-
-    // Normalize concepts list
-    const concepts = Array.isArray(wordConceptList)
-      ? wordConceptList.map((w) => String(w || "").trim()).filter(Boolean)
+    const words = Array.isArray(wordConceptList)
+      ? wordConceptList.filter((w) => w && String(w).trim().length > 0)
       : [];
 
-    concepts.forEach((term, idx) => {
-      const safeTerm = term || `Item ${idx + 1}`;
+    if (words.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "wordConceptList must include at least one concept." });
+    }
 
-      // 1) Simple explanation task
-      tasks.push({
-        taskId: `explain-${idx + 1}`,
-        title: `Explain: ${safeTerm}`,
-        prompt: `In 1–3 sentences, explain what "${safeTerm}" means in the context of ${subject || "our topic"}.`,
-        taskType: "short-answer",
-        options: [],
-        correctAnswer: null,
-        timeLimitSeconds: 90,
-        points: 10,
-      });
+    const safeSubject = subject || "our topic";
+    const safeTitle =
+      topicTitle ||
+      (subject ? `${subject} – AI Task Set` : "AI-Generated Task Set");
 
-      // 2) Movement task (if allowed)
-      if (allowMovementTasks) {
-        tasks.push({
-          taskId: `move-${idx + 1}`,
-          title: `Movement: ${safeTerm}`,
-          prompt: `As a team, create a quick physical demonstration (using gestures only) that represents "${safeTerm}". Keep it under 20 seconds. One member should be ready to explain your idea to the teacher.`,
-          taskType: "movement",
-          options: [],
-          correctAnswer: null,
-          timeLimitSeconds: 90,
-          points: 5,
-        });
-      }
+    // Decide how many tasks (same basic idea as your old version)
+    const targetCount =
+      typeof approxTaskCount === "number" && approxTaskCount > 0
+        ? approxTaskCount
+        : Math.max(6, Math.min(16, (durationMinutes || 45) / 4));
 
-      // 3) Drawing / mime task (if allowed)
-      if (allowDrawingMimeTasks) {
-        tasks.push({
-          taskId: `draw-${idx + 1}`,
-          title: `Draw / Mime: ${safeTerm}`,
-          prompt: `One teammate secretly reads the word "${safeTerm}". They must draw or mime it (no talking!) until the others guess it correctly.`,
-          taskType: "drawing-mime",
-          options: [],
-          correctAnswer: safeTerm,
-          timeLimitSeconds: 120,
-          points: 5,
-        });
-      }
+    // 1) AI: concept -> taskType plan
+    const rawPlan = await planTaskTypes(
+      safeSubject,
+      words,
+      IMPLEMENTED_TASK_TYPES,
+      lenses,
+      targetCount
+    );
 
-      // 4) Body break / quick physical reset (if allowed)
-      if (allowBodyBreaks) {
-        tasks.push({
-          taskId: `bodybreak-${idx + 1}`,
-          title: `Body Break: ${safeTerm}`,
-          prompt: `Take a quick body break that somehow connects to "${safeTerm}" (for example, act out a short movement that matches it). Keep it short and appropriate.`,
-          taskType: "body-break",
-          options: [],
-          correctAnswer: null,
-          timeLimitSeconds: 60,
-          points: 3,
-        });
-      }
+    // Sanitize plan and trim
+    const plan = (Array.isArray(rawPlan) ? rawPlan : [])
+      .filter(
+        (item) =>
+          item &&
+          typeof item.concept === "string" &&
+          IMPLEMENTED_TASK_TYPES.includes(item.taskType)
+      )
+      .slice(0, targetCount);
 
-      // 5) Scavenger hunt style (if allowed)
-      if (allowScavengerHunts) {
-        tasks.push({
-          taskId: `scavenger-${idx + 1}`,
-          title: `Scavenger: ${safeTerm}`,
-          prompt: `Find or point to something in the classroom (or on a map, diagram, or in a textbook) that connects to "${safeTerm}". Be ready to explain the connection in one sentence.`,
-          taskType: "scavenger",
-          options: [],
-          correctAnswer: null,
-          timeLimitSeconds: 180,
-          points: 8,
-        });
-      }
+    if (plan.length === 0) {
+      return res
+        .status(500)
+        .json({ error: "AI did not return any usable plan entries." });
+    }
+
+    // 2) AI: create full tasks (prompt, options, time, points, etc.)
+    const aiTasksRaw = await createAiTasks(safeSubject, plan, {
+      gradeLevel,
+      difficulty,
+      durationMinutes,
+      learningGoal,
     });
 
-    // If no concepts were given, bail gracefully
-    if (!tasks.length) {
-      return res.status(400).json({
-        error: "No tasks could be generated – check your word list.",
+    if (!Array.isArray(aiTasksRaw) || aiTasksRaw.length === 0) {
+      return res
+        .status(500)
+        .json({ error: "AI did not generate any task content." });
+    }
+
+    // 3) Validate & map into TaskSet schema
+    let tasks = aiTasksRaw.map((t, index) => {
+      let type = t.taskType;
+      if (!IMPLEMENTED_TASK_TYPES.includes(type)) {
+        type = TASK_TYPES.SHORT_ANSWER;
+      }
+
+      const time = Math.min(
+        300,
+        Math.max(20, Number(t.recommendedTimeSeconds) || 60)
+      );
+
+      const points = Math.min(
+        20,
+        Math.max(1, Number(t.recommendedPoints) || 10)
+      );
+
+      const options = Array.isArray(t.options) ? t.options : [];
+
+      let correctAnswer = null;
+      if (type === TASK_TYPES.MULTIPLE_CHOICE && options.length >= 2) {
+        if (typeof t.correctAnswer === "number") {
+          const idx = t.correctAnswer;
+          correctAnswer = idx >= 0 && idx < options.length ? idx : 0;
+        } else if (typeof t.correctAnswer === "string") {
+          const idx = options.findIndex(
+            (o) =>
+              o &&
+              o.toString().trim().toLowerCase() ===
+                t.correctAnswer.toString().trim().toLowerCase()
+          );
+          correctAnswer = idx >= 0 ? idx : 0;
+        } else {
+          correctAnswer = 0;
+        }
+      } else {
+        correctAnswer = t.correctAnswer ?? null;
+      }
+
+      return {
+        taskId: `ai-${index + 1}`,
+        title: t.title || `${t.concept || "Task"} – ${type}`,
+        prompt: t.prompt || "",
+        taskType: type,
+        options,
+        correctAnswer,
+        timeLimitSeconds: time,
+        points,
+        linear: true,
+        displayKey: "",
+        orderIndex: index,
+      };
+    });
+
+    // 4) Optional polish with your existing cleaner
+    if (typeof cleanTaskList === "function") {
+      tasks = await cleanTaskList(tasks, {
+        gradeLevel,
+        subject: safeSubject,
+        difficulty,
+        durationMinutes,
+        learningGoal,
       });
     }
 
-    // Clean / filter the tasks (length, "word salad", etc.)
-    const cleanedTasks = cleanTaskList(tasks);
-
-    if (!cleanedTasks.length) {
-      return res.status(400).json({
-        error:
-          "The AI did not produce any usable tasks. Try reducing your word list or simplifying your request.",
-      });
-    }
-
+    // 5) Save taskset
     const doc = await TaskSet.create({
-      name,
-      ownerId,
+      name: safeTitle,
+      description:
+        learningGoal ||
+        `AI-generated mix of task types for ${safeSubject}.`,
+      tasks,
+      displays: [],
       gradeLevel,
       subject,
       difficulty,
       durationMinutes,
-      topicTitle,
       learningGoal,
-      curriculumLenses,
-      tasks: cleanedTasks,
       isPublic: false,
     });
 

@@ -3,6 +3,19 @@ import mongoose from "mongoose";
 
 const { Schema } = mongoose;
 
+// Display schema – physical objects/exhibits anchored to stations
+const DisplaySchema = new Schema(
+  {
+    key: { type: String, required: true },        // unique within this TaskSet
+    name: { type: String, required: true },       // "Van Gogh: Starry Night"
+    description: { type: String },                // short description for students
+    stationColor: { type: String },               // "red", "blue", "green", etc.
+    notesForTeacher: { type: String },            // setup notes, only for teacher UI
+    imageUrl: { type: String }                    // optional reference image
+  },
+  { _id: false }
+);
+
 // Individual Task schema
 const TaskSchema = new Schema(
   {
@@ -16,6 +29,10 @@ const TaskSchema = new Schema(
     mediaUrl: String,
     timeLimitSeconds: Number,
     points: { type: Number, default: 10 },
+
+    // Link this task to a physical display (optional)
+    // Should match one of TaskSet.displays[].key if used
+    displayKey: { type: String },
 
     // EXTRA fields for AI-generated structure (optional)
     order: Number,                      // task sequence within a set
@@ -33,6 +50,10 @@ const TaskSetSchema = new Schema(
     // Original fields
     name: { type: String, required: true }, // display name for list page
     ownerId: { type: Schema.Types.ObjectId, ref: "User" },
+
+    // New: physical / anchored displays for this task set
+    displays: [DisplaySchema],
+
     tasks: [TaskSchema],
     isPublic: { type: Boolean, default: false },
 
