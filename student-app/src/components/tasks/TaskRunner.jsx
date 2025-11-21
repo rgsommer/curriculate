@@ -20,37 +20,58 @@ import DrawMimeTask from "./types/DrawMimeTask";
  */
 function normalizeTaskType(raw) {
   if (!raw) return TASK_TYPES.SHORT_ANSWER;
+
   switch (raw) {
     case "mc":
     case "multiple-choice":
       return TASK_TYPES.MULTIPLE_CHOICE;
+
     case "tf":
     case "true_false":
     case "true-false":
       return TASK_TYPES.TRUE_FALSE;
+
     case "open":
     case "short":
     case "short-answer":
       return TASK_TYPES.SHORT_ANSWER;
+
     case "open-text":
     case "open_text":
       return TASK_TYPES.OPEN_TEXT;
+
     case "sort":
       return TASK_TYPES.SORT;
+
     case "seq":
     case "sequence":
       return TASK_TYPES.SEQUENCE;
+
     case "photo":
       return TASK_TYPES.PHOTO;
+
     case "make-and-snap":
     case "make_snap":
       return TASK_TYPES.MAKE_AND_SNAP;
+
     case "body-break":
     case "body_break":
       return TASK_TYPES.BODY_BREAK;
+
     case "record-audio":
     case "record_audio":
       return TASK_TYPES.RECORD_AUDIO;
+
+    // NEW: map raw strings to DRAW and MIME
+    case "draw":
+    case "drawing":
+      return TASK_TYPES.DRAW;
+
+    case "mime":
+    case "act":
+    case "act-out":
+      return TASK_TYPES.MIME;
+
     default:
       // Already canonical, or truly unknown
       return raw;
@@ -73,11 +94,7 @@ function normalizeTaskType(raw) {
  */
 export default function TaskRunner({ task, onSubmit, disabled }) {
   if (!task) {
-    return (
-      <div className="p-4 text-center">
-        Waiting for next task…
-      </div>
-    );
+    return <div className="p-4 text-center">Waiting for next task…</div>;
   }
 
   const t = task;
@@ -138,11 +155,13 @@ export default function TaskRunner({ task, onSubmit, disabled }) {
       content = <MakeAndSnapTask {...commonProps} />;
       break;
 
-    case TASK_TYPES.DRAW_MIME:                  // 👈 NEW
-      return <DrawMimeTask {...commonProps} />;
+    // DRAW and MIME both use the unified DrawMimeTask UI
+    case TASK_TYPES.DRAW:
+    case TASK_TYPES.MIME:
+      content = <DrawMimeTask {...commonProps} />;
       break;
 
-      case TASK_TYPES.BODY_BREAK:
+    case TASK_TYPES.BODY_BREAK:
       content = <BodyBreakTask {...commonProps} />;
       break;
 
