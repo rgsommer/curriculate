@@ -63,6 +63,7 @@ function normalizeTaskType(raw) {
       return TASK_TYPES.RECORD_AUDIO;
 
     // NEW: map raw strings to DRAW and MIME
+    case "Draw":
     case "draw":
     case "drawing":
       return TASK_TYPES.DRAW;
