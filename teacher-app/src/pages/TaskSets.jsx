@@ -1,4 +1,4 @@
-// teacher-app/src/TaskSets.jsx  (FIXED VERSION)
+// teacher-app/src/pages/TaskSets.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../config";
@@ -19,10 +19,9 @@ export default function TaskSets() {
     return localStorage.getItem("curriculateActiveTasksetId") || null;
   });
 
-  // ---------------------------------------------------------------------
-  // FIXED: Load TaskSets using the SAME URL that works in your browser:
-  // GET https://api.curriculate.net/api/tasksets
-  // ---------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // Load task sets — minimal, known-good URL, no tokens/extra params
+  // -------------------------------------------------------------------
   useEffect(() => {
     async function loadSets() {
       setLoading(true);
@@ -39,7 +38,10 @@ export default function TaskSets() {
           data = text ? JSON.parse(text) : [];
         } catch (parseErr) {
           console.error("❌ JSON parse failed for /api/tasksets");
-          console.error("Raw server response (first 500 chars):", text.slice(0, 500));
+          console.error(
+            "Raw server response (first 500 chars):",
+            text.slice(0, 500)
+          );
           throw new Error("Server returned invalid JSON when loading task sets");
         }
 
@@ -59,12 +61,16 @@ export default function TaskSets() {
     loadSets();
   }, []);
 
-  // ---------------------------------------------------------------------
-  // Buttons + Actions
-  // ---------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // Actions
+  // -------------------------------------------------------------------
+  const handleNew = () => {
+    navigate("/tasksets/create");
+  };
 
-  const handleNew = () => navigate("/tasksets/create");
-  const handleEdit = (id) => navigate(`/tasksets/edit/${id}`);
+  const handleEdit = (id) => {
+    navigate(`/tasksets/edit/${id}`);
+  };
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this task set? This cannot be undone.")) return;
@@ -79,7 +85,7 @@ export default function TaskSets() {
       try {
         data = text ? JSON.parse(text) : null;
       } catch {
-        /* ignore parse error */
+        // ignore parse errors for DELETE
       }
 
       if (!res.ok) {
@@ -112,10 +118,9 @@ export default function TaskSets() {
     navigate("/live");
   };
 
-  // ---------------------------------------------------------------------
-  // CSV Upload
-  // ---------------------------------------------------------------------
-
+  // -------------------------------------------------------------------
+  // CSV upload
+  // -------------------------------------------------------------------
   const handleCsvFileChange = (e) => {
     const file = e.target.files?.[0] || null;
     setCsvFile(file);
@@ -180,10 +185,9 @@ export default function TaskSets() {
     reader.readAsText(csvFile);
   };
 
-  // ---------------------------------------------------------------------
+  // -------------------------------------------------------------------
   // Render
-  // ---------------------------------------------------------------------
-
+  // -------------------------------------------------------------------
   return (
     <div className="max-w-5xl mx-auto">
       <div className="flex justify-between items-center mb-6">
