@@ -1,49 +1,77 @@
-// controllers/aiTasksetController.js
-import { buildAiTasksetPrompt } from '../services/tasksetPromptBuilder.js';
+// backend/controllers/aiTasksetController.js
 
-const prompt = buildAiTasksetPrompt(profile, effectiveConfig);
-const TeacherProfile = require('../models/TeacherProfile');
-const TaskSet = require('../models/TaskSet');
-const UserSubscription = require('../models/UserSubscription');
-const SubscriptionPlan = require('../models/SubscriptionPlan');
-const { callLLM } = require('../services/llmService');
-const { buildAiTasksetPrompt } = require('../services/tasksetPromptBuilder');
+import TeacherProfile from "../models/TeacherProfile.js";
+import TaskSet from "../models/TaskSet.js";
+import UserSubscription from "../models/UserSubscription.js";
+import SubscriptionPlan from "../models/SubscriptionPlan.js";
 
-function validateGeneratePayload(body) {
+import { TASK_TYPES } from "../shared/taskTypes.js";
+import { planTaskTypes } from "../ai/planTaskTypes.js";
+import { createAiTasks } from "../ai/createAiTasks.js";
+import { cleanTaskList } from "../ai/cleanTasks.js";
+
+function validateGeneratePayload(body = {}) {
   const errors = [];
 
-  if (!body.gradeLevel) errors.push('gradeLevel is required');
-  if (!body.subject) errors.push('subject is required');
-  if (!body.durationMinutes) errors.push('durationMinutes is required');
-  if (!body.learningGoal) errors.push('learningGoal is required');
+  if (!body.gradeLevel) errors.push("gradeLevel is required");
+  if (!body.subject) errors.push("subject is required");
+  if (!body.durationMinutes) errors.push("durationMinutes is required");
+  if (!body.learningGoal) errors.push("learningGoal is required");
 
-  const difficultyAllowed = ['EASY', 'MEDIUM', 'HARD'];
+  const difficultyAllowed = ["EASY", "MEDIUM", "HARD"];
   if (body.difficulty && !difficultyAllowed.includes(body.difficulty)) {
-    errors.push('difficulty must be EASY, MEDIUM, or HARD');
+    errors.push("difficulty must be EASY, MEDIUM, or HARD");
   }
 
-  const goalsAllowed = ['REVIEW', 'INTRODUCTION', 'ENRICHMENT', 'ASSESSMENT'];
+  const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
   if (body.learningGoal && !goalsAllowed.includes(body.learningGoal)) {
-    errors.push('learningGoal must be one of ' + goalsAllowed.join(', '));
+    errors.push("learningGoal must be one of " + goalsAllowed.join(", "));
   }
 
   return errors;
 }
 
-async function generateTaskset(req, res) {
+export async function generateTaskset(req, res) {
   try {
-    const userId = req.user._id;
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const payloadErrors = validateGeneratePayload(req.body);
+    if (payloadErrors.length > 0) {
+      return res.status(400).json({
+        error: "Invalid payload",
+        details: payloadErrors,
+      });
+    }
 
     const profile = await TeacherProfile.findOne({ userId });
     if (!profile) {
-      return res
-        .status(400)
-        .json({ error: 'Teacher profile required. Please complete your profile first.' });
+      return res.status(400).json({
+        error:
+          "Teacher profile required. Please complete your profile first.",
+      });
     }
 
-    const errors = validateGeneratePayload(req.body);
-    if (errors.length) {
-      return res.status(400).json({ error: errors.join('; ') });
+    // Optional: subscription / feature gating
+    let sub = null;
+    let planName = null;
+    let features = {};
+    let canSaveTasksets = false;
+
+    try {
+      sub = await UserSubscription.findOne({ userId }).populate("plan");
+      if (sub && sub.plan) {
+        planName = sub.plan.planName || sub.plan.name || null;
+        features = sub.plan.features || {};
+        canSaveTasksets = !!features.canSaveTasksets;
+      }
+    } catch (subErr) {
+      console.warn(
+        "[aiTasksetController] Subscription lookup failed:",
+        subErr.message
+      );
     }
 
     const {
@@ -55,79 +83,139 @@ async function generateTaskset(req, res) {
       wordConceptList,
       learningGoal,
       allowMovementTasks,
-      allowDrawingMimeTasks
+      allowDrawingMimeTasks,
+      curriculumLenses,
     } = req.body;
+
+    // Normalize wordConceptList into an array of strings
+    const conceptList = Array.isArray(wordConceptList)
+      ? wordConceptList
+      : (wordConceptList || "")
+          .split(",")
+          .map((w) => w.trim())
+          .filter(Boolean);
 
     const effectiveConfig = {
       gradeLevel,
       subject,
-      difficulty: difficulty || profile.defaultDifficulty || 'MEDIUM',
-      durationMinutes: durationMinutes || profile.defaultDurationMinutes || 45,
-      topicTitle: topicTitle || '',
-      wordConceptList: Array.isArray(wordConceptList)
-        ? wordConceptList
-        : (wordConceptList || '').split(',').map(w => w.trim()).filter(Boolean),
-      learningGoal: learningGoal || profile.defaultLearningGoal || 'REVIEW',
+      difficulty: difficulty || profile.defaultDifficulty || "MEDIUM",
+      durationMinutes:
+        durationMinutes || profile.defaultDurationMinutes || 45,
+      topicTitle: topicTitle || "",
+      wordConceptList: conceptList,
+      learningGoal:
+        learningGoal || profile.defaultLearningGoal || "REVIEW",
       allowMovementTasks:
-        typeof allowMovementTasks === 'boolean'
+        typeof allowMovementTasks === "boolean"
           ? allowMovementTasks
           : !!profile.prefersMovementTasks,
       allowDrawingMimeTasks:
-        typeof allowDrawingMimeTasks === 'boolean'
+        typeof allowDrawingMimeTasks === "boolean"
           ? allowDrawingMimeTasks
-          : !!profile.prefersDrawingMimeTasks
+          : !!profile.prefersDrawingMimeTasks,
+      curriculumLenses: curriculumLenses || profile.curriculumLenses || [],
     };
 
-    const prompt = buildAiTasksetPrompt(profile, effectiveConfig);
-    const llmRaw = await callLLM(prompt);
-
-    let tasksetJson;
-    try {
-      tasksetJson = JSON.parse(llmRaw);
-    } catch (err) {
-      console.error('Failed to parse LLM JSON', llmRaw);
-      return res.status(500).json({ error: 'AI returned invalid JSON' });
+    // -------------------------
+    // Stage 1: Plan task types
+    // -------------------------
+    let implementedTypes = Object.values(TASK_TYPES || {});
+    if (!implementedTypes.length) {
+      // Fallback in case TASK_TYPES is empty
+      implementedTypes = [
+        "multiple-choice",
+        "short-answer",
+        "open-text",
+        "sequence",
+        "sort",
+        "make-and-snap",
+        "body-break",
+      ];
     }
 
-    if (!Array.isArray(tasksetJson.tasks) || !tasksetJson.tasks.length) {
-      return res.status(500).json({ error: 'AI did not return any tasks' });
-    }
-
-    // Determine plan & features to decide if we save
-    const sub = await UserSubscription.findOne({ userId });
-    const plan = await SubscriptionPlan.findOne({ name: sub.planName });
-    const features = plan?.features || {};
-
-    let saved = null;
-    if (features.canSaveTasksets) {
-      saved = await TaskSet.create({
-        title: tasksetJson.title || effectiveConfig.topicTitle || 'Generated TaskSet',
-        createdBy: userId,
-        gradeLevel: tasksetJson.gradeLevel || effectiveConfig.gradeLevel,
-        subject: tasksetJson.subject || effectiveConfig.subject,
-        difficulty: tasksetJson.difficulty || effectiveConfig.difficulty,
-        durationMinutes: tasksetJson.durationMinutes || effectiveConfig.durationMinutes,
-        learningGoal: tasksetJson.learningGoal || effectiveConfig.learningGoal,
-        tasks: tasksetJson.tasks
+    // Respect teacher/AI toggles for movement & drawing/mime
+    if (!effectiveConfig.allowMovementTasks) {
+      implementedTypes = implementedTypes.filter((t) => {
+        const v = t.toLowerCase();
+        return !v.includes("body") && !v.includes("move");
       });
     }
 
-    // Increment AI generation usage
-    if (sub) {
-      sub.aiGenerationsUsedThisPeriod += 1;
-      await sub.save();
+    if (!effectiveConfig.allowDrawingMimeTasks) {
+      implementedTypes = implementedTypes.filter((t) => {
+        const v = t.toLowerCase();
+        return !v.includes("draw") && !v.includes("mime");
+      });
     }
 
-    res.json({
+    const plan = await planTaskTypes(
+      effectiveConfig.subject,
+      effectiveConfig.wordConceptList,
+      implementedTypes,
+      {
+        includePhysicalMovement: effectiveConfig.allowMovementTasks,
+        includeCreative: effectiveConfig.allowDrawingMimeTasks,
+        includeAnalytical: true,
+        includeInputTasks: true,
+      },
+      effectiveConfig.wordConceptList.length
+    );
+
+    // -------------------------
+    // Stage 2: Create raw tasks
+    // -------------------------
+    const rawTasks = await createAiTasks(
+      effectiveConfig.subject,
+      plan,
+      {
+        gradeLevel: effectiveConfig.gradeLevel,
+        difficulty: effectiveConfig.difficulty,
+        learningGoal: effectiveConfig.learningGoal,
+        durationMinutes: effectiveConfig.durationMinutes,
+        topicTitle: effectiveConfig.topicTitle,
+      }
+    );
+
+    // -------------------------
+    // Stage 3: Clean & normalize
+    // -------------------------
+    const cleanedTasks = cleanTaskList(rawTasks, {
+      subject: effectiveConfig.subject,
+      gradeLevel: effectiveConfig.gradeLevel,
+    });
+
+    const tasksetJson = {
+      title:
+        effectiveConfig.topicTitle ||
+        `${effectiveConfig.subject} – AI TaskSet`,
+      gradeLevel: effectiveConfig.gradeLevel,
+      subject: effectiveConfig.subject,
+      difficulty: effectiveConfig.difficulty,
+      durationMinutes: effectiveConfig.durationMinutes,
+      learningGoal: effectiveConfig.learningGoal,
+      tasks: cleanedTasks,
+      source: "AI_GENERATOR",
+    };
+
+    let saved = null;
+    if (canSaveTasksets) {
+      const doc = new TaskSet({
+        userId,
+        ...tasksetJson,
+      });
+      saved = await doc.save();
+    }
+
+    return res.json({
       taskset: saved || tasksetJson,
       saved: !!saved,
-      planName: sub?.planName,
-      canSaveTasksets: !!features.canSaveTasksets
+      planName,
+      canSaveTasksets,
     });
   } catch (err) {
-    console.error('Error generating AI taskset', err);
-    res.status(500).json({ error: 'Failed to generate taskset' });
+    console.error("Error generating AI taskset", err);
+    return res.status(500).json({ error: "Failed to generate taskset" });
   }
 }
 
-module.exports = { generateTaskset };
+export default { generateTaskset };

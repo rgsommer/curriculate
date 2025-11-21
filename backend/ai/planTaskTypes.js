@@ -1,8 +1,8 @@
 // backend/ai/planTaskTypes.js
+// Stage 1: Decide which taskType to use for each concept.
+
 import OpenAI from "openai";
-import {
-  TASK_TYPE_LABELS,
-} from "../../shared/taskTypes.js";
+import { TASK_TYPE_LABELS } from "../../shared/taskTypes.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -13,10 +13,14 @@ const client = new OpenAI({
  *
  * @param {string} subject
  * @param {string[]} concepts
- * @param {string[]} implementedTypes
+ * @param {string[]} implementedTypes - list of allowed taskType values (strings)
  * @param {object} lenses
- * @param {number} targetCount
- * @returns {Promise<Array<{concept: string, taskType: string, reason?: string}>>}
+ * @param {boolean} [lenses.includePhysicalMovement]
+ * @param {boolean} [lenses.includeCreative]
+ * @param {boolean} [lenses.includeAnalytical]
+ * @param {boolean} [lenses.includeInputTasks]
+ * @param {number} targetCount - max number of tasks to plan
+ * @returns {Promise<Array<{ concept: string, taskType: string, reason: string }>>}
  */
 export async function planTaskTypes(
   subject,
@@ -32,53 +36,68 @@ export async function planTaskTypes(
     includeInputTasks = true,
   } = lenses;
 
+  const subjectLabel = subject || "General";
+
+  const implementedTypeDescriptions = implementedTypes
+    .map((t) => {
+      const label = TASK_TYPE_LABELS?.[t] || "";
+      return `- ${t}${label ? `: ${label}` : ""}`;
+    })
+    .join("\n");
+
   const systemPrompt = `
-You are an expert curriculum designer for an interactive classroom platform called Curriculate.
+You are the Curriculate Task Planner, an expert curriculum designer.
 
-Your job: for each concept, choose ONE best taskType from the allowed list.
+Your job:
+- Look at a subject and a list of key concepts/words.
+- Choose the BEST taskType (from a provided list) for each concept.
+- Write a 1–2 sentence reason for each choice, for the teacher.
 
-Task types available (value: label):
-${implementedTypes.map((t) => `- ${t}: ${TASK_TYPE_LABELS[t] || t}`).join(
-    "\n"
-  )}
+CONTEXT:
+- Subject: ${subjectLabel}
+- Concepts: you will receive a list.
+- Allowed taskType values (you MUST choose only from these):
+${implementedTypeDescriptions}
 
-Some broad guidelines (not strict rules):
-- Analytical (MC/sequence/sort) are good for:
-  * processes, timelines, causes & consequences, classification, factual checks
-- Creative (open-text, make-and-snap, draw) are good for:
-  * explanations, reflections, models, analogies, visual or constructed representations
-- Physical movement (body-break) is good for:
-  * acting out processes, tableaux, role-play, kinesthetic representation
-- Input (photo, short-answer, record-audio) are good for:
-  * quick captures, brief explanations, evidence from environment
-
-Teacher lenses:
+LENSES:
 - includePhysicalMovement: ${includePhysicalMovement}
 - includeCreative: ${includeCreative}
 - includeAnalytical: ${includeAnalytical}
 - includeInputTasks: ${includeInputTasks}
 
+GUIDELINES:
+- Use physical-movement types (body-break, act-it-out, mime, etc.) for:
+  * processes, sequences, role-play, kinesthetic representation.
+- Use creative types (draw, make-and-snap, photo, etc.) for:
+  * objects, scenes, emotional/affective ideas, imaginative response.
+- Use analytical types (sequence, sort, compare/contrast, "why/how" prompts) for:
+  * cause/effect, timelines, trade-offs, deeper reasoning.
+- Use input types (short-answer, open-text, photo evidence, record-audio) for:
+  * quick captures, reflections, short explanations, evidence from environment.
+
 RULES:
-- ONLY choose taskType values from the 'implementedTypes' list provided.
+- ONLY choose taskType values from the 'implementedTypes' list.
 - NEVER invent new taskType values.
-- Prefer a mix of taskTypes across the whole plan (not all the same).
-- If the subject clearly suggests timelines (e.g., History), consider sequence/sort for key events.
-- If the concept is an object, consider photo, draw, or make-and-snap.
-- If the concept is a character trait or big idea, consider open-text or short-answer.
-- You may create fewer tasks than the number of concepts, but never more than 'targetCount'.
+- Prefer a healthy mix of taskTypes across the whole plan (not all the same).
+- You MAY plan fewer tasks than the number of concepts, but NEVER more than 'targetCount'.
+- Focus on concepts that will make the most meaningful, station-based tasks.
 - You MUST return valid JSON and nothing else.
 
-Return JSON shaped as:
+JSON SHAPE:
 {
   "plan": [
-    { "concept": "string", "taskType": "string-from-implementedTypes", "reason": "short explanation" }
+    {
+      "concept": "string (one of the input concepts)",
+      "taskType": "string (one of the implementedTypes)",
+      "reason": "1–2 sentence explanation for the teacher"
+    }
   ]
 }
-`;
+  `.trim();
 
   const userPrompt = {
-    subject,
-    concepts,
+    subject: subjectLabel,
+    concepts: concepts,
     implementedTypes,
     targetCount,
     lenses: {
@@ -90,7 +109,7 @@ Return JSON shaped as:
   };
 
   const completion = await client.chat.completions.create({
-    model: "gpt-4.1",
+    model: "gpt-5.1",
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
@@ -98,7 +117,15 @@ Return JSON shaped as:
     ],
   });
 
-  const parsed = JSON.parse(completion.choices[0].message.content || "{}");
+  const raw = completion.choices?.[0]?.message?.content || "{}";
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    console.error("[planTaskTypes] Failed to parse JSON:", raw);
+    parsed = {};
+  }
+
   const plan = Array.isArray(parsed.plan) ? parsed.plan : [];
   return plan;
 }
