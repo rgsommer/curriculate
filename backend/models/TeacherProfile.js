@@ -3,43 +3,27 @@ import mongoose from "mongoose";
 
 const { Schema } = mongoose;
 
-const teacherProfileSchema = new Schema(
+const TeacherProfileSchema = new Schema(
   {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      unique: true,
-      required: true,
-    },
+    // For now dev mode → no authentication, no userId needed
+    // If you later add auth, add: user: { type: Schema.Types.ObjectId, ref: "User", required: true, unique: true }
 
-    displayName: { type: String },
-    schoolName: { type: String },
-    countryRegion: { type: String },
+    displayName: { type: String, default: "" },
+    schoolName: { type: String, default: "" },
+    countryRegion: { type: String, default: "" },
 
-    gradesTaught: [{ type: String }],
-    subjectsTaught: [{ type: String }],
+    gradesTaught: { type: [String], default: [] },
+    subjectsTaught: { type: [String], default: [] },
+    curriculumLenses: { type: [String], default: [] },
 
-    curriculumLenses: [
-      {
-        type: String,
-        enum: [
-          "BIBLICAL_CHRISTIAN",
-          "CLASSICAL_CHRISTIAN",
-          "GENERIC_CHRISTIAN",
-          "SECULAR_NEUTRAL",
-        ],
-      },
-    ],
-
-    defaultGrade: { type: String },
-    defaultSubject: { type: String },
+    defaultGrade: { type: String, default: "" },
+    defaultSubject: { type: String, default: "" },
     defaultDifficulty: {
       type: String,
       enum: ["EASY", "MEDIUM", "HARD"],
       default: "MEDIUM",
     },
     defaultDurationMinutes: { type: Number, default: 45 },
-
     defaultLearningGoal: {
       type: String,
       enum: ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"],
@@ -48,10 +32,12 @@ const teacherProfileSchema = new Schema(
 
     prefersMovementTasks: { type: Boolean, default: true },
     prefersDrawingMimeTasks: { type: Boolean, default: true },
-    prefersFrenchLanguageSupport: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-const TeacherProfile = mongoose.model("TeacherProfile", teacherProfileSchema);
+const TeacherProfile =
+  mongoose.models.TeacherProfile ||
+  mongoose.model("TeacherProfile", TeacherProfileSchema);
+
 export default TeacherProfile;
