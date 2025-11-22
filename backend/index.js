@@ -21,7 +21,7 @@ import TeacherProfile from "./models/TeacherProfile.js";
 import SubscriptionPlan from "./models/SubscriptionPlan.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
-import { buildSessionSummary } from "./analytics/sessionSummaries.js";
+import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 
 const app = express();
@@ -420,7 +420,7 @@ io.on("connection", (socket) => {
       const transcript = buildTranscript(room);
       const perParticipant = computePerParticipantStats(room, transcript);
 
-      const summary = await buildSessionSummary({
+      const summary = await generateSessionSummaries({
         roomCode: code,
         transcript,
         perParticipant,
