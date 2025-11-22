@@ -46,11 +46,17 @@ app.use(express.json());
 // ----------------------------------------------------------------------------
 // MongoDB
 // ----------------------------------------------------------------------------
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI is not defined in environment!");
+  process.exit(1);
+}
+
 mongoose
   .connect(MONGO_URI)
   .then(() => console.log("Mongo connected"))
   .catch((err) => console.error("Mongo error", err));
-  
+
 // ----------------------------------------------------------------------------
 // Routes
 // ----------------------------------------------------------------------------
