@@ -26,7 +26,7 @@ function generateRoomCode() {
     }
     if (!DISALLOWED_ROOM_CODES.has(code)) {
       return code;
-    }
+    } 
   }
   return "AA"; // ultra-fallback
 }

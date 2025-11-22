@@ -219,7 +219,7 @@ export default function TaskSets() {
       const bs = String(bv).toLowerCase();
       if (as === bs) return 0;
       return as < bs ? -dir : dir;
-    });
+    }); 
 
     return arr;
   }, [sets, sortBy, sortDir]);
