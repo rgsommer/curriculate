@@ -1,8 +1,8 @@
 // teacher-app/src/pages/TaskSets.jsx
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-
 import { API_BASE_URL } from "../config";
+
 const API_BASE = API_BASE_URL;
 
 export default function TaskSets() {
@@ -20,36 +20,28 @@ export default function TaskSets() {
   });
 
   const [sortBy, setSortBy] = useState("name");
-  const [sortDir, setSortDir] = useState("asc"); // "asc" | "desc"
+  const [sortDir, setSortDir] = useState("asc");
 
-  // -------------------------------------------------------------------
   // Load task sets
-  // -------------------------------------------------------------------
   useEffect(() => {
     async function loadSets() {
       setLoading(true);
       setError(null);
 
       try {
-        const url = `${API_BASE}/api/tasksets`;
-        const res = await fetch(url);
+        const res = await fetch(`${API_BASE}/api/tasksets`);
         const text = await res.text();
 
         let data = [];
         try {
           data = text ? JSON.parse(text) : [];
-        } catch (parseErr) {
+        } catch {
           console.error("❌ JSON parse failed for /api/tasksets");
-          console.error(
-            "Raw server response (first 500 chars):",
-            text.slice(0, 500)
-          );
-          throw new Error("Server returned invalid JSON when loading task sets");
+          console.error("Raw server response:", text.slice(0, 500));
+          throw new Error("Server returned invalid JSON for task sets");
         }
 
-        if (!res.ok) {
-          throw new Error(data?.error || "Failed to load task sets");
-        }
+        if (!res.ok) throw new Error(data?.error || "Failed to load task sets");
 
         setSets(Array.isArray(data) ? data : []);
       } catch (err) {
@@ -63,16 +55,8 @@ export default function TaskSets() {
     loadSets();
   }, []);
 
-  // -------------------------------------------------------------------
-  // Actions
-  // -------------------------------------------------------------------
-  const handleNew = () => {
-    navigate("/tasksets/create");
-  };
-
-  const handleEdit = (id) => {
-    navigate(`/tasksets/edit/${id}`);
-  };
+  const handleNew = () => navigate("/tasksets/create");
+  const handleEdit = (id) => navigate(`/tasksets/${id}`);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this task set? This cannot be undone.")) return;
@@ -81,19 +65,14 @@ export default function TaskSets() {
       const res = await fetch(`${API_BASE}/api/tasksets/${id}`, {
         method: "DELETE",
       });
-
       const text = await res.text();
       let data = null;
       try {
         data = text ? JSON.parse(text) : null;
       } catch {
-        // ignore parse errors for DELETE
+        // ignore
       }
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to delete task set");
-      }
-
+      if (!res.ok) throw new Error(data?.error || "Failed to delete task set");
       setSets((prev) => prev.filter((s) => s._id !== id));
     } catch (err) {
       alert(err.message || "Delete failed");
@@ -105,7 +84,7 @@ export default function TaskSets() {
     setActiveTasksetId(id);
 
     const meta = {
-      _id: taskset._id,
+      _id: id,
       name: taskset.name,
       numTasks: taskset.numTasks ?? taskset.tasks?.length ?? 0,
     };
@@ -120,9 +99,7 @@ export default function TaskSets() {
     navigate("/live");
   };
 
-  // -------------------------------------------------------------------
   // CSV upload
-  // -------------------------------------------------------------------
   const handleCsvFileChange = (e) => {
     const file = e.target.files?.[0] || null;
     setCsvFile(file);
@@ -162,14 +139,15 @@ export default function TaskSets() {
         let data = null;
         try {
           data = text ? JSON.parse(text) : null;
-        } catch (err) {
-          console.error("CSV upload returned non-JSON:", text.slice(0, 500));
+        } catch {
+          console.error(
+            "Upload CSV returned non-JSON:",
+            text.slice(0, 500)
+          );
           throw new Error("Server returned invalid JSON");
         }
 
-        if (!res.ok) {
-          throw new Error(data?.error || "Upload failed");
-        }
+        if (!res.ok) throw new Error(data?.error || "Upload failed");
 
         alert(`"${data.name || csvName}" uploaded!`);
         setSets((prev) => [...prev, data]);
@@ -187,9 +165,7 @@ export default function TaskSets() {
     reader.readAsText(csvFile);
   };
 
-  // -------------------------------------------------------------------
   // Sorting
-  // -------------------------------------------------------------------
   const handleSort = (field) => {
     setSortBy((prev) => {
       if (prev === field) {
@@ -203,7 +179,6 @@ export default function TaskSets() {
 
   const sortedSets = useMemo(() => {
     const arr = [...sets];
-
     const dir = sortDir === "desc" ? -1 : 1;
 
     arr.sort((a, b) => {
@@ -211,7 +186,7 @@ export default function TaskSets() {
         switch (sortBy) {
           case "subject":
             return obj.subject || "";
-          case "gradeLevel":
+          case "gradeLevel:
             return obj.gradeLevel || obj.grade || "";
           case "roomLocation":
             return obj.roomLocation || "Classroom";
@@ -254,14 +229,11 @@ export default function TaskSets() {
     return sortDir === "asc" ? " ↑" : " ↓";
   };
 
-  // -------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------
   return (
     <div className="max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Task Sets</h1>
+          <h1 className="text-2xl font-bold">Task sets</h1>
           <p className="text-sm text-gray-600">
             Browse, sort, and launch your saved task sets.
           </p>
@@ -270,7 +242,7 @@ export default function TaskSets() {
           onClick={handleNew}
           className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
         >
-          + New Task Set
+          + New task set
         </button>
       </div>
 

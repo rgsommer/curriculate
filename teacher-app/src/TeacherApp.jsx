@@ -10,6 +10,8 @@ import TeacherProfile from "./pages/TeacherProfile.jsx";
 import AiTasksetGenerator from "./pages/AiTasksetGenerator.jsx";
 import StationPosters from "./pages/StationPosters.jsx";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
+import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
+import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 
 function generateRoomCode() {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -46,6 +48,7 @@ function App() {
   const onTasksets = location.pathname.startsWith("/tasksets");
   const onProfile = location.pathname.startsWith("/teacher/profile");
   const onAiTasksets = location.pathname.startsWith("/teacher/ai-tasksets");
+  const onReports = location.pathname.startsWith("/reports");
 
   return (
     <div
@@ -138,6 +141,9 @@ function App() {
           <NavLinkButton to="/tasksets" active={onTasksets}>
             Task sets
           </NavLinkButton>
+          <NavLinkButton to="/reports" active={onReports}>
+            Reports
+          </NavLinkButton>
 
           {/* Teacher tools section */}
           <div
@@ -196,6 +202,9 @@ function App() {
               )
             }
           />
+
+          <Route path="/reports" element={<AnalyticsOverview />} />
+          <Route path="/reports/:sessionId" element={<SessionAnalyticsPage />} />
 
           {/* Task sets list & editor */}
           <Route path="/tasksets" element={<TaskSets />} />
