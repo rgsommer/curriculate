@@ -1,7 +1,11 @@
 // student-app/src/App.jsx
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
-import TaskRunner from "./components/tasks/TaskRunner.jsx"; // 👈 use the real TaskRunner
+import TaskRunner from "./components/tasks/TaskRunner.jsx";
+import StationPosters from "./pages/StationPosters.jsx";
+
+// inside <Routes>…
+<Route path="/station-posters" element={<StationPosters />} />
 
 // Socket URL – adjust if needed
 import { API_BASE_URL } from "../config";

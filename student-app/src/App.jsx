@@ -112,27 +112,26 @@ function App() {
     const trimmedTeam = teamName.trim();
 
     socket.emit(
-      "join-room",
-      { roomCode: trimmedRoom, teamName: trimmedTeam },
-      (ack) => {
-        if (ack && ack.ok) {
-          setJoined(true);
+  "student:joinRoom",
+  {
+    roomCode: trimmedRoom,
+    teamId: trimmedTeam,      // you can keep using teamName as the ID
+    teamName: trimmedTeam,
+    playerId: trimmedTeam,    // or a real student name later
+  },
+  (ack) => {
+    if (ack && ack.ok) {
+      setJoined(true);
+      if (ack.color) setAssignedColor(ack.color);
+      if (ack.stationLabel) setStationLabel(ack.stationLabel);
+      if (ack.displays) setTasksetDisplays(ack.displays);
+      ...
+    } else {
+      alert(ack?.error || "Failed to join room. Check code.");
+    }
+  }
+);
 
-          if (ack.color) setAssignedColor(ack.color);
-          if (ack.stationLabel) setStationLabel(ack.stationLabel);
-          if (ack.displays) setTasksetDisplays(ack.displays);
-
-          if (currentTask && ack.displays) {
-            const disp = ack.displays.find(
-              (d) => d.key === currentTask.displayKey
-            );
-            setCurrentDisplay(disp || null);
-          }
-        } else {
-          alert(ack?.error || "Failed to join room. Check code.");
-        }
-      }
-    );
   }
 
   // ---------------------------------------------------------
@@ -149,7 +148,7 @@ function App() {
       answer: answerData,
     };
 
-    socket.emit("submit-answer", payload, (ack) => {
+    socket.emit("task:submit", payload, (ack) => {
       if (!ack || !ack.ok) {
         console.error("Submit failed:", ack);
         alert(ack?.error || "Submit failed");

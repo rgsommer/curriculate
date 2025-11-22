@@ -3,6 +3,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { socket } from "../socket";
+import { useNavigate } from "react-router-dom";
+
+const navigate = useNavigate();
+const locationLabel = taskset.roomLocation || "Classroom";
 
 import { API_BASE_URL } from "../config";
 const API_BASE = API_BASE_URL;
@@ -1400,7 +1404,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               color: viewMode === "live" ? "#ffffff" : "#374151",
             }}
           >
-            Live view
+            Room view
           </button>
           <button
             type="button"
@@ -1418,6 +1422,27 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           >
             Room setup checklist
           </button>
+          <button
+  type="button"
+  onClick={() =>
+    navigate(
+      `/station-posters?room=${encodeURIComponent(
+        roomCode
+      )}&location=${encodeURIComponent(locationLabel)}`
+    )
+  }
+  style={{
+    marginLeft: 8,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid #d1d5db",
+    background: "#ffffff",
+    fontSize: "0.85rem",
+    cursor: "pointer",
+  }}
+>
+  Print station sheets
+</button>
         </div>
       </header>
 
