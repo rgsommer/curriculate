@@ -29,29 +29,41 @@ const app = express();
 const server = http.createServer(app);
 
 const allowedOrigins = [
+  // Production frontends
+  "https://set.curriculate.net",
+  "https://play.curriculate.net",
+  "https://curriculate.net",
+  "https://www.curriculate.net",
+  "https://api.curriculate.net",
+
+  // Local dev
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:4173",
   "http://localhost:4174",
   "http://localhost:3000",
-  "https://set.curriculate.net",
-  "https://play.curriculate.net",
-  "https://curriculate.net",
-  "https://www.curriculate.net",
 ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin(origin, callback) {
+    // No Origin header -> non-browser / health checks / curl: allow
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Log so we can see *who* is hitting us
+    console.warn("❌ Blocked CORS for origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // preflight
 
 app.use(bodyParser.json({ limit: "2mb" }));
 
