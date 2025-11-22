@@ -6,23 +6,30 @@ const router = express.Router();
 
 /**
  * Helper: find or create the single global subscription plan document.
- * For now, subscription is app-wide (not per-user).
+ * The SubscriptionPlan schema REQUIRES a 'name' field – so we include it.
  */
 async function getOrCreatePlan() {
   let plan = await SubscriptionPlan.findOne();
+
   if (!plan) {
     plan = new SubscriptionPlan({
-      tier: "FREE",
+      name: "FREE",              // REQUIRED BY YOUR MODEL
+      tier: "FREE",              // Your UI depends on this
       aiTasksetsUsedThisMonth: 0,
+      features: {
+        maxTasksPerSet: 5,
+        maxWordListWords: 10,
+        aiTaskSetsPerMonth: 1,
+      },
     });
     await plan.save();
   }
+
   return plan;
 }
 
 /**
  * GET /api/subscription/plan
- * Returns the current global plan + usage.
  */
 router.get("/plan", async (req, res) => {
   try {
@@ -36,7 +43,7 @@ router.get("/plan", async (req, res) => {
 
 /**
  * GET /api/subscription/me
- * Alias for now – same as /plan until we add per-user subscriptions.
+ * Alias for /plan for now.
  */
 router.get("/me", async (req, res) => {
   try {
@@ -50,13 +57,12 @@ router.get("/me", async (req, res) => {
 
 /**
  * POST /api/subscription/ai-usage
- * Called whenever an AI task set is successfully generated.
- * Increments aiTasksetsUsedThisMonth.
  */
 router.post("/ai-usage", async (req, res) => {
   try {
     const plan = await getOrCreatePlan();
-    plan.aiTasksetsUsedThisMonth = (plan.aiTasksetsUsedThisMonth || 0) + 1;
+    plan.aiTasksetsUsedThisMonth =
+      (plan.aiTasksetsUsedThisMonth || 0) + 1;
     await plan.save();
 
     res.json({
