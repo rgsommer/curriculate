@@ -1,22 +1,9 @@
 // teacher-app/src/pages/StationPosters.jsx
 import React, { useMemo } from "react";
 import { useLocation } from "react-router-dom";
+import { API_BASE_URL } from "../config";
 
-// Up to 12 clearly distinct colours, with text colour chosen for contrast
-const MASTER_COLORS = [
-  { key: "RED", hex: "#ff0000", text: "#ffffff" },
-  { key: "BLUE", hex: "#0066ff", text: "#ffffff" },
-  { key: "GREEN", hex: "#00aa33", text: "#ffffff" },
-  { key: "YELLOW", hex: "#ffcc00", text: "#111827" },
-  { key: "ORANGE", hex: "#ff8800", text: "#111827" },
-  { key: "PURPLE", hex: "#9900cc", text: "#ffffff" },
-  { key: "TEAL", hex: "#08a39a", text: "#ffffff" },
-  { key: "PINK", hex: "#ff4f9a", text: "#ffffff" },
-  { key: "LIME", hex: "#8bc34a", text: "#111827" },
-  { key: "NAVY", hex: "#002b5c", text: "#ffffff" },
-  { key: "BROWN", hex: "#8b4513", text: "#ffffff" },
-  { key: "GRAY", hex: "#555555", text: "#ffffff" },
-];
+const COLORS = ["red", "blue", "green", "yellow", "purple", "orange", "teal", "pink", "lime", "navy", "brown", "gray"];
 
 function useQuery() {
   const { search } = useLocation();
@@ -25,186 +12,164 @@ function useQuery() {
 
 export default function StationPosters() {
   const query = useQuery();
-  const room = (query.get("room") || "").toUpperCase();
+  const room = (query.get("room") || "AB").toUpperCase();
   const locationLabel = query.get("location") || "Classroom";
 
-  // Number of stations: default 8, but allow 4–12
-  const countRaw = parseInt(query.get("count") || "8", 10);
-  const count = Math.min(12, Math.max(4, isNaN(countRaw) ? 8 : countRaw));
+  const stationCount = Math.min(
+    12,
+    Math.max(4, Number(query.get("stations") || 8))
+  );
 
-  const colors = MASTER_COLORS.slice(0, count);
-
-  const basePlayUrl = "https://play.curriculate.net";
-
-  // Helper: build QR URL (Google Charts)
-  const buildQrUrl = (colorKey) => {
-    const fullUrl = `${basePlayUrl}/?room=${encodeURIComponent(
-      room
-    )}&station=${encodeURIComponent(colorKey)}`;
-    return (
-      "https://chart.googleapis.com/chart" +
-      `?chs=250x250&cht=qr&chl=${encodeURIComponent(fullUrl)}`
-    );
-  };
+  const stations = COLORS.slice(0, stationCount);
 
   return (
     <div
       style={{
+        padding: 16,
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
-      {/* Print hint */}
+      <h1 style={{ marginTop: 0 }}>Station posters</h1>
+      <p style={{ fontSize: "0.85rem", color: "#4b5563", maxWidth: 520 }}>
+        One page per station. These are meant for printing on letter-size
+        paper and posting at each colour station. QR codes point to{" "}
+        <code>play.curriculate.net/{room}/[colour]</code>.
+      </p>
+
+      <button
+        type="button"
+        onClick={() => window.print()}
+        style={{
+          marginBottom: 16,
+          padding: "6px 12px",
+          borderRadius: 999,
+          border: "1px solid #d1d5db",
+          background: "#ffffff",
+          cursor: "pointer",
+          fontSize: "0.85rem",
+        }}
+      >
+        Print all
+      </button>
+
       <div
         style={{
-          padding: 8,
-          textAlign: "center",
-          borderBottom: "1px solid #e5e7eb",
-          marginBottom: 8,
-          position: "sticky",
-          top: 0,
-          background: "#f9fafb",
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr)",
+          gap: 24,
         }}
-        className="no-print"
       >
-        <span style={{ fontSize: "0.9rem", marginRight: 12 }}>
-          Station posters for room{" "}
-          <strong>{room || "?"}</strong> – location:{" "}
-          <strong>{locationLabel}</strong> –{" "}
-          <strong>{count}</strong> station
-          {count === 1 ? "" : "s"}
-        </span>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          style={{
-            padding: "4px 10px",
-            borderRadius: 999,
-            border: "none",
-            background: "#2563eb",
-            color: "#fff",
-            fontSize: "0.85rem",
-            cursor: "pointer",
-          }}
-        >
-          Print all
-        </button>
-      </div>
+        {stations.map((color) => {
+          const upper = color.toUpperCase();
+          const qrTarget = `https://play.curriculate.net/${room.toLowerCase()}/${color}`;
+          const qrUrl = `https://chart.googleapis.com/chart?chs=250x250&cht=qr&chl=${encodeURIComponent(
+            qrTarget
+          )}`;
 
-      {/* One page per station */}
-      {colors.map((c, index) => (
-        <div
-          key={c.key}
-          style={{
-            width: "8.5in",
-            height: "11in",
-            boxSizing: "border-box",
-            padding: "1in 0.75in",
-            margin: "0 auto 0.5in",
-            pageBreakAfter: index === colors.length - 1 ? "auto" : "always",
-            border: "1px solid #e5e7eb",
-            background: "#fdfaf3",
-          }}
-          className="poster-page"
-        >
-          {/* Title */}
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: "1.4rem",
-              fontWeight: 600,
-              marginBottom: "1.2rem",
-            }}
-          >
-            Curriculate
-          </div>
+          const textColor =
+            ["yellow", "lime", "pink", "orange"].includes(color) ? "#111827" : "#ffffff";
 
-          {/* Colour block */}
-          <div
-            style={{
-              width: "100%",
-              height: "3in",
-              background: c.hex,
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              marginBottom: "1.2rem",
-            }}
-          >
+          return (
             <div
+              key={color}
               style={{
-                color: c.text,
-                fontSize: "1.5rem",
-                fontWeight: 700,
-                textAlign: "center",
-                lineHeight: 1.3,
+                width: "8.5in",
+                height: "11in",
+                margin: "0 auto",
+                boxSizing: "border-box",
+                padding: "1in 0.75in",
+                background: "#faf5e4",
+                pageBreakAfter: "always",
               }}
             >
-              {c.key} Station
-              <br />
-              {locationLabel}
+              <div
+                style={{
+                  textAlign: "center",
+                  fontSize: "1.4rem",
+                  fontWeight: 600,
+                  marginBottom: "0.4in",
+                }}
+              >
+                Curriculate
+              </div>
+
+              <div
+                style={{
+                  margin: "0 auto 0.6in",
+                  width: "100%",
+                  height: "2.2in",
+                  background: color,
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: textColor,
+                  fontSize: "1.3rem",
+                  fontWeight: 700,
+                  textAlign: "center",
+                  textTransform: "uppercase",
+                  padding: "0 0.5in",
+                  boxSizing: "border-box",
+                }}
+              >
+                {upper} Station<br />
+                {locationLabel}
+              </div>
+
+              <div
+                style={{
+                  textAlign: "center",
+                  fontSize: "1.2rem",
+                  fontWeight: 600,
+                  marginBottom: "0.35in",
+                }}
+              >
+                Scan to Arrive
+              </div>
+
+              <div
+                style={{
+                  textAlign: "center",
+                  marginBottom: "0.25in",
+                }}
+              >
+                <img
+                  src={qrUrl}
+                  alt={`${upper} Station QR`}
+                  style={{
+                    width: "2.5in",
+                    height: "2.5in",
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  textAlign: "center",
+                  fontSize: "0.65rem",
+                  color: "#4b5563",
+                }}
+              >
+                {qrTarget}
+              </div>
+
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "0.7in",
+                  left: 0,
+                  right: 0,
+                  textAlign: "center",
+                  fontSize: "0.6rem",
+                  color: "#9ca3af",
+                }}
+              >
+                play.curriculate.net
+              </div>
             </div>
-          </div>
-
-          {/* Instructions */}
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: "1.2rem",
-              fontWeight: 600,
-              marginBottom: "0.8rem",
-            }}
-          >
-            Scan to Arrive
-          </div>
-
-          {/* QR */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              marginBottom: "0.8rem",
-            }}
-          >
-            <img
-              src={buildQrUrl(c.key.toLowerCase())}
-              alt={`${c.key} Station QR`}
-              style={{ width: 250, height: 250 }}
-            />
-          </div>
-
-          {/* Footer URL */}
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: "0.8rem",
-              color: "#111827",
-              textDecoration: "underline",
-              marginTop: "0.6rem",
-            }}
-          >
-            play.curriculate.net
-          </div>
-        </div>
-      ))}
-
-      {/* Simple print CSS – hide toolbar when printing */}
-      <style>
-        {`
-          @media print {
-            .no-print {
-              display: none !important;
-            }
-            body {
-              margin: 0;
-            }
-            .poster-page {
-              border: none !important;
-              margin: 0 !important;
-            }
-          }
-        `}
-      </style>
+          );
+        })}
+      </div>
     </div>
   );
 }

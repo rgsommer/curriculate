@@ -134,21 +134,17 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
 
   // Join room as teacher
   useEffect(() => {
-    if (!roomCode) {
-      setStatus("No room selected.");
-      return;
-    }
+  if (!roomCode) {
+    setStatus("No room selected.");
+    return;
+  }
 
-    setStatus("Joining room…");
+  setStatus("Creating room…");
 
-    socket.emit("joinRoom", {
-      roomCode,
-      name: "Teacher",
-      role: "teacher",
-    });
+  socket.emit("teacher:createRoom", { roomCode });
 
-    setStatus("Connected.");
-  }, [roomCode]);
+  setStatus("Connected.");
+}, [roomCode]);
 
   // Check for "launch immediately" flag from Task Sets page
   useEffect(() => {

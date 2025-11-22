@@ -1,4 +1,4 @@
-// src/pages/AnalyticsOverview.jsx
+// teacher-app/src/pages/AnalyticsOverview.jsx
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/client";
@@ -26,7 +26,7 @@ export default function AnalyticsOverview() {
         if (!cancelled) {
           setError(
             err.response?.data?.error ||
-              "Unable to load analytics sessions from the server."
+              "We couldn’t load your reports right now."
           );
         }
       } finally {
@@ -41,44 +41,38 @@ export default function AnalyticsOverview() {
   }, []);
 
   if (!user) {
-    return <div className="p-4">Please log in.</div>;
+    return <div className="p-4">Please sign in to view reports.</div>;
   }
 
   if (loading) {
-    return <div className="p-4">Loading analytics…</div>;
+    return <div className="p-4">Loading reports…</div>;
   }
 
   return (
     <div className="p-6 space-y-4">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Analytics</h1>
+          <h1 className="text-2xl font-bold">Reports</h1>
           <p className="text-sm text-gray-600">
-            Session-level reports for your recent classes.
+            Session-level summaries for your recent classes.
           </p>
         </div>
-        {user.subscriptionTier === "PLUS" || user.subscriptionTier === "PRO" ? null : (
-          <div className="text-xs text-red-600 max-w-xs text-right">
-            Analytics is a PLUS / PRO feature. You can still run sessions, but
-            full reports are not yet unlocked on your current plan.
-          </div>
-        )}
       </header>
 
       {error && (
-        <div className="text-red-600 text-sm">
+        <div className="text-sm text-red-600">
           {error}
           <div className="text-xs text-gray-600 mt-1">
-            If this persists, make sure your API service exposes
-            <code className="px-1">GET /analytics/sessions</code>.
+            Analytics is still warming up behind the scenes. You can keep
+            using Curriculate; reports will appear here once they’re ready.
           </div>
         </div>
       )}
 
-      {sessions.length === 0 && !error && (
+      {!error && sessions.length === 0 && (
         <p className="text-sm text-gray-600">
-          No analytics yet. Run a task set in a live session and end the
-          session to generate a report.
+          No analytics yet. Run a live session, end it, and we’ll start
+          building reports here.
         </p>
       )}
 
@@ -101,7 +95,7 @@ export default function AnalyticsOverview() {
                 </div>
                 <div className="text-right text-xs">
                   <div>Class avg score: {s.classAverageScore}%</div>
-                  <div>Class accuracy: {s.classAverageAccuracy}%</div>
+                  <div>Engagement: {s.classAverageEngagement}%</div>
                 </div>
               </div>
             </Link>

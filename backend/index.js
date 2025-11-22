@@ -470,26 +470,41 @@ app.get("/db-check", async (req, res) => {
 // Teacher profile
 // Support both /api/profile/me (new) and /api/profile (compat)
 // --------------------------------------------------------------------
+// Helper (unchanged) to ensure one profile exists
 async function getOrCreateProfile() {
   let profile = await TeacherProfile.findOne();
   if (!profile) {
-    profile = new TeacherProfile({
-      email: "demo@curriculate.net",
-      presenterName: "Demo Presenter",
-      schoolName: "Demo School",
-      perspectives: ["Christian", "Biblical"],
-      includeIndividualReports: false,
-      assessmentCategories: [
-        { label: "Participation", weight: 25 },
-        { label: "Understanding", weight: 25 },
-        { label: "Application", weight: 25 },
-        { label: "Collaboration", weight: 25 },
-      ],
-    });
+    profile = new TeacherProfile({});
     await profile.save();
   }
   return profile;
 }
+
+// New generic updaters – accept all fields sent from PresenterProfile.jsx
+
+app.put("/api/profile/me", async (req, res) => {
+  try {
+    const profile = await getOrCreateProfile();
+    Object.assign(profile, req.body);   // <-- merge all submitted fields
+    await profile.save();
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile update failed (/api/profile/me):", err);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
+app.put("/api/profile", async (req, res) => {
+  try {
+    const profile = await getOrCreateProfile();
+    Object.assign(profile, req.body);   // <-- same here
+    await profile.save();
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile update failed (/api/profile):", err);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
 
 app.get("/api/profile/me", async (req, res) => {
   try {

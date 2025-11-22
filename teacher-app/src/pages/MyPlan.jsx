@@ -2,8 +2,8 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://api.curriculate.net";
+import { API_BASE_URL } from "../config";
+const API_BASE = API_BASE_URL;
 
 const PLAN_LABELS = {
   FREE: "Free",
@@ -28,7 +28,7 @@ export default function MyPlanPage() {
       setError("");
       setLoading(true);
       try {
-        const res = await axios.get(`${API_BASE}/api/subscription/me`);
+        const res = await axios.get(`${API_BASE}/api/backend/models/subscription/me`);
         if (!cancelled) {
           setSub(res.data || {});
         }
