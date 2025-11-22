@@ -7,91 +7,140 @@ import { authRequired } from "../middleware/authRequired.js";
 const router = express.Router();
 
 /**
+ * Utility: Ensure a user has a subscription document.
+ * Auto-provisions FREE with monthly reset window.
+ */
+async function getOrCreateUserSub(userId) {
+  let sub = await UserSubscription.findOne({ userId });
+
+  if (!sub) {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    sub = await UserSubscription.create({
+      userId,
+      planName: "FREE",
+      currentPeriodStart: start,
+      currentPeriodEnd: end,
+      aiGenerationsUsedThisPeriod: 0,
+    });
+  }
+
+  return sub;
+}
+
+/**
+ * Utility: Compute the resolved subscription limits & teaser message.
+ */
+async function buildSubscriptionResponse(sub) {
+  const planName = sub.planName || "FREE";
+
+  const plan = await SubscriptionPlan.findOne({ name: planName });
+  const featureOverrides = plan?.features || {};
+
+  // Defaults if NONE in database:
+  const maxTasksPerSet =
+    featureOverrides.maxTasksPerSet ??
+    (planName === "FREE" ? 5 : planName === "PLUS" ? 20 : 50);
+
+  const maxWordListWords =
+    featureOverrides.maxWordListWords ??
+    (planName === "FREE" ? 10 : planName === "PLUS" ? 100 : 9999);
+
+  const aiTaskSetsPerMonth =
+    featureOverrides.aiTaskSetsPerMonth ??
+    (planName === "FREE" ? 1 : planName === "PLUS" ? 50 : 9999);
+
+  const used = sub.aiGenerationsUsedThisPeriod || 0;
+  const limit = aiTaskSetsPerMonth;
+  const remaining = Math.max(0, limit - used);
+
+  let aiLimitTeaser = "";
+  if (remaining <= 0) {
+    if (planName === "FREE") {
+      aiLimitTeaser =
+        "You’ve used your 1 AI task set for this month on the Free plan. Upgrade to PLUS or PRO for more AI-generated task sets and richer reporting.";
+    } else if (planName === "PLUS") {
+      aiLimitTeaser =
+        "You’ve used all your AI task sets for this billing period. PRO increases monthly limits and unlocks deeper analytics.";
+    }
+  }
+
+  return {
+    planName,
+    currentPeriodStart: sub.currentPeriodStart,
+    currentPeriodEnd: sub.currentPeriodEnd,
+
+    // Backwards compatibility
+    aiGenerationsUsedThisPeriod: used,
+
+    // Newer clearer names
+    aiTaskSetsUsedThisPeriod: used,
+    aiTaskSetsLimit: limit,
+    aiTaskSetsRemaining: remaining,
+    aiLimitTeaser,
+
+    features: {
+      maxTasksPerSet,
+      maxWordListWords,
+      aiTaskSetsPerMonth,
+      ...featureOverrides,
+    },
+  };
+}
+
+/**
  * GET /api/subscription/me
- *
- * Returns:
- *  - planName
- *  - currentPeriodStart / End
- *  - aiGenerationsUsedThisPeriod (backwards compatible)
- *  - aiTaskSetsUsedThisPeriod
- *  - aiTaskSetsLimit
- *  - aiTaskSetsRemaining
- *  - aiLimitTeaser (for UI to show "you've used your 1 AI task set..." etc.)
- *  - features: { maxTasksPerSet, maxWordListWords, aiTaskSetsPerMonth, ... }
+ * Auth required — tied to the logged-in teacher.
  */
 router.get("/me", authRequired, async (req, res) => {
   try {
     const userId = req.user._id;
+    const sub = await getOrCreateUserSub(userId);
 
-    let sub = await UserSubscription.findOne({ userId });
+    const result = await buildSubscriptionResponse(sub);
+    return res.json(result);
+  } catch (err) {
+    console.error("subscription /me error:", err);
+    return res.status(500).json({ error: "Failed to load subscription info" });
+  }
+});
 
-    if (!sub) {
-      // Auto-create FREE if needed
+/**
+ * GET /api/subscription/plan
+ * Same response as /me — but **without requiring login**.
+ * Useful for:
+ *   - Task Generator UI
+ *   - MyPlan page for non-auth scenarios
+ *   - Older versions of teacher app
+ */
+router.get("/plan", async (req, res) => {
+  try {
+    let sub;
+
+    // If authenticated, use the user’s subscription:
+    if (req.user && req.user._id) {
+      sub = await getOrCreateUserSub(req.user._id);
+    } else {
+      // Otherwise return a generic FREE profile
       const now = new Date();
       const start = new Date(now.getFullYear(), now.getMonth(), 1);
       const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      sub = await UserSubscription.create({
-        userId,
+
+      sub = {
         planName: "FREE",
         currentPeriodStart: start,
         currentPeriodEnd: end,
         aiGenerationsUsedThisPeriod: 0,
-      });
+      };
     }
 
-    const planName = sub.planName || "FREE";
-    const plan = await SubscriptionPlan.findOne({ name: planName });
-    const planFeatures = plan?.features || {};
-
-    // --- Limits ----------------------------------------------------
-    // FREE: 1 AI task set / month, up to 5 tasks, up to 10 words
-    // PLUS / PRO: can be overridden via SubscriptionPlan.features
-    const defaultMaxTasksPerSet =
-      planFeatures.maxTasksPerSet ??
-      (planName === "FREE" ? 5 : planName === "PLUS" ? 20 : 50);
-    const defaultMaxWordListWords =
-      planFeatures.maxWordListWords ??
-      (planName === "FREE" ? 10 : planName === "PLUS" ? 100 : 9999);
-    const defaultAiTaskSetsPerMonth =
-      planFeatures.aiTaskSetsPerMonth ??
-      (planName === "FREE" ? 1 : planName === "PLUS" ? 50 : 9999);
-
-    const used = sub.aiGenerationsUsedThisPeriod || 0;
-    const limit = defaultAiTaskSetsPerMonth;
-    const remaining = Math.max(0, limit - used);
-
-    let aiLimitTeaser = "";
-    if (remaining <= 0 && planName === "FREE") {
-      aiLimitTeaser =
-        "You’ve used your 1 AI task set for this month on the Free plan. Upgrade to PLUS or PRO for more AI-generated task sets and richer reporting.";
-    } else if (remaining <= 0 && planName === "PLUS") {
-      aiLimitTeaser =
-        "You’ve used all your AI task sets for this billing period. PRO increases your AI limits and unlocks deeper analytics.";
-    }
-
-    const features = {
-      ...planFeatures,
-      maxTasksPerSet: defaultMaxTasksPerSet,
-      maxWordListWords: defaultMaxWordListWords,
-      aiTaskSetsPerMonth: defaultAiTaskSetsPerMonth,
-    };
-
-    res.json({
-      planName,
-      currentPeriodStart: sub.currentPeriodStart,
-      currentPeriodEnd: sub.currentPeriodEnd,
-      // backwards compatible field name:
-      aiGenerationsUsedThisPeriod: used,
-      // new clearer fields:
-      aiTaskSetsUsedThisPeriod: used,
-      aiTaskSetsLimit: limit,
-      aiTaskSetsRemaining: remaining,
-      aiLimitTeaser,
-      features,
-    });
+    const result = await buildSubscriptionResponse(sub);
+    return res.json(result);
   } catch (err) {
-    console.error("subscription /me error", err);
-    res.status(500).json({ error: "Failed to load subscription info" });
+    console.error("subscription /plan error:", err);
+    return res.status(500).json({ error: "Failed to load subscription plan" });
   }
 });
 

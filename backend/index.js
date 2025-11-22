@@ -20,6 +20,7 @@ import bodyParser from "body-parser";
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
 import SubscriptionPlan from "./models/SubscriptionPlan.js";
+import subscriptionRoutes from "./subscriptionRoutes.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
@@ -64,15 +65,17 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // preflight
+app.use("/api/subscription", subscriptionRoutes);
 
 app.use(bodyParser.json({ limit: "2mb" }));
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
+    origin: allowedOrigins,
+    credentials: true,
+  }
 });
+
 
 // --------------------------------------------------------------------
 // MongoDB Connection
