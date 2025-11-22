@@ -2,14 +2,10 @@
 import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
-import StationPosters from "./pages/StationPosters.jsx";
+import { API_BASE_URL } from "./config.js";
 
-// inside <Routes>…
-<Route path="/station-posters" element={<StationPosters />} />
-
-// Socket URL – adjust if needed
-import { API_BASE_URL } from "../config";
-const API_BASE = API_BASE_URL;
+// Socket URL – same base as your API (e.g. https://api.curriculate.net)
+const SOCKET_URL = API_BASE_URL;
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -35,7 +31,9 @@ function App() {
   useEffect(() => {
     const s = io(SOCKET_URL, {
       transports: ["websocket"],
+      // if your socket server has CORS credentials enabled, you can flip this to true
       withCredentials: false,
+      path: "/socket.io",
     });
 
     s.on("connect", () => {
@@ -54,11 +52,11 @@ function App() {
     });
 
     // When host assigns station / color
-    s.on("station-assigned", (payload) => {
-      // payload might look like:
+    s.on("station-assigned", (payload = {}) => {
+      // payload:
       // {
       //   color: "RED",
-      //   stationLabel: "Red Station",
+      //   stationLabel: "Red Station Hallway",
       //   displays: [...]
       // }
       setAssignedColor(payload.color || null);
@@ -99,6 +97,7 @@ function App() {
     return () => {
       s.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------
@@ -113,8 +112,8 @@ function App() {
     const trimmedTeam = teamName.trim();
 
     socket.emit(
-      "join-room",
-      { roomCode: trimmedRoom, teamName: trimmedTeam },
+      "joinRoom",
+      { roomCode: trimmedRoom, teamName: trimmedTeam, role: "team" },
       (ack) => {
         if (ack && ack.ok) {
           setJoined(true);
@@ -150,7 +149,7 @@ function App() {
       answer: answerData,
     };
 
-    socket.emit("submit-answer", payload, (ack) => {
+    socket.emit("submitAnswer", payload, (ack) => {
       if (!ack || !ack.ok) {
         console.error("Submit failed:", ack);
         alert(ack?.error || "Submit failed");
@@ -187,11 +186,11 @@ function App() {
       style={{
         maxWidth: 520,
         margin: "0 auto",
-        padding: "24px 16px 26vh", // bottom padding so content never hides under the band
+        padding: "24px 16px 26vh",
         boxSizing: "border-box",
         fontFamily: "system-ui",
         minHeight: "100dvh",
-        overflowY: "auto", // 👈 main fix: scroll the whole app content
+        overflowY: "auto",
         background: "#ffffff",
       }}
     >
@@ -399,6 +398,18 @@ function colorToHex(name) {
       return "#f97316";
     case "PURPLE":
       return "#a855f7";
+    case "TEAL":
+      return "#14b8a6";
+    case "PINK":
+      return "#ec4899";
+    case "LIME":
+      return "#84cc16";
+    case "NAVY":
+      return "#1d4ed8";
+    case "BROWN":
+      return "#92400e";
+    case "GRAY":
+      return "#6b7280";
     default:
       return "#0f172a";
   }

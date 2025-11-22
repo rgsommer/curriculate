@@ -1,0 +1,256 @@
+// teacher-app/src/App.jsx
+import React, { useState } from "react";
+import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+
+import LiveSession from "./pages/LiveSession.jsx";
+import HostView from "./pages/HostView.jsx";
+import TaskSets from "./pages/TaskSets.jsx";
+import TaskSetEditor from "./pages/TaskSetEditor.jsx";
+import TeacherProfile from "./pages/TeacherProfile.jsx";
+import AiTasksetGenerator from "./pages/AiTasksetGenerator.jsx";
+import StationPosters from "./pages/StationPosters.jsx";
+import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
+
+function generateRoomCode() {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  // safety loop to avoid infinite spin, though collisions are unlikely
+  for (let attempts = 0; attempts < 1000; attempts++) {
+    let code = "";
+    for (let i = 0; i < 2; i++) {
+      const idx = Math.floor(Math.random() * letters.length);
+      code += letters[idx];
+    }
+
+    if (!DISALLOWED_ROOM_CODES.has(code)) {
+      return code;
+    }
+  }
+
+  // Fallback if someone goes wild with the disallowed list
+  return "AA";
+}
+
+function App() {
+  // Auto-generated 2-letter room code for this teacher session
+  const [roomCode, setRoomCode] = useState(() => generateRoomCode());
+  const location = useLocation();
+
+  const handleNewCode = () => {
+    setRoomCode(generateRoomCode());
+  };
+
+  const onLive =
+    location.pathname === "/" || location.pathname.startsWith("/live");
+  const onHost = location.pathname.startsWith("/host");
+  const onTasksets = location.pathname.startsWith("/tasksets");
+  const onProfile = location.pathname.startsWith("/teacher/profile");
+  const onAiTasksets = location.pathname.startsWith("/teacher/ai-tasksets");
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        fontFamily: "system-ui",
+      }}
+    >
+      {/* SIDEBAR */}
+      <aside
+        style={{
+          width: 220,
+          background: "#18233a",
+          color: "#fff",
+          padding: 16,
+        }}
+      >
+        <h2 style={{ marginBottom: 20 }}>Curriculate</h2>
+
+        {/* Room code display */}
+        <div style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              fontSize: "0.8rem",
+              marginBottom: 4,
+              color: "#cbd5f5",
+            }}
+          >
+            Room code
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <div
+              style={{
+                minWidth: 70,
+                padding: "6px 10px",
+                borderRadius: 6,
+                border: "1px solid rgba(148,163,184,0.7)",
+                background: "#0b1120",
+                textAlign: "center",
+                fontWeight: 700,
+                letterSpacing: 2,
+                fontSize: "1.1rem",
+              }}
+            >
+              {roomCode}
+            </div>
+            <button
+              type="button"
+              onClick={handleNewCode}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 6,
+                border: "1px solid rgba(148,163,184,0.8)",
+                background: "transparent",
+                color: "#e5e7eb",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+              }}
+              title="Generate a new room code"
+            >
+              New
+            </button>
+          </div>
+          <p
+            style={{
+              marginTop: 6,
+              fontSize: "0.75rem",
+              color: "#9ca3af",
+            }}
+          >
+            Students enter this code on their devices to join.
+          </p>
+        </div>
+
+        {/* Nav */}
+        <div style={{ marginTop: 16 }}>
+          <NavLinkButton to="/live" active={onLive}>
+            Live session
+          </NavLinkButton>
+          <NavLinkButton to="/host" active={onHost}>
+            Host / projector
+          </NavLinkButton>
+          <NavLinkButton to="/tasksets" active={onTasksets}>
+            Task sets
+          </NavLinkButton>
+
+          {/* Teacher tools section */}
+          <div
+            style={{
+              marginTop: 12,
+              marginBottom: 4,
+              fontSize: "0.7rem",
+              textTransform: "uppercase",
+              letterSpacing: 1,
+              color: "#9ca3af",
+            }}
+          >
+            Teacher tools
+          </div>
+          <NavLinkButton to="/teacher/profile" active={onProfile}>
+            Teacher profile
+          </NavLinkButton>
+          <NavLinkButton to="/teacher/ai-tasksets" active={onAiTasksets}>
+            AI task set generator
+          </NavLinkButton>
+        </div>
+      </aside>
+
+      {/* MAIN AREA */}
+      <main
+        style={{
+          flex: 1,
+          background: "#f8fafc",
+          padding: 32,
+        }}
+      >
+        <Routes>
+          {/* Redirect base path to /live */}
+          <Route path="/" element={<Navigate to="/live" replace />} />
+
+          {/* Live session / Room view */}
+          <Route
+            path="/live"
+            element={
+              roomCode ? (
+                <LiveSession roomCode={roomCode} />
+              ) : (
+                <EnterRoomMessage />
+              )
+            }
+          />
+
+          {/* Host / projector */}
+          <Route
+            path="/host"
+            element={
+              roomCode ? (
+                <HostView roomCode={roomCode} />
+              ) : (
+                <EnterRoomMessage />
+              )
+            }
+          />
+
+          {/* Task sets list & editor */}
+          <Route path="/tasksets" element={<TaskSets />} />
+          <Route path="/tasksets/:id" element={<TaskSetEditor />} />
+
+          {/* Teacher profile */}
+          <Route path="/teacher/profile" element={<TeacherProfile />} />
+
+          {/* AI TaskSet generator */}
+          <Route
+            path="/teacher/ai-tasksets"
+            element={<AiTasksetGenerator />}
+          />
+
+          {/* Station posters (accessed via button in LiveSession) */}
+          <Route path="/station-posters" element={<StationPosters />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+function EnterRoomMessage() {
+  return (
+    <div style={{ padding: 16 }}>
+      <h2>No room code</h2>
+      <p>
+        Room code should appear in the left sidebar. If it is blank, refresh
+        this page.
+      </p>
+    </div>
+  );
+}
+
+function NavLinkButton({ to, active, children }) {
+  return (
+    <Link
+      to={to}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        marginBottom: 8,
+        padding: "6px 10px",
+        border: "none",
+        borderRadius: 6,
+        background: active ? "#0ea5e9" : "transparent",
+        color: "#fff",
+        cursor: "pointer",
+        textDecoration: "none",
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
+export default App;

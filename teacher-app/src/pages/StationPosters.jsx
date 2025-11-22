@@ -2,13 +2,20 @@
 import React, { useMemo } from "react";
 import { useLocation } from "react-router-dom";
 
-const COLORS = [
-  { key: "RED", hex: "#ff0000" },
-  { key: "BLUE", hex: "#0066ff" },
-  { key: "GREEN", hex: "#00aa33" },
-  { key: "YELLOW", hex: "#ffcc00" },
-  { key: "ORANGE", hex: "#ff8800" },
-  { key: "PURPLE", hex: "#9900cc" },
+// Up to 12 clearly distinct colours, with text colour chosen for contrast
+const MASTER_COLORS = [
+  { key: "RED", hex: "#ff0000", text: "#ffffff" },
+  { key: "BLUE", hex: "#0066ff", text: "#ffffff" },
+  { key: "GREEN", hex: "#00aa33", text: "#ffffff" },
+  { key: "YELLOW", hex: "#ffcc00", text: "#111827" },
+  { key: "ORANGE", hex: "#ff8800", text: "#111827" },
+  { key: "PURPLE", hex: "#9900cc", text: "#ffffff" },
+  { key: "TEAL", hex: "#08a39a", text: "#ffffff" },
+  { key: "PINK", hex: "#ff4f9a", text: "#ffffff" },
+  { key: "LIME", hex: "#8bc34a", text: "#111827" },
+  { key: "NAVY", hex: "#002b5c", text: "#ffffff" },
+  { key: "BROWN", hex: "#8b4513", text: "#ffffff" },
+  { key: "GRAY", hex: "#555555", text: "#ffffff" },
 ];
 
 function useQuery() {
@@ -21,10 +28,15 @@ export default function StationPosters() {
   const room = (query.get("room") || "").toUpperCase();
   const locationLabel = query.get("location") || "Classroom";
 
-  // Base URL to encode in QR (can adjust to match your real pattern)
+  // Number of stations: default 8, but allow 4–12
+  const countRaw = parseInt(query.get("count") || "8", 10);
+  const count = Math.min(12, Math.max(4, isNaN(countRaw) ? 8 : countRaw));
+
+  const colors = MASTER_COLORS.slice(0, count);
+
   const basePlayUrl = "https://play.curriculate.net";
 
-  // Helper: build QR URL (Google Charts style as you already use)
+  // Helper: build QR URL (Google Charts)
   const buildQrUrl = (colorKey) => {
     const fullUrl = `${basePlayUrl}/?room=${encodeURIComponent(
       room
@@ -57,7 +69,9 @@ export default function StationPosters() {
         <span style={{ fontSize: "0.9rem", marginRight: 12 }}>
           Station posters for room{" "}
           <strong>{room || "?"}</strong> – location:{" "}
-          <strong>{locationLabel}</strong>
+          <strong>{locationLabel}</strong> –{" "}
+          <strong>{count}</strong> station
+          {count === 1 ? "" : "s"}
         </span>
         <button
           type="button"
@@ -77,7 +91,7 @@ export default function StationPosters() {
       </div>
 
       {/* One page per station */}
-      {COLORS.map((c, index) => (
+      {colors.map((c, index) => (
         <div
           key={c.key}
           style={{
@@ -86,7 +100,7 @@ export default function StationPosters() {
             boxSizing: "border-box",
             padding: "1in 0.75in",
             margin: "0 auto 0.5in",
-            pageBreakAfter: index === COLORS.length - 1 ? "auto" : "always",
+            pageBreakAfter: index === colors.length - 1 ? "auto" : "always",
             border: "1px solid #e5e7eb",
             background: "#fdfaf3",
           }}
@@ -104,7 +118,7 @@ export default function StationPosters() {
             Curriculate
           </div>
 
-          {/* Color block */}
+          {/* Colour block */}
           <div
             style={{
               width: "100%",
@@ -119,7 +133,7 @@ export default function StationPosters() {
           >
             <div
               style={{
-                color: "#ffffff",
+                color: c.text,
                 fontSize: "1.5rem",
                 fontWeight: 700,
                 textAlign: "center",

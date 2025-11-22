@@ -1,16 +1,13 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { socket } from "../socket";
-import { useNavigate } from "react-router-dom";
-
-const navigate = useNavigate();
-const locationLabel = taskset.roomLocation || "Classroom";
 
 import { API_BASE_URL } from "../config";
 const API_BASE = API_BASE_URL;
 
+// Expanded palette to allow up to 12 stations
 const COLORS = [
   "red",
   "blue",
@@ -20,6 +17,10 @@ const COLORS = [
   "orange",
   "teal",
   "pink",
+  "lime",
+  "navy",
+  "brown",
+  "gray",
 ];
 
 function stationIdToColor(id) {
@@ -31,6 +32,7 @@ function stationIdToColor(id) {
 
 export default function LiveSession({ roomCode: roomCodeProp }) {
   const params = useParams();
+  const navigate = useNavigate();
   const roomCode = (roomCodeProp || params.roomCode || "").toUpperCase();
 
   const [status, setStatus] = useState("Checking connection…");
@@ -74,7 +76,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [schoolName, setSchoolName] = useState("");
   const [perspectives, setPerspectives] = useState([]);
 
-  // Load teacher profile once (email, categories, includeIndividualReports, schoolName, perspectives)
+  // Load teacher profile once
   useEffect(() => {
     let cancelled = false;
 
@@ -342,6 +344,20 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const currentTasksetName =
     roomState.taskset?.name || activeTasksetMeta?.name || "—";
   const tasksetDisplays = roomState.taskset?.displays || [];
+  const roomLocation = roomState.taskset?.roomLocation || "Classroom";
+
+  // Button: open Station Posters view
+  const handleOpenStationPosters = () => {
+    if (!roomCode) {
+      alert("No room selected for this live session.");
+      return;
+    }
+    navigate(
+      `/station-posters?room=${encodeURIComponent(
+        roomCode
+      )}&location=${encodeURIComponent(roomLocation)}`
+    );
+  };
 
   // Group displays by station color (plus "unassigned")
   const groupedDisplays = useMemo(() => {
@@ -354,6 +370,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       orange: [],
       teal: [],
       pink: [],
+      lime: [],
+      navy: [],
+      brown: [],
+      gray: [],
       unassigned: [],
     };
 
@@ -375,6 +395,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       "orange",
       "teal",
       "pink",
+      "lime",
+      "navy",
+      "brown",
+      "gray",
       "unassigned",
     ];
     return order
@@ -441,6 +465,14 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
         ? "#ccfbf1"
         : colorName === "pink"
         ? "#ffe4e6"
+        : colorName === "lime"
+        ? "#ecfccb"
+        : colorName === "navy"
+        ? "#e0e7ff"
+        : colorName === "brown"
+        ? "#f5e7da"
+        : colorName === "gray"
+        ? "#e5e7eb"
         : "#f3f4f6";
 
     return (
@@ -1028,7 +1060,15 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
         </div>
 
         {/* Right: Room status, quick controls, transcript & reports */}
-        <div style={{ flex: 2, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div
+          style={{
+            flex: 2,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
           {/* Room / status header */}
           <div
             style={{
@@ -1053,7 +1093,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                   fontSize: "1rem",
                 }}
               >
-                Live session
+                Room view
               </h2>
               <div
                 style={{
@@ -1062,9 +1102,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                 }}
               >
                 Task set:{" "}
-                <span style={{ fontWeight: 600 }}>
-                  {currentTasksetName}
-                </span>
+                <span style={{ fontWeight: 600 }}>{currentTasksetName}</span>
               </div>
             </div>
 
@@ -1075,7 +1113,8 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                 color: "#4b5563",
               }}
             >
-              {roomCode ? `Room: ${roomCode}` : "No room selected."}
+              {roomCode ? `Room: ${roomCode}` : "No room selected."} · Location:{" "}
+              {roomLocation}
             </p>
             <p
               style={{
@@ -1368,7 +1407,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               fontSize: "1.2rem",
             }}
           >
-            Live Session
+            Room view
           </h1>
           <p
             style={{
@@ -1383,66 +1422,68 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
 
         <div
           style={{
-            display: "inline-flex",
-            gap: 4,
-            padding: 2,
-            borderRadius: 999,
-            background: "#e5e7eb",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
         >
+          <div
+            style={{
+              display: "inline-flex",
+              gap: 4,
+              padding: 2,
+              borderRadius: 999,
+              background: "#e5e7eb",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode("live")}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                background:
+                  viewMode === "live" ? "#0ea5e9" : "transparent",
+                color: viewMode === "live" ? "#ffffff" : "#374151",
+              }}
+            >
+              Room view
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("setup")}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                background:
+                  viewMode === "setup" ? "#0ea5e9" : "transparent",
+                color: viewMode === "setup" ? "#ffffff" : "#374151",
+              }}
+            >
+              Room setup checklist
+            </button>
+          </div>
+
           <button
             type="button"
-            onClick={() => setViewMode("live")}
+            onClick={handleOpenStationPosters}
             style={{
               padding: "6px 10px",
               borderRadius: 999,
-              border: "none",
-              fontSize: "0.85rem",
+              border: "1px solid #d1d5db",
+              background: "#ffffff",
+              fontSize: "0.8rem",
               cursor: "pointer",
-              background:
-                viewMode === "live" ? "#0ea5e9" : "transparent",
-              color: viewMode === "live" ? "#ffffff" : "#374151",
             }}
           >
-            Room view
+            Print station sheets
           </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("setup")}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: "none",
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              background:
-                viewMode === "setup" ? "#0ea5e9" : "transparent",
-              color: viewMode === "setup" ? "#ffffff" : "#374151",
-            }}
-          >
-            Room setup checklist
-          </button>
-          <button
-  type="button"
-  onClick={() =>
-    navigate(
-      `/station-posters?room=${encodeURIComponent(
-        roomCode
-      )}&location=${encodeURIComponent(locationLabel)}`
-    )
-  }
-  style={{
-    marginLeft: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    fontSize: "0.85rem",
-    cursor: "pointer",
-  }}
->
-  Print station sheets
-</button>
         </div>
       </header>
 

@@ -1,5 +1,5 @@
 // teacher-app/src/pages/TaskSets.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { API_BASE_URL } from "../config";
@@ -19,8 +19,11 @@ export default function TaskSets() {
     return localStorage.getItem("curriculateActiveTasksetId") || null;
   });
 
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDir, setSortDir] = useState("asc"); // "asc" | "desc"
+
   // -------------------------------------------------------------------
-  // Load task sets — minimal, known-good URL, no tokens/extra params
+  // Load task sets
   // -------------------------------------------------------------------
   useEffect(() => {
     async function loadSets() {
@@ -29,7 +32,6 @@ export default function TaskSets() {
 
       try {
         const url = `${API_BASE}/api/tasksets`;
-
         const res = await fetch(url);
         const text = await res.text();
 
@@ -186,12 +188,84 @@ export default function TaskSets() {
   };
 
   // -------------------------------------------------------------------
+  // Sorting
+  // -------------------------------------------------------------------
+  const handleSort = (field) => {
+    setSortBy((prev) => {
+      if (prev === field) {
+        setSortDir((prevDir) => (prevDir === "asc" ? "desc" : "asc"));
+        return prev;
+      }
+      setSortDir("asc");
+      return field;
+    });
+  };
+
+  const sortedSets = useMemo(() => {
+    const arr = [...sets];
+
+    const dir = sortDir === "desc" ? -1 : 1;
+
+    arr.sort((a, b) => {
+      const get = (obj) => {
+        switch (sortBy) {
+          case "subject":
+            return obj.subject || "";
+          case "gradeLevel":
+            return obj.gradeLevel || obj.grade || "";
+          case "roomLocation":
+            return obj.roomLocation || "Classroom";
+          case "createdAt":
+            return obj.createdAt ? new Date(obj.createdAt).getTime() : 0;
+          case "lastUsedAt":
+            return obj.lastUsedAt ? new Date(obj.lastUsedAt).getTime() : 0;
+          case "playsCount":
+            return obj.playsCount ?? 0;
+          case "avgEngagement":
+            return obj.avgEngagementPercent ?? 0;
+          case "avgPerformance":
+            return obj.avgPerformancePercent ?? 0;
+          case "numTasks":
+            return obj.numTasks ?? obj.tasks?.length ?? 0;
+          case "name":
+          default:
+            return obj.name || "";
+        }
+      };
+
+      const av = get(a);
+      const bv = get(b);
+
+      if (typeof av === "number" && typeof bv === "number") {
+        return av === bv ? 0 : av < bv ? -dir : dir;
+      }
+
+      const as = String(av).toLowerCase();
+      const bs = String(bv).toLowerCase();
+      if (as === bs) return 0;
+      return as < bs ? -dir : dir;
+    });
+
+    return arr;
+  }, [sets, sortBy, sortDir]);
+
+  const sortLabel = (field) => {
+    if (sortBy !== field) return "";
+    return sortDir === "asc" ? " ↑" : " ↓";
+  };
+
+  // -------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Task Sets</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Task Sets</h1>
+          <p className="text-sm text-gray-600">
+            Browse, sort, and launch your saved task sets.
+          </p>
+        </div>
         <button
           onClick={handleNew}
           className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
@@ -238,72 +312,149 @@ export default function TaskSets() {
         <p>Loading task sets…</p>
       ) : error ? (
         <p className="text-red-600">{error}</p>
-      ) : sets.length === 0 ? (
+      ) : sortedSets.length === 0 ? (
         <p className="text-gray-600">No task sets yet. Create or import one.</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {sets.map((s) => {
-            const id = s._id || s.id;
-            const isActive = activeTasksetId === id;
+        <div className="overflow-x-auto rounded border bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <Th onClick={() => handleSort("name")}>
+                  Name{sortLabel("name")}
+                </Th>
+                <Th onClick={() => handleSort("subject")}>
+                  Subject{sortLabel("subject")}
+                </Th>
+                <Th onClick={() => handleSort("gradeLevel")}>
+                  Grade{sortLabel("gradeLevel")}
+                </Th>
+                <Th onClick={() => handleSort("roomLocation")}>
+                  Room{sortLabel("roomLocation")}
+                </Th>
+                <Th onClick={() => handleSort("createdAt")}>
+                  Created{sortLabel("createdAt")}
+                </Th>
+                <Th onClick={() => handleSort("lastUsedAt")}>
+                  Last used{sortLabel("lastUsedAt")}
+                </Th>
+                <Th onClick={() => handleSort("playsCount")}>
+                  Plays{sortLabel("playsCount")}
+                </Th>
+                <Th onClick={() => handleSort("avgEngagement")}>
+                  Avg engage %{sortLabel("avgEngagement")}
+                </Th>
+                <Th onClick={() => handleSort("avgPerformance")}>
+                  Avg perf %{sortLabel("avgPerformance")}
+                </Th>
+                <Th onClick={() => handleSort("numTasks")}>
+                  Tasks{sortLabel("numTasks")}
+                </Th>
+                <Th>Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedSets.map((s) => {
+                const id = s._id || s.id;
+                const isActive = activeTasksetId === id;
 
-            return (
-              <div key={id} className="border rounded bg-white p-4">
-                <h3 className="font-semibold text-lg mb-1">{s.name}</h3>
+                const numTasks = s.numTasks ?? s.tasks?.length ?? 0;
+                const createdAt = s.createdAt
+                  ? new Date(s.createdAt).toLocaleDateString()
+                  : "—";
+                const lastUsedAt = s.lastUsedAt
+                  ? new Date(s.lastUsedAt).toLocaleDateString()
+                  : "—";
+                const roomLocation = s.roomLocation || "Classroom";
 
-                {s.description && (
-                  <p className="text-sm text-gray-600 mb-1">
-                    {s.description}
-                  </p>
-                )}
+                const avgEng = s.avgEngagementPercent ?? null;
+                const avgPerf = s.avgPerformancePercent ?? null;
 
-                <p className="text-xs text-gray-500 mb-1">
-                  {s.numTasks ?? s.tasks?.length ?? 0} tasks
-                </p>
-
-                {isActive && (
-                  <p className="text-xs text-emerald-700 font-semibold mb-2">
-                    Currently active in Live Session
-                  </p>
-                )}
-
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  <button
-                    onClick={() => handleSetActive(s)}
-                    className={`px-3 py-1 text-sm rounded border transition ${
-                      isActive
-                        ? "bg-blue-600 text-white border-blue-700 hover:bg-blue-700"
-                        : "bg-white text-blue-700 border-blue-600 hover:bg-blue-50"
-                    }`}
-                  >
-                    {isActive ? "Active in Live Session" : "Use in Live Session"}
-                  </button>
-
-                  <button
-                    onClick={() => handleLaunchNow(s)}
-                    className="px-3 py-1 text-sm rounded bg-emerald-500 text-white hover:bg-emerald-600"
-                  >
-                    Launch now
-                  </button>
-
-                  <button
-                    onClick={() => handleEdit(id)}
-                    className="px-3 py-1 text-sm rounded bg-blue-500 text-white hover:bg-blue-600"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(id)}
-                    className="px-3 py-1 text-sm rounded bg-red-500 text-white hover:bg-red-600"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                return (
+                  <tr key={id} className="border-t">
+                    <td className="px-3 py-2 align-top">
+                      <div className="font-semibold text-gray-900">
+                        {s.name}
+                      </div>
+                      {s.description && (
+                        <div className="text-xs text-gray-500">
+                          {s.description}
+                        </div>
+                      )}
+                      {isActive && (
+                        <div className="text-[0.7rem] text-emerald-700 font-semibold mt-0.5">
+                          Currently active in Room View
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {s.subject || "—"}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {s.gradeLevel || s.grade || "—"}
+                    </td>
+                    <td className="px-3 py-2 align-top">{roomLocation}</td>
+                    <td className="px-3 py-2 align-top">{createdAt}</td>
+                    <td className="px-3 py-2 align-top">{lastUsedAt}</td>
+                    <td className="px-3 py-2 align-top">
+                      {s.playsCount ?? 0}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {avgEng == null ? "—" : `${avgEng.toFixed(0)}%`}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {avgPerf == null ? "—" : `${avgPerf.toFixed(0)}%`}
+                    </td>
+                    <td className="px-3 py-2 align-top">{numTasks}</td>
+                    <td className="px-3 py-2 align-top">
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          onClick={() => handleSetActive(s)}
+                          className={`px-2 py-1 text-xs rounded border transition ${
+                            isActive
+                              ? "bg-blue-600 text-white border-blue-700 hover:bg-blue-700"
+                              : "bg-white text-blue-700 border-blue-600 hover:bg-blue-50"
+                          }`}
+                        >
+                          {isActive ? "Active" : "Use"}
+                        </button>
+                        <button
+                          onClick={() => handleLaunchNow(s)}
+                          className="px-2 py-1 text-xs rounded bg-emerald-500 text-white hover:bg-emerald-600"
+                        >
+                          Launch
+                        </button>
+                        <button
+                          onClick={() => handleEdit(id)}
+                          className="px-2 py-1 text-xs rounded bg-blue-500 text-white hover:bg-blue-600"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(id)}
+                          className="px-2 py-1 text-xs rounded bg-red-500 text-white hover:bg-red-600"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
+  );
+}
+
+function Th({ children, onClick }) {
+  return (
+    <th
+      className="px-3 py-2 text-left text-xs font-semibold text-gray-700 cursor-pointer select-none"
+      onClick={onClick}
+    >
+      {children}
+    </th>
   );
 }
