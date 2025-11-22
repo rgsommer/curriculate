@@ -1,24 +1,29 @@
-// student-app/src/StudentApp.jsx
-import React, { useEffect, useState, useRef } from "react";
+// student-app/src/App.jsx
+import React, {
+  useEffect,
+  useState,
+  useRef,
+} from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
-// TASK_TYPES import is kept in case you’re using it elsewhere
-import { TASK_TYPES } from "../../shared/taskTypes.js";
+import { TASK_TYPES } from "../../shared/taskTypes";
 
-import { API_BASE_URL } from "./config.js";
+import { API_BASE_URL } from "./config";
 
-// Shared socket instance for this app
 export const socket = io(API_BASE_URL, {
+  withCredentials: true,
   withCredentials: true,
 });
 
 console.log("API_BASE_URL (student) =", API_BASE_URL);
 
 /* -----------------------------------------------------------
-   Station colour helpers – new style: station-red, station-blue...
+   Socket + station colour helpers
    ----------------------------------------------------------- */
 
-const COLOR_NAMES = [
+
+// Station colours in order: station-1 → red, station-2 → blue, etc.
+const COLORS = [
   "red",
   "blue",
   "green",
@@ -29,40 +34,11 @@ const COLOR_NAMES = [
   "pink",
 ];
 
-// Take anything (station-1, station-red, Red, etc) and normalize
-// → { id: "station-red", color: "red", label: "Station-Red" }
-function normalizeStationId(raw) {
-  if (!raw) {
-    return { id: null, color: null, label: "Not assigned yet" };
-  }
-
-  const s = String(raw).trim();
-  let lower = s.toLowerCase();
-  let color = null;
-
-  // Old numeric style: station-1, station-2, ...
-  let m = /^station-(\d+)$/.exec(lower);
-  if (m) {
-    const idx = parseInt(m[1], 10) - 1;
-    color = COLOR_NAMES[idx] || null;
-  } else {
-    // New style: station-red, station-blue, or just "red"
-    if (lower.startsWith("station-")) {
-      lower = lower.slice("station-".length);
-    }
-    color = lower;
-  }
-
-  if (!color) {
-    // Just fall back to whatever the backend gave us
-    return { id: s, color: null, label: s };
-  }
-
-  const canonicalId = `station-${color}`;
-  const prettyColor = color.charAt(0).toUpperCase() + color.slice(1);
-  const label = `Station-${prettyColor}`;
-
-  return { id: canonicalId, color, label };
+function stationIdToColor(id) {
+  const m = /^station-(\d+)$/.exec(id || "");
+  if (!m) return null;
+  const idx = parseInt(m[1], 10) - 1;
+  return COLORS[idx] || null;
 }
 
 /* -----------------------------------------------------------
@@ -253,64 +229,25 @@ export default function App() {
   /* ---------------- Socket listeners ---------------- */
 
   useEffect(() => {
-    // legacy: single task object
     const onTaskUpdate = (task) => {
-      if (!task) {
-        setCurrentTask(null);
-        return;
-      }
       setCurrentTask(task);
       setAnswered(false);
       setTaskStartTime(Date.now());
       sndTask.current.play().catch(() => {});
     };
 
-    // new: { index, task, timeLimitSeconds, ... } OR task directly
-    const onTaskLaunch = (payload) => {
-      const task = payload?.task || payload;
-      if (!task) {
-        setCurrentTask(null);
-        return;
-      }
-      setCurrentTask(task);
-      setAnswered(false);
-      setTaskStartTime(Date.now());
-      sndTask.current.play().catch(() => {});
-    };
-
-    const applyRoomState = (state) => {
+    const onRoomState = (state) => {
       setRoomState(
         state || { stations: [], teams: {}, scores: {} }
       );
     };
 
-    // old protocol
     socket.on("taskUpdate", onTaskUpdate);
-    socket.on("roomState", applyRoomState);
-
-    // new protocol variants
-    socket.on("task:launch", onTaskLaunch);
-    socket.on("room:state", applyRoomState);
-    socket.on("room:update", applyRoomState);
-
-    // optional: react to team join if backend sends it
-    socket.on("team:joined", (maybeStateOrTeam) => {
-      if (
-        maybeStateOrTeam &&
-        (maybeStateOrTeam.teams || maybeStateOrTeam.stations)
-      ) {
-        // treat as full room state
-        applyRoomState(maybeStateOrTeam);
-      }
-    });
+    socket.on("roomState", onRoomState);
 
     return () => {
       socket.off("taskUpdate", onTaskUpdate);
-      socket.off("roomState", applyRoomState);
-      socket.off("task:launch", onTaskLaunch);
-      socket.off("room:state", applyRoomState);
-      socket.off("room:update", applyRoomState);
-      socket.off("team:joined");
+      socket.off("roomState", onRoomState);
     };
   }, []);
 
@@ -319,105 +256,98 @@ export default function App() {
   const teamHere = roomState.teams[socket.id];
   const teamId = teamHere?.teamId || socket.id;
 
-  const rawAssignedStationId = teamHere?.currentStationId || null;
-  const {
-    id: assignedStationId,
-    color: assignedColor,
-    label: assignedStationLabel,
-  } = normalizeStationId(rawAssignedStationId);
+  const assignedStationId = teamHere?.currentStationId || null;
+  const assignedColor = stationIdToColor(assignedStationId);
 
   const mustScan =
-    joined &&
-    !!assignedStationId &&
-    scannedStationId !== assignedStationId;
+  joined &&
+  !!assignedStationId &&
+  scannedStationId !== assignedStationId;
 
   // Turn scanner on whenever we have an assignment but no matching scan
   useEffect(() => {
-    if (mustScan && !scanError) {
-      setScannerActive(true);
-      sndAlert.current.play().catch(() => {});
-    } else {
-      setScannerActive(false);
-    }
+  if (mustScan && !scanError) {
+    setScannerActive(true);
+    sndAlert.current.play().catch(() => {});
+  } else {
+    setScannerActive(false);
+  }
   }, [mustScan, scanError]);
 
   /* ---------------- QR scanned handler ---------------- */
 
   const handleScannedCode = (value) => {
+  try {
+    let text = (value || "").trim();
+
+    // If it's a URL, grab last path segment
     try {
-      let text = (value || "").trim();
-
-      // If it's a URL, grab last path segment
-      try {
-        const url = new URL(text);
-        const segments = url.pathname
-          .split("/")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        if (segments.length > 0) {
-          text = segments[segments.length - 1];
-        }
-      } catch {
-        // not a URL, keep raw text
+      const url = new URL(text);
+      const segments = url.pathname
+        .split("/")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (segments.length > 0) {
+        text = segments[segments.length - 1];
       }
-
-      text = text.toLowerCase();
-      let stationIdFromCode = null;
-
-      if (/^station-/.test(text)) {
-        // "station-red" or "station-1"
-        const norm = normalizeStationId(text);
-        stationIdFromCode = norm.id;
-      } else {
-        // treat raw text as a colour: "red", "blue", etc.
-        const norm = normalizeStationId(`station-${text}`);
-        stationIdFromCode = norm.id;
-      }
-
-      if (!stationIdFromCode) {
-        setScanError(
-          `Unrecognized station code: "${text}". Ask your teacher which QR to use.`
-        );
-        return;
-      }
-
-      // Enforce correct station: wrong scan → show error + stop camera
-      if (
-        assignedStationId &&
-        stationIdFromCode !== assignedStationId
-      ) {
-        const scannedNorm = normalizeStationId(stationIdFromCode);
-        const assignedNorm = normalizeStationId(assignedStationId);
-
-        const scannedLabel =
-          scannedNorm.label || stationIdFromCode;
-        const correctLabel =
-          assignedNorm.label || assignedStationId;
-
-        setScanError(
-          `This is the wrong station.\n\nYou scanned: ${scannedLabel}\nYour team is assigned to: ${correctLabel}.\n\nPlease go to the correct station and try again.`
-        );
-        // Camera will be turned OFF by the effect (because scanError != null)
-        return;
-      }
-
-      // ✅ Correct station — accept the scan
-      const norm = normalizeStationId(stationIdFromCode);
-      setScannedStationId(norm.id);
-      setScanError(null);
-
-      if (roomCode) {
-        socket.emit("station:scan", {
-          roomCode: roomCode.trim().toUpperCase(),
-          teamId,
-          stationId: norm.id,
-        });
-      }
-    } catch (err) {
-      console.error("Error handling scanned code", err);
-      setScanError("Something went wrong while scanning. Please try again.");
+    } catch {
+      // not a URL, keep raw text
     }
-  };
+
+    text = text.toLowerCase();
+
+    let stationIdFromCode = null;
+
+    if (/^station-\d+$/.test(text)) {
+      stationIdFromCode = text;
+    } else {
+      const idx = COLORS.indexOf(text);
+      if (idx !== -1) {
+        stationIdFromCode = `station-${idx + 1}`;
+      }
+    }
+
+    if (!stationIdFromCode) {
+      setScanError(
+        `Unrecognized station code: "${text}". Ask your teacher which QR to use.`
+      );
+      return;
+    }
+
+    // Enforce correct station: wrong scan → show error + stop camera
+    if (assignedStationId && stationIdFromCode !== assignedStationId) {
+      const scannedColor = stationIdToColor(stationIdFromCode);
+      const correctColor = stationIdToColor(assignedStationId);
+      const scannedLabel = scannedColor
+        ? `${scannedColor.toUpperCase()} station`
+        : stationIdFromCode;
+      const correctLabel = correctColor
+        ? `${correctColor.toUpperCase()} station`
+        : assignedStationId;
+
+      setScanError(
+        `This is the wrong station.\n\nYou scanned: ${scannedLabel}\nYour team is assigned to: ${correctLabel}.\n\nPlease go to the correct station and try again.`
+      );
+      // Camera will be turned OFF by the effect (because scanError != null)
+      return;
+    }
+
+    // ✅ Correct station — accept the scan
+    setScannedStationId(stationIdFromCode);
+    setScanError(null);
+
+    if (roomCode) {
+      socket.emit("station:scan", {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+        stationId: stationIdFromCode,
+      });
+    }
+  } catch (err) {
+    console.error("Error handling scanned code", err);
+    setScanError("Something went wrong while scanning. Please try again.");
+  }
+};
 
   /* ---------------- Handlers ---------------- */
 
@@ -443,40 +373,20 @@ export default function App() {
       return;
     }
 
-    const payload = {
+    socket.emit("joinRoom", {
       roomCode: finalRoom,
       teamName: teamName.trim(),
       members: realMembers,
-    };
-
-    // New protocol: student:joinRoom with ack
-    socket.emit("student:joinRoom", payload, (ack) => {
-      if (!ack || ack.ok === false) {
-        alert(ack?.error || "Could not join room. Check the code with your teacher.");
-        return;
-      }
-
-      // If backend returns roomState or team info, apply it
-      if (ack.roomState) {
-        setRoomState(ack.roomState);
-      }
-      // Play join sound and mark as joined
-      sndJoin.current.play().catch(() => {});
-      setJoined(true);
-      setScannedStationId(null); // force first scan once first station is assigned
+      // no teamColor — station colour is what matters
     });
 
-    // OPTIONAL: if you want to keep backward compatibility:
-    // socket.emit("joinRoom", payload);
+    sndJoin.current.play().catch(() => {});
+    setJoined(true);
+    setScannedStationId(null); // force first scan once first station is assigned
   };
 
   const handleSubmit = (answerTextFromTask) => {
-    console.log("handleSubmit called:", {
-      answerTextFromTask,
-      answered,
-      mustScan,
-      teamHere,
-    });
+    console.log("handleSubmit called:", { answerTextFromTask, answered, mustScan, teamHere });
 
     if (answered) return;
 
@@ -497,172 +407,160 @@ export default function App() {
       ? Date.now() - taskStartTime
       : null;
 
-    const payload = {
+    socket.emit("submitTask", {
       roomCode: roomCode.trim().toUpperCase(),
       teamId: teamHere.teamId || socket.id,
-      taskId: currentTask?.id || currentTask?._id || null,
-      answer: (answerTextFromTask || "").trim(),
+      answerText: (answerTextFromTask || "").trim(),
+      correct: false, // teacher/host can grade or auto-check
       timeMs: elapsedMs,
-    };
-
-    // New-style submit
-    socket.emit("student:submitAnswer", payload, (ack) => {
-      if (ack && ack.ok === false) {
-        alert(ack.error || "There was a problem submitting your answer.");
-        return;
-      }
-      setAnswered(true);
-      setCurrentTask(null);
-      sndSubmit.current.play().catch(() => {});
     });
 
-    // OPTIONAL legacy:
-    // socket.emit("submitTask", {
-    //   roomCode: payload.roomCode,
-    //   teamId: payload.teamId,
-    //   answerText: payload.answer,
-    //   correct: false,
-    //   timeMs: elapsedMs,
-    // });
+    setAnswered(true);
+    setCurrentTask(null);
+    sndSubmit.current.play().catch(() => {});
   };
 
   /* ---------------- Render: scanner gate ---------------- */
 
-  const currentStationLabel = assignedStationLabel;
+  const currentStationLabel = assignedStationId
+    ? `${assignedStationId}${
+        assignedColor ? ` (${assignedColor.toUpperCase()})` : ""
+      }`
+    : "Not assigned yet";
 
   if (joined && mustScan) {
-    return (
-      <div
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: 16,
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#020617",
+        color: "#e5e7eb",
+        fontFamily: "system-ui",
+      }}
+    >
+      <h1 style={{ margin: 0, textAlign: "center" }}>
+        Scan your station
+      </h1>
+
+      <p
         style={{
-          minHeight: "100vh",
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#020617",
-          color: "#e5e7eb",
-          fontFamily: "system-ui",
+          margin: 0,
+          textAlign: "center",
+          maxWidth: 320,
+          fontSize: "0.9rem",
         }}
       >
-        <h1 style={{ margin: 0, textAlign: "center" }}>
-          Scan your station
-        </h1>
+        Move to the colour station your team was assigned, and
+        point the camera at the QR code on that pad.
+      </p>
 
-        <p
-          style={{
-            margin: 0,
-            textAlign: "center",
-            maxWidth: 320,
-            fontSize: "0.9rem",
-          }}
-        >
-          Move to the colour station your team was assigned, and
-          point the camera at the QR code on that pad.
-        </p>
+      <div
+        style={{
+          marginTop: 10,
+          textAlign: "center",
+          fontSize: "0.85rem",
+        }}
+      >
+        Assigned station: <strong>{currentStationLabel}</strong>
+      </div>
 
+      {assignedColor && (
         <div
           style={{
-            marginTop: 10,
-            textAlign: "center",
-            fontSize: "0.85rem",
+            marginTop: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
           }}
         >
-          Assigned station: <strong>{currentStationLabel}</strong>
-        </div>
-
-        {assignedColor && (
           <div
             style={{
-              marginTop: 8,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              background: assignedColor,
+              border: "2px solid #e5e7eb",
+            }}
+          />
+          <div
+            style={{
+              textTransform: "uppercase",
+              fontWeight: 700,
+              letterSpacing: 1,
             }}
           >
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                background: assignedColor,
-                border: "2px solid #e5e7eb",
+            {assignedColor} station
+          </div>
+        </div>
+      )}
+
+      {/* Error message & retry button (instead of alerts) */}
+      {scanError && (
+        <div
+          style={{
+            maxWidth: 360,
+            background: "#7f1d1d",
+            borderRadius: 8,
+            padding: 10,
+            fontSize: "0.8rem",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {scanError}
+          <div style={{ marginTop: 8, textAlign: "right" }}>
+            <button
+              type="button"
+              onClick={() => {
+                setScanError(null);
+                setScannerActive(true);
               }}
-            />
-            <div
               style={{
-                textTransform: "uppercase",
-                fontWeight: 700,
-                letterSpacing: 1,
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "none",
+                background: "#f97316",
+                color: "#fff",
+                fontSize: "0.8rem",
+                cursor: "pointer",
               }}
             >
-              {assignedColor} station
-            </div>
+              Try scanning again
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Error message & retry button (instead of alerts) */}
-        {scanError && (
-          <div
-            style={{
-              maxWidth: 360,
-              background: "#7f1d1d",
-              borderRadius: 8,
-              padding: 10,
-              fontSize: "0.8rem",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {scanError}
-            <div style={{ marginTop: 8, textAlign: "right" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setScanError(null);
-                  setScannerActive(true);
-                }}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#f97316",
-                  color: "#fff",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                }}
-              >
-                Try scanning again
-              </button>
-            </div>
-          </div>
-        )}
+      {/* Only show camera when there is no error */}
+      {!scanError && (
+        <QrScanner
+          active={scannerActive}
+          onCode={handleScannedCode}
+          onError={(msg) =>
+            console.warn("Scanner error:", msg)
+          }
+        />
+      )}
 
-        {/* Only show camera when there is no error */}
-        {!scanError && (
-          <QrScanner
-            active={scannerActive}
-            onCode={handleScannedCode}
-            onError={(msg) =>
-              console.warn("Scanner error:", msg)
-            }
-          />
-        )}
-
-        <p
-          style={{
-            marginTop: 12,
-            fontSize: "0.75rem",
-            textAlign: "center",
-            color: "#9ca3af",
-          }}
-        >
-          If asked, tap <strong>Allow</strong> so your browser can
-          use the camera.
-        </p>
-      </div>
-    );
-  }
+      <p
+        style={{
+          marginTop: 12,
+          fontSize: "0.75rem",
+          textAlign: "center",
+          color: "#9ca3af",
+        }}
+      >
+        If asked, tap <strong>Allow</strong> so your browser can
+        use the camera.
+      </p>
+    </div>
+  );
+}
 
   /* ---------------- Render: normal UI ---------------- */
 
@@ -781,8 +679,7 @@ export default function App() {
               marginTop: 4,
             }}
           >
-            Current station:{" "}
-            <strong>{currentStationLabel}</strong>
+            Current station: <strong>{currentStationLabel}</strong>
           </p>
 
           {currentTask && !answered ? (
