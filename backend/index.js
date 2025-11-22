@@ -21,25 +21,51 @@ import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import Profile from "./models/TeacherProfile.js";
 import TaskSet from "./models/TaskSet.js";
+import tasksetRoutes from "./routes/tasksetRoutes.js";
 
 // --------------------------------------------------------------------
 // App + Server Setup
 // --------------------------------------------------------------------
 const app = express();
 app.use(express.json());
-
-app.use(cors({
-  origin: (origin, cb) => cb(null, true),
-  credentials: true,
-}));
+app.use("/api/profile", teacherProfileRoutes);
+app.use("/api/tasksets", tasksetRoutes);
+app.use("/api/ai/tasksets", aiTasksetsRouter);
 
 const server = http.createServer(app);
+const allowedOrigins = [
+  "https://set.curriculate.net",
+  "https://play.curriculate.net",
+  "https://curriculate.net",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:3000"
+];
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // allow requests with no origin (mobile apps, curl, postman)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) === -1) {
+        return callback(
+          new Error("CORS blocked by backend: " + origin),
+          false
+        );
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+  })
+);
 
 // --------------------------------------------------------------------
 // MongoDB Connection

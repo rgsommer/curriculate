@@ -1,9 +1,6 @@
 // teacher-app/src/config.js
 
-const isLocalHost =
-  window.location.hostname === "localhost" ||
-  window.location.hostname === "127.0.0.1";
-
-export const API_BASE_URL = isLocalHost
-  ? "http://localhost:10000"          // local dev backend
-  : "https://api.curriculate.net";    // Render backend in production
+export const API_BASE_URL =
+  window.location.hostname === "localhost"
+    ? "http://localhost:10000"   // dev backend
+    : "https://api.curriculate.net";   // 👈 NO /api here

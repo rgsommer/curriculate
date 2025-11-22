@@ -4,8 +4,7 @@ import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx"; // 👈 use the real TaskRunner
 
 // Socket URL – adjust if needed
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL || "https://api.curriculate.net";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:10000";
 
 function App() {
   const [socket, setSocket] = useState(null);
