@@ -1,14 +1,3 @@
-// ====================================================================
-//  Curriculate Backend – Clean, Modern, Rewritten Index.js
-//  Supports:
-//   - Rooms, Sessions, Teams, Stations
-//   - Station Location Protection (Classroom/Hallway/etc.)
-//   - Task Launching + Student Submissions
-//   - AI Rubric Scoring + AI Session Summaries
-//   - Perspectives (multi-select worldview/approach tags)
-//   - PDF + HTML Transcript Emailing
-// ====================================================================
-
 import "dotenv/config";
 import express from "express";
 import http from "http";
@@ -21,13 +10,14 @@ import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import Profile from "./models/TeacherProfile.js";
 import TaskSet from "./models/TaskSet.js";
+
 import tasksetRoutes from "./routes/tasksetRoutes.js";
 import aiTasksetsRouter from "./routes/aiTasksets.js";
 import teacherProfileRoutes from "./routes/teacherProfileRoutes.js";
 
-// --------------------------------------------------------------------
-// App + CORS Setup (CORS BEFORE ROUTES)
-// --------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// CORS FIRST
+// ----------------------------------------------------------------------------
 const app = express();
 
 const allowedOrigins = [
@@ -50,28 +40,12 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // preflight
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
-// Mount route modules
-app.use("/api/profile", teacherProfileRoutes);
-app.use("/api/tasksets", tasksetRoutes);
-app.use("/api/ai/tasksets", aiTasksetsRouter);
-
-// --------------------------------------------------------------------
-// HTTP + Socket.io Server
-// --------------------------------------------------------------------
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-  },
-});
-
-// --------------------------------------------------------------------
-// MongoDB Connection
-// --------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// MongoDB
+// ----------------------------------------------------------------------------
 mongoose
   .connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -79,21 +53,38 @@ mongoose
   })
   .then(() => console.log("Mongo connected"))
   .catch((err) => console.error("Mongo connection error:", err));
-:contentReference[oaicite:0]{index=0}
 
-// ====================================================================
-//  ROOM ENGINE (All In-Memory)
-// ====================================================================
-const rooms = {}; // rooms["8A"] = { teacherSocketId, teams, tasks, ... }
+// ----------------------------------------------------------------------------
+// Routes
+// ----------------------------------------------------------------------------
+app.use("/api/profile", teacherProfileRoutes);
+app.use("/api/tasksets", tasksetRoutes);
+app.use("/api/ai/tasksets", aiTasksetsRouter);
 
-// Create a blank room object
+// ----------------------------------------------------------------------------
+// HTTP + SOCKET SERVER
+// ----------------------------------------------------------------------------
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+  },
+});
+
+// ----------------------------------------------------------------------------
+// ROOM ENGINE (Socket)
+// ----------------------------------------------------------------------------
+const rooms = {};
+
 function createRoom(roomCode, teacherSocketId) {
   return {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {}, // teamId -> { teamName, color, members: [] }
-    stations: {}, // color -> { roomLocation }
+    teams: {},
+    stations: {},
     taskset: null,
     taskIndex: -1,
     submissions: [],
@@ -102,10 +93,8 @@ function createRoom(roomCode, teacherSocketId) {
   };
 }
 
-// Build transcript JSON for email + AI
 function buildTranscript(room) {
-  const taskset = room.taskset;
-  const tasks = taskset.tasks || [];
+  const tasks = room.taskset?.tasks || [];
 
   const taskRecords = tasks.map((t, i) => ({
     index: i,
@@ -115,22 +104,23 @@ function buildTranscript(room) {
     points: t.points ?? 10,
   }));
 
-  // Calculate team total scores
   const teamScores = {};
   for (const sub of room.submissions) {
-    const pts = (() => {
-      if (sub.aiScore && typeof sub.aiScore.totalScore === "number")
-        return sub.aiScore.totalScore;
-      return sub.correct ? (sub.points ?? 0) : 0;
-    })();
-    teamScores[sub.teamName] = (teamScores[sub.teamName] || 0) + pts;
+    const earned =
+      sub.aiScore?.totalScore ??
+      (sub.correct ? (sub.points ?? 0) : 0);
+
+    teamScores[sub.teamName] = (teamScores[sub.teamName] || 0) + earned;
   }
 
-  const totalPossible = taskRecords.reduce((s, t) => s + (t.points ?? 10), 0);
+  const totalPossible = taskRecords.reduce(
+    (s, t) => s + (t.points ?? 10),
+    0
+  );
 
   return {
     roomCode: room.code,
-    tasksetName: taskset.name,
+    tasksetName: room.taskset?.name,
     tasks: taskRecords,
     totalPossible,
     scores: teamScores,
@@ -138,11 +128,9 @@ function buildTranscript(room) {
   };
 }
 
-// Build per-participant stats for AI summaries
 function computePerParticipantStats(room, transcript) {
   const tasks = transcript.tasks || [];
-  const tasksByIndex = {};
-  tasks.forEach((t) => (tasksByIndex[t.index] = t));
+  const taskIndexMap = Object.fromEntries(tasks.map((t) => [t.index, t]));
 
   const participants = {};
 
@@ -163,16 +151,16 @@ function computePerParticipantStats(room, transcript) {
     const entry = participants[key];
     entry.attempts += 1;
 
-    const task = tasksByIndex[sub.taskIndex] || null;
-    const taskPoints = task?.points ?? 10;
-
-    if (sub.correct) entry.correctCount += 1;
-
+    const task = taskIndexMap[sub.taskIndex];
+    const pts = task?.points ?? 10;
     const earned =
-      sub.aiScore?.totalScore ?? (sub.correct ? taskPoints : 0);
+      sub.aiScore?.totalScore ??
+      (sub.correct ? pts : 0);
 
     entry.pointsEarned += earned;
-    entry.pointsPossible += taskPoints;
+    entry.pointsPossible += pts;
+
+    if (sub.correct) entry.correctCount += 1;
   }
 
   const totalTasks = tasks.length;
@@ -180,7 +168,9 @@ function computePerParticipantStats(room, transcript) {
   return Object.values(participants).map((p) => ({
     ...p,
     engagementPercent:
-      totalTasks > 0 ? Math.round((p.attempts / totalTasks) * 100) : 0,
+      totalTasks > 0
+        ? Math.round((p.attempts / totalTasks) * 100)
+        : 0,
     finalPercent:
       p.pointsPossible > 0
         ? Math.round((p.pointsEarned / p.pointsPossible) * 100)
@@ -188,13 +178,10 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
-// ====================================================================
-//  SOCKET.IO
-// ====================================================================
+// ----------------------------------------------------------------------------
+// SOCKET.IO
+// ----------------------------------------------------------------------------
 io.on("connection", (socket) => {
-  // --------------------------------------------------------------
-  // Teacher: create room
-  // --------------------------------------------------------------
   socket.on("teacher:createRoom", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     rooms[code] = createRoom(code, socket.id);
@@ -204,9 +191,6 @@ io.on("connection", (socket) => {
     socket.emit("room:created", { roomCode: code });
   });
 
-  // --------------------------------------------------------------
-  // Teacher loads a taskset
-  // --------------------------------------------------------------
   socket.on("teacher:loadTaskset", async ({ roomCode, tasksetId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -228,48 +212,40 @@ io.on("connection", (socket) => {
     });
   });
 
-  // --------------------------------------------------------------
-  // Teacher starts session
-  // --------------------------------------------------------------
   socket.on("teacher:startSession", ({ roomCode }) => {
-    const room = rooms[(roomCode || "").toUpperCase()];
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
     if (!room) return;
 
     room.startedAt = Date.now();
     room.isActive = true;
     room.taskIndex = -1;
 
-    io.to(roomCode).emit("session:started");
+    io.to(code).emit("session:started");
   });
 
-  // --------------------------------------------------------------
-  // Teacher send next task
-  // --------------------------------------------------------------
   socket.on("teacher:nextTask", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) return;
 
     room.taskIndex += 1;
-    const index = room.taskIndex;
+    const idx = room.taskIndex;
 
-    if (index >= room.taskset.tasks.length) {
+    if (idx >= room.taskset.tasks.length) {
       io.to(code).emit("session:complete");
       return;
     }
 
-    const task = room.taskset.tasks[index];
+    const task = room.taskset.tasks[idx];
 
     io.to(code).emit("task:launch", {
-      index,
+      index: idx,
       task,
       timeLimitSeconds: task.timeLimitSeconds ?? 0,
     });
   });
 
-  // --------------------------------------------------------------
-  // Student joins room
-  // --------------------------------------------------------------
   socket.on("student:joinRoom", ({ roomCode, teamId, teamName, playerId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -295,9 +271,6 @@ io.on("connection", (socket) => {
     io.to(code).emit("team:joined", { teamId, teamName, playerId });
   });
 
-  // --------------------------------------------------------------
-  // Student submits answer
-  // --------------------------------------------------------------
   socket.on("task:submit", async (payload) => {
     const { roomCode, teamId, teamName, playerId, taskIndex, answer } =
       payload;
@@ -306,10 +279,11 @@ io.on("connection", (socket) => {
     const room = rooms[code];
     if (!room) return;
 
-    const task = room.taskset.tasks[taskIndex];
+    const task = room.taskset?.tasks?.[taskIndex];
     if (!task) return;
 
     let aiScore = null;
+
     if (task.aiRubricId) {
       try {
         aiScore = await generateAIScore({
@@ -322,13 +296,12 @@ io.on("connection", (socket) => {
       }
     }
 
-    const correct = (() => {
-      if (aiScore && typeof aiScore.totalScore === "number") {
-        return aiScore.totalScore > 0;
-      }
-      if (task.correctAnswer == null) return null;
-      return String(answer).trim() === String(task.correctAnswer).trim();
-    })();
+    const correct =
+      aiScore?.totalScore != null
+        ? aiScore.totalScore > 0
+        : task.correctAnswer != null
+        ? String(answer).trim() === String(task.correctAnswer).trim()
+        : null;
 
     room.submissions.push({
       roomCode: code,
@@ -346,9 +319,6 @@ io.on("connection", (socket) => {
     socket.emit("task:received");
   });
 
-  // --------------------------------------------------------------
-  // Teacher ends session + sends transcript
-  // --------------------------------------------------------------
   socket.on(
     "teacher:endSessionAndEmail",
     async ({
@@ -398,65 +368,26 @@ io.on("connection", (socket) => {
 
         socket.emit("transcript:sent", { to: teacherEmail });
       } catch (err) {
-        console.error("Transcript error:", err);
+        console.error("Transcript email error:", err);
         socket.emit("transcript:error", {
-          message: "Failed to generate transcript.",
+          message: "Failed to generate or send transcript",
         });
       }
     }
   );
 });
 
-// ====================================================================
-// EXPRESS ROUTES (Profile + TaskSets) – simple fallbacks
-// ====================================================================
-
-// Get teacher profile
-app.get("/api/profile", async (req, res) => {
-  let p = await Profile.findOne();
-  if (!p) {
-    p = new Profile();
-    await p.save();
-  }
-  res.json(p);
+// ----------------------------------------------------------------------------
+// Fallback 404 (with CORS headers)
+// ----------------------------------------------------------------------------
+app.use((req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.status(404).json({ error: "Not found" });
 });
 
-// Update teacher profile
-app.put("/api/profile", async (req, res) => {
-  let p = await Profile.findOne();
-  if (!p) p = new Profile();
-  Object.assign(p, req.body);
-  await p.save();
-  res.json({ ok: true });
-});
-
-// Get tasksets
-app.get("/api/tasksets", async (req, res) => {
-  const sets = await TaskSet.find().sort({ createdAt: -1 }).lean();
-  res.json(sets);
-});
-
-// Save taskset (new or update)
-app.put("/api/tasksets/:id", async (req, res) => {
-  await TaskSet.findByIdAndUpdate(req.params.id, req.body);
-  res.json({ ok: true });
-});
-
-// Create taskset
-app.post("/api/tasksets", async (req, res) => {
-  const t = new TaskSet(req.body);
-  await t.save();
-  res.json(t);
-});
-
-// Simple health check
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
-});
-
-// ====================================================================
-//  Start Server
-// ====================================================================
+// ----------------------------------------------------------------------------
+// Server start
+// ----------------------------------------------------------------------------
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
