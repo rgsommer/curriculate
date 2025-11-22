@@ -70,28 +70,54 @@ const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
-    credentials: true,   
+    credentials: true,
   },
 });
 
 // ----------------------------------------------------------------------------
 // ROOM ENGINE (Socket)
 // ----------------------------------------------------------------------------
+
+const COLOR_SEQUENCE = ["RED", "BLUE", "GREEN", "YELLOW", "ORANGE", "PURPLE"];
+
+// rooms[code] = { code, teacherSocketId, teams, stations, scores, taskset, ... }
 const rooms = {};
+
+function createEmptyStations() {
+  return COLOR_SEQUENCE.map((color, index) => ({
+    id: `station-${index + 1}`,
+    color,
+    assignedTeamId: null,
+  }));
+}
 
 function createRoom(roomCode, teacherSocketId) {
   return {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {},
-    stations: {},
+    teams: {}, // teamId -> { teamId, teamName, members: [], currentStationId, lastScannedStationId }
+    stations: createEmptyStations(),
+    scores: {}, // teamName -> number
     taskset: null,
     taskIndex: -1,
     submissions: [],
     startedAt: null,
     isActive: false,
+    currentTaskStart: null,
   };
+}
+
+function recalcScores(room) {
+  const scores = {};
+  for (const sub of room.submissions) {
+    const earned =
+      sub.aiScore?.totalScore ??
+      (sub.correct ? (sub.points ?? 0) : 0);
+
+    scores[sub.teamName] = (scores[sub.teamName] || 0) + earned;
+  }
+  room.scores = scores;
 }
 
 function buildTranscript(room) {
@@ -105,14 +131,7 @@ function buildTranscript(room) {
     points: t.points ?? 10,
   }));
 
-  const teamScores = {};
-  for (const sub of room.submissions) {
-    const earned =
-      sub.aiScore?.totalScore ??
-      (sub.correct ? (sub.points ?? 0) : 0);
-
-    teamScores[sub.teamName] = (teamScores[sub.teamName] || 0) + earned;
-  }
+  recalcScores(room);
 
   const totalPossible = taskRecords.reduce(
     (s, t) => s + (t.points ?? 10),
@@ -124,7 +143,7 @@ function buildTranscript(room) {
     tasksetName: room.taskset?.name,
     tasks: taskRecords,
     totalPossible,
-    scores: teamScores,
+    scores: room.scores,
     submissions: room.submissions,
   };
 }
@@ -179,10 +198,40 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
+function emitRoomState(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+
+  recalcScores(room);
+
+  io.to(roomCode).emit("roomState", {
+    stations: room.stations,
+    teams: room.teams,
+    scores: room.scores,
+    taskset: room.taskset
+      ? {
+          _id: room.taskset._id,
+          name: room.taskset.name,
+          tasks: room.taskset.tasks?.length ?? 0,
+        }
+      : null,
+  });
+
+  // Optional: keep existing leaderboard wiring happy
+  const leaderboard = Object.entries(room.scores)
+    .map(([teamName, score]) => ({ teamName, score }))
+    .sort((a, b) => b.score - a.score);
+
+  io.to(roomCode).emit("leaderboardUpdate", leaderboard);
+}
+
 // ----------------------------------------------------------------------------
 // SOCKET.IO
 // ----------------------------------------------------------------------------
 io.on("connection", (socket) => {
+  // ------------------------------------------------------------
+  // TEACHER: create room (new style)
+  // ------------------------------------------------------------
   socket.on("teacher:createRoom", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     rooms[code] = createRoom(code, socket.id);
@@ -190,8 +239,39 @@ io.on("connection", (socket) => {
     socket.data.role = "teacher";
     socket.data.roomCode = code;
     socket.emit("room:created", { roomCode: code });
+    emitRoomState(code);
   });
 
+  // ------------------------------------------------------------
+  // TEACHER: create/join room (compat with LiveSession joinRoom)
+  // ------------------------------------------------------------
+  socket.on("joinRoom", ({ roomCode, name, role }) => {
+    const code = (roomCode || "").toUpperCase();
+    let room = rooms[code];
+
+    if (!room && role === "teacher") {
+      room = createRoom(code, socket.id);
+      rooms[code] = room;
+    } else if (!room) {
+      socket.emit("join:error", { message: "Room not found" });
+      return;
+    }
+
+    socket.join(code);
+    socket.data.role = role || "teacher";
+    socket.data.roomCode = code;
+
+    if (role === "teacher") {
+      room.teacherSocketId = socket.id;
+    }
+
+    socket.emit("room:created", { roomCode: code });
+    emitRoomState(code);
+  });
+
+  // ------------------------------------------------------------
+  // TEACHER: load taskset
+  // ------------------------------------------------------------
   socket.on("teacher:loadTaskset", async ({ roomCode, tasksetId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -211,8 +291,13 @@ io.on("connection", (socket) => {
       tasks: taskset.tasks.length,
       perspectives: taskset.perspectives ?? [],
     });
+
+    emitRoomState(code);
   });
 
+  // ------------------------------------------------------------
+  // TEACHER: start session
+  // ------------------------------------------------------------
   socket.on("teacher:startSession", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -221,10 +306,14 @@ io.on("connection", (socket) => {
     room.startedAt = Date.now();
     room.isActive = true;
     room.taskIndex = -1;
+    room.currentTaskStart = null;
 
     io.to(code).emit("session:started");
   });
 
+  // ------------------------------------------------------------
+  // TEACHER: next task
+  // ------------------------------------------------------------
   socket.on("teacher:nextTask", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -239,6 +328,7 @@ io.on("connection", (socket) => {
     }
 
     const task = room.taskset.tasks[idx];
+    room.currentTaskStart = Date.now();
 
     io.to(code).emit("task:launch", {
       index: idx,
@@ -247,6 +337,9 @@ io.on("connection", (socket) => {
     });
   });
 
+  // ------------------------------------------------------------
+  // STUDENT: join room (new style: student:joinRoom)
+  // ------------------------------------------------------------
   socket.on("student:joinRoom", ({ roomCode, teamId, teamName, playerId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -263,18 +356,82 @@ io.on("connection", (socket) => {
 
     if (!room.teams[teamId]) {
       room.teams[teamId] = {
+        teamId,
         teamName,
         members: [],
+        currentStationId: null,
+        lastScannedStationId: null,
       };
     }
     room.teams[teamId].members.push(playerId);
 
+    // keep existing event for any old listeners
     io.to(code).emit("team:joined", { teamId, teamName, playerId });
+    emitRoomState(code);
   });
 
+  // ------------------------------------------------------------
+  // STUDENT: join room (compat with student "join-room" + ack)
+  // ------------------------------------------------------------
+  socket.on("join-room", ({ roomCode, teamName }, ack) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room not found" });
+      }
+      return;
+    }
+
+    // create a teamId based on name
+    const teamId = `team-${teamName.trim().replace(/\s+/g, "-")}`;
+
+    if (!room.teams[teamId]) {
+      room.teams[teamId] = {
+        teamId,
+        teamName,
+        members: [],
+        currentStationId: null,
+        lastScannedStationId: null,
+      };
+    }
+
+    // assign first free station, or stick with any existing
+    let station = room.stations.find((s) => s.assignedTeamId === teamId);
+    if (!station) {
+      station = room.stations.find((s) => !s.assignedTeamId);
+      if (station) {
+        station.assignedTeamId = teamId;
+        room.teams[teamId].currentStationId = station.id;
+      }
+    }
+
+    socket.join(code);
+    socket.data.role = "student";
+    socket.data.roomCode = code;
+    socket.data.teamId = teamId;
+
+    const color = station?.color ?? null;
+    const stationLabel = color ? `${color} station` : "Station";
+
+    emitRoomState(code);
+
+    if (typeof ack === "function") {
+      ack({
+        ok: true,
+        color,
+        stationLabel,
+        displays: room.taskset?.displays ?? [],
+      });
+    }
+  });
+
+  // ------------------------------------------------------------
+  // STUDENT: submit answer
+  // ------------------------------------------------------------
   socket.on("task:submit", async (payload) => {
     const { roomCode, teamId, teamName, playerId, taskIndex, answer } =
-      payload;
+      payload || {};
 
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -304,6 +461,13 @@ io.on("connection", (socket) => {
         ? String(answer).trim() === String(task.correctAnswer).trim()
         : null;
 
+    const points = task.points ?? 10;
+    const submittedAt = Date.now();
+    const timeMs =
+      room.currentTaskStart != null
+        ? submittedAt - room.currentTaskStart
+        : null;
+
     room.submissions.push({
       roomCode: code,
       teamId,
@@ -312,14 +476,35 @@ io.on("connection", (socket) => {
       taskIndex,
       answer,
       correct,
-      points: task.points ?? 10,
+      points,
       aiScore,
-      submittedAt: Date.now(),
+      submittedAt,
     });
+
+    recalcScores(room);
+
+    // find station for this team
+    const team = room.teams[teamId];
+    const stationId = team?.currentStationId || null;
+
+    // live submission bubble for LiveSession
+    io.to(code).emit("taskSubmission", {
+      teamId,
+      teamName,
+      stationId,
+      answer,
+      correct,
+      timeMs,
+    });
+
+    emitRoomState(code);
 
     socket.emit("task:received");
   });
 
+  // ------------------------------------------------------------
+  // TEACHER: end session + email transcript
+  // ------------------------------------------------------------
   socket.on(
     "teacher:endSessionAndEmail",
     async ({
