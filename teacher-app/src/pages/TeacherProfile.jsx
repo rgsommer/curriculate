@@ -1,343 +1,345 @@
-// src/pages/TeacherProfile.jsx
-import { useEffect, useState } from 'react';
-import { fetchMyProfile, updateMyProfile } from '../api/profile';
+import React, { useEffect, useState } from "react";
+import axios from "axios";
 
-const ALL_LENSES = [
-  { value: 'BIBLICAL_CHRISTIAN', label: 'Biblical Christianity' },
-  { value: 'CLASSICAL_CHRISTIAN', label: 'Classical Christian Education' },
-  { value: 'GENERIC_CHRISTIAN', label: 'Generic Christian' },
-  { value: 'SECULAR_NEUTRAL', label: 'Secular / Neutral' }
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "https://api.curriculate.net";
+
+// Options for perspectives (can grow later)
+const PERSPECTIVE_OPTIONS = [
+  { value: "christian-biblical", label: "Christian / Biblical" },
+  { value: "character-formation", label: "Character / Virtue Formation" },
+  { value: "historical-thinking", label: "Historical Thinking" },
+  { value: "inquiry-learning", label: "Inquiry-Based Learning" },
+  { value: "business-professional", label: "Business / Professional" },
+  { value: "leadership-development", label: "Leadership Development" },
+  { value: "team-building", label: "Team-Building" },
+  { value: "missions-outreach", label: "Missions / Outreach" },
 ];
 
+const emptyCategory = () => ({
+  key: "",
+  label: "",
+  description: "",
+  weight: 25,
+});
 
-const DIFFICULTIES = ['EASY', 'MEDIUM', 'HARD'];
-const LEARNING_GOALS = ['REVIEW', 'INTRODUCTION', 'ENRICHMENT', 'ASSESSMENT'];
-
-export default function TeacherProfile() {
+export default function TeacherProfilePage() {
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [savedMsg, setSavedMsg] = useState("");
 
   useEffect(() => {
-    let active = true;
-    (async () => {
+    let cancelled = false;
+
+    async function load() {
+      setError("");
       try {
-        const data = await fetchMyProfile();
-        if (active) {
-          // Normalize some fields
+        const res = await axios.get(`${API_BASE}/api/profile`);
+        if (!cancelled) {
+          const data = res.data || {};
+          const cats = Array.isArray(data.assessmentCategories)
+            ? data.assessmentCategories
+            : [];
+
           setProfile({
             ...data,
-            gradesTaught: data.gradesTaught || [],
-            subjectsTaught: data.subjectsTaught || [],
-            curriculumLenses: data.curriculumLenses || []
+            assessmentCategories: [
+              ...cats,
+              ...Array(Math.max(0, 4 - cats.length)).fill(0).map(() => emptyCategory()),
+            ].slice(0, 4),
+            perspectives: Array.isArray(data.perspectives)
+              ? data.perspectives
+              : [],
           });
         }
       } catch (err) {
-        console.error(err);
-        if (active) setError('Failed to load profile');
-      } finally {
-        if (active) setLoading(false);
+        console.error("Load profile error", err);
+        if (!cancelled) {
+          setError("Could not load teacher profile.");
+        }
       }
-    })();
+    }
+
+    load();
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, []);
 
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setProfile(prev => ({ ...prev, [name]: value }));
-  }
+  const updateField = (field, value) => {
+    setProfile((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
 
-  function handleCheckboxListChange(e, field, optionValue) {
-    const checked = e.target.checked;
-    setProfile(prev => {
-      const current = new Set(prev[field] || []);
-      if (checked) current.add(optionValue);
-      else current.delete(optionValue);
-      return { ...prev, [field]: Array.from(current) };
+  const updateCategory = (idx, field, value) => {
+    setProfile((prev) => {
+      const cats = [...(prev.assessmentCategories || [])];
+      const current = { ...(cats[idx] || emptyCategory()) };
+      if (field === "label") {
+        current.label = value;
+        if (!current.key) {
+          current.key = value
+            .toLowerCase()
+            .replace(/\s+/g, "-")
+            .replace(/[^a-z0-9\-]/g, "")
+            .slice(0, 32);
+        }
+      } else {
+        current[field] = value;
+      }
+      cats[idx] = current;
+      return { ...prev, assessmentCategories: cats };
     });
-  }
+  };
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  const handleSave = async () => {
+    if (!profile) return;
     setSaving(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSavedMsg("");
+
+    const payload = {
+      ...profile,
+      assessmentCategories: (profile.assessmentCategories || [])
+        .filter((c) => c && c.label && c.key)
+        .map((c) => ({
+          key: c.key,
+          label: c.label,
+          description: c.description || "",
+          weight: Number.isFinite(Number(c.weight))
+            ? Number(c.weight)
+            : 25,
+        })),
+    };
+
     try {
-      const payload = {
-        displayName: profile.displayName,
-        schoolName: profile.schoolName,
-        countryRegion: profile.countryRegion,
-        gradesTaught: profile.gradesTaught.filter(Boolean),
-        subjectsTaught: profile.subjectsTaught.filter(Boolean),
-        curriculumLenses: profile.curriculumLenses,
-        defaultGrade: profile.defaultGrade,
-        defaultSubject: profile.defaultSubject,
-        defaultDifficulty: profile.defaultDifficulty,
-        defaultDurationMinutes: Number(profile.defaultDurationMinutes || 45),
-        defaultLearningGoal: profile.defaultLearningGoal,
-        prefersMovementTasks: !!profile.prefersMovementTasks,
-        prefersDrawingMimeTasks: !!profile.prefersDrawingMimeTasks,
-        prefersFrenchLanguageSupport: !!profile.prefersFrenchLanguageSupport
-      };
-      const updated = await updateMyProfile(payload);
-      setProfile(updated);
-      setSuccess('Profile saved');
+      await axios.put(`${API_BASE}/api/profile`, payload);
+      setSavedMsg("Profile saved.");
+      setTimeout(() => setSavedMsg(""), 2500);
     } catch (err) {
-      console.error(err);
-      setError('Failed to save profile');
+      console.error("Save profile error", err);
+      setError("Could not save profile.");
     } finally {
       setSaving(false);
     }
-  }
-
-  if (loading) {
-    return <div>Loading profile…</div>;
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-3xl mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">Teacher Profile</h1>
-        <div className="mb-2 text-red-600">{error}</div>
-      </div>
-    );
-  }
+  };
 
   if (!profile) {
     return (
-      <div className="max-w-3xl mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">Teacher Profile</h1>
-        <div className="mb-2 text-red-600">
-          No profile data returned from the server.
-        </div>
+      <div style={{ padding: 16 }}>
+        <h1>Teacher Profile</h1>
+        {error ? <p style={{ color: "red" }}>{error}</p> : <p>Loading…</p>}
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Teacher Profile</h1>
-      {error && <div className="mb-2 text-red-600">{error}</div>}
-      {success && <div className="mb-2 text-green-600">{success}</div>}
+    <div
+      style={{
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, 'Segoe UI'",
+        maxWidth: 800,
+        margin: "0 auto",
+      }}
+    >
+      <h1 style={{ marginTop: 0 }}>Teacher Profile</h1>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic info */}
-        <section>
-          <h2 className="font-semibold mb-2">Basic Info</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="flex flex-col">
-              <span>Display Name</span>
-              <input
-                className="border rounded px-2 py-1"
-                name="displayName"
-                value={profile.displayName || ''}
-                onChange={handleChange}
-              />
-            </label>
-            <label className="flex flex-col">
-              <span>School Name</span>
-              <input
-                className="border rounded px-2 py-1"
-                name="schoolName"
-                value={profile.schoolName || ''}
-                onChange={handleChange}
-              />
-            </label>
-            <label className="flex flex-col">
-              <span>Country/Region</span>
-              <input
-                className="border rounded px-2 py-1"
-                name="countryRegion"
-                value={profile.countryRegion || ''}
-                onChange={handleChange}
-              />
-            </label>
-          </div>
-        </section>
+      {error && <p style={{ color: "red", marginTop: 0 }}>{error}</p>}
+      {savedMsg && <p style={{ color: "green", marginTop: 0 }}>{savedMsg}</p>}
 
-        {/* Teaching areas */}
-        <section>
-          <h2 className="font-semibold mb-2">Teaching Areas</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="flex flex-col">
-              <span>Grades Taught (comma-separated)</span>
-              <input
-                className="border rounded px-2 py-1"
-                value={profile.gradesTaught.join(', ')}
-                onChange={e =>
-                  setProfile(prev => ({
-                    ...prev,
-                    gradesTaught: e.target.value
-                      .split(',')
-                      .map(s => s.trim())
-                      .filter(Boolean)
-                  }))
-                }
-              />
-            </label>
-            <label className="flex flex-col">
-              <span>Subjects Taught (comma-separated)</span>
-              <input
-                className="border rounded px-2 py-1"
-                value={profile.subjectsTaught.join(', ')}
-                onChange={e =>
-                  setProfile(prev => ({
-                    ...prev,
-                    subjectsTaught: e.target.value
-                      .split(',')
-                      .map(s => s.trim())
-                      .filter(Boolean)
-                  }))
-                }
-              />
-            </label>
-          </div>
-        </section>
+      {/* School name */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>School / Organization Name</label>
+        <input
+          type="text"
+          value={profile.schoolName || ""}
+          onChange={(e) => updateField("schoolName", e.target.value)}
+          placeholder="e.g., Brampton Christian School"
+          style={{
+            marginTop: 4,
+            padding: "6px 8px",
+            borderRadius: 6,
+            border: "1px solid #ccc",
+            width: "100%",
+            maxWidth: 360,
+            fontSize: "0.9rem",
+          }}
+        />
+      </div>
 
-        {/* Curriculum lens */}
-        <section>
-          <h2 className="font-semibold mb-2">Curriculum Lens</h2>
-          <p className="text-sm text-gray-600 mb-1">
-            These choices shape how the AI frames examples, worldview, and doctrine.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {ALL_LENSES.map(l => (
-              <label key={l.value} className="flex items-center gap-2">
+      {/* Email */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Transcript Email</label>
+        <input
+          type="email"
+          value={profile.email || ""}
+          onChange={(e) => updateField("email", e.target.value)}
+          placeholder="you@school.org"
+          style={{
+            marginTop: 4,
+            padding: "6px 8px",
+            borderRadius: 6,
+            border: "1px solid #ccc",
+            width: "100%",
+            maxWidth: 320,
+            fontSize: "0.9rem",
+          }}
+        />
+      </div>
+
+      {/* Perspectives */}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>Perspectives</h2>
+        <p style={{ fontSize: "0.8rem", color: "#555", marginTop: 0 }}>
+          Select one or more perspectives that Curriculate should “wear” when generating summaries and feedback.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {PERSPECTIVE_OPTIONS.map((opt) => {
+            const selected = (profile.perspectives || []).includes(opt.value);
+            return (
+              <label
+                key={opt.value}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: "0.85rem",
+                }}
+              >
                 <input
                   type="checkbox"
-                  checked={(profile.curriculumLenses || []).includes(l.value)}
-                  onChange={e => handleCheckboxListChange(e, 'curriculumLenses', l.value)}
+                  checked={selected}
+                  onChange={(e) => {
+                    setProfile((prev) => {
+                      const current = prev.perspectives || [];
+                      const next = e.target.checked
+                        ? [...new Set([...current, opt.value])]
+                        : current.filter((v) => v !== opt.value);
+                      return { ...prev, perspectives: next };
+                    });
+                  }}
                 />
-                <span>{l.label}</span>
+                {opt.label}
               </label>
-            ))}
-          </div>
-        </section>
+            );
+          })}
+        </div>
 
-        {/* Defaults for AI generation */}
-        <section>
-          <h2 className="font-semibold mb-2">Defaults for AI Task Sets</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="flex flex-col">
-              <span>Default Grade</span>
+        <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#555" }}>
+          Selected:{" "}
+          {(profile.perspectives || [])
+            .map(
+              (v) =>
+                PERSPECTIVE_OPTIONS.find((o) => o.value === v)?.label ||
+                v
+            )
+            .join(", ") || "None"}
+        </p>
+      </div>
+
+      {/* Include individual reports */}
+      <div style={{ marginBottom: 24 }}>
+        <label
+          style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem" }}
+        >
+          <input
+            type="checkbox"
+            checked={!!profile.includeIndividualReports}
+            onChange={(e) =>
+              updateField("includeIndividualReports", e.target.checked)
+            }
+          />
+          Include individual one-page reports in the PDF transcript
+        </label>
+      </div>
+
+      {/* Assessment categories */}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: "1rem" }}>Assessment Categories (optional)</h2>
+        <p style={{ fontSize: "0.8rem", color: "#555" }}>
+          Define up to four categories for AI-based feedback (Knowledge, Application, Thinking, Communication, etc.).
+        </p>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0,2fr) minmax(0,3fr) 80px",
+            gap: 8,
+            fontSize: "0.8rem",
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>Label</div>
+          <div style={{ fontWeight: 600 }}>Description (for AI)</div>
+          <div style={{ fontWeight: 600 }}>Weight</div>
+
+          {(profile.assessmentCategories || []).map((cat, idx) => (
+            <React.Fragment key={idx}>
               <input
-                className="border rounded px-2 py-1"
-                name="defaultGrade"
-                value={profile.defaultGrade || ''}
-                onChange={handleChange}
+                type="text"
+                value={cat.label || ""}
+                onChange={(e) =>
+                  updateCategory(idx, "label", e.target.value)
+                }
+                placeholder={
+                  idx === 0 ? "Knowledge" : idx === 1 ? "Application" : idx === 2 ? "Thinking" : "Communication"
+                }
+                style={{
+                  padding: "4px 6px",
+                  border: "1px solid #ccc",
+                  borderRadius: 4,
+                }}
               />
-            </label>
-            <label className="flex flex-col">
-              <span>Default Subject</span>
+
               <input
-                className="border rounded px-2 py-1"
-                name="defaultSubject"
-                value={profile.defaultSubject || ''}
-                onChange={handleChange}
+                type="text"
+                value={cat.description || ""}
+                onChange={(e) =>
+                  updateCategory(idx, "description", e.target.value)
+                }
+                placeholder="Explain what this category measures"
+                style={{
+                  padding: "4px 6px",
+                  border: "1px solid #ccc",
+                  borderRadius: 4,
+                }}
               />
-            </label>
-            <label className="flex flex-col">
-              <span>Default Difficulty</span>
-              <select
-                className="border rounded px-2 py-1"
-                name="defaultDifficulty"
-                value={profile.defaultDifficulty || 'MEDIUM'}
-                onChange={handleChange}
-              >
-                {DIFFICULTIES.map(d => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col">
-              <span>Default Duration (minutes)</span>
+
               <input
                 type="number"
-                min="5"
-                className="border rounded px-2 py-1"
-                name="defaultDurationMinutes"
-                value={profile.defaultDurationMinutes || 45}
-                onChange={handleChange}
+                value={cat.weight ?? 25}
+                onChange={(e) =>
+                  updateCategory(idx, "weight", e.target.value)
+                }
+                style={{
+                  padding: "4px 6px",
+                  border: "1px solid #ccc",
+                  borderRadius: 4,
+                }}
               />
-            </label>
-            <label className="flex flex-col">
-              <span>Default Learning Goal</span>
-              <select
-                className="border rounded px-2 py-1"
-                name="defaultLearningGoal"
-                value={profile.defaultLearningGoal || 'REVIEW'}
-                onChange={handleChange}
-              >
-                {LEARNING_GOALS.map(g => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </section>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
 
-        {/* Pedagogical prefs */}
-        <section>
-          <h2 className="font-semibold mb-2">Pedagogical Preferences</h2>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={!!profile.prefersMovementTasks}
-                onChange={e =>
-                  setProfile(prev => ({
-                    ...prev,
-                    prefersMovementTasks: e.target.checked
-                  }))
-                }
-              />
-              <span>Include movement / Body Break style tasks by default</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={!!profile.prefersDrawingMimeTasks}
-                onChange={e =>
-                  setProfile(prev => ({
-                    ...prev,
-                    prefersDrawingMimeTasks: e.target.checked
-                  }))
-                }
-              />
-              <span>Include drawing / mime tasks by default</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={!!profile.prefersFrenchLanguageSupport}
-                onChange={e =>
-                  setProfile(prev => ({
-                    ...prev,
-                    prefersFrenchLanguageSupport: e.target.checked
-                  }))
-                }
-              />
-              <span>Include French language support where appropriate</span>
-            </label>
-          </div>
-        </section>
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save Profile'}
-        </button>
-      </form>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saving}
+        style={{
+          padding: "8px 14px",
+          borderRadius: 8,
+          border: "none",
+          background: saving ? "#999" : "#0ea5e9",
+          color: "#fff",
+          fontSize: "0.9rem",
+        }}
+      >
+        {saving ? "Saving…" : "Save Profile"}
+      </button>
     </div>
   );
 }

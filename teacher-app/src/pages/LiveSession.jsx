@@ -1,9 +1,12 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import axios from "axios";
 import { socket } from "../socket";
 
-// Station colours in order: station-1 → red, station-2 → blue, etc.
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "https://api.curriculate.net";
+
 const COLORS = [
   "red",
   "blue",
@@ -24,7 +27,6 @@ function stationIdToColor(id) {
 
 export default function LiveSession({ roomCode: roomCodeProp }) {
   const params = useParams();
-  // Prefer explicit prop, then URL param, otherwise empty string
   const roomCode = (roomCodeProp || params.roomCode || "").toUpperCase();
 
   const [status, setStatus] = useState("Checking connection…");
@@ -38,14 +40,13 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
 
-  // Quick task fields
   const [prompt, setPrompt] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
 
-  // Which taskset is loaded in this room (from server)
-  const [loadedTasksetId, setLoadedTasksetId] = useState(null);
+  const [schoolName, setSchoolName] = useState("");
+  const [perspectives, setPerspectives] = useState([]);
 
-  // Which taskset the teacher chose in TaskSets (from localStorage)
+  const [loadedTasksetId, setLoadedTasksetId] = useState(null);
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
     try {
       const raw = localStorage.getItem("curriculateActiveTasksetMeta");
@@ -54,14 +55,83 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       return null;
     }
   });
-
-  // If TaskSets OR the button here asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
 
-  // View mode: 'live' = normal view, 'setup' = room setup checklist
   const [viewMode, setViewMode] = useState("live");
 
-  // Join as teacher whenever roomCode changes
+  // Teacher profile-driven info
+  const [teacherEmail, setTeacherEmail] = useState(() => {
+    try {
+      return localStorage.getItem("curriculateTeacherEmail") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [assessmentCategories, setAssessmentCategories] = useState([]);
+  const [includeIndividualReports, setIncludeIndividualReports] =
+    useState(true);
+
+  // Load teacher profile once (email, categories, includeIndividualReports)
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      try {
+        const res = await axios.get(`${API_BASE}/api/profile`);
+        if (cancelled) return;
+        const data = res.data || {};
+
+        if (data.email) {
+          setTeacherEmail(data.email);
+          try {
+            localStorage.setItem(
+              "curriculateTeacherEmail",
+              data.email
+            );
+          } catch {
+            // ignore
+          }
+        }
+
+        // NEW: School name + Perspectives
+        if (data.schoolName) {
+          setSchoolName(data.schoolName);
+        }
+
+        if (Array.isArray(data.perspectives)) {
+          setPerspectives(data.perspectives);
+        }
+
+        setIncludeIndividualReports(
+          data.includeIndividualReports !== false
+        );
+        if (Array.isArray(data.assessmentCategories)) {
+          setAssessmentCategories(data.assessmentCategories);
+        }
+      } catch (err) {
+        console.error("LiveSession: failed to load teacher profile", err);
+      }
+    }
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (teacherEmail) {
+        localStorage.setItem(
+          "curriculateTeacherEmail",
+          teacherEmail
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }, [teacherEmail]);
+
   useEffect(() => {
     if (!roomCode) {
       setStatus("No room selected.");
@@ -79,7 +149,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     setStatus("Connected.");
   }, [roomCode]);
 
-  // On first mount, check if TaskSets asked us to auto-launch
   useEffect(() => {
     const flag = localStorage.getItem("curriculateLaunchImmediately");
     if (flag === "true") {
@@ -88,31 +157,26 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     }
   }, []);
 
-  // If auto-launch is requested, load + then launch the active taskset
   useEffect(() => {
     if (!autoLaunchRequested) return;
     if (!roomCode || !activeTasksetMeta?._id) return;
 
     const desiredId = activeTasksetMeta._id;
 
-    // If the correct taskset isn't loaded yet, load it first.
     if (loadedTasksetId !== desiredId) {
       setStatus(`Loading taskset "${activeTasksetMeta.name}"…`);
       socket.emit("loadTaskset", {
         roomCode,
         tasksetId: desiredId,
       });
-      // Wait for "tasksetLoaded" to fire and update loadedTasksetId.
       return;
     }
 
-    // At this point, the correct taskset is loaded in this room — launch it.
     setStatus(`Launching "${activeTasksetMeta.name}"…`);
     socket.emit("launchTaskset", { roomCode });
     setAutoLaunchRequested(false);
-  }, [autoLaunchRequested, roomCode, activeTasksetMeta?._id, loadedTasksetId]);
+  }, [autoLaunchRequested, roomCode, activeTasksetMeta?._id, loadedTasksetId, activeTasksetMeta?.name]);
 
-  // Socket listeners
   useEffect(() => {
     const handleRoom = (state) => {
       setRoomState(
@@ -133,22 +197,27 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     };
 
     const handleTasksetLoaded = (info) => {
-      console.log("Taskset loaded:", info);
       if (info && info.tasksetId) {
         setLoadedTasksetId(info.tasksetId);
 
-        // Keep local meta fresh from the server
         setActiveTasksetMeta((prev) => {
           const meta = {
             _id: info.tasksetId,
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
-          localStorage.setItem("curriculateActiveTasksetId", meta._id);
-          localStorage.setItem(
-            "curriculateActiveTasksetMeta",
-            JSON.stringify(meta)
-          );
+          try {
+            localStorage.setItem(
+              "curriculateActiveTasksetId",
+              meta._id
+            );
+            localStorage.setItem(
+              "curriculateActiveTasksetMeta",
+              JSON.stringify(meta)
+            );
+          } catch {
+            // ignore
+          }
           return meta;
         });
 
@@ -169,8 +238,23 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     const handleScanEvent = (ev) => {
       setScanEvents((prev) => {
         const next = [ev, ...prev];
-        return next.slice(0, 30); // keep last 30
+        return next.slice(0, 30);
       });
+    };
+
+    const handleTranscriptSent = (payload) => {
+      if (payload?.to) {
+        alert(`Transcript emailed to ${payload.to}.`);
+      } else {
+        alert("Transcript emailed.");
+      }
+    };
+
+    const handleTranscriptError = (payload) => {
+      alert(
+        payload?.message ||
+          "There was a problem generating or sending the transcript."
+      );
     };
 
     socket.on("roomState", handleRoom);
@@ -178,6 +262,8 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     socket.on("tasksetLoaded", handleTasksetLoaded);
     socket.on("taskSubmission", handleSubmission);
     socket.on("scanEvent", handleScanEvent);
+    socket.on("transcript:sent", handleTranscriptSent);
+    socket.on("transcript:error", handleTranscriptError);
 
     return () => {
       socket.off("roomState", handleRoom);
@@ -185,6 +271,8 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       socket.off("tasksetLoaded", handleTasksetLoaded);
       socket.off("taskSubmission", handleSubmission);
       socket.off("scanEvent", handleScanEvent);
+      socket.off("transcript:sent", handleTranscriptSent);
+      socket.off("transcript:error", handleTranscriptError);
     };
   }, [roomCode]);
 
@@ -200,7 +288,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     setStatus("Quick task launched.");
   };
 
-  // ✅ NEW: one-click launch that uses the autoLaunch effect
   const handleLaunchTaskset = () => {
     if (!roomCode) {
       alert("No room selected for this live session.");
@@ -214,16 +301,35 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       return;
     }
 
-    // This triggers the effect above, which will:
-    // 1) loadTaskset if needed
-    // 2) launchTaskset once loaded
     setAutoLaunchRequested(true);
     setStatus(
       `Preparing to launch "${activeTasksetMeta.name}" to room ${roomCode}…`
     );
   };
 
-  // Derived helpers
+  const handleEndAndEmailTranscript = () => {
+    if (!roomCode) {
+      alert("No room selected for this live session.");
+      return;
+    }
+    if (!teacherEmail || !teacherEmail.includes("@")) {
+      alert(
+        "Please enter a valid teacher email address before sending the transcript."
+      );
+      return;
+    }
+    socket.emit("endSessionAndEmail", {
+      roomCode,
+      teacherEmail: teacherEmail.trim(),
+      assessmentCategories,
+      includeIndividualReports,
+      schoolName,
+      perspectives,
+    });
+
+    setStatus("Generating & emailing transcript…");
+  };
+
   const stations = roomState.stations || [];
   const teamsById = roomState.teams || {};
   const scores = roomState.scores || {};
@@ -271,16 +377,13 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     const latest = submissions[team.teamId];
     const score = scores[team.teamName] ?? 0;
 
-    // Where this team should currently be
     const assignedStationId = team.currentStationId || stationId;
     const assignedColor = stationIdToColor(assignedStationId);
 
-    // Last station they scanned (from QR)
     const scannedStationId = team.lastScannedStationId || null;
     const hasScanForThisAssignment =
       scannedStationId && scannedStationId === assignedStationId;
 
-    // Bubble colour: grey until correct scan, then assigned colour
     const bubbleBg =
       hasScanForThisAssignment && assignedColor ? assignedColor : "#f9fafb";
     const textColor =
@@ -312,7 +415,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           transition: "background 0.2s ease, border 0.2s ease",
         }}
       >
-        {/* Station + Team */}
         <div
           style={{
             display: "flex",
@@ -346,8 +448,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                 {team.members.join(", ")}
               </div>
             )}
-
-            {/* Assigned vs scan status */}
             <div
               style={{
                 marginTop: 6,
@@ -396,7 +496,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           </div>
         </div>
 
-        {/* Latest submission summary */}
         {latest ? (
           <div
             style={{
@@ -407,7 +506,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                 : "1px solid rgba(148,163,184,0.4)",
               fontSize: "0.8rem",
               display: "flex",
-              justifyContent: "space_between",
+              justifyContent: "space-between",
               gap: 8,
               alignItems: "center",
             }}
@@ -423,7 +522,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             >
               <strong>Ans:</strong> {latest.answerText || "—"}
             </div>
-
             <div style={{ textAlign: "right" }}>
               {isCorrect !== null && (
                 <div>{isCorrect ? "✅ correct" : "❌ incorrect"}</div>
@@ -455,7 +553,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     );
   };
 
-  // Group displays by station colour for the setup tab
   const groupedDisplays = useMemo(() => {
     const grouped = {};
     (tasksetDisplays || []).forEach((d) => {
@@ -624,7 +721,8 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                                 marginTop: 4,
                               }}
                             >
-                              <strong>Setup notes:</strong> {d.notesForTeacher}
+                              <strong>Setup notes:</strong>{" "}
+                              {d.notesForTeacher}
                             </div>
                           )}
                         </div>
@@ -637,7 +735,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           )}
         </div>
 
-        {/* Right column: reuse leaderboard + scan log as quick reference */}
         <div
           style={{
             flex: 1.2,
@@ -649,9 +746,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             gap: 12,
           }}
         >
-          {/* Leaderboard (same as live view) */}
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+              Leaderboard
+            </h2>
             {leaderboard.length === 0 ? (
               <p style={{ color: "#6b7280" }}>No scores yet.</p>
             ) : (
@@ -665,7 +763,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             )}
           </div>
 
-          {/* Scan log */}
           <div
             style={{
               marginTop: 12,
@@ -767,16 +864,19 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           minHeight: 0,
         }}
       >
-        {/* Stations grid */}
         <div style={{ flex: 3, minWidth: 0 }}>
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Stations</h2>
           {stations.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>No stations yet.</p>
+            <p style={{ color: "#6b7280" }}>
+              No stations yet. Once student devices join this room, they will
+              appear here with their assigned colours and scores.
+            </p>
           ) : (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(230px, 1fr))",
                 gap: 12,
               }}
             >
@@ -785,7 +885,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           )}
         </div>
 
-        {/* Right column: leaderboard + scan log */}
         <div
           style={{
             flex: 1.2,
@@ -797,9 +896,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             gap: 12,
           }}
         >
-          {/* Leaderboard */}
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+              Leaderboard
+            </h2>
             {leaderboard.length === 0 ? (
               <p style={{ color: "#6b7280" }}>No scores yet.</p>
             ) : (
@@ -813,7 +913,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             )}
           </div>
 
-          {/* Scan log (debug) */}
           <div
             style={{
               marginTop: 12,
@@ -916,7 +1015,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
         fontFamily: "system-ui",
       }}
     >
-      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -947,7 +1045,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           </p>
         </div>
 
-        {/* Quick task / taskset controls */}
         <div
           style={{
             marginBottom: 0,
@@ -955,14 +1052,13 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             borderRadius: 8,
             border: "1px solid #e5e7eb",
             background: "#f9fafb",
-            minWidth: 280,
+            minWidth: 340,
           }}
         >
           <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
             Quick task / taskset controls
           </h2>
 
-          {/* Active taskset info */}
           <div
             style={{
               fontSize: "0.8rem",
@@ -1018,7 +1114,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <button
               type="button"
               onClick={handleLaunchQuickTask}
@@ -1052,10 +1148,101 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               Launch from taskset
             </button>
           </div>
+
+          {/* Transcript email + brief summary of categories */}
+          <div
+            style={{
+              marginTop: 8,
+              paddingTop: 8,
+              borderTop: "1px solid #e5e7eb",
+            }}
+          >
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                color: "#4b5563",
+                marginBottom: 4,
+              }}
+            >
+              Transcript email:
+            </label>
+            <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+              <input
+                type="email"
+                placeholder="you@school.org"
+                value={teacherEmail}
+                onChange={(e) => setTeacherEmail(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: "4px 6px",
+                  borderRadius: 4,
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.8rem",
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleEndAndEmailTranscript}
+                style={{
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#6366f1",
+                  color: "#ffffff",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                End & email
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 4,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={includeIndividualReports}
+                onChange={(e) =>
+                  setIncludeIndividualReports(e.target.checked)
+                }
+              />
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  color: "#4b5563",
+                }}
+              >
+                Include one-page student reports in PDF
+              </span>
+            </div>
+
+            {assessmentCategories && assessmentCategories.length > 0 && (
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: "0.75rem",
+                  color: "#6b7280",
+                }}
+              >
+                Categories:{" "}
+                {assessmentCategories
+                  .map((c) => c.label)
+                  .filter(Boolean)
+                  .join(", ") || "—"}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* View mode toggle (Live vs Setup) */}
       <div
         style={{
           display: "flex",
@@ -1098,7 +1285,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
         </button>
       </div>
 
-      {/* Main body: either live view or setup view */}
       {viewMode === "setup" ? renderSetupView() : renderLiveView()}
     </div>
   );
