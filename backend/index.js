@@ -26,63 +26,65 @@ import aiTasksetsRouter from "./routes/aiTasksets.js";
 import teacherProfileRoutes from "./routes/teacherProfileRoutes.js";
 
 // --------------------------------------------------------------------
-// App + Server Setup
+// App + CORS Setup (CORS BEFORE ROUTES)
 // --------------------------------------------------------------------
 const app = express();
-app.use(express.json());
-app.use("/api/profile", teacherProfileRoutes);
-app.use("/api/tasksets", tasksetRoutes);
-app.use("/api/ai/tasksets", aiTasksetsRouter);
 
-const server = http.createServer(app);
 const allowedOrigins = [
   "https://set.curriculate.net",
   "https://play.curriculate.net",
   "https://curriculate.net",
   "http://localhost:5173",
   "http://localhost:5174",
-  "http://localhost:3000"
+  "http://localhost:3000",
 ];
 
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // preflight
+app.use(express.json());
+
+// Mount route modules
+app.use("/api/profile", teacherProfileRoutes);
+app.use("/api/tasksets", tasksetRoutes);
+app.use("/api/ai/tasksets", aiTasksetsRouter);
+
+// --------------------------------------------------------------------
+// HTTP + Socket.io Server
+// --------------------------------------------------------------------
+const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
-    credentials: true,
   },
 });
-
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // allow requests with no origin (mobile apps, curl, postman)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1) {
-        return callback(
-          new Error("CORS blocked by backend: " + origin),
-          false
-        );
-      }
-      return callback(null, true);
-    },
-    credentials: true,
-  })
-);
 
 // --------------------------------------------------------------------
 // MongoDB Connection
 // --------------------------------------------------------------------
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log("Mongo connected"))
-.catch(err => console.error("Mongo connection error:", err));
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("Mongo connected"))
+  .catch((err) => console.error("Mongo connection error:", err));
+:contentReference[oaicite:0]{index=0}
 
 // ====================================================================
 //  ROOM ENGINE (All In-Memory)
 // ====================================================================
-const rooms = {};  // rooms["8A"] = { teacherSocketId, teams, tasks, ... }
+const rooms = {}; // rooms["8A"] = { teacherSocketId, teams, tasks, ... }
 
 // Create a blank room object
 function createRoom(roomCode, teacherSocketId) {
@@ -90,8 +92,8 @@ function createRoom(roomCode, teacherSocketId) {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {},            // teamId -> { teamName, color, members: [] }
-    stations: {},         // color -> { roomLocation }
+    teams: {}, // teamId -> { teamName, color, members: [] }
+    stations: {}, // color -> { roomLocation }
     taskset: null,
     taskIndex: -1,
     submissions: [],
@@ -140,7 +142,7 @@ function buildTranscript(room) {
 function computePerParticipantStats(room, transcript) {
   const tasks = transcript.tasks || [];
   const tasksByIndex = {};
-  tasks.forEach(t => tasksByIndex[t.index] = t);
+  tasks.forEach((t) => (tasksByIndex[t.index] = t));
 
   const participants = {};
 
@@ -166,8 +168,8 @@ function computePerParticipantStats(room, transcript) {
 
     if (sub.correct) entry.correctCount += 1;
 
-    const earned = sub.aiScore?.totalScore ??
-                   (sub.correct ? taskPoints : 0);
+    const earned =
+      sub.aiScore?.totalScore ?? (sub.correct ? taskPoints : 0);
 
     entry.pointsEarned += earned;
     entry.pointsPossible += taskPoints;
@@ -175,14 +177,14 @@ function computePerParticipantStats(room, transcript) {
 
   const totalTasks = tasks.length;
 
-  return Object.values(participants).map(p => ({
+  return Object.values(participants).map((p) => ({
     ...p,
-    engagementPercent: totalTasks > 0
-      ? Math.round(p.attempts / totalTasks * 100)
-      : 0,
-    finalPercent: p.pointsPossible > 0
-      ? Math.round(p.pointsEarned / p.pointsPossible * 100)
-      : 0,
+    engagementPercent:
+      totalTasks > 0 ? Math.round((p.attempts / totalTasks) * 100) : 0,
+    finalPercent:
+      p.pointsPossible > 0
+        ? Math.round((p.pointsEarned / p.pointsPossible) * 100)
+        : 0,
   }));
 }
 
@@ -190,7 +192,6 @@ function computePerParticipantStats(room, transcript) {
 //  SOCKET.IO
 // ====================================================================
 io.on("connection", (socket) => {
-
   // --------------------------------------------------------------
   // Teacher: create room
   // --------------------------------------------------------------
@@ -298,14 +299,8 @@ io.on("connection", (socket) => {
   // Student submits answer
   // --------------------------------------------------------------
   socket.on("task:submit", async (payload) => {
-    const {
-      roomCode,
-      teamId,
-      teamName,
-      playerId,
-      taskIndex,
-      answer,
-    } = payload;
+    const { roomCode, teamId, teamName, playerId, taskIndex, answer } =
+      payload;
 
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -354,61 +349,66 @@ io.on("connection", (socket) => {
   // --------------------------------------------------------------
   // Teacher ends session + sends transcript
   // --------------------------------------------------------------
-  socket.on("teacher:endSessionAndEmail", async ({
-    roomCode,
-    teacherEmail,
-    assessmentCategories,
-    includeIndividualReports,
-    schoolName,
-    perspectives,
-  }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) {
-      socket.emit("transcript:error", { message: "Room not found" });
-      return;
-    }
-
-    if (!teacherEmail) {
-      socket.emit("transcript:error", { message: "Teacher email missing" });
-      return;
-    }
-
-    try {
-      const transcript = buildTranscript(room);
-      const stats = computePerParticipantStats(room, transcript);
-
-      let aiSummary = null;
-      if (process.env.OPENAI_API_KEY) {
-        aiSummary = await generateSessionSummaries({
-          transcript,
-          perParticipantStats: stats,
-          assessmentCategories: assessmentCategories || [],
-          perspectives: perspectives || [],
-        });
+  socket.on(
+    "teacher:endSessionAndEmail",
+    async ({
+      roomCode,
+      teacherEmail,
+      assessmentCategories,
+      includeIndividualReports,
+      schoolName,
+      perspectives,
+    }) => {
+      const code = (roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        socket.emit("transcript:error", { message: "Room not found" });
+        return;
       }
 
-      await sendTranscriptEmail({
-        to: teacherEmail,
-        transcript,
-        aiSummary,
-        includeIndividualReports,
-        schoolName,
-        perspectives,
-      });
+      if (!teacherEmail) {
+        socket.emit("transcript:error", {
+          message: "Teacher email missing",
+        });
+        return;
+      }
 
-      socket.emit("transcript:sent", { to: teacherEmail });
+      try {
+        const transcript = buildTranscript(room);
+        const stats = computePerParticipantStats(room, transcript);
 
-    } catch (err) {
-      console.error("Transcript error:", err);
-      socket.emit("transcript:error", { message: "Failed to generate transcript." });
+        let aiSummary = null;
+        if (process.env.OPENAI_API_KEY) {
+          aiSummary = await generateSessionSummaries({
+            transcript,
+            perParticipantStats: stats,
+            assessmentCategories: assessmentCategories || [],
+            perspectives: perspectives || [],
+          });
+        }
+
+        await sendTranscriptEmail({
+          to: teacherEmail,
+          transcript,
+          aiSummary,
+          includeIndividualReports,
+          schoolName,
+          perspectives,
+        });
+
+        socket.emit("transcript:sent", { to: teacherEmail });
+      } catch (err) {
+        console.error("Transcript error:", err);
+        socket.emit("transcript:error", {
+          message: "Failed to generate transcript.",
+        });
+      }
     }
-  });
-
+  );
 });
 
 // ====================================================================
-// EXPRESS ROUTES (Profile + TaskSets)
+// EXPRESS ROUTES (Profile + TaskSets) – simple fallbacks
 // ====================================================================
 
 // Get teacher profile
@@ -447,6 +447,11 @@ app.post("/api/tasksets", async (req, res) => {
   const t = new TaskSet(req.body);
   await t.save();
   res.json(t);
+});
+
+// Simple health check
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
 });
 
 // ====================================================================

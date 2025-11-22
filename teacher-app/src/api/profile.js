@@ -24,20 +24,26 @@ async function parseJsonOrThrow(res, defaultMessage) {
 }
 
 export async function fetchMyProfile() {
-  const res = await fetch(`${API_BASE}/api/profile/me`, {
+  const res = await fetch(`${API_BASE}/api/profile`, {
     credentials: "include",
   });
-  return parseJsonOrThrow(res, "Failed to load profile");
+
+  if (!res.ok) {
+    throw new Error("Failed to load profile");
+  }
+  return res.json();
 }
 
 export async function updateMyProfile(payload) {
-  const res = await fetch(`${API_BASE}/api/profile/me`, {
+  const res = await fetch(`${API_BASE}/api/profile`, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(payload),
   });
-  return parseJsonOrThrow(res, "Failed to save profile");
+
+  if (!res.ok) {
+    throw new Error("Failed to save profile");
+  }
+  return res.json();
 }

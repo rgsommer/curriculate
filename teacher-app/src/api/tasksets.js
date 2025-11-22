@@ -41,7 +41,7 @@ export async function generateAiTaskset(payload) {
   return data;
 }
 
-// 🔹 List all tasksets (for now, unfiltered)
+// 🔹 List all tasksets
 export async function listMyTasksets() {
   const res = await fetch(`${API_BASE}/api/tasksets`);
   return parseJsonOrThrow(res, "Failed to load task sets");

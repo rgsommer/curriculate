@@ -3,8 +3,8 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./TaskRunner.jsx";
 
-// Socket URL – adjust if needed
-import { API_BASE_URL } from "./config"; // ⬅️ use shared config
+// Socket URL – follow API_BASE_URL
+import { API_BASE_URL } from "./config";
 const SOCKET_URL = API_BASE_URL;
 
 function App() {
@@ -50,12 +50,6 @@ function App() {
 
     // When host assigns station / color
     s.on("station-assigned", (payload = {}) => {
-      // payload might look like:
-      // {
-      //   color: "RED",
-      //   stationLabel: "Red Station",
-      //   displays: [...]
-      // }
       setAssignedColor(payload.color || null);
       setStationLabel(payload.stationLabel || null);
       setTasksetDisplays(payload.displays || []);
@@ -90,7 +84,7 @@ function App() {
       setCurrentDisplay(null);
     });
 
-    // 🔐 New: show friendly errors when scanning wrong location etc.
+    // Friendly errors for scan/location mis-matches
     const handleScanError = (payload) => {
       if (!payload || !payload.message) return;
       alert(payload.message);
@@ -103,8 +97,7 @@ function App() {
       s.off("scan-error", handleScanError);
       s.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []);:contentReference[oaicite:4]{index=4}
 
   // ---------------------------------------------------------
   // Join
@@ -359,7 +352,7 @@ function App() {
         </section>
       </main>
 
-      {/* COLOUR BAND FOOTER (NO LONGER FIXED / OVERLAYING) */}
+      {/* COLOUR BAND FOOTER (not overlaying content) */}
       <footer
         style={{
           minHeight: 96,
