@@ -45,18 +45,33 @@ const allowedOrigins = [
   "http://localhost:3000",
 ];
 
+const allowedOrigins = [
+  "https://set.curriculate.net",
+  "https://play.curriculate.net",
+  "https://curriculate.net",
+  "https://www.curriculate.net",
+  "https://api.curriculate.net",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:3000",
+];
+
+// Allow ANY Vercel deployment for teacher/station apps
+function isVercelPreview(origin) {
+  if (!origin) return false;
+  return origin.endsWith(".vercel.app");
+}
 const corsOptions = {
   origin(origin, callback) {
-    // No Origin header -> non-browser / health checks / curl: allow
     if (!origin) {
+      // curl, health checks, server-to-server
       return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
       return callback(null, true);
     }
 
-    // Log so we can see *who* is hitting us
     console.warn("❌ Blocked CORS for origin:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
