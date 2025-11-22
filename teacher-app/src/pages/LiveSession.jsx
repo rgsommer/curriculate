@@ -4,8 +4,8 @@ import { useParams } from "react-router-dom";
 import axios from "axios";
 import { socket } from "../socket";
 
-import { API_BASE_URL } from "./config"; // ⬅️ use shared config
-const SOCKET_URL = API_BASE_URL;
+import { API_BASE_URL } from "../config";
+const API_BASE = API_BASE_URL;
 
 const COLORS = [
   "red",
@@ -43,9 +43,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [prompt, setPrompt] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
 
-  const [schoolName, setSchoolName] = useState("");
-  const [perspectives, setPerspectives] = useState([]);
-
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
     try {
@@ -70,8 +67,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [assessmentCategories, setAssessmentCategories] = useState([]);
   const [includeIndividualReports, setIncludeIndividualReports] =
     useState(true);
+  const [schoolName, setSchoolName] = useState("");
+  const [perspectives, setPerspectives] = useState([]);
 
-  // Load teacher profile once (email, categories, includeIndividualReports)
+  // Load teacher profile once (email, categories, includeIndividualReports, schoolName, perspectives)
   useEffect(() => {
     let cancelled = false;
 
@@ -84,16 +83,20 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
         if (data.email) {
           setTeacherEmail(data.email);
           try {
-            localStorage.setItem(
-              "curriculateTeacherEmail",
-              data.email
-            );
+            localStorage.setItem("curriculateTeacherEmail", data.email);
           } catch {
             // ignore
           }
         }
 
-        // NEW: School name + Perspectives
+        if (Array.isArray(data.assessmentCategories)) {
+          setAssessmentCategories(data.assessmentCategories);
+        }
+
+        if (typeof data.includeIndividualReports === "boolean") {
+          setIncludeIndividualReports(data.includeIndividualReports);
+        }
+
         if (data.schoolName) {
           setSchoolName(data.schoolName);
         }
@@ -101,37 +104,29 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
         if (Array.isArray(data.perspectives)) {
           setPerspectives(data.perspectives);
         }
-
-        setIncludeIndividualReports(
-          data.includeIndividualReports !== false
-        );
-        if (Array.isArray(data.assessmentCategories)) {
-          setAssessmentCategories(data.assessmentCategories);
-        }
       } catch (err) {
-        console.error("LiveSession: failed to load teacher profile", err);
+        console.error("Failed to load teacher profile in LiveSession:", err);
       }
     }
 
     loadProfile();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
+  // Keep teacherEmail persisted
   useEffect(() => {
+    if (!teacherEmail) return;
     try {
-      if (teacherEmail) {
-        localStorage.setItem(
-          "curriculateTeacherEmail",
-          teacherEmail
-        );
-      }
+      localStorage.setItem("curriculateTeacherEmail", teacherEmail);
     } catch {
       // ignore
     }
   }, [teacherEmail]);
 
+  // Join room as teacher
   useEffect(() => {
     if (!roomCode) {
       setStatus("No room selected.");
@@ -149,6 +144,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     setStatus("Connected.");
   }, [roomCode]);
 
+  // Check for "launch immediately" flag from Task Sets page
   useEffect(() => {
     const flag = localStorage.getItem("curriculateLaunchImmediately");
     if (flag === "true") {
@@ -157,6 +153,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     }
   }, []);
 
+  // Auto-load & launch active taskset when requested
   useEffect(() => {
     if (!autoLaunchRequested) return;
     if (!roomCode || !activeTasksetMeta?._id) return;
@@ -175,8 +172,15 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     setStatus(`Launching "${activeTasksetMeta.name}"…`);
     socket.emit("launchTaskset", { roomCode });
     setAutoLaunchRequested(false);
-  }, [autoLaunchRequested, roomCode, activeTasksetMeta?._id, loadedTasksetId, activeTasksetMeta?.name]);
+  }, [
+    autoLaunchRequested,
+    roomCode,
+    activeTasksetMeta?._id,
+    activeTasksetMeta?.name,
+    loadedTasksetId,
+  ]);
 
+  // Socket event wiring
   useEffect(() => {
     const handleRoom = (state) => {
       setRoomState(
@@ -189,78 +193,76 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       );
     };
 
-    const handleLeaderboard = (scores) => {
-      const entries = Object.entries(scores || {}).sort(
-        (a, b) => b[1] - a[1]
-      );
-      setLeaderboard(entries);
+    const handleLeaderboard = (entries) => {
+      setLeaderboard(entries || []);
     };
 
     const handleTasksetLoaded = (info) => {
-      if (info && info.tasksetId) {
-        setLoadedTasksetId(info.tasksetId);
+      if (!info) return;
+      setLoadedTasksetId(info._id || info.id || null);
 
-        setActiveTasksetMeta((prev) => {
-          const meta = {
-            _id: info.tasksetId,
-            name: info.name || prev?.name || "Loaded Taskset",
-            numTasks: info.numTasks ?? prev?.numTasks ?? 0,
-          };
-          try {
-            localStorage.setItem(
-              "curriculateActiveTasksetId",
-              meta._id
-            );
-            localStorage.setItem(
-              "curriculateActiveTasksetMeta",
-              JSON.stringify(meta)
-            );
-          } catch {
-            // ignore
-          }
-          return meta;
-        });
+      setActiveTasksetMeta((prev) => {
+        const meta = {
+          _id: info.tasksetId || info._id || prev?._id,
+          name: info.name || prev?.name || "Loaded Taskset",
+          numTasks: info.numTasks ?? prev?.numTasks ?? 0,
+        };
+        try {
+          localStorage.setItem("curriculateActiveTasksetId", meta._id);
+          localStorage.setItem(
+            "curriculateActiveTasksetMeta",
+            JSON.stringify(meta)
+          );
+        } catch {
+          // ignore
+        }
+        return meta;
+      });
 
-        setStatus(
-          `Taskset "${info.name || "Taskset"}" loaded into room ${roomCode}.`
-        );
+      if (info.tasksetId || info._id) {
+        setStatus(`Taskset "${info.name}" loaded for room ${roomCode}.`);
       }
     };
 
-    const handleSubmission = (sub) => {
-      if (!sub?.teamId) return;
-      setSubmissions((prev) => ({
-        ...prev,
-        [sub.teamId]: sub,
-      }));
+    const handleTaskSubmission = (payload) => {
+      if (!payload || !payload.teamId) return;
+
+      setSubmissions((prev) => {
+        const next = { ...prev };
+        next[payload.teamId] = {
+          ...payload,
+          receivedAt: Date.now(),
+        };
+        return next;
+      });
     };
 
-    const handleScanEvent = (ev) => {
+    const handleScanEvent = (payload) => {
+      if (!payload) return;
       setScanEvents((prev) => {
-        const next = [ev, ...prev];
+        const next = [{ ...payload, timestamp: Date.now() }, ...prev];
         return next.slice(0, 30);
       });
     };
 
-    const handleTranscriptSent = (payload) => {
-      if (payload?.to) {
-        alert(`Transcript emailed to ${payload.to}.`);
+    const handleTranscriptSent = ({ to }) => {
+      setStatus("Transcript emailed.");
+      if (to) {
+        alert(`Transcript emailed to ${to}.`);
       } else {
         alert("Transcript emailed.");
       }
     };
 
-    const handleTranscriptError = (payload) => {
-      alert(
-        payload?.message ||
-          "There was a problem generating or sending the transcript."
-      );
+    const handleTranscriptError = ({ message }) => {
+      setStatus("Transcript error.");
+      alert(message || "Failed to generate & send transcript.");
     };
 
     socket.on("roomState", handleRoom);
     socket.on("leaderboardUpdate", handleLeaderboard);
     socket.on("tasksetLoaded", handleTasksetLoaded);
-    socket.on("taskSubmission", handleSubmission);
+    socket.on("taskSubmission", handleTaskSubmission);
     socket.on("scanEvent", handleScanEvent);
     socket.on("transcript:sent", handleTranscriptSent);
     socket.on("transcript:error", handleTranscriptError);
@@ -269,7 +271,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       socket.off("roomState", handleRoom);
       socket.off("leaderboardUpdate", handleLeaderboard);
       socket.off("tasksetLoaded", handleTasksetLoaded);
-      socket.off("taskSubmission", handleSubmission);
+      socket.off("taskSubmission", handleTaskSubmission);
       socket.off("scanEvent", handleScanEvent);
       socket.off("transcript:sent", handleTranscriptSent);
       socket.off("transcript:error", handleTranscriptError);
@@ -337,6 +339,45 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     roomState.taskset?.name || activeTasksetMeta?.name || "—";
   const tasksetDisplays = roomState.taskset?.displays || [];
 
+  // Group displays by station color (plus "unassigned")
+  const groupedDisplays = useMemo(() => {
+    const groups = {
+      red: [],
+      blue: [],
+      green: [],
+      yellow: [],
+      purple: [],
+      orange: [],
+      teal: [],
+      pink: [],
+      unassigned: [],
+    };
+
+    for (const d of tasksetDisplays) {
+      const key = (d.stationColor || "unassigned").toLowerCase();
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(d);
+    }
+    return groups;
+  }, [tasksetDisplays]);
+
+  const orderedDisplayGroups = useMemo(() => {
+    const order = [
+      "red",
+      "blue",
+      "green",
+      "yellow",
+      "purple",
+      "orange",
+      "teal",
+      "pink",
+      "unassigned",
+    ];
+    return order
+      .map((key) => ({ key, items: groupedDisplays[key] || [] }))
+      .filter((g) => g.items.length > 0);
+  }, [groupedDisplays]);
+
   const renderStationCard = (station) => {
     const team = teamsById[station.assignedTeamId] || null;
     const stationId = station.id;
@@ -349,233 +390,180 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             borderRadius: 12,
             border: "1px dashed #cbd5f5",
             padding: 12,
-            minWidth: 180,
-            minHeight: 90,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: 4,
             background: "#f9fafb",
+            minHeight: 80,
           }}
         >
           <div
             style={{
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: 1,
+              fontSize: "0.8rem",
               color: "#6b7280",
+              marginBottom: 4,
             }}
           >
-            {station.id}
+            {stationId.toUpperCase()}
           </div>
-          <div style={{ color: "#9ca3af" }}>No team yet</div>
+          <div
+            style={{
+              fontSize: "0.9rem",
+              color: "#9ca3af",
+              fontStyle: "italic",
+            }}
+          >
+            No team at this station yet.
+          </div>
         </div>
       );
     }
 
-    const latest = submissions[team.teamId];
+    const latest = submissions[team.teamId] || null;
+    const colorName = station.color || stationIdToColor(stationId);
     const score = scores[team.teamName] ?? 0;
 
-    const assignedStationId = team.currentStationId || stationId;
-    const assignedColor = stationIdToColor(assignedStationId);
-
-    const scannedStationId = team.lastScannedStationId || null;
-    const hasScanForThisAssignment =
-      scannedStationId && scannedStationId === assignedStationId;
-
-    const bubbleBg =
-      hasScanForThisAssignment && assignedColor ? assignedColor : "#f9fafb";
-    const textColor =
-      hasScanForThisAssignment && assignedColor ? "#ffffff" : "#111827";
-    const subtleTextColor =
-      hasScanForThisAssignment && assignedColor
-        ? "rgba(241,245,249,0.9)"
-        : "#6b7280";
-
-    const isCorrect = latest?.correct ?? null;
+    const bg =
+      colorName === "red"
+        ? "#fee2e2"
+        : colorName === "blue"
+        ? "#dbeafe"
+        : colorName === "green"
+        ? "#dcfce7"
+        : colorName === "yellow"
+        ? "#fef9c3"
+        : colorName === "purple"
+        ? "#f3e8ff"
+        : colorName === "orange"
+        ? "#ffedd5"
+        : colorName === "teal"
+        ? "#ccfbf1"
+        : colorName === "pink"
+        ? "#ffe4e6"
+        : "#f3f4f6";
 
     return (
       <div
         key={station.id}
         style={{
           borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          background: bg,
           padding: 12,
-          minWidth: 220,
-          minHeight: 130,
-          background: bubbleBg,
-          color: textColor,
           display: "flex",
           flexDirection: "column",
-          justifyContent: "space-between",
-          boxShadow: "0 1px 3px rgba(15,23,42,0.16)",
-          border: hasScanForThisAssignment
-            ? "2px solid rgba(15,23,42,0.25)"
-            : "1px solid #e5e7eb",
-          transition: "background 0.2s ease, border 0.2s ease",
+          gap: 6,
+          minHeight: 80,
         }}
       >
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            gap: 8,
-            alignItems: "flex-start",
+            alignItems: "baseline",
           }}
         >
           <div>
             <div
               style={{
-                fontSize: "0.7rem",
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                color: subtleTextColor,
+                fontSize: "0.75rem",
+                color: "#4b5563",
+                marginBottom: 2,
               }}
             >
-              {station.id}
+              {stationId.toUpperCase()}
             </div>
-            <div style={{ fontWeight: 700 }}>
-              {team.teamName || "Team"}
+            <div
+              style={{
+                fontSize: "0.95rem",
+                fontWeight: 600,
+              }}
+            >
+              {team.teamName}
             </div>
-            {Array.isArray(team.members) && team.members.length > 0 && (
+            {team.members?.length > 0 && (
               <div
                 style={{
-                  fontSize: "0.7rem",
-                  color: subtleTextColor,
+                  fontSize: "0.75rem",
+                  color: "#4b5563",
                   marginTop: 2,
                 }}
               >
                 {team.members.join(", ")}
               </div>
             )}
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: "0.75rem",
-              }}
-            >
-              <div>
-                <strong>Assigned to:</strong>{" "}
-                {assignedColor
-                  ? `${assignedColor.toUpperCase()} (${assignedStationId})`
-                  : assignedStationId || "—"}
-              </div>
-              <div
-                style={{
-                  marginTop: 2,
-                  color: hasScanForThisAssignment ? "#bbf7d0" : subtleTextColor,
-                  fontStyle: hasScanForThisAssignment ? "normal" : "italic",
-                }}
-              >
-                {hasScanForThisAssignment
-                  ? "Scanned and ready"
-                  : "Waiting for a scan…"}
-              </div>
-            </div>
           </div>
-
-          <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontSize: "0.7rem",
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                color: subtleTextColor,
-              }}
-            >
-              Score
-            </div>
-            <div
-              style={{
-                fontSize: "1.4rem",
-                fontWeight: 800,
-              }}
-            >
-              {score}
-            </div>
+          <div
+            style={{
+              fontSize: "1.1rem",
+              fontWeight: 700,
+              color: "#111827",
+            }}
+          >
+            {score} pts
           </div>
         </div>
 
         {latest ? (
           <div
             style={{
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: hasScanForThisAssignment
-                ? "1px solid rgba(241,245,249,0.6)"
-                : "1px solid rgba(148,163,184,0.4)",
+              marginTop: 4,
+              paddingTop: 4,
+              borderTop: "1px dashed #e5e7eb",
               fontSize: "0.8rem",
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 8,
-              alignItems: "center",
             }}
           >
+            <div style={{ marginBottom: 2 }}>
+              <span style={{ fontWeight: 600 }}>Ans:</span>{" "}
+              <span title={latest.answer}>
+                {String(latest.answer).length > 60
+                  ? `${String(latest.answer).slice(0, 57)}…`
+                  : latest.answer}
+              </span>
+            </div>
             <div
               style={{
-                maxWidth: "65%",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "0.75rem",
               }}
-              title={latest.answerText}
             >
-              <strong>Ans:</strong> {latest.answerText || "—"}
-            </div>
-            <div style={{ textAlign: "right" }}>
-              {isCorrect !== null && (
-                <div>{isCorrect ? "✅ correct" : "❌ incorrect"}</div>
-              )}
-              {latest.timeMs != null && (
-                <div>
-                  <strong>Time:</strong>{" "}
+              <span>
+                {latest.correct === true && (
+                  <span style={{ color: "#15803d", fontWeight: 600 }}>
+                    ✅ correct
+                  </span>
+                )}
+                {latest.correct === false && (
+                  <span style={{ color: "#b91c1c", fontWeight: 600 }}>
+                    ❌ incorrect
+                  </span>
+                )}
+                {latest.correct == null && (
+                  <span style={{ color: "#6b7280" }}>—</span>
+                )}
+              </span>
+              {typeof latest.timeMs === "number" && (
+                <span style={{ color: "#4b5563" }}>
                   {(latest.timeMs / 1000).toFixed(1)}s
-                </div>
+                </span>
               )}
             </div>
           </div>
         ) : (
           <div
             style={{
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: hasScanForThisAssignment
-                ? "1px dashed rgba(241,245,249,0.6)"
-                : "1px dashed rgba(148,163,184,0.4)",
-              fontSize: "0.75rem",
-              color: subtleTextColor,
+              marginTop: 4,
+              paddingTop: 4,
+              borderTop: "1px dashed #e5e7eb",
+              fontSize: "0.8rem",
+              color: "#6b7280",
             }}
           >
-            No submission yet
+            No submission yet.
           </div>
         )}
       </div>
     );
   };
-
-  const groupedDisplays = useMemo(() => {
-    const grouped = {};
-    (tasksetDisplays || []).forEach((d) => {
-      const key = (d.stationColor || "Unassigned").toLowerCase();
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(d);
-    });
-    return grouped;
-  }, [tasksetDisplays]);
-
-  const orderedDisplayGroups = useMemo(() => {
-    const keys = Object.keys(groupedDisplays);
-    if (!keys.length) return [];
-    const colorOrder = [...COLORS, "unassigned"];
-    return keys.sort((a, b) => {
-      const ia = colorOrder.indexOf(a);
-      const ib = colorOrder.indexOf(b);
-      if (ia === -1 && ib === -1) return a.localeCompare(b);
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
-    });
-  }, [groupedDisplays]);
 
   const renderSetupView = () => {
     return (
@@ -587,44 +575,41 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           minHeight: 0,
         }}
       >
+        {/* Left: Displays */}
         <div style={{ flex: 3, minWidth: 0 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>
-            Room setup checklist
-          </h2>
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Room setup</h2>
           <p
             style={{
               marginTop: 0,
-              marginBottom: 8,
+              marginBottom: 12,
               fontSize: "0.85rem",
               color: "#4b5563",
             }}
           >
-            Taskset: <strong>{currentTasksetName}</strong>
+            These are the printed station displays for this task set. Place
+            each colour’s sheet at its matching station.
           </p>
 
-          {tasksetDisplays.length === 0 ? (
+          {orderedDisplayGroups.length === 0 ? (
             <p style={{ color: "#6b7280" }}>
-              No displays defined for this task set. In the Task Sets editor,
-              add “Physical displays / stations” and link tasks via the
-              “Linked display” dropdown.
+              No station displays are defined for this task set.
             </p>
           ) : (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(260px, 1fr))",
-                gap: 12,
+                gridTemplateColumns: "minmax(0, 1fr)",
+                gap: 10,
               }}
             >
-              {orderedDisplayGroups.map((colorKey) => {
-                const displays = groupedDisplays[colorKey] || [];
-                const isUnassigned = colorKey === "unassigned";
-                const label = isUnassigned
-                  ? "Unassigned / floating displays"
-                  : `${colorKey.toUpperCase()} station`;
-
-                const chipColor = isUnassigned ? "#374151" : colorKey;
+              {orderedDisplayGroups.map(({ key, items }) => {
+                const colorKey = key;
+                const chipColor =
+                  colorKey === "unassigned" ? "#374151" : colorKey;
+                const label =
+                  colorKey === "unassigned"
+                    ? "Unassigned / floating displays"
+                    : `${colorKey.toUpperCase()} station`;
 
                 return (
                   <div
@@ -634,64 +619,69 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                       border: "1px solid #e5e7eb",
                       background: "#f9fafb",
                       padding: 12,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 8,
+                        justifyContent: "space-between",
+                        marginBottom: 6,
                       }}
                     >
                       <div
                         style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: 999,
-                          background: chipColor,
-                          border: "2px solid #e5e7eb",
-                        }}
-                      />
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: "0.9rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
                         }}
                       >
-                        {label}
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 999,
+                            background:
+                              colorKey === "unassigned"
+                                ? "#6b7280"
+                                : chipColor,
+                          }}
+                        />
+                        <div
+                          style={{
+                            fontSize: "0.85rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {label}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.75rem",
+                          color: "#6b7280",
+                        }}
+                      >
+                        {items.length} display
+                        {items.length === 1 ? "" : "s"}
                       </div>
                     </div>
 
                     <div
                       style={{
-                        fontSize: "0.75rem",
-                        color: "#6b7280",
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr)",
+                        gap: 6,
                       }}
                     >
-                      {isUnassigned
-                        ? "These displays are not tied to a station colour yet."
-                        : "Place these objects at this colour station before students arrive."}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 4,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 8,
-                      }}
-                    >
-                      {displays.map((d) => (
+                      {items.map((d) => (
                         <div
-                          key={d.key}
+                          key={d.key || d.name}
                           style={{
                             borderRadius: 8,
-                            border: "1px solid #e5e7eb",
-                            background: "#ffffff",
+                            border: "1px dashed #d1d5db",
                             padding: 8,
+                            background: "#ffffff",
                           }}
                         >
                           <div
@@ -716,13 +706,12 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                           {d.notesForTeacher && (
                             <div
                               style={{
+                                marginTop: 4,
                                 fontSize: "0.75rem",
                                 color: "#6b7280",
-                                marginTop: 4,
                               }}
                             >
-                              <strong>Setup notes:</strong>{" "}
-                              {d.notesForTeacher}
+                              Notes: {d.notesForTeacher}
                             </div>
                           )}
                         </div>
@@ -735,28 +724,41 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           )}
         </div>
 
-        <div
-          style={{
-            flex: 1.2,
-            minWidth: 260,
-            borderLeft: "1px solid #e5e7eb",
-            paddingLeft: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+        {/* Right: Leaderboard + Scan log */}
+        <div style={{ flex: 2, minWidth: 0 }}>
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
+            }}
+          >
+            <h3
+              style={{
+                marginTop: 0,
+                marginBottom: 6,
+                fontSize: "0.9rem",
+              }}
+            >
               Leaderboard
-            </h2>
+            </h3>
             {leaderboard.length === 0 ? (
-              <p style={{ color: "#6b7280" }}>No scores yet.</p>
+              <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                No scores yet.
+              </p>
             ) : (
-              <ol style={{ paddingLeft: 18, margin: 0 }}>
-                {leaderboard.map(([name, pts]) => (
-                  <li key={name} style={{ marginBottom: 4 }}>
-                    <strong>{name}</strong> — {pts} pts
+              <ol
+                style={{
+                  margin: 0,
+                  paddingLeft: 18,
+                  fontSize: "0.85rem",
+                }}
+              >
+                {leaderboard.map((entry, idx) => (
+                  <li key={entry.teamName + idx}>
+                    {entry.teamName} — {entry.score} pts
                   </li>
                 ))}
               </ol>
@@ -765,10 +767,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
 
           <div
             style={{
-              marginTop: 12,
-              paddingTop: 8,
-              borderTop: "1px solid #e5e7eb",
-              fontSize: "0.8rem",
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
             }}
           >
             <div
@@ -797,12 +799,12 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                 {scanEvents.length === 1 ? "event" : "events"}
               </span>
             </div>
-
             {scanEvents.length === 0 ? (
               <p
                 style={{
+                  fontSize: "0.8rem",
+                  color: "#6b7280",
                   margin: 0,
-                  color: "#9ca3af",
                 }}
               >
                 No scans yet.
@@ -864,6 +866,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           minHeight: 0,
         }}
       >
+        {/* Left: Stations, leaderboard, scan log */}
         <div style={{ flex: 3, minWidth: 0 }}>
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Stations</h2>
           {stations.length === 0 ? (
@@ -875,288 +878,376 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns:
-                  "repeat(auto-fit, minmax(230px, 1fr))",
-                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 10,
               }}
             >
               {stations.map((s) => renderStationCard(s))}
             </div>
           )}
-        </div>
-
-        <div
-          style={{
-            flex: 1.2,
-            minWidth: 260,
-            borderLeft: "1px solid #e5e7eb",
-            paddingLeft: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-              Leaderboard
-            </h2>
-            {leaderboard.length === 0 ? (
-              <p style={{ color: "#6b7280" }}>No scores yet.</p>
-            ) : (
-              <ol style={{ paddingLeft: 18, margin: 0 }}>
-                {leaderboard.map(([name, pts]) => (
-                  <li key={name} style={{ marginBottom: 4 }}>
-                    <strong>{name}</strong> — {pts} pts
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
 
           <div
             style={{
-              marginTop: 12,
-              paddingTop: 8,
-              borderTop: "1px solid #e5e7eb",
-              fontSize: "0.8rem",
+              marginTop: 16,
+              display: "grid",
+              gridTemplateColumns: "1.2fr 1.2fr",
+              gap: 12,
+            }}
+          >
+            {/* Leaderboard */}
+            <div
+              style={{
+                padding: 10,
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
+                background: "#ffffff",
+              }}
+            >
+              <h3
+                style={{
+                  marginTop: 0,
+                  marginBottom: 6,
+                  fontSize: "0.9rem",
+                }}
+              >
+                Leaderboard
+              </h3>
+              {leaderboard.length === 0 ? (
+                <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                  No scores yet.
+                </p>
+              ) : (
+                <ol
+                  style={{
+                    margin: 0,
+                    paddingLeft: 18,
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  {leaderboard.map((entry, idx) => (
+                    <li key={entry.teamName + idx}>
+                      {idx + 1}. {entry.teamName} — {entry.score} pts
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+
+            {/* Scan log */}
+            <div
+              style={{
+                padding: 10,
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
+                background: "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 4,
+                }}
+              >
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  Scan log (debug)
+                </h3>
+                <span
+                  style={{
+                    fontSize: "0.7rem",
+                    color: "#6b7280",
+                  }}
+                >
+                  latest {scanEvents.length}{" "}
+                  {scanEvents.length === 1 ? "event" : "events"}
+                </span>
+              </div>
+              {scanEvents.length === 0 ? (
+                <p
+                  style={{
+                    fontSize: "0.8rem",
+                    color: "#6b7280",
+                    margin: 0,
+                  }}
+                >
+                  No scans yet.
+                </p>
+              ) : (
+                <div
+                  style={{
+                    maxHeight: 180,
+                    overflowY: "auto",
+                    borderRadius: 6,
+                    border: "1px solid #e5e7eb",
+                    background: "#f9fafb",
+                    padding: 6,
+                  }}
+                >
+                  {scanEvents.map((ev, idx) => {
+                    const t = new Date(ev.timestamp);
+                    const timeStr = t.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                    });
+                    const color = stationIdToColor(ev.stationId);
+
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: "2px 4px",
+                          borderBottom:
+                            idx === scanEvents.length - 1
+                              ? "none"
+                              : "1px dashed #e5e7eb",
+                        }}
+                      >
+                        <div>
+                          <strong>{timeStr}</strong> —{" "}
+                          {ev.teamName || "Team"} scanned{" "}
+                          {color ? color.toUpperCase() : ev.stationId}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Room status, quick controls, transcript & reports */}
+        <div style={{ flex: 2, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Room / status header */}
+          <div
+            style={{
+              marginBottom: 0,
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
             }}
           >
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "center",
+                alignItems: "baseline",
                 marginBottom: 4,
               }}
             >
-              <h3
+              <h2
                 style={{
                   margin: 0,
-                  fontSize: "0.85rem",
+                  fontSize: "1rem",
                 }}
               >
-                Scan log (debug)
-              </h3>
-              <span
+                Live session
+              </h2>
+              <div
                 style={{
-                  fontSize: "0.7rem",
+                  fontSize: "0.8rem",
                   color: "#6b7280",
                 }}
               >
-                latest {scanEvents.length}{" "}
-                {scanEvents.length === 1 ? "event" : "events"}
-              </span>
+                Task set:{" "}
+                <span style={{ fontWeight: 600 }}>
+                  {currentTasksetName}
+                </span>
+              </div>
             </div>
 
-            {scanEvents.length === 0 ? (
-              <p
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.9rem",
+                color: "#4b5563",
+              }}
+            >
+              {roomCode ? `Room: ${roomCode}` : "No room selected."}
+            </p>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.8rem",
+                color: "#6b7280",
+              }}
+            >
+              Status: {status}
+            </p>
+          </div>
+
+          {/* Quick task / taskset controls CARD */}
+          <div
+            style={{
+              marginBottom: 0,
+              padding: 12,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#f9fafb",
+              minWidth: 0,
+            }}
+          >
+            <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
+              Quick task / taskset controls
+            </h2>
+
+            <div
+              style={{
+                fontSize: "0.8rem",
+                color: "#6b7280",
+                marginBottom: 8,
+              }}
+            >
+              {activeTasksetMeta?._id ? (
+                <>
+                  Active taskset:{" "}
+                  <strong>{activeTasksetMeta.name}</strong>{" "}
+                  ({activeTasksetMeta.numTasks ?? "?"} tasks)
+                  {loadedTasksetId === activeTasksetMeta._id ? (
+                    <> — loaded in room.</>
+                  ) : (
+                    <> — not loaded yet.</>
+                  )}
+                </>
+              ) : (
+                <>No active taskset selected.</>
+              )}
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <label
                 style={{
-                  margin: 0,
-                  color: "#9ca3af",
+                  display: "block",
+                  fontSize: "0.8rem",
+                  color: "#4b5563",
+                  marginBottom: 2,
                 }}
               >
-                No scans yet.
-              </p>
-            ) : (
-              <div
+                Quick task prompt:
+              </label>
+              <textarea
+                rows={2}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Ask a quick question to the room…"
                 style={{
-                  maxHeight: 200,
-                  overflowY: "auto",
+                  width: "100%",
                   borderRadius: 6,
-                  border: "1px solid #e5e7eb",
-                  background: "#f9fafb",
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.85rem",
                   padding: 6,
+                  resize: "vertical",
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.8rem",
+                  color: "#4b5563",
+                  marginBottom: 2,
                 }}
               >
-                {scanEvents.map((ev, idx) => {
-                  const t = new Date(ev.timestamp);
-                  const timeStr = t.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  });
-                  const color = stationIdToColor(ev.stationId);
+                Correct answer (optional):
+              </label>
+              <input
+                type="text"
+                value={correctAnswer}
+                onChange={(e) => setCorrectAnswer(e.target.value)}
+                placeholder="Used for auto-marking where applicable"
+                style={{
+                  width: "100%",
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.85rem",
+                  padding: "4px 6px",
+                }}
+              />
+            </div>
 
-                  return (
-                    <div
-                      key={idx}
-                      style={{
-                        padding: "2px 4px",
-                        borderBottom:
-                          idx === scanEvents.length - 1
-                            ? "none"
-                            : "1px dashed #e5e7eb",
-                      }}
-                    >
-                      <div>
-                        <strong>{timeStr}</strong> —{" "}
-                        {ev.teamName || "Team"} scanned{" "}
-                        {color ? color.toUpperCase() : ev.stationId}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
+            <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+              <button
+                type="button"
+                onClick={handleLaunchQuickTask}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#0ea5e9",
+                  color: "#ffffff",
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                }}
+              >
+                Launch quick task
+              </button>
+              <button
+                type="button"
+                onClick={handleLaunchTaskset}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#10b981",
+                  color: "#ffffff",
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                }}
+              >
+                Launch from taskset
+              </button>
+            </div>
 
-  return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        padding: 16,
-        gap: 16,
-        fontFamily: "system-ui",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 16,
-          alignItems: "flex-start",
-        }}
-      >
-        <div>
-          <h1 style={{ margin: 0 }}>Live session</h1>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.9rem",
-              color: "#4b5563",
-            }}
-          >
-            {roomCode ? `Room: ${roomCode}` : "No room selected."}
-          </p>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.8rem",
-              color: "#6b7280",
-            }}
-          >
-            Status: {status}
-          </p>
-        </div>
-
-        <div
-          style={{
-            marginBottom: 0,
-            padding: 12,
-            borderRadius: 8,
-            border: "1px solid #e5e7eb",
-            background: "#f9fafb",
-            minWidth: 340,
-          }}
-        >
-          <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
-            Quick task / taskset controls
-          </h2>
-
-          <div
-            style={{
-              fontSize: "0.8rem",
-              color: "#6b7280",
-              marginBottom: 8,
-            }}
-          >
-            {activeTasksetMeta?._id ? (
-              <>
-                Active taskset:{" "}
-                <strong>{activeTasksetMeta.name}</strong>{" "}
-                ({activeTasksetMeta.numTasks ?? "?"} tasks)
-                {loadedTasksetId === activeTasksetMeta._id ? (
-                  <span style={{ color: "#059669" }}>
-                    {" "}
-                    – loaded in room
-                  </span>
-                ) : (
-                  <span> – not yet loaded in this room</span>
-                )}
-              </>
-            ) : (
-              <>No active taskset. Set one on the Task Sets page.</>
-            )}
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input
-              type="text"
-              placeholder="Quick task prompt"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+            <div
               style={{
-                flex: 2,
-                padding: "4px 6px",
-                borderRadius: 4,
-                border: "1px solid #d1d5db",
-                fontSize: "0.8rem",
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Correct answer (optional)"
-              value={correctAnswer}
-              onChange={(e) => setCorrectAnswer(e.target.value)}
-              style={{
-                flex: 1.3,
-                padding: "4px 6px",
-                borderRadius: 4,
-                border: "1px solid #d1d5db",
-                fontSize: "0.8rem",
-              }}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={handleLaunchQuickTask}
-              style={{
-                flex: 1,
-                padding: "6px 8px",
-                borderRadius: 6,
-                border: "none",
-                background: "#0ea5e9",
-                color: "#ffffff",
-                fontSize: "0.85rem",
-                cursor: "pointer",
+                fontSize: "0.75rem",
+                color: "#6b7280",
               }}
             >
-              Launch quick task
-            </button>
-            <button
-              type="button"
-              onClick={handleLaunchTaskset}
-              style={{
-                flex: 1,
-                padding: "6px 8px",
-                borderRadius: 6,
-                border: "none",
-                background: "#10b981",
-                color: "#ffffff",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-              }}
-            >
-              Launch from taskset
-            </button>
+              Use your taskset’s full tasks for structured sessions, or fire a
+              quick question to reset focus.
+            </div>
           </div>
 
-          {/* Transcript email + brief summary of categories */}
+          {/* Transcript & Reports CARD */}
           <div
             style={{
-              marginTop: 8,
-              paddingTop: 8,
-              borderTop: "1px solid #e5e7eb",
+              marginBottom: 0,
+              padding: 12,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
+              minWidth: 0,
             }}
           >
+            <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
+              Transcript & Reports
+            </h2>
+
+            <p
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "0.8rem",
+                color: "#6b7280",
+              }}
+            >
+              When you’re finished, end the session and get a PDF transcript
+              (and, if enabled, one-page reports for each student).
+            </p>
+
             <label
               style={{
                 display: "block",
@@ -1208,6 +1299,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               }}
             >
               <input
+                id="include-individual-reports"
                 type="checkbox"
                 checked={includeIndividualReports}
                 onChange={(e) =>
@@ -1234,7 +1326,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               >
                 Categories:{" "}
                 {assessmentCategories
-                  .map((c) => c.label)
+                  .map((c) => c.label || c.name || c)
                   .filter(Boolean)
                   .join(", ") || "—"}
               </div>
@@ -1242,48 +1334,92 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           </div>
         </div>
       </div>
+    );
+  };
 
-      <div
+  return (
+    <div
+      style={{
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        height: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      <header
         style={{
           display: "flex",
-          gap: 8,
-          borderBottom: "1px solid #e5e7eb",
-          paddingBottom: 4,
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
         }}
       >
-        <button
-          type="button"
-          onClick={() => setViewMode("live")}
+        <div>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.2rem",
+            }}
+          >
+            Live Session
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.8rem",
+              color: "#6b7280",
+            }}
+          >
+            Monitor stations, scores, and send transcripts when you’re done.
+          </p>
+        </div>
+
+        <div
           style={{
-            padding: "6px 10px",
+            display: "inline-flex",
+            gap: 4,
+            padding: 2,
             borderRadius: 999,
-            border: "none",
-            fontSize: "0.85rem",
-            cursor: "pointer",
-            background:
-              viewMode === "live" ? "#0ea5e9" : "transparent",
-            color: viewMode === "live" ? "#ffffff" : "#374151",
+            background: "#e5e7eb",
           }}
         >
-          Live view
-        </button>
-        <button
-          type="button"
-          onClick={() => setViewMode("setup")}
-          style={{
-            padding: "6px 10px",
-            borderRadius: 999,
-            border: "none",
-            fontSize: "0.85rem",
-            cursor: "pointer",
-            background:
-              viewMode === "setup" ? "#0ea5e9" : "transparent",
-            color: viewMode === "setup" ? "#ffffff" : "#374151",
-          }}
-        >
-          Room setup checklist
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setViewMode("live")}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: "none",
+              fontSize: "0.85rem",
+              cursor: "pointer",
+              background:
+                viewMode === "live" ? "#0ea5e9" : "transparent",
+              color: viewMode === "live" ? "#ffffff" : "#374151",
+            }}
+          >
+            Live view
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("setup")}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: "none",
+              fontSize: "0.85rem",
+              cursor: "pointer",
+              background:
+                viewMode === "setup" ? "#0ea5e9" : "transparent",
+              color: viewMode === "setup" ? "#ffffff" : "#374151",
+            }}
+          >
+            Room setup checklist
+          </button>
+        </div>
+      </header>
 
       {viewMode === "setup" ? renderSetupView() : renderLiveView()}
     </div>
