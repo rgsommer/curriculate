@@ -1,9 +1,6 @@
 // teacher-app/src/pages/TeacherProfile.jsx
 import React, { useEffect, useState } from "react";
-import axios from "axios";
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://api.curriculate.net";
+import { fetchMyProfile, updateMyProfile } from "../api/profile";
 
 // Options for perspectives (can grow later)
 const PERSPECTIVE_OPTIONS = [
@@ -20,501 +17,446 @@ const PERSPECTIVE_OPTIONS = [
 const emptyCategory = () => ({
   key: "",
   label: "",
-  description: "",
   weight: 25,
 });
 
-const PLAN_LABELS = {
-  FREE: "Free",
-  TEACHER_PLUS: "Teacher Plus",
-  SCHOOL: "School / Campus",
-};
+export default function TeacherProfile() {
+  const [profile, setProfile] = useState({
+    presenterName: "",
+    email: "",
+    schoolName: "",
+    presenterTitle: "",
+    defaultRoomLabel: "Classroom",
+    defaultStations: 8,
+    includeStudentReports: false,
+    assessmentCategories: [emptyCategory(), emptyCategory(), emptyCategory(), emptyCategory()],
+    perspectives: [],
+  });
 
-function formatPlanLabel(planName) {
-  if (!planName) return "Free";
-  return PLAN_LABELS[planName] || planName;
-}
-
-export default function TeacherProfilePage() {
-  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [savedMsg, setSavedMsg] = useState("");
 
-  const [planName, setPlanName] = useState(null);
-  const [planFeatures, setPlanFeatures] = useState({});
-  const [loadingPlan, setLoadingPlan] = useState(true);
-
+  // ------------------------
+  // Load profile on mount
+  // ------------------------
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    async function loadProfile() {
+      setLoading(true);
       setError("");
-      setLoadingPlan(true);
-
       try {
-        // Load profile + subscription together
-        const [profileRes, subRes] = await Promise.all([
-          axios.get(`${API_BASE}/api/profile`),
-          axios
-            .get(`${API_BASE}/api/subscription/me`)
-            .catch((err) => {
-              // Don’t break profile load if subscription is not set up yet
-              console.warn("subscription /me failed", err?.response?.status);
-              return null;
-            }),
-        ]);
+        const data = await fetchMyProfile(); // calls /api/profile via src/api/profile.js
 
-        if (cancelled) return;
+        if (!cancelled) {
+          const cats = Array.isArray(data.assessmentCategories)
+            ? data.assessmentCategories
+            : [];
 
-        // PROFILE
-        const data = (profileRes && profileRes.data) || {};
-        const cats = Array.isArray(data.assessmentCategories)
-          ? data.assessmentCategories
-          : [];
-
-        const filledCats = [
-          ...cats,
-          ...Array(Math.max(0, 4 - cats.length)).fill(0).map(() => emptyCategory()),
-        ].slice(0, 4);
-
-        setProfile({
-          ...data,
-          assessmentCategories: filledCats,
-          perspectives: Array.isArray(data.perspectives)
-            ? data.perspectives
-            : [],
-        });
-
-        // SUBSCRIPTION
-        if (subRes && subRes.data) {
-          const sub = subRes.data;
-          setPlanName(sub.planName || "FREE");
-          setPlanFeatures(sub.features || {});
-        } else {
-          setPlanName("FREE");
-          setPlanFeatures({});
+          setProfile({
+            presenterName: data.presenterName || "",
+            email: data.email || "",
+            schoolName: data.schoolName || "",
+            presenterTitle: data.presenterTitle || "",
+            defaultRoomLabel: data.defaultRoomLabel || "Classroom",
+            defaultStations: data.defaultStations || 8,
+            includeStudentReports: !!data.includeStudentReports,
+            assessmentCategories: [
+              ...cats,
+              ...Array(Math.max(0, 4 - cats.length))
+                .fill(0)
+                .map(() => emptyCategory()),
+            ].slice(0, 4),
+            perspectives: Array.isArray(data.perspectives)
+              ? data.perspectives
+              : [],
+          });
         }
       } catch (err) {
-        console.error("Load profile error", err);
+        console.error("Load presenter profile error", err);
         if (!cancelled) {
           setError("Could not load presenter profile.");
         }
       } finally {
-        if (!cancelled) setLoadingPlan(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    load();
+    loadProfile();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const updateField = (field, value) => {
-    setProfile((prev) => ({
-      ...(prev || {}),
-      [field]: value,
-    }));
-  };
-
-  const updateCategory = (index, field, value) => {
-    setProfile((prev) => {
-      if (!prev) return prev;
-      const list = [...(prev.assessmentCategories || [])];
-      const cat = { ...(list[index] || emptyCategory()) };
-
-      if (field === "label") {
-        cat.label = value;
-        if (!cat.key) {
-          cat.key = value
-            .toLowerCase()
-            .replace(/\s+/g, "-")
-            .replace(/[^a-z0-9-]/g, "");
-        }
-      } else if (field === "description") {
-        cat.description = value;
-      } else if (field === "weight") {
-        const num = Number(value);
-        cat.weight = Number.isFinite(num) ? num : 25;
-      }
-      list[index] = cat;
-      return {
-        ...prev,
-        assessmentCategories: list,
-      };
-    });
-  };
-
-  const handleSave = async () => {
-    if (!profile) return;
+  // ------------------------
+  // Save profile
+  // ------------------------
+  async function handleSave() {
     setSaving(true);
     setError("");
-    setSavedMsg("");
-
-    const payload = {
-      ...profile,
-      assessmentCategories: (profile.assessmentCategories || [])
-        .filter((c) => c && c.label && c.key)
-        .map((c) => ({
-          key: c.key,
-          label: c.label,
-          description: c.description || "",
-          weight: Number.isFinite(Number(c.weight))
-            ? Number(c.weight)
-            : 25,
-        })),
-    };
-
     try {
-      await axios.put(`${API_BASE}/api/profile`, payload);
-      setSavedMsg("Presenter profile saved.");
-      setTimeout(() => setSavedMsg(""), 2500);
+      const payload = {
+        ...profile,
+        defaultStations: Number(profile.defaultStations) || 8,
+        assessmentCategories: profile.assessmentCategories
+          .filter((c) => c.key.trim() || c.label.trim())
+          .map((c) => ({
+            key: c.key.trim(),
+            label: c.label.trim(),
+            weight: Number(c.weight) || 0,
+          })),
+      };
+
+      await updateMyProfile(payload); // PUT /api/profile
     } catch (err) {
-      console.error("Save profile error", err);
-      setError("Could not save profile.");
+      console.error("Save presenter profile error", err);
+      setError("Could not save presenter profile.");
     } finally {
       setSaving(false);
     }
-  };
-
-  if (!profile) {
-    return (
-      <div style={{ padding: 16 }}>
-        <h1>Presenter Profile</h1>
-        {error ? <p style={{ color: "red" }}>{error}</p> : <p>Loading…</p>}
-      </div>
-    );
   }
 
-  const totalWeight = (profile.assessmentCategories || []).reduce(
-    (sum, c) => sum + (Number(c.weight) || 0),
-    0
-  );
+  // ------------------------
+  // Helpers for form updates
+  // ------------------------
+  function updateField(field, value) {
+    setProfile((prev) => ({ ...prev, [field]: value }));
+  }
 
-  const canToggleIndividualReports =
-    planName === "TEACHER_PLUS" || planName === "SCHOOL";
+  function togglePerspective(value) {
+    setProfile((prev) => {
+      const has = prev.perspectives.includes(value);
+      return {
+        ...prev,
+        perspectives: has
+          ? prev.perspectives.filter((v) => v !== value)
+          : [...prev.perspectives, value],
+      };
+    });
+  }
 
+  function updateCategory(index, field, value) {
+    setProfile((prev) => {
+      const next = [...prev.assessmentCategories];
+      next[index] = { ...next[index], [field]: value };
+      return { ...prev, assessmentCategories: next };
+    });
+  }
+
+  // ------------------------
+  // Render
+  // ------------------------
   return (
-    <div
-      style={{
-        padding: 16,
-        fontFamily: "system-ui, -apple-system, 'Segoe UI'",
-        maxWidth: 900,
-        margin: "0 auto",
-      }}
-    >
-      {/* Header with plan badge */}
-      <div
+    <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "system-ui" }}>
+      <h1 style={{ marginBottom: 8 }}>Presenter Profile</h1>
+      <p style={{ marginTop: 0, marginBottom: 16, color: "#4b5563" }}>
+        Tell Curriculate a little about who you are and how you want sessions
+        to be framed. This helps with reports, AI summaries, and student
+        handouts.
+      </p>
+
+      {loading && <p>Loading presenter profile…</p>}
+
+      {error && (
+        <p style={{ color: "#b91c1c", fontSize: "0.9rem" }}>{error}</p>
+      )}
+
+      {/* Basic presenter info */}
+      <section
         style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 16,
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
           marginBottom: 16,
         }}
       >
-        <div>
-          <h1 style={{ marginTop: 0, marginBottom: 4 }}>Presenter Profile</h1>
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "#555" }}>
-            This information appears on reports and helps shape AI-generated
-            task sets and session summaries.
+        <h2 style={{ fontSize: "1.1rem", marginTop: 0 }}>Who is presenting?</h2>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: "block", fontSize: "0.85rem" }}>
+            Name
+          </label>
+          <input
+            type="text"
+            value={profile.presenterName}
+            onChange={(e) => updateField("presenterName", e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #cbd5e1",
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: "block", fontSize: "0.85rem" }}>
+            Email for reports
+          </label>
+          <input
+            type="email"
+            value={profile.email}
+            onChange={(e) => updateField("email", e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #cbd5e1",
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: "block", fontSize: "0.85rem" }}>
+            School / organization
+          </label>
+          <input
+            type="text"
+            value={profile.schoolName}
+            onChange={(e) => updateField("schoolName", e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #cbd5e1",
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: "block", fontSize: "0.85rem" }}>
+            Role / title (optional)
+          </label>
+          <input
+            type="text"
+            value={profile.presenterTitle}
+            onChange={(e) => updateField("presenterTitle", e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #cbd5e1",
+            }}
+          />
+        </div>
+      </section>
+
+      {/* Room / stations settings */}
+      <section
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 16,
+        }}
+      >
+        <h2 style={{ fontSize: "1.1rem", marginTop: 0 }}>Room & stations</h2>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: "block", fontSize: "0.85rem" }}>
+            Default room label
+          </label>
+          <input
+            type="text"
+            value={profile.defaultRoomLabel}
+            onChange={(e) => updateField("defaultRoomLabel", e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #cbd5e1",
+            }}
+          />
+          <p style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: 4 }}>
+            For example: “Classroom”, “Hallway”, “Gym A”.
           </p>
         </div>
 
-        <div style={{ textAlign: "right" }}>
-          <div
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: "block", fontSize: "0.85rem" }}>
+            Default number of stations
+          </label>
+          <input
+            type="number"
+            min={4}
+            max={12}
+            value={profile.defaultStations}
+            onChange={(e) => updateField("defaultStations", e.target.value)}
             style={{
-              display: "inline-block",
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px solid #d1d5db",
-              fontSize: "0.8rem",
-              background: "#f9fafb",
+              width: 100,
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #cbd5e1",
             }}
-          >
-            <span style={{ color: "#6b7280", marginRight: 4 }}>
-              Current plan:
-            </span>
-            <strong>{formatPlanLabel(planName)}</strong>
-          </div>
-          {!loadingPlan && (
-            <div style={{ marginTop: 4 }}>
-              <a
-                href="/my-plan"
-                style={{
-                  fontSize: "0.75rem",
-                  color: "#0ea5e9",
-                  textDecoration: "none",
-                }}
-              >
-                View plan &amp; upgrade options
-              </a>
-            </div>
-          )}
+          />
+          <p style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: 4 }}>
+            Used as the default layout for Room View and station posters. You
+            can still override per session.
+          </p>
         </div>
-      </div>
 
-      {error && (
-        <p style={{ color: "red", marginTop: 0, marginBottom: 8 }}>{error}</p>
-      )}
-      {savedMsg && (
-        <p style={{ color: "green", marginTop: 0, marginBottom: 8 }}>
-          {savedMsg}
-        </p>
-      )}
-
-      {/* School name */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-          School / Organization Name
-        </label>
-        <input
-          type="text"
-          value={profile.schoolName || ""}
-          onChange={(e) => updateField("schoolName", e.target.value)}
-          placeholder="e.g., Brampton Christian School"
-          style={{
-            marginTop: 4,
-            padding: "6px 8px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            width: "100%",
-            maxWidth: 360,
-            fontSize: "0.9rem",
-          }}
-        />
-      </div>
-
-      {/* Presenter name */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-          Presenter Name
-        </label>
-        <input
-          type="text"
-          value={profile.displayName || profile.teacherName || ""}
-          onChange={(e) => updateField("displayName", e.target.value)}
-          placeholder="e.g., Mr. Sommer"
-          style={{
-            marginTop: 4,
-            padding: "6px 8px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            width: "100%",
-            maxWidth: 260,
-            fontSize: "0.9rem",
-          }}
-        />
-        <p style={{ fontSize: "0.75rem", color: "#666", marginTop: 4 }}>
-          Reports will refer to you as the <strong>Presenter</strong>, which
-          works for classrooms, conferences, PD days, and camps.
-        </p>
-      </div>
-
-      {/* Email */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-          Transcript Email
-        </label>
-        <input
-          type="email"
-          value={profile.email || ""}
-          onChange={(e) => updateField("email", e.target.value)}
-          placeholder="you@school.org"
-          style={{
-            marginTop: 4,
-            padding: "6px 8px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            width: "100%",
-            maxWidth: 260,
-            fontSize: "0.9rem",
-          }}
-        />
-        <p style={{ fontSize: "0.75rem", color: "#666", marginTop: 4 }}>
-          Session transcripts and PDF reports can be emailed here (depending on
-          your plan).
-        </p>
-      </div>
-
-      {/* Perspectives */}
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>Perspectives</h2>
-        <p style={{ fontSize: "0.8rem", color: "#555", marginTop: 0 }}>
-          Choose the lens or perspective for your sessions (Christian, business,
-          team-building, etc.). These can be surfaced on reports and guide AI
-          wording.
-        </p>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr)",
-            gap: 4,
-            maxWidth: 420,
-          }}
-        >
-          {PERSPECTIVE_OPTIONS.map((opt) => {
-            const selected = (profile.perspectives || []).includes(opt.value);
-            return (
-              <label
-                key={opt.value}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: "0.85rem",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={(e) =>
-                    updateField(
-                      "perspectives",
-                      e.target.checked
-                        ? [...(profile.perspectives || []), opt.value]
-                        : (profile.perspectives || []).filter(
-                            (v) => v !== opt.value
-                          )
-                    )
-                  }
-                />
-                {opt.label}
-              </label>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Include individual reports (gated by plan) */}
-      <div style={{ marginBottom: 24 }}>
         <label
           style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
+            marginTop: 8,
             fontSize: "0.9rem",
           }}
         >
           <input
             type="checkbox"
-            checked={!!profile.includeIndividualReports}
-            disabled={!canToggleIndividualReports}
+            checked={profile.includeStudentReports}
             onChange={(e) =>
-              updateField("includeIndividualReports", e.target.checked)
+              updateField("includeStudentReports", e.target.checked)
             }
           />
-          <span>
-            Include individual one-page snapshot reports in the PDF transcript
-            (where data is available).
-          </span>
+          Include individual student report pages in PDF exports (where
+          available).
         </label>
-        {!canToggleIndividualReports && (
-          <p style={{ fontSize: "0.75rem", color: "#666", marginTop: 4 }}>
-            Individual student reports are unlocked on{" "}
-            <strong>Teacher Plus</strong> and <strong>School</strong> plans.
-            You’re currently on{" "}
-            <strong>{formatPlanLabel(planName)}</strong>.{" "}
-            <a
-              href="/my-plan"
-              style={{ color: "#0ea5e9", textDecoration: "none" }}
-            >
-              See upgrade options
-            </a>
-            .
-          </p>
-        )}
-      </div>
+      </section>
 
-      {/* Assessment categories */}
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: "1rem" }}>Assessment Categories (optional)</h2>
-        <p style={{ fontSize: "0.8rem", color: "#555" }}>
-          Define up to four categories for AI-based feedback (Knowledge,
-          Application, Thinking, Communication, etc.). We’ll use these when
-          summarizing performance.
+      {/* Perspectives */}
+      <section
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 16,
+        }}
+      >
+        <h2 style={{ fontSize: "1.1rem", marginTop: 0 }}>
+          Perspectives / lenses
+        </h2>
+        <p style={{ fontSize: "0.85rem", color: "#4b5563" }}>
+          Choose one or more perspectives that describe how you want AI
+          summaries and reports to “look at” your sessions.
         </p>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0,2fr) minmax(0,3fr) 80px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
             gap: 8,
-            fontSize: "0.8rem",
+            marginTop: 8,
           }}
         >
-          <div style={{ fontWeight: 600 }}>Label</div>
-          <div style={{ fontWeight: 600 }}>Description (for AI)</div>
-          <div style={{ fontWeight: 600 }}>Weight</div>
+          {PERSPECTIVE_OPTIONS.map((opt) => {
+            const checked = profile.perspectives.includes(opt.value);
+            return (
+              <label
+                key={opt.value}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 6,
+                  padding: 8,
+                  borderRadius: 8,
+                  border: checked
+                    ? "1px solid #0ea5e9"
+                    : "1px solid #e5e7eb",
+                  background: checked ? "#e0f2fe" : "#ffffff",
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => togglePerspective(opt.value)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>{opt.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </section>
 
-          {(profile.assessmentCategories || []).map((cat, idx) => (
+      {/* Assessment categories */}
+      <section
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 16,
+        }}
+      >
+        <h2 style={{ fontSize: "1.1rem", marginTop: 0 }}>
+          Optional assessment categories
+        </h2>
+        <p style={{ fontSize: "0.85rem", color: "#4b5563" }}>
+          Use up to four categories (for example: Knowledge, Application,
+          Collaboration, Communication) for finer breakdowns in reports.
+        </p>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 2fr 1fr",
+            gap: 8,
+            marginTop: 8,
+          }}
+        >
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Key</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Label</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Weight %</div>
+
+          {profile.assessmentCategories.map((cat, idx) => (
             <React.Fragment key={idx}>
               <input
-                type="text"
-                value={cat.label || ""}
+                placeholder="knowledge"
+                value={cat.key}
                 onChange={(e) =>
-                  updateCategory(idx, "label", e.target.value)
+                  updateCategory(idx, "key", e.target.value.toLowerCase())
                 }
-                placeholder={`Category ${idx + 1}`}
                 style={{
                   padding: "4px 6px",
+                  border: "1px solid #cbd5e1",
                   borderRadius: 4,
-                  border: "1px solid #ccc",
                 }}
               />
               <input
-                type="text"
-                value={cat.description || ""}
+                placeholder="Knowledge / Content"
+                value={cat.label}
                 onChange={(e) =>
-                  updateCategory(idx, "description", e.target.value)
+                  updateCategory(idx, "label", e.target.value)
                 }
-                placeholder="What should AI look for here?"
                 style={{
                   padding: "4px 6px",
+                  border: "1px solid #cbd5e1",
                   borderRadius: 4,
-                  border: "1px solid #ccc",
                 }}
               />
               <input
                 type="number"
-                value={cat.weight ?? ""}
+                min={0}
+                max={100}
+                value={cat.weight ?? 25}
                 onChange={(e) =>
                   updateCategory(idx, "weight", e.target.value)
                 }
-                min={0}
-                max={100}
                 style={{
                   padding: "4px 6px",
+                  border: "1px solid #cbd5e1",
                   borderRadius: 4,
-                  border: "1px solid #ccc",
-                  width: "100%",
                 }}
               />
             </React.Fragment>
           ))}
         </div>
-
-        <p style={{ fontSize: "0.75rem", color: "#666", marginTop: 6 }}>
-          Total weight:{" "}
-          <span
-            style={{ fontWeight: 600, color: totalWeight === 100 ? "green" : "red" }}
-          >
-            {totalWeight}%
-          </span>{" "}
-          (aim for 100%, but we’ll still work if it’s a bit off).
-        </p>
-      </div>
+      </section>
 
       <button
+        type="button"
         onClick={handleSave}
         disabled={saving}
         style={{
           padding: "8px 14px",
           borderRadius: 8,
           border: "none",
-          background: saving ? "#999" : "#0ea5e9",
+          background: saving ? "#9ca3af" : "#0ea5e9",
           color: "#fff",
           fontSize: "0.9rem",
           cursor: saving ? "default" : "pointer",
