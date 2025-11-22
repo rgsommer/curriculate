@@ -1,51 +1,69 @@
+// ====================================================================
+//  Curriculate Backend – Clean, Modern, Rewritten Index.js
+//  Supports:
+//   - Rooms, Sessions, Teams, Stations
+//   - Station Location Protection (Classroom/Hallway/etc.)
+//   - Task Launching + Student Submissions
+//   - AI Rubric Scoring + AI Session Summaries
+//   - Perspectives (multi-select worldview/approach tags)
+//   - PDF + HTML Transcript Emailing
+// ====================================================================
+
 import "dotenv/config";
 import express from "express";
 import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
+import bodyParser from "body-parser";
+import TaskSet from "./models/TaskSet.js";
+import TeacherProfile from "./models/TeacherProfile.js";
+import SubscriptionPlan from "./models/SubscriptionPlan.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
-import { generateSessionSummaries } from "./ai/sessionSummaries.js";
+import { buildSessionSummary } from "./analytics/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
-import Profile from "./models/TeacherProfile.js";
-import TaskSet from "./models/TaskSet.js";
 
-import tasksetRoutes from "./routes/tasksetRoutes.js";
-import aiTasksetsRouter from "./routes/aiTasksets.js";
-import teacherProfileRoutes from "./routes/teacherProfileRoutes.js";
-
-// ----------------------------------------------------------------------------
-// CORS FIRST
-// ----------------------------------------------------------------------------
 const app = express();
+const server = http.createServer(app);
 
 const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:4173",
+  "http://localhost:4174",
+  "http://localhost:3000",
   "https://set.curriculate.net",
   "https://play.curriculate.net",
   "https://curriculate.net",
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:3000",
+  "https://www.curriculate.net",
 ];
 
-const corsOptions = {
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error("Not allowed by CORS"));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
+
+app.use(bodyParser.json({ limit: "2mb" }));
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
   },
-  credentials: true,
-};
+});
 
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-app.use(express.json());
-
-// ----------------------------------------------------------------------------
-// MongoDB
-// ----------------------------------------------------------------------------
+// --------------------------------------------------------------------
+// MongoDB Connection
+// --------------------------------------------------------------------
 const MONGO_URI = process.env.MONGO_URI;
 if (!MONGO_URI) {
   console.error("❌ MONGO_URI is not defined in environment!");
@@ -55,76 +73,33 @@ if (!MONGO_URI) {
 mongoose
   .connect(MONGO_URI)
   .then(() => console.log("Mongo connected"))
-  .catch((err) => console.error("Mongo error", err));
+  .catch((err) => console.error("Mongo connection error:", err));
 
-// ----------------------------------------------------------------------------
-// Routes
-// ----------------------------------------------------------------------------
-app.use("/api/profile", teacherProfileRoutes);
-app.use("/api/tasksets", tasksetRoutes);
-app.use("/api/ai/tasksets", aiTasksetsRouter);
+// ====================================================================
+//  ROOM ENGINE (All In-Memory)
+// ====================================================================
+const rooms = {}; // rooms["8A"] = { teacherSocketId, teams, tasks, ... }
 
-// ----------------------------------------------------------------------------
-// HTTP + SOCKET SERVER
-// ----------------------------------------------------------------------------
-const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
-
-// ----------------------------------------------------------------------------
-// ROOM ENGINE (Socket)
-// ----------------------------------------------------------------------------
-
-const COLOR_SEQUENCE = ["RED", "BLUE", "GREEN", "YELLOW", "ORANGE", "PURPLE"];
-
-// rooms[code] = { code, teacherSocketId, teams, stations, scores, taskset, ... }
-const rooms = {};
-
-function createEmptyStations() {
-  return COLOR_SEQUENCE.map((color, index) => ({
-    id: `station-${index + 1}`,
-    color,
-    assignedTeamId: null,
-  }));
-}
-
+// Create a blank room object
 function createRoom(roomCode, teacherSocketId) {
   return {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {}, // teamId -> { teamId, teamName, members: [], currentStationId, lastScannedStationId }
-    stations: createEmptyStations(),
-    scores: {}, // teamName -> number
+    teams: {}, // teamId -> { teamName, color, members: [] }
+    stations: {}, // stationId (e.g. "station-red") -> { roomLocation }
     taskset: null,
     taskIndex: -1,
     submissions: [],
     startedAt: null,
     isActive: false,
-    currentTaskStart: null,
   };
 }
 
-function recalcScores(room) {
-  const scores = {};
-  for (const sub of room.submissions) {
-    const earned =
-      sub.aiScore?.totalScore ??
-      (sub.correct ? (sub.points ?? 0) : 0);
-
-    scores[sub.teamName] = (scores[sub.teamName] || 0) + earned;
-  }
-  room.scores = scores;
-}
-
+// Build a transcript object from a room for analytics + emailing
 function buildTranscript(room) {
-  const tasks = room.taskset?.tasks || [];
+  const taskset = room.taskset;
+  const tasks = taskset.tasks || [];
 
   const taskRecords = tasks.map((t, i) => ({
     index: i,
@@ -134,26 +109,36 @@ function buildTranscript(room) {
     points: t.points ?? 10,
   }));
 
-  recalcScores(room);
-
-  const totalPossible = taskRecords.reduce(
-    (s, t) => s + (t.points ?? 10),
-    0
-  );
+  // Calculate team total scores
+  const teamScores = {};
+  for (const sub of room.submissions) {
+    if (!teamScores[sub.teamId]) {
+      teamScores[sub.teamId] = {
+        teamId: sub.teamId,
+        teamName: sub.teamName,
+        totalPoints: 0,
+        attempts: 0,
+      };
+    }
+    teamScores[sub.teamId].totalPoints += sub.points ?? 0;
+    teamScores[sub.teamId].attempts += 1;
+  }
 
   return {
     roomCode: room.code,
-    tasksetName: room.taskset?.name,
+    startedAt: room.startedAt,
+    completedAt: Date.now(),
     tasks: taskRecords,
-    totalPossible,
-    scores: room.scores,
+    scores: teamScores,
     submissions: room.submissions,
   };
 }
 
+// Build per-participant stats for AI summaries
 function computePerParticipantStats(room, transcript) {
   const tasks = transcript.tasks || [];
-  const taskIndexMap = Object.fromEntries(tasks.map((t) => [t.index, t]));
+  const tasksByIndex = {};
+  tasks.forEach((t) => (tasksByIndex[t.index] = t));
 
   const participants = {};
 
@@ -173,17 +158,15 @@ function computePerParticipantStats(room, transcript) {
 
     const entry = participants[key];
     entry.attempts += 1;
+    if (sub.correct) {
+      entry.correctCount += 1;
+    }
+    entry.pointsEarned += sub.points ?? 0;
 
-    const task = taskIndexMap[sub.taskIndex];
-    const pts = task?.points ?? 10;
-    const earned =
-      sub.aiScore?.totalScore ??
-      (sub.correct ? pts : 0);
-
-    entry.pointsEarned += earned;
-    entry.pointsPossible += pts;
-
-    if (sub.correct) entry.correctCount += 1;
+    const taskMeta = tasksByIndex[sub.taskIndex];
+    if (taskMeta) {
+      entry.pointsPossible += taskMeta.points ?? 10;
+    }
   }
 
   const totalTasks = tasks.length;
@@ -201,40 +184,33 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
-function emitRoomState(roomCode) {
-  const room = rooms[roomCode];
-  if (!room) return;
+function buildRoomState(room) {
+  if (!room) {
+    return { teams: {}, stations: {}, scores: {} };
+  }
 
-  recalcScores(room);
+  // Simple per-team score summary (aggregate points)
+  const scores = {};
+  for (const sub of room.submissions) {
+    if (!scores[sub.teamId]) scores[sub.teamId] = 0;
+    scores[sub.teamId] += sub.points ?? 0;
+  }
 
-  io.to(roomCode).emit("roomState", {
-    stations: room.stations,
+  return {
     teams: room.teams,
-    scores: room.scores,
-    taskset: room.taskset
-      ? {
-          _id: room.taskset._id,
-          name: room.taskset.name,
-          tasks: room.taskset.tasks?.length ?? 0,
-        }
-      : null,
-  });
-
-  // Optional: keep existing leaderboard wiring happy
-  const leaderboard = Object.entries(room.scores)
-    .map(([teamName, score]) => ({ teamName, score }))
-    .sort((a, b) => b.score - a.score);
-
-  io.to(roomCode).emit("leaderboardUpdate", leaderboard);
+    stations: room.stations,
+    scores,
+    taskIndex: room.taskIndex,
+  };
 }
 
-// ----------------------------------------------------------------------------
-// SOCKET.IO
-// ----------------------------------------------------------------------------
+// ====================================================================
+//  SOCKET.IO
+// ====================================================================
 io.on("connection", (socket) => {
-  // ------------------------------------------------------------
-  // TEACHER: create room (new style)
-  // ------------------------------------------------------------
+  // --------------------------------------------------------------
+  // Teacher: create room
+  // --------------------------------------------------------------
   socket.on("teacher:createRoom", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     rooms[code] = createRoom(code, socket.id);
@@ -242,39 +218,11 @@ io.on("connection", (socket) => {
     socket.data.role = "teacher";
     socket.data.roomCode = code;
     socket.emit("room:created", { roomCode: code });
-    emitRoomState(code);
   });
 
-  // ------------------------------------------------------------
-  // TEACHER: create/join room (compat with LiveSession joinRoom)
-  // ------------------------------------------------------------
-  socket.on("joinRoom", ({ roomCode, name, role }) => {
-    const code = (roomCode || "").toUpperCase();
-    let room = rooms[code];
-
-    if (!room && role === "teacher") {
-      room = createRoom(code, socket.id);
-      rooms[code] = room;
-    } else if (!room) {
-      socket.emit("join:error", { message: "Room not found" });
-      return;
-    }
-
-    socket.join(code);
-    socket.data.role = role || "teacher";
-    socket.data.roomCode = code;
-
-    if (role === "teacher") {
-      room.teacherSocketId = socket.id;
-    }
-
-    socket.emit("room:created", { roomCode: code });
-    emitRoomState(code);
-  });
-
-  // ------------------------------------------------------------
-  // TEACHER: load taskset
-  // ------------------------------------------------------------
+  // --------------------------------------------------------------
+  // Teacher loads a taskset
+  // --------------------------------------------------------------
   socket.on("teacher:loadTaskset", async ({ roomCode, tasksetId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -292,15 +240,14 @@ io.on("connection", (socket) => {
     io.to(code).emit("taskset:loaded", {
       name: taskset.name,
       tasks: taskset.tasks.length,
-      perspectives: taskset.perspectives ?? [],
+      subject: taskset.subject,
+      gradeLevel: taskset.gradeLevel,
     });
-
-    emitRoomState(code);
   });
 
-  // ------------------------------------------------------------
-  // TEACHER: start session
-  // ------------------------------------------------------------
+  // --------------------------------------------------------------
+  // Teacher starts session
+  // --------------------------------------------------------------
   socket.on("teacher:startSession", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -309,45 +256,49 @@ io.on("connection", (socket) => {
     room.startedAt = Date.now();
     room.isActive = true;
     room.taskIndex = -1;
-    room.currentTaskStart = null;
 
     io.to(code).emit("session:started");
   });
 
-  // ------------------------------------------------------------
-  // TEACHER: next task
-  // ------------------------------------------------------------
+  // --------------------------------------------------------------
+  // Teacher send next task
+  // --------------------------------------------------------------
   socket.on("teacher:nextTask", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) return;
 
     room.taskIndex += 1;
-    const idx = room.taskIndex;
+    const index = room.taskIndex;
 
-    if (idx >= room.taskset.tasks.length) {
+    if (index >= room.taskset.tasks.length) {
       io.to(code).emit("session:complete");
       return;
     }
 
-    const task = room.taskset.tasks[idx];
-    room.currentTaskStart = Date.now();
+    const task = room.taskset.tasks[index];
 
+    // NEW: emit `task:launch` (modern contract)
     io.to(code).emit("task:launch", {
-      index: idx,
+      index,
       task,
       timeLimitSeconds: task.timeLimitSeconds ?? 0,
     });
   });
 
-  // ------------------------------------------------------------
-  // STUDENT: join room (new style: student:joinRoom)
-  // ------------------------------------------------------------
-  socket.on("student:joinRoom", ({ roomCode, teamId, teamName, playerId }) => {
+  // --------------------------------------------------------------
+  // Student joins room
+  // --------------------------------------------------------------
+  socket.on("student:joinRoom", (payload, ack) => {
+    const { roomCode, teamId, teamName, playerId } = payload || {};
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) {
-      socket.emit("join:error", { message: "Room not found" });
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room not found" });
+      } else {
+        socket.emit("join:error", { message: "Room not found" });
+      }
       return;
     }
 
@@ -359,92 +310,42 @@ io.on("connection", (socket) => {
 
     if (!room.teams[teamId]) {
       room.teams[teamId] = {
-        teamId,
         teamName,
         members: [],
-        currentStationId: null,
-        lastScannedStationId: null,
       };
     }
     room.teams[teamId].members.push(playerId);
 
-    // keep existing event for any old listeners
+    const state = buildRoomState(room);
+
     io.to(code).emit("team:joined", { teamId, teamName, playerId });
-    emitRoomState(code);
-  });
-
-  // ------------------------------------------------------------
-  // STUDENT: join room (compat with student "join-room" + ack)
-  // ------------------------------------------------------------
-  socket.on("join-room", ({ roomCode, teamName }, ack) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Room not found" });
-      }
-      return;
-    }
-
-    // create a teamId based on name
-    const teamId = `team-${teamName.trim().replace(/\s+/g, "-")}`;
-
-    if (!room.teams[teamId]) {
-      room.teams[teamId] = {
-        teamId,
-        teamName,
-        members: [],
-        currentStationId: null,
-        lastScannedStationId: null,
-      };
-    }
-
-    // assign first free station, or stick with any existing
-    let station = room.stations.find((s) => s.assignedTeamId === teamId);
-    if (!station) {
-      station = room.stations.find((s) => !s.assignedTeamId);
-      if (station) {
-        station.assignedTeamId = teamId;
-        room.teams[teamId].currentStationId = station.id;
-      }
-    }
-
-    socket.join(code);
-    socket.data.role = "student";
-    socket.data.roomCode = code;
-    socket.data.teamId = teamId;
-
-    const color = station?.color ?? null;
-    const stationLabel = color ? `${color} station` : "Station";
-
-    emitRoomState(code);
 
     if (typeof ack === "function") {
-      ack({
-        ok: true,
-        color,
-        stationLabel,
-        displays: room.taskset?.displays ?? [],
-      });
+      ack({ ok: true, roomState: state });
     }
   });
 
-  // ------------------------------------------------------------
-  // STUDENT: submit answer
-  // ------------------------------------------------------------
-  socket.on("task:submit", async (payload) => {
-    const { roomCode, teamId, teamName, playerId, taskIndex, answer } =
-      payload || {};
+  // --------------------------------------------------------------
+  // Student submits answer
+  // --------------------------------------------------------------
+  const handleStudentSubmit = async (payload, ack) => {
+    const {
+      roomCode,
+      teamId,
+      teamName,
+      playerId,
+      taskIndex,
+      answer,
+    } = payload;
 
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
 
-    const task = room.taskset?.tasks?.[taskIndex];
+    const task = room.taskset.tasks[taskIndex];
     if (!task) return;
 
     let aiScore = null;
-
     if (task.aiRubricId) {
       try {
         aiScore = await generateAIScore({
@@ -457,19 +358,15 @@ io.on("connection", (socket) => {
       }
     }
 
-    const correct =
-      aiScore?.totalScore != null
-        ? aiScore.totalScore > 0
-        : task.correctAnswer != null
-        ? String(answer).trim() === String(task.correctAnswer).trim()
-        : null;
-
-    const points = task.points ?? 10;
-    const submittedAt = Date.now();
-    const timeMs =
-      room.currentTaskStart != null
-        ? submittedAt - room.currentTaskStart
-        : null;
+    const correct = (() => {
+      // If AI returned a numeric totalScore, treat > 0 as "some credit"
+      if (aiScore && typeof aiScore.totalScore === "number") {
+        return aiScore.totalScore > 0;
+      }
+      // Fallback: string comparison to correctAnswer if provided
+      if (task.correctAnswer == null) return null;
+      return String(answer).trim() === String(task.correctAnswer).trim();
+    })();
 
     room.submissions.push({
       roomCode: code,
@@ -479,35 +376,30 @@ io.on("connection", (socket) => {
       taskIndex,
       answer,
       correct,
-      points,
+      points: task.points ?? 10,
       aiScore,
-      submittedAt,
+      submittedAt: Date.now(),
     });
-
-    recalcScores(room);
-
-    // find station for this team
-    const team = room.teams[teamId];
-    const stationId = team?.currentStationId || null;
-
-    // live submission bubble for LiveSession
-    io.to(code).emit("taskSubmission", {
-      teamId,
-      teamName,
-      stationId,
-      answer,
-      correct,
-      timeMs,
-    });
-
-    emitRoomState(code);
 
     socket.emit("task:received");
+    if (typeof ack === "function") {
+      ack({ ok: true });
+    }
+  };
+
+  // NEW canonical event:
+  socket.on("student:submitAnswer", (payload, ack) => {
+    handleStudentSubmit(payload, ack);
   });
 
-  // ------------------------------------------------------------
-  // TEACHER: end session + email transcript
-  // ------------------------------------------------------------
+  // Legacy alias:
+  socket.on("task:submit", (payload) => {
+    handleStudentSubmit(payload);
+  });
+
+  // --------------------------------------------------------------
+  // Teacher ends session + sends transcript
+  // --------------------------------------------------------------
   socket.on(
     "teacher:endSessionAndEmail",
     async ({
@@ -525,58 +417,152 @@ io.on("connection", (socket) => {
         return;
       }
 
-      if (!teacherEmail) {
-        socket.emit("transcript:error", {
-          message: "Teacher email missing",
-        });
-        return;
-      }
+      const transcript = buildTranscript(room);
+      const perParticipant = computePerParticipantStats(room, transcript);
+
+      const summary = await buildSessionSummary({
+        roomCode: code,
+        transcript,
+        perParticipant,
+        assessmentCategories,
+        perspectives,
+      });
 
       try {
-        const transcript = buildTranscript(room);
-        const stats = computePerParticipantStats(room, transcript);
-
-        let aiSummary = null;
-        if (process.env.OPENAI_API_KEY) {
-          aiSummary = await generateSessionSummaries({
-            transcript,
-            perParticipantStats: stats,
-            assessmentCategories: assessmentCategories || [],
-            perspectives: perspectives || [],
-          });
-        }
-
         await sendTranscriptEmail({
           to: teacherEmail,
-          transcript,
-          aiSummary,
-          includeIndividualReports,
+          roomCode: code,
           schoolName,
-          perspectives,
+          summary,
+          transcript,
+          perParticipant,
+          assessmentCategories,
+          includeIndividualReports,
         });
 
-        socket.emit("transcript:sent", { to: teacherEmail });
-      } catch (err) {
-        console.error("Transcript email error:", err);
+        socket.emit("transcript:sent", {
+          ok: true,
+          email: teacherEmail,
+        });
+      } catch (e) {
+        console.error("Transcript emailing failed:", e);
         socket.emit("transcript:error", {
-          message: "Failed to generate or send transcript",
+          message: "Failed to send transcript email",
         });
       }
     }
   );
 });
 
-// ----------------------------------------------------------------------------
-// Fallback 404 (with CORS headers)
-// ----------------------------------------------------------------------------
-app.use((req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.status(404).json({ error: "Not found" });
+// ====================================================================
+//  REST Routes (profile, subscription, AI, etc.)
+// ====================================================================
+
+// Simple DB check
+app.get("/db-check", async (req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    res.json({ ok: true, db: "reachable" });
+  } catch (err) {
+    console.error("DB check failed:", err);
+    res.status(500).json({ ok: false, error: "DB unreachable" });
+  }
 });
 
-// ----------------------------------------------------------------------------
-// Server start
-// ----------------------------------------------------------------------------
+// Teacher profile
+app.get("/api/profile/me", async (req, res) => {
+  try {
+    // For now, just grab the first profile doc
+    let profile = await TeacherProfile.findOne().lean();
+    if (!profile) {
+      profile = await TeacherProfile.create({
+        email: "demo@curriculate.net",
+        presenterName: "Demo Presenter",
+        schoolName: "Demo School",
+        perspectives: ["Christian", "Biblical"],
+        includeIndividualReports: false,
+        assessmentCategories: [
+          { label: "Participation", weight: 25 },
+          { label: "Understanding", weight: 25 },
+          { label: "Application", weight: 25 },
+          { label: "Collaboration", weight: 25 },
+        ],
+      });
+    }
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
+
+app.put("/api/profile/me", async (req, res) => {
+  try {
+    let profile = await TeacherProfile.findOne();
+    if (!profile) {
+      profile = new TeacherProfile();
+    }
+
+    profile.presenterName = req.body.presenterName ?? profile.presenterName;
+    profile.schoolName = req.body.schoolName ?? profile.schoolName;
+    profile.email = req.body.email ?? profile.email;
+    profile.perspectives = req.body.perspectives ?? profile.perspectives;
+    profile.includeIndividualReports =
+      req.body.includeIndividualReports ?? profile.includeIndividualReports;
+    profile.assessmentCategories =
+      req.body.assessmentCategories ?? profile.assessmentCategories;
+
+    await profile.save();
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile update failed:", err);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
+// Subscription info
+app.get("/api/subscription/plan", async (req, res) => {
+  try {
+    let plan = await SubscriptionPlan.findOne().lean();
+    if (!plan) {
+      plan = await SubscriptionPlan.create({
+        tier: "FREE",
+        aiTasksetsUsedThisMonth: 0,
+      });
+    }
+    res.json(plan);
+  } catch (err) {
+    console.error("Subscription fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch subscription plan" });
+  }
+});
+
+app.post("/api/subscription/ai-usage", async (req, res) => {
+  try {
+    let plan = await SubscriptionPlan.findOne();
+    if (!plan) {
+      plan = new SubscriptionPlan({ tier: "FREE" });
+    }
+    plan.aiTasksetsUsedThisMonth =
+      (plan.aiTasksetsUsedThisMonth || 0) + 1;
+    await plan.save();
+    res.json({ ok: true, aiTasksetsUsedThisMonth: plan.aiTasksetsUsedThisMonth });
+  } catch (err) {
+    console.error("AI usage update failed:", err);
+    res.status(500).json({ error: "Failed to update AI usage" });
+  }
+});
+
+// Create taskset
+app.post("/api/tasksets", async (req, res) => {
+  const t = new TaskSet(req.body);
+  await t.save();
+  res.json(t);
+});
+
+// ====================================================================
+//  Start Server
+// ====================================================================
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
