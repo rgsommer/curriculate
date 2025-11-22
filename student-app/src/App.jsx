@@ -4,8 +4,8 @@ import { io } from "socket.io-client";
 import TaskRunner from "./TaskRunner.jsx";
 
 // Socket URL – adjust if needed
-const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL || "https://api.curriculate.net";
+import { API_BASE_URL } from "./config"; // ⬅️ use shared config
+const SOCKET_URL = API_BASE_URL;
 
 function App() {
   const [socket, setSocket] = useState(null);
