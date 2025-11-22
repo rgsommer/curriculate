@@ -6,22 +6,30 @@ const router = express.Router();
 
 /**
  * Helper: find or create the single global subscription plan document.
- * The SubscriptionPlan schema REQUIRES a 'name' field – so we include it.
+ * The SubscriptionPlan schema REQUIRES a 'name' field.
  */
 async function getOrCreatePlan() {
-  let plan = await SubscriptionPlan.findOne();
+  // For now we treat the FREE plan as the "current" plan
+  let plan = await SubscriptionPlan.findOne({ name: "FREE" });
 
   if (!plan) {
     plan = new SubscriptionPlan({
-      name: "FREE",              // REQUIRED BY YOUR MODEL
-      tier: "FREE",              // Your UI depends on this
-      aiTasksetsUsedThisMonth: 0,
+      name: "FREE",               // REQUIRED BY SCHEMA
+      monthlyPriceCents: 0,
       features: {
-        maxTasksPerSet: 5,
-        maxWordListWords: 10,
-        aiTaskSetsPerMonth: 1,
+        maxAiGenerationsPerMonth: 1,  // 1 AI task set / month for FREE
+        canSaveTasksets: true,
+        canEditGeneratedTasksets: true,
+        canAccessSharedLibrary: false,
+        allowedCurriculumLenses: [],
+        hasAnalyticsDashboard: false,
+        canViewTasksetAnalytics: false,
+        canEmailReports: false,
       },
+      // Not in schema, but mongoose will still store it and we can read it:
+      aiTasksetsUsedThisMonth: 0,
     });
+
     await plan.save();
   }
 
@@ -30,6 +38,7 @@ async function getOrCreatePlan() {
 
 /**
  * GET /api/subscription/plan
+ * Global plan definition + usage.
  */
 router.get("/plan", async (req, res) => {
   try {
@@ -57,17 +66,20 @@ router.get("/me", async (req, res) => {
 
 /**
  * POST /api/subscription/ai-usage
+ * Called whenever an AI task set is successfully generated.
+ * Increments aiTasksetsUsedThisMonth (a loose field on this doc).
  */
 router.post("/ai-usage", async (req, res) => {
   try {
     const plan = await getOrCreatePlan();
-    plan.aiTasksetsUsedThisMonth =
-      (plan.aiTasksetsUsedThisMonth || 0) + 1;
+
+    // This field is not in the schema, but mongoose will still track it.
+    plan.aiTasksetsUsedThisMonth = (plan.aiTasksetsUsedThisMonth || 0) + 1;
     await plan.save();
 
     res.json({
       ok: true,
-      tier: plan.tier,
+      name: plan.name,
       aiTasksetsUsedThisMonth: plan.aiTasksetsUsedThisMonth,
     });
   } catch (err) {
