@@ -20,7 +20,7 @@ import bodyParser from "body-parser";
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
 import SubscriptionPlan from "./models/SubscriptionPlan.js";
-import subscriptionRoutes from "./routes/subscriptionRoutes.js";
+// 🚫 REMOVED: import subscriptionRoutes from "./subscriptionRoutes.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
@@ -65,7 +65,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // preflight
-app.use("/api/subscription", subscriptionRoutes);
+// 🚫 REMOVED: app.use("/api/subscription", subscriptionRoutes);
 
 app.use(bodyParser.json({ limit: "2mb" }));
 
@@ -73,9 +73,8 @@ const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     credentials: true,
-  }
+  },
 });
-
 
 // --------------------------------------------------------------------
 // MongoDB Connection
@@ -500,7 +499,7 @@ async function getOrCreateProfile() {
 app.put("/api/profile/me", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-    Object.assign(profile, req.body);   // <-- merge all submitted fields
+    Object.assign(profile, req.body); // <-- merge all submitted fields
     await profile.save();
     res.json(profile);
   } catch (err) {
@@ -512,7 +511,7 @@ app.put("/api/profile/me", async (req, res) => {
 app.put("/api/profile", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-    Object.assign(profile, req.body);   // <-- same here
+    Object.assign(profile, req.body); // <-- same here
     await profile.save();
     res.json(profile);
   } catch (err) {
@@ -612,7 +611,10 @@ app.post("/api/subscription/ai-usage", async (req, res) => {
     plan.aiTasksetsUsedThisMonth =
       (plan.aiTasksetsUsedThisMonth || 0) + 1;
     await plan.save();
-    res.json({ ok: true, aiTasksetsUsedThisMonth: plan.aiTasksetsUsedThisMonth });
+    res.json({
+      ok: true,
+      aiTasksetsUsedThisMonth: plan.aiTasksetsUsedThisMonth,
+    });
   } catch (err) {
     console.error("AI usage update failed:", err);
     res.status(500).json({ error: "Failed to update AI usage" });

@@ -1,146 +1,72 @@
 // backend/routes/subscriptionRoutes.js
 import express from "express";
 import SubscriptionPlan from "../models/SubscriptionPlan.js";
-import UserSubscription from "../models/UserSubscription.js";
-import { authRequired } from "../middleware/authRequired.js";
 
 const router = express.Router();
 
 /**
- * Utility: Ensure a user has a subscription document.
- * Auto-provisions FREE with monthly reset window.
+ * Helper: find or create the single global subscription plan document.
+ * For now, subscription is app-wide (not per-user).
  */
-async function getOrCreateUserSub(userId) {
-  let sub = await UserSubscription.findOne({ userId });
-
-  if (!sub) {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-    sub = await UserSubscription.create({
-      userId,
-      planName: "FREE",
-      currentPeriodStart: start,
-      currentPeriodEnd: end,
-      aiGenerationsUsedThisPeriod: 0,
+async function getOrCreatePlan() {
+  let plan = await SubscriptionPlan.findOne();
+  if (!plan) {
+    plan = new SubscriptionPlan({
+      tier: "FREE",
+      aiTasksetsUsedThisMonth: 0,
     });
+    await plan.save();
   }
-
-  return sub;
+  return plan;
 }
 
 /**
- * Utility: Compute the resolved subscription limits & teaser message.
+ * GET /api/subscription/plan
+ * Returns the current global plan + usage.
  */
-async function buildSubscriptionResponse(sub) {
-  const planName = sub.planName || "FREE";
-
-  const plan = await SubscriptionPlan.findOne({ name: planName });
-  const featureOverrides = plan?.features || {};
-
-  // Defaults if NONE in database:
-  const maxTasksPerSet =
-    featureOverrides.maxTasksPerSet ??
-    (planName === "FREE" ? 5 : planName === "PLUS" ? 20 : 50);
-
-  const maxWordListWords =
-    featureOverrides.maxWordListWords ??
-    (planName === "FREE" ? 10 : planName === "PLUS" ? 100 : 9999);
-
-  const aiTaskSetsPerMonth =
-    featureOverrides.aiTaskSetsPerMonth ??
-    (planName === "FREE" ? 1 : planName === "PLUS" ? 50 : 9999);
-
-  const used = sub.aiGenerationsUsedThisPeriod || 0;
-  const limit = aiTaskSetsPerMonth;
-  const remaining = Math.max(0, limit - used);
-
-  let aiLimitTeaser = "";
-  if (remaining <= 0) {
-    if (planName === "FREE") {
-      aiLimitTeaser =
-        "You’ve used your 1 AI task set for this month on the Free plan. Upgrade to PLUS or PRO for more AI-generated task sets and richer reporting.";
-    } else if (planName === "PLUS") {
-      aiLimitTeaser =
-        "You’ve used all your AI task sets for this billing period. PRO increases monthly limits and unlocks deeper analytics.";
-    }
-  }
-
-  return {
-    planName,
-    currentPeriodStart: sub.currentPeriodStart,
-    currentPeriodEnd: sub.currentPeriodEnd,
-
-    // Backwards compatibility
-    aiGenerationsUsedThisPeriod: used,
-
-    // Newer clearer names
-    aiTaskSetsUsedThisPeriod: used,
-    aiTaskSetsLimit: limit,
-    aiTaskSetsRemaining: remaining,
-    aiLimitTeaser,
-
-    features: {
-      maxTasksPerSet,
-      maxWordListWords,
-      aiTaskSetsPerMonth,
-      ...featureOverrides,
-    },
-  };
-}
-
-/**
- * GET /api/subscription/me
- * Auth required — tied to the logged-in teacher.
- */
-router.get("/me", authRequired, async (req, res) => {
+router.get("/plan", async (req, res) => {
   try {
-    const userId = req.user._id;
-    const sub = await getOrCreateUserSub(userId);
-
-    const result = await buildSubscriptionResponse(sub);
-    return res.json(result);
+    const plan = await getOrCreatePlan();
+    res.json(plan);
   } catch (err) {
-    console.error("subscription /me error:", err);
-    return res.status(500).json({ error: "Failed to load subscription info" });
+    console.error("GET /api/subscription/plan error:", err);
+    res.status(500).json({ error: "Failed to load subscription plan" });
   }
 });
 
 /**
- * GET /api/subscription/plan
- * Same response as /me — but **without requiring login**.
- * Useful for:
- *   - Task Generator UI
- *   - MyPlan page for non-auth scenarios
- *   - Older versions of teacher app
+ * GET /api/subscription/me
+ * Alias for now – same as /plan until we add per-user subscriptions.
  */
-router.get("/plan", async (req, res) => {
+router.get("/me", async (req, res) => {
   try {
-    let sub;
-
-    // If authenticated, use the user’s subscription:
-    if (req.user && req.user._id) {
-      sub = await getOrCreateUserSub(req.user._id);
-    } else {
-      // Otherwise return a generic FREE profile
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-      sub = {
-        planName: "FREE",
-        currentPeriodStart: start,
-        currentPeriodEnd: end,
-        aiGenerationsUsedThisPeriod: 0,
-      };
-    }
-
-    const result = await buildSubscriptionResponse(sub);
-    return res.json(result);
+    const plan = await getOrCreatePlan();
+    res.json(plan);
   } catch (err) {
-    console.error("subscription /plan error:", err);
-    return res.status(500).json({ error: "Failed to load subscription plan" });
+    console.error("GET /api/subscription/me error:", err);
+    res.status(500).json({ error: "Failed to load subscription info" });
+  }
+});
+
+/**
+ * POST /api/subscription/ai-usage
+ * Called whenever an AI task set is successfully generated.
+ * Increments aiTasksetsUsedThisMonth.
+ */
+router.post("/ai-usage", async (req, res) => {
+  try {
+    const plan = await getOrCreatePlan();
+    plan.aiTasksetsUsedThisMonth = (plan.aiTasksetsUsedThisMonth || 0) + 1;
+    await plan.save();
+
+    res.json({
+      ok: true,
+      tier: plan.tier,
+      aiTasksetsUsedThisMonth: plan.aiTasksetsUsedThisMonth,
+    });
+  } catch (err) {
+    console.error("POST /api/subscription/ai-usage error:", err);
+    res.status(500).json({ error: "Failed to update AI usage" });
   }
 });
 
