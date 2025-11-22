@@ -31,6 +31,7 @@ function App() {
   useEffect(() => {
     const s = io(SOCKET_URL, {
       transports: ["websocket"],
+      withCredentials: false,
     });
 
     s.on("connect", () => {
