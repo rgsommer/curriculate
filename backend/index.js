@@ -72,6 +72,7 @@ app.options("*", cors(corsOptions)); // preflight
 // 🚫 REMOVED: app.use("/api/subscription", subscriptionRoutes);
 
 app.use(bodyParser.json({ limit: "2mb" }));
+app.use("/api/subscription", subscriptionRoutes);
 
 const io = new Server(server, {
   cors: {
@@ -584,44 +585,6 @@ app.put("/api/profile", async (req, res) => {
   } catch (err) {
     console.error("Profile update failed (/api/profile):", err);
     res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-// --------------------------------------------------------------------
-// Subscription info
-// --------------------------------------------------------------------
-app.get("/api/subscription/plan", async (req, res) => {
-  try {
-    let plan = await SubscriptionPlan.findOne().lean();
-    if (!plan) {
-      plan = await SubscriptionPlan.create({
-        tier: "FREE",
-        aiTasksetsUsedThisMonth: 0,
-      });
-    }
-    res.json(plan);
-  } catch (err) {
-    console.error("Subscription fetch failed:", err);
-    res.status(500).json({ error: "Failed to fetch subscription plan" });
-  }
-});
-
-app.post("/api/subscription/ai-usage", async (req, res) => {
-  try {
-    let plan = await SubscriptionPlan.findOne();
-    if (!plan) {
-      plan = new SubscriptionPlan({ tier: "FREE" });
-    }
-    plan.aiTasksetsUsedThisMonth =
-      (plan.aiTasksetsUsedThisMonth || 0) + 1;
-    await plan.save();
-    res.json({
-      ok: true,
-      aiTasksetsUsedThisMonth: plan.aiTasksetsUsedThisMonth,
-    });
-  } catch (err) {
-    console.error("AI usage update failed:", err);
-    res.status(500).json({ error: "Failed to update AI usage" });
   }
 });
 

@@ -28,7 +28,9 @@ export default function MyPlanPage() {
       setError("");
       setLoading(true);
       try {
-        const res = await axios.get(`${API_BASE}/api/subscription/plan`);
+        const res = await axios.get(`${API_BASE}/api/subscription/me`, {
+          withCredentials: true,
+        });
 
         if (!cancelled) {
           setSub(res.data || {});
