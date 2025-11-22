@@ -1,9 +1,9 @@
 // teacher-app/src/pages/MyPlan.jsx
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { API_BASE_URL } from "../config";
 
-const API_BASE = API_BASE_URL || "http://localhost:10000";
+import { API_BASE_URL } from "../config";
+const API_BASE = API_BASE_URL;
 
 const PLAN_LABELS = {
   FREE: "Free",
@@ -21,15 +21,15 @@ export default function MyPlanPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+    useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setError("");
       setLoading(true);
       try {
-        // backend: GET /api/subscription/plan
         const res = await axios.get(`${API_BASE}/api/subscription/plan`);
+
         if (!cancelled) {
           setSub(res.data || {});
         }
