@@ -7,6 +7,7 @@
 //   - AI Rubric Scoring + AI Session Summaries
 //   - Perspectives (multi-select worldview/approach tags)
 //   - PDF + HTML Transcript Emailing
+//   - Basic REST API for Profile, Subscription, TaskSets, Analytics
 // ====================================================================
 
 import "dotenv/config";
@@ -99,7 +100,7 @@ function createRoom(roomCode, teacherSocketId) {
 // Build a transcript object from a room for analytics + emailing
 function buildTranscript(room) {
   const taskset = room.taskset;
-  const tasks = taskset.tasks || [];
+  const tasks = taskset?.tasks || [];
 
   const taskRecords = tasks.map((t, i) => ({
     index: i,
@@ -174,9 +175,7 @@ function computePerParticipantStats(room, transcript) {
   return Object.values(participants).map((p) => ({
     ...p,
     engagementPercent:
-      totalTasks > 0
-        ? Math.round((p.attempts / totalTasks) * 100)
-        : 0,
+      totalTasks > 0 ? Math.round((p.attempts / totalTasks) * 100) : 0,
     finalPercent:
       p.pointsPossible > 0
         ? Math.round((p.pointsEarned / p.pointsPossible) * 100)
@@ -186,7 +185,7 @@ function computePerParticipantStats(room, transcript) {
 
 function buildRoomState(room) {
   if (!room) {
-    return { teams: {}, stations: {}, scores: {} };
+    return { teams: {}, stations: {}, scores: {}, taskIndex: -1 };
   }
 
   // Simple per-team score summary (aggregate points)
@@ -278,7 +277,7 @@ io.on("connection", (socket) => {
 
     const task = room.taskset.tasks[index];
 
-    // NEW: emit `task:launch` (modern contract)
+    // Emit `task:launch` (modern contract)
     io.to(code).emit("task:launch", {
       index,
       task,
@@ -340,7 +339,7 @@ io.on("connection", (socket) => {
 
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
-    if (!room) return;
+    if (!room || !room.taskset) return;
 
     const task = room.taskset.tasks[taskIndex];
     if (!task) return;
@@ -359,11 +358,9 @@ io.on("connection", (socket) => {
     }
 
     const correct = (() => {
-      // If AI returned a numeric totalScore, treat > 0 as "some credit"
       if (aiScore && typeof aiScore.totalScore === "number") {
         return aiScore.totalScore > 0;
       }
-      // Fallback: string comparison to correctAnswer if provided
       if (task.correctAnswer == null) return null;
       return String(answer).trim() === String(task.correctAnswer).trim();
     })();
@@ -455,7 +452,7 @@ io.on("connection", (socket) => {
 });
 
 // ====================================================================
-//  REST Routes (profile, subscription, AI, etc.)
+//  REST Routes (profile, subscription, tasksets, analytics)
 // ====================================================================
 
 // Simple DB check
@@ -469,26 +466,34 @@ app.get("/db-check", async (req, res) => {
   }
 });
 
+// --------------------------------------------------------------------
 // Teacher profile
+// Support both /api/profile/me (new) and /api/profile (compat)
+// --------------------------------------------------------------------
+async function getOrCreateProfile() {
+  let profile = await TeacherProfile.findOne();
+  if (!profile) {
+    profile = new TeacherProfile({
+      email: "demo@curriculate.net",
+      presenterName: "Demo Presenter",
+      schoolName: "Demo School",
+      perspectives: ["Christian", "Biblical"],
+      includeIndividualReports: false,
+      assessmentCategories: [
+        { label: "Participation", weight: 25 },
+        { label: "Understanding", weight: 25 },
+        { label: "Application", weight: 25 },
+        { label: "Collaboration", weight: 25 },
+      ],
+    });
+    await profile.save();
+  }
+  return profile;
+}
+
 app.get("/api/profile/me", async (req, res) => {
   try {
-    // For now, just grab the first profile doc
-    let profile = await TeacherProfile.findOne().lean();
-    if (!profile) {
-      profile = await TeacherProfile.create({
-        email: "demo@curriculate.net",
-        presenterName: "Demo Presenter",
-        schoolName: "Demo School",
-        perspectives: ["Christian", "Biblical"],
-        includeIndividualReports: false,
-        assessmentCategories: [
-          { label: "Participation", weight: 25 },
-          { label: "Understanding", weight: 25 },
-          { label: "Application", weight: 25 },
-          { label: "Collaboration", weight: 25 },
-        ],
-      });
-    }
+    const profile = await getOrCreateProfile();
     res.json(profile);
   } catch (err) {
     console.error("Profile fetch failed:", err);
@@ -498,10 +503,7 @@ app.get("/api/profile/me", async (req, res) => {
 
 app.put("/api/profile/me", async (req, res) => {
   try {
-    let profile = await TeacherProfile.findOne();
-    if (!profile) {
-      profile = new TeacherProfile();
-    }
+    const profile = await getOrCreateProfile();
 
     profile.presenterName = req.body.presenterName ?? profile.presenterName;
     profile.schoolName = req.body.schoolName ?? profile.schoolName;
@@ -520,7 +522,41 @@ app.put("/api/profile/me", async (req, res) => {
   }
 });
 
+// Legacy/compat routes for frontend code still calling /api/profile
+app.get("/api/profile", async (req, res) => {
+  try {
+    const profile = await getOrCreateProfile();
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile fetch failed (/api/profile):", err);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
+});
+
+app.put("/api/profile", async (req, res) => {
+  try {
+    const profile = await getOrCreateProfile();
+
+    profile.presenterName = req.body.presenterName ?? profile.presenterName;
+    profile.schoolName = req.body.schoolName ?? profile.schoolName;
+    profile.email = req.body.email ?? profile.email;
+    profile.perspectives = req.body.perspectives ?? profile.perspectives;
+    profile.includeIndividualReports =
+      req.body.includeIndividualReports ?? profile.includeIndividualReports;
+    profile.assessmentCategories =
+      req.body.assessmentCategories ?? profile.assessmentCategories;
+
+    await profile.save();
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile update failed (/api/profile):", err);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
+// --------------------------------------------------------------------
 // Subscription info
+// --------------------------------------------------------------------
 app.get("/api/subscription/plan", async (req, res) => {
   try {
     let plan = await SubscriptionPlan.findOne().lean();
@@ -553,11 +589,87 @@ app.post("/api/subscription/ai-usage", async (req, res) => {
   }
 });
 
+// --------------------------------------------------------------------
+// TaskSets – full REST for teacher app
+// --------------------------------------------------------------------
+
 // Create taskset
 app.post("/api/tasksets", async (req, res) => {
-  const t = new TaskSet(req.body);
-  await t.save();
-  res.json(t);
+  try {
+    const t = new TaskSet(req.body);
+    await t.save();
+    res.status(201).json(t);
+  } catch (err) {
+    console.error("POST /api/tasksets error:", err);
+    res.status(500).json({ error: "Failed to create task set" });
+  }
+});
+
+// List tasksets
+app.get("/api/tasksets", async (req, res) => {
+  try {
+    const sets = await TaskSet.find().sort({ createdAt: -1 }).lean();
+    res.json(sets);
+  } catch (err) {
+    console.error("GET /api/tasksets error:", err);
+    res.status(500).json({ error: "Failed to load task sets" });
+  }
+});
+
+// Get single taskset
+app.get("/api/tasksets/:id", async (req, res) => {
+  try {
+    const set = await TaskSet.findById(req.params.id).lean();
+    if (!set) {
+      return res.status(404).json({ error: "Task set not found" });
+    }
+    res.json(set);
+  } catch (err) {
+    console.error("GET /api/tasksets/:id error:", err);
+    res.status(500).json({ error: "Failed to load task set" });
+  }
+});
+
+// Update taskset
+app.put("/api/tasksets/:id", async (req, res) => {
+  try {
+    const updated = await TaskSet.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    ).lean();
+    if (!updated) {
+      return res.status(404).json({ error: "Task set not found" });
+    }
+    res.json(updated);
+  } catch (err) {
+    console.error("PUT /api/tasksets/:id error:", err);
+    res.status(500).json({ error: "Failed to update task set" });
+  }
+});
+
+// Delete taskset
+app.delete("/api/tasksets/:id", async (req, res) => {
+  try {
+    await TaskSet.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /api/tasksets/:id error:", err);
+    res.status(500).json({ error: "Failed to delete task set" });
+  }
+});
+
+// --------------------------------------------------------------------
+// Analytics (stub) – to keep Reports page from blowing up
+// --------------------------------------------------------------------
+app.get("/analytics/sessions", async (req, res) => {
+  try {
+    // Later: query SessionAnalytics and return real data
+    res.json({ sessions: [] });
+  } catch (err) {
+    console.error("GET /analytics/sessions error:", err);
+    res.status(500).json({ error: "Failed to load analytics sessions" });
+  }
 });
 
 // ====================================================================
