@@ -20,7 +20,7 @@ import bodyParser from "body-parser";
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
 import SubscriptionPlan from "./models/SubscriptionPlan.js";
-import subscriptionRoutes from "./subscriptionRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
