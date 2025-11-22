@@ -26,6 +26,7 @@
     "mongoose": "^8.6.0",
     "openai": "^4.54.1",
     "papaparse": "^5.5.3",
+    "nodemailer": "^6.9.8"
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5"
   },
