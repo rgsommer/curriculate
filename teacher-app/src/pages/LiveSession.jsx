@@ -4,8 +4,8 @@ import { useParams } from "react-router-dom";
 import axios from "axios";
 import { socket } from "../socket";
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://api.curriculate.net";
+import { API_BASE_URL } from "./config"; // ⬅️ use shared config
+const SOCKET_URL = API_BASE_URL;
 
 const COLORS = [
   "red",

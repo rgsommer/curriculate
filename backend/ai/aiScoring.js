@@ -4,7 +4,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const DEFAULT_MODEL = process.env.AI_SCORING_MODEL || "gpt-4.1-mini";
+const DEFAULT_MODEL = process.env.AI_SCORING_MODEL || "gpt-5.1";
 
 /**
  * Build a human-readable description of what the student submitted.
