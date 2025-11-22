@@ -1,4 +1,3 @@
-// backend/ai/aiScoring.js
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -113,4 +112,13 @@ Return ONLY JSON in this format:
   }
 
   return parsed;
+}
+
+/**
+ * Backwards-compatibility wrapper.
+ * Some parts of the code import { generateAIScore }.
+ * This simply calls scoreSubmissionWithAI with the same args.
+ */
+export async function generateAIScore(args) {
+  return scoreSubmissionWithAI(args);
 }

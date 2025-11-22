@@ -46,7 +46,9 @@ export default function TeacherProfilePage() {
             ...data,
             assessmentCategories: [
               ...cats,
-              ...Array(Math.max(0, 4 - cats.length)).fill(0).map(() => emptyCategory()),
+              ...Array(Math.max(0, 4 - cats.length))
+                .fill(0)
+                .map(() => emptyCategory()),
             ].slice(0, 4),
             perspectives: Array.isArray(data.perspectives)
               ? data.perspectives
@@ -56,7 +58,7 @@ export default function TeacherProfilePage() {
       } catch (err) {
         console.error("Load profile error", err);
         if (!cancelled) {
-          setError("Could not load teacher profile.");
+          setError("Could not load presenter profile.");
         }
       }
     }
@@ -109,19 +111,17 @@ export default function TeacherProfilePage() {
           key: c.key,
           label: c.label,
           description: c.description || "",
-          weight: Number.isFinite(Number(c.weight))
-            ? Number(c.weight)
-            : 25,
+          weight: Number.isFinite(Number(c.weight)) ? Number(c.weight) : 25,
         })),
     };
 
     try {
       await axios.put(`${API_BASE}/api/profile`, payload);
-      setSavedMsg("Profile saved.");
+      setSavedMsg("Presenter profile saved.");
       setTimeout(() => setSavedMsg(""), 2500);
     } catch (err) {
       console.error("Save profile error", err);
-      setError("Could not save profile.");
+      setError("Could not save presenter profile.");
     } finally {
       setSaving(false);
     }
@@ -130,7 +130,7 @@ export default function TeacherProfilePage() {
   if (!profile) {
     return (
       <div style={{ padding: 16 }}>
-        <h1>Teacher Profile</h1>
+        <h1>Presenter Profile</h1>
         {error ? <p style={{ color: "red" }}>{error}</p> : <p>Loading…</p>}
       </div>
     );
@@ -145,14 +145,22 @@ export default function TeacherProfilePage() {
         margin: "0 auto",
       }}
     >
-      <h1 style={{ marginTop: 0 }}>Teacher Profile</h1>
+      <h1 style={{ marginTop: 0 }}>Presenter Profile</h1>
+
+      <p style={{ fontSize: "0.8rem", color: "#555", marginTop: 4 }}>
+        This profile represents the <strong>presenter</strong> — whether you are
+        a classroom teacher, workshop leader, or conference host. Your school or
+        organization name and perspectives will appear on reports.
+      </p>
 
       {error && <p style={{ color: "red", marginTop: 0 }}>{error}</p>}
       {savedMsg && <p style={{ color: "green", marginTop: 0 }}>{savedMsg}</p>}
 
       {/* School name */}
       <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>School / Organization Name</label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+          School / Organization Name
+        </label>
         <input
           type="text"
           value={profile.schoolName || ""}
@@ -172,7 +180,9 @@ export default function TeacherProfilePage() {
 
       {/* Email */}
       <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Transcript Email</label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+          Transcript Email
+        </label>
         <input
           type="email"
           value={profile.email || ""}
@@ -194,7 +204,8 @@ export default function TeacherProfilePage() {
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>Perspectives</h2>
         <p style={{ fontSize: "0.8rem", color: "#555", marginTop: 0 }}>
-          Select one or more perspectives that Curriculate should “wear” when generating summaries and feedback.
+          Select one or more perspectives that Curriculate should “wear” when
+          generating summaries and feedback.
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -234,8 +245,7 @@ export default function TeacherProfilePage() {
           {(profile.perspectives || [])
             .map(
               (v) =>
-                PERSPECTIVE_OPTIONS.find((o) => o.value === v)?.label ||
-                v
+                PERSPECTIVE_OPTIONS.find((o) => o.value === v)?.label || v
             )
             .join(", ") || "None"}
         </p>
@@ -244,7 +254,12 @@ export default function TeacherProfilePage() {
       {/* Include individual reports */}
       <div style={{ marginBottom: 24 }}>
         <label
-          style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.9rem" }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: "0.9rem",
+          }}
         >
           <input
             type="checkbox"
@@ -255,13 +270,18 @@ export default function TeacherProfilePage() {
           />
           Include individual one-page reports in the PDF transcript
         </label>
+        <p style={{ fontSize: "0.75rem", color: "#666", marginTop: 4 }}>
+          On the FREE plan, you’ll see a single session summary. Higher tiers
+          unlock richer team and student reporting.
+        </p>
       </div>
 
       {/* Assessment categories */}
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: "1rem" }}>Assessment Categories (optional)</h2>
         <p style={{ fontSize: "0.8rem", color: "#555" }}>
-          Define up to four categories for AI-based feedback (Knowledge, Application, Thinking, Communication, etc.).
+          Define up to four categories for AI-based feedback (Knowledge,
+          Application, Thinking, Communication, etc.).
         </p>
 
         <div
@@ -281,11 +301,15 @@ export default function TeacherProfilePage() {
               <input
                 type="text"
                 value={cat.label || ""}
-                onChange={(e) =>
-                  updateCategory(idx, "label", e.target.value)
-                }
+                onChange={(e) => updateCategory(idx, "label", e.target.value)}
                 placeholder={
-                  idx === 0 ? "Knowledge" : idx === 1 ? "Application" : idx === 2 ? "Thinking" : "Communication"
+                  idx === 0
+                    ? "Knowledge"
+                    : idx === 1
+                    ? "Application"
+                    : idx === 2
+                    ? "Thinking"
+                    : "Communication"
                 }
                 style={{
                   padding: "4px 6px",
@@ -338,7 +362,7 @@ export default function TeacherProfilePage() {
           fontSize: "0.9rem",
         }}
       >
-        {saving ? "Saving…" : "Save Profile"}
+        {saving ? "Saving…" : "Save Presenter Profile"}
       </button>
     </div>
   );
