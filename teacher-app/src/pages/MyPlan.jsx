@@ -1,9 +1,9 @@
 // teacher-app/src/pages/MyPlan.jsx
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-
 import { API_BASE_URL } from "../config";
-const API_BASE = API_BASE_URL;
+
+const API_BASE = API_BASE_URL || "http://localhost:10000";
 
 const PLAN_LABELS = {
   FREE: "Free",
@@ -28,7 +28,8 @@ export default function MyPlanPage() {
       setError("");
       setLoading(true);
       try {
-        const res = await axios.get(`${API_BASE}/api/backend/models/subscription/me`);
+        // backend: GET /api/subscription/plan
+        const res = await axios.get(`${API_BASE}/api/subscription/plan`);
         if (!cancelled) {
           setSub(res.data || {});
         }
@@ -50,10 +51,13 @@ export default function MyPlanPage() {
     };
   }, []);
 
-  const planName = sub?.planName || "FREE";
-  const features = sub?.features || {};
-  const used = sub?.aiGenerationsUsedThisPeriod ?? 0;
-  const maxAi = features.maxAiGenerationsPerMonth ?? null;
+  const tier = sub?.tier || "FREE";
+  const planLabel = formatPlanLabel(tier);
+  const used = sub?.aiTasksetsUsedThisMonth ?? 0;
+
+  // Simple defaults for now – you can tune later.
+  const maxAi =
+    tier === "FREE" ? 1 : tier === "TEACHER_PLUS" ? 10 : tier === "SCHOOL" ? 50 : null;
 
   return (
     <div
@@ -106,7 +110,7 @@ export default function MyPlanPage() {
                 background: "#ffffff",
               }}
             >
-              Current plan: <strong>{formatPlanLabel(planName)}</strong>
+              Current plan: <strong>{planLabel}</strong>
             </div>
             {sub?.currentPeriodStart && sub?.currentPeriodEnd && (
               <p
@@ -125,7 +129,7 @@ export default function MyPlanPage() {
           </div>
 
           {/* Upgrade CTA – just messaging for now */}
-          {planName === "FREE" && (
+          {tier === "FREE" && (
             <div style={{ textAlign: "right" }}>
               <p style={{ fontSize: "0.8rem", color: "#4b5563", margin: 0 }}>
                 Ready to unlock more analytics and reports?
@@ -158,13 +162,12 @@ export default function MyPlanPage() {
             </p>
           ) : (
             <p style={{ fontSize: "0.8rem", color: "#4b5563", marginTop: 4 }}>
-              You’ve generated{" "}
-              <strong>{used}</strong>{" "}
-              AI task set{used === 1 ? "" : "s"} this month.
+              You’ve generated <strong>{used}</strong> AI task set
+              {used === 1 ? "" : "s"} this month.
               {maxAi != null && (
                 <>
                   {" "}
-                  Your plan includes{" "}
+                  Your {planLabel} plan includes{" "}
                   <strong>{maxAi}</strong> per month.
                 </>
               )}

@@ -1,7 +1,6 @@
 // teacher-app/src/pages/TaskSetEditor.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { API_BASE_URL } from "../config";
 
 import {
   TASK_TYPES,
@@ -9,7 +8,9 @@ import {
   IMPLEMENTED_TASK_TYPES,
 } from "../../../shared/taskTypes.js";
 
-const API_BASE = API_BASE_URL;
+import { API_BASE_URL } from "../config";
+
+const API_BASE = API_BASE_URL || "http://localhost:10000";
 
 // Normalize any legacy values coming from older tasksets
 function normalizeTaskType(raw) {
@@ -28,7 +29,7 @@ function normalizeTaskType(raw) {
       return TASK_TYPES.SHORT_ANSWER;
     case "open-text":
     case "open_text":
-      return TASK_TYPES.OPEN_TEXT;
+      return TASK_TYPES.SHORT_ANSWER;
     case "sort":
       return TASK_TYPES.SORT;
     case "seq":
@@ -83,7 +84,7 @@ export default function TaskSetEditor() {
     setLoading(true);
     setError(null);
 
-    fetch(`${API_BASE}/tasksets/${id}`, {
+    fetch(`${API_BASE}/api/tasksets/${id}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(async (res) => {
@@ -291,7 +292,9 @@ export default function TaskSetEditor() {
 
     setSaving(true);
     try {
-      const url = id ? `${API_BASE}/tasksets/${id}` : `${API_BASE}/tasksets`;
+      const url = id
+        ? `${API_BASE}/api/tasksets/${id}`
+        : `${API_BASE}/api/tasksets`;
       const method = id ? "PUT" : "POST";
 
       const res = await fetch(url, {
@@ -410,90 +413,112 @@ export default function TaskSetEditor() {
       </div>
 
       {/* DISPLAYS PANEL */}
-      <div className="mb-6 border rounded bg-white p-4">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="font-semibold text-lg">Physical Displays / Stations</h2>
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold">Displays / stations</h2>
           <button
             onClick={addDisplay}
-            className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
+            className="px-3 py-1 text-sm rounded border bg-white hover:bg-gray-50"
           >
-            + Add Display
+            + Add display
           </button>
         </div>
+        <p className="text-xs text-gray-600 mb-2">
+          Displays are physical screens, boards, or table-top instructions that
+          stay fixed while teams rotate. You can attach tasks to a specific
+          display if needed.
+        </p>
 
         {displays.length === 0 ? (
-          <p className="text-gray-600 text-sm">
-            Add a display for each physical object/exhibit that will live at a
-            specific station (e.g., “Red – Van Gogh print”, “Blue – Pendulum
-            setup”). Tasks can then link directly to these.
+          <p className="text-sm text-gray-500">
+            No displays yet. You can still run this set without them.
           </p>
         ) : (
           <div className="space-y-3">
-            {displays.map((display, index) => (
-              <div
-                key={display.key || index}
-                className="border rounded p-3 bg-slate-50"
-              >
-                <div className="flex justify-between gap-2 mb-2">
-                  <input
-                    type="text"
-                    placeholder="Display key (unique in this set)"
-                    value={display.key || ""}
-                    onChange={(e) =>
-                      updateDisplay(index, "key", e.target.value)
-                    }
-                    className="flex-1 border rounded px-2 py-1 text-sm"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Station colour (e.g. red)"
-                    value={display.stationColor || ""}
-                    onChange={(e) =>
-                      updateDisplay(index, "stationColor", e.target.value)
-                    }
-                    className="w-40 border rounded px-2 py-1 text-sm"
-                  />
+            {displays.map((d, index) => (
+              <div key={d.key || index} className="border rounded p-3 bg-gray-50">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="font-semibold text-sm">
+                    Display {index + 1}
+                  </div>
                   <button
                     onClick={() => removeDisplay(index)}
-                    className="px-2 py-1 text-sm border rounded border-red-500 text-red-600"
+                    className="text-xs text-red-600 hover:underline"
                   >
-                    Delete
+                    Remove
                   </button>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Display name (e.g. Van Gogh: Starry Night)"
-                  value={display.name || ""}
-                  onChange={(e) =>
-                    updateDisplay(index, "name", e.target.value)
-                  }
-                  className="w-full border rounded px-2 py-1 text-sm mb-2"
-                />
-                <textarea
-                  placeholder="Short description (seen by students)"
-                  value={display.description || ""}
-                  onChange={(e) =>
-                    updateDisplay(index, "description", e.target.value)
-                  }
-                  className="w-full border rounded px-2 py-1 text-sm mb-2 h-16"
-                />
-                <textarea
-                  placeholder="Notes for teacher (setup instructions, where to put it, etc.)"
-                  value={display.notesForTeacher || ""}
-                  onChange={(e) =>
-                    updateDisplay(index, "notesForTeacher", e.target.value)
-                  }
-                  className="w-full border rounded px-2 py-1 text-sm mb-2 h-16"
-                />
-                <input
-                  type="text"
-                  placeholder="Image URL (optional)"
-                  value={display.imageUrl || ""}
-                  onChange={(e) =>
-                    updateDisplay(index, "imageUrl", e.target.value)
-                  }
-                  className="w-full border rounded px-2 py-1 text-sm"
-                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Name / label
+                    </label>
+                    <input
+                      type="text"
+                      value={d.name || ""}
+                      onChange={(e) =>
+                        updateDisplay(index, "name", e.target.value)
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm"
+                      placeholder="e.g. Red Station, Microscope table"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Station colour (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={d.stationColor || ""}
+                      onChange={(e) =>
+                        updateDisplay(index, "stationColor", e.target.value)
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm"
+                      placeholder="e.g. Red, Blue, etc."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Description / what’s here
+                    </label>
+                    <textarea
+                      value={d.description || ""}
+                      onChange={(e) =>
+                        updateDisplay(index, "description", e.target.value)
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm h-16"
+                      placeholder="e.g. microscope, set of primary documents, dice and cards"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Image URL (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={d.imageUrl || ""}
+                      onChange={(e) =>
+                        updateDisplay(index, "imageUrl", e.target.value)
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm"
+                      placeholder="For projector or display-only resources"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-1">
+                      Notes for the teacher
+                    </label>
+                    <textarea
+                      value={d.notesForTeacher || ""}
+                      onChange={(e) =>
+                        updateDisplay(index, "notesForTeacher", e.target.value)
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm h-16"
+                      placeholder="Setup details, safety hints, or reminders for you."
+                    />
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -501,245 +526,234 @@ export default function TaskSetEditor() {
       </div>
 
       {/* TASKS PANEL */}
-      <div className="mb-4 flex justify-between items-center">
-        <h2 className="font-semibold text-lg">Tasks</h2>
-        <button
-          onClick={addTask}
-          className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700"
-        >
-          + Add Task
-        </button>
-      </div>
-
-      {tasks.length === 0 ? (
-        <p className="text-gray-600">No tasks yet. Add one to get started.</p>
-      ) : (
-        <div className="space-y-4">
-          {tasks.map((task, index) => (
-            <div key={task._tempId} className="border rounded bg-white p-4">
-              <div className="flex justify-between items-center mb-3">
-                <div className="font-semibold">Task {index + 1}</div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => moveTask(task._tempId, "up")}
-                    disabled={index === 0}
-                    className="px-2 py-1 text-sm border rounded disabled:opacity-40"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    onClick={() => moveTask(task._tempId, "down")}
-                    disabled={index === tasks.length - 1}
-                    className="px-2 py-1 text-sm border rounded disabled:opacity-40"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    onClick={() => removeTask(task._tempId)}
-                    className="px-2 py-1 text-sm border rounded border-red-500 text-red-600"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-
-              <input
-                type="text"
-                value={task.title || ""}
-                onChange={(e) =>
-                  updateTask(task._tempId, "title", e.target.value)
-                }
-                placeholder="Optional short title"
-                className="w-full border rounded px-2 py-1 mb-2 text-sm"
-              />
-
-              <textarea
-                value={task.prompt || ""}
-                onChange={(e) =>
-                  updateTask(task._tempId, "prompt", e.target.value)
-                }
-                placeholder="Prompt / question..."
-                className="w-full border rounded px-2 py-1 mb-3 h-20 text-sm"
-              />
-
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Task type
-                  </label>
-                  <select
-                    value={task.taskType}
-                    onChange={(e) =>
-                      updateTask(
-                        task._tempId,
-                        "taskType",
-                        normalizeTaskType(e.target.value)
-                      )
-                    }
-                    className="w-full border rounded px-2 py-1 text-sm"
-                  >
-                    {TASK_TYPE_OPTIONS.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="mt-1 text-xs text-gray-500">
-                    Category:{" "}
-                    <span className="font-medium">
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold">Tasks</h2>
+          <button
+            onClick={addTask}
+            className="px-3 py-1 text-sm rounded border bg-white hover:bg-gray-50"
+          >
+            + Add task
+          </button>
+        </div>
+        {tasks.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No tasks yet. Add at least one to save this set.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {tasks.map((task, index) => (
+              <div key={task._tempId} className="border rounded p-3 bg-gray-50">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="font-semibold text-sm">
+                    Task {index + 1} –{" "}
+                    <span className="text-xs text-gray-600">
                       {prettyCategory(task.taskType)}
                     </span>
                   </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => moveTask(task._tempId, "up")}
+                      className="px-2 py-1 text-xs border rounded"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveTask(task._tempId, "down")}
+                      className="px-2 py-1 text-xs border rounded"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeTask(task._tempId)}
+                      className="px-2 py-1 text-xs border rounded text-red-600"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm mt-5">
-                  <input
-                    type="checkbox"
-                    checked={!!task.linear}
-                    onChange={(e) =>
-                      updateTask(task._tempId, "linear", e.target.checked)
-                    }
-                  />
-                  Keep this task in fixed sequence (for future “mixed” mode)
-                </label>
-              </div>
 
-              {/* Linked display */}
-              <div className="mb-3">
-                <label className="block text-sm font-medium mb-1">
-                  Linked display (optional)
-                </label>
-                <select
-                  value={task.displayKey || ""}
-                  onChange={(e) =>
-                    updateTask(task._tempId, "displayKey", e.target.value)
-                  }
-                  className="w-full border rounded px-2 py-1 text-sm"
-                >
-                  <option value="">None</option>
-                  {displays.map((d) => (
-                    <option key={d.key} value={d.key}>
-                      {d.stationColor
-                        ? `${d.stationColor.toUpperCase()}: `
-                        : ""}
-                      {d.name || d.key}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Options for MC / sort / sequence */}
-              {[TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.SORT, TASK_TYPES.SEQUENCE].includes(
-                task.taskType
-              ) && (
-                <div className="mb-3">
-                  <label className="block text-sm font-medium mb-1">
-                    Options
-                  </label>
-                  {(task.options || []).map((opt, i) => (
-                    <div key={i} className="flex gap-2 mb-1">
-                      <input
-                        type="text"
-                        value={opt}
-                        onChange={(e) =>
-                          updateOption(task._tempId, i, e.target.value)
-                        }
-                        className="flex-1 border rounded px-2 py-1 text-sm"
-                      />
-                      <button
-                        onClick={() => removeOption(task._tempId, i)}
-                        className="px-2 py-1 text-sm border rounded border-red-500 text-red-600"
-                      >
-                        X
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => addOption(task._tempId)}
-                    className="mt-1 px-3 py-1 text-sm rounded border"
-                  >
-                    + Add option
-                  </button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Correct answer
-                  </label>
-                  {task.taskType === TASK_TYPES.MULTIPLE_CHOICE ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Title (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={task.title || ""}
+                      onChange={(e) =>
+                        updateTask(task._tempId, "title", e.target.value)
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm"
+                      placeholder="e.g. Predict the outcome"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Task type
+                    </label>
                     <select
-                      value={task.correctAnswer ?? ""}
+                      value={task.taskType}
                       onChange={(e) =>
                         updateTask(
                           task._tempId,
-                          "correctAnswer",
-                          e.target.value
+                          "taskType",
+                          normalizeTaskType(e.target.value)
                         )
                       }
                       className="w-full border rounded px-2 py-1 text-sm"
                     >
-                      <option value="">-- none --</option>
-                      {(task.options || []).map((opt, i) => (
-                        <option key={i} value={opt}>
-                          {opt}
+                      {TASK_TYPE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
                         </option>
                       ))}
                     </select>
-                  ) : (
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="block text-sm font-medium mb-1">
+                    Prompt
+                  </label>
+                  <textarea
+                    value={task.prompt || ""}
+                    onChange={(e) =>
+                      updateTask(task._tempId, "prompt", e.target.value)
+                    }
+                    className="w-full border rounded px-2 py-1 text-sm h-20"
+                  />
+                </div>
+
+                {/* Options area for MC / sort / sequence */}
+                {[
+                  TASK_TYPES.MULTIPLE_CHOICE,
+                  TASK_TYPES.SORT,
+                  TASK_TYPES.SEQUENCE,
+                ].includes(task.taskType) && (
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium mb-1">
+                      Options
+                    </label>
+                    <div className="space-y-2">
+                      {(task.options || []).map((opt, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="text"
+                            value={opt}
+                            onChange={(e) =>
+                              updateOption(task._tempId, i, e.target.value)
+                            }
+                            className="flex-1 border rounded px-2 py-1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeOption(task._tempId, i)}
+                            className="px-2 py-1 text-xs border rounded text-red-600"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => addOption(task._tempId)}
+                        className="px-3 py-1 text-xs rounded border bg-white hover:bg-gray-50"
+                      >
+                        + Add option
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Correct answer */}
+                <div className="mb-3">
+                  <label className="block text-sm font-medium mb-1">
+                    Correct answer (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={
+                      task.taskType === TASK_TYPES.MULTIPLE_CHOICE &&
+                      typeof task.correctAnswer === "number"
+                        ? (task.options || [])[task.correctAnswer] || ""
+                        : task.correctAnswer || ""
+                    }
+                    onChange={(e) =>
+                      updateTask(task._tempId, "correctAnswer", e.target.value)
+                    }
+                    className="w-full border rounded px-2 py-1 text-sm"
+                    placeholder="Leave blank for open / unscored tasks"
+                  />
+                </div>
+
+                {/* Points, time, display mapping */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Points
+                    </label>
                     <input
-                      type="text"
-                      value={task.correctAnswer || ""}
+                      type="number"
+                      value={task.points ?? 10}
                       onChange={(e) =>
                         updateTask(
                           task._tempId,
-                          "correctAnswer",
-                          e.target.value
+                          "points",
+                          Number(e.target.value) || 0
                         )
                       }
                       className="w-full border rounded px-2 py-1 text-sm"
                     />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Points
-                  </label>
-                  <input
-                    type="number"
-                    value={task.points ?? 10}
-                    onChange={(e) =>
-                      updateTask(
-                        task._tempId,
-                        "points",
-                        Number(e.target.value) || 10
-                      )
-                    }
-                    className="w-full border rounded px-2 py-1 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Time limit (sec)
-                  </label>
-                  <input
-                    type="number"
-                    value={task.timeLimitSeconds ?? ""}
-                    onChange={(e) =>
-                      updateTask(
-                        task._tempId,
-                        "timeLimitSeconds",
-                        e.target.value ? Number(e.target.value) : null
-                      )
-                    }
-                    className="w-full border rounded px-2 py-1 text-sm"
-                  />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Display (optional)
+                    </label>
+                    <select
+                      value={task.displayKey || ""}
+                      onChange={(e) =>
+                        updateTask(task._tempId, "displayKey", e.target.value)
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm"
+                    >
+                      <option value="">(none)</option>
+                      {displays.map((d) => (
+                        <option key={d.key} value={d.key}>
+                          {d.name || d.stationColor || d.key}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
+                      Time limit (sec)
+                    </label>
+                    <input
+                      type="number"
+                      value={task.timeLimitSeconds ?? ""}
+                      onChange={(e) =>
+                        updateTask(
+                          task._tempId,
+                          "timeLimitSeconds",
+                          e.target.value ? Number(e.target.value) : null
+                        )
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

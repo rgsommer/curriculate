@@ -140,10 +140,7 @@ export default function TaskSets() {
         try {
           data = text ? JSON.parse(text) : null;
         } catch {
-          console.error(
-            "Upload CSV returned non-JSON:",
-            text.slice(0, 500)
-          );
+          console.error("Upload CSV returned non-JSON:", text.slice(0, 500));
           throw new Error("Server returned invalid JSON");
         }
 
@@ -219,7 +216,7 @@ export default function TaskSets() {
       const bs = String(bv).toLowerCase();
       if (as === bs) return 0;
       return as < bs ? -dir : dir;
-    }); 
+    });
 
     return arr;
   }, [sets, sortBy, sortDir]);
@@ -381,14 +378,35 @@ export default function TaskSets() {
                       <div className="flex flex-wrap gap-1">
                         <button
                           onClick={() => handleSetActive(s)}
-                          className={`px-2 py-1 text-xs rounded border transition ${
+                          onDoubleClick={() => {
+                            handleSetActive(s);
+                            handleLaunchNow(s);
+                          }}
+                          onKeyDown={(e) => {
+                            if (
+                              (e.ctrlKey || e.metaKey) &&
+                              e.key === "Enter"
+                            ) {
+                              e.preventDefault();
+                              handleSetActive(s);
+                              handleLaunchNow(s);
+                            }
+                          }}
+                          className={`px-3 py-1 text-sm rounded border transition ${
                             isActive
                               ? "bg-blue-600 text-white border-blue-700 hover:bg-blue-700"
                               : "bg-white text-blue-700 border-blue-600 hover:bg-blue-50"
                           }`}
+                          title="Click to select • double-click or Ctrl+Enter to launch"
                         >
-                          {isActive ? "Active" : "Use"}
+                          Use in Live Session{" "}
+                          {isActive && (
+                            <span className="ml-1" aria-hidden="true">
+                              🚀
+                            </span>
+                          )}
                         </button>
+
                         <button
                           onClick={() => handleLaunchNow(s)}
                           className="px-2 py-1 text-xs rounded bg-emerald-500 text-white hover:bg-emerald-600"

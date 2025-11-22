@@ -11,16 +11,25 @@ export default function AiTasksetGenerator() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [form, setForm] = useState({
-    gradeLevel: "",
-    subject: "",
-    difficulty: "MEDIUM",
-    durationMinutes: 45,
-    topicTitle: "",
-    wordConceptText: "",
-    learningGoal: "REVIEW",
-    allowMovementTasks: true,
-    allowDrawingMimeTasks: true,
-  });
+  gradeLevel: "",
+  subject: "",
+  difficulty: "MEDIUM",
+  durationMinutes: 45,
+  topicTitle: "",
+  wordConceptText: "",
+  learningGoal: "REVIEW",
+  allowMovementTasks: true,
+  allowDrawingMimeTasks: true,
+  roomLabel: "Classroom",
+  fixedStations: false,
+  fixedStationsNotes: "",
+});
+
+const wordCount = form.wordConceptText
+  .split(/[,\n]/)
+  .map((w) => w.trim())
+  .filter(Boolean).length;
+const wordLimit = 10; // FREE tier limit for now
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -52,6 +61,8 @@ export default function AiTasksetGenerator() {
             typeof prof.prefersDrawingMimeTasks === "boolean"
               ? prof.prefersDrawingMimeTasks
               : true,
+          roomLabel: prof.defaultRoomLabel || "Classroom",
+
         }));
       } catch (err) {
         console.error("Failed to load teacher profile for AI defaults:", err);
@@ -99,6 +110,9 @@ export default function AiTasksetGenerator() {
         allowMovementTasks: form.allowMovementTasks,
         allowDrawingMimeTasks: form.allowDrawingMimeTasks,
         curriculumLenses: profile?.curriculumLenses || [],
+        roomLabel: form.roomLabel || profile?.defaultRoomLabel || "Classroom",
+        fixedStations: form.fixedStations,
+        fixedStationsNotes: form.fixedStationsNotes,
       };
 
       const data = await generateAiTaskset(payload);
@@ -163,6 +177,63 @@ export default function AiTasksetGenerator() {
               />
             </label>
 
+<section className="mt-6">
+  <h2 className="font-semibold mb-2">Room & stations</h2>
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <label className="flex flex-col">
+      <span>Room / location label</span>
+      <input
+        className="border rounded px-2 py-1"
+        name="roomLabel"
+        value={form.roomLabel}
+        onChange={handleChange}
+        placeholder={profile?.defaultRoomLabel || "Classroom"}
+      />
+      <span className="text-xs text-gray-500 mt-1">
+        This will be used in station posters and AI prompts (e.g. "Classroom",
+        "Hallway", "Gym A").
+      </span>
+    </label>
+
+    <label className="inline-flex items-start gap-2 mt-2">
+      <input
+        type="checkbox"
+        name="fixedStations"
+        checked={form.fixedStations}
+        onChange={handleChange}
+      />
+      <span>
+        Fixed stations for this set
+        <span className="block text-xs text-gray-500">
+          Check this if each colour will have a specific place and object
+          (e.g., Red – Table 1 – microscope).
+        </span>
+      </span>
+    </label>
+  </div>
+
+  {form.fixedStations && (
+    <div className="mt-4">
+      <label className="flex flex-col">
+        <span>Where and what will be at each station?</span>
+        <textarea
+          className="border rounded px-2 py-1 min-h-[80px]"
+          name="fixedStationsNotes"
+          value={form.fixedStationsNotes}
+          onChange={handleChange}
+          placeholder={`Example: 
+Red – Table 1 – microscope
+Blue – Hallway – Picasso prints`}
+        />
+        <span className="text-xs text-gray-500 mt-1">
+          This note is for you and for the AI. It helps align what the tasks
+          ask students to do with what is actually at each station.
+        </span>
+      </label>
+    </div>
+  )}
+</section>
+
             <label className="flex flex-col">
               <span>Difficulty</span>
               <select
@@ -217,6 +288,24 @@ export default function AiTasksetGenerator() {
               placeholder="Acadia, Treaty of Utrecht, deportation, oath of allegiance, Mi'kmaq, Grand Pré"
             />
           </label>
+          <label className="flex flex-col">
+  <span>Word / Concept List (comma-separated)</span>
+  <textarea
+    className="border rounded px-2 py-1 min-h-[80px]"
+    name="wordConceptText"
+    value={form.wordConceptText}
+    onChange={handleChange}
+    placeholder="e.g. fortress, expulsion, Acadia, deportation"
+  />
+  <span className="text-xs text-gray-600 mt-1">
+    Words in list: {wordCount} / {wordLimit}
+  </span>
+  <span className="text-xs text-gray-500">
+    On the Free plan, you can include up to {wordLimit} words. Longer lists are
+    available with Curriculate Plus and Pro.
+  </span>
+</label>
+
         </section>
 
         <section>
