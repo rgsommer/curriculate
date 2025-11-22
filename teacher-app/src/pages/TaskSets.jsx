@@ -186,7 +186,7 @@ export default function TaskSets() {
         switch (sortBy) {
           case "subject":
             return obj.subject || "";
-          case "gradeLevel:
+          case "gradeLevel":
             return obj.gradeLevel || obj.grade || "";
           case "roomLocation":
             return obj.roomLocation || "Classroom";

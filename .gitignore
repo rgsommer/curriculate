@@ -11,3 +11,12 @@ teacher-dev.log
 dist/
 build/
 .env.local
+# Ignore env files
+.env
+.env.*
+backend/.env
+
+# Ignore env files
+.env
+.env.*
+backend/.env

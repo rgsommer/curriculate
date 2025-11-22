@@ -2,7 +2,6 @@
 import React, { useEffect, useState } from "react";
 import api from "../api/client";
 import { Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 
 export default function AnalyticsOverview() {
   const { user } = useAuth();
