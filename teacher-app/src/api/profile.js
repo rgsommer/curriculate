@@ -1,6 +1,7 @@
 // src/api/profile.js
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:10000";
+import { API_BASE_URL } from "../config";
+const API_BASE = API_BASE_URL;
 
 async function parseJsonOrThrow(res, defaultMessage) {
   const text = await res.text();
