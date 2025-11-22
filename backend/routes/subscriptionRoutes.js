@@ -5,19 +5,21 @@ import SubscriptionPlan from "../models/SubscriptionPlan.js";
 const router = express.Router();
 
 /**
- * Helper: find or create the single global subscription plan document.
- * The SubscriptionPlan schema REQUIRES a 'name' field.
+ * Seed the 3-tier subscription structure:
+ *
+ *  FREE
+ *  PLUS
+ *  PRO
+ *
+ *  This will only create missing tiers.
  */
-async function getOrCreatePlan() {
-  // For now we treat the FREE plan as the "current" plan
-  let plan = await SubscriptionPlan.findOne({ name: "FREE" });
-
-  if (!plan) {
-    plan = new SubscriptionPlan({
-      name: "FREE",               // REQUIRED BY SCHEMA
+async function seedPlans() {
+  const defaults = [
+    {
+      name: "FREE",
       monthlyPriceCents: 0,
       features: {
-        maxAiGenerationsPerMonth: 1,  // 1 AI task set / month for FREE
+        maxAiGenerationsPerMonth: 1,
         canSaveTasksets: true,
         canEditGeneratedTasksets: true,
         canAccessSharedLibrary: false,
@@ -26,11 +28,70 @@ async function getOrCreatePlan() {
         canViewTasksetAnalytics: false,
         canEmailReports: false,
       },
-      // Not in schema, but mongoose will still store it and we can read it:
-      aiTasksetsUsedThisMonth: 0,
-    });
+    },
+    {
+      name: "TEACHER_PLUS",
+      monthlyPriceCents: 999, // $9.99/mo
+      features: {
+        maxAiGenerationsPerMonth: 20,
+        canSaveTasksets: true,
+        canEditGeneratedTasksets: true,
+        canAccessSharedLibrary: true,
+        allowedCurriculumLenses: ["Academic", "Biblical", "Creative"],
+        hasAnalyticsDashboard: true,
+        canViewTasksetAnalytics: true,
+        canEmailReports: true,
+      },
+    },
+    {
+      name: "SCHOOL",
+      monthlyPriceCents: 4999, // $49.99/mo
+      features: {
+        maxAiGenerationsPerMonth: 999,
+        canSaveTasksets: true,
+        canEditGeneratedTasksets: true,
+        canAccessSharedLibrary: true,
+        allowedCurriculumLenses: ["Academic", "Biblical", "Creative"],
+        hasAnalyticsDashboard: true,
+        canViewTasksetAnalytics: true,
+        canEmailReports: true,
+      },
+    },
+  ];
 
-    await plan.save();
+  for (const plan of defaults) {
+    const exists = await SubscriptionPlan.findOne({ name: plan.name });
+    if (!exists) {
+      await SubscriptionPlan.create(plan);
+      console.log(`Seeded plan: ${plan.name}`);
+    }
+  }
+}
+
+seedPlans();
+
+/**
+ * Instead of "current teacher", we return the GLOBAL plan.
+ * Default is FREE.
+ */
+async function getCurrentPlan() {
+  let plan = await SubscriptionPlan.findOne({ name: "FREE" }).lean();
+
+  if (!plan) {
+    plan = await SubscriptionPlan.create({
+      name: "FREE",
+      monthlyPriceCents: 0,
+      features: {
+        maxAiGenerationsPerMonth: 1,
+        canSaveTasksets: true,
+        canEditGeneratedTasksets: true,
+        canAccessSharedLibrary: false,
+        allowedCurriculumLenses: [],
+        hasAnalyticsDashboard: false,
+        canViewTasksetAnalytics: false,
+        canEmailReports: false,
+      },
+    });
   }
 
   return plan;
@@ -38,53 +99,55 @@ async function getOrCreatePlan() {
 
 /**
  * GET /api/subscription/plan
- * Global plan definition + usage.
  */
 router.get("/plan", async (req, res) => {
   try {
-    const plan = await getOrCreatePlan();
+    const plan = await getCurrentPlan();
     res.json(plan);
   } catch (err) {
-    console.error("GET /api/subscription/plan error:", err);
+    console.error("GET /api/subscription/plan:", err);
     res.status(500).json({ error: "Failed to load subscription plan" });
   }
 });
 
 /**
  * GET /api/subscription/me
- * Alias for /plan for now.
+ * Alias for now
  */
 router.get("/me", async (req, res) => {
   try {
-    const plan = await getOrCreatePlan();
+    const plan = await getCurrentPlan();
     res.json(plan);
   } catch (err) {
-    console.error("GET /api/subscription/me error:", err);
+    console.error("GET /api/subscription/me:", err);
     res.status(500).json({ error: "Failed to load subscription info" });
   }
 });
 
 /**
  * POST /api/subscription/ai-usage
- * Called whenever an AI task set is successfully generated.
- * Increments aiTasksetsUsedThisMonth (a loose field on this doc).
  */
 router.post("/ai-usage", async (req, res) => {
   try {
-    const plan = await getOrCreatePlan();
+    const plan = await getCurrentPlan();
 
-    // This field is not in the schema, but mongoose will still track it.
-    plan.aiTasksetsUsedThisMonth = (plan.aiTasksetsUsedThisMonth || 0) + 1;
-    await plan.save();
+    // Soft field — not part of schema, but mongoose allows it
+    plan.aiTasksetsUsedThisMonth =
+      (plan.aiTasksetsUsedThisMonth ?? 0) + 1;
+
+    const updated = await SubscriptionPlan.findOneAndUpdate(
+      { name: plan.name },
+      plan,
+      { new: true }
+    );
 
     res.json({
       ok: true,
-      name: plan.name,
-      aiTasksetsUsedThisMonth: plan.aiTasksetsUsedThisMonth,
+      aiTasksetsUsedThisMonth: updated.aiTasksetsUsedThisMonth,
     });
   } catch (err) {
-    console.error("POST /api/subscription/ai-usage error:", err);
-    res.status(500).json({ error: "Failed to update AI usage" });
+    console.error("POST /api/subscription/ai-usage:", err);
+    res.status(500).json({ error: "Failed to increment AI usage" });
   }
 });
 

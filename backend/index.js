@@ -72,7 +72,6 @@ app.options("*", cors(corsOptions)); // preflight
 // 🚫 REMOVED: app.use("/api/subscription", subscriptionRoutes);
 
 app.use(bodyParser.json({ limit: "2mb" }));
-app.use("/api/subscription", subscriptionRoutes);
 
 const io = new Server(server, {
   cors: {
