@@ -15,7 +15,7 @@ const client = new OpenAI({
 });
 
 const SUMMARY_MODEL =
-  process.env.AI_SUMMARY_MODEL || "gpt-4.1-mini";
+  process.env.AI_SUMMARY_MODEL || "gpt-5.1";
 
 /**
  * Generate AI session summaries:
@@ -26,6 +26,7 @@ const SUMMARY_MODEL =
  * @param {Array}  params.assessmentCategories    // up to 4 categories defined by teacher
  * @param {Array}  params.perspectives            // worldview/discipline/approach tags
  */
+
 export async function generateSessionSummaries({
   transcript,
   perParticipantStats,
