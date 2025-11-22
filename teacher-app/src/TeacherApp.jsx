@@ -1,4 +1,4 @@
-// teacher-app/src/App.jsx
+// teacher-app/src/TeacherApp.jsx
 import React, { useState } from "react";
 import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 
@@ -9,33 +9,29 @@ import TaskSetEditor from "./pages/TaskSetEditor.jsx";
 import TeacherProfile from "./pages/TeacherProfile.jsx";
 import AiTasksetGenerator from "./pages/AiTasksetGenerator.jsx";
 import StationPosters from "./pages/StationPosters.jsx";
-import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
 import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
 import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
 
+import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
+
 function generateRoomCode() {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-  // safety loop to avoid infinite spin, though collisions are unlikely
   for (let attempts = 0; attempts < 1000; attempts++) {
     let code = "";
     for (let i = 0; i < 2; i++) {
       const idx = Math.floor(Math.random() * letters.length);
       code += letters[idx];
     }
-
     if (!DISALLOWED_ROOM_CODES.has(code)) {
       return code;
     }
   }
-
-  // Fallback if someone goes wild with the disallowed list
-  return "AA";
+  return "AA"; // ultra-fallback
 }
 
-function App() {
-  // Auto-generated 2-letter room code for this teacher session
+function TeacherApp() {
   const [roomCode, setRoomCode] = useState(() => generateRoomCode());
   const location = useLocation();
 
@@ -47,17 +43,17 @@ function App() {
     location.pathname === "/" || location.pathname.startsWith("/live");
   const onHost = location.pathname.startsWith("/host");
   const onTasksets = location.pathname.startsWith("/tasksets");
-  const onProfile = location.pathname.startsWith("/teacher/profile");
-  const onAiTasksets = location.pathname.startsWith("/teacher/ai-tasksets");
   const onReports = location.pathname.startsWith("/reports");
   const onMyPlan = location.pathname.startsWith("/my-plan");
+  const onProfile = location.pathname.startsWith("/teacher/profile");
+  const onAiTasksets = location.pathname.startsWith("/teacher/ai-tasksets");
 
   return (
     <div
       style={{
         display: "flex",
         minHeight: "100vh",
-        fontFamily: "system-ui",
+        fontFamily: "system-ui, -apple-system, 'Segoe UI'",
       }}
     >
       {/* SIDEBAR */}
@@ -69,7 +65,7 @@ function App() {
           padding: 16,
         }}
       >
-        <h2 style={{ marginBottom: 20 }}>Curriculate</h2>
+        <h2 style={{ marginTop: 0, marginBottom: 20 }}>Curriculate</h2>
 
         {/* Room code display */}
         <div style={{ marginBottom: 24 }}>
@@ -147,9 +143,8 @@ function App() {
             Reports
           </NavLinkButton>
           <NavLinkButton to="/my-plan" active={onMyPlan}>
-            My Plan
+            My plan
           </NavLinkButton>
-
 
           {/* Teacher tools section */}
           <div
@@ -165,7 +160,7 @@ function App() {
             Teacher tools
           </div>
           <NavLinkButton to="/teacher/profile" active={onProfile}>
-            Teacher profile
+            Presenter profile
           </NavLinkButton>
           <NavLinkButton to="/teacher/ai-tasksets" active={onAiTasksets}>
             AI task set generator
@@ -185,7 +180,7 @@ function App() {
           {/* Redirect base path to /live */}
           <Route path="/" element={<Navigate to="/live" replace />} />
 
-          {/* Live session / Room view */}
+          {/* Live / Room view */}
           <Route
             path="/live"
             element={
@@ -197,7 +192,7 @@ function App() {
             }
           />
 
-          {/* Host / projector */}
+          {/* Host / Projector */}
           <Route
             path="/host"
             element={
@@ -209,15 +204,21 @@ function App() {
             }
           />
 
-          <Route path="/reports" element={<AnalyticsOverview />} />
-          <Route path="/reports/:sessionId" element={<SessionAnalyticsPage />} />
-          <Route path="/my-plan" element={<MyPlanPage />} />
-
-          {/* Task sets list & editor */}
+          {/* Task sets list + editor */}
           <Route path="/tasksets" element={<TaskSets />} />
           <Route path="/tasksets/:id" element={<TaskSetEditor />} />
 
-          {/* Teacher profile */}
+          {/* Reports (analytics) */}
+          <Route path="/reports" element={<AnalyticsOverview />} />
+          <Route
+            path="/reports/:sessionId"
+            element={<SessionAnalyticsPage />}
+          />
+
+          {/* My Plan */}
+          <Route path="/my-plan" element={<MyPlanPage />} />
+
+          {/* Presenter profile */}
           <Route path="/teacher/profile" element={<TeacherProfile />} />
 
           {/* AI TaskSet generator */}
@@ -226,7 +227,7 @@ function App() {
             element={<AiTasksetGenerator />}
           />
 
-          {/* Station posters (accessed via button in LiveSession) */}
+          {/* Station posters */}
           <Route path="/station-posters" element={<StationPosters />} />
         </Routes>
       </main>
@@ -256,12 +257,12 @@ function NavLinkButton({ to, active, children }) {
         textAlign: "left",
         marginBottom: 8,
         padding: "6px 10px",
-        border: "none",
         borderRadius: 6,
         background: active ? "#0ea5e9" : "transparent",
         color: "#fff",
         cursor: "pointer",
         textDecoration: "none",
+        fontSize: "0.9rem",
       }}
     >
       {children}
@@ -269,4 +270,4 @@ function NavLinkButton({ to, active, children }) {
   );
 }
 
-export default App;
+export default TeacherApp;

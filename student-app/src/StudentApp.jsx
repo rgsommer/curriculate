@@ -1,104 +1,101 @@
-// student-app/src/App.jsx
-import React, { useEffect, useState } from "react";
+// student-app/src/StudentApp.jsx
+import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
-import TaskRunner from "./components/tasks/TaskRunner.jsx";
-import { API_BASE_URL } from "./config.js";
+import { API_BASE_URL } from "./config";
 
-// Socket URL – same base as your API (e.g. https://api.curriculate.net)
+// Student app talks straight to the same origin as REST
 const SOCKET_URL = API_BASE_URL;
 
-function App() {
+// simple local id for this device in this tab
+function makePlayerId() {
+  return "p-" + Math.random().toString(36).slice(2, 9);
+}
+
+function colorToHex(name) {
+  if (!name) return "#111827";
+  const n = name.toLowerCase();
+  if (n.includes("red")) return "#ef4444";
+  if (n.includes("blue")) return "#3b82f6";
+  if (n.includes("green")) return "#22c55e";
+  if (n.includes("yellow")) return "#eab308";
+  if (n.includes("orange")) return "#f97316";
+  if (n.includes("purple")) return "#a855f7";
+  if (n.includes("pink")) return "#ec4899";
+  if (n.includes("teal")) return "#14b8a6";
+  if (n.includes("brown")) return "#92400e";
+  if (n.includes("grey") || n.includes("gray")) return "#6b7280";
+  return "#0f172a";
+}
+
+export default function StudentApp() {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [joined, setJoined] = useState(false);
 
   const [roomCode, setRoomCode] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [joined, setJoined] = useState(false);
 
   const [assignedColor, setAssignedColor] = useState(null);
   const [stationLabel, setStationLabel] = useState(null);
 
   const [currentTask, setCurrentTask] = useState(null);
-  const [answered, setAnswered] = useState(false);
-
-  // Optional: if you’re using displayKey / station display objects
+  const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
   const [tasksetDisplays, setTasksetDisplays] = useState([]);
   const [currentDisplay, setCurrentDisplay] = useState(null);
 
+  const [answered, setAnswered] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const playerIdRef = useRef(makePlayerId());
+
   // ---------------------------------------------------------
-  // Connect socket
+  // Socket setup
   // ---------------------------------------------------------
   useEffect(() => {
     const s = io(SOCKET_URL, {
       transports: ["websocket"],
-      // if your socket server has CORS credentials enabled, you can flip this to true
-      withCredentials: false,
-      path: "/socket.io",
+      withCredentials: true,
     });
 
-    s.on("connect", () => {
-      setConnected(true);
-    });
-
+    s.on("connect", () => setConnected(true));
     s.on("disconnect", () => {
       setConnected(false);
       setJoined(false);
-      setAssignedColor(null);
-      setStationLabel(null);
       setCurrentTask(null);
-      setAnswered(false);
-      setTasksetDisplays([]);
       setCurrentDisplay(null);
     });
 
-    // When host assigns station / color
-    s.on("station-assigned", (payload = {}) => {
-      // payload:
-      // {
-      //   color: "RED",
-      //   stationLabel: "Red Station Hallway",
-      //   displays: [...]
-      // }
-      setAssignedColor(payload.color || null);
-      setStationLabel(payload.stationLabel || null);
-      setTasksetDisplays(payload.displays || []);
-
-      if (currentTask && payload.displays) {
-        const disp = payload.displays.find(
-          (d) => d.key === currentTask.displayKey
-        );
-        setCurrentDisplay(disp || null);
-      }
-    });
-
-    // When a new task comes in for this team
-    s.on("task-started", (task) => {
+    // Teacher starts / sends tasks
+    s.on("task:launch", ({ index, task, timeLimitSeconds }) => {
+      setCurrentTaskIndex(index);
       setCurrentTask(task || null);
       setAnswered(false);
+      setSubmitting(false);
 
       if (task && task.displayKey && tasksetDisplays?.length) {
-        const disp = tasksetDisplays.find(
-          (d) => d.key === task.displayKey
-        );
+        const disp = tasksetDisplays.find((d) => d.key === task.displayKey);
         setCurrentDisplay(disp || null);
       } else {
         setCurrentDisplay(null);
       }
     });
 
-    // If host ends the task / clears it
-    s.on("task-cleared", () => {
+    // Session complete
+    s.on("session:complete", () => {
       setCurrentTask(null);
-      setAnswered(false);
       setCurrentDisplay(null);
+    });
+
+    // Server confirms it recorded our submission
+    s.on("task:received", () => {
+      setSubmitting(false);
+      setAnswered(true);
     });
 
     setSocket(s);
     return () => {
       s.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tasksetDisplays]);
 
   // ---------------------------------------------------------
   // Join
@@ -112,8 +109,8 @@ function App() {
     const trimmedTeam = teamName.trim();
 
     socket.emit(
-      "joinRoom",
-      { roomCode: trimmedRoom, teamName: trimmedTeam, role: "team" },
+      "join-room",
+      { roomCode: trimmedRoom, teamName: trimmedTeam },
       (ack) => {
         if (ack && ack.ok) {
           setJoined(true);
@@ -140,23 +137,27 @@ function App() {
   // ---------------------------------------------------------
   function handleSubmit(answerData) {
     if (!socket || !joined || !currentTask) return;
-    if (answered) return;
+    if (answered || submitting) return;
+
+    const trimmedRoom = roomCode.trim().toUpperCase();
+    const trimmedTeam = teamName.trim();
+
+    // match backend's teamId derivation used in join-room handler
+    const teamId =
+      "team-" + trimmedTeam.trim().replace(/\s+/g, "-").toLowerCase();
 
     const payload = {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamName: teamName.trim(),
-      taskId: currentTask._id || currentTask.id,
+      roomCode: trimmedRoom,
+      teamId,
+      teamName: trimmedTeam,
+      playerId: playerIdRef.current,
+      taskIndex: currentTaskIndex ?? 0,
       answer: answerData,
     };
 
-    socket.emit("submitAnswer", payload, (ack) => {
-      if (!ack || !ack.ok) {
-        console.error("Submit failed:", ack);
-        alert(ack?.error || "Submit failed");
-        return;
-      }
-      setAnswered(true);
-    });
+    setSubmitting(true);
+    socket.emit("task:submit", payload);
+    // we'll flip to answered when "task:received" comes back
   }
 
   // ---------------------------------------------------------
@@ -186,7 +187,7 @@ function App() {
       style={{
         maxWidth: 520,
         margin: "0 auto",
-        padding: "24px 16px 26vh",
+        padding: "24px 16px 26vh", // bottom padding so content never hides under the band
         boxSizing: "border-box",
         fontFamily: "system-ui",
         minHeight: "100dvh",
@@ -211,141 +212,190 @@ function App() {
       <p
         style={{
           fontSize: "0.9rem",
-          marginBottom: 16,
+          marginBottom: 4,
           color: connected ? "#16a34a" : "#b91c1c",
         }}
       >
         {connected ? "Connected" : "Not connected"}
       </p>
+      {joined && (
+        <p
+          style={{
+            fontSize: "0.8rem",
+            marginTop: 0,
+            marginBottom: 16,
+            color: "#4b5563",
+          }}
+        >
+          Room: {roomCode.toUpperCase() || "—"}
+        </p>
+      )}
 
-      {/* Join form (if not joined yet) */}
+      {/* Join form */}
       {!joined && (
         <form
           onSubmit={handleJoin}
           style={{
-            marginBottom: 24,
-            padding: 12,
-            borderRadius: 10,
             border: "1px solid #e5e7eb",
-            background: "#f9fafb",
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 24,
           }}
         >
-          <div
-            style={{
-              marginBottom: 8,
-              fontSize: "0.9rem",
-              color: "#111827",
-            }}
-          >
-            {statusLine}
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div style={{ marginBottom: 12 }}>
+            <label
+              htmlFor="room"
+              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+            >
+              Room code
+            </label>
             <input
-              type="text"
-              placeholder="Room code"
+              id="room"
               value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+              onChange={(e) => setRoomCode(e.target.value)}
               style={{
-                flex: 0.6,
+                width: "100%",
+                padding: "8px 10px",
+                fontSize: "1rem",
                 borderRadius: 8,
                 border: "1px solid #d1d5db",
-                padding: "6px 8px",
-                fontSize: "0.95rem",
               }}
+              autoCapitalize="characters"
+              autoCorrect="off"
             />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label
+              htmlFor="team"
+              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+            >
+              Team name
+            </label>
             <input
-              type="text"
-              placeholder="Team name"
+              id="team"
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               style={{
-                flex: 1,
+                width: "100%",
+                padding: "8px 10px",
+                fontSize: "1rem",
                 borderRadius: 8,
                 border: "1px solid #d1d5db",
-                padding: "6px 8px",
-                fontSize: "0.95rem",
               }}
             />
           </div>
-
           <button
             type="submit"
             disabled={!connected || !roomCode.trim() || !teamName.trim()}
             style={{
               width: "100%",
-              padding: "8px 10px",
-              borderRadius: 8,
+              padding: "10px 12px",
+              borderRadius: 999,
               border: "none",
-              background:
-                !connected || !roomCode.trim() || !teamName.trim()
-                  ? "#9ca3af"
-                  : "#2563eb",
-              color: "#fff",
+              fontSize: "1rem",
               fontWeight: 600,
-              cursor:
-                !connected || !roomCode.trim() || !teamName.trim()
-                  ? "default"
-                  : "pointer",
+              background: connected ? "#0f172a" : "#6b7280",
+              color: "#f9fafb",
             }}
           >
-            Join
+            Join room
           </button>
         </form>
       )}
 
-      {/* Status when joined */}
-      {joined && (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 10,
-            borderRadius: 10,
-            background: "#eff6ff",
-            border: "1px solid #bfdbfe",
-            fontSize: "0.9rem",
-            color: "#1e3a8a",
-          }}
-        >
-          {statusLine}
-        </div>
-      )}
+      {/* Status line */}
+      <p
+        style={{
+          fontSize: "0.9rem",
+          marginBottom: 16,
+          color: "#374151",
+        }}
+      >
+        {statusLine}
+      </p>
 
       {/* Task area */}
-      <section>
-        {joined ? (
-          currentTask ? (
-            <TaskRunner
-              task={currentTask}
-              onSubmit={handleSubmit}
-              disabled={answered}
-              answered={answered}
-              stationColor={bandColor}
-              currentDisplay={currentDisplay}
-            />
-          ) : (
-            <p
+      <section
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          padding: 16,
+          minHeight: 160,
+        }}
+      >
+        {!currentTask && (
+          <p style={{ fontSize: "0.95rem", color: "#6b7280" }}>
+            {joined
+              ? "Waiting for your next task…"
+              : "Join a room to begin receiving tasks."}
+          </p>
+        )}
+
+        {currentTask && (
+          <>
+            <h2
               style={{
-                fontSize: "1rem",
-                color: "#4b5563",
+                margin: "0 0 8px",
+                fontSize: "1.1rem",
               }}
             >
-              Waiting for task…
+              {currentTask.title || "Task"}
+            </h2>
+            <p
+              style={{
+                margin: "0 0 12px",
+                fontSize: "0.95rem",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {currentTask.prompt}
             </p>
-          )
-        ) : (
-          <p
-            style={{
-              fontSize: "0.9rem",
-              color: "#6b7280",
-            }}
-          >
-            Once you join a room, tasks from your teacher will appear here.
-          </p>
+
+            {/* For now, treat everything as a free-text answer;
+                your earlier specialized controls can drop back in here */}
+            <textarea
+              disabled={answered || submitting}
+              rows={4}
+              style={{
+                width: "100%",
+                fontSize: "0.95rem",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                marginBottom: 12,
+                resize: "vertical",
+              }}
+              placeholder={answered ? "Answer submitted." : "Type your answer…"}
+              onChange={() => {}}
+            />
+
+            <button
+              type="button"
+              disabled={answered || submitting}
+              onClick={() => handleSubmit("submitted via simple textarea")}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 999,
+                border: "none",
+                fontSize: "1rem",
+                fontWeight: 600,
+                background: answered ? "#16a34a" : "#0f172a",
+                color: "#f9fafb",
+                opacity: answered || submitting ? 0.7 : 1,
+              }}
+            >
+              {answered
+                ? "Answer received"
+                : submitting
+                ? "Sending…"
+                : "Submit answer"}
+            </button>
+          </>
         )}
       </section>
 
-      {/* Fixed coloured band at bottom */}
+      {/* Fixed bottom colour band */}
       <div
         style={{
           position: "fixed",
@@ -354,65 +404,31 @@ function App() {
           bottom: 0,
           height: "22vh",
           background: bandColor,
+          color: "#f9fafb",
           display: "flex",
-          alignItems: "center",
+          flexDirection: "column",
           justifyContent: "center",
-          color: "#fff",
+          alignItems: "center",
           textAlign: "center",
-          padding: 12,
-          transition: "background 0.25s ease-in-out",
+          padding: "8px 12px 18px",
         }}
       >
-        <div>
-          <div style={{ fontSize: "0.8rem", opacity: 0.85 }}>
-            Station colour
-          </div>
-          <div style={{ fontSize: "1.4rem", fontWeight: 700 }}>
-            {assignedColor || (joined ? "Waiting…" : "Not joined")}
-          </div>
-          {stationLabel && (
-            <div style={{ fontSize: "0.8rem", opacity: 0.85 }}>
-              {stationLabel}
-            </div>
-          )}
+        <div style={{ fontSize: "0.8rem", opacity: 0.85, marginBottom: 4 }}>
+          API {connected ? "OK" : "offline"}
+          {joined && roomCode
+            ? ` • Room: ${roomCode.trim().toUpperCase()}`
+            : ""}
+        </div>
+        <div style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>
+          {teamName || "Your team"}
+        </div>
+        <div style={{ fontSize: "0.9rem" }}>
+          Current station:{" "}
+          <span style={{ fontWeight: 600 }}>
+            {assignedColor ? stationLabel || assignedColor : "Not assigned yet"}
+          </span>
         </div>
       </div>
     </div>
   );
 }
-
-// Map a color name to a hex – adjust to match your design
-function colorToHex(name) {
-  if (!name) return "#0f172a";
-  const key = String(name).toUpperCase();
-  switch (key) {
-    case "RED":
-      return "#ef4444";
-    case "BLUE":
-      return "#3b82f6";
-    case "GREEN":
-      return "#22c55e";
-    case "YELLOW":
-      return "#eab308";
-    case "ORANGE":
-      return "#f97316";
-    case "PURPLE":
-      return "#a855f7";
-    case "TEAL":
-      return "#14b8a6";
-    case "PINK":
-      return "#ec4899";
-    case "LIME":
-      return "#84cc16";
-    case "NAVY":
-      return "#1d4ed8";
-    case "BROWN":
-      return "#92400e";
-    case "GRAY":
-      return "#6b7280";
-    default:
-      return "#0f172a";
-  }
-}
-
-export default App;
