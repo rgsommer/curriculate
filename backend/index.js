@@ -22,6 +22,7 @@ import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import Profile from "./models/TeacherProfile.js";
 import TaskSet from "./models/TaskSet.js";
 import tasksetRoutes from "./routes/tasksetRoutes.js";
+import teacherProfileRoutes from "./routes/teacherProfileRoutes.js";
 
 // --------------------------------------------------------------------
 // App + Server Setup
