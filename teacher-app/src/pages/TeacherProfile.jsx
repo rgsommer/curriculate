@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { API_BASE_URL } from "../config";
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://api.curriculate.net";
+const API_BASE = API_BASE_URL;
 
 // Options for perspectives (can grow later)
 const PERSPECTIVE_OPTIONS = [
@@ -16,354 +16,296 @@ const PERSPECTIVE_OPTIONS = [
   { value: "missions-outreach", label: "Missions / Outreach" },
 ];
 
-const emptyCategory = () => ({
-  key: "",
-  label: "",
-  description: "",
-  weight: 25,
-});
+// Make sure we always have 4 perspective slots in the UI
+function ensureFourSlots(perspectives = []) {
+  const base = Array.isArray(perspectives) ? perspectives : [];
+  return [...base, ...Array(Math.max(0, 4 - base.length)).fill("")].slice(
+    0,
+    4
+  );
+}
 
-export default function TeacherProfilePage() {
-  const [profile, setProfile] = useState(null);
+export default function TeacherProfile() {
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [savedMsg, setSavedMsg] = useState("");
+
+  const [form, setForm] = useState({
+    displayName: "",
+    schoolName: "",
+    defaultGrade: "",
+    defaultSubject: "",
+    defaultDurationMinutes: 45,
+    defaultDifficulty: "MEDIUM",
+    defaultLearningGoal: "REVIEW",
+    perspectives: [],
+    allowIndividualReports: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
-      setError("");
+    async function loadProfile() {
       try {
-        const res = await axios.get(`${API_BASE}/api/profile`);
-        if (!cancelled) {
-          const data = res.data || {};
-          const cats = Array.isArray(data.assessmentCategories)
-            ? data.assessmentCategories
-            : [];
+        const res = await axios.get(`${API_BASE}/teacher-profile/me`, {
+          withCredentials: true,
+        });
 
-          setProfile({
-            ...data,
-            assessmentCategories: [
-              ...cats,
-              ...Array(Math.max(0, 4 - cats.length))
-                .fill(0)
-                .map(() => emptyCategory()),
-            ].slice(0, 4),
-            perspectives: Array.isArray(data.perspectives)
-              ? data.perspectives
-              : [],
-          });
-        }
+        if (cancelled) return;
+        const data = res.data || {};
+        const {
+          displayName,
+          schoolName,
+          defaultGrade,
+          defaultSubject,
+          defaultDurationMinutes,
+          defaultDifficulty,
+          defaultLearningGoal,
+          perspectives,
+          allowIndividualReports,
+        } = data;
+
+        setForm({
+          displayName: displayName || "",
+          schoolName: schoolName || "",
+          defaultGrade: defaultGrade || "",
+          defaultSubject: defaultSubject || "",
+          defaultDurationMinutes: defaultDurationMinutes || 45,
+          defaultDifficulty: defaultDifficulty || "MEDIUM",
+          defaultLearningGoal: defaultLearningGoal || "REVIEW",
+          perspectives: ensureFourSlots(perspectives),
+          allowIndividualReports: !!allowIndividualReports,
+        });
       } catch (err) {
         console.error("Load profile error", err);
         if (!cancelled) {
-          setError("Could not load presenter profile.");
+          setError("Could not load teacher profile.");
         }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 
-    load();
+    loadProfile();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const updateField = (field, value) => {
-    setProfile((prev) => ({
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((prev) => ({
       ...prev,
-      [field]: value,
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
 
-  const updateCategory = (idx, field, value) => {
-    setProfile((prev) => {
-      const cats = [...(prev.assessmentCategories || [])];
-      const current = { ...(cats[idx] || emptyCategory()) };
-      if (field === "label") {
-        current.label = value;
-        if (!current.key) {
-          current.key = value
-            .toLowerCase()
-            .replace(/\s+/g, "-")
-            .replace(/[^a-z0-9\-]/g, "")
-            .slice(0, 32);
-        }
-      } else {
-        current[field] = value;
-      }
-      cats[idx] = current;
-      return { ...prev, assessmentCategories: cats };
+  const handlePerspectiveChange = (index, value) => {
+    setForm((prev) => {
+      const copy = [...prev.perspectives];
+      copy[index] = value;
+      return { ...prev, perspectives: copy };
     });
   };
 
-  const handleSave = async () => {
-    if (!profile) return;
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setSaving(true);
     setError("");
-    setSavedMsg("");
-
-    const payload = {
-      ...profile,
-      assessmentCategories: (profile.assessmentCategories || [])
-        .filter((c) => c && c.label && c.key)
-        .map((c) => ({
-          key: c.key,
-          label: c.label,
-          description: c.description || "",
-          weight: Number.isFinite(Number(c.weight)) ? Number(c.weight) : 25,
-        })),
-    };
 
     try {
-      await axios.put(`${API_BASE}/api/profile`, payload);
-      setSavedMsg("Presenter profile saved.");
-      setTimeout(() => setSavedMsg(""), 2500);
+      const payload = {
+        ...form,
+        perspectives: form.perspectives.filter(Boolean),
+      };
+
+      await axios.put(`${API_BASE}/teacher-profile/me`, payload, {
+        withCredentials: true,
+      });
+
+      alert("Presenter profile saved.");
     } catch (err) {
       console.error("Save profile error", err);
-      setError("Could not save presenter profile.");
+      setError("Could not save profile.");
     } finally {
       setSaving(false);
     }
   };
 
-  if (!profile) {
-    return (
-      <div style={{ padding: 16 }}>
-        <h1>Presenter Profile</h1>
-        {error ? <p style={{ color: "red" }}>{error}</p> : <p>Loading…</p>}
-      </div>
-    );
+  if (loading) {
+    return <div className="p-4">Loading presenter profile…</div>;
   }
 
   return (
-    <div
-      style={{
-        padding: 16,
-        fontFamily: "system-ui, -apple-system, 'Segoe UI'",
-        maxWidth: 800,
-        margin: "0 auto",
-      }}
-    >
-      <h1 style={{ marginTop: 0 }}>Presenter Profile</h1>
-
-      <p style={{ fontSize: "0.8rem", color: "#555", marginTop: 4 }}>
-        This profile represents the <strong>presenter</strong> — whether you are
-        a classroom teacher, workshop leader, or conference host. Your school or
-        organization name and perspectives will appear on reports.
+    <div className="max-w-3xl mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-2">Presenter Profile</h1>
+      <p className="text-sm text-gray-600 mb-4">
+        This information helps Curriculate tune AI-generated task sets and
+        reporting for your context.
       </p>
 
-      {error && <p style={{ color: "red", marginTop: 0 }}>{error}</p>}
-      {savedMsg && <p style={{ color: "green", marginTop: 0 }}>{savedMsg}</p>}
+      {error && <div className="mb-3 text-red-600">{error}</div>}
 
-      {/* School name */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-          School / Organization Name
-        </label>
-        <input
-          type="text"
-          value={profile.schoolName || ""}
-          onChange={(e) => updateField("schoolName", e.target.value)}
-          placeholder="e.g., Brampton Christian School"
-          style={{
-            marginTop: 4,
-            padding: "6px 8px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            width: "100%",
-            maxWidth: 360,
-            fontSize: "0.9rem",
-          }}
-        />
-      </div>
-
-      {/* Email */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-          Transcript Email
-        </label>
-        <input
-          type="email"
-          value={profile.email || ""}
-          onChange={(e) => updateField("email", e.target.value)}
-          placeholder="you@school.org"
-          style={{
-            marginTop: 4,
-            padding: "6px 8px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            width: "100%",
-            maxWidth: 320,
-            fontSize: "0.9rem",
-          }}
-        />
-      </div>
-
-      {/* Perspectives */}
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>Perspectives</h2>
-        <p style={{ fontSize: "0.8rem", color: "#555", marginTop: 0 }}>
-          Select one or more perspectives that Curriculate should “wear” when
-          generating summaries and feedback.
-        </p>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {PERSPECTIVE_OPTIONS.map((opt) => {
-            const selected = (profile.perspectives || []).includes(opt.value);
-            return (
-              <label
-                key={opt.value}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: "0.85rem",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={(e) => {
-                    setProfile((prev) => {
-                      const current = prev.perspectives || [];
-                      const next = e.target.checked
-                        ? [...new Set([...current, opt.value])]
-                        : current.filter((v) => v !== opt.value);
-                      return { ...prev, perspectives: next };
-                    });
-                  }}
-                />
-                {opt.label}
-              </label>
-            );
-          })}
-        </div>
-
-        <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#555" }}>
-          Selected:{" "}
-          {(profile.perspectives || [])
-            .map(
-              (v) =>
-                PERSPECTIVE_OPTIONS.find((o) => o.value === v)?.label || v
-            )
-            .join(", ") || "None"}
-        </p>
-      </div>
-
-      {/* Include individual reports */}
-      <div style={{ marginBottom: 24 }}>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: "0.9rem",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={!!profile.includeIndividualReports}
-            onChange={(e) =>
-              updateField("includeIndividualReports", e.target.checked)
-            }
-          />
-          Include individual one-page reports in the PDF transcript
-        </label>
-        <p style={{ fontSize: "0.75rem", color: "#666", marginTop: 4 }}>
-          On the FREE plan, you’ll see a single session summary. Higher tiers
-          unlock richer team and student reporting.
-        </p>
-      </div>
-
-      {/* Assessment categories */}
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: "1rem" }}>Assessment Categories (optional)</h2>
-        <p style={{ fontSize: "0.8rem", color: "#555" }}>
-          Define up to four categories for AI-based feedback (Knowledge,
-          Application, Thinking, Communication, etc.).
-        </p>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0,2fr) minmax(0,3fr) 80px",
-            gap: 8,
-            fontSize: "0.8rem",
-          }}
-        >
-          <div style={{ fontWeight: 600 }}>Label</div>
-          <div style={{ fontWeight: 600 }}>Description (for AI)</div>
-          <div style={{ fontWeight: 600 }}>Weight</div>
-
-          {(profile.assessmentCategories || []).map((cat, idx) => (
-            <React.Fragment key={idx}>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Basic Info */}
+        <section>
+          <h2 className="font-semibold mb-2">Basic Info</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="flex flex-col">
+              <span>Display Name</span>
               <input
                 type="text"
-                value={cat.label || ""}
-                onChange={(e) => updateCategory(idx, "label", e.target.value)}
-                placeholder={
-                  idx === 0
-                    ? "Knowledge"
-                    : idx === 1
-                    ? "Application"
-                    : idx === 2
-                    ? "Thinking"
-                    : "Communication"
-                }
-                style={{
-                  padding: "4px 6px",
-                  border: "1px solid #ccc",
-                  borderRadius: 4,
-                }}
+                name="displayName"
+                value={form.displayName}
+                onChange={handleChange}
+                className="border rounded px-2 py-1"
+                placeholder="How should we refer to you in the app?"
               />
-
+            </label>
+            <label className="flex flex-col">
+              <span>School / Organization</span>
               <input
                 type="text"
-                value={cat.description || ""}
-                onChange={(e) =>
-                  updateCategory(idx, "description", e.target.value)
-                }
-                placeholder="Explain what this category measures"
-                style={{
-                  padding: "4px 6px",
-                  border: "1px solid #ccc",
-                  borderRadius: 4,
-                }}
+                name="schoolName"
+                value={form.schoolName}
+                onChange={handleChange}
+                className="border rounded px-2 py-1"
+                placeholder="School or organization name"
               />
+            </label>
+            <label className="flex flex-col">
+              <span>Default Grade</span>
+              <input
+                type="text"
+                name="defaultGrade"
+                value={form.defaultGrade}
+                onChange={handleChange}
+                className="border rounded px-2 py-1"
+                placeholder="e.g. 7"
+              />
+            </label>
+            <label className="flex flex-col">
+              <span>Default Subject</span>
+              <input
+                type="text"
+                name="defaultSubject"
+                value={form.defaultSubject}
+                onChange={handleChange}
+                className="border rounded px-2 py-1"
+                placeholder="e.g. History"
+              />
+            </label>
+          </div>
+        </section>
 
+        {/* Defaults for AI */}
+        <section>
+          <h2 className="font-semibold mb-2">AI Defaults</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label className="flex flex-col">
+              <span>Default Duration (minutes)</span>
               <input
                 type="number"
-                value={cat.weight ?? 25}
-                onChange={(e) =>
-                  updateCategory(idx, "weight", e.target.value)
-                }
-                style={{
-                  padding: "4px 6px",
-                  border: "1px solid #ccc",
-                  borderRadius: 4,
-                }}
+                name="defaultDurationMinutes"
+                value={form.defaultDurationMinutes}
+                onChange={handleChange}
+                className="border rounded px-2 py-1"
+                min={5}
+                max={120}
               />
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
+            </label>
+            <label className="flex flex-col">
+              <span>Default Difficulty</span>
+              <select
+                name="defaultDifficulty"
+                value={form.defaultDifficulty}
+                onChange={handleChange}
+                className="border rounded px-2 py-1"
+              >
+                <option value="EASY">Easy</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HARD">Hard</option>
+              </select>
+            </label>
+            <label className="flex flex-col">
+              <span>Default Learning Goal</span>
+              <select
+                name="defaultLearningGoal"
+                value={form.defaultLearningGoal}
+                onChange={handleChange}
+                className="border rounded px-2 py-1"
+              >
+                <option value="REVIEW">Review / Practice</option>
+                <option value="INTRODUCTION">Introduce New Material</option>
+                <option value="ENRICHMENT">Enrichment / Extension</option>
+                <option value="ASSESSMENT">Assessment / Check-in</option>
+              </select>
+            </label>
+          </div>
+        </section>
 
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saving}
-        style={{
-          padding: "8px 14px",
-          borderRadius: 8,
-          border: "none",
-          background: saving ? "#999" : "#0ea5e9",
-          color: "#fff",
-          fontSize: "0.9rem",
-        }}
-      >
-        {saving ? "Saving…" : "Save Presenter Profile"}
-      </button>
+        {/* Perspectives */}
+        <section>
+          <h2 className="font-semibold mb-2">Perspectives (Curriculum Lenses)</h2>
+          <p className="text-xs text-gray-600 mb-2">
+            Choose up to four perspectives that often shape how you approach a
+            topic. These help AI suggest tasks that fit your teaching style and
+            context.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {form.perspectives.map((value, index) => (
+              <label key={index} className="flex flex-col text-sm">
+                <span>Perspective {index + 1}</span>
+                <select
+                  value={value}
+                  onChange={(e) =>
+                    handlePerspectiveChange(index, e.target.value)
+                  }
+                  className="border rounded px-2 py-1"
+                >
+                  <option value="">— None —</option>
+                  {PERSPECTIVE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        {/* Reporting preferences */}
+        <section>
+          <h2 className="font-semibold mb-2">Reporting</h2>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="allowIndividualReports"
+              checked={form.allowIndividualReports}
+              onChange={handleChange}
+            />
+            <span>
+              I would like the option to generate individual student PDF
+              reports when available on my plan.
+            </span>
+          </label>
+          <p className="mt-1 text-xs text-gray-600">
+            On Free, you&apos;ll see a basic session summary. Curriculate Plus
+            and Pro add richer class and individual reporting options.
+          </p>
+        </section>
+
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save Presenter Profile"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

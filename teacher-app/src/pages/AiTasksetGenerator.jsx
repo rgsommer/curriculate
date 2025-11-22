@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchMyProfile } from "../api/profile";
 import { generateAiTaskset } from "../api/tasksets";
+import { API_BASE_URL } from "../config"; // ⬅️ use shared config
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
@@ -77,9 +78,10 @@ export default function AiTasksetGenerator() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch("/api/subscription/me", {
+        const res = await fetch(`${API_BASE_URL}/api/subscription/me`, {
           credentials: "include",
         });
+
         if (!active) return;
         if (!res.ok) throw new Error("Failed to load subscription info");
         const sub = await res.json();
@@ -203,7 +205,7 @@ export default function AiTasksetGenerator() {
           includeInputTasks: true,
         },
 
-        // NEW: hint max tasks to AI (FREE = 5, etc.)
+        // Hint max tasks to AI (FREE = 5, etc.)
         maxTasksPerSet,
       };
 

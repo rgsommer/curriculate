@@ -1,6 +1,7 @@
 // teacher-app/src/pages/TaskSetEditor.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { API_BASE_URL } from "../config";
 
 import {
   TASK_TYPES,
@@ -8,7 +9,7 @@ import {
   IMPLEMENTED_TASK_TYPES,
 } from "../../../shared/taskTypes.js";
 
-const API_BASE = "http://localhost:10000";
+const API_BASE = API_BASE_URL;
 
 // Normalize any legacy values coming from older tasksets
 function normalizeTaskType(raw) {
@@ -106,8 +107,7 @@ export default function TaskSetEditor() {
           (data.tasks || []).map((t, idx) => ({
             ...t,
             taskType: normalizeTaskType(t.taskType || t.task_type),
-            timeLimitSeconds:
-              t.timeLimitSeconds ?? t.time_limit ?? null,
+            timeLimitSeconds: t.timeLimitSeconds ?? t.time_limit ?? null,
             displayKey: t.displayKey || "",
             _tempId: Math.random().toString(36).slice(2),
             orderIndex: t.orderIndex ?? idx,
@@ -261,9 +261,7 @@ export default function TaskSetEditor() {
         ].includes(canonicalType);
 
         const options = needsOptions
-          ? (t.options || []).filter(
-              (opt) => !!opt && opt.trim() !== ""
-            )
+          ? (t.options || []).filter((opt) => !!opt && opt.trim() !== "")
           : [];
 
         let correctAnswer = t.correctAnswer;
@@ -368,7 +366,7 @@ export default function TaskSetEditor() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-2">
         <h1 className="text-2xl font-bold">
           {id ? "Edit Task Set" : "Create Task Set"}
         </h1>
