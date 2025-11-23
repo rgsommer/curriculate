@@ -16,9 +16,8 @@ const COLORS = [
 
 function stationIdToColor(id) {
   const m = /^station-(\d+)$/.exec(id || "");
-  if (!m) return null;
-  const idx = parseInt(m[1], 10) - 1;
-  return COLORS[idx] || null;
+  const idx = m ? parseInt(m[1], 10) - 1 : -1;
+  return idx >= 0 ? COLORS[idx] || null : null;
 }
 
 export default function LiveSession({ roomCode }) {
@@ -52,17 +51,24 @@ export default function LiveSession({ roomCode }) {
   // If TaskSets asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
 
-  // Join as teacher whenever roomCode changes
+  // ----------------------------------------------------
+  // Create the room + join it as teacher whenever roomCode changes
+  // ----------------------------------------------------
   useEffect(() => {
     if (!roomCode) {
       setStatus("No room selected.");
       return;
     }
 
-    setStatus("Joining room…");
+    const code = roomCode.toUpperCase();
+    setStatus(`Creating room ${code}…`);
 
+    // Create/reset the room on the backend
+    socket.emit("teacher:createRoom", { roomCode: code });
+
+    // Join that room as the teacher so we receive room:state updates
     socket.emit("joinRoom", {
-      roomCode: roomCode.toUpperCase(),
+      roomCode: code,
       name: "Teacher",
       role: "teacher",
     });
