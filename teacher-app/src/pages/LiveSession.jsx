@@ -402,7 +402,7 @@ export default function LiveSession({ roomCode }) {
     </div>
   );
 }
-
+ 
 const btnStyle = {
   display: "block",
   width: "100%",

@@ -186,7 +186,7 @@ export default function HostView({ roomCode }) {
                       fontSize: "1.1rem",
                       fontWeight: 700,
                     }}
-                  >
+                  > 
                     {entry.points} pts
                   </div>
                 </div>
