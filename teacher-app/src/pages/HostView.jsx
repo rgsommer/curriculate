@@ -30,14 +30,17 @@ export default function HostView({ roomCode }) {
       setSubmissions((prev) => [sub, ...prev].slice(0, 30));
     };
 
+    // OLD behaviour (2 days ago)
     socket.on("roomState", handleRoom);
-    socket.on("room:state", handleRoom); // NEW: support new event name
     socket.on("taskSubmission", handleSubmission);
+
+    // NEW: also accept room:state if server started using that
+    socket.on("room:state", handleRoom);
 
     return () => {
       socket.off("roomState", handleRoom);
-      socket.off("room:state", handleRoom); // NEW
       socket.off("taskSubmission", handleSubmission);
+      socket.off("room:state", handleRoom);
     };
   }, []);
 
