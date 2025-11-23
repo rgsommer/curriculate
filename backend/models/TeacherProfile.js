@@ -33,7 +33,10 @@ const TeacherProfileSchema = new Schema(
     // Teacher or facilitator display name
     displayName: { type: String, default: "" },
 
-    // School, organization, retreat, conference, company, etc.
+    // Explicit presenter fields used in the UI
+    presenterName: { type: String, default: "" },
+    presenterRole: { type: String, default: "" },
+
     schoolName: { type: String, default: "" },
 
     // The email address where reports/transcripts get sent
