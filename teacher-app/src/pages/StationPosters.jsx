@@ -118,12 +118,12 @@ export default function StationPosters() {
           // e.g. https://play.curriculate.net/Classroom/red
           const qrTarget = `https://play.curriculate.net/${encodeURIComponent(
             locationLabel
-          )}/${color}`;
+          )}/${color.toLowerCase()}`;
 
-          // Use a robust QR service
-          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
+          // Use QuickChart (best printing reliability)
+          const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(
             qrTarget
-          )}`;
+          )}&size=250`;
 
           const textColor = ["yellow", "lime", "pink", "orange"].includes(color)
             ? "#111827"
