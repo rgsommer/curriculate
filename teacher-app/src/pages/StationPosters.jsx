@@ -17,131 +17,119 @@ const COLORS = [
   "gray",
 ];
 
-const LOCATIONS = ["classroom", "hallway", "gym", "library"];
-
 function useQuery() {
   const { search } = useLocation();
   return useMemo(() => new URLSearchParams(search), [search]);
 }
 
-/**
- * Printable QR station posters.
- * Requirements:
- * - White background
- * - QR code should fill the page nicely
- * - Web address printed under the QR should be ONLY `play.curriculate.net`
- */
 export default function StationPosters() {
-  const navigate = useNavigate();
   const query = useQuery();
+  const navigate = useNavigate();
 
-  const selectedLocation = query.get("location") || "classroom";
-  const selectedColors = query.getAll("color").length
-    ? query.getAll("color")
-    : ["red", "blue", "green", "yellow"];
+  // "Room" here is your class code or label shown on the poster
+  const room = (query.get("room") || "8A").toUpperCase();
 
-  const handleLocationChange = (e) => {
-    const loc = e.target.value;
-    const params = new URLSearchParams();
-    params.set("location", loc);
-    selectedColors.forEach((c) => params.append("color", c));
-    navigate({ search: params.toString() });
-  };
+  // This is the label you choose for where the station lives
+  // e.g., Classroom, Hallway, Library, etc.
+  const locationLabel = query.get("location") || "Classroom";
 
-  const handleColorToggle = (color) => {
-    const set = new Set(selectedColors);
-    if (set.has(color)) {
-      set.delete(color);
-    } else {
-      set.add(color);
-    }
-    const params = new URLSearchParams();
-    params.set("location", selectedLocation);
-    Array.from(set).forEach((c) => params.append("color", c));
-    navigate({ search: params.toString() });
-  };
+  const stationCount = Math.min(
+    12,
+    Math.max(4, Number(query.get("stations") || 8))
+  );
 
-  const makeQrTarget = (color) =>
-    `https://play.curriculate.net/${selectedLocation}/${color}`;
+  const stations = COLORS.slice(0, stationCount);
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ marginBottom: 4 }}>Station Posters</h1>
-      <p style={{ marginTop: 0, color: "#4b5563" }}>
-        Choose a location and colours, then print. Each page is formatted for
-        8.5×11&quot; with a white background.
+    <div
+      style={{
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      }}
+    >
+      {/* Print-only CSS */}
+      <style>
+        {`
+          @media print {
+            body * {
+              visibility: hidden;
+            }
+            .station-print-page,
+            .station-print-page * {
+              visibility: visible;
+            }
+            .station-print-page {
+              page-break-after: always;
+            }
+          }
+        `}
+      </style>
+
+      <h1 style={{ marginTop: 0 }}>Station posters</h1>
+      <p style={{ fontSize: "0.85rem", color: "#4b5563", maxWidth: 520 }}>
+        One page per station. These are meant for printing on letter-size paper
+        and posting at each colour station. QR codes still point to{" "}
+        <code>play.curriculate.net/{locationLabel}/[colour]</code>, but the
+        printed address stays simple: <code>play.curriculate.net</code>.
       </p>
 
-      {/* Controls (not printed) */}
-      <div
-        style={{
-          marginBottom: 16,
-          padding: 12,
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          background: "#f9fafb",
-        }}
-      >
-        <div style={{ marginBottom: 8 }}>
-          <label
-            style={{
-              marginRight: 8,
-              fontSize: "0.85rem",
-              color: "#374151",
-            }}
-          >
-            Location:
-          </label>
-          <select
-            value={selectedLocation}
-            onChange={handleLocationChange}
-            style={{
-              padding: "4px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              fontSize: "0.9rem",
-            }}
-          >
-            {LOCATIONS.map((loc) => (
-              <option key={loc} value={loc}>
-                {loc.charAt(0).toUpperCase() + loc.slice(1)}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 999,
+            border: "1px solid #d1d5db",
+            background: "#ffffff",
+            cursor: "pointer",
+            fontSize: "0.85rem",
+          }}
+        >
+          ← Back
+        </button>
 
-        <div style={{ fontSize: "0.85rem", color: "#374151" }}>
-          Colours:&nbsp;
-          {COLORS.map((color) => {
-            const active = selectedColors.includes(color);
-            return (
-              <button
-                key={color}
-                type="button"
-                onClick={() => handleColorToggle(color)}
-                style={{
-                  marginRight: 6,
-                  marginBottom: 4,
-                  padding: "2px 8px",
-                  borderRadius: 999,
-                  border: active ? "none" : "1px solid #d1d5db",
-                  background: active ? color : "#ffffff",
-                  color: active ? "#ffffff" : "#111827",
-                  fontSize: "0.75rem",
-                  cursor: "pointer",
-                }}
-              >
-                {color}
-              </button>
-            );
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 999,
+            border: "1px solid #d1d5db",
+            background: "#ffffff",
+            cursor: "pointer",
+            fontSize: "0.85rem",
+          }}
+        >
+          Print all
+        </button>
       </div>
 
-      {/* Printable pages */}
-      <div>
-        {selectedColors.map((color) => {
-          const qrTarget = makeQrTarget(color);
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr)",
+          gap: 24,
+        }}
+      >
+        {stations.map((color) => {
+          const upper = color.toUpperCase();
+
+          // Path that the student app expects:
+          // e.g. https://play.curriculate.net/Classroom/red
+          const qrTarget = `https://play.curriculate.net/${encodeURIComponent(
+            locationLabel
+          )}/${color.toLowerCase()}`;
+
+          // High-resolution QR for crisp printing
+          const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(
+            qrTarget
+          )}&size=512`;
+
+          const textColor = ["yellow", "lime", "pink", "orange"].includes(color)
+            ? "#111827"
+            : "#ffffff";
+
           return (
             <div
               key={color}
@@ -149,75 +137,80 @@ export default function StationPosters() {
               style={{
                 width: "8.5in",
                 height: "11in",
-                margin: "0 auto 24px",
+                margin: "0 auto",
                 boxSizing: "border-box",
-                padding: "0.75in",
-                background: "#ffffff",
-                color: "#111827",
+                padding: "1in 0.75in",
+                background: "#ffffff", // pure white background
                 position: "relative",
-                pageBreakAfter: "always",
-                border: "1px solid #e5e7eb",
               }}
             >
               <div
                 style={{
                   textAlign: "center",
-                  marginBottom: "0.5in",
+                  fontSize: "1.4rem",
+                  fontWeight: 600,
+                  marginBottom: "0.4in",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: "1.5rem",
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  {color} Station
-                </div>
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontSize: "0.95rem",
-                    textTransform: "capitalize",
-                    color: "#4b5563",
-                  }}
-                >
-                  {selectedLocation}
-                </div>
+                Curriculate – Room {room}
               </div>
 
-              {/* QR code box */}
               <div
                 style={{
+                  margin: "0 auto 0.6in",
                   width: "100%",
-                  height: "6.5in",
+                  height: "2.2in",
+                  background: color,
+                  borderRadius: 8,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  color: textColor,
+                  fontSize: "1.3rem",
+                  fontWeight: 700,
+                  textAlign: "center",
+                  textTransform: "uppercase",
+                  padding: "0 0.5in",
+                  boxSizing: "border-box",
+                }}
+              >
+                {upper} Station
+                <br />
+                {locationLabel}
+              </div>
+
+              <div
+                style={{
+                  textAlign: "center",
+                  fontSize: "1.2rem",
+                  fontWeight: 600,
+                  marginBottom: "0.35in",
+                }}
+              >
+                Scan to Arrive
+              </div>
+
+              <div
+                style={{
+                  textAlign: "center",
+                  marginBottom: "0.25in",
                 }}
               >
                 <img
-                  src={`https://chart.googleapis.com/chart?chs=700x700&cht=qr&chl=${encodeURIComponent(
-                    qrTarget
-                  )}`}
-                  alt={`${color} station QR`}
+                  src={qrUrl}
+                  alt={`${upper} Station QR`}
                   style={{
-                    maxWidth: "100%",
-                    maxHeight: "100%",
+                    width: "2.5in",
+                    height: "2.5in",
                   }}
                 />
               </div>
 
-              {/* Footer: simple web address only */}
+              {/* Printed web address (simple, not the full path) */}
               <div
                 style={{
-                  position: "absolute",
-                  bottom: "0.7in",
-                  left: 0,
-                  right: 0,
                   textAlign: "center",
-                  fontSize: "0.9rem",
+                  fontSize: "0.65rem",
                   color: "#4b5563",
                 }}
               >
