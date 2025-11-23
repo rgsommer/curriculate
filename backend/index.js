@@ -19,8 +19,7 @@ import mongoose from "mongoose";
 import bodyParser from "body-parser";
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
-import SubscriptionPlan from "./models/SubscriptionPlan.js";
-// 🚫 REMOVED: import subscriptionRoutes from "./subscriptionRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
@@ -50,35 +49,26 @@ function isVercelPreview(origin) {
   if (!origin) return false;
   return origin.endsWith(".vercel.app");
 }
-const corsOptions = {
-  origin(origin, callback) {
-    if (!origin) {
-      // curl, health checks, server-to-server
-      return callback(null, true);
-    }
-
-    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
-      return callback(null, true);
-    }
-
-    console.warn("❌ Blocked CORS for origin:", origin);
-    return callback(new Error("Not allowed by CORS"));
-  },
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // preflight
-// 🚫 REMOVED: app.use("/api/subscription", subscriptionRoutes);
-
-app.use(bodyParser.json({ limit: "2mb" }));
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
+        return callback(null, true);
+      }
+      console.warn("❌ Blocked CORS for socket.io:", origin);
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   },
 });
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // preflight
+app.use("/api/subscription", subscriptionRoutes);
+
+app.use(bodyParser.json({ limit: "2mb" }));
 
 // --------------------------------------------------------------------
 // MongoDB Connection

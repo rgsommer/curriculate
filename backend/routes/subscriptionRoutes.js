@@ -1,4 +1,3 @@
-// backend/routes/subscriptionRoutes.js
 import express from "express";
 import SubscriptionPlan from "../models/SubscriptionPlan.js";
 
@@ -8,10 +7,10 @@ const router = express.Router();
  * Seed the 3-tier subscription structure:
  *
  *  FREE
- *  PLUS
- *  PRO
+ *  TEACHER_PLUS
+ *  SCHOOL
  *
- *  This will only create missing tiers.
+ * Only creates missing tiers; existing docs are left alone.
  */
 async function seedPlans() {
   const defaults = [
@@ -19,7 +18,7 @@ async function seedPlans() {
       name: "FREE",
       monthlyPriceCents: 0,
       features: {
-        maxAiGenerationsPerMonth: 1,
+        maxAiGenerationsPerMonth: 1, // 1 AI task set / month
         canSaveTasksets: true,
         canEditGeneratedTasksets: true,
         canAccessSharedLibrary: false,
@@ -45,7 +44,7 @@ async function seedPlans() {
     },
     {
       name: "SCHOOL",
-      monthlyPriceCents: 4999, // $49.99/mo
+      monthlyPriceCents: 4999, // $49.99/mo – whatever you like
       features: {
         maxAiGenerationsPerMonth: 999,
         canSaveTasksets: true,
@@ -63,16 +62,19 @@ async function seedPlans() {
     const exists = await SubscriptionPlan.findOne({ name: plan.name });
     if (!exists) {
       await SubscriptionPlan.create(plan);
-      console.log(`Seeded plan: ${plan.name}`);
+      console.log(`Seeded subscription plan: ${plan.name}`);
     }
   }
 }
 
-seedPlans();
+// Fire and forget seed on startup
+seedPlans().catch((err) => {
+  console.error("Failed seeding subscription plans:", err);
+});
 
 /**
- * Instead of "current teacher", we return the GLOBAL plan.
- * Default is FREE.
+ * Helper: for now we just pick the FREE plan as the "current" one.
+ * Later this can depend on the logged-in presenter.
  */
 async function getCurrentPlan() {
   let plan = await SubscriptionPlan.findOne({ name: "FREE" }).lean();
@@ -97,57 +99,47 @@ async function getCurrentPlan() {
   return plan;
 }
 
-/**
- * GET /api/subscription/plan
- */
+// GET /api/subscription/plan
 router.get("/plan", async (req, res) => {
   try {
     const plan = await getCurrentPlan();
     res.json(plan);
   } catch (err) {
-    console.error("GET /api/subscription/plan:", err);
+    console.error("GET /api/subscription/plan error:", err);
     res.status(500).json({ error: "Failed to load subscription plan" });
   }
 });
 
-/**
- * GET /api/subscription/me
- * Alias for now
- */
+// GET /api/subscription/me (alias)
 router.get("/me", async (req, res) => {
   try {
     const plan = await getCurrentPlan();
     res.json(plan);
   } catch (err) {
-    console.error("GET /api/subscription/me:", err);
+    console.error("GET /api/subscription/me error:", err);
     res.status(500).json({ error: "Failed to load subscription info" });
   }
 });
 
-/**
- * POST /api/subscription/ai-usage
- */
+// POST /api/subscription/ai-usage
 router.post("/ai-usage", async (req, res) => {
   try {
     const plan = await getCurrentPlan();
+    const used = (plan.aiTasksetsUsedThisMonth ?? 0) + 1;
 
-    // Soft field — not part of schema, but mongoose allows it
-    plan.aiTasksetsUsedThisMonth =
-      (plan.aiTasksetsUsedThisMonth ?? 0) + 1;
-
-    const updated = await SubscriptionPlan.findOneAndUpdate(
+    await SubscriptionPlan.updateOne(
       { name: plan.name },
-      plan,
-      { new: true }
+      { $set: { aiTasksetsUsedThisMonth: used } },
+      { upsert: true }
     );
 
     res.json({
       ok: true,
-      aiTasksetsUsedThisMonth: updated.aiTasksetsUsedThisMonth,
+      aiTasksetsUsedThisMonth: used,
     });
   } catch (err) {
-    console.error("POST /api/subscription/ai-usage:", err);
-    res.status(500).json({ error: "Failed to increment AI usage" });
+    console.error("POST /api/subscription/ai-usage error:", err);
+    res.status(500).json({ error: "Failed to update AI usage" });
   }
 });
 
