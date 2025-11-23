@@ -44,31 +44,41 @@ const allowedOrigins = [
   "http://localhost:3000",
 ];
 
-// Allow ANY Vercel deployment for teacher/station apps
+/// Allow *any* Vercel preview deployments
 function isVercelPreview(origin) {
-  if (!origin) return false;
-  return origin.endsWith(".vercel.app");
+  return origin && origin.endsWith(".vercel.app");
 }
 
-const io = new Server(server, {
-  cors: {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
-        return callback(null, true);
-      }
-      console.warn("❌ Blocked CORS for socket.io:", origin);
-      return callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
+      return callback(null, true);
+    }
+    console.warn("❌ Blocked CORS:", origin);
+    return callback(new Error("Not allowed by CORS"));
   },
-});
+  credentials: true,
+};
 
+// Must come BEFORE any routes:
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // preflight
+app.options("*", cors(corsOptions));
+
+// ====================================================================
+//  EXPRESS MIDDLEWARE
+// ====================================================================
+app.use(bodyParser.json({ limit: "3mb" }));
+
+// Mount subscriptionRouter properly
 app.use("/api/subscription", subscriptionRoutes);
 
-app.use(bodyParser.json({ limit: "2mb" }));
+// ====================================================================
+//  SOCKET.IO – ONLY ONE INSTANCE
+// ====================================================================
+const io = new Server(server, {
+  cors: corsOptions,
+});
 
 // --------------------------------------------------------------------
 // MongoDB Connection
