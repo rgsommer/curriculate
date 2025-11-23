@@ -2,9 +2,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
-// TASK_TYPES import is kept in case you’re using it elsewhere
 import { TASK_TYPES } from "../../shared/taskTypes.js";
-
 import { API_BASE_URL } from "./config.js";
 
 // Shared socket instance for this app
@@ -29,8 +27,6 @@ const COLOR_NAMES = [
   "pink",
 ];
 
-// Take anything (station-1, station-red, Red, etc) and normalize
-// → { id: "station-red", color: "red", label: "Station-Red" }
 function normalizeStationId(raw) {
   if (!raw) {
     return { id: null, color: null, label: "Not assigned yet" };
@@ -54,7 +50,6 @@ function normalizeStationId(raw) {
   }
 
   if (!color) {
-    // Just fall back to whatever the backend gave us
     return { id: s, color: null, label: s };
   }
 
@@ -144,7 +139,7 @@ function QrScanner({ active, onCode, onError }) {
     function stopCamera() {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+        rafRefRef.current = null;
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
@@ -214,6 +209,8 @@ export default function App() {
   const [answered, setAnswered] = useState(false);
   const [taskStartTime, setTaskStartTime] = useState(null);
 
+  const [explicitTeamId, setExplicitTeamId] = useState(null);
+
   // QR / scanning state
   const [scannedStationId, setScannedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
@@ -221,14 +218,10 @@ export default function App() {
 
   // sounds
   const sndJoin = useRef(
-    new Audio(
-      "https://actions.google.com/sounds/v1/cartoon/pop.ogg"
-    )
+    new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg")
   );
   const sndTask = useRef(
-    new Audio(
-      "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
-    )
+    new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg")
   );
   const sndSubmit = useRef(
     new Audio(
@@ -236,13 +229,10 @@ export default function App() {
     )
   );
   const sndAlert = useRef(
-    new Audio(
-      "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
-    )
+    new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg")
   );
 
   /* ---------------- API health ---------------- */
-
   useEffect(() => {
     fetch(`${API_BASE_URL}/db-check`)
       .then((r) => r.json())
@@ -251,9 +241,7 @@ export default function App() {
   }, []);
 
   /* ---------------- Socket listeners ---------------- */
-
   useEffect(() => {
-    // legacy: single task object
     const onTaskUpdate = (task) => {
       if (!task) {
         setCurrentTask(null);
@@ -265,7 +253,6 @@ export default function App() {
       sndTask.current.play().catch(() => {});
     };
 
-    // new: { index, task, timeLimitSeconds, ... } OR task directly
     const onTaskLaunch = (payload) => {
       const task = payload?.task || payload;
       if (!task) {
@@ -279,27 +266,18 @@ export default function App() {
     };
 
     const applyRoomState = (state) => {
-      setRoomState(
-        state || { stations: [], teams: {}, scores: {} }
-      );
+      setRoomState(state || { stations: [], teams: {}, scores: {} });
     };
 
-    // old protocol
     socket.on("taskUpdate", onTaskUpdate);
     socket.on("roomState", applyRoomState);
 
-    // new protocol variants
     socket.on("task:launch", onTaskLaunch);
     socket.on("room:state", applyRoomState);
     socket.on("room:update", applyRoomState);
 
-    // optional: react to team join if backend sends it
     socket.on("team:joined", (maybeStateOrTeam) => {
-      if (
-        maybeStateOrTeam &&
-        (maybeStateOrTeam.teams || maybeStateOrTeam.stations)
-      ) {
-        // treat as full room state
+      if (maybeStateOrTeam && (maybeStateOrTeam.teams || maybeStateOrTeam.stations)) {
         applyRoomState(maybeStateOrTeam);
       }
     });
@@ -316,8 +294,9 @@ export default function App() {
 
   /* ---------------- Team & assignment (this device) ---------------- */
 
-  const teamHere = roomState.teams[socket.id];
-  const teamId = teamHere?.teamId || socket.id;
+  const keyForMe = explicitTeamId || socket.id;
+  const teamHere = roomState.teams[keyForMe];
+  const teamId = teamHere?.teamId || keyForMe;
 
   const rawAssignedStationId = teamHere?.currentStationId || null;
   const {
@@ -327,11 +306,8 @@ export default function App() {
   } = normalizeStationId(rawAssignedStationId);
 
   const mustScan =
-    joined &&
-    !!assignedStationId &&
-    scannedStationId !== assignedStationId;
+    joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
-  // Turn scanner on whenever we have an assignment but no matching scan
   useEffect(() => {
     if (mustScan && !scanError) {
       setScannerActive(true);
@@ -347,7 +323,6 @@ export default function App() {
     try {
       let text = (value || "").trim();
 
-      // If it's a URL, grab last path segment
       try {
         const url = new URL(text);
         const segments = url.pathname
@@ -358,18 +333,16 @@ export default function App() {
           text = segments[segments.length - 1];
         }
       } catch {
-        // not a URL, keep raw text
+        // not a URL, keep raw
       }
 
       text = text.toLowerCase();
       let stationIdFromCode = null;
 
       if (/^station-/.test(text)) {
-        // "station-red" or "station-1"
         const norm = normalizeStationId(text);
         stationIdFromCode = norm.id;
       } else {
-        // treat raw text as a colour: "red", "blue", etc.
         const norm = normalizeStationId(`station-${text}`);
         stationIdFromCode = norm.id;
       }
@@ -381,27 +354,18 @@ export default function App() {
         return;
       }
 
-      // Enforce correct station: wrong scan → show error + stop camera
-      if (
-        assignedStationId &&
-        stationIdFromCode !== assignedStationId
-      ) {
+      if (assignedStationId && stationIdFromCode !== assignedStationId) {
         const scannedNorm = normalizeStationId(stationIdFromCode);
         const assignedNorm = normalizeStationId(assignedStationId);
-
-        const scannedLabel =
-          scannedNorm.label || stationIdFromCode;
-        const correctLabel =
-          assignedNorm.label || assignedStationId;
+        const scannedLabel = scannedNorm.label || stationIdFromCode;
+        const correctLabel = assignedNorm.label || assignedStationId;
 
         setScanError(
           `This is the wrong station.\n\nYou scanned: ${scannedLabel}\nYour team is assigned to: ${correctLabel}.\n\nPlease go to the correct station and try again.`
         );
-        // Camera will be turned OFF by the effect (because scanError != null)
         return;
       }
 
-      // ✅ Correct station — accept the scan
       const norm = normalizeStationId(stationIdFromCode);
       setScannedStationId(norm.id);
       setScanError(null);
@@ -427,12 +391,9 @@ export default function App() {
     setMembers(next);
   };
 
-  // Ready for Action (joins as a team; device stays with this team)
   const handleReady = () => {
     const finalRoom = roomCode.trim().toUpperCase();
-    const realMembers = members
-      .map((m) => m.trim())
-      .filter(Boolean);
+    const realMembers = members.map((m) => m.trim()).filter(Boolean);
 
     if (!finalRoom) {
       alert("Room code is required");
@@ -449,38 +410,29 @@ export default function App() {
       members: realMembers,
     };
 
-    // New protocol: student:joinRoom with ack
     socket.emit("student:joinRoom", payload, (ack) => {
       if (!ack || ack.ok === false) {
-        alert(ack?.error || "Could not join room. Check the code with your teacher.");
+        alert(
+          ack?.error || "Could not join room. Check the code with your teacher."
+        );
         return;
       }
 
-      // If backend returns roomState or team info, apply it
+      if (ack.teamId) {
+        setExplicitTeamId(ack.teamId);
+      }
       if (ack.roomState) {
         setRoomState(ack.roomState);
       }
-      // Play join sound and mark as joined
       sndJoin.current.play().catch(() => {});
       setJoined(true);
-      setScannedStationId(null); // force first scan once first station is assigned
+      setScannedStationId(null);
     });
-
-    // OPTIONAL: if you want to keep backward compatibility:
-    // socket.emit("joinRoom", payload);
   };
 
   const handleSubmit = (answerTextFromTask) => {
-    console.log("handleSubmit called:", {
-      answerTextFromTask,
-      answered,
-      mustScan,
-      teamHere,
-    });
-
     if (answered) return;
 
-    // Enforce that they've scanned their assigned station first
     if (mustScan) {
       alert(
         "Before answering, your team must go to the station you were assigned and scan its QR code."
@@ -493,19 +445,16 @@ export default function App() {
       return;
     }
 
-    const elapsedMs = taskStartTime
-      ? Date.now() - taskStartTime
-      : null;
+    const elapsedMs = taskStartTime ? Date.now() - taskStartTime : null;
 
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
-      teamId: teamHere.teamId || socket.id,
+      teamId,
       taskId: currentTask?.id || currentTask?._id || null,
       answer: (answerTextFromTask || "").trim(),
       timeMs: elapsedMs,
     };
 
-    // New-style submit
     socket.emit("student:submitAnswer", payload, (ack) => {
       if (ack && ack.ok === false) {
         alert(ack.error || "There was a problem submitting your answer.");
@@ -515,15 +464,6 @@ export default function App() {
       setCurrentTask(null);
       sndSubmit.current.play().catch(() => {});
     });
-
-    // OPTIONAL legacy:
-    // socket.emit("submitTask", {
-    //   roomCode: payload.roomCode,
-    //   teamId: payload.teamId,
-    //   answerText: payload.answer,
-    //   correct: false,
-    //   timeMs: elapsedMs,
-    // });
   };
 
   /* ---------------- Render: scanner gate ---------------- */
@@ -546,9 +486,7 @@ export default function App() {
           fontFamily: "system-ui",
         }}
       >
-        <h1 style={{ margin: 0, textAlign: "center" }}>
-          Scan your station
-        </h1>
+        <h1 style={{ margin: 0, textAlign: "center" }}>Scan your station</h1>
 
         <p
           style={{
@@ -558,8 +496,8 @@ export default function App() {
             fontSize: "0.9rem",
           }}
         >
-          Move to the colour station your team was assigned, and
-          point the camera at the QR code on that pad.
+          Move to the colour station your team was assigned, and point the
+          camera at the QR code on that pad.
         </p>
 
         <div
@@ -602,7 +540,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Error message & retry button (instead of alerts) */}
         {scanError && (
           <div
             style={{
@@ -638,14 +575,11 @@ export default function App() {
           </div>
         )}
 
-        {/* Only show camera when there is no error */}
         {!scanError && (
           <QrScanner
             active={scannerActive}
             onCode={handleScannedCode}
-            onError={(msg) =>
-              console.warn("Scanner error:", msg)
-            }
+            onError={(msg) => console.warn("Scanner error:", msg)}
           />
         )}
 
@@ -657,8 +591,8 @@ export default function App() {
             color: "#9ca3af",
           }}
         >
-          If asked, tap <strong>Allow</strong> so your browser can
-          use the camera.
+          If asked, tap <strong>Allow</strong> so your browser can use the
+          camera.
         </p>
       </div>
     );
@@ -666,8 +600,7 @@ export default function App() {
 
   /* ---------------- Render: normal UI ---------------- */
 
-  const bandColor =
-    assignedColor || (joined ? "#0f172a" : "#111827");
+  const bandColor = assignedColor || (joined ? "#0f172a" : "#111827");
 
   return (
     <div
@@ -687,9 +620,7 @@ export default function App() {
 
       <p style={{ fontSize: "0.75rem", marginBottom: 8 }}>
         {apiStatus} • Room:{" "}
-        {roomCode.trim()
-          ? roomCode.trim().toUpperCase()
-          : "—"}
+        {roomCode.trim() ? roomCode.trim().toUpperCase() : "—"}
       </p>
 
       {!joined ? (
@@ -727,9 +658,7 @@ export default function App() {
             <input
               key={idx}
               value={m}
-              onChange={(e) =>
-                handleMemberChange(idx, e.target.value)
-              }
+              onChange={(e) => handleMemberChange(idx, e.target.value)}
               placeholder={`Student ${idx + 1}`}
               style={{
                 display: "block",
@@ -760,20 +689,17 @@ export default function App() {
         </>
       ) : (
         <div style={{ minHeight: "60vh" }}>
-          <h2>
-            {teamHere?.teamName || "Your team"}
-          </h2>
-          {Array.isArray(teamHere?.members) &&
-            teamHere.members.length > 0 && (
-              <p
-                style={{
-                  fontSize: "0.8rem",
-                  marginBottom: 10,
-                }}
-              >
-                {teamHere.members.join(", ")}
-              </p>
-            )}
+          <h2>{teamHere?.teamName || "Your team"}</h2>
+          {Array.isArray(teamHere?.members) && teamHere.members.length > 0 && (
+            <p
+              style={{
+                fontSize: "0.8rem",
+                marginBottom: 10,
+              }}
+            >
+              {teamHere.members.join(", ")}
+            </p>
+          )}
 
           <p
             style={{
@@ -781,21 +707,15 @@ export default function App() {
               marginTop: 4,
             }}
           >
-            Current station:{" "}
-            <strong>{currentStationLabel}</strong>
+            Current station: <strong>{currentStationLabel}</strong>
           </p>
 
           {currentTask && !answered ? (
-            <TaskRunner
-              task={currentTask}
-              onSubmit={handleSubmit}
-              disabled={answered}
-            />
+            <TaskRunner task={currentTask} onSubmit={handleSubmit} disabled={answered} />
           ) : (
             <p>Waiting for task…</p>
           )}
 
-          {/* bottom band shows current station colour for THIS TEAM */}
           <div
             style={{
               position: "fixed",
@@ -826,17 +746,16 @@ export default function App() {
                   : "WAITING FOR STATION"}
               </div>
               <div>{teamHere?.teamName || "Your team"}</div>
-              {Array.isArray(teamHere?.members) &&
-                teamHere.members.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: "0.75rem",
-                    }}
-                  >
-                    {teamHere.members.join(", ")}
-                  </div>
-                )}
+              {Array.isArray(teamHere?.members) && teamHere.members.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: "0.75rem",
+                  }}
+                >
+                  {teamHere.members.join(", ")}
+                </div>
+              )}
             </div>
           </div>
         </div>

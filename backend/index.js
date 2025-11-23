@@ -307,59 +307,65 @@ io.on("connection", (socket) => {
   // Student joins room
   // --------------------------------------------------------------
   socket.on("student:joinRoom", (payload, ack) => {
-    const { roomCode, teamName, members } = payload || {};
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Room not found" });
-      } else {
-        socket.emit("join:error", { message: "Room not found" });
-      }
-      return;
-    }
+  const { roomCode, teamName, members } = payload || {};
+  const code = (roomCode || "").toUpperCase();
+  const room = rooms[code];
 
-    socket.join(code);
-    socket.data.role = "student";
-    socket.data.roomCode = code;
-
-    // Use this socket's id as the canonical teamId
-    const teamId = socket.id;
-    socket.data.teamId = teamId;
-
-    const cleanMembers =
-      Array.isArray(members) && members.length > 0
-        ? members.map((m) => String(m).trim()).filter(Boolean)
-        : [];
-    const primaryName =
-      cleanMembers[0] || (teamName || `Team-${teamId.slice(-4)}`);
-
-    if (!room.teams[teamId]) {
-      room.teams[teamId] = {
-        teamId,
-        teamName: teamName || primaryName,
-        members: cleanMembers,
-      };
-    } else {
-      room.teams[teamId].teamName =
-        teamName || room.teams[teamId].teamName;
-      if (cleanMembers.length > 0) {
-        room.teams[teamId].members = cleanMembers;
-      }
-    }
-
-    const state = buildRoomState(room);
-
-    io.to(code).emit("team:joined", {
-      teamId,
-      teamName: room.teams[teamId].teamName,
-      members: room.teams[teamId].members,
-    });
-
+  if (!room) {
     if (typeof ack === "function") {
-      ack({ ok: true, roomState: state, teamId });
+      ack({ ok: false, error: "Room not found" });
+    } else {
+      socket.emit("join:error", { message: "Room not found" });
     }
+    return;
+  }
+
+  socket.join(code);
+  socket.data.role = "student";
+  socket.data.roomCode = code;
+
+  // Use this socket as the canonical team id
+  const teamId = socket.id;
+  socket.data.teamId = teamId;
+
+  const cleanMembers =
+    Array.isArray(members) && members.length > 0
+      ? members.map((m) => String(m).trim()).filter(Boolean)
+      : [];
+
+  const displayName =
+    teamName ||
+    cleanMembers[0] ||
+    `Team-${String(teamId).slice(-4)}`;
+
+  if (!room.teams[teamId]) {
+    room.teams[teamId] = {
+      teamId,
+      teamName: displayName,
+      members: cleanMembers,
+      score: 0,
+      stationColor: null,
+    };
+  } else {
+    room.teams[teamId].teamName = displayName;
+    room.teams[teamId].members = cleanMembers;
+  }
+
+  // Assuming you already have a buildRoomState(room) helper
+  const state = buildRoomState(room);
+
+  // Notify teacher & any connected views
+  io.to(code).emit("room:state", state);
+  io.to(room.teacherSocketId).emit("team:joined", {
+    teamId,
+    teamName: displayName,
+    members: cleanMembers,
   });
+
+  if (typeof ack === "function") {
+    ack({ ok: true, roomState: state, teamId });
+  }
+});
 
   // --------------------------------------------------------------
   // Student submits answer
