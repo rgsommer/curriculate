@@ -511,7 +511,8 @@ app.get("/db-check", async (req, res) => {
 // Teacher profile
 // Support both /api/profile/me (new) and /api/profile (compat)
 // --------------------------------------------------------------------
-// Helper (unchanged) to ensure one profile exists
+
+// Helper to ensure one profile exists
 async function getOrCreateProfile() {
   let profile = await TeacherProfile.findOne();
   if (!profile) {
@@ -521,64 +522,18 @@ async function getOrCreateProfile() {
   return profile;
 }
 
-// New generic updaters – accept all fields sent from PresenterProfile.jsx
-
-app.put("/api/profile/me", async (req, res) => {
-  try {
-    const profile = await getOrCreateProfile();
-    Object.assign(profile, req.body); // <-- merge all submitted fields
-    await profile.save();
-    res.json(profile);
-  } catch (err) {
-    console.error("Profile update failed (/api/profile/me):", err);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-app.put("/api/profile", async (req, res) => {
-  try {
-    const profile = await getOrCreateProfile();
-    Object.assign(profile, req.body); // <-- same here
-    await profile.save();
-    res.json(profile);
-  } catch (err) {
-    console.error("Profile update failed (/api/profile):", err);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
+// GET /api/profile/me  (preferred)
 app.get("/api/profile/me", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
     res.json(profile);
   } catch (err) {
-    console.error("Profile fetch failed:", err);
+    console.error("Profile fetch failed (/api/profile/me):", err);
     res.status(500).json({ error: "Failed to fetch profile" });
   }
 });
 
-app.put("/api/profile/me", async (req, res) => {
-  try {
-    const profile = await getOrCreateProfile();
-
-    profile.presenterName = req.body.presenterName ?? profile.presenterName;
-    profile.schoolName = req.body.schoolName ?? profile.schoolName;
-    profile.email = req.body.email ?? profile.email;
-    profile.perspectives = req.body.perspectives ?? profile.perspectives;
-    profile.includeIndividualReports =
-      req.body.includeIndividualReports ?? profile.includeIndividualReports;
-    profile.assessmentCategories =
-      req.body.assessmentCategories ?? profile.assessmentCategories;
-
-    await profile.save();
-    res.json(profile);
-  } catch (err) {
-    console.error("Profile update failed:", err);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-// Legacy/compat routes for frontend code still calling /api/profile
+// GET /api/profile  (legacy alias)
 app.get("/api/profile", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
@@ -589,18 +544,28 @@ app.get("/api/profile", async (req, res) => {
   }
 });
 
+// PUT /api/profile/me – accept everything the Presenter Profile form sends
+app.put("/api/profile/me", async (req, res) => {
+  try {
+    const profile = await getOrCreateProfile();
+
+    // Merge all fields coming from the front end
+    Object.assign(profile, req.body);
+
+    await profile.save();
+    res.json(profile);
+  } catch (err) {
+    console.error("Profile update failed (/api/profile/me):", err);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
+// PUT /api/profile – legacy alias, same behavior
 app.put("/api/profile", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
 
-    profile.presenterName = req.body.presenterName ?? profile.presenterName;
-    profile.schoolName = req.body.schoolName ?? profile.schoolName;
-    profile.email = req.body.email ?? profile.email;
-    profile.perspectives = req.body.perspectives ?? profile.perspectives;
-    profile.includeIndividualReports =
-      req.body.includeIndividualReports ?? profile.includeIndividualReports;
-    profile.assessmentCategories =
-      req.body.assessmentCategories ?? profile.assessmentCategories;
+    Object.assign(profile, req.body);
 
     await profile.save();
     res.json(profile);

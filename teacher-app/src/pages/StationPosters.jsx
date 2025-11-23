@@ -1,9 +1,21 @@
 // teacher-app/src/pages/StationPosters.jsx
 import React, { useMemo } from "react";
-import { useLocation } from "react-router-dom";
-import { API_BASE_URL } from "../config";
+import { useLocation, useNavigate } from "react-router-dom";
 
-const COLORS = ["red", "blue", "green", "yellow", "purple", "orange", "teal", "pink", "lime", "navy", "brown", "gray"];
+const COLORS = [
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "purple",
+  "orange",
+  "teal",
+  "pink",
+  "lime",
+  "navy",
+  "brown",
+  "gray",
+];
 
 function useQuery() {
   const { search } = useLocation();
@@ -12,7 +24,13 @@ function useQuery() {
 
 export default function StationPosters() {
   const query = useQuery();
-  const room = (query.get("room") || "AB").toUpperCase();
+  const navigate = useNavigate();
+
+  // "Room" here is your class code or label shown on the poster
+  const room = (query.get("room") || "8A").toUpperCase();
+
+  // This is the *path* segment and label under the colour block
+  // e.g., Classroom, Hallway, Library, etc.
   const locationLabel = query.get("location") || "Classroom";
 
   const stationCount = Math.min(
@@ -29,28 +47,62 @@ export default function StationPosters() {
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
+      {/* Print-only CSS */}
+      <style>
+        {`
+          @media print {
+            body * {
+              visibility: hidden;
+            }
+            .station-print-page,
+            .station-print-page * {
+              visibility: visible;
+            }
+            .station-print-page {
+              page-break-after: always;
+            }
+          }
+        `}
+      </style>
+
       <h1 style={{ marginTop: 0 }}>Station posters</h1>
       <p style={{ fontSize: "0.85rem", color: "#4b5563", maxWidth: 520 }}>
         One page per station. These are meant for printing on letter-size
         paper and posting at each colour station. QR codes point to{" "}
-        <code>play.curriculate.net/{room}/[colour]</code>.
+        <code>play.curriculate.net/{locationLabel}/[colour]</code>.
       </p>
 
-      <button
-        type="button"
-        onClick={() => window.print()}
-        style={{
-          marginBottom: 16,
-          padding: "6px 12px",
-          borderRadius: 999,
-          border: "1px solid #d1d5db",
-          background: "#ffffff",
-          cursor: "pointer",
-          fontSize: "0.85rem",
-        }}
-      >
-        Print all
-      </button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 999,
+            border: "1px solid #d1d5db",
+            background: "#ffffff",
+            cursor: "pointer",
+            fontSize: "0.85rem",
+          }}
+        >
+          ← Back
+        </button>
+
+        <button
+          type="button"
+          onClick={() => window.print()}
+          style={{
+            padding: "6px 12px",
+            borderRadius: 999,
+            border: "1px solid #d1d5db",
+            background: "#ffffff",
+            cursor: "pointer",
+            fontSize: "0.85rem",
+          }}
+        >
+          Print all
+        </button>
+      </div>
 
       <div
         style={{
@@ -61,17 +113,26 @@ export default function StationPosters() {
       >
         {stations.map((color) => {
           const upper = color.toUpperCase();
-          const qrTarget = `https://play.curriculate.net/${room.toLowerCase()}/${color}`;
-          const qrUrl = `https://chart.googleapis.com/chart?chs=250x250&cht=qr&chl=${encodeURIComponent(
+
+          // Path now matches what the student app expects:
+          // e.g. https://play.curriculate.net/Classroom/red
+          const qrTarget = `https://play.curriculate.net/${encodeURIComponent(
+            locationLabel
+          )}/${color}`;
+
+          // Use a robust QR service
+          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
             qrTarget
           )}`;
 
-          const textColor =
-            ["yellow", "lime", "pink", "orange"].includes(color) ? "#111827" : "#ffffff";
+          const textColor = ["yellow", "lime", "pink", "orange"].includes(color)
+            ? "#111827"
+            : "#ffffff";
 
           return (
             <div
               key={color}
+              className="station-print-page"
               style={{
                 width: "8.5in",
                 height: "11in",
@@ -79,7 +140,7 @@ export default function StationPosters() {
                 boxSizing: "border-box",
                 padding: "1in 0.75in",
                 background: "#faf5e4",
-                pageBreakAfter: "always",
+                position: "relative",
               }}
             >
               <div
@@ -90,7 +151,7 @@ export default function StationPosters() {
                   marginBottom: "0.4in",
                 }}
               >
-                Curriculate
+                Curriculate – Room {room}
               </div>
 
               <div
@@ -112,7 +173,8 @@ export default function StationPosters() {
                   boxSizing: "border-box",
                 }}
               >
-                {upper} Station<br />
+                {upper} Station
+                <br />
                 {locationLabel}
               </div>
 
