@@ -2,181 +2,293 @@
 import React, { useEffect, useState } from "react";
 import { socket } from "../socket";
 
-export default function HostView({ roomCode }) {  const [roomState, setRoomState] = useState({
-    stations: [],
+/**
+ * Projector-style host view.
+ * - Creates the room (teacher:createRoom) when a roomCode is provided.
+ * - Listens to room:state updates from the server.
+ * - Shows teams, their stations and scores, plus a simple leaderboard.
+ *
+ * NOTE: This view relies on the same socket instance as the rest of the
+ * teacher app. It should usually be opened AFTER a room code is chosen
+ * in TeacherApp.
+ */
+export default function HostView({ roomCode }) {
+  const [roomState, setRoomState] = useState({
     teams: {},
+    stations: {},
     scores: {},
+    taskIndex: -1,
   });
-  const [submissions, setSubmissions] = useState([]);
-  const [scoreInputs, setScoreInputs] = useState({}); // teamId -> points
 
-  // join as host 
+  const [status, setStatus] = useState("Waiting for room…");
+
+  // Create / join the room as the teacher host
   useEffect(() => {
-    if (!roomCode) return;
-    socket.emit("joinRoom", {
-      roomCode: roomCode.toUpperCase(),
-      name: "Host",
-      role: "host",
-    });
+    if (!roomCode) {
+      setStatus("No room selected.");
+      return;
+    }
+
+    const code = roomCode.toUpperCase();
+    setStatus(`Creating room ${code}…`);
+
+    socket.emit("teacher:createRoom", { roomCode: code });
+
+    // We don't need any cleanup here; the socket stays connected
   }, [roomCode]);
 
-  // listen
+  // Listen for room:state broadcasts
   useEffect(() => {
-    const handleRoom = (state) =>
-      setRoomState(state || { stations: [], teams: {}, scores: {} });
-
-    const handleSubmission = (sub) => {
-      setSubmissions((prev) => [sub, ...prev].slice(0, 30));
+    const handleRoomState = (state) => {
+      if (!state) return;
+      setRoomState(state);
+      setStatus("Live – teams & scores updating.");
     };
 
-    socket.on("roomState", handleRoom);
-    socket.on("taskSubmission", handleSubmission);
+    socket.on("room:state", handleRoomState);
 
     return () => {
-      socket.off("roomState", handleRoom);
-      socket.off("taskSubmission", handleSubmission);
+      socket.off("room:state", handleRoomState);
     };
   }, []);
 
-  const handleScore = (teamId) => {
-    if (!roomCode) return;
-    const pts = Number(scoreInputs[teamId] || 0);
-    socket.emit("hostScoreSubmission", {
-      roomCode: roomCode.toUpperCase(),
-      teamId,
-      points: pts,
-    });
-    // clear
-    setScoreInputs((prev) => ({ ...prev, [teamId]: "" }));
-  };
-
   const teamsArray = Object.values(roomState.teams || {});
-  const scoresEntries = Object.entries(roomState.scores || {}).sort(
-    (a, b) => b[1] - a[1]
-  );
+  const scoresByTeamId = roomState.scores || {};
+
+  const leaderboard = [...teamsArray]
+    .map((t) => ({
+      ...t,
+      points: scoresByTeamId[t.teamId] || 0,
+    }))
+    .sort((a, b) => b.points - a.points);
 
   return (
-    <div style={{ height: "100%", display: "flex", gap: 16 }}>
-      {/* left + middle */}
-      <div style={{ flex: 1 }}>
-        <h1>Host view</h1>
-        {roomCode ? (
-          <p>Room: {roomCode.toUpperCase()}</p>
-        ) : (
-          <p style={{ color: "#b91c1c" }}>No room selected.</p>
-        )}
-
-        <h2>Teams</h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {teamsArray.length === 0 ? (
-            <p>No teams yet.</p>
-          ) : (
-            teamsArray.map((t) => (
-              <div
-                key={t.teamId}
-                style={{
-                  background: t.teamColor || "rgba(148,163,184,0.25)",
-                  color: t.teamColor ? "#fff" : "#000",
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  minWidth: 150,
-                }}
-              >
-                <strong>{t.teamName}</strong>{" "}
-                {t.teamColor ? `(${t.teamColor})` : ""}
-                {(t.members || []).length > 0 && (
-                  <div style={{ fontSize: "0.7rem" }}>
-                    {t.members.join(", ")}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
+    <div
+      style={{
+        height: "100%",
+        padding: "16px 24px",
+        boxSizing: "border-box",
+        display: "flex",
+        gap: 24,
+        background: "#020617",
+        color: "#f9fafb",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      }}
+    >
+      {/* Left: room + team grid */}
+      <div style={{ flex: 2, minWidth: 0 }}>
+        <div
+          style={{
+            marginBottom: 16,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+          }}
+        >
+          <div>
+            <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Host View</h1>
+            <p style={{ margin: "4px 0", fontSize: "0.9rem", opacity: 0.9 }}>
+              {status}
+            </p>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: "0.8rem", opacity: 0.8 }}>Room code</div>
+            <div
+              style={{
+                fontSize: "1.8rem",
+                letterSpacing: "0.2em",
+                fontWeight: 700,
+              }}
+            >
+              {roomCode ? roomCode.toUpperCase() : "— —"}
+            </div>
+          </div>
         </div>
 
-        <h2 style={{ marginTop: 20 }}>Latest submissions</h2>
-        {submissions.length === 0 ? (
-          <p>None yet.</p>
+        <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Teams</h2>
+        {teamsArray.length === 0 ? (
+          <p style={{ opacity: 0.8 }}>No teams have joined yet.</p>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {submissions.map((s, i) => (
-              <li
-                key={i}
-                style={{
-                  background: "#fff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 8,
-                  padding: "8px 10px",
-                  marginBottom: 8,
-                }}
-              >
-                <div>
-                  <strong>{s.teamName}</strong>{" "}
-                  {s.correct ? "✅" : "❌"}{" "}
-                  <span style={{ fontSize: "0.7rem", color: "#475569" }}>
-                    {s.timeMs ? `${Math.round(s.timeMs / 1000)}s` : ""}
-                  </span>
-                </div>
-                <div style={{ marginTop: 4 }}>
-                  {s.answerText && s.answerText.trim()
-                    ? s.answerText
-                    : "(no text submitted)"}
-                </div>
-                <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-                  <input
-                    type="number"
-                    placeholder="pts"
-                    value={scoreInputs[s.teamId] ?? ""}
-                    onChange={(e) =>
-                      setScoreInputs((prev) => ({
-                        ...prev,
-                        [s.teamId]: e.target.value,
-                      }))
-                    }
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            {teamsArray.map((team) => {
+              const points = scoresByTeamId[team.teamId] || 0;
+              const color = team.stationColor || "gray";
+
+              return (
+                <div
+                  key={team.teamId}
+                  style={{
+                    minWidth: 160,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: "#020617",
+                    border: "1px solid rgba(148, 163, 184, 0.5)",
+                    boxShadow: "0 6px 18px rgba(15, 23, 42, 0.8)",
+                  }}
+                >
+                  <div
                     style={{
-                      width: 70,
-                      padding: 4,
-                      border: "1px solid #cbd5f5",
-                      borderRadius: 4,
-                    }}
-                  />
-                  <button
-                    onClick={() => handleScore(s.teamId)}
-                    style={{
-                      background: "#2563eb",
-                      color: "#fff",
-                      border: "none",
-                      padding: "4px 10px",
-                      borderRadius: 5,
-                      cursor: "pointer",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
                     }}
                   >
-                    Score
-                  </button>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: "1rem",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {team.teamName}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.85rem",
+                        fontVariantNumeric: "tabular-nums",
+                        opacity: 0.9,
+                      }}
+                    >
+                      {points} pts
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: 999,
+                        background:
+                          color === "gray"
+                            ? "rgba(148, 163, 184, 0.7)"
+                            : color,
+                        border: "1px solid rgba(15,23,42,0.8)",
+                      }}
+                    />
+                    <span style={{ fontSize: "0.8rem", opacity: 0.9 }}>
+                      {color === "gray"
+                        ? "No station yet"
+                        : `${color} station`}
+                    </span>
+                  </div>
+                  {team.members && team.members.length > 0 && (
+                    <div
+                      style={{
+                        fontSize: "0.75rem",
+                        opacity: 0.8,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {team.members.join(", ")}
+                    </div>
+                  )}
                 </div>
-              </li>
-            ))}
-          </ul>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* right: leaderboard */}
+      {/* Right: leaderboard */}
       <div
         style={{
-          width: 240,
-          borderLeft: "1px solid #e2e8f0",
-          paddingLeft: 16,
+          flex: 1,
+          minWidth: 0,
+          padding: 16,
+          borderRadius: 16,
+          background:
+            "radial-gradient(circle at top, rgba(56,189,248,0.25), transparent 60%), #020617",
+          border: "1px solid rgba(148, 163, 184, 0.5)",
+          boxShadow: "0 12px 30px rgba(15, 23, 42, 0.9)",
         }}
       >
-        <h2>Leaderboard</h2>
-        {scoresEntries.length === 0 ? (
-          <p>No scores yet.</p>
+        <h2 style={{ marginTop: 0, fontSize: "1.2rem", marginBottom: 8 }}>
+          Leaderboard
+        </h2>
+        {leaderboard.length === 0 ? (
+          <p style={{ opacity: 0.8 }}>No scores yet.</p>
         ) : (
-          scoresEntries.map(([name, pts], idx) => (
-            <p key={name}>
-              {idx + 1}. {name} — {pts} pts
-            </p>
-          ))
+          <ol
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {leaderboard.map((team, index) => (
+              <li
+                key={team.teamId}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "6px 8px",
+                  borderRadius: 999,
+                  background:
+                    index === 0
+                      ? "rgba(34,197,94,0.12)"
+                      : "rgba(15,23,42,0.6)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    minWidth: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 20,
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      opacity: 0.9,
+                    }}
+                  >
+                    {index + 1}.
+                  </span>
+                  <span
+                    style={{
+                      fontWeight: index === 0 ? 600 : 500,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {team.teamName}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    fontVariantNumeric: "tabular-nums",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  {team.points} pts
+                </span>
+              </li>
+            ))}
+          </ol>
         )}
       </div>
     </div>

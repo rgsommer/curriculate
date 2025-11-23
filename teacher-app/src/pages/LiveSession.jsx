@@ -3,1489 +3,649 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { socket } from "../socket";
-
 import { API_BASE_URL } from "../config";
+
 const API_BASE = API_BASE_URL;
 
-// Expanded palette to allow up to 12 stations
-const COLORS = [
-  "red",
-  "blue",
-  "green",
-  "yellow",
-  "purple",
-  "orange",
-  "teal",
-  "pink",
-  "lime",
-  "navy",
-  "brown",
-  "gray",
-];
-
-function stationIdToColor(id) {
-  const m = /^station-(\d+)$/.exec(id || "");
-  if (!m) return null;
-  const idx = parseInt(m[1], 10) - 1;
-  return COLORS[idx] || null;
-}
-
-export default function LiveSession({ roomCode: roomCodeProp }) {
+export default function LiveSession({ roomCode: propRoomCode }) {
   const params = useParams();
   const navigate = useNavigate();
-  const roomCode = (roomCodeProp || params.roomCode || "").toUpperCase();
 
-  const [status, setStatus] = useState("Checking connection…");
+  const roomCode = (propRoomCode || params.roomCode || "").toUpperCase();
+
   const [roomState, setRoomState] = useState({
-    stations: [],
     teams: {},
+    stations: {},
     scores: {},
-    taskset: null,
+    taskIndex: -1,
   });
-  const [submissions, setSubmissions] = useState({});
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [scanEvents, setScanEvents] = useState([]);
 
-  const [prompt, setPrompt] = useState("");
-  const [correctAnswer, setCorrectAnswer] = useState("");
+  const [status, setStatus] = useState("Waiting for room…");
 
+  // Taskset / launching state
+  const [activeTasksetMeta, setActiveTasksetMeta] = useState(null);
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
-  const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
-    try {
-      const raw = localStorage.getItem("curriculateActiveTasksetMeta");
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
+  const [tasksetStatus, setTasksetStatus] = useState("No task set loaded.");
 
-  const [viewMode, setViewMode] = useState("live");
-
-  // Teacher profile-driven info
-  const [teacherEmail, setTeacherEmail] = useState(() => {
-    try {
-      return localStorage.getItem("curriculateTeacherEmail") || "";
-    } catch {
-      return "";
-    }
-  });
+  // Transcript / profile settings
+  const [teacherEmail, setTeacherEmail] = useState("");
+  const [schoolName, setSchoolName] = useState("");
   const [assessmentCategories, setAssessmentCategories] = useState([]);
   const [includeIndividualReports, setIncludeIndividualReports] =
-    useState(true);
-  const [schoolName, setSchoolName] = useState("");
+    useState(false);
   const [perspectives, setPerspectives] = useState([]);
+  const [emailStatus, setEmailStatus] = useState("");
 
-  // Load teacher profile once
+  // Derived helpers
+  const teamsArray = useMemo(
+    () => Object.values(roomState.teams || {}),
+    [roomState.teams]
+  );
+
+  const scoresByTeamId = roomState.scores || {};
+  const leaderboard = useMemo(
+    () =>
+      [...teamsArray]
+        .map((t) => ({
+          ...t,
+          points: scoresByTeamId[t.teamId] || 0,
+        }))
+        .sort((a, b) => b.points - a.points),
+    [teamsArray, scoresByTeamId]
+  );
+
+  // ---------------------------------------------
+  // Load profile (for transcript defaults)
+  // ---------------------------------------------
   useEffect(() => {
     let cancelled = false;
 
     async function loadProfile() {
       try {
         const res = await axios.get(`${API_BASE}/api/profile`);
-        if (cancelled) return;
         const data = res.data || {};
+        if (cancelled) return;
 
-        if (data.email) {
-          setTeacherEmail(data.email);
-          try {
-            localStorage.setItem("curriculateTeacherEmail", data.email);
-          } catch {
-            // ignore
-          }
-        }
-
+        if (data.email) setTeacherEmail(data.email);
+        if (data.schoolName) setSchoolName(data.schoolName);
         if (Array.isArray(data.assessmentCategories)) {
           setAssessmentCategories(data.assessmentCategories);
         }
-
         if (typeof data.includeIndividualReports === "boolean") {
           setIncludeIndividualReports(data.includeIndividualReports);
+        } else if (typeof data.includeStudentReports === "boolean") {
+          setIncludeIndividualReports(data.includeStudentReports);
         }
-
-        if (data.schoolName) {
-          setSchoolName(data.schoolName);
-        }
-
         if (Array.isArray(data.perspectives)) {
           setPerspectives(data.perspectives);
         }
       } catch (err) {
-        console.error("Failed to load teacher profile in LiveSession:", err);
+        console.error("Failed to load presenter profile:", err);
       }
     }
 
     loadProfile();
-
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Keep teacherEmail persisted
+  // ---------------------------------------------
+  // Restore active taskset from localStorage
+  // (set on TaskSets page)
+  // ---------------------------------------------
   useEffect(() => {
-    if (!teacherEmail) return;
     try {
-      localStorage.setItem("curriculateTeacherEmail", teacherEmail);
-    } catch {
-      // ignore
-    }
-  }, [teacherEmail]);
-
-  // Join room as presenter (same pattern as HostView)
-  useEffect(() => {
-    if (!roomCode) {
-      setStatus("No room selected.");
-      return;
-    }
-
-    setStatus("Joining room…");
-
-    socket.emit("joinRoom", {
-      roomCode,
-      name: "Presenter",
-      role: "host",
-    });
-  }, [roomCode]);
-
-  // Check for "launch immediately" flag from Task Sets page
-  useEffect(() => {
-    const flag = localStorage.getItem("curriculateLaunchImmediately");
-    if (flag === "true") {
-      localStorage.removeItem("curriculateLaunchImmediately");
-      setAutoLaunchRequested(true);
+      const raw = localStorage.getItem("curriculateActiveTasksetMeta");
+      if (raw) {
+        const meta = JSON.parse(raw);
+        if (meta && meta._id) {
+          setActiveTasksetMeta(meta);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not read active taskset meta from localStorage", e);
     }
   }, []);
 
-  // Auto-load & launch active taskset when requested
+  // ---------------------------------------------
+  // Socket listeners (room:state, taskset, transcript)
+  // ---------------------------------------------
   useEffect(() => {
-    if (!autoLaunchRequested) return;
-    if (!roomCode || !activeTasksetMeta?._id) return;
-
-    const desiredId = activeTasksetMeta._id;
-
-    if (loadedTasksetId !== desiredId) {
-      setStatus(`Loading taskset "${activeTasksetMeta.name}"…`);
-      socket.emit("loadTaskset", {
-        roomCode,
-        tasksetId: desiredId,
-      });
-      return;
-    }
-
-    setStatus(`Launching "${activeTasksetMeta.name}"…`);
-    socket.emit("launchTaskset", { roomCode });
-    setAutoLaunchRequested(false);
-  }, [
-    autoLaunchRequested,
-    roomCode,
-    activeTasksetMeta?._id,
-    activeTasksetMeta?.name,
-    loadedTasksetId,
-  ]);
-
-  // Socket event wiring
-  useEffect(() => {
-    const handleRoom = (state) => {
-      setRoomState(
-        state || {
-          stations: [],
-          teams: {},
-          scores: {},
-          taskset: null,
-        }
-      );
+    const handleRoomState = (state) => {
+      if (!state) return;
+      setRoomState(state);
+      setStatus("Connected – teams and scores updating.");
     };
 
-    const handleLeaderboard = (entries) => {
-      setLeaderboard(entries || []);
-    };
-
-    const handleTasksetLoaded = (info) => {
-      if (!info) return;
-      setLoadedTasksetId(info._id || info.id || null);
-
-      setActiveTasksetMeta((prev) => {
-        const meta = {
-          _id: info.tasksetId || info._id || prev?._id,
-          name: info.name || prev?.name || "Loaded Taskset",
-          numTasks: info.numTasks ?? prev?.numTasks ?? 0,
-        };
-        try {
-          localStorage.setItem("curriculateActiveTasksetId", meta._id);
-          localStorage.setItem(
-            "curriculateActiveTasksetMeta",
-            JSON.stringify(meta)
-          );
-        } catch {
-          // ignore
-        }
-        return meta;
-      });
-
-      if (info.tasksetId || info._id) {
-        setStatus(`Taskset "${info.name}" loaded for room ${roomCode}.`);
-      }
-    };
-
-    const handleTaskSubmission = (payload) => {
-      if (!payload || !payload.teamId) return;
-
-      setSubmissions((prev) => {
-        const next = { ...prev };
-        next[payload.teamId] = {
-          ...payload,
-          receivedAt: Date.now(),
-        };
-        return next;
-      });
-    };
-
-    const handleScanEvent = (payload) => {
-      if (!payload) return;
-      setScanEvents((prev) => {
-        const next = [{ ...payload, timestamp: Date.now() }, ...prev];
-        return next.slice(0, 30);
-      });
-    };
-
-    const handleTranscriptSent = ({ to }) => {
-      setStatus("Transcript emailed.");
-      if (to) {
-        alert(`Transcript emailed to ${to}.`);
+    const handleTasksetLoaded = (payload) => {
+      setLoadedTasksetId((prev) => prev ?? activeTasksetMeta?._id || null);
+      if (payload && payload.name) {
+        setTasksetStatus(
+          `Loaded "${payload.name}" (${payload.tasks ?? "?"} tasks)`
+        );
       } else {
-        alert("Transcript emailed.");
+        setTasksetStatus("Task set loaded.");
       }
     };
 
-    const handleTranscriptError = ({ message }) => {
-      setStatus("Transcript error.");
-      alert(message || "Failed to generate & send transcript.");
+    const handleTasksetError = (payload) => {
+      const msg = payload?.message || "Task set error.";
+      setTasksetStatus(msg);
     };
 
-    socket.on("roomState", handleRoom);
-    socket.on("leaderboardUpdate", handleLeaderboard);
-    socket.on("tasksetLoaded", handleTasksetLoaded);
-    socket.on("taskSubmission", handleTaskSubmission);
-    socket.on("scanEvent", handleScanEvent);
+    const handleTranscriptSent = () => {
+      setEmailStatus("Transcript email sent.");
+    };
+
+    const handleTranscriptError = (payload) => {
+      const msg = payload?.message || "Failed to send transcript.";
+      setEmailStatus(msg);
+    };
+
+    socket.on("room:state", handleRoomState);
+    socket.on("taskset:loaded", handleTasksetLoaded);
+    socket.on("taskset:error", handleTasksetError);
     socket.on("transcript:sent", handleTranscriptSent);
     socket.on("transcript:error", handleTranscriptError);
 
     return () => {
-      socket.off("roomState", handleRoom);
-      socket.off("leaderboardUpdate", handleLeaderboard);
-      socket.off("tasksetLoaded", handleTasksetLoaded);
-      socket.off("taskSubmission", handleTaskSubmission);
-      socket.off("scanEvent", handleScanEvent);
+      socket.off("room:state", handleRoomState);
+      socket.off("taskset:loaded", handleTasksetLoaded);
+      socket.off("taskset:error", handleTasksetError);
       socket.off("transcript:sent", handleTranscriptSent);
       socket.off("transcript:error", handleTranscriptError);
     };
-  }, [roomCode]);
+  }, [activeTasksetMeta?._id]);
 
-  const handleLaunchQuickTask = () => {
-    if (!roomCode || !prompt.trim()) return;
-    socket.emit("teacherLaunchTask", {
-      roomCode,
-      prompt: prompt.trim(),
-      correctAnswer: correctAnswer.trim(),
+  // ---------------------------------------------
+  // Auto-launch when coming from TaskSets ("Launch now")
+  // ---------------------------------------------
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const flag = localStorage.getItem("curriculateLaunchImmediately");
+    if (flag !== "true") return;
+
+    // Clear the flag so we only try once
+    localStorage.removeItem("curriculateLaunchImmediately");
+
+    if (!activeTasksetMeta || !activeTasksetMeta._id) return;
+
+    // If needed, load the set first, then start session + first task
+    handleLoadActiveTaskset().then((ok) => {
+      if (!ok) return;
+      handleStartSessionAndFirstTask();
     });
-    setPrompt("");
-    setCorrectAnswer("");
-    setStatus("Quick task launched.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode, activeTasksetMeta]);
+
+  // ---------------------------------------------
+  // Actions
+  // ---------------------------------------------
+  const handleLoadActiveTaskset = async () => {
+    if (!roomCode || !activeTasksetMeta?._id) {
+      setTasksetStatus("No active task set selected.");
+      return false;
+    }
+
+    setTasksetStatus("Loading task set…");
+    return new Promise((resolve) => {
+      socket.emit(
+        "teacher:loadTaskset",
+        { roomCode, tasksetId: activeTasksetMeta._id },
+        // In this backend, there is no explicit ack, so we resolve optimistically.
+      );
+      // We'll rely on taskset:loaded / taskset:error events to update UI.
+      setTimeout(() => resolve(true), 300);
+    });
   };
 
-  const handleLaunchTaskset = () => {
-    if (!roomCode) {
-      alert("No room selected for this live session.");
-      return;
-    }
+  const handleStartSessionAndFirstTask = () => {
+    if (!roomCode) return;
+    socket.emit("teacher:startSession", { roomCode });
+    socket.emit("teacher:nextTask", { roomCode });
+    setStatus("Session running – first task launched.");
+  };
 
-    if (!activeTasksetMeta?._id) {
-      alert(
-        'No active task set selected.\n\nGo to the Task Sets page and click "Use in Live Session" on the set you want.'
-      );
-      return;
-    }
-
-    setAutoLaunchRequested(true);
-    setStatus(
-      `Preparing to launch "${activeTasksetMeta.name}" to room ${roomCode}…`
-    );
+  const handleNextTask = () => {
+    if (!roomCode) return;
+    socket.emit("teacher:nextTask", { roomCode });
+    setStatus("Next task launched.");
   };
 
   const handleEndAndEmailTranscript = () => {
-    if (!roomCode) {
-      alert("No room selected for this live session.");
+    if (!roomCode) return;
+
+    const trimmedEmail = teacherEmail.trim();
+    if (!trimmedEmail) {
+      setEmailStatus("Please provide an email address first.");
       return;
     }
-    if (!teacherEmail || !teacherEmail.includes("@")) {
-      alert(
-        "Please enter a valid teacher email address before sending the transcript."
-      );
-      return;
-    }
-    socket.emit("endSessionAndEmail", {
+
+    setEmailStatus("Ending session and sending transcript…");
+
+    socket.emit("teacher:endSessionAndEmail", {
       roomCode,
-      teacherEmail: teacherEmail.trim(),
+      teacherEmail: trimmedEmail,
       assessmentCategories,
       includeIndividualReports,
       schoolName,
       perspectives,
     });
-
-    setStatus("Generating & emailing transcript…");
   };
 
-  const stations = roomState.stations || [];
-  const teamsById = roomState.teams || {};
-  const scores = roomState.scores || {};
-  const currentTasksetName =
-    roomState.taskset?.name || activeTasksetMeta?.name || "—";
-  const tasksetDisplays = roomState.taskset?.displays || [];
-  const roomLocation = roomState.taskset?.roomLocation || "Classroom";
-
-  // Button: open Station Posters view
-  const handleOpenStationPosters = () => {
-    if (!roomCode) {
-      alert("No room selected for this live session.");
-      return;
-    }
-    navigate(
-      `/station-posters?room=${encodeURIComponent(
-        roomCode
-      )}&location=${encodeURIComponent(roomLocation)}`
-    );
-  };
-
-  // Group displays by station color (plus "unassigned")
-  const groupedDisplays = useMemo(() => {
-    const groups = {
-      red: [],
-      blue: [],
-      green: [],
-      yellow: [],
-      purple: [],
-      orange: [],
-      teal: [],
-      pink: [],
-      lime: [],
-      navy: [],
-      brown: [],
-      gray: [],
-      unassigned: [],
-    };
-
-    for (const d of tasksetDisplays) {
-      const key = (d.stationColor || "unassigned").toLowerCase();
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(d);
-    }
-    return groups;
-  }, [tasksetDisplays]);
-
-  const orderedDisplayGroups = useMemo(() => {
-    const order = [
-      "red",
-      "blue",
-      "green",
-      "yellow",
-      "purple",
-      "orange",
-      "teal",
-      "pink",
-      "lime",
-      "navy",
-      "brown",
-      "gray",
-      "unassigned",
-    ];
-    return order
-      .map((key) => ({ key, items: groupedDisplays[key] || [] }))
-      .filter((g) => g.items.length > 0);
-  }, [groupedDisplays]);
-
-  const renderStationCard = (station) => {
-    const team = teamsById[station.assignedTeamId] || null;
-    const stationId = station.id;
-
-    if (!team) {
-      return (
-        <div
-          key={station.id}
+  // ---------------------------------------------
+  // Render
+  // ---------------------------------------------
+  return (
+    <div
+      style={{
+        height: "100%",
+        padding: "16px 24px",
+        boxSizing: "border-box",
+        display: "grid",
+        gridTemplateColumns: "2fr 1.2fr",
+        gap: 24,
+      }}
+    >
+      {/* Left column: live room */}
+      <div>
+        <header
           style={{
-            borderRadius: 12,
-            border: "1px dashed #cbd5f5",
-            padding: 12,
-            background: "#f9fafb",
-            minHeight: 80,
-          }}
-        >
-          <div
-            style={{
-              fontSize: "0.8rem",
-              color: "#6b7280",
-              marginBottom: 4,
-            }}
-          >
-            {stationId.toUpperCase()}
-          </div>
-          <div
-            style={{
-              fontSize: "0.9rem",
-              color: "#9ca3af",
-              fontStyle: "italic",
-            }}
-          >
-            No team at this station yet.
-          </div>
-        </div>
-      );
-    }
-
-    const latest = submissions[team.teamId] || null;
-    const colorName = station.color || stationIdToColor(stationId);
-    const score = scores[team.teamName] ?? 0;
-
-    const bg =
-      colorName === "red"
-        ? "#fee2e2"
-        : colorName === "blue"
-        ? "#dbeafe"
-        : colorName === "green"
-        ? "#dcfce7"
-        : colorName === "yellow"
-        ? "#fef9c3"
-        : colorName === "purple"
-        ? "#f3e8ff"
-        : colorName === "orange"
-        ? "#ffedd5"
-        : colorName === "teal"
-        ? "#ccfbf1"
-        : colorName === "pink"
-        ? "#ffe4e6"
-        : colorName === "lime"
-        ? "#ecfccb"
-        : colorName === "navy"
-        ? "#e0e7ff"
-        : colorName === "brown"
-        ? "#f5e7da"
-        : colorName === "gray"
-        ? "#e5e7eb"
-        : "#f3f4f6";
-
-    return (
-      <div
-        key={station.id}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          background: bg,
-          padding: 12,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          minHeight: 80,
-        }}
-      >
-        <div
-          style={{
+            marginBottom: 16,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "baseline",
           }}
         >
           <div>
-            <div
-              style={{
-                fontSize: "0.75rem",
-                color: "#4b5563",
-                marginBottom: 2,
-              }}
-            >
-              {stationId.toUpperCase()}
-            </div>
-            <div
-              style={{
-                fontSize: "0.95rem",
-                fontWeight: 600,
-              }}
-            >
-              {team.teamName}
-            </div>
-            {team.members?.length > 0 && (
-              <div
-                style={{
-                  fontSize: "0.75rem",
-                  color: "#4b5563",
-                  marginTop: 2,
-                }}
-              >
-                {team.members.join(", ")}
-              </div>
-            )}
-          </div>
-          <div
-            style={{
-              fontSize: "1.1rem",
-              fontWeight: 700,
-              color: "#111827",
-            }}
-          >
-            {score} pts
-          </div>
-        </div>
-
-        {latest ? (
-          <div
-            style={{
-              marginTop: 4,
-              paddingTop: 4,
-              borderTop: "1px dashed #e5e7eb",
-              fontSize: "0.8rem",
-            }}
-          >
-            <div style={{ marginBottom: 2 }}>
-              <span style={{ fontWeight: 600 }}>Ans:</span>{" "}
-              <span title={latest.answer}>
-                {String(latest.answer).length > 60
-                  ? `${String(latest.answer).slice(0, 57)}…`
-                  : latest.answer}
-              </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                fontSize: "0.75rem",
-              }}
-            >
-              <span>
-                {latest.correct === true && (
-                  <span style={{ color: "#15803d", fontWeight: 600 }}>
-                    ✅ correct
-                  </span>
-                )}
-                {latest.correct === false && (
-                  <span style={{ color: "#b91c1c", fontWeight: 600 }}>
-                    ❌ incorrect
-                  </span>
-                )}
-                {latest.correct == null && (
-                  <span style={{ color: "#6b7280" }}>—</span>
-                )}
-              </span>
-              {typeof latest.timeMs === "number" && (
-                <span style={{ color: "#4b5563" }}>
-                  {(latest.timeMs / 1000).toFixed(1)}s
-                </span>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              marginTop: 4,
-              paddingTop: 4,
-              borderTop: "1px dashed #e5e7eb",
-              fontSize: "0.8rem",
-              color: "#6b7280",
-            }}
-          >
-            No submission yet.
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderSetupView = () => {
-    return (
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          flex: 1,
-          minHeight: 0,
-        }}
-      >
-        {/* Left: Displays */}
-        <div style={{ flex: 3, minWidth: 0 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Room setup</h2>
-          <p
-            style={{
-              marginTop: 0,
-              marginBottom: 12,
-              fontSize: "0.85rem",
-              color: "#4b5563",
-            }}
-          >
-            These are the printed station displays for this task set. Place
-            each colour’s sheet at its matching station.
-          </p>
-
-          {orderedDisplayGroups.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>
-              No station displays are defined for this task set.
+            <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Live Session</h1>
+            <p style={{ margin: "4px 0", fontSize: "0.9rem", color: "#4b5563" }}>
+              {status}
             </p>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "#6b7280" }}>
+              {tasksetStatus}
+            </p>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+              Room code
+            </div>
+            <div
+              style={{
+                fontSize: "1.6rem",
+                letterSpacing: "0.18em",
+                fontWeight: 700,
+              }}
+            >
+              {roomCode || "— —"}
+            </div>
+          </div>
+        </header>
+
+        {/* Teams + stations */}
+        <section>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Teams</h2>
+          {teamsArray.length === 0 ? (
+            <p style={{ color: "#6b7280" }}>No teams have joined yet.</p>
           ) : (
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr)",
+                display: "flex",
+                flexWrap: "wrap",
                 gap: 10,
               }}
             >
-              {orderedDisplayGroups.map(({ key, items }) => {
-                const colorKey = key;
-                const chipColor =
-                  colorKey === "unassigned" ? "#374151" : colorKey;
-                const label =
-                  colorKey === "unassigned"
-                    ? "Unassigned / floating displays"
-                    : `${colorKey.toUpperCase()} station`;
-
+              {teamsArray.map((team) => {
+                const points = scoresByTeamId[team.teamId] || 0;
                 return (
                   <div
-                    key={colorKey}
+                    key={team.teamId}
                     style={{
-                      borderRadius: 12,
+                      minWidth: 170,
+                      padding: "10px 12px",
+                      borderRadius: 10,
                       border: "1px solid #e5e7eb",
                       background: "#f9fafb",
-                      padding: 12,
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
-                        alignItems: "center",
                         justifyContent: "space-between",
-                        marginBottom: 6,
+                        marginBottom: 4,
                       }}
                     >
-                      <div
+                      <strong
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
+                          fontSize: "0.95rem",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
                         }}
                       >
-                        <span
-                          style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: 999,
-                            background:
-                              colorKey === "unassigned"
-                                ? "#6b7280"
-                                : chipColor,
-                          }}
-                        />
-                        <div
-                          style={{
-                            fontSize: "0.85rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {label}
-                        </div>
-                      </div>
+                        {team.teamName}
+                      </strong>
+                      <span
+                        style={{
+                          fontSize: "0.85rem",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {points} pts
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 4,
+                        fontSize: "0.8rem",
+                        color: "#6b7280",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 999,
+                          background:
+                            team.stationColor || "rgba(148,163,184,0.6)",
+                          border: "1px solid rgba(148,163,184,0.9)",
+                        }}
+                      />
+                      <span>
+                        {team.stationColor
+                          ? `${team.stationColor} station`
+                          : "No station yet"}
+                      </span>
+                    </div>
+                    {team.members && team.members.length > 0 && (
                       <div
                         style={{
                           fontSize: "0.75rem",
                           color: "#6b7280",
+                          lineHeight: 1.3,
                         }}
                       >
-                        {items.length} display
-                        {items.length === 1 ? "" : "s"}
+                        {team.members.join(", ")}
                       </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(0, 1fr)",
-                        gap: 6,
-                      }}
-                    >
-                      {items.map((d) => (
-                        <div
-                          key={d.key || d.name}
-                          style={{
-                            borderRadius: 8,
-                            border: "1px dashed #d1d5db",
-                            padding: 8,
-                            background: "#ffffff",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              fontSize: "0.9rem",
-                            }}
-                          >
-                            {d.name || d.key}
-                          </div>
-                          {d.description && (
-                            <div
-                              style={{
-                                fontSize: "0.8rem",
-                                color: "#4b5563",
-                                marginTop: 2,
-                              }}
-                            >
-                              {d.description}
-                            </div>
-                          )}
-                          {d.notesForTeacher && (
-                            <div
-                              style={{
-                                marginTop: 4,
-                                fontSize: "0.75rem",
-                                color: "#6b7280",
-                              }}
-                            >
-                              Notes: {d.notesForTeacher}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Right: Leaderboard + Scan log */}
-        <div style={{ flex: 2, minWidth: 0 }}>
-          <div
-            style={{
-              marginBottom: 12,
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              background: "#ffffff",
-            }}
-          >
-            <h3
+        {/* Session controls */}
+        <section style={{ marginTop: 16 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            Session controls
+          </h2>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleLoadActiveTaskset}
+              disabled={!activeTasksetMeta}
               style={{
-                marginTop: 0,
-                marginBottom: 6,
-                fontSize: "0.9rem",
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid #e5e7eb",
+                background: activeTasksetMeta ? "#eff6ff" : "#f9fafb",
+                cursor: activeTasksetMeta ? "pointer" : "not-allowed",
+                fontSize: "0.85rem",
               }}
             >
-              Leaderboard
-            </h3>
-            {leaderboard.length === 0 ? (
-              <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                No scores yet.
-              </p>
-            ) : (
-              <ol
-                style={{
-                  margin: 0,
-                  paddingLeft: 18,
-                  fontSize: "0.85rem",
-                }}
-              >
-                {leaderboard.map((entry, idx) => (
-                  <li key={entry.teamName + idx}>
-                    {entry.teamName} — {entry.score} pts
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
+              {activeTasksetMeta
+                ? `Load "${activeTasksetMeta.name}"`
+                : "No active task set"}
+            </button>
 
-          <div
-            style={{
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              background: "#ffffff",
-            }}
-          >
-            <div
+            <button
+              type="button"
+              onClick={handleStartSessionAndFirstTask}
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 4,
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                background: "#0ea5e9",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: "0.85rem",
               }}
             >
-              <h3
-                style={{
-                  margin: 0,
-                  fontSize: "0.85rem",
-                }}
-              >
-                Scan log (debug)
-              </h3>
-              <span
-                style={{
-                  fontSize: "0.7rem",
-                  color: "#6b7280",
-                }}
-              >
-                latest {scanEvents.length}{" "}
-                {scanEvents.length === 1 ? "event" : "events"}
-              </span>
-            </div>
-            {scanEvents.length === 0 ? (
-              <p
-                style={{
-                  fontSize: "0.8rem",
-                  color: "#6b7280",
-                  margin: 0,
-                }}
-              >
-                No scans yet.
-              </p>
-            ) : (
-              <div
-                style={{
-                  maxHeight: 200,
-                  overflowY: "auto",
-                  borderRadius: 6,
-                  border: "1px solid #e5e7eb",
-                  background: "#f9fafb",
-                  padding: 6,
-                }}
-              >
-                {scanEvents.map((ev, idx) => {
-                  const t = new Date(ev.timestamp);
-                  const timeStr = t.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  });
-                  const color = stationIdToColor(ev.stationId);
+              Start & launch first task
+            </button>
 
-                  return (
-                    <div
-                      key={idx}
-                      style={{
-                        padding: "2px 4px",
-                        borderBottom:
-                          idx === scanEvents.length - 1
-                            ? "none"
-                            : "1px dashed #e5e7eb",
-                      }}
-                    >
-                      <div>
-                        <strong>{timeStr}</strong> —{" "}
-                        {ev.teamName || "Team"} scanned{" "}
-                        {color ? color.toUpperCase() : ev.stationId}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={handleNextTask}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid #e5e7eb",
+                background: "#f3f4f6",
+                cursor: "pointer",
+                fontSize: "0.85rem",
+              }}
+            >
+              Next task
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate("/tasksets")}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid #e5e7eb",
+                background: "#f9fafb",
+                cursor: "pointer",
+                fontSize: "0.85rem",
+              }}
+            >
+              Go to Task Sets
+            </button>
           </div>
-        </div>
+        </section>
       </div>
-    );
-  };
 
-  const renderLiveView = () => {
-    return (
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          flex: 1,
-          minHeight: 0,
-        }}
-      >
-        {/* Left: Stations, leaderboard, scan log */}
-        <div style={{ flex: 3, minWidth: 0 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Stations</h2>
-          {stations.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>
-              No stations yet. Once student devices join this room, they will
-              appear here with their assigned colours and scores.
-            </p>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 10,
-              }}
-            >
-              {stations.map((s) => renderStationCard(s))}
-            </div>
-          )}
-
-          <div
-            style={{
-              marginTop: 16,
-              display: "grid",
-              gridTemplateColumns: "1.2fr 1.2fr",
-              gap: 12,
-            }}
-          >
-            {/* Leaderboard */}
-            <div
-              style={{
-                padding: 10,
-                borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                background: "#ffffff",
-              }}
-            >
-              <h3
-                style={{
-                  marginTop: 0,
-                  marginBottom: 6,
-                  fontSize: "0.9rem",
-                }}
-              >
-                Leaderboard
-              </h3>
-              {leaderboard.length === 0 ? (
-                <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                  No scores yet.
-                </p>
-              ) : (
-                <ol
-                  style={{
-                    margin: 0,
-                    paddingLeft: 18,
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  {leaderboard.map((entry, idx) => (
-                    <li key={entry.teamName + idx}>
-                      {idx + 1}. {entry.teamName} — {entry.score} pts
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-
-            {/* Scan log */}
-            <div
-              style={{
-                padding: 10,
-                borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                background: "#ffffff",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 4,
-                }}
-              >
-                <h3
-                  style={{
-                    margin: 0,
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  Scan log (debug)
-                </h3>
-                <span
-                  style={{
-                    fontSize: "0.7rem",
-                    color: "#6b7280",
-                  }}
-                >
-                  latest {scanEvents.length}{" "}
-                  {scanEvents.length === 1 ? "event" : "events"}
-                </span>
-              </div>
-              {scanEvents.length === 0 ? (
-                <p
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "#6b7280",
-                    margin: 0,
-                  }}
-                >
-                  No scans yet.
-                </p>
-              ) : (
-                <div
-                  style={{
-                    maxHeight: 180,
-                    overflowY: "auto",
-                    borderRadius: 6,
-                    border: "1px solid #e5e7eb",
-                    background: "#f9fafb",
-                    padding: 6,
-                  }}
-                >
-                  {scanEvents.map((ev, idx) => {
-                    const t = new Date(ev.timestamp);
-                    const timeStr = t.toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    });
-                    const color = stationIdToColor(ev.stationId);
-
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          padding: "2px 4px",
-                          borderBottom:
-                            idx === scanEvents.length - 1
-                              ? "none"
-                              : "1px dashed #e5e7eb",
-                        }}
-                      >
-                        <div>
-                          <strong>{timeStr}</strong> —{" "}
-                          {ev.teamName || "Team"} scanned{" "}
-                          {color ? color.toUpperCase() : ev.stationId}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Room status, quick controls, transcript & reports */}
-        <div
+      {/* Right column: leaderboard + transcript */}
+      <div>
+        <section
           style={{
-            flex: 2,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
           }}
         >
-          {/* Room / status header */}
-          <div
-            style={{
-              marginBottom: 0,
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              background: "#ffffff",
-            }}
-          >
-            <div
+          <h2 style={{ fontSize: "1.1rem", marginTop: 0, marginBottom: 8 }}>
+            Leaderboard
+          </h2>
+          {leaderboard.length === 0 ? (
+            <p style={{ color: "#6b7280" }}>No scores yet.</p>
+          ) : (
+            <ol
               style={{
+                listStyle: "none",
+                padding: 0,
+                margin: 0,
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "baseline",
-                marginBottom: 4,
+                flexDirection: "column",
+                gap: 6,
               }}
             >
-              <h2
-                style={{
-                  margin: 0,
-                  fontSize: "1rem",
-                }}
-              >
-                Room view
-              </h2>
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  color: "#6b7280",
-                }}
-              >
-                Task set:{" "}
-                <span style={{ fontWeight: 600 }}>{currentTasksetName}</span>
-              </div>
-            </div>
+              {leaderboard.map((team, index) => (
+                <li
+                  key={team.teamId}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "6px 8px",
+                    borderRadius: 999,
+                    background:
+                      index === 0 ? "#dcfce7" : "rgba(209,213,219,0.5)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 20,
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        color: "#4b5563",
+                      }}
+                    >
+                      {index + 1}.
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: index === 0 ? 600 : 500,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {team.teamName}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontVariantNumeric: "tabular-nums",
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    {team.points} pts
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
 
-            <p
-              style={{
-                margin: 0,
-                fontSize: "0.9rem",
-                color: "#4b5563",
-              }}
-            >
-              {roomCode ? `Room: ${roomCode}` : "No room selected."} · Location:{" "}
-              {roomLocation}
-            </p>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "0.8rem",
-                color: "#6b7280",
-              }}
-            >
-              Status: {status}
-            </p>
-          </div>
+        <section
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <h2 style={{ fontSize: "1.1rem", marginTop: 0, marginBottom: 8 }}>
+            Transcript & reports
+          </h2>
 
-          {/* Quick task / taskset controls CARD */}
-          <div
-            style={{
-              marginBottom: 0,
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              background: "#f9fafb",
-              minWidth: 0,
-            }}
-          >
-            <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
-              Quick task / taskset controls
-            </h2>
-
-            <div
-              style={{
-                fontSize: "0.8rem",
-                color: "#6b7280",
-                marginBottom: 8,
-              }}
-            >
-              {activeTasksetMeta?._id ? (
-                <>
-                  Active taskset:{" "}
-                  <strong>{activeTasksetMeta.name}</strong>{" "}
-                  ({activeTasksetMeta.numTasks ?? "?"} tasks)
-                  {loadedTasksetId === activeTasksetMeta._id ? (
-                    <> — loaded in room.</>
-                  ) : (
-                    <> — not loaded yet.</>
-                  )}
-                </>
-              ) : (
-                <>No active taskset selected.</>
-              )}
-            </div>
-
-            <div style={{ marginBottom: 8 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.8rem",
-                  color: "#4b5563",
-                  marginBottom: 2,
-                }}
-              >
-                Quick task prompt:
-              </label>
-              <textarea
-                rows={2}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Ask a quick question to the room…"
-                style={{
-                  width: "100%",
-                  borderRadius: 6,
-                  border: "1px solid #d1d5db",
-                  fontSize: "0.85rem",
-                  padding: 6,
-                  resize: "vertical",
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: 8 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.8rem",
-                  color: "#4b5563",
-                  marginBottom: 2,
-                }}
-              >
-                Correct answer (optional):
-              </label>
-              <input
-                type="text"
-                value={correctAnswer}
-                onChange={(e) => setCorrectAnswer(e.target.value)}
-                placeholder="Used for auto-marking where applicable"
-                style={{
-                  width: "100%",
-                  borderRadius: 6,
-                  border: "1px solid #d1d5db",
-                  fontSize: "0.85rem",
-                  padding: "4px 6px",
-                }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-              <button
-                type="button"
-                onClick={handleLaunchQuickTask}
-                style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#0ea5e9",
-                  color: "#ffffff",
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                }}
-              >
-                Launch quick task
-              </button>
-              <button
-                type="button"
-                onClick={handleLaunchTaskset}
-                style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#10b981",
-                  color: "#ffffff",
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                }}
-              >
-                Launch from taskset
-              </button>
-            </div>
-
-            <div
-              style={{
-                fontSize: "0.75rem",
-                color: "#6b7280",
-              }}
-            >
-              Use your taskset’s full tasks for structured sessions, or fire a
-              quick question to reset focus.
-            </div>
-          </div>
-
-          {/* Transcript & Reports CARD */}
-          <div
-            style={{
-              marginBottom: 0,
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              background: "#ffffff",
-              minWidth: 0,
-            }}
-          >
-            <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
-              Transcript & Reports
-            </h2>
-
-            <p
-              style={{
-                marginTop: 0,
-                marginBottom: 8,
-                fontSize: "0.8rem",
-                color: "#6b7280",
-              }}
-            >
-              When you’re finished, end the session and get a PDF transcript
-              (and, if enabled, one-page reports for each student).
-            </p>
-
+          <div style={{ marginBottom: 8 }}>
             <label
               style={{
                 display: "block",
                 fontSize: "0.8rem",
+                marginBottom: 2,
                 color: "#4b5563",
-                marginBottom: 4,
               }}
             >
-              Transcript email:
+              Send transcript to
             </label>
-            <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-              <input
-                type="email"
-                placeholder="you@school.org"
-                value={teacherEmail}
-                onChange={(e) => setTeacherEmail(e.target.value)}
-                style={{
-                  flex: 1,
-                  padding: "4px 6px",
-                  borderRadius: 4,
-                  border: "1px solid #d1d5db",
-                  fontSize: "0.8rem",
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleEndAndEmailTranscript}
-                style={{
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#6366f1",
-                  color: "#ffffff",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                End & email
-              </button>
-            </div>
-
-            <div
+            <input
+              type="email"
+              value={teacherEmail}
+              onChange={(e) => setTeacherEmail(e.target.value)}
+              placeholder="you@example.com"
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 4,
-              }}
-            >
-              <input
-                id="include-individual-reports"
-                type="checkbox"
-                checked={includeIndividualReports}
-                onChange={(e) =>
-                  setIncludeIndividualReports(e.target.checked)
-                }
-              />
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  color: "#4b5563",
-                }}
-              >
-                Include one-page student reports in PDF
-              </span>
-            </div>
-
-            {assessmentCategories && assessmentCategories.length > 0 && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: "0.75rem",
-                  color: "#6b7280",
-                }}
-              >
-                Categories:{" "}
-                {assessmentCategories
-                  .map((c) => c.label || c.name || c)
-                  .filter(Boolean)
-                  .join(", ") || "—"}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div
-      style={{
-        padding: 16,
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        height: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "1.2rem",
-            }}
-          >
-            Room view
-          </h1>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.8rem",
-              color: "#6b7280",
-            }}
-          >
-            Monitor stations, scores, and send transcripts when you’re done.
-          </p>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <div
-            style={{
-              display: "inline-flex",
-              gap: 4,
-              padding: 2,
-              borderRadius: 999,
-              background: "#e5e7eb",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setViewMode("live")}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
                 fontSize: "0.85rem",
-                cursor: "pointer",
-                background:
-                  viewMode === "live" ? "#0ea5e9" : "transparent",
-                color: viewMode === "live" ? "#ffffff" : "#374151",
               }}
-            >
-              Room view
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("setup")}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-                background:
-                  viewMode === "setup" ? "#0ea5e9" : "transparent",
-                color: viewMode === "setup" ? "#ffffff" : "#374151",
-              }}
-            >
-              Room setup checklist
-            </button>
+            />
           </div>
+
+          <div style={{ marginBottom: 8 }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
+            >
+              School / organization
+            </label>
+            <input
+              type="text"
+              value={schoolName}
+              onChange={(e) => setSchoolName(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                fontSize: "0.85rem",
+              }}
+            />
+          </div>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: "0.85rem",
+              color: "#4b5563",
+              marginBottom: 8,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={includeIndividualReports}
+              onChange={(e) => setIncludeIndividualReports(e.target.checked)}
+            />
+            Include individual student reports
+          </label>
 
           <button
             type="button"
-            onClick={handleOpenStationPosters}
+            onClick={handleEndAndEmailTranscript}
             style={{
               padding: "6px 10px",
               borderRadius: 999,
-              border: "1px solid #d1d5db",
-              background: "#ffffff",
-              fontSize: "0.8rem",
+              border: "none",
+              background: "#22c55e",
+              color: "#fff",
               cursor: "pointer",
+              fontSize: "0.85rem",
             }}
           >
-            Print station sheets
+            End session & email transcript
           </button>
-        </div>
-      </header>
 
-      {viewMode === "setup" ? renderSetupView() : renderLiveView()}
+          {emailStatus && (
+            <p
+              style={{
+                marginTop: 8,
+                fontSize: "0.8rem",
+                color: "#4b5563",
+              }}
+            >
+              {emailStatus}
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

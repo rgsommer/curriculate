@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchMyProfile } from "../api/profile";
 import { generateAiTaskset } from "../api/tasksets";
-import { API_BASE_URL } from "../config"; // ⬅️ use shared config
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
@@ -14,366 +13,213 @@ export default function AiTasksetGenerator() {
     gradeLevel: "",
     subject: "",
     difficulty: "MEDIUM",
-    durationMinutes: 45,
-    topicTitle: "",
-    wordConceptText: "",
     learningGoal: "REVIEW",
-    allowMovementTasks: true,
-    allowDrawingMimeTasks: true,
+    topicDescription: "",
+    numberOfTasks: 8,
   });
 
-  const [submitting, setSubmitting] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  // Subscription / AI-limit state
-  const [subscription, setSubscription] = useState(null);
-  const [aiLimitMessage, setAiLimitMessage] = useState("");
+  // In a fuller build we would fetch subscription/plan too. For now,
+  // assume Free and just generate within modest limits.
+  const planName = "FREE";
 
-  // ------------------------------------------------------
-  // Load presenter profile defaults
-  // ------------------------------------------------------
   useEffect(() => {
-    let active = true;
-    (async () => {
+    let cancelled = false;
+
+    async function loadProfile() {
       try {
-        const prof = await fetchMyProfile();
-        if (!active) return;
-        setProfile(prof);
-
-        setForm((prev) => ({
-          ...prev,
-          gradeLevel: prof.defaultGrade || "",
-          subject: prof.defaultSubject || "",
-          difficulty: prof.defaultDifficulty || "MEDIUM",
-          durationMinutes: prof.defaultDurationMinutes || 45,
-          learningGoal: prof.defaultLearningGoal || "REVIEW",
-          allowMovementTasks:
-            typeof prof.prefersMovementTasks === "boolean"
-              ? prof.prefersMovementTasks
-              : true,
-          allowDrawingMimeTasks:
-            typeof prof.prefersDrawingMimeTasks === "boolean"
-              ? prof.prefersDrawingMimeTasks
-              : true,
-        }));
-      } catch (err) {
-        console.error("Failed to load presenter profile for AI defaults:", err);
-        if (active)
-          setError("Failed to load presenter profile for AI defaults.");
-      } finally {
-        if (active) setLoadingProfile(false);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // ------------------------------------------------------
-  // Load subscription info (AI limits, plan name, features)
-  // ------------------------------------------------------
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/subscription/me`, {
-          credentials: "include",
-        });
-
-        if (!active) return;
-        if (!res.ok) throw new Error("Failed to load subscription info");
-        const sub = await res.json();
-        setSubscription(sub);
-
-        // Initial teaser if backend already has one
-        if (sub?.aiLimitTeaser) {
-          setAiLimitMessage(sub.aiLimitTeaser);
-        } else if (
-          typeof sub?.aiTaskSetsRemaining === "number" &&
-          sub.aiTaskSetsRemaining >= 0
-        ) {
-          const n = sub.aiTaskSetsRemaining;
-          setAiLimitMessage(
-            `You can generate ${n} more AI task set${
-              n === 1 ? "" : "s"
-            } this month on your current plan.`
-          );
+        const data = await fetchMyProfile();
+        if (cancelled) return;
+        setProfile(data || null);
+        if (data?.defaultGradeLevel) {
+          setForm((prev) => ({
+            ...prev,
+            gradeLevel: prev.gradeLevel || data.defaultGradeLevel,
+          }));
+        }
+        if (data?.defaultSubject) {
+          setForm((prev) => ({
+            ...prev,
+            subject: prev.subject || data.defaultSubject,
+          }));
         }
       } catch (err) {
-        console.error("Failed to load subscription info:", err);
-        // Silent fail is fine; generator still works.
+        console.error("Failed to load profile for AI generator:", err);
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
       }
-    })();
+    }
 
+    loadProfile();
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, []);
 
-  // ------------------------------------------------------
-  // Derived values from subscription (plan badge + limits)
-  // ------------------------------------------------------
-  const planName = subscription?.planName || "FREE";
-  const nicePlanName =
-    planName === "FREE"
-      ? "Free"
-      : planName === "PLUS"
-      ? "Plus"
-      : planName === "PRO"
-      ? "Pro"
-      : planName;
+  const handleChange = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
 
-  const maxWordListWords =
-    subscription?.features?.maxWordListWords ??
-    (planName === "FREE" ? 10 : planName === "PLUS" ? 100 : 9999);
-
-  const maxTasksPerSet =
-    subscription?.features?.maxTasksPerSet ??
-    (planName === "FREE" ? 5 : planName === "PLUS" ? 20 : 50);
-
-  const aiRemaining =
-    typeof subscription?.aiTaskSetsRemaining === "number"
-      ? subscription.aiTaskSetsRemaining
-      : null;
-
-  const wordConceptListRaw = form.wordConceptText
-    .split(",")
-    .map((w) => w.trim())
-    .filter(Boolean);
-  const wordConceptCount = wordConceptListRaw.length;
-  const overWordLimit =
-    typeof maxWordListWords === "number" &&
-    maxWordListWords > 0 &&
-    wordConceptCount > maxWordListWords;
-
-  // ------------------------------------------------------
-  // Handlers
-  // ------------------------------------------------------
-  function handleChange(e) {
-    const { name, value, type, checked } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  }
-
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
+    if (generating) return;
+
     setError("");
     setResult(null);
+    setGenerating(true);
 
     try {
-      // Guard 1: AI usage for this period
-      if (aiRemaining !== null && aiRemaining <= 0) {
-        if (subscription?.aiLimitTeaser) {
-          setAiLimitMessage(subscription.aiLimitTeaser);
-        } else {
-          setAiLimitMessage(
-            "You’ve reached your AI limit for this period on your current plan."
-          );
-        }
-        setSubmitting(false);
-        return;
-      }
-
-      // Guard 2: word list length (e.g., FREE = 10)
-      if (overWordLimit) {
-        setError(
-          `Your current plan allows up to ${maxWordListWords} words in the list. You currently have ${wordConceptCount}.`
-        );
-        setSubmitting(false);
-        return;
-      }
-
       const payload = {
-        gradeLevel: form.gradeLevel || profile?.defaultGrade,
-        subject: form.subject || profile?.defaultSubject,
-        difficulty: form.difficulty,
-        durationMinutes: Number(form.durationMinutes),
-        topicTitle: form.topicTitle,
-        wordConceptList: wordConceptListRaw,
-        learningGoal: form.learningGoal,
-
-        // Task preferences, as before
-        lenses: {
-          includePhysicalMovement: form.allowMovementTasks,
-          includeCreative: form.allowDrawingMimeTasks,
-          includeAnalytical: true,
-          includeInputTasks: true,
-        },
-
-        // Hint max tasks to AI (FREE = 5, etc.)
-        maxTasksPerSet,
+        ...form,
+        numberOfTasks: Number(form.numberOfTasks) || 8,
+        difficulty: form.difficulty || "MEDIUM",
+        learningGoal: form.learningGoal || "REVIEW",
+        presenterProfile: profile || undefined,
+        planName,
       };
 
       const data = await generateAiTaskset(payload);
-      console.log("✅ AI taskset response:", data);
-
-      // Keep subscription state in sync if backend returns it
-      if (data?.subscription) {
-        setSubscription(data.subscription);
-
-        if (data.subscription.aiLimitTeaser) {
-          setAiLimitMessage(data.subscription.aiLimitTeaser);
-        } else if (
-          typeof data.subscription.aiTaskSetsRemaining === "number" &&
-          data.subscription.aiTaskSetsRemaining >= 0
-        ) {
-          const n = data.subscription.aiTaskSetsRemaining;
-          setAiLimitMessage(
-            `You can generate ${n} more AI task set${
-              n === 1 ? "" : "s"
-            } this month on your current plan.`
-          );
-        }
-      }
 
       const taskset = data?.taskset || data;
       if (!taskset) {
         throw new Error(
-          "Server did not return a taskset object. Check backend /api/ai/tasksets."
+          "Server did not return a taskset. Check that the AI taskset endpoint is configured."
         );
       }
 
       setResult(taskset);
     } catch (err) {
-      console.error("AI TaskSet generation error:", err);
-      setError(err.message || "Failed to generate TaskSet");
+      console.error("AI taskset generation failed:", err);
+      const friendly =
+        err?.response?.data?.error ||
+        err.message ||
+        "Failed to generate TaskSet";
+      setError(friendly);
     } finally {
-      setSubmitting(false);
+      setGenerating(false);
     }
-  } 
+  };
 
-  if (loadingProfile) return <div>Loading defaults…</div>;
-
-  // ------------------------------------------------------
-  // Render
-  // ------------------------------------------------------
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      {/* Plan badge */}
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-bold">AI Task Set Generator</h1>
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs bg-slate-50 border-slate-300">
-          <span className="uppercase tracking-wide text-gray-500">
-            Current plan
-          </span>
-          <span className="font-semibold text-gray-800">
-            {nicePlanName}
-          </span>
-        </div>
-      </div>
+    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
+      <h1 style={{ marginBottom: 4 }}>AI TaskSet Generator</h1>
+      <p style={{ marginTop: 0, color: "#6b7280" }}>
+        Describe what you want, and Curriculate will draft a TaskSet for you.
+      </p>
 
-      {error && <div className="mb-2 text-red-600">{error}</div>}
+      {loadingProfile && <p>Loading presenter profile…</p>}
 
-      {!profile && (
-        <div className="mb-4 text-yellow-700">
-          You don&apos;t have a presenter profile yet. Defaults will be minimal.
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6 mb-8">
-        <section>
-          <h2 className="font-semibold mb-2">Basic Settings</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="flex flex-col">
-              <span>Grade</span>
-              <input
-                className="border rounded px-2 py-1"
-                name="gradeLevel"
-                value={form.gradeLevel}
-                onChange={handleChange}
-                placeholder={profile?.defaultGrade || "e.g. 7"}
-              />
+      <form onSubmit={handleSubmit} style={{ marginTop: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
+            >
+              Grade level
             </label>
-
-            <label className="flex flex-col">
-              <span>Subject</span>
-              <input
-                className="border rounded px-2 py-1"
-                name="subject"
-                value={form.subject}
-                onChange={handleChange}
-                placeholder={profile?.defaultSubject || "e.g. History"}
-              />
-            </label>
-
-            <label className="flex flex-col">
-              <span>Difficulty</span>
-              <select
-                className="border rounded px-2 py-1"
-                name="difficulty"
-                value={form.difficulty}
-                onChange={handleChange}
-              >
-                {DIFFICULTIES.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="flex flex-col">
-              <span>Target Duration (minutes)</span>
-              <input
-                type="number"
-                min="5"
-                className="border rounded px-2 py-1"
-                name="durationMinutes"
-                value={form.durationMinutes}
-                onChange={handleChange}
-              />
-            </label>
-
-            <label className="flex flex-col md:col-span-2">
-              <span>Topic / Unit Title</span>
-              <input
-                className="border rounded px-2 py-1"
-                name="topicTitle"
-                value={form.topicTitle}
-                onChange={handleChange}
-                placeholder="e.g. Expulsion of the Acadians"
-              />
-            </label>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="font-semibold mb-2">Curriculum Content</h2>
-          <label className="flex flex-col">
-            <span>Word & Concept List (comma-separated)</span>
-            <textarea
-              className="border rounded px-2 py-1 min-h-[80px]"
-              name="wordConceptText"
-              value={form.wordConceptText}
-              onChange={handleChange}
-              placeholder="Acadia, Treaty of Utrecht, deportation, oath of allegiance, Mi'kmaq, Grand Pré"
+            <input
+              type="text"
+              value={form.gradeLevel}
+              onChange={(e) => handleChange("gradeLevel", e.target.value)}
+              placeholder="e.g., Grade 7"
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
             />
-          </label>
-          <div className="mt-1 text-xs text-gray-600 flex flex-col md:flex-row md:items-center md:justify-between gap-1">
-            <span>
-              Words in list: {wordConceptCount} / {maxWordListWords}
-            </span>
-            {planName === "FREE" && (
-              <span>
-                On the Free plan, you can include up to {maxWordListWords}{" "}
-                words. Longer lists are available with Curriculate Plus and
-                Pro.
-              </span>
-            )}
           </div>
 
-          <label className="flex flex-col mt-3">
-            <span>Learning Goal</span>
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
+            >
+              Subject
+            </label>
+            <input
+              type="text"
+              value={form.subject}
+              onChange={(e) => handleChange("subject", e.target.value)}
+              placeholder="e.g., History – War of 1812"
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
+            />
+          </div>
+
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
+            >
+              Difficulty
+            </label>
             <select
-              className="border rounded px-2 py-1"
-              name="learningGoal"
+              value={form.difficulty}
+              onChange={(e) => handleChange("difficulty", e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
+            >
+              {DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
+            >
+              Learning goal
+            </label>
+            <select
               value={form.learningGoal}
-              onChange={handleChange}
+              onChange={(e) => handleChange("learningGoal", e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
             >
               {LEARNING_GOALS.map((g) => (
                 <option key={g} value={g}>
@@ -381,86 +227,108 @@ export default function AiTasksetGenerator() {
                 </option>
               ))}
             </select>
-          </label>
-        </section>
-
-        <section>
-          <h2 className="font-semibold mb-2">Task Preferences</h2>
-          <div className="space-y-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="allowMovementTasks"
-                checked={form.allowMovementTasks}
-                onChange={handleChange}
-              />
-              <span>Allow movement / Body Break tasks</span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="allowDrawingMimeTasks"
-                checked={form.allowDrawingMimeTasks}
-                onChange={handleChange}
-              />
-              <span>Allow drawing / mime tasks</span>
-            </label>
           </div>
-          <p className="mt-2 text-xs text-gray-600">
-            This plan will typically generate up to {maxTasksPerSet} tasks in a
-            set, based on your current subscription.
-          </p>
-        </section>
 
-        <div>
-          <button
-            type="submit"
-            disabled={
-              submitting ||
-              (aiRemaining !== null && aiRemaining <= 0) ||
-              overWordLimit
-            }
-            className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {submitting ? "Generating…" : "Generate Task Set"}
-          </button>
-
-          {/* AI Limit / Teaser Message */}
-          {aiLimitMessage && (
-            <div
-              className={`mt-2 text-sm ${
-                aiRemaining === 0 ? "text-red-600" : "text-gray-700"
-              }`}
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
             >
-              {aiLimitMessage}
-            </div>
-          )}
+              Number of tasks
+            </label>
+            <input
+              type="number"
+              min={4}
+              max={20}
+              value={form.numberOfTasks}
+              onChange={(e) => handleChange("numberOfTasks", e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
+            />
+          </div>
         </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: "0.8rem",
+              marginBottom: 2,
+              color: "#4b5563",
+            }}
+          >
+            Topic / description for the AI
+          </label>
+          <textarea
+            value={form.topicDescription}
+            onChange={(e) => handleChange("topicDescription", e.target.value)}
+            rows={4}
+            placeholder="Explain what you want this TaskSet to cover, any key vocabulary, texts, or constraints…"
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              resize: "vertical",
+            }}
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={generating}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 999,
+            border: "none",
+            background: "#0ea5e9",
+            color: "#ffffff",
+            cursor: "pointer",
+            fontSize: "0.9rem",
+          }}
+        >
+          {generating ? "Generating…" : "Generate TaskSet"}
+        </button>
+
+        {error && (
+          <p style={{ marginTop: 8, color: "#b91c1c", fontSize: "0.85rem" }}>
+            {error}
+          </p>
+        )}
       </form>
 
       {result && (
-        <section className="border rounded p-4 bg-gray-50">
-          <h2 className="font-semibold mb-2">
-            Generated Task Set: {result.name || "(untitled)"}
+        <div style={{ marginTop: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 4 }}>
+            Draft TaskSet
           </h2>
-          <p className="text-sm text-gray-700 mb-4">
-            Grade {result.gradeLevel} • {result.subject} • Difficulty{" "}
-            {result.difficulty} • {result.durationMinutes} min
+          <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
+            This has been created server-side. You can refine it on the TaskSets
+            page.
           </p>
-
-          <ol className="space-y-4 list-decimal pl-5">
-            {result.tasks.map((t) => (
-              <li key={t.orderIndex} className="bg-white border rounded p-3">
-                <div className="text-xs text-gray-500 mb-1">
-                  {t.taskType} • {t.timeLimitSeconds}s • {t.points} pts
-                </div>
-                <div className="font-medium whitespace-pre-wrap">
-                  {t.prompt}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
+          <pre
+            style={{
+              marginTop: 8,
+              padding: 12,
+              borderRadius: 12,
+              background: "#111827",
+              color: "#e5e7eb",
+              fontSize: "0.8rem",
+              overflowX: "auto",
+              maxHeight: "320px",
+            }}
+          >
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </div>
       )}
     </div>
   );
