@@ -1,13 +1,5 @@
 // ====================================================================
-//  Curriculate Backend – Clean, Modern, Rewritten Index.js
-//  Supports:
-//   - Rooms, Sessions, Teams, Stations
-//   - Station Location Protection (Classroom/Hallway/etc.)
-//   - Task Launching + Student Submissions
-//   - AI Rubric Scoring + AI Session Summaries
-//   - Perspectives (multi-select worldview/approach tags)
-//   - PDF + HTML Transcript Emailing
-//   - Basic REST API for Profile, Subscription, TaskSets, Analytics
+//  Curriculate Backend – Clean, Repaired Index.js
 // ====================================================================
 
 import "dotenv/config";
@@ -17,9 +9,10 @@ import cors from "cors";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 import bodyParser from "body-parser";
+
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
-//import subscriptionRoutes from "./routes/subscriptionRoutes.js";
+import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
@@ -29,6 +22,9 @@ import { generateTaskset as generateAiTaskset } from "./controllers/aiTasksetCon
 const app = express();
 const server = http.createServer(app);
 
+// ====================================================================
+//  CORS
+// ====================================================================
 const allowedOrigins = [
   // Production frontends
   "https://set.curriculate.net",
@@ -45,7 +41,7 @@ const allowedOrigins = [
   "http://localhost:3000",
 ];
 
-/// Allow *any* Vercel preview deployments
+// Allow *any* Vercel preview deployments
 function isVercelPreview(origin) {
   return origin && origin.endsWith(".vercel.app");
 }
@@ -71,11 +67,11 @@ app.options("*", cors(corsOptions));
 // ====================================================================
 app.use(bodyParser.json({ limit: "3mb" }));
 
-// Mount subscriptionRouter properly
-//app.use("/api/subscription", subscriptionRoutes);
+// Subscription routes (MyPlan / current plan info)
+app.use("/api/subscription", subscriptionRoutes);
 
 // ====================================================================
-//  SOCKET.IO – ONLY ONE INSTANCE
+//  SOCKET.IO
 // ====================================================================
 const io = new Server(server, {
   cors: corsOptions,
@@ -98,7 +94,7 @@ mongoose
 // ====================================================================
 //  ROOM ENGINE (All In-Memory)
 // ====================================================================
-const rooms = {}; // rooms["8A"] = { teacherSocketId, teams, tasks, ... }
+const rooms = {}; // rooms["8A"] = { teacherSocketId, teams, taskset, ... }
 
 // Create a blank room object
 function createRoom(roomCode, teacherSocketId) {
@@ -106,8 +102,8 @@ function createRoom(roomCode, teacherSocketId) {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {}, // teamId -> { teamName, color, members: [] }
-    stations: {}, // stationId (e.g. "station-red") -> { roomLocation }
+    teams: {}, // teamId -> { teamId, teamName, members: [], stationColor, ... }
+    stations: {}, // future: stationId -> station data
     taskset: null,
     taskIndex: -1,
     submissions: [],
@@ -115,36 +111,6 @@ function createRoom(roomCode, teacherSocketId) {
     isActive: false,
   };
 }
-  // --------------------------------------------------------------
-  // Generic joinRoom (used by HostView / projector, optional teacher)
-  // --------------------------------------------------------------
-  socket.on("joinRoom", (payload = {}, ack) => {
-    const { roomCode, role, name } = payload;
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-
-    if (!room) {
-      const error = { ok: false, error: "Room not found" };
-      if (typeof ack === "function") {
-        ack(error);
-      } else {
-        socket.emit("join:error", { message: error.error });
-      }
-      return;
-    }
-
-    socket.join(code);
-    socket.data.roomCode = code;
-    socket.data.role = role || "viewer";
-    socket.data.displayName = name || role || "Viewer";
-
-    const state = buildRoomState(room);
-    socket.emit("room:state", state);
-
-    if (typeof ack === "function") {
-      ack({ ok: true, roomState: state });
-    }
-  });
 
 // Build a transcript object from a room for analytics + emailing
 function buildTranscript(room) {
@@ -232,6 +198,7 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
+// Build state sent to teacher / host / live views
 function buildRoomState(room) {
   if (!room) {
     return { teams: {}, stations: {}, scores: {}, taskIndex: -1 };
@@ -253,22 +220,58 @@ function buildRoomState(room) {
 }
 
 // ====================================================================
-//  SOCKET.IO
+//  SOCKET.IO – EVENTS
 // ====================================================================
 io.on("connection", (socket) => {
   // --------------------------------------------------------------
-  // Teacher: create room
+  // Teacher: create room (LiveSession)
   // --------------------------------------------------------------
   socket.on("teacher:createRoom", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     rooms[code] = createRoom(code, socket.id);
+
     socket.join(code);
     socket.data.role = "teacher";
     socket.data.roomCode = code;
+
     socket.emit("room:created", { roomCode: code });
   });
 
-    // --------------------------------------------------------------
+  // --------------------------------------------------------------
+  // Generic joinRoom (HostView / projector / teacher reconnect)
+  // --------------------------------------------------------------
+  socket.on("joinRoom", (payload = {}, ack) => {
+    const { roomCode, role, name } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+
+    if (!room) {
+      const error = { ok: false, error: "Room not found" };
+      if (typeof ack === "function") {
+        ack(error);
+      } else {
+        socket.emit("join:error", { message: error.error });
+      }
+      return;
+    }
+
+    socket.join(code);
+    socket.data.roomCode = code;
+    socket.data.role = role || "viewer";
+    socket.data.displayName = name || role || "Viewer";
+
+    const state = buildRoomState(room);
+
+    // Send both events for backwards compatibility
+    socket.emit("room:state", state);
+    socket.emit("roomState", state);
+
+    if (typeof ack === "function") {
+      ack({ ok: true, roomState: state });
+    }
+  });
+
+  // --------------------------------------------------------------
   // Teacher loads a taskset (and alias used by client: "loadTaskset")
   // --------------------------------------------------------------
   async function handleTeacherLoadTaskset({ roomCode, tasksetId }) {
@@ -286,8 +289,9 @@ io.on("connection", (socket) => {
     room.taskIndex = -1;
 
     io.to(code).emit("taskset:loaded", {
+      tasksetId: String(taskset._id),
       name: taskset.name,
-      tasks: taskset.tasks.length,
+      numTasks: taskset.tasks.length,
       subject: taskset.subject,
       gradeLevel: taskset.gradeLevel,
     });
@@ -301,7 +305,6 @@ io.on("connection", (socket) => {
   socket.on("loadTaskset", (payload) => {
     handleTeacherLoadTaskset(payload || {});
   });
-
 
   // --------------------------------------------------------------
   // Teacher starts session
@@ -336,7 +339,7 @@ io.on("connection", (socket) => {
 
     const task = room.taskset.tasks[index];
 
-    // Emit `task:launch` (modern contract)
+    // Emit `task:launch` (StudentApp listens to this)
     io.to(code).emit("task:launch", {
       index,
       task,
@@ -391,70 +394,73 @@ io.on("connection", (socket) => {
   // Student joins room
   // --------------------------------------------------------------
   socket.on("student:joinRoom", (payload, ack) => {
-  const { roomCode, teamName, members } = payload || {};
-  const code = (roomCode || "").toUpperCase();
-  const room = rooms[code];
+    const { roomCode, teamName, members } = payload || {};
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
 
-  if (!room) {
-    if (typeof ack === "function") {
-      ack({ ok: false, error: "Room not found" });
-    } else {
-      socket.emit("join:error", { message: "Room not found" });
+    if (!room) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room not found" });
+      } else {
+        socket.emit("join:error", { message: "Room not found" });
+      }
+      return;
     }
-    return;
-  }
 
-  socket.join(code);
-  socket.data.role = "student";
-  socket.data.roomCode = code;
+    socket.join(code);
+    socket.data.role = "student";
+    socket.data.roomCode = code;
 
-  // Use this socket as the canonical team id
-  const teamId = socket.id;
-  socket.data.teamId = teamId;
+    // Use this socket as the canonical team id
+    const teamId = socket.id;
+    socket.data.teamId = teamId;
 
-  const cleanMembers =
-    Array.isArray(members) && members.length > 0
-      ? members.map((m) => String(m).trim()).filter(Boolean)
-      : [];
+    const cleanMembers =
+      Array.isArray(members) && members.length > 0
+        ? members.map((m) => String(m).trim()).filter(Boolean)
+        : [];
 
-  const displayName =
-    teamName ||
-    cleanMembers[0] ||
-    `Team-${String(teamId).slice(-4)}`;
+    const displayName =
+      teamName ||
+      cleanMembers[0] ||
+      `Team-${String(teamId).slice(-4)}`;
 
-  if (!room.teams[teamId]) {
-    room.teams[teamId] = {
-      teamId,
-      teamName: displayName,
-      members: cleanMembers,
-      score: 0,
-      stationColor: null,
-    };
-  } else {
-    room.teams[teamId].teamName = displayName;
-    room.teams[teamId].members = cleanMembers;
-  }
+    if (!room.teams[teamId]) {
+      room.teams[teamId] = {
+        teamId,
+        teamName: displayName,
+        members: cleanMembers,
+        score: 0,
+        stationColor: null,
+      };
+    } else {
+      room.teams[teamId].teamName = displayName;
+      room.teams[teamId].members = cleanMembers;
+    }
 
-  // Assuming you already have a buildRoomState(room) helper
-  const state = buildRoomState(room);
+    const state = buildRoomState(room);
 
-  // Notify teacher & any connected views
-  io.to(code).emit("room:state", state);
-  io.to(room.teacherSocketId).emit("team:joined", {
-    teamId,
-    teamName: displayName,
-    members: cleanMembers,
+    // Notify teacher & any connected views
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+
+    if (room.teacherSocketId) {
+      io.to(room.teacherSocketId).emit("team:joined", {
+        teamId,
+        teamName: displayName,
+        members: cleanMembers,
+      });
+    }
+
+    if (typeof ack === "function") {
+      ack({ ok: true, roomState: state, teamId });
+    }
   });
-
-  if (typeof ack === "function") {
-    ack({ ok: true, roomState: state, teamId });
-  }
-});
 
   // --------------------------------------------------------------
   // Student submits answer
   // --------------------------------------------------------------
-    const handleStudentSubmit = async (payload, ack) => {
+  const handleStudentSubmit = async (payload, ack) => {
     const { roomCode, teamId, taskIndex, answer } = payload || {};
 
     const code = (roomCode || "").toUpperCase();
@@ -508,6 +514,11 @@ io.on("connection", (socket) => {
       aiScore,
       submittedAt: Date.now(),
     });
+
+    // Send latest state to views
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
 
     socket.emit("task:received");
     if (typeof ack === "function") {
