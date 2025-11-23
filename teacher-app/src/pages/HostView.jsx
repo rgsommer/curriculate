@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from "react";
 import { socket } from "../socket";
 
-export default function HostView({ roomCode }) {  const [roomState, setRoomState] = useState({
+export default function HostView({ roomCode }) {
+  const [roomState, setRoomState] = useState({
     stations: [],
     teams: {},
     scores: {},
@@ -10,17 +11,23 @@ export default function HostView({ roomCode }) {  const [roomState, setRoomState
   const [submissions, setSubmissions] = useState([]);
   const [scoreInputs, setScoreInputs] = useState({}); // teamId -> points
 
-  // join as host
+  // Join/create as host (teacher)
   useEffect(() => {
     if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+
+    // New-style room creation
+    socket.emit("teacher:createRoom", { roomCode: code });
+
+    // Legacy fallback in case the server still expects this
     socket.emit("joinRoom", {
-      roomCode: roomCode.toUpperCase(),
+      roomCode: code,
       name: "Host",
       role: "host",
     });
   }, [roomCode]);
 
-  // listen
+  // listen for room state + submissions
   useEffect(() => {
     const handleRoom = (state) =>
       setRoomState(state || { stations: [], teams: {}, scores: {} });
@@ -29,11 +36,14 @@ export default function HostView({ roomCode }) {  const [roomState, setRoomState
       setSubmissions((prev) => [sub, ...prev].slice(0, 30));
     };
 
+    // Support both old and new event names
     socket.on("roomState", handleRoom);
+    socket.on("room:state", handleRoom);
     socket.on("taskSubmission", handleSubmission);
 
     return () => {
       socket.off("roomState", handleRoom);
+      socket.off("room:state", handleRoom);
       socket.off("taskSubmission", handleSubmission);
     };
   }, []);

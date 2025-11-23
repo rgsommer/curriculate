@@ -1,6 +1,6 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { socket } from "../socket";
 
 // Station colours in order: station-1 → red, station-2 → blue, etc.
@@ -24,6 +24,7 @@ function stationIdToColor(id) {
 
 export default function LiveSession({ roomCode: roomCodeProp }) {
   const params = useParams();
+  const navigate = useNavigate();
   // Prefer explicit prop, then URL param, otherwise empty string
   const roomCode = (roomCodeProp || params.roomCode || "").toUpperCase();
 
@@ -61,17 +62,22 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   // View mode: 'live' = normal view, 'setup' = room setup checklist
   const [viewMode, setViewMode] = useState("live");
 
-  // Join as teacher whenever roomCode changes
+  // Join/create as teacher whenever roomCode changes
   useEffect(() => {
     if (!roomCode) {
       setStatus("No room selected.");
       return;
     }
 
-    setStatus("Joining room…");
+    const code = roomCode.toUpperCase();
+    setStatus(`Creating room ${code}…`);
 
+    // New-style room creation
+    socket.emit("teacher:createRoom", { roomCode: code });
+
+    // Legacy fallback in case the server still expects joinRoom
     socket.emit("joinRoom", {
-      roomCode,
+      roomCode: code,
       name: "Teacher",
       role: "teacher",
     });
@@ -98,19 +104,39 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     // If the correct taskset isn't loaded yet, load it first.
     if (loadedTasksetId !== desiredId) {
       setStatus(`Loading taskset "${activeTasksetMeta.name}"…`);
+
+      // New-style + legacy fallbacks
+      socket.emit("teacher:loadTaskset", {
+        roomCode,
+        tasksetId: desiredId,
+      });
       socket.emit("loadTaskset", {
         roomCode,
         tasksetId: desiredId,
       });
-      // Wait for "tasksetLoaded" to fire and update loadedTasksetId.
+
+      // Wait for "tasksetLoaded"/"taskset:loaded" to fire and update loadedTasksetId.
       return;
     }
 
     // At this point, the correct taskset is loaded in this room — launch it.
     setStatus(`Launching "${activeTasksetMeta.name}"…`);
+
+    // New-style: start session + go to first task
+    socket.emit("teacher:startSession", { roomCode });
+    socket.emit("teacher:nextTask", { roomCode });
+
+    // Legacy fallback: single launch event
     socket.emit("launchTaskset", { roomCode });
+
     setAutoLaunchRequested(false);
-  }, [autoLaunchRequested, roomCode, activeTasksetMeta?._id, loadedTasksetId]);
+  }, [
+    autoLaunchRequested,
+    roomCode,
+    activeTasksetMeta?._id,
+    activeTasksetMeta?.name,
+    loadedTasksetId,
+  ]);
 
   // Socket listeners
   useEffect(() => {
@@ -134,13 +160,14 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
 
     const handleTasksetLoaded = (info) => {
       console.log("Taskset loaded:", info);
-      if (info && info.tasksetId) {
-        setLoadedTasksetId(info.tasksetId);
+      if (info && (info.tasksetId || info.id)) {
+        const id = info.tasksetId || info.id;
+        setLoadedTasksetId(id);
 
         // Keep local meta fresh from the server
         setActiveTasksetMeta((prev) => {
           const meta = {
-            _id: info.tasksetId,
+            _id: id,
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
@@ -173,16 +200,21 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       });
     };
 
+    // Support both old and new event names
     socket.on("roomState", handleRoom);
+    socket.on("room:state", handleRoom);
     socket.on("leaderboardUpdate", handleLeaderboard);
     socket.on("tasksetLoaded", handleTasksetLoaded);
+    socket.on("taskset:loaded", handleTasksetLoaded);
     socket.on("taskSubmission", handleSubmission);
     socket.on("scanEvent", handleScanEvent);
 
     return () => {
       socket.off("roomState", handleRoom);
+      socket.off("room:state", handleRoom);
       socket.off("leaderboardUpdate", handleLeaderboard);
       socket.off("tasksetLoaded", handleTasksetLoaded);
+      socket.off("taskset:loaded", handleTasksetLoaded);
       socket.off("taskSubmission", handleSubmission);
       socket.off("scanEvent", handleScanEvent);
     };
@@ -200,7 +232,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     setStatus("Quick task launched.");
   };
 
-  // ✅ NEW: one-click launch that uses the autoLaunch effect
+  // one-click launch that uses the autoLaunch effect
   const handleLaunchTaskset = () => {
     if (!roomCode) {
       alert("No room selected for this live session.");
@@ -214,13 +246,15 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       return;
     }
 
-    // This triggers the effect above, which will:
-    // 1) loadTaskset if needed
-    // 2) launchTaskset once loaded
     setAutoLaunchRequested(true);
     setStatus(
       `Preparing to launch "${activeTasksetMeta.name}" to room ${roomCode}…`
     );
+  };
+
+  const handleOpenRoomCodes = () => {
+    // navigates to the QR sheet view
+    navigate("/station-posters?location=classroom");
   };
 
   // Derived helpers
@@ -1018,7 +1052,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <button
               type="button"
               onClick={handleLaunchQuickTask}
@@ -1052,6 +1086,23 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               Launch from taskset
             </button>
           </div>
+
+          {/* Room codes button */}
+          <button
+            type="button"
+            onClick={handleOpenRoomCodes}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              background: "#ffffff",
+              fontSize: "0.8rem",
+              cursor: "pointer",
+            }}
+          >
+            Room codes (QR posters)
+          </button>
         </div>
       </div>
 
