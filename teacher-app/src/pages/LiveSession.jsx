@@ -1,651 +1,1105 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import axios from "axios";
+import { useParams } from "react-router-dom";
 import { socket } from "../socket";
-import { API_BASE_URL } from "../config";
 
-const API_BASE = API_BASE_URL;
+// Station colours in order: station-1 → red, station-2 → blue, etc.
+const COLORS = [
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "purple",
+  "orange",
+  "teal",
+  "pink",
+];
 
-export default function LiveSession({ roomCode: propRoomCode }) {
+function stationIdToColor(id) {
+  const m = /^station-(\d+)$/.exec(id || "");
+  if (!m) return null;
+  const idx = parseInt(m[1], 10) - 1;
+  return COLORS[idx] || null;
+}
+
+export default function LiveSession({ roomCode: roomCodeProp }) {
   const params = useParams();
-  const navigate = useNavigate();
+  // Prefer explicit prop, then URL param, otherwise empty string
+  const roomCode = (roomCodeProp || params.roomCode || "").toUpperCase();
 
-  const roomCode = (propRoomCode || params.roomCode || "").toUpperCase();
-
+  const [status, setStatus] = useState("Checking connection…");
   const [roomState, setRoomState] = useState({
+    stations: [],
     teams: {},
-    stations: {},
     scores: {},
-    taskIndex: -1,
+    taskset: null,
   });
+  const [submissions, setSubmissions] = useState({});
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [scanEvents, setScanEvents] = useState([]);
 
-  const [status, setStatus] = useState("Waiting for room…");
+  // Quick task fields
+  const [prompt, setPrompt] = useState("");
+  const [correctAnswer, setCorrectAnswer] = useState("");
 
-  // Taskset / launching state
-  const [activeTasksetMeta, setActiveTasksetMeta] = useState(null);
+  // Which taskset is loaded in this room (from server)
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
-  const [tasksetStatus, setTasksetStatus] = useState("No task set loaded.");
 
-  // Transcript / profile settings
-  const [teacherEmail, setTeacherEmail] = useState("");
-  const [schoolName, setSchoolName] = useState("");
-  const [assessmentCategories, setAssessmentCategories] = useState([]);
-  const [includeIndividualReports, setIncludeIndividualReports] =
-    useState(false);
-  const [perspectives, setPerspectives] = useState([]);
-  const [emailStatus, setEmailStatus] = useState("");
-
-  // Derived helpers
-  const teamsArray = useMemo(
-    () => Object.values(roomState.teams || {}),
-    [roomState.teams]
-  );
-
-  const scoresByTeamId = roomState.scores || {};
-  const leaderboard = useMemo(
-    () =>
-      [...teamsArray]
-        .map((t) => ({
-          ...t,
-          points: scoresByTeamId[t.teamId] || 0,
-        }))
-        .sort((a, b) => b.points - a.points),
-    [teamsArray, scoresByTeamId]
-  );
-
-  // ---------------------------------------------
-  // Load profile (for transcript defaults)
-  // ---------------------------------------------
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadProfile() {
-      try {
-        const res = await axios.get(`${API_BASE}/api/profile`);
-        const data = res.data || {};
-        if (cancelled) return;
-
-        if (data.email) setTeacherEmail(data.email);
-        if (data.schoolName) setSchoolName(data.schoolName);
-        if (Array.isArray(data.assessmentCategories)) {
-          setAssessmentCategories(data.assessmentCategories);
-        }
-        if (typeof data.includeIndividualReports === "boolean") {
-          setIncludeIndividualReports(data.includeIndividualReports);
-        } else if (typeof data.includeStudentReports === "boolean") {
-          setIncludeIndividualReports(data.includeStudentReports);
-        }
-        if (Array.isArray(data.perspectives)) {
-          setPerspectives(data.perspectives);
-        }
-      } catch (err) {
-        console.error("Failed to load presenter profile:", err);
-      }
-    }
-
-    loadProfile();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // ---------------------------------------------
-  // Restore active taskset from localStorage
-  // (set on TaskSets page)
-  // ---------------------------------------------
-  useEffect(() => {
+  // Which taskset the teacher chose in TaskSets (from localStorage)
+  const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
     try {
       const raw = localStorage.getItem("curriculateActiveTasksetMeta");
-      if (raw) {
-        const meta = JSON.parse(raw);
-        if (meta && meta._id) {
-          setActiveTasksetMeta(meta);
-        }
-      }
-    } catch (e) {
-      console.warn("Could not read active taskset meta from localStorage", e);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
     }
-  }, []);
+  });
 
-  // ---------------------------------------------
-  // Socket listeners (room:state, taskset, transcript)
-  // ---------------------------------------------
+  // If TaskSets OR the button here asked us to "launch now"
+  const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
+
+  // View mode: 'live' = normal view, 'setup' = room setup checklist
+  const [viewMode, setViewMode] = useState("live");
+
+  // Join as teacher whenever roomCode changes
   useEffect(() => {
-    const handleRoomState = (state) => {
-      if (!state) return;
-      setRoomState(state);
-      setStatus("Connected – teams and scores updating.");
-    };
-
-    const handleTasksetLoaded = (payload) => {
-      setLoadedTasksetId((prev) => prev ?? activeTasksetMeta?._id || null);
-      if (payload && payload.name) {
-        setTasksetStatus(
-          `Loaded "${payload.name}" (${payload.tasks ?? "?"} tasks)`
-        );
-      } else {
-        setTasksetStatus("Task set loaded.");
-      }
-    };
-
-    const handleTasksetError = (payload) => {
-      const msg = payload?.message || "Task set error.";
-      setTasksetStatus(msg);
-    };
-
-    const handleTranscriptSent = () => {
-      setEmailStatus("Transcript email sent.");
-    };
-
-    const handleTranscriptError = (payload) => {
-      const msg = payload?.message || "Failed to send transcript.";
-      setEmailStatus(msg);
-    };
-
-    socket.on("room:state", handleRoomState);
-    socket.on("taskset:loaded", handleTasksetLoaded);
-    socket.on("taskset:error", handleTasksetError);
-    socket.on("transcript:sent", handleTranscriptSent);
-    socket.on("transcript:error", handleTranscriptError);
-
-    return () => {
-      socket.off("room:state", handleRoomState);
-      socket.off("taskset:loaded", handleTasksetLoaded);
-      socket.off("taskset:error", handleTasksetError);
-      socket.off("transcript:sent", handleTranscriptSent);
-      socket.off("transcript:error", handleTranscriptError);
-    };
-  }, [activeTasksetMeta?._id]);
-
-  // ---------------------------------------------
-  // Auto-launch when coming from TaskSets ("Launch now")
-  // ---------------------------------------------
-  useEffect(() => {
-    if (!roomCode) return;
-
-    const flag = localStorage.getItem("curriculateLaunchImmediately");
-    if (flag !== "true") return;
-
-    // Clear the flag so we only try once
-    localStorage.removeItem("curriculateLaunchImmediately");
-
-    if (!activeTasksetMeta || !activeTasksetMeta._id) return;
-
-    // If needed, load the set first, then start session + first task
-    handleLoadActiveTaskset().then((ok) => {
-      if (!ok) return;
-      handleStartSessionAndFirstTask();
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, activeTasksetMeta]);
-
-  // ---------------------------------------------
-  // Actions
-  // ---------------------------------------------
-  const handleLoadActiveTaskset = async () => {
-    if (!roomCode || !activeTasksetMeta?._id) {
-      setTasksetStatus("No active task set selected.");
-      return false;
-    }
-
-    setTasksetStatus("Loading task set…");
-    return new Promise((resolve) => {
-      socket.emit(
-        "teacher:loadTaskset",
-        { roomCode, tasksetId: activeTasksetMeta._id },
-        // In this backend, there is no explicit ack, so we resolve optimistically.
-      );
-      // We'll rely on taskset:loaded / taskset:error events to update UI.
-      setTimeout(() => resolve(true), 300);
-    });
-  };
-
-  const handleStartSessionAndFirstTask = () => {
-    if (!roomCode) return;
-    socket.emit("teacher:startSession", { roomCode });
-    socket.emit("teacher:nextTask", { roomCode });
-    setStatus("Session running – first task launched.");
-  };
-
-  const handleNextTask = () => {
-    if (!roomCode) return;
-    socket.emit("teacher:nextTask", { roomCode });
-    setStatus("Next task launched.");
-  };
-
-  const handleEndAndEmailTranscript = () => {
-    if (!roomCode) return;
-
-    const trimmedEmail = teacherEmail.trim();
-    if (!trimmedEmail) {
-      setEmailStatus("Please provide an email address first.");
+    if (!roomCode) {
+      setStatus("No room selected.");
       return;
     }
 
-    setEmailStatus("Ending session and sending transcript…");
+    setStatus("Joining room…");
 
-    socket.emit("teacher:endSessionAndEmail", {
+    socket.emit("joinRoom", {
       roomCode,
-      teacherEmail: trimmedEmail,
-      assessmentCategories,
-      includeIndividualReports,
-      schoolName,
-      perspectives,
+      name: "Teacher",
+      role: "teacher",
     });
+
+    setStatus("Connected.");
+  }, [roomCode]);
+
+  // On first mount, check if TaskSets asked us to auto-launch
+  useEffect(() => {
+    const flag = localStorage.getItem("curriculateLaunchImmediately");
+    if (flag === "true") {
+      localStorage.removeItem("curriculateLaunchImmediately");
+      setAutoLaunchRequested(true);
+    }
+  }, []);
+
+  // If auto-launch is requested, load + then launch the active taskset
+  useEffect(() => {
+    if (!autoLaunchRequested) return;
+    if (!roomCode || !activeTasksetMeta?._id) return;
+
+    const desiredId = activeTasksetMeta._id;
+
+    // If the correct taskset isn't loaded yet, load it first.
+    if (loadedTasksetId !== desiredId) {
+      setStatus(`Loading taskset "${activeTasksetMeta.name}"…`);
+      socket.emit("loadTaskset", {
+        roomCode,
+        tasksetId: desiredId,
+      });
+      // Wait for "tasksetLoaded" to fire and update loadedTasksetId.
+      return;
+    }
+
+    // At this point, the correct taskset is loaded in this room — launch it.
+    setStatus(`Launching "${activeTasksetMeta.name}"…`);
+    socket.emit("launchTaskset", { roomCode });
+    setAutoLaunchRequested(false);
+  }, [autoLaunchRequested, roomCode, activeTasksetMeta?._id, loadedTasksetId]);
+
+  // Socket listeners
+  useEffect(() => {
+    const handleRoom = (state) => {
+      setRoomState(
+        state || {
+          stations: [],
+          teams: {},
+          scores: {},
+          taskset: null,
+        }
+      );
+    };
+
+    const handleLeaderboard = (scores) => {
+      const entries = Object.entries(scores || {}).sort(
+        (a, b) => b[1] - a[1]
+      );
+      setLeaderboard(entries);
+    };
+
+    const handleTasksetLoaded = (info) => {
+      console.log("Taskset loaded:", info);
+      if (info && info.tasksetId) {
+        setLoadedTasksetId(info.tasksetId);
+
+        // Keep local meta fresh from the server
+        setActiveTasksetMeta((prev) => {
+          const meta = {
+            _id: info.tasksetId,
+            name: info.name || prev?.name || "Loaded Taskset",
+            numTasks: info.numTasks ?? prev?.numTasks ?? 0,
+          };
+          localStorage.setItem("curriculateActiveTasksetId", meta._id);
+          localStorage.setItem(
+            "curriculateActiveTasksetMeta",
+            JSON.stringify(meta)
+          );
+          return meta;
+        });
+
+        setStatus(
+          `Taskset "${info.name || "Taskset"}" loaded into room ${roomCode}.`
+        );
+      }
+    };
+
+    const handleSubmission = (sub) => {
+      if (!sub?.teamId) return;
+      setSubmissions((prev) => ({
+        ...prev,
+        [sub.teamId]: sub,
+      }));
+    };
+
+    const handleScanEvent = (ev) => {
+      setScanEvents((prev) => {
+        const next = [ev, ...prev];
+        return next.slice(0, 30); // keep last 30
+      });
+    };
+
+    socket.on("roomState", handleRoom);
+    socket.on("leaderboardUpdate", handleLeaderboard);
+    socket.on("tasksetLoaded", handleTasksetLoaded);
+    socket.on("taskSubmission", handleSubmission);
+    socket.on("scanEvent", handleScanEvent);
+
+    return () => {
+      socket.off("roomState", handleRoom);
+      socket.off("leaderboardUpdate", handleLeaderboard);
+      socket.off("tasksetLoaded", handleTasksetLoaded);
+      socket.off("taskSubmission", handleSubmission);
+      socket.off("scanEvent", handleScanEvent);
+    };
+  }, [roomCode]);
+
+  const handleLaunchQuickTask = () => {
+    if (!roomCode || !prompt.trim()) return;
+    socket.emit("teacherLaunchTask", {
+      roomCode,
+      prompt: prompt.trim(),
+      correctAnswer: correctAnswer.trim(),
+    });
+    setPrompt("");
+    setCorrectAnswer("");
+    setStatus("Quick task launched.");
   };
 
-  // ---------------------------------------------
-  // Render
-  // ---------------------------------------------
-  return (
-    <div
-      style={{
-        height: "100%",
-        padding: "16px 24px",
-        boxSizing: "border-box",
-        display: "grid",
-        gridTemplateColumns: "2fr 1.2fr",
-        gap: 24,
-      }}
-    >
-      {/* Left column: live room */}
-      <div>
-        <header
+  // ✅ NEW: one-click launch that uses the autoLaunch effect
+  const handleLaunchTaskset = () => {
+    if (!roomCode) {
+      alert("No room selected for this live session.");
+      return;
+    }
+
+    if (!activeTasksetMeta?._id) {
+      alert(
+        'No active task set selected.\n\nGo to the Task Sets page and click "Use in Live Session" on the set you want.'
+      );
+      return;
+    }
+
+    // This triggers the effect above, which will:
+    // 1) loadTaskset if needed
+    // 2) launchTaskset once loaded
+    setAutoLaunchRequested(true);
+    setStatus(
+      `Preparing to launch "${activeTasksetMeta.name}" to room ${roomCode}…`
+    );
+  };
+
+  // Derived helpers
+  const stations = roomState.stations || [];
+  const teamsById = roomState.teams || {};
+  const scores = roomState.scores || {};
+  const currentTasksetName =
+    roomState.taskset?.name || activeTasksetMeta?.name || "—";
+  const tasksetDisplays = roomState.taskset?.displays || [];
+
+  const renderStationCard = (station) => {
+    const team = teamsById[station.assignedTeamId] || null;
+    const stationId = station.id;
+
+    if (!team) {
+      return (
+        <div
+          key={station.id}
           style={{
-            marginBottom: 16,
+            borderRadius: 12,
+            border: "1px dashed #cbd5f5",
+            padding: 12,
+            minWidth: 180,
+            minHeight: 90,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 4,
+            background: "#f9fafb",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: 1,
+              color: "#6b7280",
+            }}
+          >
+            {station.id}
+          </div>
+          <div style={{ color: "#9ca3af" }}>No team yet</div>
+        </div>
+      );
+    }
+
+    const latest = submissions[team.teamId];
+    const score = scores[team.teamName] ?? 0;
+
+    // Where this team should currently be
+    const assignedStationId = team.currentStationId || stationId;
+    const assignedColor = stationIdToColor(assignedStationId);
+
+    // Last station they scanned (from QR)
+    const scannedStationId = team.lastScannedStationId || null;
+    const hasScanForThisAssignment =
+      scannedStationId && scannedStationId === assignedStationId;
+
+    // Bubble colour: grey until correct scan, then assigned colour
+    const bubbleBg =
+      hasScanForThisAssignment && assignedColor ? assignedColor : "#f9fafb";
+    const textColor =
+      hasScanForThisAssignment && assignedColor ? "#ffffff" : "#111827";
+    const subtleTextColor =
+      hasScanForThisAssignment && assignedColor
+        ? "rgba(241,245,249,0.9)"
+        : "#6b7280";
+
+    const isCorrect = latest?.correct ?? null;
+
+    return (
+      <div
+        key={station.id}
+        style={{
+          borderRadius: 12,
+          padding: 12,
+          minWidth: 220,
+          minHeight: 130,
+          background: bubbleBg,
+          color: textColor,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          boxShadow: "0 1px 3px rgba(15,23,42,0.16)",
+          border: hasScanForThisAssignment
+            ? "2px solid rgba(15,23,42,0.25)"
+            : "1px solid #e5e7eb",
+          transition: "background 0.2s ease, border 0.2s ease",
+        }}
+      >
+        {/* Station + Team */}
+        <div
+          style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "baseline",
+            gap: 8,
+            alignItems: "flex-start",
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Live Session</h1>
-            <p style={{ margin: "4px 0", fontSize: "0.9rem", color: "#4b5563" }}>
-              {status}
-            </p>
-            <p style={{ margin: 0, fontSize: "0.85rem", color: "#6b7280" }}>
-              {tasksetStatus}
-            </p>
+            <div
+              style={{
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                color: subtleTextColor,
+              }}
+            >
+              {station.id}
+            </div>
+            <div style={{ fontWeight: 700 }}>
+              {team.teamName || "Team"}
+            </div>
+            {Array.isArray(team.members) && team.members.length > 0 && (
+              <div
+                style={{
+                  fontSize: "0.7rem",
+                  color: subtleTextColor,
+                  marginTop: 2,
+                }}
+              >
+                {team.members.join(", ")}
+              </div>
+            )}
+
+            {/* Assigned vs scan status */}
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: "0.75rem",
+              }}
+            >
+              <div>
+                <strong>Assigned to:</strong>{" "}
+                {assignedColor
+                  ? `${assignedColor.toUpperCase()} (${assignedStationId})`
+                  : assignedStationId || "—"}
+              </div>
+              <div
+                style={{
+                  marginTop: 2,
+                  color: hasScanForThisAssignment ? "#bbf7d0" : subtleTextColor,
+                  fontStyle: hasScanForThisAssignment ? "normal" : "italic",
+                }}
+              >
+                {hasScanForThisAssignment
+                  ? "Scanned and ready"
+                  : "Waiting for a scan…"}
+              </div>
+            </div>
           </div>
+
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-              Room code
+            <div
+              style={{
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                color: subtleTextColor,
+              }}
+            >
+              Score
             </div>
             <div
               style={{
-                fontSize: "1.6rem",
-                letterSpacing: "0.18em",
-                fontWeight: 700,
+                fontSize: "1.4rem",
+                fontWeight: 800,
               }}
             >
-              {roomCode || "— —"}
+              {score}
             </div>
           </div>
-        </header>
+        </div>
 
-        {/* Teams + stations */}
-        <section>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Teams</h2>
-          {teamsArray.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>No teams have joined yet.</p>
+        {/* Latest submission summary */}
+        {latest ? (
+          <div
+            style={{
+              marginTop: 6,
+              paddingTop: 6,
+              borderTop: hasScanForThisAssignment
+                ? "1px solid rgba(241,245,249,0.6)"
+                : "1px solid rgba(148,163,184,0.4)",
+              fontSize: "0.8rem",
+              display: "flex",
+              justifyContent: "space_between",
+              gap: 8,
+              alignItems: "center",
+            }}
+          >
+            <div
+              style={{
+                maxWidth: "65%",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+              title={latest.answerText}
+            >
+              <strong>Ans:</strong> {latest.answerText || "—"}
+            </div>
+
+            <div style={{ textAlign: "right" }}>
+              {isCorrect !== null && (
+                <div>{isCorrect ? "✅ correct" : "❌ incorrect"}</div>
+              )}
+              {latest.timeMs != null && (
+                <div>
+                  <strong>Time:</strong>{" "}
+                  {(latest.timeMs / 1000).toFixed(1)}s
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 6,
+              paddingTop: 6,
+              borderTop: hasScanForThisAssignment
+                ? "1px dashed rgba(241,245,249,0.6)"
+                : "1px dashed rgba(148,163,184,0.4)",
+              fontSize: "0.75rem",
+              color: subtleTextColor,
+            }}
+          >
+            No submission yet
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Group displays by station colour for the setup tab
+  const groupedDisplays = useMemo(() => {
+    const grouped = {};
+    (tasksetDisplays || []).forEach((d) => {
+      const key = (d.stationColor || "Unassigned").toLowerCase();
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(d);
+    });
+    return grouped;
+  }, [tasksetDisplays]);
+
+  const orderedDisplayGroups = useMemo(() => {
+    const keys = Object.keys(groupedDisplays);
+    if (!keys.length) return [];
+    const colorOrder = [...COLORS, "unassigned"];
+    return keys.sort((a, b) => {
+      const ia = colorOrder.indexOf(a);
+      const ib = colorOrder.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [groupedDisplays]);
+
+  const renderSetupView = () => {
+    return (
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        <div style={{ flex: 3, minWidth: 0 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>
+            Room setup checklist
+          </h2>
+          <p
+            style={{
+              marginTop: 0,
+              marginBottom: 8,
+              fontSize: "0.85rem",
+              color: "#4b5563",
+            }}
+          >
+            Taskset: <strong>{currentTasksetName}</strong>
+          </p>
+
+          {tasksetDisplays.length === 0 ? (
+            <p style={{ color: "#6b7280" }}>
+              No displays defined for this task set. In the Task Sets editor,
+              add “Physical displays / stations” and link tasks via the
+              “Linked display” dropdown.
+            </p>
           ) : (
             <div
               style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 10,
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(260px, 1fr))",
+                gap: 12,
               }}
             >
-              {teamsArray.map((team) => {
-                const points = scoresByTeamId[team.teamId] || 0;
+              {orderedDisplayGroups.map((colorKey) => {
+                const displays = groupedDisplays[colorKey] || [];
+                const isUnassigned = colorKey === "unassigned";
+                const label = isUnassigned
+                  ? "Unassigned / floating displays"
+                  : `${colorKey.toUpperCase()} station`;
+
+                const chipColor = isUnassigned ? "#374151" : colorKey;
+
                 return (
                   <div
-                    key={team.teamId}
+                    key={colorKey}
                     style={{
-                      minWidth: 170,
-                      padding: "10px 12px",
-                      borderRadius: 10,
+                      borderRadius: 12,
                       border: "1px solid #e5e7eb",
                       background: "#f9fafb",
+                      padding: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
                     }}
                   >
                     <div
                       style={{
                         display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: 4,
+                        alignItems: "center",
+                        gap: 8,
                       }}
                     >
-                      <strong
+                      <div
                         style={{
-                          fontSize: "0.95rem",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                          background: chipColor,
+                          border: "2px solid #e5e7eb",
+                        }}
+                      />
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: "0.9rem",
                         }}
                       >
-                        {team.teamName}
-                      </strong>
-                      <span
-                        style={{
-                          fontSize: "0.85rem",
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        {points} pts
-                      </span>
+                        {label}
+                      </div>
                     </div>
+
                     <div
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        marginBottom: 4,
-                        fontSize: "0.8rem",
+                        fontSize: "0.75rem",
                         color: "#6b7280",
                       }}
                     >
-                      <span
-                        style={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: 999,
-                          background:
-                            team.stationColor || "rgba(148,163,184,0.6)",
-                          border: "1px solid rgba(148,163,184,0.9)",
-                        }}
-                      />
-                      <span>
-                        {team.stationColor
-                          ? `${team.stationColor} station`
-                          : "No station yet"}
-                      </span>
+                      {isUnassigned
+                        ? "These displays are not tied to a station colour yet."
+                        : "Place these objects at this colour station before students arrive."}
                     </div>
-                    {team.members && team.members.length > 0 && (
-                      <div
-                        style={{
-                          fontSize: "0.75rem",
-                          color: "#6b7280",
-                          lineHeight: 1.3,
-                        }}
-                      >
-                        {team.members.join(", ")}
-                      </div>
-                    )}
+
+                    <div
+                      style={{
+                        marginTop: 4,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      {displays.map((d) => (
+                        <div
+                          key={d.key}
+                          style={{
+                            borderRadius: 8,
+                            border: "1px solid #e5e7eb",
+                            background: "#ffffff",
+                            padding: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              fontSize: "0.9rem",
+                            }}
+                          >
+                            {d.name || d.key}
+                          </div>
+                          {d.description && (
+                            <div
+                              style={{
+                                fontSize: "0.8rem",
+                                color: "#4b5563",
+                                marginTop: 2,
+                              }}
+                            >
+                              {d.description}
+                            </div>
+                          )}
+                          {d.notesForTeacher && (
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#6b7280",
+                                marginTop: 4,
+                              }}
+                            >
+                              <strong>Setup notes:</strong> {d.notesForTeacher}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
-        </section>
+        </div>
 
-        {/* Session controls */}
-        <section style={{ marginTop: 16 }}>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
-            Session controls
-          </h2>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={handleLoadActiveTaskset}
-              disabled={!activeTasksetMeta}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "1px solid #e5e7eb",
-                background: activeTasksetMeta ? "#eff6ff" : "#f9fafb",
-                cursor: activeTasksetMeta ? "pointer" : "not-allowed",
-                fontSize: "0.85rem",
-              }}
-            >
-              {activeTasksetMeta
-                ? `Load "${activeTasksetMeta.name}"`
-                : "No active task set"}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleStartSessionAndFirstTask}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: "#0ea5e9",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "0.85rem",
-              }}
-            >
-              Start & launch first task
-            </button>
-
-            <button
-              type="button"
-              onClick={handleNextTask}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "1px solid #e5e7eb",
-                background: "#f3f4f6",
-                cursor: "pointer",
-                fontSize: "0.85rem",
-              }}
-            >
-              Next task
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate("/tasksets")}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "1px solid #e5e7eb",
-                background: "#f9fafb",
-                cursor: "pointer",
-                fontSize: "0.85rem",
-              }}
-            >
-              Go to Task Sets
-            </button>
-          </div>
-        </section>
-      </div>
-
-      {/* Right column: leaderboard + transcript */}
-      <div>
-        <section
+        {/* Right column: reuse leaderboard + scan log as quick reference */}
+        <div
           style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 12,
-            border: "1px solid #e5e7eb",
-            background: "#f9fafb",
+            flex: 1.2,
+            minWidth: 260,
+            borderLeft: "1px solid #e5e7eb",
+            paddingLeft: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
           }}
         >
-          <h2 style={{ fontSize: "1.1rem", marginTop: 0, marginBottom: 8 }}>
-            Leaderboard
-          </h2>
-          {leaderboard.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>No scores yet.</p>
-          ) : (
-            <ol
-              style={{
-                listStyle: "none",
-                padding: 0,
-                margin: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              {leaderboard.map((team, index) => (
-                <li
-                  key={team.teamId}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "6px 8px",
-                    borderRadius: 999,
-                    background:
-                      index === 0 ? "#dcfce7" : "rgba(209,213,219,0.5)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      minWidth: 0,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 20,
-                        textAlign: "right",
-                        fontVariantNumeric: "tabular-nums",
-                        color: "#4b5563",
-                      }}
-                    >
-                      {index + 1}.
-                    </span>
-                    <span
-                      style={{
-                        fontWeight: index === 0 ? 600 : 500,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {team.teamName}
-                    </span>
-                  </div>
-                  <span
-                    style={{
-                      fontVariantNumeric: "tabular-nums",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    {team.points} pts
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-
-        <section
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            border: "1px solid #e5e7eb",
-            background: "#f9fafb",
-          }}
-        >
-          <h2 style={{ fontSize: "1.1rem", marginTop: 0, marginBottom: 8 }}>
-            Transcript & reports
-          </h2>
-
-          <div style={{ marginBottom: 8 }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Send transcript to
-            </label>
-            <input
-              type="email"
-              value={teacherEmail}
-              onChange={(e) => setTeacherEmail(e.target.value)}
-              placeholder="you@example.com"
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                fontSize: "0.85rem",
-              }}
-            />
+          {/* Leaderboard (same as live view) */}
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
+            {leaderboard.length === 0 ? (
+              <p style={{ color: "#6b7280" }}>No scores yet.</p>
+            ) : (
+              <ol style={{ paddingLeft: 18, margin: 0 }}>
+                {leaderboard.map(([name, pts]) => (
+                  <li key={name} style={{ marginBottom: 4 }}>
+                    <strong>{name}</strong> — {pts} pts
+                  </li>
+                ))}
+              </ol>
+            )}
           </div>
 
-          <div style={{ marginBottom: 8 }}>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              School / organization
-            </label>
-            <input
-              type="text"
-              value={schoolName}
-              onChange={(e) => setSchoolName(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                fontSize: "0.85rem",
-              }}
-            />
-          </div>
-
-          <label
+          {/* Scan log */}
+          <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: "0.85rem",
+              marginTop: 12,
+              paddingTop: 8,
+              borderTop: "1px solid #e5e7eb",
+              fontSize: "0.8rem",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 4,
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "0.85rem",
+                }}
+              >
+                Scan log (debug)
+              </h3>
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  color: "#6b7280",
+                }}
+              >
+                latest {scanEvents.length}{" "}
+                {scanEvents.length === 1 ? "event" : "events"}
+              </span>
+            </div>
+
+            {scanEvents.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color: "#9ca3af",
+                }}
+              >
+                No scans yet.
+              </p>
+            ) : (
+              <div
+                style={{
+                  maxHeight: 200,
+                  overflowY: "auto",
+                  borderRadius: 6,
+                  border: "1px solid #e5e7eb",
+                  background: "#f9fafb",
+                  padding: 6,
+                }}
+              >
+                {scanEvents.map((ev, idx) => {
+                  const t = new Date(ev.timestamp);
+                  const timeStr = t.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  });
+                  const color = stationIdToColor(ev.stationId);
+
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: "2px 4px",
+                        borderBottom:
+                          idx === scanEvents.length - 1
+                            ? "none"
+                            : "1px dashed #e5e7eb",
+                      }}
+                    >
+                      <div>
+                        <strong>{timeStr}</strong> —{" "}
+                        {ev.teamName || "Team"} scanned{" "}
+                        {color ? color.toUpperCase() : ev.stationId}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLiveView = () => {
+    return (
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        {/* Stations grid */}
+        <div style={{ flex: 3, minWidth: 0 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Stations</h2>
+          {stations.length === 0 ? (
+            <p style={{ color: "#6b7280" }}>No stations yet.</p>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {stations.map((s) => renderStationCard(s))}
+            </div>
+          )}
+        </div>
+
+        {/* Right column: leaderboard + scan log */}
+        <div
+          style={{
+            flex: 1.2,
+            minWidth: 260,
+            borderLeft: "1px solid #e5e7eb",
+            paddingLeft: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          {/* Leaderboard */}
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
+            {leaderboard.length === 0 ? (
+              <p style={{ color: "#6b7280" }}>No scores yet.</p>
+            ) : (
+              <ol style={{ paddingLeft: 18, margin: 0 }}>
+                {leaderboard.map(([name, pts]) => (
+                  <li key={name} style={{ marginBottom: 4 }}>
+                    <strong>{name}</strong> — {pts} pts
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
+          {/* Scan log (debug) */}
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 8,
+              borderTop: "1px solid #e5e7eb",
+              fontSize: "0.8rem",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 4,
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "0.85rem",
+                }}
+              >
+                Scan log (debug)
+              </h3>
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  color: "#6b7280",
+                }}
+              >
+                latest {scanEvents.length}{" "}
+                {scanEvents.length === 1 ? "event" : "events"}
+              </span>
+            </div>
+
+            {scanEvents.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color: "#9ca3af",
+                }}
+              >
+                No scans yet.
+              </p>
+            ) : (
+              <div
+                style={{
+                  maxHeight: 200,
+                  overflowY: "auto",
+                  borderRadius: 6,
+                  border: "1px solid #e5e7eb",
+                  background: "#f9fafb",
+                  padding: 6,
+                }}
+              >
+                {scanEvents.map((ev, idx) => {
+                  const t = new Date(ev.timestamp);
+                  const timeStr = t.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  });
+                  const color = stationIdToColor(ev.stationId);
+
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: "2px 4px",
+                        borderBottom:
+                          idx === scanEvents.length - 1
+                            ? "none"
+                            : "1px dashed #e5e7eb",
+                      }}
+                    >
+                      <div>
+                        <strong>{timeStr}</strong> —{" "}
+                        {ev.teamName || "Team"} scanned{" "}
+                        {color ? color.toUpperCase() : ev.stationId}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        padding: 16,
+        gap: 16,
+        fontFamily: "system-ui",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 16,
+          alignItems: "flex-start",
+        }}
+      >
+        <div>
+          <h1 style={{ margin: 0 }}>Live session</h1>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.9rem",
               color: "#4b5563",
+            }}
+          >
+            {roomCode ? `Room: ${roomCode}` : "No room selected."}
+          </p>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.8rem",
+              color: "#6b7280",
+            }}
+          >
+            Status: {status}
+          </p>
+        </div>
+
+        {/* Quick task / taskset controls */}
+        <div
+          style={{
+            marginBottom: 0,
+            padding: 12,
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+            minWidth: 280,
+          }}
+        >
+          <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
+            Quick task / taskset controls
+          </h2>
+
+          {/* Active taskset info */}
+          <div
+            style={{
+              fontSize: "0.8rem",
+              color: "#6b7280",
               marginBottom: 8,
             }}
           >
+            {activeTasksetMeta?._id ? (
+              <>
+                Active taskset:{" "}
+                <strong>{activeTasksetMeta.name}</strong>{" "}
+                ({activeTasksetMeta.numTasks ?? "?"} tasks)
+                {loadedTasksetId === activeTasksetMeta._id ? (
+                  <span style={{ color: "#059669" }}>
+                    {" "}
+                    – loaded in room
+                  </span>
+                ) : (
+                  <span> – not yet loaded in this room</span>
+                )}
+              </>
+            ) : (
+              <>No active taskset. Set one on the Task Sets page.</>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <input
-              type="checkbox"
-              checked={includeIndividualReports}
-              onChange={(e) => setIncludeIndividualReports(e.target.checked)}
-            />
-            Include individual student reports
-          </label>
-
-          <button
-            type="button"
-            onClick={handleEndAndEmailTranscript}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: "none",
-              background: "#22c55e",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: "0.85rem",
-            }}
-          >
-            End session & email transcript
-          </button>
-
-          {emailStatus && (
-            <p
+              type="text"
+              placeholder="Quick task prompt"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
               style={{
-                marginTop: 8,
+                flex: 2,
+                padding: "4px 6px",
+                borderRadius: 4,
+                border: "1px solid #d1d5db",
                 fontSize: "0.8rem",
-                color: "#4b5563",
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Correct answer (optional)"
+              value={correctAnswer}
+              onChange={(e) => setCorrectAnswer(e.target.value)}
+              style={{
+                flex: 1.3,
+                padding: "4px 6px",
+                borderRadius: 4,
+                border: "1px solid #d1d5db",
+                fontSize: "0.8rem",
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={handleLaunchQuickTask}
+              style={{
+                flex: 1,
+                padding: "6px 8px",
+                borderRadius: 6,
+                border: "none",
+                background: "#0ea5e9",
+                color: "#ffffff",
+                fontSize: "0.85rem",
+                cursor: "pointer",
               }}
             >
-              {emailStatus}
-            </p>
-          )}
-        </section>
+              Launch quick task
+            </button>
+            <button
+              type="button"
+              onClick={handleLaunchTaskset}
+              style={{
+                flex: 1,
+                padding: "6px 8px",
+                borderRadius: 6,
+                border: "none",
+                background: "#10b981",
+                color: "#ffffff",
+                fontSize: "0.85rem",
+                cursor: "pointer",
+              }}
+            >
+              Launch from taskset
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* View mode toggle (Live vs Setup) */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          borderBottom: "1px solid #e5e7eb",
+          paddingBottom: 4,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setViewMode("live")}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 999,
+            border: "none",
+            fontSize: "0.85rem",
+            cursor: "pointer",
+            background:
+              viewMode === "live" ? "#0ea5e9" : "transparent",
+            color: viewMode === "live" ? "#ffffff" : "#374151",
+          }}
+        >
+          Live view
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("setup")}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 999,
+            border: "none",
+            fontSize: "0.85rem",
+            cursor: "pointer",
+            background:
+              viewMode === "setup" ? "#0ea5e9" : "transparent",
+            color: viewMode === "setup" ? "#ffffff" : "#374151",
+          }}
+        >
+          Room setup checklist
+        </button>
+      </div>
+
+      {/* Main body: either live view or setup view */}
+      {viewMode === "setup" ? renderSetupView() : renderLiveView()}
     </div>
   );
 }
