@@ -115,6 +115,36 @@ function createRoom(roomCode, teacherSocketId) {
     isActive: false,
   };
 }
+  // --------------------------------------------------------------
+  // Generic joinRoom (used by HostView / projector, optional teacher)
+  // --------------------------------------------------------------
+  socket.on("joinRoom", (payload = {}, ack) => {
+    const { roomCode, role, name } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+
+    if (!room) {
+      const error = { ok: false, error: "Room not found" };
+      if (typeof ack === "function") {
+        ack(error);
+      } else {
+        socket.emit("join:error", { message: error.error });
+      }
+      return;
+    }
+
+    socket.join(code);
+    socket.data.roomCode = code;
+    socket.data.role = role || "viewer";
+    socket.data.displayName = name || role || "Viewer";
+
+    const state = buildRoomState(room);
+    socket.emit("room:state", state);
+
+    if (typeof ack === "function") {
+      ack({ ok: true, roomState: state });
+    }
+  });
 
 // Build a transcript object from a room for analytics + emailing
 function buildTranscript(room) {
@@ -238,10 +268,10 @@ io.on("connection", (socket) => {
     socket.emit("room:created", { roomCode: code });
   });
 
+    // --------------------------------------------------------------
+  // Teacher loads a taskset (and alias used by client: "loadTaskset")
   // --------------------------------------------------------------
-  // Teacher loads a taskset
-  // --------------------------------------------------------------
-  socket.on("teacher:loadTaskset", async ({ roomCode, tasksetId }) => {
+  async function handleTeacherLoadTaskset({ roomCode, tasksetId }) {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
@@ -261,7 +291,17 @@ io.on("connection", (socket) => {
       subject: taskset.subject,
       gradeLevel: taskset.gradeLevel,
     });
+  }
+
+  socket.on("teacher:loadTaskset", (payload) => {
+    handleTeacherLoadTaskset(payload || {});
   });
+
+  // Alias used by LiveSession
+  socket.on("loadTaskset", (payload) => {
+    handleTeacherLoadTaskset(payload || {});
+  });
+
 
   // --------------------------------------------------------------
   // Teacher starts session
@@ -279,9 +319,9 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Teacher send next task
+  // Teacher send next task (and alias "launchTaskset")
   // --------------------------------------------------------------
-  socket.on("teacher:nextTask", ({ roomCode }) => {
+  function handleTeacherNextTask({ roomCode }) {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) return;
@@ -299,6 +339,49 @@ io.on("connection", (socket) => {
     // Emit `task:launch` (modern contract)
     io.to(code).emit("task:launch", {
       index,
+      task,
+      timeLimitSeconds: task.timeLimitSeconds ?? 0,
+    });
+  }
+
+  socket.on("teacher:nextTask", (payload) => {
+    handleTeacherNextTask(payload || {});
+  });
+
+  // Alias used by LiveSession when launching a taskset
+  socket.on("launchTaskset", (payload) => {
+    handleTeacherNextTask(payload || {});
+  });
+
+  // --------------------------------------------------------------
+  // Quick ad-hoc task (used by "Launch quick task" button)
+  // --------------------------------------------------------------
+  socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
+    const code = (roomCode || "").toUpperCase();
+    if (!code || !prompt) return;
+
+    let room = rooms[code];
+    if (!room) {
+      room = rooms[code] = createRoom(code, socket.id);
+    }
+
+    const task = {
+      taskType: "short-answer",
+      prompt,
+      correctAnswer: correctAnswer || null,
+      points: 10,
+    };
+
+    room.taskset = {
+      name: "Quick task",
+      subject: "Ad-hoc",
+      gradeLevel: "",
+      tasks: [task],
+    };
+    room.taskIndex = 0;
+
+    io.to(code).emit("task:launch", {
+      index: 0,
       task,
       timeLimitSeconds: task.timeLimitSeconds ?? 0,
     });
