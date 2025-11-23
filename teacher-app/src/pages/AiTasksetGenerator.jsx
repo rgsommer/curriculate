@@ -1,6 +1,7 @@
+// teacher-app/src/pages/AiTasksetGenerator.jsx
 import { useEffect, useState } from "react";
 import { fetchMyProfile } from "../api/profile";
-import { generateAiTaskset } from "../api/tasksets";
+import { API_BASE_URL } from "../config";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
@@ -22,29 +23,19 @@ export default function AiTasksetGenerator() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  // In a fuller build we would fetch subscription/plan too. For now,
-  // assume Free and just generate within modest limits.
-  const planName = "FREE";
-
   useEffect(() => {
     let cancelled = false;
-
     async function loadProfile() {
       try {
         const data = await fetchMyProfile();
         if (cancelled) return;
         setProfile(data || null);
-        if (data?.defaultGradeLevel) {
-          setForm((prev) => ({
-            ...prev,
-            gradeLevel: prev.gradeLevel || data.defaultGradeLevel,
-          }));
+
+        if (data?.defaultGradeLevel && !form.gradeLevel) {
+          setForm((prev) => ({ ...prev, gradeLevel: data.defaultGradeLevel }));
         }
-        if (data?.defaultSubject) {
-          setForm((prev) => ({
-            ...prev,
-            subject: prev.subject || data.defaultSubject,
-          }));
+        if (data?.defaultSubject && !form.subject) {
+          setForm((prev) => ({ ...prev, subject: data.defaultSubject }));
         }
       } catch (err) {
         console.error("Failed to load profile for AI generator:", err);
@@ -52,11 +43,11 @@ export default function AiTasksetGenerator() {
         if (!cancelled) setLoadingProfile(false);
       }
     }
-
     loadProfile();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleChange = (field, value) => {
@@ -73,31 +64,47 @@ export default function AiTasksetGenerator() {
 
     try {
       const payload = {
-        ...form,
+        gradeLevel: form.gradeLevel,
+        subject: form.subject,
+        difficulty: form.difficulty,
+        learningGoal: form.learningGoal,
+        topicDescription: form.topicDescription,
         numberOfTasks: Number(form.numberOfTasks) || 8,
-        difficulty: form.difficulty || "MEDIUM",
-        learningGoal: form.learningGoal || "REVIEW",
         presenterProfile: profile || undefined,
-        planName,
       };
 
-      const data = await generateAiTaskset(payload);
+      const res = await fetch(`${API_BASE_URL}/api/ai/tasksets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        credentials: "include",
+      });
 
+      if (!res.ok) {
+        let msg = `Server error (${res.status})`;
+        try {
+          const data = await res.json();
+          if (data?.message) msg = data.message;
+          else if (data?.error) msg = data.error;
+        } catch {
+          // ignore parse error
+        }
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
       const taskset = data?.taskset || data;
       if (!taskset) {
         throw new Error(
-          "Server did not return a taskset. Check that the AI taskset endpoint is configured."
+          "Server did not return a taskset. Check /api/ai/tasksets on the backend."
         );
       }
-
       setResult(taskset);
     } catch (err) {
       console.error("AI taskset generation failed:", err);
-      const friendly =
-        err?.response?.data?.error ||
-        err.message ||
-        "Failed to generate TaskSet";
-      setError(friendly);
+      setError(err.message || "Failed to generate TaskSet");
     } finally {
       setGenerating(false);
     }
@@ -311,7 +318,7 @@ export default function AiTasksetGenerator() {
             Draft TaskSet
           </h2>
           <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
-            This has been created server-side. You can refine it on the TaskSets
+            This is what the server returned. You can refine it on the TaskSets
             page.
           </p>
           <pre
@@ -323,7 +330,7 @@ export default function AiTasksetGenerator() {
               color: "#e5e7eb",
               fontSize: "0.8rem",
               overflowX: "auto",
-              maxHeight: "320px",
+              maxHeight: 320,
             }}
           >
             {JSON.stringify(result, null, 2)}
