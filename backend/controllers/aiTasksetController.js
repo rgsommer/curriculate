@@ -199,9 +199,13 @@ export async function generateTaskset(req, res) {
       canSaveTasksets,
     });
   } catch (err) {
-    console.error("Error generating AI taskset", err);
-    return res.status(500).json({ error: "Failed to generate taskset" });
-  }
+  console.error("🔥 AI Taskset Generation Error:");
+  console.error(err.stack || err);
+  return res.status(500).json({
+    error: "Failed to generate taskset",
+    details: err.message,
+  });
+}
 }
 
 export default { generateTaskset };
