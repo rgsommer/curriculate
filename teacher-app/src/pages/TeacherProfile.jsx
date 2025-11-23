@@ -28,8 +28,13 @@ export default function TeacherProfile() {
     presenterTitle: "",
     defaultRoomLabel: "Classroom",
     defaultStations: 8,
-    includeStudentReports: false,
-    assessmentCategories: [emptyCategory(), emptyCategory(), emptyCategory(), emptyCategory()],
+    includeIndividualReports: false, // unified field name
+    assessmentCategories: [
+      emptyCategory(),
+      emptyCategory(),
+      emptyCategory(),
+      emptyCategory(),
+    ],
     perspectives: [],
   });
 
@@ -54,14 +59,20 @@ export default function TeacherProfile() {
             ? data.assessmentCategories
             : [];
 
+          // Prefer includeIndividualReports but fall back to any older includeStudentReports flag
+          const includeReports =
+            typeof data.includeIndividualReports === "boolean"
+              ? data.includeIndividualReports
+              : !!data.includeStudentReports;
+
           setProfile({
             presenterName: data.presenterName || "",
             email: data.email || "",
             schoolName: data.schoolName || "",
-            presenterTitle: data.presenterTitle || "",
+            presenterTitle: data.presenterTitle || data.title || "",
             defaultRoomLabel: data.defaultRoomLabel || "Classroom",
             defaultStations: data.defaultStations || 8,
-            includeStudentReports: !!data.includeStudentReports,
+            includeIndividualReports: includeReports,
             assessmentCategories: [
               ...cats,
               ...Array(Math.max(0, 4 - cats.length))
@@ -96,8 +107,11 @@ export default function TeacherProfile() {
     setSaving(true);
     setError("");
     try {
+      const includeReports = !!profile.includeIndividualReports;
+
       const payload = {
         ...profile,
+        // Normalize numeric + structured fields
         defaultStations: Number(profile.defaultStations) || 8,
         assessmentCategories: profile.assessmentCategories
           .filter((c) => c.key.trim() || c.label.trim())
@@ -106,6 +120,13 @@ export default function TeacherProfile() {
             label: c.label.trim(),
             weight: Number(c.weight) || 0,
           })),
+
+        // Make sure both field names are sent, so backend / other views stay in sync
+        includeIndividualReports: includeReports,
+        includeStudentReports: includeReports,
+
+        // Some backends might expect "title" instead of "presenterTitle"
+        title: profile.presenterTitle,
       };
 
       await updateMyProfile(payload); // PUT /api/profile
@@ -174,9 +195,7 @@ export default function TeacherProfile() {
         <h2 style={{ fontSize: "1.1rem", marginTop: 0 }}>Who is presenting?</h2>
 
         <div style={{ marginBottom: 10 }}>
-          <label style={{ display: "block", fontSize: "0.85rem" }}>
-            Name
-          </label>
+          <label style={{ display: "block", fontSize: "0.85rem" }}>Name</label>
           <input
             type="text"
             value={profile.presenterName}
@@ -260,7 +279,9 @@ export default function TeacherProfile() {
           <input
             type="text"
             value={profile.defaultRoomLabel}
-            onChange={(e) => updateField("defaultRoomLabel", e.target.value)}
+            onChange={(e) =>
+              updateField("defaultRoomLabel", e.target.value)
+            }
             style={{
               width: "100%",
               padding: "6px 8px",
@@ -282,7 +303,9 @@ export default function TeacherProfile() {
             min={4}
             max={12}
             value={profile.defaultStations}
-            onChange={(e) => updateField("defaultStations", e.target.value)}
+            onChange={(e) =>
+              updateField("defaultStations", e.target.value)
+            }
             style={{
               width: 100,
               padding: "6px 8px",
@@ -307,9 +330,9 @@ export default function TeacherProfile() {
         >
           <input
             type="checkbox"
-            checked={profile.includeStudentReports}
+            checked={profile.includeIndividualReports}
             onChange={(e) =>
-              updateField("includeStudentReports", e.target.checked)
+              updateField("includeIndividualReports", e.target.checked)
             }
           />
           Include individual student report pages in PDF exports (where
@@ -401,7 +424,9 @@ export default function TeacherProfile() {
         >
           <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Key</div>
           <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Label</div>
-          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Weight %</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+            Weight %
+          </div>
 
           {profile.assessmentCategories.map((cat, idx) => (
             <React.Fragment key={idx}>

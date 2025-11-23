@@ -29,7 +29,7 @@ export default function StationPosters() {
   // "Room" here is your class code or label shown on the poster
   const room = (query.get("room") || "8A").toUpperCase();
 
-  // This is the *path* segment and label under the colour block
+  // This is the label you choose for where the station lives
   // e.g., Classroom, Hallway, Library, etc.
   const locationLabel = query.get("location") || "Classroom";
 
@@ -67,9 +67,10 @@ export default function StationPosters() {
 
       <h1 style={{ marginTop: 0 }}>Station posters</h1>
       <p style={{ fontSize: "0.85rem", color: "#4b5563", maxWidth: 520 }}>
-        One page per station. These are meant for printing on letter-size
-        paper and posting at each colour station. QR codes point to{" "}
-        <code>play.curriculate.net/{locationLabel}/[colour]</code>.
+        One page per station. These are meant for printing on letter-size paper
+        and posting at each colour station. QR codes still point to{" "}
+        <code>play.curriculate.net/{locationLabel}/[colour]</code>, but the
+        printed address stays simple: <code>play.curriculate.net</code>.
       </p>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -114,16 +115,16 @@ export default function StationPosters() {
         {stations.map((color) => {
           const upper = color.toUpperCase();
 
-          // Path now matches what the student app expects:
+          // Path that the student app expects:
           // e.g. https://play.curriculate.net/Classroom/red
           const qrTarget = `https://play.curriculate.net/${encodeURIComponent(
             locationLabel
           )}/${color.toLowerCase()}`;
 
-          // Use QuickChart (best printing reliability)
+          // High-resolution QR for crisp printing
           const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(
             qrTarget
-          )}&size=250`;
+          )}&size=512`;
 
           const textColor = ["yellow", "lime", "pink", "orange"].includes(color)
             ? "#111827"
@@ -139,7 +140,7 @@ export default function StationPosters() {
                 margin: "0 auto",
                 boxSizing: "border-box",
                 padding: "1in 0.75in",
-                background: "#faf5e4",
+                background: "#ffffff", // pure white background
                 position: "relative",
               }}
             >
@@ -205,25 +206,12 @@ export default function StationPosters() {
                 />
               </div>
 
+              {/* Printed web address (simple, not the full path) */}
               <div
                 style={{
                   textAlign: "center",
                   fontSize: "0.65rem",
                   color: "#4b5563",
-                }}
-              >
-                {qrTarget}
-              </div>
-
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: "0.7in",
-                  left: 0,
-                  right: 0,
-                  textAlign: "center",
-                  fontSize: "0.6rem",
-                  color: "#9ca3af",
                 }}
               >
                 play.curriculate.net

@@ -132,20 +132,21 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     }
   }, [teacherEmail]);
 
-  // Join room as teacher
+  // Join room as presenter (same pattern as HostView)
   useEffect(() => {
-  if (!roomCode) {
-    setStatus("No room selected.");
-    return;
-  }
+    if (!roomCode) {
+      setStatus("No room selected.");
+      return;
+    }
 
-  setStatus("Creating room…");
+    setStatus("Joining room…");
 
-  // Notify server to create room
-  socket.emit("teacher:createRoom", { roomCode });
-
-  setStatus("Connected.");
-}, [roomCode]);
+    socket.emit("joinRoom", {
+      roomCode,
+      name: "Presenter",
+      role: "host",
+    });
+  }, [roomCode]);
 
   // Check for "launch immediately" flag from Task Sets page
   useEffect(() => {
@@ -1270,7 +1271,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               border: "1px solid #e5e7eb",
               background: "#ffffff",
               minWidth: 0,
-            }} 
+            }}
           >
             <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
               Transcript & Reports
