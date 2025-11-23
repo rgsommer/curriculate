@@ -1270,7 +1270,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               border: "1px solid #e5e7eb",
               background: "#ffffff",
               minWidth: 0,
-            }}
+            }} 
           >
             <h2 style={{ fontSize: "1rem", marginBottom: 4 }}>
               Transcript & Reports

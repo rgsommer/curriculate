@@ -10,7 +10,7 @@ export default function HostView({ roomCode }) {  const [roomState, setRoomState
   const [submissions, setSubmissions] = useState([]);
   const [scoreInputs, setScoreInputs] = useState({}); // teamId -> points
 
-  // join as host
+  // join as host 
   useEffect(() => {
     if (!roomCode) return;
     socket.emit("joinRoom", {
