@@ -307,7 +307,7 @@ io.on("connection", (socket) => {
   // Student joins room
   // --------------------------------------------------------------
   socket.on("student:joinRoom", (payload, ack) => {
-    const { roomCode, teamId, teamName, playerId } = payload || {};
+    const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) {
@@ -322,45 +322,68 @@ io.on("connection", (socket) => {
     socket.join(code);
     socket.data.role = "student";
     socket.data.roomCode = code;
+
+    // Use this socket's id as the canonical teamId
+    const teamId = socket.id;
     socket.data.teamId = teamId;
-    socket.data.playerId = playerId;
+
+    const cleanMembers =
+      Array.isArray(members) && members.length > 0
+        ? members.map((m) => String(m).trim()).filter(Boolean)
+        : [];
+    const primaryName =
+      cleanMembers[0] || (teamName || `Team-${teamId.slice(-4)}`);
 
     if (!room.teams[teamId]) {
       room.teams[teamId] = {
-        teamName,
-        members: [],
+        teamId,
+        teamName: teamName || primaryName,
+        members: cleanMembers,
       };
+    } else {
+      room.teams[teamId].teamName =
+        teamName || room.teams[teamId].teamName;
+      if (cleanMembers.length > 0) {
+        room.teams[teamId].members = cleanMembers;
+      }
     }
-    room.teams[teamId].members.push(playerId);
 
     const state = buildRoomState(room);
 
-    io.to(code).emit("team:joined", { teamId, teamName, playerId });
+    io.to(code).emit("team:joined", {
+      teamId,
+      teamName: room.teams[teamId].teamName,
+      members: room.teams[teamId].members,
+    });
 
     if (typeof ack === "function") {
-      ack({ ok: true, roomState: state });
+      ack({ ok: true, roomState: state, teamId });
     }
   });
 
   // --------------------------------------------------------------
   // Student submits answer
   // --------------------------------------------------------------
-  const handleStudentSubmit = async (payload, ack) => {
-    const {
-      roomCode,
-      teamId,
-      teamName,
-      playerId,
-      taskIndex,
-      answer,
-    } = payload;
+    const handleStudentSubmit = async (payload, ack) => {
+    const { roomCode, teamId, taskIndex, answer } = payload || {};
 
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) return;
 
-    const task = room.taskset.tasks[taskIndex];
+    // Prefer explicit taskIndex; otherwise use the room's current index
+    const idx =
+      typeof taskIndex === "number" && taskIndex >= 0
+        ? taskIndex
+        : room.taskIndex;
+
+    const task = room.taskset.tasks[idx];
     if (!task) return;
+
+    const effectiveTeamId = teamId || socket.data.teamId || socket.id;
+    const team = room.teams[effectiveTeamId] || {};
+    const teamName =
+      team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
 
     let aiScore = null;
     if (task.aiRubricId) {
@@ -385,10 +408,10 @@ io.on("connection", (socket) => {
 
     room.submissions.push({
       roomCode: code,
-      teamId,
+      teamId: effectiveTeamId,
       teamName,
-      playerId,
-      taskIndex,
+      playerId: socket.data.playerId || null,
+      taskIndex: idx,
       answer,
       correct,
       points: task.points ?? 10,
