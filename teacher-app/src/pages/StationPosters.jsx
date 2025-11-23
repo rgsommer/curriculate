@@ -50,21 +50,48 @@ export default function StationPosters() {
       {/* Print-only CSS */}
       <style>
         {`
+          /* Exact printer margin: 1" all around on Letter */
+          @page {
+            size: letter;
+            margin: 1in;
+          }
+
           @media print {
+            /* Remove any extra browser / app padding */
+            html, body {
+              margin: 0;
+              padding: 0;
+            }
+            #root {
+              margin: 0;
+              padding: 0;
+            }
+
+            /* Hide everything by default */
             body * {
               visibility: hidden;
             }
+
+            /* Only show the poster sheets */
             .station-print-page,
             .station-print-page * {
               visibility: visible;
             }
+
             .station-print-page {
               page-break-after: always;
+              /* Use full printable area; no extra margins/padding */
+              width: auto !important;
+              height: auto !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              box-shadow: none !important;
             }
           }
         `}
       </style>
 
+      {/* Screen-only header/controls (hidden in print by the CSS above) */}
       <h1 style={{ marginTop: 0 }}>Station posters</h1>
       <p style={{ fontSize: "0.85rem", color: "#4b5563", maxWidth: 520 }}>
         One page per station. These are meant for printing on letter-size paper
@@ -105,6 +132,7 @@ export default function StationPosters() {
         </button>
       </div>
 
+      {/* Posters (one per page) */}
       <div
         style={{
           display: "grid",
@@ -135,11 +163,12 @@ export default function StationPosters() {
               key={color}
               className="station-print-page"
               style={{
+                // Screen preview as a letter-size sheet
                 width: "8.5in",
                 height: "11in",
                 margin: "0 auto",
                 boxSizing: "border-box",
-                padding: "1in 0.75in",
+                padding: "0.5in 0.75in", // modest padding for on-screen; overridden to 0 in print
                 background: "#ffffff", // pure white background
                 position: "relative",
               }}
