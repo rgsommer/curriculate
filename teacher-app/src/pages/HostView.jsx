@@ -1,184 +1,200 @@
 // teacher-app/src/pages/HostView.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { socket } from "../socket";
 
-export default function HostView({ roomCode }) {  const [roomState, setRoomState] = useState({
+/**
+ * HostView
+ *
+ * Simple projector view for the room:
+ * - Listens for room state (teams + scores).
+ * - Shows a big, clean leaderboard and optional station information.
+ *
+ * It does NOT create the room – LiveSession should do that.
+ * Here we just join the same Socket.IO room and mirror whatever the teacher sees.
+ */
+export default function HostView({ roomCode }) {
+  const [roomState, setRoomState] = useState({
+    roomCode: "",
     stations: [],
     teams: {},
     scores: {},
   });
-  const [submissions, setSubmissions] = useState([]);
-  const [scoreInputs, setScoreInputs] = useState({}); // teamId -> points
 
-  // join as host
   useEffect(() => {
     if (!roomCode) return;
-    socket.emit("joinRoom", {
-      roomCode: roomCode.toUpperCase(),
-      name: "Host",
-      role: "host",
-    });
-  }, [roomCode]);
+    const code = roomCode.toUpperCase();
 
-  // listen
-  useEffect(() => {
-    const handleRoom = (state) =>
-      setRoomState(state || { stations: [], teams: {}, scores: {} });
-
-    const handleSubmission = (sub) => {
-      setSubmissions((prev) => [sub, ...prev].slice(0, 30));
+    const handleRoomState = (state) => {
+      if (!state) return;
+      setRoomState((prev) => ({ ...prev, ...state }));
     };
 
-    socket.on("roomState", handleRoom);
-    socket.on("taskSubmission", handleSubmission);
+    // Join the socket.io room as a passive viewer. Different backends name this differently,
+    // so we call a couple of events to be safe.
+    socket.emit("host:joinRoom", { roomCode: code });
+    socket.emit("teacher:joinView", { roomCode: code });
+
+    // And always listen for both old + new room-state event names:
+    socket.on("roomState", handleRoomState);
+    socket.on("room:state", handleRoomState);
+    socket.on("room:update", handleRoomState);
 
     return () => {
-      socket.off("roomState", handleRoom);
-      socket.off("taskSubmission", handleSubmission);
+      socket.off("roomState", handleRoomState);
+      socket.off("room:state", handleRoomState);
+      socket.off("room:update", handleRoomState);
     };
-  }, []);
+  }, [roomCode]);
 
-  const handleScore = (teamId) => {
-    if (!roomCode) return;
-    const pts = Number(scoreInputs[teamId] || 0);
-    socket.emit("hostScoreSubmission", {
-      roomCode: roomCode.toUpperCase(),
-      teamId,
-      points: pts,
-    });
-    // clear
-    setScoreInputs((prev) => ({ ...prev, [teamId]: "" }));
-  };
+  const scores = roomState.scores || {};
+  const teamsArray = useMemo(() => {
+    const teams = roomState.teams || {};
+    return Object.values(teams);
+  }, [roomState]);
 
-  const teamsArray = Object.values(roomState.teams || {});
-  const scoresEntries = Object.entries(roomState.scores || {}).sort(
-    (a, b) => b[1] - a[1]
-  );
+  const leaderboard = useMemo(() => {
+    if (!teamsArray.length) return [];
+    return teamsArray
+      .map((team) => ({
+        teamId: team.teamId,
+        teamName: team.teamName || "Unnamed team",
+        members: team.members || [],
+        points: scores[team.teamId] ?? 0,
+      }))
+      .sort((a, b) => b.points - a.points);
+  }, [teamsArray, scores]);
+
+  const roomLabel = roomState.roomCode || roomCode || "—";
 
   return (
-    <div style={{ height: "100%", display: "flex", gap: 16 }}>
-      {/* left + middle */}
-      <div style={{ flex: 1 }}>
-        <h1>Host view</h1>
-        {roomCode ? (
-          <p>Room: {roomCode.toUpperCase()}</p>
-        ) : (
-          <p style={{ color: "#b91c1c" }}>No room selected.</p>
-        )}
-
-        <h2>Teams</h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {teamsArray.length === 0 ? (
-            <p>No teams yet.</p>
-          ) : (
-            teamsArray.map((t) => (
-              <div
-                key={t.teamId}
-                style={{
-                  background: t.teamColor || "rgba(148,163,184,0.25)",
-                  color: t.teamColor ? "#fff" : "#000",
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  minWidth: 150,
-                }}
-              >
-                <strong>{t.teamName}</strong>{" "}
-                {t.teamColor ? `(${t.teamColor})` : ""}
-                {(t.members || []).length > 0 && (
-                  <div style={{ fontSize: "0.7rem" }}>
-                    {t.members.join(", ")}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-
-        <h2 style={{ marginTop: 20 }}>Latest submissions</h2>
-        {submissions.length === 0 ? (
-          <p>None yet.</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {submissions.map((s, i) => (
-              <li
-                key={i}
-                style={{
-                  background: "#fff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 8,
-                  padding: "8px 10px",
-                  marginBottom: 8,
-                }}
-              >
-                <div>
-                  <strong>{s.teamName}</strong>{" "}
-                  {s.correct ? "✅" : "❌"}{" "}
-                  <span style={{ fontSize: "0.7rem", color: "#475569" }}>
-                    {s.timeMs ? `${Math.round(s.timeMs / 1000)}s` : ""}
-                  </span>
-                </div>
-                <div style={{ marginTop: 4 }}>
-                  {s.answerText && s.answerText.trim()
-                    ? s.answerText
-                    : "(no text submitted)"}
-                </div>
-                <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-                  <input
-                    type="number"
-                    placeholder="pts"
-                    value={scoreInputs[s.teamId] ?? ""}
-                    onChange={(e) =>
-                      setScoreInputs((prev) => ({
-                        ...prev,
-                        [s.teamId]: e.target.value,
-                      }))
-                    }
-                    style={{
-                      width: 70,
-                      padding: 4,
-                      border: "1px solid #cbd5f5",
-                      borderRadius: 4,
-                    }}
-                  />
-                  <button
-                    onClick={() => handleScore(s.teamId)}
-                    style={{
-                      background: "#2563eb",
-                      color: "#fff",
-                      border: "none",
-                      padding: "4px 10px",
-                      borderRadius: 5,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Score
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* right: leaderboard */}
-      <div
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: "30px 40px",
+        background: "#020617",
+        color: "#e5e7eb",
+        fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+      }}
+    >
+      <header
         style={{
-          width: 240,
-          borderLeft: "1px solid #e2e8f0",
-          paddingLeft: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          marginBottom: 24,
         }}
       >
-        <h2>Leaderboard</h2>
-        {scoresEntries.length === 0 ? (
-          <p>No scores yet.</p>
-        ) : (
-          scoresEntries.map(([name, pts], idx) => (
-            <p key={name}>
-              {idx + 1}. {name} — {pts} pts
+        <div>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.8rem",
+              letterSpacing: 1,
+            }}
+          >
+            Curriculate – Live
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              marginTop: 4,
+              fontSize: "0.9rem",
+              color: "#9ca3af",
+            }}
+          >
+            Room code:{" "}
+            <span
+              style={{
+                fontWeight: 700,
+                letterSpacing: 3,
+                fontSize: "1.1rem",
+              }}
+            >
+              {roomLabel}
+            </span>
+          </p>
+        </div>
+      </header>
+
+      <main>
+        <section style={{ marginBottom: 32 }}>
+          <h2
+            style={{
+              margin: 0,
+              marginBottom: 12,
+              fontSize: "1.4rem",
+            }}
+          >
+            Leaderboard
+          </h2>
+
+          {leaderboard.length === 0 ? (
+            <p style={{ fontSize: "1rem", color: "#9ca3af" }}>
+              Waiting for teams to join…
             </p>
-          ))
-        )}
-      </div>
+          ) : (
+            <div>
+              {leaderboard.map((entry, index) => (
+                <div
+                  key={entry.teamId || index}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "8px 0",
+                    borderBottom:
+                      index === leaderboard.length - 1
+                        ? "none"
+                        : "1px solid rgba(148,163,184,0.3)",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 40,
+                      textAlign: "right",
+                      paddingRight: 12,
+                      fontWeight: 700,
+                      fontSize: "1.2rem",
+                      color: index === 0 ? "#f97316" : "#e5e7eb",
+                    }}
+                  >
+                    {index + 1}.
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: "1.1rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {entry.teamName}
+                    </div>
+                    {entry.members.length > 0 && (
+                      <div
+                        style={{
+                          fontSize: "0.8rem",
+                          color: "#9ca3af",
+                        }}
+                      >
+                        {entry.members.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      minWidth: 80,
+                      textAlign: "right",
+                      fontSize: "1.1rem",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {entry.points} pts
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
