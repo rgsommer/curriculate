@@ -15,12 +15,14 @@ function validateGeneratePayload(body = {}) {
 
   if (!body.gradeLevel) errors.push("gradeLevel is required");
   if (!body.subject) errors.push("subject is required");
-  if (!body.durationMinutes) errors.push("durationMinutes is required");
-  if (!body.learningGoal) errors.push("learningGoal is required");
 
-  const difficultyAllowed = ["EASY", "MEDIUM", "HARD"];
-  if (body.difficulty && !difficultyAllowed.includes(body.difficulty)) {
-    errors.push("difficulty must be EASY, MEDIUM, or HARD");
+  const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
+  if (body.difficulty && !difficultiesAllowed.includes(body.difficulty)) {
+    errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
+  }
+
+  if (body.durationMinutes && Number(body.durationMinutes) <= 0) {
+    errors.push("durationMinutes must be a positive number");
   }
 
   const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
@@ -34,9 +36,6 @@ function validateGeneratePayload(body = {}) {
 export async function generateTaskset(req, res) {
   try {
     const userId = req.user?._id;
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
-    }
 
     const payloadErrors = validateGeneratePayload(req.body);
     if (payloadErrors.length > 0) {
@@ -46,34 +45,15 @@ export async function generateTaskset(req, res) {
       });
     }
 
-    const profile = await TeacherProfile.findOne({ userId });
-    if (!profile) {
-      return res.status(400).json({
-        error:
-          "Teacher profile required. Please complete your profile first.",
-      });
+    // -----------------------------
+    // Teacher profile (soft lookup)
+    // -----------------------------
+    let profile = null;
+    if (userId) {
+      profile = await TeacherProfile.findOne({ userId });
     }
 
-    // Optional: subscription / feature gating
-    let sub = null;
-    let planName = null;
-    let features = {};
-    let canSaveTasksets = false;
-
-    try {
-      sub = await UserSubscription.findOne({ userId }).populate("plan");
-      if (sub && sub.plan) {
-        planName = sub.plan.planName || sub.plan.name || null;
-        features = sub.plan.features || {};
-        canSaveTasksets = !!features.canSaveTasksets;
-      }
-    } catch (subErr) {
-      console.warn(
-        "[aiTasksetController] Subscription lookup failed:",
-        subErr.message
-      );
-    }
-
+    // If we don't have a stored profile yet, fall back to request values
     const {
       gradeLevel,
       subject,
@@ -87,7 +67,62 @@ export async function generateTaskset(req, res) {
       curriculumLenses,
     } = req.body;
 
-    // Normalize wordConceptList into an array of strings
+    if (!profile) {
+      profile = {
+        defaultDifficulty: difficulty || "MEDIUM",
+        defaultDurationMinutes: durationMinutes || 45,
+        defaultLearningGoal: learningGoal || "REVIEW",
+        prefersMovementTasks: !!allowMovementTasks,
+        prefersDrawingMimeTasks: !!allowDrawingMimeTasks,
+        curriculumLenses: curriculumLenses || [],
+      };
+    }
+
+    // ----------------------------------------
+    // Optional: subscription / feature gating
+    // ----------------------------------------
+    let sub = null;
+    let planName = null;
+    let features = {};
+    let canSaveTasksets = false;
+
+    try {
+      if (userId) {
+        sub = await UserSubscription.findOne({ userId }).populate("plan");
+      }
+      if (sub && sub.plan) {
+        planName = sub.plan.planName || sub.plan.name || null;
+        features = sub.plan.features || {};
+        canSaveTasksets = !!features.canSaveTasksets;
+      }
+    } catch (subErr) {
+      console.warn(
+        "[aiTasksetController] Subscription lookup failed:",
+        subErr.message
+      );
+    }
+
+    // Optional: check AI taskset limits if you want
+    if (sub && sub.plan) {
+      const plan = sub.plan;
+      const limits = plan.aiTaskLimits || {};
+      const maxPerMonth = limits.tasksetsPerMonth || limits.maxTasksets || null;
+
+      if (maxPerMonth != null && maxPerMonth >= 0) {
+        const used = sub.aiTaskSetsUsedThisPeriod || 0;
+        if (used >= maxPerMonth) {
+          return res.status(403).json({
+            error: "AI_LIMIT_REACHED",
+            message:
+              "You have used all AI task sets available in your current plan for this billing period.",
+          });
+        }
+      }
+    }
+
+    // -------------------------
+    // Stage 1: Plan task types
+    // -------------------------
     const conceptList = Array.isArray(wordConceptList)
       ? wordConceptList
       : (wordConceptList || "")
@@ -116,42 +151,9 @@ export async function generateTaskset(req, res) {
       curriculumLenses: curriculumLenses || profile.curriculumLenses || [],
     };
 
-    // -------------------------
-    // Stage 1: Plan task types
-    // -------------------------
-    let implementedTypes = Object.values(TASK_TYPES || {});
-    if (!implementedTypes.length) {
-      // Fallback in case TASK_TYPES is empty
-      implementedTypes = [
-        "multiple-choice",
-        "short-answer",
-        "open-text",
-        "sequence",
-        "sort",
-        "make-and-snap",
-        "body-break",
-      ];
-    }
-
-    // Respect teacher/AI toggles for movement & drawing/mime
-    if (!effectiveConfig.allowMovementTasks) {
-      implementedTypes = implementedTypes.filter((t) => {
-        const v = t.toLowerCase();
-        return !v.includes("body") && !v.includes("move");
-      });
-    }
-
-    if (!effectiveConfig.allowDrawingMimeTasks) {
-      implementedTypes = implementedTypes.filter((t) => {
-        const v = t.toLowerCase();
-        return !v.includes("draw") && !v.includes("mime");
-      });
-    }
-
-    const plan = await planTaskTypes(
-      effectiveConfig.subject,
-      effectiveConfig.wordConceptList,
-      implementedTypes,
+    const planResult = await planTaskTypes(
+      effectiveConfig,
+      TASK_TYPES,
       {
         includePhysicalMovement: effectiveConfig.allowMovementTasks,
         includeCreative: effectiveConfig.allowDrawingMimeTasks,
@@ -161,42 +163,48 @@ export async function generateTaskset(req, res) {
       effectiveConfig.wordConceptList.length
     );
 
+    const { plannedTasks, implementedTypes } = planResult;
+
     // -------------------------
     // Stage 2: Create raw tasks
     // -------------------------
-    const rawTasks = await createAiTasks(
-      effectiveConfig.subject,
-      plan,
-      {
-        gradeLevel: effectiveConfig.gradeLevel,
-        difficulty: effectiveConfig.difficulty,
-        learningGoal: effectiveConfig.learningGoal,
-        durationMinutes: effectiveConfig.durationMinutes,
-        topicTitle: effectiveConfig.topicTitle,
-      }
-    );
+    const rawTasks = await createAiTasks({
+      gradeLevel: effectiveConfig.gradeLevel,
+      subject: effectiveConfig.subject,
+      topicTitle: effectiveConfig.topicTitle,
+      learningGoal: effectiveConfig.learningGoal,
+      concepts: effectiveConfig.wordConceptList,
+      taskPlan: plannedTasks,
+      curriculumLenses: effectiveConfig.curriculumLenses,
+    });
 
     // -------------------------
     // Stage 3: Clean & normalize
     // -------------------------
-    const cleanedTasks = cleanTaskList(rawTasks, {
-      subject: effectiveConfig.subject,
-      gradeLevel: effectiveConfig.gradeLevel,
-    });
+    const cleanedTasks = await cleanTaskList(rawTasks, TASK_TYPES);
 
+    // Build TaskSet JSON
+    const now = new Date();
     const tasksetJson = {
-      title:
+      name:
         effectiveConfig.topicTitle ||
-        `${effectiveConfig.subject} – AI TaskSet`,
-      gradeLevel: effectiveConfig.gradeLevel,
+        `${effectiveConfig.subject} – AI set ${now.toISOString().slice(0, 10)}`,
       subject: effectiveConfig.subject,
+      gradeLevel: effectiveConfig.gradeLevel,
+      learningGoal: effectiveConfig.learningGoal,
       difficulty: effectiveConfig.difficulty,
       durationMinutes: effectiveConfig.durationMinutes,
-      learningGoal: effectiveConfig.learningGoal,
+      curriculumLenses: effectiveConfig.curriculumLenses,
       tasks: cleanedTasks,
-      source: "AI_GENERATOR",
+      meta: {
+        generatedBy: "AI",
+        generatedAt: now.toISOString(),
+        implementedTypes,
+        sourceConfig: effectiveConfig,
+      },
     };
 
+    // Optionally save the taskset if plan allows
     let saved = null;
     if (canSaveTasksets) {
       const doc = new TaskSet({
@@ -204,6 +212,13 @@ export async function generateTaskset(req, res) {
         ...tasksetJson,
       });
       saved = await doc.save();
+
+      // Increment usage if we track AI sets per plan
+      if (sub && sub.plan) {
+        sub.aiTaskSetsUsedThisPeriod =
+          (sub.aiTaskSetsUsedThisPeriod || 0) + 1;
+        await sub.save();
+      }
     }
 
     return res.json({

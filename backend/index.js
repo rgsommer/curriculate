@@ -24,6 +24,7 @@ import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
+import { generateTaskset as generateAiTaskset } from "./controllers/aiTasksetController.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -650,6 +651,9 @@ app.delete("/api/tasksets/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to delete task set" });
   }
 });
+
+// Generate an AI taskset
+app.post("/api/ai/tasksets", generateAiTaskset);
 
 // --------------------------------------------------------------------
 // Analytics (stub) – to keep Reports page from blowing up
