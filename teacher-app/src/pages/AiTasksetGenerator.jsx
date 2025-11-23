@@ -245,7 +245,7 @@ export default function AiTasksetGenerator() {
     } finally {
       setSubmitting(false);
     }
-  }
+  } 
 
   if (loadingProfile) return <div>Loading defaults…</div>;
 
