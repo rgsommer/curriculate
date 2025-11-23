@@ -19,7 +19,7 @@ import mongoose from "mongoose";
 import bodyParser from "body-parser";
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
-import subscriptionRoutes from "./routes/subscriptionRoutes.js";
+//import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
@@ -72,7 +72,7 @@ app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: "3mb" }));
 
 // Mount subscriptionRouter properly
-app.use("/api/subscription", subscriptionRoutes);
+//app.use("/api/subscription", subscriptionRoutes);
 
 // ====================================================================
 //  SOCKET.IO – ONLY ONE INSTANCE
