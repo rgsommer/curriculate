@@ -1,9 +1,13 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import axios from "axios";
 import { socket } from "../socket";
 
-// Station colours in order: station-1 → red, station-2 → blue, etc.
+import { API_BASE_URL } from "../config";
+const API_BASE = API_BASE_URL;
+
+// Expanded palette to allow up to 12 stations
 const COLORS = [
   "red",
   "blue",
@@ -13,19 +17,24 @@ const COLORS = [
   "orange",
   "teal",
   "pink",
+  "indigo",
+  "lime",
+  "amber",
+  "cyan",
 ];
 
 function stationIdToColor(id) {
-  const m = /^station-(\d+)$/.exec(id || "");
-  if (!m) return null;
-  const idx = parseInt(m[1], 10) - 1;
+  if (!id) return null;
+  const match = /^station-(\d+)$/.exec(id);
+  if (!match) return null;
+  const idx = parseInt(match[1], 10) - 1;
   return COLORS[idx] || null;
 }
 
 export default function LiveSession({ roomCode: roomCodeProp }) {
   const params = useParams();
   const navigate = useNavigate();
-  // Prefer explicit prop, then URL param, otherwise empty string
+
   const roomCode = (roomCodeProp || params.roomCode || "").toUpperCase();
 
   const [status, setStatus] = useState("Checking connection…");
@@ -39,14 +48,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
 
-  // Quick task fields
   const [prompt, setPrompt] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
 
-  // Which taskset is loaded in this room (from server)
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
-
-  // Which taskset the teacher chose in TaskSets (from localStorage)
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
     try {
       const raw = localStorage.getItem("curriculateActiveTasksetMeta");
@@ -55,37 +60,88 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       return null;
     }
   });
-
-  // If TaskSets OR the button here asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
 
-  // View mode: 'live' = normal view, 'setup' = room setup checklist
   const [viewMode, setViewMode] = useState("live");
 
-  // Join/create as teacher whenever roomCode changes
+  // Teacher profile-driven info
+  const [teacherEmail, setTeacherEmail] = useState(() => {
+    try {
+      return localStorage.getItem("curriculateTeacherEmail") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [assessmentCategories, setAssessmentCategories] = useState([]);
+  const [includeIndividualReports, setIncludeIndividualReports] =
+    useState(false);
+  const [schoolName, setSchoolName] = useState("");
+  const [perspectives, setPerspectives] = useState([]);
+
+  // Load teacher profile for transcript defaults
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      try {
+        const res = await axios.get(`${API_BASE}/api/profile`);
+        const data = res.data || {};
+        if (cancelled) return;
+
+        if (data.email && !teacherEmail) {
+          setTeacherEmail(data.email);
+        }
+        if (Array.isArray(data.assessmentCategories)) {
+          setAssessmentCategories(data.assessmentCategories);
+        }
+        if (typeof data.includeIndividualReports === "boolean") {
+          setIncludeIndividualReports(data.includeIndividualReports);
+        } else if (typeof data.includeStudentReports === "boolean") {
+          setIncludeIndividualReports(data.includeStudentReports);
+        }
+        if (data.schoolName) {
+          setSchoolName(data.schoolName);
+        }
+        if (Array.isArray(data.perspectives)) {
+          setPerspectives(data.perspectives);
+        }
+      } catch (err) {
+        console.error("Failed to load presenter profile for LiveSession:", err);
+      }
+    }
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep teacherEmail persisted
+  useEffect(() => {
+    if (!teacherEmail) return;
+    try {
+      localStorage.setItem("curriculateTeacherEmail", teacherEmail);
+    } catch {
+      // ignore
+    }
+  }, [teacherEmail]);
+
+  // Join room as teacher (this was the broken bit)
   useEffect(() => {
     if (!roomCode) {
       setStatus("No room selected.");
       return;
     }
 
-    const code = roomCode.toUpperCase();
-    setStatus(`Creating room ${code}…`);
+    setStatus("Creating room…");
 
-    // New-style room creation
-    socket.emit("teacher:createRoom", { roomCode: code });
-
-    // Legacy fallback in case the server still expects joinRoom
-    socket.emit("joinRoom", {
-      roomCode: code,
-      name: "Teacher",
-      role: "teacher",
-    });
+    // Notify server to create room
+    socket.emit("teacher:createRoom", { roomCode });
 
     setStatus("Connected.");
   }, [roomCode]);
 
-  // On first mount, check if TaskSets asked us to auto-launch
+  // Check for "launch immediately" flag from Task Sets page
   useEffect(() => {
     const flag = localStorage.getItem("curriculateLaunchImmediately");
     if (flag === "true") {
@@ -94,41 +150,24 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     }
   }, []);
 
-  // If auto-launch is requested, load + then launch the active taskset
+  // Auto-load & launch active taskset when requested
   useEffect(() => {
     if (!autoLaunchRequested) return;
     if (!roomCode || !activeTasksetMeta?._id) return;
 
     const desiredId = activeTasksetMeta._id;
 
-    // If the correct taskset isn't loaded yet, load it first.
     if (loadedTasksetId !== desiredId) {
       setStatus(`Loading taskset "${activeTasksetMeta.name}"…`);
-
-      // New-style + legacy fallbacks
-      socket.emit("teacher:loadTaskset", {
-        roomCode,
-        tasksetId: desiredId,
-      });
       socket.emit("loadTaskset", {
         roomCode,
         tasksetId: desiredId,
       });
-
-      // Wait for "tasksetLoaded"/"taskset:loaded" to fire and update loadedTasksetId.
       return;
     }
 
-    // At this point, the correct taskset is loaded in this room — launch it.
     setStatus(`Launching "${activeTasksetMeta.name}"…`);
-
-    // New-style: start session + go to first task
-    socket.emit("teacher:startSession", { roomCode });
-    socket.emit("teacher:nextTask", { roomCode });
-
-    // Legacy fallback: single launch event
     socket.emit("launchTaskset", { roomCode });
-
     setAutoLaunchRequested(false);
   }, [
     autoLaunchRequested,
@@ -138,7 +177,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     loadedTasksetId,
   ]);
 
-  // Socket listeners
+  // Socket event wiring
   useEffect(() => {
     const handleRoom = (state) => {
       setRoomState(
@@ -151,38 +190,35 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       );
     };
 
-    const handleLeaderboard = (scores) => {
-      const entries = Object.entries(scores || {}).sort(
-        (a, b) => b[1] - a[1]
-      );
-      setLeaderboard(entries);
+    const handleLeaderboard = (entries) => {
+      setLeaderboard(entries || []);
     };
 
     const handleTasksetLoaded = (info) => {
-      console.log("Taskset loaded:", info);
-      if (info && (info.tasksetId || info.id)) {
-        const id = info.tasksetId || info.id;
-        setLoadedTasksetId(id);
+      if (!info) return;
+      setLoadedTasksetId(info.tasksetId || info._id || null);
 
-        // Keep local meta fresh from the server
-        setActiveTasksetMeta((prev) => {
-          const meta = {
-            _id: id,
-            name: info.name || prev?.name || "Loaded Taskset",
-            numTasks: info.numTasks ?? prev?.numTasks ?? 0,
-          };
+      setActiveTasksetMeta((prev) => {
+        const meta = {
+          _id: info.tasksetId || info._id || prev?._id,
+          name: info.name || prev?.name || "Loaded Taskset",
+          numTasks: info.numTasks ?? prev?.numTasks ?? 0,
+        };
+        try {
           localStorage.setItem("curriculateActiveTasksetId", meta._id);
           localStorage.setItem(
             "curriculateActiveTasksetMeta",
             JSON.stringify(meta)
           );
-          return meta;
-        });
+        } catch {
+          // ignore
+        }
+        return meta;
+      });
 
-        setStatus(
-          `Taskset "${info.name || "Taskset"}" loaded into room ${roomCode}.`
-        );
-      }
+      setStatus(
+        `Taskset "${info.name || "Taskset"}" loaded into room ${roomCode}.`
+      );
     };
 
     const handleSubmission = (sub) => {
@@ -194,18 +230,13 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     };
 
     const handleScanEvent = (ev) => {
-      setScanEvents((prev) => {
-        const next = [ev, ...prev];
-        return next.slice(0, 30); // keep last 30
-      });
+      setScanEvents((prev) => [ev, ...prev].slice(0, 60));
     };
 
-    // Support both old and new event names
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("leaderboardUpdate", handleLeaderboard);
     socket.on("tasksetLoaded", handleTasksetLoaded);
-    socket.on("taskset:loaded", handleTasksetLoaded);
     socket.on("taskSubmission", handleSubmission);
     socket.on("scanEvent", handleScanEvent);
 
@@ -214,7 +245,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       socket.off("room:state", handleRoom);
       socket.off("leaderboardUpdate", handleLeaderboard);
       socket.off("tasksetLoaded", handleTasksetLoaded);
-      socket.off("taskset:loaded", handleTasksetLoaded);
       socket.off("taskSubmission", handleSubmission);
       socket.off("scanEvent", handleScanEvent);
     };
@@ -232,7 +262,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     setStatus("Quick task launched.");
   };
 
-  // one-click launch that uses the autoLaunch effect
   const handleLaunchTaskset = () => {
     if (!roomCode) {
       alert("No room selected for this live session.");
@@ -253,17 +282,48 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   };
 
   const handleOpenRoomCodes = () => {
-    // navigates to the QR sheet view
     navigate("/station-posters?location=classroom");
   };
 
-  // Derived helpers
+  const handleEndAndEmailTranscript = () => {
+    if (!roomCode) {
+      alert("No room selected for this live session.");
+      return;
+    }
+    if (!teacherEmail || !teacherEmail.includes("@")) {
+      alert(
+        "Please enter a valid teacher email address before sending the transcript."
+      );
+      return;
+    }
+    socket.emit("endSessionAndEmail", {
+      roomCode,
+      teacherEmail: teacherEmail.trim(),
+      assessmentCategories,
+      includeIndividualReports,
+      schoolName,
+      perspectives,
+    });
+
+    setStatus("Generating & emailing transcript…");
+  };
+
   const stations = roomState.stations || [];
   const teamsById = roomState.teams || {};
   const scores = roomState.scores || {};
   const currentTasksetName =
     roomState.taskset?.name || activeTasksetMeta?.name || "—";
   const tasksetDisplays = roomState.taskset?.displays || [];
+
+  const leaderboardWithNames = useMemo(() => {
+    return leaderboard.map(([teamName, pts]) => ({
+      teamName,
+      pts,
+    }));
+  }, [leaderboard]);
+
+  // ---- RENDER HELPERS BELOW ----
+  // (All of this is your existing visual layout)
 
   const renderStationCard = (station) => {
     const team = teamsById[station.assignedTeamId] || null;
@@ -305,16 +365,12 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     const latest = submissions[team.teamId];
     const score = scores[team.teamName] ?? 0;
 
-    // Where this team should currently be
     const assignedStationId = team.currentStationId || stationId;
     const assignedColor = stationIdToColor(assignedStationId);
-
-    // Last station they scanned (from QR)
     const scannedStationId = team.lastScannedStationId || null;
     const hasScanForThisAssignment =
       scannedStationId && scannedStationId === assignedStationId;
 
-    // Bubble colour: grey until correct scan, then assigned colour
     const bubbleBg =
       hasScanForThisAssignment && assignedColor ? assignedColor : "#f9fafb";
     const textColor =
@@ -493,7 +549,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   const groupedDisplays = useMemo(() => {
     const grouped = {};
     (tasksetDisplays || []).forEach((d) => {
-      const key = (d.stationColor || "Unassigned").toLowerCase();
+      const key = (d.stationColor || "unassigned").toLowerCase();
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(d);
     });
@@ -658,7 +714,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
                                 marginTop: 4,
                               }}
                             >
-                              <strong>Setup notes:</strong> {d.notesForTeacher}
+                              Notes: {d.notesForTeacher}
                             </div>
                           )}
                         </div>
@@ -671,40 +727,45 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           )}
         </div>
 
-        {/* Right column: reuse leaderboard + scan log as quick reference */}
-        <div
-          style={{
-            flex: 1.2,
-            minWidth: 260,
-            borderLeft: "1px solid #e5e7eb",
-            paddingLeft: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          {/* Leaderboard (same as live view) */}
-          <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
-            {leaderboard.length === 0 ? (
+        {/* Right: Leaderboard + Scan log */}
+        <div style={{ flex: 2, minWidth: 0 }}>
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
+            }}
+          >
+            <h3
+              style={{
+                marginTop: 0,
+                marginBottom: 6,
+                fontSize: "0.9rem",
+              }}
+            >
+              Leaderboard
+            </h3>
+            {leaderboardWithNames.length === 0 ? (
               <p style={{ color: "#6b7280" }}>No scores yet.</p>
             ) : (
               <ol style={{ paddingLeft: 18, margin: 0 }}>
-                {leaderboard.map(([name, pts]) => (
-                  <li key={name} style={{ marginBottom: 4 }}>
-                    <strong>{name}</strong> — {pts} pts
+                {leaderboardWithNames.map((row, idx) => (
+                  <li key={row.teamName} style={{ marginBottom: 4 }}>
+                    <strong>{row.teamName}</strong> — {row.pts} pts
                   </li>
                 ))}
               </ol>
             )}
           </div>
 
-          {/* Scan log */}
           <div
             style={{
-              marginTop: 12,
-              paddingTop: 8,
-              borderTop: "1px solid #e5e7eb",
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
               fontSize: "0.8rem",
             }}
           >
@@ -834,13 +895,13 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
           {/* Leaderboard */}
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
-            {leaderboard.length === 0 ? (
+            {leaderboardWithNames.length === 0 ? (
               <p style={{ color: "#6b7280" }}>No scores yet.</p>
             ) : (
               <ol style={{ paddingLeft: 18, margin: 0 }}>
-                {leaderboard.map(([name, pts]) => (
-                  <li key={name} style={{ marginBottom: 4 }}>
-                    <strong>{name}</strong> — {pts} pts
+                {leaderboardWithNames.map((row, idx) => (
+                  <li key={row.teamName} style={{ marginBottom: 4 }}>
+                    <strong>{row.teamName}</strong> — {row.pts} pts
                   </li>
                 ))}
               </ol>
@@ -951,7 +1012,7 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
       }}
     >
       {/* Header */}
-      <div
+      <header
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -996,7 +1057,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             Quick task / taskset controls
           </h2>
 
-          {/* Active taskset info */}
           <div
             style={{
               fontSize: "0.8rem",
@@ -1087,7 +1147,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
             </button>
           </div>
 
-          {/* Room codes button */}
           <button
             type="button"
             onClick={handleOpenRoomCodes}
@@ -1101,12 +1160,12 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
               cursor: "pointer",
             }}
           >
-            Room codes (QR posters)
+            Print station sheets
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* View mode toggle (Live vs Setup) */}
+      {/* View mode toggle */}
       <div
         style={{
           display: "flex",
@@ -1149,7 +1208,6 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
         </button>
       </div>
 
-      {/* Main body: either live view or setup view */}
       {viewMode === "setup" ? renderSetupView() : renderLiveView()}
     </div>
   );

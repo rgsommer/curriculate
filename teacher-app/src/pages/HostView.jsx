@@ -11,23 +11,17 @@ export default function HostView({ roomCode }) {
   const [submissions, setSubmissions] = useState([]);
   const [scoreInputs, setScoreInputs] = useState({}); // teamId -> points
 
-  // Join/create as host (teacher)
+  // join as host
   useEffect(() => {
     if (!roomCode) return;
-    const code = roomCode.toUpperCase();
-
-    // New-style room creation
-    socket.emit("teacher:createRoom", { roomCode: code });
-
-    // Legacy fallback in case the server still expects this
     socket.emit("joinRoom", {
-      roomCode: code,
+      roomCode: roomCode.toUpperCase(),
       name: "Host",
       role: "host",
     });
   }, [roomCode]);
 
-  // listen for room state + submissions
+  // listen
   useEffect(() => {
     const handleRoom = (state) =>
       setRoomState(state || { stations: [], teams: {}, scores: {} });
@@ -36,14 +30,13 @@ export default function HostView({ roomCode }) {
       setSubmissions((prev) => [sub, ...prev].slice(0, 30));
     };
 
-    // Support both old and new event names
     socket.on("roomState", handleRoom);
-    socket.on("room:state", handleRoom);
+    socket.on("room:state", handleRoom); // NEW: support new event name
     socket.on("taskSubmission", handleSubmission);
 
     return () => {
       socket.off("roomState", handleRoom);
-      socket.off("room:state", handleRoom);
+      socket.off("room:state", handleRoom); // NEW
       socket.off("taskSubmission", handleSubmission);
     };
   }, []);
