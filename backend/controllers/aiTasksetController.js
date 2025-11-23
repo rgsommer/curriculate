@@ -2,8 +2,8 @@
 
 import TeacherProfile from "../models/TeacherProfile.js";
 import TaskSet from "../models/TaskSet.js";
-import UserSubscription from "../models/UserSubscription.js";
-import SubscriptionPlan from "../models/SubscriptionPlan.js";
+// NOTE: Not using UserSubscription yet; keep it out until subscription plans are finalized.
+// import UserSubscription from "../models/UserSubscription.js";
 
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { planTaskTypes } from "../ai/planTaskTypes.js";
@@ -35,6 +35,7 @@ function validateGeneratePayload(body = {}) {
 
 export async function generateTaskset(req, res) {
   try {
+    // For now, there is no auth wired, so this will usually be undefined.
     const userId = req.user?._id;
 
     const payloadErrors = validateGeneratePayload(req.body);
@@ -50,7 +51,14 @@ export async function generateTaskset(req, res) {
     // -----------------------------
     let profile = null;
     if (userId) {
-      profile = await TeacherProfile.findOne({ userId });
+      try {
+        profile = await TeacherProfile.findOne({ userId });
+      } catch (err) {
+        console.warn(
+          "[aiTasksetController] Failed to load TeacherProfile:",
+          err.message
+        );
+      }
     }
 
     // If we don't have a stored profile yet, fall back to request values
@@ -78,47 +86,15 @@ export async function generateTaskset(req, res) {
       };
     }
 
-    // ----------------------------------------
-    // Optional: subscription / feature gating
-    // ----------------------------------------
-    let sub = null;
-    let planName = null;
-    let features = {};
-    let canSaveTasksets = false;
-
-    try {
-      if (userId) {
-        sub = await UserSubscription.findOne({ userId }).populate("plan");
-      }
-      if (sub && sub.plan) {
-        planName = sub.plan.planName || sub.plan.name || null;
-        features = sub.plan.features || {};
-        canSaveTasksets = !!features.canSaveTasksets;
-      }
-    } catch (subErr) {
-      console.warn(
-        "[aiTasksetController] Subscription lookup failed:",
-        subErr.message
-      );
-    }
-
-    // Optional: check AI taskset limits if you want
-    if (sub && sub.plan) {
-      const plan = sub.plan;
-      const limits = plan.aiTaskLimits || {};
-      const maxPerMonth = limits.tasksetsPerMonth || limits.maxTasksets || null;
-
-      if (maxPerMonth != null && maxPerMonth >= 0) {
-        const used = sub.aiTaskSetsUsedThisPeriod || 0;
-        if (used >= maxPerMonth) {
-          return res.status(403).json({
-            error: "AI_LIMIT_REACHED",
-            message:
-              "You have used all AI task sets available in your current plan for this billing period.",
-          });
-        }
-      }
-    }
+    // -----------------------------
+    // Subscription / plan (simplified)
+    // -----------------------------
+    // You don't have a separate SubscriptionPlan schema wired in here yet.
+    // So for now we just:
+    //  - always allow saving
+    //  - return a simple planName placeholder
+    let planName = "FREE";
+    let canSaveTasksets = true;
 
     // -------------------------
     // Stage 1: Plan task types
@@ -204,7 +180,9 @@ export async function generateTaskset(req, res) {
       },
     };
 
-    // Optionally save the taskset if plan allows
+    // -------------------------
+    // Stage 4: Save (for now, always)
+    // -------------------------
     let saved = null;
     if (canSaveTasksets) {
       const doc = new TaskSet({
@@ -212,13 +190,6 @@ export async function generateTaskset(req, res) {
         ...tasksetJson,
       });
       saved = await doc.save();
-
-      // Increment usage if we track AI sets per plan
-      if (sub && sub.plan) {
-        sub.aiTaskSetsUsedThisPeriod =
-          (sub.aiTaskSetsUsedThisPeriod || 0) + 1;
-        await sub.save();
-      }
     }
 
     return res.json({

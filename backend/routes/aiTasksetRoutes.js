@@ -2,7 +2,7 @@
 import express from "express";
 import { authRequired } from "../middleware/authRequired.js";
 import UserSubscription from "../models/UserSubscription.js";
-import SubscriptionPlan from "../models/SubscriptionPlan.js";
+//import SubscriptionPlan from "../models/SubscriptionPlan.js";
 import { createAiTasks } from "../ai/createAiTasks.js";
 
 const router = express.Router();

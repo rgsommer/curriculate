@@ -1,5 +1,5 @@
 // middleware/checkFeature.js
-const SubscriptionPlan = require('../models/SubscriptionPlan');
+//const SubscriptionPlan = require('../models/SubscriptionPlan');
 const UserSubscription = require('../models/UserSubscription');
 
 async function ensureUserSubscription(userId) {
