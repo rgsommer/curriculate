@@ -224,7 +224,10 @@ export default function LiveSession({ roomCode }) {
   };
 
   // Derived helpers
-  const stations = roomState.stations || [];
+  const stations = Array.isArray(roomState.stations)
+  ? roomState.stations
+  : Object.values(roomState.stations || {});
+
   const teamsById = roomState.teams || {};
   const scores = roomState.scores || {};
 
