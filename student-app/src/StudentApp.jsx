@@ -253,10 +253,35 @@ export default function StudentApp() {
   // Preload scan / task sound
   useEffect(() => {
     const audio = new Audio("/sounds/scan-alert.mp3");
-    audio.load();
+    audio.preload = "auto";
+    audio.volume = 1.0;
     sndAlert.current = audio;
   }, []);
 
+  // Pulse CSS for the coloured scanner box
+  useEffect(() => {
+    const styleId = "station-pulse-style";
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      @keyframes stationPulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(255,255,255,0.9);
+        }
+        70% {
+          box-shadow: 0 0 0 18px rgba(255,255,255,0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(255,255,255,0);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  // Socket events
   useEffect(() => {
     socket.on("connect", () => {
       console.log("Student socket connected:", socket.id);
@@ -294,11 +319,16 @@ export default function StudentApp() {
 
       if (sndAlert.current) {
         sndAlert.current.currentTime = 0;
-        sndAlert.current.play().catch(() => {});
+        sndAlert.current
+          .play()
+          .then(() => {})
+          .catch((err) =>
+            console.warn("Student task sound play blocked/failed", err)
+          );
       }
 
       setStatusMessage(
-        "New task received! Read carefully and submit your best answer."
+        "Task received! Read carefully and submit your best answer."
       );
     });
 
@@ -318,39 +348,38 @@ export default function StudentApp() {
     };
   }, [teamId, assignedStationId]);
 
-  useEffect(() => {
-  const styleId = "station-pulse-style";
-  if (document.getElementById(styleId)) return;
-
-  const style = document.createElement("style");
-  style.id = styleId;
-  style.textContent = `
-    @keyframes stationPulse {
-      0% {
-        box-shadow: 0 0 0 0 rgba(255,255,255,0.9);
-      }
-      70% {
-        box-shadow: 0 0 0 18px rgba(255,255,255,0);
-      }
-      100% {
-        box-shadow: 0 0 0 0 rgba(255,255,255,0);
-      }
-    }
-  `;
-  document.head.appendChild(style);
-}, []);
-  
+  // Turn scanner on/off depending on whether a scan is required
   useEffect(() => {
     const mustScan =
       joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
     if (mustScan && !scanError) {
       setScannerActive(true);
+      // optional: a soft ping when they *need* to scan
       sndAlert.current?.play().catch(() => {});
     } else {
       setScannerActive(false);
     }
   }, [joined, assignedStationId, scannedStationId, scanError]);
+
+  /* ---------------- Audio unlock helper ---------------- */
+
+  const unlockAudioForBrowser = () => {
+    const a = sndAlert.current;
+    if (!a) return;
+    // Play muted once to satisfy autoplay policies, then reset
+    a.muted = true;
+    a
+      .play()
+      .then(() => {
+        a.pause();
+        a.currentTime = 0;
+        a.muted = false;
+      })
+      .catch(() => {
+        // ignore; user will just not get task sound in stricter browsers
+      });
+  };
 
   /* ---------------- Handlers ---------------- */
 
@@ -376,6 +405,9 @@ export default function StudentApp() {
       alert("Not connected to server yet. Please wait a moment.");
       return;
     }
+
+    // Unlock audio on this explicit user gesture
+    unlockAudioForBrowser();
 
     const filteredMembers = members
       .map((m) => m.trim())
@@ -502,9 +534,9 @@ export default function StudentApp() {
           setCurrentTask(null);
           setTaskIndex(null);
 
-          setStatusMessage(
-            "Answer submitted! Wait for your next station assignment."
-          );
+          // Keep message minimal – the *real* next step comes
+          // when room:state assigns a new station and triggers scan prompt.
+          setStatusMessage("Answer submitted.");
         }
       );
     } catch (err) {
@@ -532,174 +564,34 @@ export default function StudentApp() {
         padding: 16,
         display: "flex",
         flexDirection: "column",
-        gap: 16,
-        alignItems: "center",
-        justifyContent: "center",
-        // 🔴 Use the station colour while scanning; fallback to dark if none
-        background: mustScan && assignedColor ? assignedColor : "#fefce8",
-        color: mustScan && assignedColor ? "#f9fafb" : "#111827",
-        fontFamily: "system-ui",
+        alignItems: "stretch",
+        justifyContent: "flex-start",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        backgroundColor: "#fefce8",
+        color: "#111827",
       }}
     >
-      <header style={{ marginBottom: 16 }}>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: "1.4rem",
-          }}
-        >
-          Curriculate – Team Station
-        </h1>
-        <p
-          style={{
-            margin: 0,
-            fontSize: "0.85rem",
-            color: "#4b5563",
-          }}
-        >
-          {connected ? "Connected" : "Connecting…"}{" "}
-          {roomCode ? `· Room ${roomCode.toUpperCase()}` : null}
-        </p>
-      </header>
-
-      {!joined && (
-        <section
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 12,
-            background: "#f3f4ff",
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
-            Join your room
-          </h2>
-          <div
+      {/* Main content column */}
+      <div
+        style={{
+          flex: 1,
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <header style={{ marginBottom: 4 }}>
+          <h1
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
+              margin: 0,
+              fontSize: "1.4rem",
             }}
           >
-            <label style={{ fontSize: "0.85rem" }}>
-              Room code
-              <input
-                type="text"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                style={{
-                  width: "100%",
-                  padding: "4px 6px",
-                  marginTop: 2,
-                  borderRadius: 6,
-                  border: "1px solid #d1d5db",
-                  fontSize: "1rem",
-                }}
-              />
-            </label>
-
-            <label style={{ fontSize: "0.85rem" }}>
-              Team name
-              <input
-                type="text"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "4px 6px",
-                  marginTop: 2,
-                  borderRadius: 6,
-                  border: "1px solid #d1d5db",
-                  fontSize: "1rem",
-                }}
-              />
-            </label>
-
-            <div>
-              <div
-                style={{
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Team members (optional)
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                {members.map((m, idx) => (
-                  <input
-                    key={idx}
-                    type="text"
-                    value={m}
-                    onChange={(e) =>
-                      handleMemberChange(idx, e.target.value)
-                    }
-                    placeholder={`Member ${idx + 1}`}
-                    style={{
-                      width: "100%",
-                      padding: "4px 6px",
-                      borderRadius: 6,
-                      border: "1px solid #e5e7eb",
-                      fontSize: "0.9rem",
-                    }}
-                  />
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={addMemberField}
-                style={{
-                  marginTop: 6,
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border: "none",
-                  fontSize: "0.8rem",
-                  background: "#e5e7eb",
-                  cursor: "pointer",
-                }}
-              >
-                + Add member field
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleJoin}
-              style={{
-                marginTop: 8,
-                padding: "8px 12px",
-                borderRadius: 999,
-                border: "none",
-                background: "#16a34a",
-                color: "#ffffff",
-                fontSize: "0.95rem",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              Ready for action
-            </button>
-          </div>
-        </section>
-      )}
-
-      {joined && (
-        <section
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 12,
-            background: "#fef9c3",
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: "1rem" }}>
-            Team {teamName || "?"}
-          </h2>
+            Curriculate – Team Station
+          </h1>
           <p
             style={{
               margin: 0,
@@ -707,108 +599,273 @@ export default function StudentApp() {
               color: "#4b5563",
             }}
           >
-            {statusMessage}
+            {connected ? "Connected" : "Connecting…"}{" "}
+            {roomCode ? `· Room ${roomCode.toUpperCase()}` : null}
           </p>
+        </header>
 
-          <div
+        {!joined && (
+          <section
             style={{
-              marginTop: 8,
-              paddingTop: 8,
-              borderTop: "1px solid #e5e7eb",
-              fontSize: "0.85rem",
+              marginBottom: 8,
+              padding: 12,
+              borderRadius: 12,
+              background: "#f3f4ff",
             }}
           >
-            <div>
-              <strong>Current station: </strong>
-              {assignedNorm.label}
-            </div>
-            {mustScan ? (
-              <div style={{ color: "#b91c1c", marginTop: 2 }}>
-                Please scan the QR code at your assigned station.
+            <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+              Join your room
+            </h2>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <label style={{ fontSize: "0.85rem" }}>
+                Room code
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  style={{
+                    width: "100%",
+                    padding: "4px 6px",
+                    marginTop: 2,
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                    fontSize: "1rem",
+                  }}
+                />
+              </label>
+
+              <label style={{ fontSize: "0.85rem" }}>
+                Team name
+                <input
+                  type="text"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "4px 6px",
+                    marginTop: 2,
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                    fontSize: "1rem",
+                  }}
+                />
+              </label>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Team members (optional)
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  {members.map((m, idx) => (
+                    <input
+                      key={idx}
+                      type="text"
+                      value={m}
+                      onChange={(e) =>
+                        handleMemberChange(idx, e.target.value)
+                      }
+                      placeholder={`Member ${idx + 1}`}
+                      style={{
+                        width: "100%",
+                        padding: "4px 6px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        fontSize: "0.9rem",
+                      }}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addMemberField}
+                  style={{
+                    marginTop: 6,
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "none",
+                    fontSize: "0.8rem",
+                    background: "#e5e7eb",
+                    cursor: "pointer",
+                  }}
+                >
+                  + Add member field
+                </button>
               </div>
-            ) : scannedStationId ? (
-              <div style={{ color: "#059669", marginTop: 2 }}>
-                Station confirmed ({scannedNorm.label}). Wait for the task.
-              </div>
-            ) : (
-              <div style={{ color: "#6b7280", marginTop: 2 }}>
-                Waiting for a task…
-              </div>
-            )}
-            {scanError && (
-              <div
+
+              <button
+                type="button"
+                onClick={handleJoin}
                 style={{
-                  marginTop: 6,
-                  padding: 6,
-                  borderRadius: 8,
-                  background: "#fee2e2",
-                  color: "#991b1b",
-                  whiteSpace: "pre-wrap",
-                  fontSize: "0.8rem",
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "#16a34a",
+                  color: "#ffffff",
+                  fontSize: "0.95rem",
+                  cursor: "pointer",
+                  fontWeight: 600,
                 }}
               >
-                {scanError}
+                Ready for action
+              </button>
+            </div>
+          </section>
+        )}
+
+        {joined && (
+          <section
+            style={{
+              marginBottom: 8,
+              padding: 12,
+              borderRadius: 12,
+              background: "#fef9c3",
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: "1rem" }}>
+              Team {teamName || "?"}
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.85rem",
+                color: "#4b5563",
+              }}
+            >
+              {statusMessage}
+            </p>
+
+            <div
+              style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: "1px solid #e5e7eb",
+                fontSize: "0.85rem",
+              }}
+            >
+              <div>
+                <strong>Current station: </strong>
+                {assignedNorm.label}
               </div>
-            )}
-          </div>
-        </section>
-      )}
+              {mustScan ? (
+                <div style={{ color: "#b91c1c", marginTop: 2 }}>
+                  Please scan the QR code at your assigned station.
+                </div>
+              ) : scannedStationId ? (
+                <div style={{ color: "#059669", marginTop: 2 }}>
+                  Station confirmed ({scannedNorm.label}). Wait for the task.
+                </div>
+              ) : (
+                <div style={{ color: "#6b7280", marginTop: 2 }}>
+                  Waiting for a task…
+                </div>
+              )}
+              {scanError && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    padding: 6,
+                    borderRadius: 8,
+                    background: "#fee2e2",
+                    color: "#991b1b",
+                    whiteSpace: "pre-wrap",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  {scanError}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
-      {joined && scannerActive && (
-        <section
-  style={{
-    marginBottom: 16,
-    padding: 12,
-    borderRadius: 12,
-    background: assignedColor ? assignedColor : "#eff6ff",
-    // ✨ glow only while scanning & a colour is known
-    animation:
-      scannerActive && assignedColor ? "stationPulse 1.6s infinite" : "none",
-    boxShadow:
-      scannerActive && assignedColor
-        ? "0 0 0 0 rgba(255,255,255,0.9)"
-        : "0 1px 3px rgba(15,23,42,0.12)",
-    transition: "background 0.2s ease, box-shadow 0.2s ease",
-  }}
->
-  <h2
-    style={{
-      marginTop: 0,
-      marginBottom: 8,
-      fontSize: "1rem",
-      color: assignedColor ? "#ffffff" : "#111827",
-    }}
-  >
-    Scan your station
-  </h2>
-  <QrScanner
-    active={scannerActive}
-    onCode={handleScannedCode}
-    onError={setScanError}
-  />
-</section>
-      )}
+        {joined && scannerActive && (
+          <section
+            style={{
+              marginBottom: 8,
+              padding: 12,
+              borderRadius: 12,
+              background: assignedColor ? assignedColor : "#eff6ff",
+              animation:
+                scannerActive && assignedColor
+                  ? "stationPulse 1.6s infinite"
+                  : "none",
+              boxShadow:
+                scannerActive && assignedColor
+                  ? "0 0 0 0 rgba(255,255,255,0.9)"
+                  : "0 1px 3px rgba(15,23,42,0.12)",
+              transition: "background 0.2s ease, box-shadow 0.2s ease",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1rem",
+                color: assignedColor ? "#ffffff" : "#111827",
+              }}
+            >
+              Scan your station
+            </h2>
+            <QrScanner
+              active={scannerActive}
+              onCode={handleScannedCode}
+              onError={setScanError}
+            />
+          </section>
+        )}
 
-      {/* 🔒 Only show the task when no scan is required */}
-      {joined && currentTask && !mustScan && (
-        <section
-          style={{
-            padding: 12,
-            borderRadius: 12,
-            background: "#f1f5f9",
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
-            Task {taskIndex != null ? taskIndex + 1 : ""}
-          </h2>
-          <TaskRunner
-            task={currentTask}
-            taskTypes={TASK_TYPES}
-            onSubmit={handleSubmitAnswer}
-            submitting={submitting}
-          />
-        </section>
-      )}
+        {/* 🔒 Only show the task when no scan is required */}
+        {joined && currentTask && !mustScan && (
+          <section
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              background: "#f1f5f9",
+            }}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+              Task {taskIndex != null ? taskIndex + 1 : ""}
+            </h2>
+            <TaskRunner
+              task={currentTask}
+              taskTypes={TASK_TYPES}
+              onSubmit={handleSubmitAnswer}
+              submitting={submitting}
+            />
+          </section>
+        )}
+      </div>
+
+      {/* Persistent colour band at the bottom (about half the screen) */}
+      <div
+        style={{
+          marginTop: 16,
+          width: "100%",
+          height: "50vh",
+          borderTopLeftRadius: 32,
+          borderTopRightRadius: 32,
+          backgroundColor: assignedColor ? assignedColor : "#e5e7eb",
+          boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
+        }}
+      />
     </div>
   );
 }
