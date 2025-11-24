@@ -495,6 +495,75 @@ io.on("connection", (socket) => {
     }
   });
 
+    // --------------------------------------------------------------
+  // Student scans a station QR
+  // --------------------------------------------------------------
+  socket.on("station:scan", (payload, ack) => {
+    const { roomCode, teamId, stationId } = payload || {};
+    const code = (roomCode || "").toUpperCase();
+
+    const room = rooms[code];
+    if (!room) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room not found" });
+      }
+      return;
+    }
+
+    // Work out which team this is
+    const effectiveTeamId = teamId || socket.data.teamId || socket.id;
+    const team = room.teams[effectiveTeamId];
+    if (!team) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Team not found in room" });
+      }
+      return;
+    }
+
+    // Normalise station id: allow "1" or "station-1"
+    let raw = String(stationId || "").trim().toLowerCase();
+    if (!raw) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "No station id" });
+      }
+      return;
+    }
+    if (!raw.startsWith("station-")) {
+      raw = `station-${raw}`;
+    }
+
+    if (!room.stations[raw]) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: `Unknown station: ${raw}` });
+      }
+      return;
+    }
+
+    // Record the scan on the team + station
+    team.currentStationId = raw;
+    team.lastScannedStationId = raw;
+    room.stations[raw].assignedTeamId = effectiveTeamId;
+
+    // Optional: log an event for the scan log UI
+    const ev = {
+      roomCode: code,
+      teamId: effectiveTeamId,
+      teamName: team.teamName,
+      stationId: raw,
+      timestamp: Date.now(),
+    };
+    io.to(code).emit("scanEvent", ev);
+
+    // Broadcast updated room state so LiveSession/HostView update
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+
+    if (typeof ack === "function") {
+      ack({ ok: true });
+    }
+  });
+
   // --------------------------------------------------------------
   // Student submits answer
   // --------------------------------------------------------------
