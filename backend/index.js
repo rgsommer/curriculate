@@ -1,5 +1,5 @@
 // ====================================================================
-//  Curriculate Backend – Clean, Repaired Index.js
+//  Curriculate Backend – Robust Index.js (rooms always joinable)
 // ====================================================================
 
 import "dotenv/config";
@@ -41,7 +41,6 @@ const allowedOrigins = [
   "http://localhost:3000",
 ];
 
-// Allow *any* Vercel preview deployments
 function isVercelPreview(origin) {
   return origin && origin.endsWith(".vercel.app");
 }
@@ -58,7 +57,6 @@ const corsOptions = {
   credentials: true,
 };
 
-// Must come BEFORE any routes:
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
@@ -94,16 +92,15 @@ mongoose
 // ====================================================================
 //  ROOM ENGINE (All In-Memory)
 // ====================================================================
-const rooms = {}; // rooms["8A"] = { teacherSocketId, teams, taskset, ... }
+const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, taskset, ... }
 
-// Create a blank room object
 function createRoom(roomCode, teacherSocketId) {
   return {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {}, // teamId -> { teamId, teamName, members: [], stationColor, ... }
-    stations: {}, // future: stationId -> station data
+    teams: {},      // teamId -> { teamId, teamName, members: [], ... }
+    stations: {},   // future: stationId -> station data
     taskset: null,
     taskIndex: -1,
     submissions: [],
@@ -112,7 +109,6 @@ function createRoom(roomCode, teacherSocketId) {
   };
 }
 
-// Build a transcript object from a room for analytics + emailing
 function buildTranscript(room) {
   const taskset = room.taskset;
   const tasks = taskset?.tasks || [];
@@ -125,7 +121,6 @@ function buildTranscript(room) {
     points: t.points ?? 10,
   }));
 
-  // Calculate team total scores
   const teamScores = {};
   for (const sub of room.submissions) {
     if (!teamScores[sub.teamId]) {
@@ -150,7 +145,6 @@ function buildTranscript(room) {
   };
 }
 
-// Build per-participant stats for AI summaries
 function computePerParticipantStats(room, transcript) {
   const tasks = transcript.tasks || [];
   const tasksByIndex = {};
@@ -198,13 +192,11 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
-// Build state sent to teacher / host / live views
 function buildRoomState(room) {
   if (!room) {
     return { teams: {}, stations: {}, scores: {}, taskIndex: -1 };
   }
 
-  // Simple per-team score summary (aggregate points)
   const scores = {};
   for (const sub of room.submissions) {
     if (!scores[sub.teamId]) scores[sub.teamId] = 0;
@@ -228,13 +220,23 @@ io.on("connection", (socket) => {
   // --------------------------------------------------------------
   socket.on("teacher:createRoom", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
-    rooms[code] = createRoom(code, socket.id);
+    let room = rooms[code];
+
+    // NEW: if students joined first and created a room, reuse it
+    if (room) {
+      room.teacherSocketId = socket.id;
+    } else {
+      room = rooms[code] = createRoom(code, socket.id);
+    }
 
     socket.join(code);
     socket.data.role = "teacher";
     socket.data.roomCode = code;
 
+    const state = buildRoomState(room);
     socket.emit("room:created", { roomCode: code });
+    socket.emit("room:state", state);
+    socket.emit("roomState", state);
   });
 
   // --------------------------------------------------------------
@@ -261,8 +263,6 @@ io.on("connection", (socket) => {
     socket.data.displayName = name || role || "Viewer";
 
     const state = buildRoomState(room);
-
-    // Send both events for backwards compatibility
     socket.emit("room:state", state);
     socket.emit("roomState", state);
 
@@ -301,7 +301,6 @@ io.on("connection", (socket) => {
     handleTeacherLoadTaskset(payload || {});
   });
 
-  // Alias used by LiveSession
   socket.on("loadTaskset", (payload) => {
     handleTeacherLoadTaskset(payload || {});
   });
@@ -339,7 +338,6 @@ io.on("connection", (socket) => {
 
     const task = room.taskset.tasks[index];
 
-    // Emit `task:launch` (StudentApp listens to this)
     io.to(code).emit("task:launch", {
       index,
       task,
@@ -351,13 +349,12 @@ io.on("connection", (socket) => {
     handleTeacherNextTask(payload || {});
   });
 
-  // Alias used by LiveSession when launching a taskset
   socket.on("launchTaskset", (payload) => {
     handleTeacherNextTask(payload || {});
   });
 
   // --------------------------------------------------------------
-  // Quick ad-hoc task (used by "Launch quick task" button)
+  // Quick ad-hoc task
   // --------------------------------------------------------------
   socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
     const code = (roomCode || "").toUpperCase();
@@ -391,27 +388,22 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Student joins room
+  // Student joins room – NOW auto-creates room if missing
   // --------------------------------------------------------------
   socket.on("student:joinRoom", (payload, ack) => {
     const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
 
+    let room = rooms[code];
     if (!room) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Room not found" });
-      } else {
-        socket.emit("join:error", { message: "Room not found" });
-      }
-      return;
+      // NEW: auto-create so students can join even if teacher isn't in yet
+      room = rooms[code] = createRoom(code, null);
     }
 
     socket.join(code);
     socket.data.role = "student";
     socket.data.roomCode = code;
 
-    // Use this socket as the canonical team id
     const teamId = socket.id;
     socket.data.teamId = teamId;
 
@@ -440,7 +432,6 @@ io.on("connection", (socket) => {
 
     const state = buildRoomState(room);
 
-    // Notify teacher & any connected views
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
@@ -467,7 +458,6 @@ io.on("connection", (socket) => {
     const room = rooms[code];
     if (!room || !room.taskset) return;
 
-    // Prefer explicit taskIndex; otherwise use the room's current index
     const idx =
       typeof taskIndex === "number" && taskIndex >= 0
         ? taskIndex
@@ -515,7 +505,6 @@ io.on("connection", (socket) => {
       submittedAt: Date.now(),
     });
 
-    // Send latest state to views
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
@@ -526,12 +515,10 @@ io.on("connection", (socket) => {
     }
   };
 
-  // NEW canonical event:
   socket.on("student:submitAnswer", (payload, ack) => {
     handleStudentSubmit(payload, ack);
   });
 
-  // Legacy alias:
   socket.on("task:submit", (payload) => {
     handleStudentSubmit(payload);
   });
@@ -597,7 +584,6 @@ io.on("connection", (socket) => {
 //  REST Routes (profile, subscription, tasksets, analytics)
 // ====================================================================
 
-// Simple DB check
 app.get("/db-check", async (req, res) => {
   try {
     await mongoose.connection.db.admin().ping();
@@ -608,12 +594,6 @@ app.get("/db-check", async (req, res) => {
   }
 });
 
-// --------------------------------------------------------------------
-// Teacher profile
-// Support both /api/profile/me (new) and /api/profile (compat)
-// --------------------------------------------------------------------
-
-// Helper to ensure one profile exists
 async function getOrCreateProfile() {
   let profile = await TeacherProfile.findOne();
   if (!profile) {
@@ -623,7 +603,6 @@ async function getOrCreateProfile() {
   return profile;
 }
 
-// GET /api/profile/me  (preferred)
 app.get("/api/profile/me", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
@@ -634,7 +613,6 @@ app.get("/api/profile/me", async (req, res) => {
   }
 });
 
-// GET /api/profile  (legacy alias)
 app.get("/api/profile", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
@@ -645,14 +623,10 @@ app.get("/api/profile", async (req, res) => {
   }
 });
 
-// PUT /api/profile/me – accept everything the Presenter Profile form sends
 app.put("/api/profile/me", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-
-    // Merge all fields coming from the front end
     Object.assign(profile, req.body);
-
     await profile.save();
     res.json(profile);
   } catch (err) {
@@ -661,13 +635,10 @@ app.put("/api/profile/me", async (req, res) => {
   }
 });
 
-// PUT /api/profile – legacy alias, same behavior
 app.put("/api/profile", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-
     Object.assign(profile, req.body);
-
     await profile.save();
     res.json(profile);
   } catch (err) {
@@ -676,11 +647,7 @@ app.put("/api/profile", async (req, res) => {
   }
 });
 
-// --------------------------------------------------------------------
-// TaskSets – full REST for teacher app
-// --------------------------------------------------------------------
-
-// Create taskset
+// TaskSets REST
 app.post("/api/tasksets", async (req, res) => {
   try {
     const t = new TaskSet(req.body);
@@ -692,7 +659,6 @@ app.post("/api/tasksets", async (req, res) => {
   }
 });
 
-// List tasksets
 app.get("/api/tasksets", async (req, res) => {
   try {
     const sets = await TaskSet.find().sort({ createdAt: -1 }).lean();
@@ -703,7 +669,6 @@ app.get("/api/tasksets", async (req, res) => {
   }
 });
 
-// Get single taskset
 app.get("/api/tasksets/:id", async (req, res) => {
   try {
     const set = await TaskSet.findById(req.params.id).lean();
@@ -717,7 +682,6 @@ app.get("/api/tasksets/:id", async (req, res) => {
   }
 });
 
-// Update taskset
 app.put("/api/tasksets/:id", async (req, res) => {
   try {
     const updated = await TaskSet.findByIdAndUpdate(
@@ -735,7 +699,6 @@ app.put("/api/tasksets/:id", async (req, res) => {
   }
 });
 
-// Delete taskset
 app.delete("/api/tasksets/:id", async (req, res) => {
   try {
     await TaskSet.findByIdAndDelete(req.params.id);
@@ -746,15 +709,12 @@ app.delete("/api/tasksets/:id", async (req, res) => {
   }
 });
 
-// Generate an AI taskset
+// AI Taskset
 app.post("/api/ai/tasksets", generateAiTaskset);
 
-// --------------------------------------------------------------------
-// Analytics (stub) – to keep Reports page from blowing up
-// --------------------------------------------------------------------
+// Analytics stub
 app.get("/analytics/sessions", async (req, res) => {
   try {
-    // Later: query SessionAnalytics and return real data
     res.json({ sessions: [] });
   } catch (err) {
     console.error("GET /analytics/sessions error:", err);
