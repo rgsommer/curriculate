@@ -475,7 +475,14 @@ export default function StudentApp() {
             );
             return;
           }
-          setStatusMessage("Answer submitted! Wait for the next task.");
+
+          // ✅ Clear the current task UI after a successful submit
+          setCurrentTask(null);
+          setTaskIndex(null);
+
+          setStatusMessage(
+            "Answer submitted! Wait for your next station assignment."
+          );
         }
       );
     } catch (err) {
@@ -738,7 +745,8 @@ export default function StudentApp() {
         </section>
       )}
 
-      {joined && currentTask && (
+      {/* 🔒 Only show the task when no scan is required */}
+      {joined && currentTask && !mustScan && (
         <section
           style={{
             padding: 12,
