@@ -255,229 +255,240 @@ export default function LiveSession({ roomCode }) {
   }
 
   const renderStationCard = (station) => {
-    const team = teamsById[station.assignedTeamId] || null;
-    const stationId = station.id;
+  const team = teamsById[station.assignedTeamId] || null;
+  const stationId = station.id;
 
-    if (!team) {
-      return (
-        <div
-          key={station.id}
-          style={{
-            borderRadius: 12,
-            border: "1px dashed #cbd5f5",
-            padding: 12,
-            minWidth: 180,
-            minHeight: 90,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: 4,
-            background: "#f9fafb",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              color: "#6b7280",
-            }}
-          >
-            {station.id}
-          </div>
-          <div style={{ color: "#9ca3af" }}>No team yet</div>
-        </div>
-      );
-    }
-
-    const latest = submissions[team.teamId];
-    const score = scores[team.teamId] ?? 0;
-
-    // Where this team should currently be
-    const assignedStationId = team.currentStationId || stationId;
-    const assignedColor = stationIdToColor(assignedStationId);
-
-    // Last station they scanned (from QR) – backend ensures this only
-    // matches correct assignments
-    const scannedStationId = team.lastScannedStationId || null;
-    const hasScanForThisAssignment =
-      scannedStationId && scannedStationId === assignedStationId;
-
-    // Bubble colour: grey until correct scan, then assigned colour
-    const bubbleBg =
-      hasScanForThisAssignment && assignedColor ? assignedColor : "#f9fafb";
-    const textColor =
-      hasScanForThisAssignment && assignedColor ? "#ffffff" : "#111827";
-    const subtleTextColor =
-      hasScanForThisAssignment && assignedColor
-        ? "rgba(241,245,249,0.9)"
-        : "#6b7280";
-
-    const isCorrect = latest?.correct ?? null;
-
+  if (!team) {
     return (
       <div
         key={station.id}
         style={{
           borderRadius: 12,
+          border: "1px dashed #cbd5f5",
           padding: 12,
-          minWidth: 220,
-          minHeight: 130,
-          background: bubbleBg,
-          color: textColor,
+          minWidth: 180,
+          minHeight: 90,
           display: "flex",
           flexDirection: "column",
-          justifyContent: "space-between",
-          boxShadow: "0 1px 3px rgba(15,23,42,0.16)",
-          border: hasScanForThisAssignment
-            ? "2px solid rgba(15,23,42,0.25)"
-            : "1px solid #e5e7eb",
-          transition: "background 0.2s ease, border 0.2s ease",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: 4,
+          background: "#f9fafb",
         }}
       >
-        {/* Station + Team */}
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 8,
-            alignItems: "flex-start",
+            fontSize: "0.75rem",
+            textTransform: "uppercase",
+            letterSpacing: 1,
+            color: "#6b7280",
           }}
         >
-          <div>
-            <div
-              style={{
-                fontSize: "0.7rem",
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                color: subtleTextColor,
-              }}
-            >
-              {station.id}
-            </div>
-            <div style={{ fontWeight: 700 }}>
-              {team.teamName || "Team"}
-            </div>
-            {Array.isArray(team.members) && team.members.length > 0 && (
-              <div
-                style={{
-                  fontSize: "0.7rem",
-                  color: subtleTextColor,
-                  marginTop: 2,
-                }}
-              >
-                {team.members.join(", ")}
-              </div>
-            )}
+          {station.id}
+        </div>
+        <div style={{ color: "#9ca3af" }}>No team yet</div>
+      </div>
+    );
+  }
 
-            {/* Assigned vs scan status */}
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: "0.75rem",
-              }}
-            >
-              <div>
-                <strong>Assigned to:</strong>{" "}
-                {assignedColor
-                  ? `${assignedColor.toUpperCase()} (${assignedStationId})`
-                  : assignedStationId || "—"}
-              </div>
-              <div
-                style={{
-                  marginTop: 2,
-                  color: hasScanForThisAssignment ? "#bbf7d0" : subtleTextColor,
-                  fontStyle: hasScanForThisAssignment ? "normal" : "italic",
-                }}
-              >
-                {hasScanForThisAssignment
-                  ? "Scanned and ready"
-                  : "Waiting for a scan…"}
-              </div>
-            </div>
+  const latest = submissions[team.teamId];
+  const score = scores[team.teamId] ?? 0;
+
+  // Where this team should currently be
+  const assignedStationId = team.currentStationId || stationId;
+  const assignedColor = stationIdToColor(assignedStationId);
+
+  // Last station they scanned (from QR)
+  const scannedStationId = team.lastScannedStationId || null;
+  const hasScanForThisAssignment =
+    scannedStationId && scannedStationId === assignedStationId;
+
+  // Card background & text colours
+  const bubbleBg =
+    hasScanForThisAssignment && assignedColor ? assignedColor : "#f9fafb";
+  const textColor =
+    hasScanForThisAssignment && assignedColor ? "#ffffff" : "#111827";
+  const subtleTextColor =
+    hasScanForThisAssignment && assignedColor
+      ? "rgba(241,245,249,0.9)"
+      : "#6b7280";
+
+  const isCorrect = latest?.correct ?? null;
+
+  return (
+    <div
+      key={station.id}
+      style={{
+        borderRadius: 12,
+        padding: 12,
+        minWidth: 220,
+        minHeight: 130,
+        background: bubbleBg,
+        color: textColor,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        boxShadow: "0 1px 3px rgba(15,23,42,0.16)",
+        border: hasScanForThisAssignment
+          ? "2px solid rgba(15,23,42,0.25)"
+          : "1px solid #e5e7eb",
+        transition: "background 0.2s ease, border 0.2s ease",
+      }}
+    >
+      {/* Station + Team */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+          alignItems: "flex-start",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: "0.7rem",
+              textTransform: "uppercase",
+              letterSpacing: 1,
+              color: subtleTextColor,
+            }}
+          >
+            {station.id}
           </div>
-
-          <div style={{ textAlign: "right" }}>
+          <div style={{ fontWeight: 700 }}>
+            {team.teamName || "Team"}
+          </div>
+          {Array.isArray(team.members) && team.members.length > 0 && (
             <div
               style={{
                 fontSize: "0.7rem",
-                textTransform: "uppercase",
-                letterSpacing: 1,
                 color: subtleTextColor,
+                marginTop: 2,
               }}
             >
-              Score
+              {team.members.join(", ")}
+            </div>
+          )}
+
+          {/* Assigned vs scan status */}
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: "0.75rem",
+            }}
+          >
+            <div>
+              <strong>Assigned to:</strong>{" "}
+              {assignedColor
+                ? `${assignedColor.toUpperCase()} (${assignedStationId})`
+                : assignedStationId || "—"}
             </div>
             <div
               style={{
-                fontSize: "1.4rem",
-                fontWeight: 800,
+                marginTop: 2,
+                color: hasScanForThisAssignment ? "#bbf7d0" : subtleTextColor,
+                fontStyle: hasScanForThisAssignment ? "normal" : "italic",
               }}
             >
-              {score}
+              {hasScanForThisAssignment
+                ? "Scanned and ready"
+                : "Waiting for a scan…"}
             </div>
           </div>
         </div>
 
-        {/* Latest submission summary */}
-        {latest ? (
+        <div style={{ textAlign: "right" }}>
           <div
             style={{
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: hasScanForThisAssignment
-                ? "1px solid rgba(241,245,249,0.6)"
-                : "1px solid rgba(148,163,184,0.4)",
-              fontSize: "0.8rem",
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 8,
-              alignItems: "center",
-            }}
-          >
-            <div
-              style={{
-                maxWidth: "65%",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-              title={latest.answerText}
-            >
-              <strong>Ans:</strong> {latest.answerText || "—"}
-            </div>
-
-            <div style={{ textAlign: "right" }}>
-              {isCorrect !== null && (
-                <div>{isCorrect ? "✅ correct" : "❌ incorrect"}</div>
-              )}
-              {latest.timeMs != null && (
-                <div>
-                  <strong>Time:</strong>{" "}
-                  {(latest.timeMs / 1000).toFixed(1)}s
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: hasScanForThisAssignment
-                ? "1px dashed rgba(241,245,249,0.6)"
-                : "1px dashed rgba(148,163,184,0.4)",
-              fontSize: "0.75rem",
+              fontSize: "0.7rem",
+              textTransform: "uppercase",
+              letterSpacing: 1,
               color: subtleTextColor,
             }}
           >
-            No submission yet
+            Score
           </div>
-        )}
+          <div
+            style={{
+              fontSize: "1.4rem",
+              fontWeight: 800,
+            }}
+          >
+            {score}
+          </div>
+        </div>
       </div>
-    );
-  };
+
+      {/* Latest submission summary */}
+      {latest ? (
+        <div
+          style={{
+            marginTop: 6,
+            paddingTop: 6,
+            borderTop: hasScanForThisAssignment
+              ? "1px solid rgba(241,245,249,0.6)"
+              : "1px solid rgba(148,163,184,0.4)",
+            fontSize: "0.8rem",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              maxWidth: "65%",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+            title={latest.answerText}
+          >
+            <strong>Ans:</strong> {latest.answerText || "—"}
+          </div>
+
+          <div style={{ textAlign: "right" }}>
+            {isCorrect !== null && (
+              <div>{isCorrect ? "✅ correct" : "❌ incorrect"}</div>
+            )}
+            {latest.timeMs != null && (
+              <div>
+                <strong>Time:</strong>{" "}
+                {(latest.timeMs / 1000).toFixed(1)}s
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            marginTop: 6,
+            paddingTop: 6,
+            borderTop: hasScanForThisAssignment
+              ? "1px dashed rgba(241,245,249,0.6)"
+              : "1px dashed rgba(148,163,184,0.4)",
+            fontSize: "0.75rem",
+            color: subtleTextColor,
+          }}
+        >
+          No submission yet
+        </div>
+      )}
+
+      {/* 🔴 Persistent colour band at the bottom */}
+      <div
+        style={{
+          marginTop: 8,
+          height: 6,
+          borderRadius: 999,
+          backgroundColor: assignedColor
+            ? assignedColor
+            : "rgba(148,163,184,0.5)",
+        }}
+      />
+    </div>
+  );
+};
 
   return (
     <div
