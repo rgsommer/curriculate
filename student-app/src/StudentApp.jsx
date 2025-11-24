@@ -91,39 +91,44 @@ function QrScanner({ active, onCode, onError }) {
         }
 
         if ("BarcodeDetector" in window) {
-          const detector = new window.BarcodeDetector({
-            formats: ["qr_code", "code_128", "code_39", "ean_13"],
-          });
+  const detector = new window.BarcodeDetector({
+    formats: ["qr_code", "code_128", "code_39", "ean_13"],
+  });
 
-          const detectLoop = async () => {
-            if (cancelled) return;
+  const detectLoop = async () => {
+    if (cancelled) return;
 
-            if (!videoRef.current || videoRef.current.readyState < 2) {
-              rafRef.current = requestAnimationFrame(detectLoop);
-              return;
-            }
+    if (!videoRef.current || videoRef.current.readyState < 2) {
+      rafRef.current = requestAnimationFrame(detectLoop);
+      return;
+    }
 
-            try {
-              const barcodes = await detector.detect(videoRef.current);
-              if (barcodes && barcodes.length > 0) {
-                const value = barcodes[0].rawValue || "";
-                if (value) {
-                  try {
-                    onCode?.(value);
-                  } catch (err) {
-                    console.error("Error in onCode callback", err);
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn("Barcode detection error", err);
-            }
+    try {
+      const barcodes = await detector.detect(videoRef.current);
+      if (barcodes && barcodes.length > 0) {
+        const value = barcodes[0].rawValue || "";
+        if (value) {
+          try {
+            onCode?.(value);
+          } catch (err) {
+            console.error("Error in onCode callback", err);
+          }
+          // ✅ Stop camera after first successful scan
+          cancelled = true;
+          stopCamera();
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Barcode detection error", err);
+    }
 
-            rafRef.current = requestAnimationFrame(detectLoop);
-          };
+    rafRef.current = requestAnimationFrame(detectLoop);
+  };
 
-          detectLoop();
-        } else {
+  detectLoop();
+}
+ else {
           const msg =
             "Camera is on, but this browser cannot auto-detect QR codes. Try Chrome or Edge.";
           onError?.(msg);
@@ -137,15 +142,15 @@ function QrScanner({ active, onCode, onError }) {
     }
 
     function stopCamera() {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-    }
+  if (rafRef.current) {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+  }
+  if (streamRef.current) {
+    streamRef.current.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }
+}
 
     if (active) {
       startCamera();
