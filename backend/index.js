@@ -1,5 +1,5 @@
 // ====================================================================
-//  Curriculate Backend – Robust Index.js (rooms always joinable)
+//  Curriculate Backend – Rooms, Teams, Stations, Tasks, AI, Emailing
 // ====================================================================
 
 import "dotenv/config";
@@ -65,7 +65,7 @@ app.options("*", cors(corsOptions));
 // ====================================================================
 app.use(bodyParser.json({ limit: "3mb" }));
 
-// Subscription routes (MyPlan / current plan info)
+// Subscription / MyPlan routes
 app.use("/api/subscription", subscriptionRoutes);
 
 // ====================================================================
@@ -90,17 +90,29 @@ mongoose
   .catch((err) => console.error("Mongo connection error:", err));
 
 // ====================================================================
-//  ROOM ENGINE (All In-Memory)
+//  ROOM ENGINE (In-Memory)
 // ====================================================================
-const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, taskset, ... }
+const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
 
+// Create a new room with a default set of stations
 function createRoom(roomCode, teacherSocketId) {
+  // Create 8 default stations: station-1 .. station-8
+  const stations = {};
+  const NUM_STATIONS = 8;
+  for (let i = 1; i <= NUM_STATIONS; i++) {
+    const id = `station-${i}`;
+    stations[id] = {
+      id,
+      assignedTeamId: null,
+    };
+  }
+
   return {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {},      // teamId -> { teamId, teamName, members: [], ... }
-    stations: {},   // future: stationId -> station data
+    teams: {},    // teamId -> { teamId, teamName, members: [], currentStationId, ... }
+    stations,     // stationId -> { id, assignedTeamId }
     taskset: null,
     taskIndex: -1,
     submissions: [],
@@ -109,6 +121,7 @@ function createRoom(roomCode, teacherSocketId) {
   };
 }
 
+// Build a transcript from a room
 function buildTranscript(room) {
   const taskset = room.taskset;
   const tasks = taskset?.tasks || [];
@@ -145,6 +158,7 @@ function buildTranscript(room) {
   };
 }
 
+// Per-participant stats
 function computePerParticipantStats(room, transcript) {
   const tasks = transcript.tasks || [];
   const tasksByIndex = {};
@@ -192,6 +206,7 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
+// Compact room state for clients
 function buildRoomState(room) {
   if (!room) {
     return { teams: {}, stations: {}, scores: {}, taskIndex: -1 };
@@ -212,7 +227,7 @@ function buildRoomState(room) {
 }
 
 // ====================================================================
-//  SOCKET.IO – EVENTS
+//  SOCKET.IO – EVENT HANDLERS
 // ====================================================================
 io.on("connection", (socket) => {
   // --------------------------------------------------------------
@@ -222,7 +237,7 @@ io.on("connection", (socket) => {
     const code = (roomCode || "").toUpperCase();
     let room = rooms[code];
 
-    // NEW: if students joined first and created a room, reuse it
+    // Reuse an existing room if it already exists (preserve teams)
     if (room) {
       room.teacherSocketId = socket.id;
     } else {
@@ -240,7 +255,7 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Generic joinRoom (HostView / projector / teacher reconnect)
+  // Generic joinRoom (HostView / viewer / reconnect)
   // --------------------------------------------------------------
   socket.on("joinRoom", (payload = {}, ack) => {
     const { roomCode, role, name } = payload;
@@ -272,7 +287,7 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Teacher loads a taskset (and alias used by client: "loadTaskset")
+  // Teacher loads a taskset
   // --------------------------------------------------------------
   async function handleTeacherLoadTaskset({ roomCode, tasksetId }) {
     const code = (roomCode || "").toUpperCase();
@@ -288,7 +303,7 @@ io.on("connection", (socket) => {
     room.taskset = taskset;
     room.taskIndex = -1;
 
-    io.to(code).emit("taskset:loaded", {
+    io.to(code).emit("tasksetLoaded", {
       tasksetId: String(taskset._id),
       name: taskset.name,
       numTasks: taskset.tasks.length,
@@ -306,7 +321,7 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Teacher starts session
+  // Teacher starts a session
   // --------------------------------------------------------------
   socket.on("teacher:startSession", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
@@ -321,7 +336,7 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Teacher send next task (and alias "launchTaskset")
+  // Teacher sends next task (and alias "launchTaskset")
   // --------------------------------------------------------------
   function handleTeacherNextTask({ roomCode }) {
     const code = (roomCode || "").toUpperCase();
@@ -354,7 +369,7 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Quick ad-hoc task
+  // Quick ad-hoc task from teacher
   // --------------------------------------------------------------
   socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
     const code = (roomCode || "").toUpperCase();
@@ -388,15 +403,15 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Student joins room – NOW auto-creates room if missing
+  // Student joins room – assign a station immediately
   // --------------------------------------------------------------
   socket.on("student:joinRoom", (payload, ack) => {
     const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
+    // Allow students to join first – create room if needed.
     let room = rooms[code];
     if (!room) {
-      // NEW: auto-create so students can join even if teacher isn't in yet
       room = rooms[code] = createRoom(code, null);
     }
 
@@ -404,6 +419,7 @@ io.on("connection", (socket) => {
     socket.data.role = "student";
     socket.data.roomCode = code;
 
+    // Use this socket as the canonical team id
     const teamId = socket.id;
     socket.data.teamId = teamId;
 
@@ -424,17 +440,48 @@ io.on("connection", (socket) => {
         members: cleanMembers,
         score: 0,
         stationColor: null,
+        currentStationId: null,
       };
     } else {
       room.teams[teamId].teamName = displayName;
       room.teams[teamId].members = cleanMembers;
     }
 
+    // Ensure stations exist (defensive – createRoom already does this)
+    if (!room.stations || Object.keys(room.stations).length === 0) {
+      room.stations = {};
+      const NUM_STATIONS = 8;
+      for (let i = 1; i <= NUM_STATIONS; i++) {
+        const id = `station-${i}`;
+        room.stations[id] = { id, assignedTeamId: null };
+      }
+    }
+
+    // If this team has no current station yet, assign one.
+    if (!room.teams[teamId].currentStationId) {
+      const stationIds = Object.keys(room.stations);
+      const taken = new Set(
+        Object.values(room.teams)
+          .map((t) => t.currentStationId)
+          .filter(Boolean)
+      );
+      const available = stationIds.filter((id) => !taken.has(id));
+      const assignedId = available[0] || stationIds[0] || null;
+
+      room.teams[teamId].currentStationId = assignedId;
+      if (assignedId && room.stations[assignedId]) {
+        room.stations[assignedId].assignedTeamId = teamId;
+      }
+    }
+
+    // Build and broadcast updated room state
     const state = buildRoomState(room);
 
+    // Notify all clients in the room
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
+    // Notify teacher (if connected) that a team has joined
     if (room.teacherSocketId) {
       io.to(room.teacherSocketId).emit("team:joined", {
         teamId,
@@ -456,7 +503,12 @@ io.on("connection", (socket) => {
 
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
-    if (!room || !room.taskset) return;
+    if (!room || !room.taskset) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room or taskset not found" });
+      }
+      return;
+    }
 
     const idx =
       typeof taskIndex === "number" && taskIndex >= 0
@@ -464,7 +516,12 @@ io.on("connection", (socket) => {
         : room.taskIndex;
 
     const task = room.taskset.tasks[idx];
-    if (!task) return;
+    if (!task) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Task not found" });
+      }
+      return;
+    }
 
     const effectiveTeamId = teamId || socket.data.teamId || socket.id;
     const team = room.teams[effectiveTeamId] || {};
@@ -524,7 +581,7 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-  // Teacher ends session + sends transcript
+  // Teacher ends session + sends transcript email
   // --------------------------------------------------------------
   socket.on(
     "teacher:endSessionAndEmail",
@@ -581,7 +638,7 @@ io.on("connection", (socket) => {
 });
 
 // ====================================================================
-//  REST Routes (profile, subscription, tasksets, analytics)
+//  REST ROUTES – Profile, TaskSets, AI, Analytics
 // ====================================================================
 
 app.get("/db-check", async (req, res) => {
@@ -647,7 +704,7 @@ app.put("/api/profile", async (req, res) => {
   }
 });
 
-// TaskSets REST
+// TaskSets CRUD
 app.post("/api/tasksets", async (req, res) => {
   try {
     const t = new TaskSet(req.body);
