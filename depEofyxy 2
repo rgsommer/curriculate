@@ -1,0 +1,13 @@
+#!/bin/bash
+git status
+read -p "Commit message: " msg
+
+echo "🔧 Adding changes..."
+git add .
+echo "📝 Committing..."
+git commit -m "$msg"
+echo "🚀 Pushing..."
+git push origin main
+
+echo "🔥 Deploy to GitHub complete!"
+EOF

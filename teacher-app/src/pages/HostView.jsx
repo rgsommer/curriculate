@@ -9,180 +9,232 @@ export default function HostView({ roomCode }) {
     scores: {},
   });
   const [submissions, setSubmissions] = useState([]);
-  const [scoreInputs, setScoreInputs] = useState({}); // teamId -> points
 
-  // join as host
+  // Join as a host / viewer for this room
   useEffect(() => {
     if (!roomCode) return;
+
+    const code = roomCode.toUpperCase();
+
     socket.emit("joinRoom", {
-      roomCode: roomCode.toUpperCase(),
-      name: "Host",
+      roomCode: code,
       role: "host",
+      name: "Host",
     });
-  }, [roomCode]);
 
-  // listen
-  useEffect(() => {
-    const handleRoom = (state) =>
+    const handleRoom = (state) => {
       setRoomState(state || { stations: [], teams: {}, scores: {} });
-
-    const handleSubmission = (sub) => {
-      setSubmissions((prev) => [sub, ...prev].slice(0, 30));
     };
 
-    // OLD behaviour (2 days ago)
-    socket.on("roomState", handleRoom);
-    socket.on("taskSubmission", handleSubmission);
+    const handleSubmission = (sub) => {
+      if (!sub) return;
+      setSubmissions((prev) => [sub, ...prev].slice(0, 20));
+    };
 
-    // NEW: also accept room:state if server started using that
+    socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
+    socket.on("taskSubmission", handleSubmission);
 
     return () => {
       socket.off("roomState", handleRoom);
-      socket.off("taskSubmission", handleSubmission);
       socket.off("room:state", handleRoom);
+      socket.off("taskSubmission", handleSubmission);
     };
-  }, []);
+  }, [roomCode]);
 
-  const handleScore = (teamId) => {
-    if (!roomCode) return;
-    const pts = Number(scoreInputs[teamId] || 0);
-    socket.emit("hostScoreSubmission", {
-      roomCode: roomCode.toUpperCase(),
-      teamId,
-      points: pts,
-    });
-    // clear
-    setScoreInputs((prev) => ({ ...prev, [teamId]: "" }));
-  };
-
-  const teamsArray = Object.values(roomState.teams || {});
+  const teamsById = roomState.teams || {};
+  const teamsArray = Object.values(teamsById);
   const scoresEntries = Object.entries(roomState.scores || {}).sort(
     (a, b) => b[1] - a[1]
   );
 
   return (
-    <div style={{ height: "100%", display: "flex", gap: 16 }}>
-      {/* left + middle */}
-      <div style={{ flex: 1 }}>
-        <h1>Host view</h1>
+    <div
+      style={{
+        height: "100%",
+        display: "flex",
+        gap: 16,
+        padding: 16,
+        fontFamily: "system-ui",
+      }}
+    >
+      {/* Left column: room + teams */}
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <h1 style={{ marginTop: 0 }}>Host view</h1>
         {roomCode ? (
-          <p>Room: {roomCode.toUpperCase()}</p>
+          <p style={{ marginTop: 0 }}>
+            Room: <strong>{roomCode.toUpperCase()}</strong>
+          </p>
         ) : (
           <p style={{ color: "#b91c1c" }}>No room selected.</p>
         )}
 
-        <h2>Teams</h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {teamsArray.length === 0 ? (
-            <p>No teams yet.</p>
-          ) : (
-            teamsArray.map((t) => (
+        <h2 style={{ marginTop: 24, marginBottom: 8 }}>Teams</h2>
+        {teamsArray.length === 0 ? (
+          <p style={{ color: "#6b7280" }}>No teams joined yet.</p>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            {teamsArray.map((team) => (
               <div
-                key={t.teamId}
+                key={team.teamId}
                 style={{
-                  background: t.teamColor || "rgba(148,163,184,0.25)",
-                  color: t.teamColor ? "#fff" : "#000",
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  minWidth: 150,
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  background: "#e5e7eb",
                 }}
               >
-                <strong>{t.teamName}</strong>{" "}
-                {t.teamColor ? `(${t.teamColor})` : ""}
-                {(t.members || []).length > 0 && (
-                  <div style={{ fontSize: "0.7rem" }}>
-                    {t.members.join(", ")}
+                <div style={{ fontWeight: 600 }}>{team.teamName}</div>
+                {Array.isArray(team.members) && team.members.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "#4b5563",
+                      marginTop: 2,
+                    }}
+                  >
+                    {team.members.join(", ")}
                   </div>
                 )}
               </div>
-            ))
-          )}
-        </div>
-
-        <h2 style={{ marginTop: 20 }}>Latest submissions</h2>
-        {submissions.length === 0 ? (
-          <p>None yet.</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {submissions.map((s, i) => (
-              <li
-                key={i}
-                style={{
-                  background: "#fff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 8,
-                  padding: "8px 10px",
-                  marginBottom: 8,
-                }}
-              >
-                <div>
-                  <strong>{s.teamName}</strong>{" "}
-                  {s.correct ? "✅" : "❌"}{" "}
-                  <span style={{ fontSize: "0.7rem", color: "#475569" }}>
-                    {s.timeMs ? `${Math.round(s.timeMs / 1000)}s` : ""}
-                  </span>
-                </div>
-                <div style={{ marginTop: 4 }}>
-                  {s.answerText && s.answerText.trim()
-                    ? s.answerText
-                    : "(no text submitted)"}
-                </div>
-                <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-                  <input
-                    type="number"
-                    placeholder="pts"
-                    value={scoreInputs[s.teamId] ?? ""}
-                    onChange={(e) =>
-                      setScoreInputs((prev) => ({
-                        ...prev,
-                        [s.teamId]: e.target.value,
-                      }))
-                    }
-                    style={{
-                      width: 70,
-                      padding: 4,
-                      border: "1px solid #cbd5f5",
-                      borderRadius: 4,
-                    }}
-                  />
-                  <button
-                    onClick={() => handleScore(s.teamId)}
-                    style={{
-                      background: "#2563eb",
-                      color: "#fff",
-                      border: "none",
-                      padding: "4px 10px",
-                      borderRadius: 5,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Score
-                  </button>
-                </div>
-              </li>
             ))}
-          </ul>
+          </div>
         )}
       </div>
 
-      {/* right: leaderboard */}
+      {/* Middle: latest submissions */}
       <div
         style={{
-          width: 240,
-          borderLeft: "1px solid #e2e8f0",
+          flex: 1.2,
+          minWidth: 260,
+          borderLeft: "1px solid #e5e7eb",
           paddingLeft: 16,
         }}
       >
-        <h2>Leaderboard</h2>
-        {scoresEntries.length === 0 ? (
-          <p>No scores yet.</p>
+        <h2 style={{ marginTop: 0, marginBottom: 8 }}>Latest submissions</h2>
+        {submissions.length === 0 ? (
+          <p style={{ color: "#6b7280" }}>None yet.</p>
         ) : (
-          scoresEntries.map(([name, pts], idx) => (
-            <p key={name}>
-              {idx + 1}. {name} — {pts} pts
-            </p>
-          ))
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            {submissions.map((s, idx) => {
+              const when = s.submittedAt
+                ? new Date(s.submittedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })
+                : "";
+
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    borderRadius: 8,
+                    border: "1px solid #e5e7eb",
+                    padding: "8px 10px",
+                    background: "#f9fafb",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "baseline",
+                      gap: 8,
+                    }}
+                  >
+                    <div>
+                      <strong>{s.teamName || teamsById[s.teamId]?.teamName}</strong>{" "}
+                      {s.correct === null
+                        ? ""
+                        : s.correct
+                        ? "✅"
+                        : "❌"}{" "}
+                      {s.points != null && (
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "#4b5563",
+                          }}
+                        >
+                          ({s.points} pts)
+                        </span>
+                      )}
+                    </div>
+                    {when && (
+                      <span
+                        style={{
+                          fontSize: "0.7rem",
+                          color: "#6b7280",
+                        }}
+                      >
+                        {when}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: "0.85rem",
+                      color: "#111827",
+                    }}
+                  >
+                    {s.answerText && s.answerText.trim()
+                      ? s.answerText
+                      : "(no text answer)"}
+                  </div>
+                  {s.timeMs != null && (
+                    <div
+                      style={{
+                        marginTop: 2,
+                        fontSize: "0.75rem",
+                        color: "#6b7280",
+                      }}
+                    >
+                      Time: {(s.timeMs / 1000).toFixed(1)}s
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Right: leaderboard */}
+      <div
+        style={{
+          flex: 0.9,
+          minWidth: 220,
+          borderLeft: "1px solid #e5e7eb",
+          paddingLeft: 16,
+        }}
+      >
+        <h2 style={{ marginTop: 0, marginBottom: 8 }}>Leaderboard</h2>
+        {scoresEntries.length === 0 ? (
+          <p style={{ color: "#6b7280" }}>No scores yet.</p>
+        ) : (
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            {scoresEntries.map(([teamId, pts], idx) => {
+              const teamName = teamsById[teamId]?.teamName || teamId;
+              return (
+                <li key={teamId} style={{ marginBottom: 4 }}>
+                  <strong>{teamName}</strong> — {pts} pts
+                </li>
+              );
+            })}
+          </ol>
         )}
       </div>
     </div>
