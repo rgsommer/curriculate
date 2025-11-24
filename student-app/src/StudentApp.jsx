@@ -507,9 +507,15 @@ export default function StudentApp() {
       style={{
         minHeight: "100vh",
         padding: 16,
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        backgroundColor: "#fefce8",
-        color: "#111827",
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        alignItems: "center",
+        justifyContent: "center",
+        // 🔴 Use the station colour while scanning; fallback to dark if none
+        background: assignedColor || "#020617",
+        color: "#e5e7eb",
+        fontFamily: "system-ui",
       }}
     >
       <header style={{ marginBottom: 16 }}>
