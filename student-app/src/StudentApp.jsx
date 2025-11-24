@@ -250,8 +250,10 @@ export default function StudentApp() {
   const [submitting, setSubmitting] = useState(false);
   const sndAlert = useRef(null);
 
+  // Preload scan / task sound
   useEffect(() => {
     const audio = new Audio("/sounds/scan-alert.mp3");
+    audio.load();
     sndAlert.current = audio;
   }, []);
 
@@ -267,18 +269,21 @@ export default function StudentApp() {
     });
 
     socket.on("room:state", (state) => {
-      console.log("[Student] room:state", state);
-
       const teams = state?.teams || {};
       const team = teams[teamId] || null;
 
       if (team) {
-        const stationId = team.currentStationId || null;
-        setAssignedStationId(stationId || null);
-      }
+        const newStation = team.currentStationId;
+        const oldStation = assignedStationId;
 
-      if (state?.taskIndex != null && state.taskIndex >= 0) {
-        setTaskIndex(state.taskIndex);
+        setAssignedStationId(newStation);
+
+        // If assigned station changed, clear previous scan & prompt
+        if (newStation && newStation !== oldStation) {
+          setScannedStationId(null);
+          setScanError(null);
+          setStatusMessage("New station assigned! Please scan the QR.");
+        }
       }
     });
 
@@ -286,6 +291,12 @@ export default function StudentApp() {
       console.log("[Student] task:launch", { index, task });
       setCurrentTask(task || null);
       setTaskIndex(index);
+
+      if (sndAlert.current) {
+        sndAlert.current.currentTime = 0;
+        sndAlert.current.play().catch(() => {});
+      }
+
       setStatusMessage(
         "New task received! Read carefully and submit your best answer."
       );
@@ -305,7 +316,7 @@ export default function StudentApp() {
       socket.off("task:launch");
       socket.off("session:complete");
     };
-  }, [teamId]);
+  }, [teamId, assignedStationId]);
 
   useEffect(() => {
     const mustScan =
@@ -707,7 +718,7 @@ export default function StudentApp() {
         </section>
       )}
 
-      {joined && (
+      {joined && scannerActive && (
         <section
           style={{
             marginBottom: 16,

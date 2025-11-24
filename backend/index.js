@@ -111,8 +111,8 @@ function createRoom(roomCode, teacherSocketId) {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {},    // teamId -> { teamId, teamName, members: [], currentStationId, ... }
-    stations,     // stationId -> { id, assignedTeamId }
+    teams: {}, // teamId -> { teamId, teamName, members: [], currentStationId, ... }
+    stations, // stationId -> { id, assignedTeamId }
     taskset: null,
     taskIndex: -1,
     submissions: [],
@@ -474,9 +474,7 @@ io.on("connection", (socket) => {
         : [];
 
     const displayName =
-      teamName ||
-      cleanMembers[0] ||
-      `Team-${String(teamId).slice(-4)}`;
+      teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
 
     if (!room.teams[teamId]) {
       room.teams[teamId] = {
@@ -540,7 +538,7 @@ io.on("connection", (socket) => {
     }
   });
 
-    // --------------------------------------------------------------
+  // --------------------------------------------------------------
   // Student scans a station QR
   // --------------------------------------------------------------
   socket.on("station:scan", (payload, ack) => {
@@ -610,101 +608,101 @@ io.on("connection", (socket) => {
   });
 
   // --------------------------------------------------------------
-// Student submits answer
-// --------------------------------------------------------------
-const handleStudentSubmit = async (payload, ack) => {
-  const { roomCode, teamId, taskIndex, answer, timeMs } = payload || {};
+  // Student submits answer
+  // --------------------------------------------------------------
+  const handleStudentSubmit = async (payload, ack) => {
+    const { roomCode, teamId, taskIndex, answer, timeMs } = payload || {};
 
-  const code = (roomCode || "").toUpperCase();
-  const room = rooms[code];
-  if (!room || !room.taskset) {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.taskset) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room or taskset not found" });
+      }
+      return;
+    }
+
+    // Prefer explicit taskIndex; otherwise use the room's current index
+    const idx =
+      typeof taskIndex === "number" && taskIndex >= 0
+        ? taskIndex
+        : room.taskIndex;
+
+    const task = room.taskset.tasks[idx];
+    if (!task) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Task not found" });
+      }
+      return;
+    }
+
+    const effectiveTeamId = teamId || socket.data.teamId || socket.id;
+    const team = room.teams[effectiveTeamId] || {};
+    const teamName =
+      team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
+
+    let aiScore = null;
+    if (task.aiRubricId) {
+      try {
+        aiScore = await generateAIScore({
+          rubricId: task.aiRubricId,
+          prompt: task.prompt,
+          answer,
+        });
+      } catch (e) {
+        console.error("AI scoring failed:", e);
+      }
+    }
+
+    const correct = (() => {
+      if (aiScore && typeof aiScore.totalScore === "number") {
+        return aiScore.totalScore > 0;
+      }
+      if (task.correctAnswer == null) return null;
+      return String(answer).trim() === String(task.correctAnswer).trim();
+    })();
+
+    const submittedAt = Date.now();
+
+    // Store full submission in the room
+    room.submissions.push({
+      roomCode: code,
+      teamId: effectiveTeamId,
+      teamName,
+      playerId: socket.data.playerId || null,
+      taskIndex: idx,
+      answer,
+      correct,
+      points: task.points ?? 10,
+      aiScore,
+      timeMs: timeMs ?? null,
+      submittedAt,
+    });
+
+    // Rebuild scores + broadcast updated room state
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+
+    // Emit a lightweight summary for HostView "Latest submissions"
+    const submissionSummary = {
+      roomCode: code,
+      teamId: effectiveTeamId,
+      teamName,
+      taskIndex: idx,
+      answerText: String(answer || ""),
+      correct,
+      points: task.points ?? 10,
+      timeMs: timeMs ?? null,
+      submittedAt,
+    };
+    io.to(code).emit("taskSubmission", submissionSummary);
+
+    socket.emit("task:received");
     if (typeof ack === "function") {
-      ack({ ok: false, error: "Room or taskset not found" });
+      ack({ ok: true });
     }
-    return;
-  }
-
-  // Prefer explicit taskIndex; otherwise use the room's current index
-  const idx =
-    typeof taskIndex === "number" && taskIndex >= 0
-      ? taskIndex
-      : room.taskIndex;
-
-  const task = room.taskset.tasks[idx];
-  if (!task) {
-    if (typeof ack === "function") {
-      ack({ ok: false, error: "Task not found" });
-    }
-    return;
-  }
-
-  const effectiveTeamId = teamId || socket.data.teamId || socket.id;
-  const team = room.teams[effectiveTeamId] || {};
-  const teamName =
-    team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
-
-  let aiScore = null;
-  if (task.aiRubricId) {
-    try {
-      aiScore = await generateAIScore({
-        rubricId: task.aiRubricId,
-        prompt: task.prompt,
-        answer,
-      });
-    } catch (e) {
-      console.error("AI scoring failed:", e);
-    }
-  }
-
-  const correct = (() => {
-    if (aiScore && typeof aiScore.totalScore === "number") {
-      return aiScore.totalScore > 0;
-    }
-    if (task.correctAnswer == null) return null;
-    return String(answer).trim() === String(task.correctAnswer).trim();
-  })();
-
-  const submittedAt = Date.now();
-
-  // Store full submission in the room
-  room.submissions.push({
-    roomCode: code,
-    teamId: effectiveTeamId,
-    teamName,
-    playerId: socket.data.playerId || null,
-    taskIndex: idx,
-    answer,
-    correct,
-    points: task.points ?? 10,
-    aiScore,
-    timeMs: timeMs ?? null,
-    submittedAt,
-  });
-
-  // Rebuild scores + broadcast updated room state
-  const state = buildRoomState(room);
-  io.to(code).emit("room:state", state);
-  io.to(code).emit("roomState", state);
-
-  // Emit a lightweight summary for HostView "Latest submissions"
-  const submissionSummary = {
-    roomCode: code,
-    teamId: effectiveTeamId,
-    teamName,
-    taskIndex: idx,
-    answerText: String(answer || ""),
-    correct,
-    points: task.points ?? 10,
-    timeMs: timeMs ?? null,
-    submittedAt,
   };
-  io.to(code).emit("taskSubmission", submissionSummary);
-
-  socket.emit("task:received");
-  if (typeof ack === "function") {
-    ack({ ok: true });
-  }
-};
 
   socket.on("student:submitAnswer", (payload, ack) => {
     handleStudentSubmit(payload, ack);

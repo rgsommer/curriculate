@@ -1,5 +1,5 @@
 // teacher-app/src/pages/LiveSession.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 
 // Station colours in order: station-1 → red, station-2 → blue, etc.
@@ -50,6 +50,15 @@ export default function LiveSession({ roomCode }) {
 
   // If TaskSets asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
+
+  // Join sound when a team joins
+  const joinSoundRef = useRef(null);
+
+  useEffect(() => {
+    const audio = new Audio("/sounds/join.mp3");
+    audio.load();
+    joinSoundRef.current = audio;
+  }, []);
 
   // ----------------------------------------------------
   // Create the room + join it as teacher whenever roomCode changes
@@ -117,11 +126,10 @@ export default function LiveSession({ roomCode }) {
   useEffect(() => {
     const handleRoom = (state) => {
       console.log("[LiveSession] room state received:", state);
-      setRoomState(state || { stations: [], teams: {}, scores: {} });
-    };
+      const safe = state || { stations: [], teams: {}, scores: {} };
+      setRoomState(safe);
 
-    const handleLeaderboard = (scores) => {
-      const entries = Object.entries(scores || {}).sort(
+      const entries = Object.entries(safe.scores || {}).sort(
         (a, b) => b[1] - a[1]
       );
       setLeaderboard(entries);
@@ -139,7 +147,7 @@ export default function LiveSession({ roomCode }) {
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
-            localStorage.setItem("curriculateActiveTasksetId", meta._id);
+          localStorage.setItem("curriculateActiveTasksetId", meta._id);
           localStorage.setItem(
             "curriculateActiveTasksetMeta",
             JSON.stringify(meta)
@@ -158,30 +166,35 @@ export default function LiveSession({ roomCode }) {
     };
 
     const handleScanEvent = (ev) => {
-      // ev: { roomCode, teamId, teamName, stationId, assignedStationId, timestamp }
+      // ev: { roomCode, teamId, teamName, stationId, timestamp }
       setScanEvents((prev) => {
         const next = [ev, ...prev];
         return next.slice(0, 30); // keep last 30
       });
     };
 
-    // OLD behaviour (2 days ago)
+    const handleTeamJoined = (info) => {
+      console.log("[LiveSession] team joined:", info);
+      if (joinSoundRef.current) {
+        joinSoundRef.current.currentTime = 0;
+        joinSoundRef.current.play().catch(() => {});
+      }
+    };
+
     socket.on("roomState", handleRoom);
-    socket.on("leaderboardUpdate", handleLeaderboard);
+    socket.on("room:state", handleRoom);
     socket.on("tasksetLoaded", handleTasksetLoaded);
     socket.on("taskSubmission", handleSubmission);
     socket.on("scanEvent", handleScanEvent);
-
-    // NEW: also accept room:state if server started using that
-    socket.on("room:state", handleRoom);
+    socket.on("team:joined", handleTeamJoined);
 
     return () => {
       socket.off("roomState", handleRoom);
-      socket.off("leaderboardUpdate", handleLeaderboard);
+      socket.off("room:state", handleRoom);
       socket.off("tasksetLoaded", handleTasksetLoaded);
       socket.off("taskSubmission", handleSubmission);
       socket.off("scanEvent", handleScanEvent);
-      socket.off("room:state", handleRoom);
+      socket.off("team:joined", handleTeamJoined);
     };
   }, []);
 
@@ -232,7 +245,7 @@ export default function LiveSession({ roomCode }) {
   const teamsById = roomState.teams || {};
   const scores = roomState.scores || {};
 
-  // 🔹 NEW: if there are no stations yet but there ARE teams,
+  // If there are no stations yet but there ARE teams,
   // show one pseudo-station card per team so joins are visible.
   if (stations.length === 0 && Object.keys(teamsById).length > 0) {
     stations = Object.keys(teamsById).map((teamId, index) => ({
@@ -279,7 +292,7 @@ export default function LiveSession({ roomCode }) {
     }
 
     const latest = submissions[team.teamId];
-    const score = scores[team.teamName] ?? 0;
+    const score = scores[team.teamId] ?? 0;
 
     // Where this team should currently be
     const assignedStationId = team.currentStationId || stationId;
@@ -664,11 +677,17 @@ export default function LiveSession({ roomCode }) {
               <p style={{ color: "#6b7280" }}>No scores yet.</p>
             ) : (
               <ol style={{ paddingLeft: 18, margin: 0 }}>
-                {leaderboard.map(([name, pts]) => (
-                  <li key={name} style={{ marginBottom: 4 }}>
-                    <strong>{name}</strong> — {pts} pts
-                  </li>
-                ))}
+                {leaderboard.map(([teamId, pts]) => {
+                  const teamName =
+                    teamsById[teamId]?.teamName ||
+                    teamsById[teamId]?.displayName ||
+                    teamId;
+                  return (
+                    <li key={teamId} style={{ marginBottom: 4 }}>
+                      <strong>{teamName}</strong> — {pts} pts
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </div>
