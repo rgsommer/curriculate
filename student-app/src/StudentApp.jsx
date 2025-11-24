@@ -319,6 +319,28 @@ export default function StudentApp() {
   }, [teamId, assignedStationId]);
 
   useEffect(() => {
+  const styleId = "station-pulse-style";
+  if (document.getElementById(styleId)) return;
+
+  const style = document.createElement("style");
+  style.id = styleId;
+  style.textContent = `
+    @keyframes stationPulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(255,255,255,0.9);
+      }
+      70% {
+        box-shadow: 0 0 0 18px rgba(255,255,255,0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(255,255,255,0);
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}, []);
+  
+  useEffect(() => {
     const mustScan =
       joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
@@ -498,6 +520,7 @@ export default function StudentApp() {
 
   const assignedNorm = normalizeStationId(assignedStationId);
   const scannedNorm = normalizeStationId(scannedStationId);
+  const assignedColor = assignedNorm.color;
 
   const mustScan =
     joined && !!assignedStationId && scannedStationId !== assignedStationId;
@@ -513,8 +536,8 @@ export default function StudentApp() {
         alignItems: "center",
         justifyContent: "center",
         // 🔴 Use the station colour while scanning; fallback to dark if none
-        background: assignedColor || "#020617",
-        color: "#e5e7eb",
+        background: mustScan && assignedColor ? assignedColor : "#fefce8",
+        color: mustScan && assignedColor ? "#f9fafb" : "#111827",
         fontFamily: "system-ui",
       }}
     >
@@ -733,22 +756,37 @@ export default function StudentApp() {
 
       {joined && scannerActive && (
         <section
-          style={{
-            marginBottom: 16,
-            padding: 12,
-            borderRadius: 12,
-            background: "#eff6ff",
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
-            Scan your station
-          </h2>
-          <QrScanner
-            active={scannerActive}
-            onCode={handleScannedCode}
-            onError={setScanError}
-          />
-        </section>
+  style={{
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
+    background: assignedColor ? assignedColor : "#eff6ff",
+    // ✨ glow only while scanning & a colour is known
+    animation:
+      scannerActive && assignedColor ? "stationPulse 1.6s infinite" : "none",
+    boxShadow:
+      scannerActive && assignedColor
+        ? "0 0 0 0 rgba(255,255,255,0.9)"
+        : "0 1px 3px rgba(15,23,42,0.12)",
+    transition: "background 0.2s ease, box-shadow 0.2s ease",
+  }}
+>
+  <h2
+    style={{
+      marginTop: 0,
+      marginBottom: 8,
+      fontSize: "1rem",
+      color: assignedColor ? "#ffffff" : "#111827",
+    }}
+  >
+    Scan your station
+  </h2>
+  <QrScanner
+    active={scannerActive}
+    onCode={handleScannedCode}
+    onError={setScanError}
+  />
+</section>
       )}
 
       {/* 🔒 Only show the task when no scan is required */}
