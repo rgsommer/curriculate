@@ -139,7 +139,7 @@ function QrScanner({ active, onCode, onError }) {
     function stopCamera() {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
-        rafRefRef.current = null;
+        rafRef.current = null;
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
