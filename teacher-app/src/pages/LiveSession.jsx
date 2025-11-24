@@ -116,6 +116,7 @@ export default function LiveSession({ roomCode }) {
   // Socket listeners
   useEffect(() => {
     const handleRoom = (state) => {
+      console.log("[LiveSession] room state received:", state);
       setRoomState(state || { stations: [], teams: {}, scores: {} });
     };
 
@@ -138,7 +139,7 @@ export default function LiveSession({ roomCode }) {
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
-          localStorage.setItem("curriculateActiveTasksetId", meta._id);
+            localStorage.setItem("curriculateActiveTasksetId", meta._id);
           localStorage.setItem(
             "curriculateActiveTasksetMeta",
             JSON.stringify(meta)
@@ -224,12 +225,21 @@ export default function LiveSession({ roomCode }) {
   };
 
   // Derived helpers
-  const stations = Array.isArray(roomState.stations)
-  ? roomState.stations
-  : Object.values(roomState.stations || {});
+  let stations = Array.isArray(roomState.stations)
+    ? roomState.stations
+    : Object.values(roomState.stations || {});
 
   const teamsById = roomState.teams || {};
   const scores = roomState.scores || {};
+
+  // 🔹 NEW: if there are no stations yet but there ARE teams,
+  // show one pseudo-station card per team so joins are visible.
+  if (stations.length === 0 && Object.keys(teamsById).length > 0) {
+    stations = Object.keys(teamsById).map((teamId, index) => ({
+      id: `Team ${index + 1}`,
+      assignedTeamId: teamId,
+    }));
+  }
 
   const renderStationCard = (station) => {
     const team = teamsById[station.assignedTeamId] || null;
