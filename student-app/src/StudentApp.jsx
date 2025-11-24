@@ -232,6 +232,8 @@ export default function App() {
     new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg")
   );
 
+  const [socketStatus, setSocketStatus] = useState("Connecting…");
+
   /* ---------------- API health ---------------- */
   useEffect(() => {
     fetch(`${API_BASE_URL}/db-check`)
@@ -241,6 +243,26 @@ export default function App() {
   }, []);
 
   /* ---------------- Socket listeners ---------------- */
+  //Log actions to console
+  useEffect(() => {
+  function onConnect() {
+    console.log("Student socket connected:", socket.id);
+    setSocketStatus("Connected");
+  }
+  function onDisconnect(reason) {
+    console.log("Student socket disconnected:", reason);
+    setSocketStatus("Disconnected");
+  }
+
+  socket.on("connect", onConnect);
+  socket.on("disconnect", onDisconnect);
+
+  return () => {
+    socket.off("connect", onConnect);
+    socket.off("disconnect", onDisconnect);
+  };
+}, []);
+
   useEffect(() => {
     const onTaskUpdate = (task) => {
       if (!task) {
@@ -392,43 +414,54 @@ export default function App() {
   };
 
   const handleReady = () => {
-    const finalRoom = roomCode.trim().toUpperCase();
-    const realMembers = members.map((m) => m.trim()).filter(Boolean);
+  const finalRoom = roomCode.trim().toUpperCase();
+  const realMembers = members.map((m) => m.trim()).filter(Boolean);
 
-    if (!finalRoom) {
-      alert("Room code is required");
-      return;
-    }
-    if (realMembers.length === 0) {
-      alert("Enter at least one student name");
-      return;
-    }
+  console.log("[Student] Ready click", {
+    finalRoom,
+    realMembersCount: realMembers.length,
+    socketConnected: socket.connected,
+  });
 
-    const payload = {
-      roomCode: finalRoom,
-      teamName: teamName.trim(),
-      members: realMembers,
-    };
+  if (!finalRoom) {
+    alert("Room code is required");
+    return;
+  }
+  if (realMembers.length === 0) {
+    alert("Enter at least one student name");
+    return;
+  }
 
-    socket.emit("student:joinRoom", payload, (ack) => {
-      if (!ack || ack.ok === false) {
-        alert(
-          ack?.error || "Could not join room. Check the code with your teacher."
-        );
-        return;
-      }
-
-      if (ack.teamId) {
-        setExplicitTeamId(ack.teamId);
-      }
-      if (ack.roomState) {
-        setRoomState(ack.roomState);
-      }
-      sndJoin.current.play().catch(() => {});
-      setJoined(true);
-      setScannedStationId(null);
-    });
+  const payload = {
+    roomCode: finalRoom,
+    teamName: teamName.trim(),
+    members: realMembers,
   };
+
+  console.log("[Student] Emitting student:joinRoom", payload);
+
+  socket.emit("student:joinRoom", payload, (ack) => {
+    console.log("[Student] joinRoom ack:", ack);
+
+    if (!ack || ack.ok === false) {
+      alert(
+        ack?.error ||
+          "Could not join room. Check the code with your teacher."
+      );
+      return;
+    }
+
+    if (ack.teamId) {
+      setExplicitTeamId(ack.teamId);
+    }
+    if (ack.roomState) {
+      setRoomState(ack.roomState);
+    }
+    sndJoin.current.play().catch(() => {});
+    setJoined(true);
+    setScannedStationId(null);
+  });
+};
 
   const handleSubmit = (answerTextFromTask) => {
     if (answered) return;
@@ -626,6 +659,11 @@ export default function App() {
       {!joined ? (
         <>
           <h1>Team check-in</h1>
+
+          <p style={{ fontSize: "0.75rem", marginBottom: 8 }}>
+  {apiStatus} • Socket: {socketStatus} • Room:{" "}
+  {roomCode.trim() ? roomCode.trim().toUpperCase() : "—"}
+</p>
 
           <label>Room code</label>
           <input
