@@ -476,7 +476,7 @@ export default function StudentApp() {
             return;
           }
 
-          // Clear the current task UI after a successful submit
+          // ✅ Clear the current task UI after a successful submit
           setCurrentTask(null);
           setTaskIndex(null);
 
@@ -502,18 +502,11 @@ export default function StudentApp() {
   const mustScan =
     joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
-  const stationColor = assignedNorm.color; // e.g. "red"
-  const headerBandBg =
-    mustScan && stationColor ? stationColor : "#fef9c3";
-  const headerTextColor =
-    mustScan && stationColor ? "#fffbeb" : "#4b5563";
-
   return (
     <div
       style={{
         minHeight: "100vh",
         padding: 16,
-        paddingBottom: 32, // leave space above bottom band
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         backgroundColor: "#fefce8",
         color: "#111827",
@@ -672,7 +665,7 @@ export default function StudentApp() {
             marginBottom: 16,
             padding: 12,
             borderRadius: 12,
-            background: headerBandBg,
+            background: "#fef9c3",
           }}
         >
           <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: "1rem" }}>
@@ -682,7 +675,7 @@ export default function StudentApp() {
             style={{
               margin: 0,
               fontSize: "0.85rem",
-              color: headerTextColor,
+              color: "#4b5563",
             }}
           >
             {statusMessage}
@@ -692,9 +685,8 @@ export default function StudentApp() {
             style={{
               marginTop: 8,
               paddingTop: 8,
-              borderTop: "1px solid rgba(0,0,0,0.08)",
+              borderTop: "1px solid #e5e7eb",
               fontSize: "0.85rem",
-              color: mustScan && stationColor ? "#fffbeb" : "#111827",
             }}
           >
             <div>
@@ -702,7 +694,7 @@ export default function StudentApp() {
               {assignedNorm.label}
             </div>
             {mustScan ? (
-              <div style={{ marginTop: 2 }}>
+              <div style={{ color: "#b91c1c", marginTop: 2 }}>
                 Please scan the QR code at your assigned station.
               </div>
             ) : scannedStationId ? (
@@ -742,4 +734,37 @@ export default function StudentApp() {
             background: "#eff6ff",
           }}
         >
-          <h2 style={{ marginTop: 0, marginBottom: 
+          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+            Scan your station
+          </h2>
+          <QrScanner
+            active={scannerActive}
+            onCode={handleScannedCode}
+            onError={setScanError}
+          />
+        </section>
+      )}
+
+      {/* 🔒 Only show the task when no scan is required */}
+      {joined && currentTask && !mustScan && (
+        <section
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            background: "#f1f5f9",
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+            Task {taskIndex != null ? taskIndex + 1 : ""}
+          </h2>
+          <TaskRunner
+            task={currentTask}
+            taskTypes={TASK_TYPES}
+            onSubmit={handleSubmitAnswer}
+            submitting={submitting}
+          />
+        </section>
+      )}
+    </div>
+  );
+}
