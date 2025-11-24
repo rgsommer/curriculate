@@ -121,6 +121,42 @@ function createRoom(roomCode, teacherSocketId) {
   };
 }
 
+function reassignStations(room) {
+  const stationIds = Object.keys(room.stations || {});
+  const teamIds = Object.keys(room.teams || {});
+
+  if (stationIds.length === 0 || teamIds.length === 0) return;
+
+  // Keep track of rotation round
+  if (typeof room._stationRound !== "number") {
+    room._stationRound = 0;
+  }
+  room._stationRound += 1;
+
+  // Clear existing assignments
+  stationIds.forEach((id) => {
+    room.stations[id].assignedTeamId = null;
+  });
+
+  const sortedTeams = [...teamIds].sort();
+
+  sortedTeams.forEach((teamId, index) => {
+    const stationIdx = (index + room._stationRound) % stationIds.length;
+    const stationId = stationIds[stationIdx];
+
+    const team = room.teams[teamId];
+    if (!team) return;
+
+    team.currentStationId = stationId;
+    team.lastScannedStationId = null; // force a new scan
+
+    if (!room.stations[stationId]) {
+      room.stations[stationId] = { id: stationId, assignedTeamId: null };
+    }
+    room.stations[stationId].assignedTeamId = teamId;
+  });
+}
+
 // Build a transcript from a room
 function buildTranscript(room) {
   const taskset = room.taskset;
@@ -343,6 +379,7 @@ io.on("connection", (socket) => {
     const room = rooms[code];
     if (!room || !room.taskset) return;
 
+    // Move to next task in the set
     room.taskIndex += 1;
     const index = room.taskIndex;
 
@@ -350,6 +387,14 @@ io.on("connection", (socket) => {
       io.to(code).emit("session:complete");
       return;
     }
+
+    // 🔄 Reassign stations for the next round
+    reassignStations(room);
+
+    // Broadcast updated room state so LiveSession/HostView see new colours
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
 
     const task = room.taskset.tasks[index];
 

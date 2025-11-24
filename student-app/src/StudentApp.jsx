@@ -13,8 +13,9 @@ export const socket = io(API_BASE_URL, {
 console.log("API_BASE_URL (student) =", API_BASE_URL);
 
 /* -----------------------------------------------------------
-   Station colour helpers – new style: station-red, station-blue...
-   ----------------------------------------------------------- */
+   Station colour helpers – numeric ids (station-1, station-2…)
+   are canonical. Colours are derived from that.
+----------------------------------------------------------- */
 
 const COLOR_NAMES = [
   "red",
@@ -34,35 +35,65 @@ function normalizeStationId(raw) {
 
   const s = String(raw).trim();
   let lower = s.toLowerCase();
-  let color = null;
 
-  // Old numeric style: station-1, station-2, ...
+  // Case 1: full numeric id: "station-1", "station-2", ...
   let m = /^station-(\d+)$/.exec(lower);
   if (m) {
     const idx = parseInt(m[1], 10) - 1;
-    color = COLOR_NAMES[idx] || null;
-  } else {
-    // New style: station-red, station-blue, or just "red"
-    if (lower.startsWith("station-")) {
-      lower = lower.slice("station-".length);
+    const color = COLOR_NAMES[idx] || null;
+    if (!color) {
+      return { id: `station-${m[1]}`, color: null, label: s };
     }
-    color = lower;
+    const prettyColor = color.charAt(0).toUpperCase() + color.slice(1);
+    return {
+      id: `station-${m[1]}`,
+      color,
+      label: `Station-${prettyColor}`,
+    };
   }
 
-  if (!color) {
-    return { id: s, color: null, label: s };
+  // Case 2: plain number: "1", "2", ...
+  m = /^(\d+)$/.exec(lower);
+  if (m) {
+    const idx = parseInt(m[1], 10) - 1;
+    const color = COLOR_NAMES[idx] || null;
+    if (!color) {
+      return {
+        id: `station-${m[1]}`,
+        color: null,
+        label: `Station-${m[1]}`,
+      };
+    }
+    const prettyColor = color.charAt(0).toUpperCase() + color.slice(1);
+    return {
+      id: `station-${m[1]}`,
+      color,
+      label: `Station-${prettyColor}`,
+    };
   }
 
-  const canonicalId = `station-${color}`;
-  const prettyColor = color.charAt(0).toUpperCase() + color.slice(1);
-  const label = `Station-${prettyColor}`;
+  // Case 3: colour-based: "station-red" or "red"
+  if (lower.startsWith("station-")) {
+    lower = lower.slice("station-".length);
+  }
+  const colorIndex = COLOR_NAMES.indexOf(lower);
+  if (colorIndex >= 0) {
+    const id = `station-${colorIndex + 1}`;
+    const prettyColor = lower.charAt(0).toUpperCase() + lower.slice(1);
+    return {
+      id,
+      color: lower,
+      label: `Station-${prettyColor}`,
+    };
+  }
 
-  return { id: canonicalId, color, label };
+  // Fallback
+  return { id: s, color: null, label: s };
 }
 
 /* -----------------------------------------------------------
-   QR Scanner component (in-app camera)
-   ----------------------------------------------------------- */
+   QR Scanner component – opens camera & decodes QR
+----------------------------------------------------------- */
 
 function QrScanner({ active, onCode, onError }) {
   const videoRef = useRef(null);
@@ -73,17 +104,22 @@ function QrScanner({ active, onCode, onError }) {
     let cancelled = false;
 
     async function startCamera() {
+      if (!active || cancelled) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        onError?.(
+          "Camera is not available in this browser. Try Chrome, Edge, or a modern mobile browser."
+        );
+        return;
+      }
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
-          audio: false,
         });
-
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
-
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -91,44 +127,43 @@ function QrScanner({ active, onCode, onError }) {
         }
 
         if ("BarcodeDetector" in window) {
-  const detector = new window.BarcodeDetector({
-    formats: ["qr_code", "code_128", "code_39", "ean_13"],
-  });
+          const detector = new window.BarcodeDetector({
+            formats: ["qr_code", "code_128", "code_39", "ean_13"],
+          });
 
-  const detectLoop = async () => {
-    if (cancelled) return;
+          const detectLoop = async () => {
+            if (cancelled) return;
 
-    if (!videoRef.current || videoRef.current.readyState < 2) {
-      rafRef.current = requestAnimationFrame(detectLoop);
-      return;
-    }
+            if (!videoRef.current || videoRef.current.readyState < 2) {
+              rafRef.current = requestAnimationFrame(detectLoop);
+              return;
+            }
 
-    try {
-      const barcodes = await detector.detect(videoRef.current);
-      if (barcodes && barcodes.length > 0) {
-        const value = barcodes[0].rawValue || "";
-        if (value) {
-          try {
-            onCode?.(value);
-          } catch (err) {
-            console.error("Error in onCode callback", err);
-          }
-          // ✅ Stop camera after first successful scan
-          cancelled = true;
-          stopCamera();
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn("Barcode detection error", err);
-    }
+            try {
+              const barcodes = await detector.detect(videoRef.current);
+              if (barcodes && barcodes.length > 0) {
+                const value = barcodes[0].rawValue || "";
+                if (value) {
+                  try {
+                    onCode?.(value);
+                  } catch (err) {
+                    console.error("Error in onCode callback", err);
+                  }
+                  // Stop camera after first successful scan
+                  cancelled = true;
+                  stopCamera();
+                  return;
+                }
+              }
+            } catch (err) {
+              console.warn("Barcode detection error", err);
+            }
 
-    rafRef.current = requestAnimationFrame(detectLoop);
-  };
+            rafRef.current = requestAnimationFrame(detectLoop);
+          };
 
-  detectLoop();
-}
- else {
+          detectLoop();
+        } else {
           const msg =
             "Camera is on, but this browser cannot auto-detect QR codes. Try Chrome or Edge.";
           onError?.(msg);
@@ -142,15 +177,15 @@ function QrScanner({ active, onCode, onError }) {
     }
 
     function stopCamera() {
-  if (rafRef.current) {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-  }
-  if (streamRef.current) {
-    streamRef.current.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-  }
-}
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    }
 
     if (active) {
       startCamera();
@@ -165,9 +200,10 @@ function QrScanner({ active, onCode, onError }) {
   return (
     <div
       style={{
-        position: "relative",
-        width: "100%",
-        maxWidth: 480,
+        borderRadius: 12,
+        overflow: "hidden",
+        background: "#000",
+        maxWidth: 360,
         margin: "0 auto",
       }}
     >
@@ -175,176 +211,178 @@ function QrScanner({ active, onCode, onError }) {
         ref={videoRef}
         style={{
           width: "100%",
-          borderRadius: 16,
+          height: "auto",
+          display: "block",
           background: "#000",
         }}
-        muted
         playsInline
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: "15%",
-          border: "3px solid rgba(59,130,246,0.9)",
-          borderRadius: 24,
-          pointerEvents: "none",
-        }}
+        muted
       />
     </div>
   );
 }
 
 /* -----------------------------------------------------------
-   Main App — DEVICE = TEAM
-   ----------------------------------------------------------- */
+   Student App main
+----------------------------------------------------------- */
 
-export default function App() {
+export default function StudentApp() {
+  const [connected, setConnected] = useState(false);
   const [roomCode, setRoomCode] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [members, setMembers] = useState(["", "", "", "", "", ""]);
+  const [members, setMembers] = useState([""]);
   const [joined, setJoined] = useState(false);
+  const [teamId, setTeamId] = useState(null);
 
-  const [apiStatus, setApiStatus] = useState("Checking API…");
-  const [roomState, setRoomState] = useState({
-    stations: [],
-    teams: {},
-    scores: {},
-  });
-  const [currentTask, setCurrentTask] = useState(null);
-  const [answered, setAnswered] = useState(false);
-  const [taskStartTime, setTaskStartTime] = useState(null);
-
-  const [explicitTeamId, setExplicitTeamId] = useState(null);
-
-  // QR / scanning state
+  const [assignedStationId, setAssignedStationId] = useState(null);
   const [scannedStationId, setScannedStationId] = useState(null);
-  const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
+  const [scannerActive, setScannerActive] = useState(false);
 
-  // sounds
-  const sndJoin = useRef(
-    new Audio("https://actions.google.com/sounds/v1/cartoon/pop.ogg")
-  );
-  const sndTask = useRef(
-    new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg")
-  );
-  const sndSubmit = useRef(
-    new Audio(
-      "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
-    )
-  );
-  const sndAlert = useRef(
-    new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg")
+  const [currentTask, setCurrentTask] = useState(null);
+  const [taskIndex, setTaskIndex] = useState(null);
+  const [taskSetMeta, setTaskSetMeta] = useState(null);
+
+  const [statusMessage, setStatusMessage] = useState(
+    "Enter your room code and team name to begin."
   );
 
-  const [socketStatus, setSocketStatus] = useState("Connecting…");
+  const [submitting, setSubmitting] = useState(false);
+  const sndAlert = useRef(null);
 
-  /* ---------------- API health ---------------- */
   useEffect(() => {
-    fetch(`${API_BASE_URL}/db-check`)
-      .then((r) => r.json())
-      .then(() => setApiStatus("✅ API OK"))
-      .catch(() => setApiStatus("❌ cannot reach API"));
+    const audio = new Audio("/sounds/scan-alert.mp3");
+    sndAlert.current = audio;
   }, []);
 
-  /* ---------------- Socket listeners ---------------- */
-  //Log actions to console
   useEffect(() => {
-  function onConnect() {
-    console.log("Student socket connected:", socket.id);
-    setSocketStatus("Connected");
-  }
-  function onDisconnect(reason) {
-    console.log("Student socket disconnected:", reason);
-    setSocketStatus("Disconnected");
-  }
+    socket.on("connect", () => {
+      console.log("Student socket connected:", socket.id);
+      setConnected(true);
+    });
 
-  socket.on("connect", onConnect);
-  socket.on("disconnect", onDisconnect);
+    socket.on("disconnect", () => {
+      console.log("Student socket disconnected");
+      setConnected(false);
+    });
 
-  return () => {
-    socket.off("connect", onConnect);
-    socket.off("disconnect", onDisconnect);
-  };
-}, []);
+    socket.on("room:state", (state) => {
+      console.log("[Student] room:state", state);
 
-  useEffect(() => {
-    const onTaskUpdate = (task) => {
-      if (!task) {
-        setCurrentTask(null);
-        return;
+      const teams = state?.teams || {};
+      const team = teams[teamId] || null;
+
+      if (team) {
+        const stationId = team.currentStationId || null;
+        setAssignedStationId(stationId || null);
       }
-      setCurrentTask(task);
-      setAnswered(false);
-      setTaskStartTime(Date.now());
-      sndTask.current.play().catch(() => {});
-    };
 
-    const onTaskLaunch = (payload) => {
-      const task = payload?.task || payload;
-      if (!task) {
-        setCurrentTask(null);
-        return;
-      }
-      setCurrentTask(task);
-      setAnswered(false);
-      setTaskStartTime(Date.now());
-      sndTask.current.play().catch(() => {});
-    };
-
-    const applyRoomState = (state) => {
-      setRoomState(state || { stations: [], teams: {}, scores: {} });
-    };
-
-    socket.on("taskUpdate", onTaskUpdate);
-    socket.on("roomState", applyRoomState);
-
-    socket.on("task:launch", onTaskLaunch);
-    socket.on("room:state", applyRoomState);
-    socket.on("room:update", applyRoomState);
-
-    socket.on("team:joined", (maybeStateOrTeam) => {
-      if (maybeStateOrTeam && (maybeStateOrTeam.teams || maybeStateOrTeam.stations)) {
-        applyRoomState(maybeStateOrTeam);
+      if (state?.taskIndex != null && state.taskIndex >= 0) {
+        setTaskIndex(state.taskIndex);
       }
     });
 
+    socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
+      console.log("[Student] task:launch", { index, task });
+      setCurrentTask(task || null);
+      setTaskIndex(index);
+      setStatusMessage(
+        "New task received! Read carefully and submit your best answer."
+      );
+    });
+
+    socket.on("session:complete", () => {
+      setCurrentTask(null);
+      setStatusMessage(
+        "Task set complete! Wait for your teacher to show the results."
+      );
+    });
+
     return () => {
-      socket.off("taskUpdate", onTaskUpdate);
-      socket.off("roomState", applyRoomState);
-      socket.off("task:launch", onTaskLaunch);
-      socket.off("room:state", applyRoomState);
-      socket.off("room:update", applyRoomState);
-      socket.off("team:joined");
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("room:state");
+      socket.off("task:launch");
+      socket.off("session:complete");
     };
-  }, []);
-
-  /* ---------------- Team & assignment (this device) ---------------- */
-
-  const keyForMe = explicitTeamId || socket.id;
-  const teamHere = roomState.teams[keyForMe];
-  const teamId = teamHere?.teamId || keyForMe;
-
-  const rawAssignedStationId = teamHere?.currentStationId || null;
-  const {
-    id: assignedStationId,
-    color: assignedColor,
-    label: assignedStationLabel,
-  } = normalizeStationId(rawAssignedStationId);
-
-  const mustScan =
-    joined && !!assignedStationId && scannedStationId !== assignedStationId;
+  }, [teamId]);
 
   useEffect(() => {
+    const mustScan =
+      joined && !!assignedStationId && scannedStationId !== assignedStationId;
+
     if (mustScan && !scanError) {
       setScannerActive(true);
-      sndAlert.current.play().catch(() => {});
+      sndAlert.current?.play().catch(() => {});
     } else {
       setScannerActive(false);
     }
-  }, [mustScan, scanError]);
+  }, [joined, assignedStationId, scannedStationId, scanError]);
 
-  /* ---------------- QR scanned handler ---------------- */
+  /* ---------------- Handlers ---------------- */
+
+  const handleMemberChange = (idx, val) => {
+    setMembers((prev) => {
+      const next = [...prev];
+      next[idx] = val;
+      return next;
+    });
+  };
+
+  const addMemberField = () => {
+    setMembers((prev) => [...prev, ""]);
+  };
+
+  const handleJoin = () => {
+    const finalRoom = roomCode.trim().toUpperCase();
+    if (!finalRoom || !teamName.trim()) {
+      alert("Please enter both a room code and team name.");
+      return;
+    }
+    if (!connected) {
+      alert("Not connected to server yet. Please wait a moment.");
+      return;
+    }
+
+    const filteredMembers = members
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0);
+
+    console.log("[Student] Ready click", {
+      finalRoom,
+      realMembersCount: filteredMembers.length,
+      socketConnected: connected,
+    });
+
+    socket.emit(
+      "student:joinRoom",
+      {
+        roomCode: finalRoom,
+        teamName: teamName.trim(),
+        members: filteredMembers,
+      },
+      (ack) => {
+        console.log("[Student] joinRoom ack:", ack);
+        if (!ack || !ack.ok) {
+          alert(ack?.error || "Unable to join room.");
+          return;
+        }
+
+        setRoomCode(finalRoom);
+        setJoined(true);
+        setTeamId(ack.teamId || socket.id);
+        setStatusMessage(
+          "Joined! Wait for your teacher to assign your first station."
+        );
+
+        const teams = ack.roomState?.teams || {};
+        const team = teams[ack.teamId] || null;
+        if (team?.currentStationId) {
+          setAssignedStationId(team.currentStationId);
+        }
+      }
+    );
+  };
 
   const handleScannedCode = (value) => {
     try {
@@ -364,15 +402,9 @@ export default function App() {
       }
 
       text = text.toLowerCase();
-      let stationIdFromCode = null;
 
-      if (/^station-/.test(text)) {
-        const norm = normalizeStationId(text);
-        stationIdFromCode = norm.id;
-      } else {
-        const norm = normalizeStationId(`station-${text}`);
-        stationIdFromCode = norm.id;
-      }
+      const normFromCode = normalizeStationId(text);
+      const stationIdFromCode = normFromCode.id;
 
       if (!stationIdFromCode) {
         setScanError(
@@ -388,7 +420,7 @@ export default function App() {
         const correctLabel = assignedNorm.label || assignedStationId;
 
         setScanError(
-          `This is the wrong station.\n\nYou scanned: ${scannedLabel}\nYour team is assigned to: ${correctLabel}.\n\nPlease go to the correct station and try again.`
+          `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\nThe correct station is: ${correctLabel}.\n\nPlease go to the correct station and try again.`
         );
         return;
       }
@@ -410,398 +442,309 @@ export default function App() {
     }
   };
 
-  /* ---------------- Handlers ---------------- */
+  const handleSubmitAnswer = async (taskPayload) => {
+    if (!roomCode || !joined || taskIndex == null) return;
 
-  const handleMemberChange = (idx, val) => {
-    const next = [...members];
-    next[idx] = val;
-    setMembers(next);
-  };
-
-  const handleReady = () => {
-  const finalRoom = roomCode.trim().toUpperCase();
-  const realMembers = members.map((m) => m.trim()).filter(Boolean);
-
-  console.log("[Student] Ready click", {
-    finalRoom,
-    realMembersCount: realMembers.length,
-    socketConnected: socket.connected,
-  });
-
-  if (!finalRoom) {
-    alert("Room code is required");
-    return;
-  }
-  if (realMembers.length === 0) {
-    alert("Enter at least one student name");
-    return;
-  }
-
-  const payload = {
-    roomCode: finalRoom,
-    teamName: teamName.trim(),
-    members: realMembers,
-  };
-
-  console.log("[Student] Emitting student:joinRoom", payload);
-
-  socket.emit("student:joinRoom", payload, (ack) => {
-    console.log("[Student] joinRoom ack:", ack);
-
-    if (!ack || ack.ok === false) {
-      alert(
-        ack?.error ||
-          "Could not join room. Check the code with your teacher."
+    try {
+      setSubmitting(true);
+      socket.emit(
+        "student:submitAnswer",
+        {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+          taskIndex,
+          ...taskPayload,
+        },
+        (ack) => {
+          setSubmitting(false);
+          if (!ack || !ack.ok) {
+            alert(
+              ack?.error ||
+                "There was a problem submitting your answer. Please try again."
+            );
+            return;
+          }
+          setStatusMessage("Answer submitted! Wait for the next task.");
+        }
       );
-      return;
-    }
-
-    if (ack.teamId) {
-      setExplicitTeamId(ack.teamId);
-    }
-    if (ack.roomState) {
-      setRoomState(ack.roomState);
-    }
-    sndJoin.current.play().catch(() => {});
-    setJoined(true);
-    setScannedStationId(null);
-  });
-};
-
-  const handleSubmit = (answerTextFromTask) => {
-    if (answered) return;
-
-    if (mustScan) {
+    } catch (err) {
+      console.error("Error submitting answer", err);
+      setSubmitting(false);
       alert(
-        "Before answering, your team must go to the station you were assigned and scan its QR code."
+        "There was a problem submitting your answer. Please check your connection and try again."
       );
-      return;
     }
-
-    if (!teamHere) {
-      alert("Your team is not fully registered in the room yet.");
-      return;
-    }
-
-    const elapsedMs = taskStartTime ? Date.now() - taskStartTime : null;
-
-    const payload = {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      taskId: currentTask?.id || currentTask?._id || null,
-      answer: (answerTextFromTask || "").trim(),
-      timeMs: elapsedMs,
-    };
-
-    socket.emit("student:submitAnswer", payload, (ack) => {
-      if (ack && ack.ok === false) {
-        alert(ack.error || "There was a problem submitting your answer.");
-        return;
-      }
-      setAnswered(true);
-      setCurrentTask(null);
-      sndSubmit.current.play().catch(() => {});
-    });
   };
 
-  /* ---------------- Render: scanner gate ---------------- */
+  /* ---------------- Render ---------------- */
 
-  const currentStationLabel = assignedStationLabel;
+  const assignedNorm = normalizeStationId(assignedStationId);
+  const scannedNorm = normalizeStationId(scannedStationId);
 
-  if (joined && mustScan) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#020617",
-          color: "#e5e7eb",
-          fontFamily: "system-ui",
-        }}
-      >
-        <h1 style={{ margin: 0, textAlign: "center" }}>Scan your station</h1>
-
-        <p
-          style={{
-            margin: 0,
-            textAlign: "center",
-            maxWidth: 320,
-            fontSize: "0.9rem",
-          }}
-        >
-          Move to the colour station your team was assigned, and point the
-          camera at the QR code on that pad.
-        </p>
-
-        <div
-          style={{
-            marginTop: 10,
-            textAlign: "center",
-            fontSize: "0.85rem",
-          }}
-        >
-          Assigned station: <strong>{currentStationLabel}</strong>
-        </div>
-
-        {assignedColor && (
-          <div
-            style={{
-              marginTop: 8,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                background: assignedColor,
-                border: "2px solid #e5e7eb",
-              }}
-            />
-            <div
-              style={{
-                textTransform: "uppercase",
-                fontWeight: 700,
-                letterSpacing: 1,
-              }}
-            >
-              {assignedColor} station
-            </div>
-          </div>
-        )}
-
-        {scanError && (
-          <div
-            style={{
-              maxWidth: 360,
-              background: "#7f1d1d",
-              borderRadius: 8,
-              padding: 10,
-              fontSize: "0.8rem",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {scanError}
-            <div style={{ marginTop: 8, textAlign: "right" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setScanError(null);
-                  setScannerActive(true);
-                }}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#f97316",
-                  color: "#fff",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                }}
-              >
-                Try scanning again
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!scanError && (
-          <QrScanner
-            active={scannerActive}
-            onCode={handleScannedCode}
-            onError={(msg) => console.warn("Scanner error:", msg)}
-          />
-        )}
-
-        <p
-          style={{
-            marginTop: 12,
-            fontSize: "0.75rem",
-            textAlign: "center",
-            color: "#9ca3af",
-          }}
-        >
-          If asked, tap <strong>Allow</strong> so your browser can use the
-          camera.
-        </p>
-      </div>
-    );
-  }
-
-  /* ---------------- Render: normal UI ---------------- */
-
-  const bandColor = assignedColor || (joined ? "#0f172a" : "#111827");
+  const mustScan =
+    joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
   return (
     <div
       style={{
-        maxWidth: 520,
-        margin: "30px auto",
-        fontFamily: "system-ui",
+        minHeight: "100vh",
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        backgroundColor: "#fefce8",
+        color: "#111827",
       }}
     >
-      <style>{`
-        @keyframes flashBand {
-          0% { filter: brightness(1); }
-          50% { filter: brightness(1.35); }
-          100% { filter: brightness(1); }
-        }
-      `}</style>
+      <header style={{ marginBottom: 16 }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: "1.4rem",
+          }}
+        >
+          Curriculate – Team Station
+        </h1>
+        <p
+          style={{
+            margin: 0,
+            fontSize: "0.85rem",
+            color: "#4b5563",
+          }}
+        >
+          {connected ? "Connected" : "Connecting…"}{" "}
+          {roomCode ? `· Room ${roomCode.toUpperCase()}` : null}
+        </p>
+      </header>
 
-      <p style={{ fontSize: "0.75rem", marginBottom: 8 }}>
-        {apiStatus} • Room:{" "}
-        {roomCode.trim() ? roomCode.trim().toUpperCase() : "—"}
-      </p>
-
-      {!joined ? (
-        <>
-          <h1>Team check-in</h1>
-
-          <p style={{ fontSize: "0.75rem", marginBottom: 8 }}>
-  {apiStatus} • Socket: {socketStatus} • Room:{" "}
-  {roomCode.trim() ? roomCode.trim().toUpperCase() : "—"}
-</p>
-
-          <label>Room code</label>
-          <input
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value)}
-            placeholder="e.g. AB"
-            style={{
-              display: "block",
-              width: "100%",
-              marginBottom: 10,
-              padding: 6,
-            }}
-          />
-
-          <label>Team name (optional)</label>
-          <input
-            value={teamName}
-            onChange={(e) => setTeamName(e.target.value)}
-            placeholder="e.g. The Bobsy Twins"
-            style={{
-              display: "block",
-              width: "100%",
-              marginBottom: 10,
-              padding: 6,
-            }}
-          />
-
-          <label>Student names (up to 6)</label>
-          {members.map((m, idx) => (
-            <input
-              key={idx}
-              value={m}
-              onChange={(e) => handleMemberChange(idx, e.target.value)}
-              placeholder={`Student ${idx + 1}`}
-              style={{
-                display: "block",
-                width: "100%",
-                marginBottom: 6,
-                padding: 6,
-              }}
-            />
-          ))}
-
-          <button
-            type="button"
-            onClick={handleReady}
-            style={{
-              marginTop: 16,
-              padding: "10px 16px",
-              borderRadius: 8,
-              border: "none",
-              background: "#0ea5e9",
-              color: "#fff",
-              fontSize: "1rem",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Ready for Action
-          </button>
-        </>
-      ) : (
-        <div style={{ minHeight: "60vh" }}>
-          <h2>{teamHere?.teamName || "Your team"}</h2>
-          {Array.isArray(teamHere?.members) && teamHere.members.length > 0 && (
-            <p
-              style={{
-                fontSize: "0.8rem",
-                marginBottom: 10,
-              }}
-            >
-              {teamHere.members.join(", ")}
-            </p>
-          )}
-
-          <p
-            style={{
-              fontSize: "0.85rem",
-              marginTop: 4,
-            }}
-          >
-            Current station: <strong>{currentStationLabel}</strong>
-          </p>
-
-          {currentTask && !answered ? (
-            <TaskRunner task={currentTask} onSubmit={handleSubmit} disabled={answered} />
-          ) : (
-            <p>Waiting for task…</p>
-          )}
-
+      {!joined && (
+        <section
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            background: "#f3f4ff",
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+            Join your room
+          </h2>
           <div
             style={{
-              position: "fixed",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: "35vh",
-              background: bandColor,
               display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#fff",
-              textAlign: "center",
-              padding: 12,
-              transition: "background 0.25s ease-in-out",
+              flexDirection: "column",
+              gap: 8,
             }}
           >
+            <label style={{ fontSize: "0.85rem" }}>
+              Room code
+              <input
+                type="text"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                style={{
+                  width: "100%",
+                  padding: "4px 6px",
+                  marginTop: 2,
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  fontSize: "1rem",
+                }}
+              />
+            </label>
+
+            <label style={{ fontSize: "0.85rem" }}>
+              Team name
+              <input
+                type="text"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "4px 6px",
+                  marginTop: 2,
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  fontSize: "1rem",
+                }}
+              />
+            </label>
+
             <div>
               <div
                 style={{
-                  fontSize: "1.6rem",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
                 }}
               >
-                {assignedColor
-                  ? `${assignedColor.toUpperCase()} STATION`
-                  : "WAITING FOR STATION"}
+                Team members (optional)
               </div>
-              <div>{teamHere?.teamName || "Your team"}</div>
-              {Array.isArray(teamHere?.members) && teamHere.members.length > 0 && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontSize: "0.75rem",
-                  }}
-                >
-                  {teamHere.members.join(", ")}
-                </div>
-              )}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                {members.map((m, idx) => (
+                  <input
+                    key={idx}
+                    type="text"
+                    value={m}
+                    onChange={(e) =>
+                      handleMemberChange(idx, e.target.value)
+                    }
+                    placeholder={`Member ${idx + 1}`}
+                    style={{
+                      width: "100%",
+                      padding: "4px 6px",
+                      borderRadius: 6,
+                      border: "1px solid #e5e7eb",
+                      fontSize: "0.9rem",
+                    }}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={addMemberField}
+                style={{
+                  marginTop: 6,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border: "none",
+                  fontSize: "0.8rem",
+                  background: "#e5e7eb",
+                  cursor: "pointer",
+                }}
+              >
+                + Add member field
+              </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleJoin}
+              style={{
+                marginTop: 8,
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "none",
+                background: "#16a34a",
+                color: "#ffffff",
+                fontSize: "0.95rem",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Ready for action
+            </button>
           </div>
-        </div>
+        </section>
+      )}
+
+      {joined && (
+        <section
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            background: "#fef9c3",
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: "1rem" }}>
+            Team {teamName || "?"}
+          </h2>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.85rem",
+              color: "#4b5563",
+            }}
+          >
+            {statusMessage}
+          </p>
+
+          <div
+            style={{
+              marginTop: 8,
+              paddingTop: 8,
+              borderTop: "1px solid #e5e7eb",
+              fontSize: "0.85rem",
+            }}
+          >
+            <div>
+              <strong>Current station: </strong>
+              {assignedNorm.label}
+            </div>
+            {mustScan ? (
+              <div style={{ color: "#b91c1c", marginTop: 2 }}>
+                Please scan the QR code at your assigned station.
+              </div>
+            ) : scannedStationId ? (
+              <div style={{ color: "#059669", marginTop: 2 }}>
+                Station confirmed ({scannedNorm.label}). Wait for the task.
+              </div>
+            ) : (
+              <div style={{ color: "#6b7280", marginTop: 2 }}>
+                Waiting for a task…
+              </div>
+            )}
+            {scanError && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: 6,
+                  borderRadius: 8,
+                  background: "#fee2e2",
+                  color: "#991b1b",
+                  whiteSpace: "pre-wrap",
+                  fontSize: "0.8rem",
+                }}
+              >
+                {scanError}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {joined && (
+        <section
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            background: "#eff6ff",
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+            Scan your station
+          </h2>
+          <QrScanner
+            active={scannerActive}
+            onCode={handleScannedCode}
+            onError={setScanError}
+          />
+        </section>
+      )}
+
+      {joined && currentTask && (
+        <section
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            background: "#f1f5f9",
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+            Task {taskIndex != null ? taskIndex + 1 : ""}
+          </h2>
+          <TaskRunner
+            task={currentTask}
+            taskTypes={TASK_TYPES}
+            onSubmit={handleSubmitAnswer}
+            submitting={submitting}
+          />
+        </section>
       )}
     </div>
   );
