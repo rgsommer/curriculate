@@ -14,7 +14,6 @@ console.log("API_BASE_URL (student) =", API_BASE_URL);
 
 /* -----------------------------------------------------------
    Station colour helpers – numeric ids (station-1, station-2…)
-   are canonical. Colours are derived from that.
 ----------------------------------------------------------- */
 
 const COLOR_NAMES = [
@@ -92,8 +91,7 @@ function normalizeStationId(raw) {
 }
 
 /* -----------------------------------------------------------
-   QR Scanner component – opens camera & decodes QR
-   Option A: camera only stops when onCode(value) returns true
+   QR Scanner – camera only stops when onCode(value) returns true
 ----------------------------------------------------------- */
 
 function QrScanner({ active, onCode, onError }) {
@@ -128,7 +126,7 @@ function QrScanner({ active, onCode, onError }) {
         if (barcodes && barcodes.length > 0) {
           const value = barcodes[0].rawValue || "";
           if (value) {
-            let shouldStop = true; // default if handler doesn't return bool
+            let shouldStop = true; // default if handler doesn’t return bool
             try {
               if (onCode) {
                 const result = onCode(value);
@@ -142,7 +140,7 @@ function QrScanner({ active, onCode, onError }) {
               console.error("Error in onCode callback", err);
             }
 
-            // ✅ Option A: only stop on correct scan
+            // ✅ Option A: only stop camera when handler says so
             if (shouldStop) {
               cancelled = true;
               await stopCamera();
@@ -260,9 +258,9 @@ export default function StudentApp() {
   );
 
   const [submitting, setSubmitting] = useState(false);
-  const sndAlert = useRef(null); // <audio> element ref
+  const sndAlert = useRef(null);
 
-  // Add CSS for pulsing effect once
+  // Pulse CSS for colour box
   useEffect(() => {
     const styleId = "station-pulse-style";
     if (document.getElementById(styleId)) return;
@@ -279,7 +277,6 @@ export default function StudentApp() {
     document.head.appendChild(style);
   }, []);
 
-  // Ensure sound volume sane once mounted
   useEffect(() => {
     if (sndAlert.current) {
       sndAlert.current.volume = 1.0;
@@ -354,21 +351,20 @@ export default function StudentApp() {
     };
   }, [teamId, assignedStationId]);
 
-  // Turn scanner on/off depending on whether a scan is required
+  // 🔧 Scanner activation logic – **no longer tied to scanError**
   useEffect(() => {
     const mustScan =
       joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
-    if (mustScan && !scanError) {
+    if (mustScan) {
       setScannerActive(true);
+      // Optional: sound prompt; keep if you like
       const a = sndAlert.current;
       a?.play().catch(() => {});
     } else {
       setScannerActive(false);
     }
-  }, [joined, assignedStationId, scannedStationId, scanError]);
-
-  /* ---------------- Audio unlock helper ---------------- */
+  }, [joined, assignedStationId, scannedStationId]);
 
   const unlockAudioForBrowser = () => {
     const a = sndAlert.current;
@@ -383,8 +379,6 @@ export default function StudentApp() {
       })
       .catch(() => {});
   };
-
-  /* ---------------- Handlers ---------------- */
 
   const handleMemberChange = (idx, val) => {
     setMembers((prev) => {
@@ -438,8 +432,6 @@ export default function StudentApp() {
         setRoomCode(finalRoom);
         setJoined(true);
         setTeamId(ack.teamId || socket.id);
-
-        // Initial prompt: scan right away
         setStatusMessage("Scan the QR code at your assigned station.");
 
         const teams = ack.roomState?.teams || {};
@@ -451,9 +443,7 @@ export default function StudentApp() {
     );
   };
 
-  // onCode handler returns boolean:
-  // true  => correct station → stop camera
-  // false => keep camera running (wrong / invalid)
+  // onCode handler: returns true to stop camera, false to keep scanning
   const handleScannedCode = (value) => {
     try {
       let text = (value || "").trim();
@@ -500,7 +490,6 @@ export default function StudentApp() {
       setScannedStationId(norm.id);
       setScanError(null);
 
-      // After a correct scan, change message to team members
       const nonEmptyMembers = members.map((m) => m.trim()).filter(Boolean);
       if (nonEmptyMembers.length > 0) {
         setStatusMessage(`Team members: ${nonEmptyMembers.join(", ")}`);
@@ -516,7 +505,7 @@ export default function StudentApp() {
         });
       }
 
-      return true; // ✅ Correct scan → stop camera
+      return true; // ✅ correct scan → stop camera
     } catch (err) {
       console.error("Error handling scanned code", err);
       setScanError("Something went wrong while scanning. Please try again.");
@@ -547,7 +536,6 @@ export default function StudentApp() {
             return;
           }
 
-          // Clear task UI; new station + scan prompt will come via room:state
           setCurrentTask(null);
           setTaskIndex(null);
           setStatusMessage("Answer submitted.");
@@ -561,8 +549,6 @@ export default function StudentApp() {
       );
     }
   };
-
-  /* ---------------- Render ---------------- */
 
   const assignedNorm = normalizeStationId(assignedStationId);
   const scannedNorm = normalizeStationId(scannedStationId);
@@ -854,7 +840,6 @@ export default function StudentApp() {
           </section>
         )}
 
-        {/* Only show the task when no scan is required */}
         {joined && currentTask && !mustScan && (
           <section
             style={{
