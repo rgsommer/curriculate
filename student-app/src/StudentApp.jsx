@@ -93,7 +93,7 @@ function normalizeStationId(raw) {
 
 /* -----------------------------------------------------------
    QR Scanner component – opens camera & decodes QR
-   ⚠️ Important: camera only stops when onCode(value) returns true
+   Option A: camera only stops when onCode(value) returns true
 ----------------------------------------------------------- */
 
 function QrScanner({ active, onCode, onError }) {
@@ -104,55 +104,68 @@ function QrScanner({ active, onCode, onError }) {
   useEffect(() => {
     let cancelled = false;
 
+    async function stopCamera() {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    }
+
+    async function detectLoop(detector) {
+      if (cancelled) return;
+
+      if (!videoRef.current || videoRef.current.readyState < 2) {
+        rafRef.current = requestAnimationFrame(() => detectLoop(detector));
+        return;
+      }
+
+      try {
+        const barcodes = await detector.detect(videoRef.current);
+        if (barcodes && barcodes.length > 0) {
+          const value = barcodes[0].rawValue || "";
+          if (value) {
+            let shouldStop = true; // default if handler doesn't return bool
+            try {
+              if (onCode) {
+                const result = onCode(value);
+                if (result instanceof Promise) {
+                  shouldStop = await result;
+                } else if (typeof result === "boolean") {
+                  shouldStop = result;
+                }
+              }
+            } catch (err) {
+              console.error("Error in onCode callback", err);
+            }
+
+            // ✅ Option A: only stop on correct scan
+            if (shouldStop) {
+              cancelled = true;
+              await stopCamera();
+              return;
+            }
+            // ❗ Wrong / invalid → keep scanning
+          }
+        }
+      } catch (err) {
+        console.warn("Barcode detection error", err);
+      }
+
+      rafRef.current = requestAnimationFrame(() => detectLoop(detector));
+    }
+
     async function startCamera() {
       if (!active || cancelled) return;
+
       if (!navigator.mediaDevices?.getUserMedia) {
         onError?.(
           "Camera is not available in this browser. Try Chrome, Edge, or a modern mobile browser."
         );
         return;
-      }
-
-      async function detectLoop(detector) {
-        if (cancelled) return;
-
-        if (!videoRef.current || videoRef.current.readyState < 2) {
-          rafRef.current = requestAnimationFrame(() => detectLoop(detector));
-          return;
-        }
-
-        try {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes && barcodes.length > 0) {
-            const value = barcodes[0].rawValue || "";
-            if (value) {
-              let shouldStop = true; // default: keep old behaviour if handler doesn't return bool
-              try {
-                if (onCode) {
-                  const result = onCode(value);
-                  if (result instanceof Promise) {
-                    shouldStop = await result;
-                  } else if (typeof result === "boolean") {
-                    shouldStop = result;
-                  }
-                }
-              } catch (err) {
-                console.error("Error in onCode callback", err);
-              }
-
-              if (shouldStop) {
-                cancelled = true;
-                stopCamera();
-                return;
-              }
-              // ❗ If shouldStop is false (wrong station / invalid), keep scanning
-            }
-          }
-        } catch (err) {
-          console.warn("Barcode detection error", err);
-        }
-
-        rafRef.current = requestAnimationFrame(() => detectLoop(detector));
       }
 
       try {
@@ -184,17 +197,6 @@ function QrScanner({ active, onCode, onError }) {
         const msg =
           "Unable to access camera. Please allow camera access or use a different browser.";
         onError?.(msg);
-      }
-    }
-
-    function stopCamera() {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRefRef = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
       }
     }
 
@@ -252,7 +254,6 @@ export default function StudentApp() {
 
   const [currentTask, setCurrentTask] = useState(null);
   const [taskIndex, setTaskIndex] = useState(null);
-  const [taskSetMeta, setTaskSetMeta] = useState(null); // reserved
 
   const [statusMessage, setStatusMessage] = useState(
     "Enter your room code and team name to begin."
@@ -261,7 +262,7 @@ export default function StudentApp() {
   const [submitting, setSubmitting] = useState(false);
   const sndAlert = useRef(null); // <audio> element ref
 
-  // Pulse CSS for the coloured scanner box
+  // Add CSS for pulsing effect once
   useEffect(() => {
     const styleId = "station-pulse-style";
     if (document.getElementById(styleId)) return;
@@ -270,21 +271,15 @@ export default function StudentApp() {
     style.id = styleId;
     style.textContent = `
       @keyframes stationPulse {
-        0% {
-          box-shadow: 0 0 0 0 rgba(255,255,255,0.9);
-        }
-        70% {
-          box-shadow: 0 0 0 18px rgba(255,255,255,0);
-        }
-        100% {
-          box-shadow 0 0 0 0 rgba(255,255,255,0);
-        }
+        0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.9); }
+        70%  { box-shadow: 0 0 0 18px rgba(255,255,255,0); }
+        100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
       }
     `;
     document.head.appendChild(style);
   }, []);
 
-  // Ensure sound volume is sane once audio element is mounted
+  // Ensure sound volume sane once mounted
   useEffect(() => {
     if (sndAlert.current) {
       sndAlert.current.volume = 1.0;
@@ -322,7 +317,7 @@ export default function StudentApp() {
       }
     });
 
-    socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
+    socket.on("task:launch", ({ index, task }) => {
       console.log("[Student] task:launch", { index, task });
       setCurrentTask(task || null);
       setTaskIndex(index);
@@ -443,7 +438,8 @@ export default function StudentApp() {
         setRoomCode(finalRoom);
         setJoined(true);
         setTeamId(ack.teamId || socket.id);
-        // Immediately instruct to scan (never “wait for teacher”)
+
+        // Initial prompt: scan right away
         setStatusMessage("Scan the QR code at your assigned station.");
 
         const teams = ack.roomState?.teams || {};
@@ -462,6 +458,7 @@ export default function StudentApp() {
     try {
       let text = (value || "").trim();
 
+      // Allow scanning URLs that end in station slug
       try {
         const url = new URL(text);
         const segments = url.pathname
@@ -472,7 +469,7 @@ export default function StudentApp() {
           text = segments[segments.length - 1];
         }
       } catch {
-        // not a URL, keep raw
+        // not a URL, ignore
       }
 
       text = text.toLowerCase();
@@ -503,7 +500,7 @@ export default function StudentApp() {
       setScannedStationId(norm.id);
       setScanError(null);
 
-      // 🔶 After a correct scan, top message shows team members
+      // After a correct scan, change message to team members
       const nonEmptyMembers = members.map((m) => m.trim()).filter(Boolean);
       if (nonEmptyMembers.length > 0) {
         setStatusMessage(`Team members: ${nonEmptyMembers.join(", ")}`);
@@ -550,10 +547,9 @@ export default function StudentApp() {
             return;
           }
 
+          // Clear task UI; new station + scan prompt will come via room:state
           setCurrentTask(null);
           setTaskIndex(null);
-
-          // New station assignment & scan prompt come via room:state
           setStatusMessage("Answer submitted.");
         }
       );
@@ -858,7 +854,7 @@ export default function StudentApp() {
           </section>
         )}
 
-        {/* 🔒 Only show the task when no scan is required */}
+        {/* Only show the task when no scan is required */}
         {joined && currentTask && !mustScan && (
           <section
             style={{
