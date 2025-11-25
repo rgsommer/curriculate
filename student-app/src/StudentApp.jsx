@@ -13,6 +13,21 @@ export const socket = io(API_BASE_URL, {
 console.log("API_BASE_URL (student) =", API_BASE_URL);
 
 /* -----------------------------------------------------------
+   Station mapping – LOCATION + COLOUR → station-id
+   Edit this to match your actual posters.
+   Example: play.curriculate.net/Hallway/red
+   => location = "hallway", colour = "red" => "hallway-red"
+----------------------------------------------------------- */
+
+const STATION_SLUGS = {
+  // slug          : stationId
+  "hallway-red": "station-1",
+  // "hallway-blue": "station-2",
+  // "classroom-red": "station-3",
+  // etc – fill this out to match how you assign stations
+};
+
+/* -----------------------------------------------------------
    Station colour helpers – numeric ids (station-1, station-2…)
 ----------------------------------------------------------- */
 
@@ -351,14 +366,13 @@ export default function StudentApp() {
     };
   }, [teamId, assignedStationId]);
 
-  // 🔧 Scanner activation logic – **no longer tied to scanError**
+  // Scanner activation logic – independent of scanError
   useEffect(() => {
     const mustScan =
       joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
     if (mustScan) {
       setScannerActive(true);
-      // Optional: sound prompt; keep if you like
       const a = sndAlert.current;
       a?.play().catch(() => {});
     } else {
@@ -446,38 +460,73 @@ export default function StudentApp() {
   // onCode handler: returns true to stop camera, false to keep scanning
   const handleScannedCode = (value) => {
     try {
-      let text = (value || "").trim();
+      // Normalise slashes first so we can handle backslash QR text
+      let raw = (value || "").trim().replace(/\\/g, "/");
 
-      // Allow scanning URLs that end in station slug
+      let segments = [];
+
+      // Try parse as full URL first
       try {
-        const url = new URL(text);
-        const segments = url.pathname
+        const url = new URL(raw);
+        segments = url.pathname
           .split("/")
           .map((s) => s.trim())
           .filter(Boolean);
-        if (segments.length > 0) {
-          text = segments[segments.length - 1];
-        }
       } catch {
-        // not a URL, ignore
+        // Not a valid URL; treat as path-like string
+        segments = raw.split("/").map((s) => s.trim()).filter(Boolean);
       }
 
-      text = text.toLowerCase();
+      let location = null;
+      let colour = null;
 
-      const normFromCode = normalizeStationId(text);
-      const stationIdFromCode = normFromCode.id;
+      if (segments.length >= 2) {
+        location = segments[segments.length - 2].toLowerCase();
+        colour = segments[segments.length - 1].toLowerCase();
+      } else if (segments.length === 1) {
+        // Fallback: only have colour segment
+        colour = segments[0].toLowerCase();
+      }
 
-      if (!stationIdFromCode) {
+      let stationIdFromCode = null;
+
+      // If we have both location + colour, use them as slug
+      if (location && colour) {
+        const slug = `${location}-${colour}`;
+        stationIdFromCode = STATION_SLUGS[slug] || null;
+        if (!stationIdFromCode) {
+          setScanError(
+            `Unrecognized station code: "${location}/${colour}". Ask your teacher which QR to use.`
+          );
+          return false; // keep scanning
+        }
+      } else if (colour) {
+        // Fallback: colour-only behaviour using normalizeStationId
+        const normFromCode = normalizeStationId(colour);
+        stationIdFromCode = normFromCode.id;
+        if (!stationIdFromCode) {
+          setScanError(
+            `Unrecognized station colour: "${colour}". Ask your teacher which QR to use.`
+          );
+          return false;
+        }
+      } else {
         setScanError(
-          `Unrecognized station code: "${text}". Ask your teacher which QR to use.`
+          `Unrecognized station code: "${raw}". Ask your teacher which QR to use.`
         );
-        return false; // keep scanning
+        return false;
       }
 
+      // Now we have a concrete stationIdFromCode (e.g., "station-1").
+      // Compare to assignedStationId – this enforces LOCATION+COLOUR
       if (assignedStationId && stationIdFromCode !== assignedStationId) {
-        const scannedNorm = normalizeStationId(stationIdFromCode);
         const assignedNorm = normalizeStationId(assignedStationId);
-        const scannedLabel = scannedNorm.label || stationIdFromCode;
+        const scannedNorm = normalizeStationId(stationIdFromCode);
+
+        const scannedLabel =
+          (location && colour
+            ? `${location}/${colour}`
+            : scannedNorm.label || stationIdFromCode) || stationIdFromCode;
         const correctLabel = assignedNorm.label || assignedStationId;
 
         setScanError(
@@ -505,7 +554,7 @@ export default function StudentApp() {
         });
       }
 
-      return true; // ✅ correct scan → stop camera
+      return true; // ✅ correct station (location+colour) → stop camera
     } catch (err) {
       console.error("Error handling scanned code", err);
       setScanError("Something went wrong while scanning. Please try again.");
