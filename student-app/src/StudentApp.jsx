@@ -93,6 +93,7 @@ function normalizeStationId(raw) {
 
 /* -----------------------------------------------------------
    QR Scanner component – opens camera & decodes QR
+   ⚠️ Important: camera only stops when onCode(value) returns true
 ----------------------------------------------------------- */
 
 function QrScanner({ active, onCode, onError }) {
@@ -110,6 +111,48 @@ function QrScanner({ active, onCode, onError }) {
           "Camera is not available in this browser. Try Chrome, Edge, or a modern mobile browser."
         );
         return;
+      }
+
+      async function detectLoop(detector) {
+        if (cancelled) return;
+
+        if (!videoRef.current || videoRef.current.readyState < 2) {
+          rafRef.current = requestAnimationFrame(() => detectLoop(detector));
+          return;
+        }
+
+        try {
+          const barcodes = await detector.detect(videoRef.current);
+          if (barcodes && barcodes.length > 0) {
+            const value = barcodes[0].rawValue || "";
+            if (value) {
+              let shouldStop = true; // default: keep old behaviour if handler doesn't return bool
+              try {
+                if (onCode) {
+                  const result = onCode(value);
+                  if (result instanceof Promise) {
+                    shouldStop = await result;
+                  } else if (typeof result === "boolean") {
+                    shouldStop = result;
+                  }
+                }
+              } catch (err) {
+                console.error("Error in onCode callback", err);
+              }
+
+              if (shouldStop) {
+                cancelled = true;
+                stopCamera();
+                return;
+              }
+              // ❗ If shouldStop is false (wrong station / invalid), keep scanning
+            }
+          }
+        } catch (err) {
+          console.warn("Barcode detection error", err);
+        }
+
+        rafRef.current = requestAnimationFrame(() => detectLoop(detector));
       }
 
       try {
@@ -130,39 +173,7 @@ function QrScanner({ active, onCode, onError }) {
           const detector = new window.BarcodeDetector({
             formats: ["qr_code", "code_128", "code_39", "ean_13"],
           });
-
-          const detectLoop = async () => {
-            if (cancelled) return;
-
-            if (!videoRef.current || videoRef.current.readyState < 2) {
-              rafRef.current = requestAnimationFrame(detectLoop);
-              return;
-            }
-
-            try {
-              const barcodes = await detector.detect(videoRef.current);
-              if (barcodes && barcodes.length > 0) {
-                const value = barcodes[0].rawValue || "";
-                if (value) {
-                  try {
-                    onCode?.(value);
-                  } catch (err) {
-                    console.error("Error in onCode callback", err);
-                  }
-                  // Stop camera after first successful scan
-                  cancelled = true;
-                  stopCamera();
-                  return;
-                }
-              }
-            } catch (err) {
-              console.warn("Barcode detection error", err);
-            }
-
-            rafRef.current = requestAnimationFrame(detectLoop);
-          };
-
-          detectLoop();
+          detectLoop(detector);
         } else {
           const msg =
             "Camera is on, but this browser cannot auto-detect QR codes. Try Chrome or Edge.";
@@ -241,22 +252,14 @@ export default function StudentApp() {
 
   const [currentTask, setCurrentTask] = useState(null);
   const [taskIndex, setTaskIndex] = useState(null);
-  const [taskSetMeta, setTaskSetMeta] = useState(null);
+  const [taskSetMeta, setTaskSetMeta] = useState(null); // reserved for future
 
   const [statusMessage, setStatusMessage] = useState(
     "Enter your room code and team name to begin."
   );
 
   const [submitting, setSubmitting] = useState(false);
-  const sndAlert = useRef(null);
-
-  // Preload scan / task sound
-  useEffect(() => {
-    const audio = new Audio("/sounds/scan-alert.mp3");
-    audio.preload = "auto";
-    audio.volume = 1.0;
-    sndAlert.current = audio;
-  }, []);
+  const sndAlert = useRef(null); // <audio> element ref
 
   // Pulse CSS for the coloured scanner box
   useEffect(() => {
@@ -279,6 +282,13 @@ export default function StudentApp() {
       }
     `;
     document.head.appendChild(style);
+  }, []);
+
+  // Ensure sound volume is sane once audio element is mounted
+  useEffect(() => {
+    if (sndAlert.current) {
+      sndAlert.current.volume = 1.0;
+    }
   }, []);
 
   // Socket events
@@ -317,9 +327,10 @@ export default function StudentApp() {
       setCurrentTask(task || null);
       setTaskIndex(index);
 
-      if (sndAlert.current) {
-        sndAlert.current.currentTime = 0;
-        sndAlert.current
+      const a = sndAlert.current;
+      if (a) {
+        a.currentTime = 0;
+        a
           .play()
           .then(() => {})
           .catch((err) =>
@@ -356,7 +367,8 @@ export default function StudentApp() {
     if (mustScan && !scanError) {
       setScannerActive(true);
       // optional: a soft ping when they *need* to scan
-      sndAlert.current?.play().catch(() => {});
+      const a = sndAlert.current;
+      a?.play().catch(() => {});
     } else {
       setScannerActive(false);
     }
@@ -377,7 +389,7 @@ export default function StudentApp() {
         a.muted = false;
       })
       .catch(() => {
-        // ignore; user will just not get task sound in stricter browsers
+        // ignore – if this fails, we'll just have no sound in stricter browsers
       });
   };
 
@@ -436,9 +448,8 @@ export default function StudentApp() {
         setRoomCode(finalRoom);
         setJoined(true);
         setTeamId(ack.teamId || socket.id);
-        setStatusMessage(
-          "Joined! Wait for your teacher to assign your first station."
-        );
+        // ❌ Never tell them to wait for teacher
+        setStatusMessage("Scan the QR code at your assigned station.");
 
         const teams = ack.roomState?.teams || {};
         const team = teams[ack.teamId] || null;
@@ -449,6 +460,9 @@ export default function StudentApp() {
     );
   };
 
+  // onCode handler returns boolean:
+  // true  => correct station → stop camera
+  // false => keep camera running (wrong / invalid)
   const handleScannedCode = (value) => {
     try {
       let text = (value || "").trim();
@@ -475,7 +489,8 @@ export default function StudentApp() {
         setScanError(
           `Unrecognized station code: "${text}". Ask your teacher which QR to use.`
         );
-        return;
+        // ❗ invalid → keep scanning
+        return false;
       }
 
       if (assignedStationId && stationIdFromCode !== assignedStationId) {
@@ -487,7 +502,8 @@ export default function StudentApp() {
         setScanError(
           `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\nThe correct station is: ${correctLabel}.\n\nPlease go to the correct station and try again.`
         );
-        return;
+        // ❗ wrong station → keep scanning
+        return false;
       }
 
       const norm = normalizeStationId(stationIdFromCode);
@@ -501,9 +517,14 @@ export default function StudentApp() {
           stationId: norm.id,
         });
       }
+
+      // ✅ correct scan → stop camera
+      return true;
     } catch (err) {
       console.error("Error handling scanned code", err);
       setScanError("Something went wrong while scanning. Please try again.");
+      // keep scanning in case of error
+      return false;
     }
   };
 
@@ -534,8 +555,8 @@ export default function StudentApp() {
           setCurrentTask(null);
           setTaskIndex(null);
 
-          // Keep message minimal – the *real* next step comes
-          // when room:state assigns a new station and triggers scan prompt.
+          // The new station assignment & scan prompt will come immediately
+          // from the server via "room:state" after reassignStations(room).
           setStatusMessage("Answer submitted.");
         }
       );
@@ -571,6 +592,14 @@ export default function StudentApp() {
         color: "#111827",
       }}
     >
+      {/* Hidden audio element for task / scan sounds */}
+      <audio
+        ref={sndAlert}
+        src="/sounds/scan-alert.mp3"
+        preload="auto"
+        style={{ display: "none" }}
+      />
+
       {/* Main content column */}
       <div
         style={{

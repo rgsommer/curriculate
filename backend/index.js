@@ -373,6 +373,7 @@ io.on("connection", (socket) => {
 
   // --------------------------------------------------------------
   // Teacher sends next task (and alias "launchTaskset")
+  // 👉 Stations are NOT reassigned here anymore – that happens on submit
   // --------------------------------------------------------------
   function handleTeacherNextTask({ roomCode }) {
     const code = (roomCode || "").toUpperCase();
@@ -388,15 +389,12 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // 🔄 Reassign stations for the next round
-    reassignStations(room);
+    const task = room.taskset.tasks[index];
 
-    // Broadcast updated room state so LiveSession/HostView see new colours
+    // Optionally broadcast state so UI sees the new task index
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
-
-    const task = room.taskset.tasks[index];
 
     io.to(code).emit("task:launch", {
       index,
@@ -449,6 +447,7 @@ io.on("connection", (socket) => {
 
   // --------------------------------------------------------------
   // Student joins room – assign a station immediately
+  // and clean up any old team with the same name
   // --------------------------------------------------------------
   socket.on("student:joinRoom", (payload, ack) => {
     const { roomCode, teamName, members } = payload || {};
@@ -475,6 +474,21 @@ io.on("connection", (socket) => {
 
     const displayName =
       teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
+
+    // 💥 If there's an existing team with the same name, remove it and free its station
+    for (const [existingId, t] of Object.entries(room.teams)) {
+      if (t.teamName === displayName && existingId !== teamId) {
+        const oldStation = t.currentStationId;
+        if (
+          oldStation &&
+          room.stations[oldStation] &&
+          room.stations[oldStation].assignedTeamId === existingId
+        ) {
+          room.stations[oldStation].assignedTeamId = null;
+        }
+        delete room.teams[existingId];
+      }
+    }
 
     if (!room.teams[teamId]) {
       room.teams[teamId] = {
@@ -609,6 +623,9 @@ io.on("connection", (socket) => {
 
   // --------------------------------------------------------------
   // Student submits answer
+  // 👉 After every submission we immediately reassign stations
+  //    and broadcast a new room:state, so StudentApp gets a
+  //    new colour + scan prompt right away.
   // --------------------------------------------------------------
   const handleStudentSubmit = async (payload, ack) => {
     const { roomCode, teamId, taskIndex, answer, timeMs } = payload || {};
@@ -679,26 +696,10 @@ io.on("connection", (socket) => {
       submittedAt,
     });
 
-    // 🔄 NEW LOGIC: if all teams have submitted for this task index,
-    // immediately rotate stations for the next round.
-    const teamIds = Object.keys(room.teams || {});
-    if (teamIds.length > 0 && typeof idx === "number" && idx >= 0) {
-      const submittedTeams = new Set(
-        room.submissions
-          .filter(
-            (s) =>
-              s.taskIndex === idx && s.teamId && teamIds.includes(s.teamId)
-          )
-          .map((s) => s.teamId)
-      );
+    // 🔄 Immediately rotate stations for the next round (no waiting)
+    reassignStations(room);
 
-      if (submittedTeams.size === teamIds.length) {
-        // Everyone has submitted for this task: reassign stations now
-        reassignStations(room);
-      }
-    }
-
-    // Rebuild scores + broadcast updated room state (after any rotation)
+    // Rebuild scores + broadcast updated room state (after rotation)
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
@@ -786,6 +787,35 @@ io.on("connection", (socket) => {
       }
     }
   );
+
+  // --------------------------------------------------------------
+  // Cleanup on disconnect – remove team & free station
+  // --------------------------------------------------------------
+  socket.on("disconnect", () => {
+    const code = socket.data?.roomCode;
+    const teamId = socket.data?.teamId;
+    if (!code || !teamId) return;
+
+    const room = rooms[code];
+    if (!room || !room.teams[teamId]) return;
+
+    const team = room.teams[teamId];
+    const stationId = team.currentStationId;
+
+    if (
+      stationId &&
+      room.stations[stationId] &&
+      room.stations[stationId].assignedTeamId === teamId
+    ) {
+      room.stations[stationId].assignedTeamId = null;
+    }
+
+    delete room.teams[teamId];
+
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+  });
 });
 
 // ====================================================================
@@ -880,7 +910,7 @@ app.get("/api/tasksets", async (req, res) => {
 app.get("/api/tasksets/:id", async (req, res) => {
   try {
     const set = await TaskSet.findById(req.params.id).lean();
-    if (!set) {
+  if (!set) {
       return res.status(404).json({ error: "Task set not found" });
     }
     res.json(set);
