@@ -42,6 +42,7 @@ export async function listSessions(req, res) {
         startedAt,
         classAverageScore: sa.classAverageScore,
         classAverageAccuracy: sa.classAverageAccuracy,
+        classAverageEngagement: sa.classAverageEngagement ?? null,
       };
     });
 
@@ -89,6 +90,7 @@ export async function getSessionDetails(req, res) {
         startedAt: session?.startedAt || sa.createdAt,
         classAverageScore: sa.classAverageScore,
         classAverageAccuracy: sa.classAverageAccuracy,
+        classAverageEngagement: sa.classAverageEngagement ?? null,
         tasks: sa.tasks || [],
         teams: sa.teams || [],
       },

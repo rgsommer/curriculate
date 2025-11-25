@@ -78,6 +78,15 @@ function normalizeStationId(raw) {
   return { id: s, color: null, label: s };
 }
 
+// Format remaining time nicely as M:SS
+function formatRemainingMs(ms) {
+  if (ms == null || ms <= 0) return "0:00";
+  const totalSeconds = Math.ceil(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 /* -----------------------------------------------------------
    Minimal QR Scanner – camera only stops when onCode(value) returns true
 ----------------------------------------------------------- */
@@ -226,6 +235,15 @@ export default function StudentApp() {
   const [submitting, setSubmitting] = useState(false);
   const sndAlert = useRef(null);
 
+  // NEW: timeout-related state
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
+  const [remainingMs, setRemainingMs] = useState(null);
+  const timeoutTimerRef = useRef(null);
+  const timeoutSubmittedRef = useRef(false);
+
+  // NEW: draft answer tracking (for timeout auto-submit)
+  const [currentAnswerDraft, setCurrentAnswerDraft] = useState(null);
+
   // Pulse CSS for colour box
   useEffect(() => {
     const styleId = "station-pulse-style";
@@ -287,6 +305,20 @@ export default function StudentApp() {
       setCurrentTask(task || null);
       setTaskIndex(index);
 
+      // Reset any previous draft and timer
+      setCurrentAnswerDraft(null);
+      timeoutSubmittedRef.current = false;
+
+      const limit =
+        task?.timeLimitSeconds ?? task?.time_limit ?? null;
+      if (limit && limit > 0) {
+        setTimeLimitSeconds(limit);
+        setRemainingMs(limit * 1000);
+      } else {
+        setTimeLimitSeconds(null);
+        setRemainingMs(null);
+      }
+
       const a = sndAlert.current;
       if (a) {
         a.currentTime = 0;
@@ -305,6 +337,9 @@ export default function StudentApp() {
 
     socket.on("session:complete", () => {
       setCurrentTask(null);
+      setTimeLimitSeconds(null);
+      setRemainingMs(null);
+      timeoutSubmittedRef.current = false;
       setStatusMessage(
         "Task set complete! Wait for your teacher to show the results."
       );
@@ -318,6 +353,78 @@ export default function StudentApp() {
       socket.off("session:complete");
     };
   }, [teamId, assignedStationId]);
+
+  // Timeout timer effect
+  useEffect(() => {
+    if (!currentTask || !timeLimitSeconds || timeLimitSeconds <= 0) {
+      if (timeoutTimerRef.current) {
+        clearInterval(timeoutTimerRef.current);
+        timeoutTimerRef.current = null;
+      }
+      setRemainingMs(null);
+      timeoutSubmittedRef.current = false;
+      return;
+    }
+
+    const totalMs = timeLimitSeconds * 1000;
+    const start = Date.now();
+    setRemainingMs(totalMs);
+    timeoutSubmittedRef.current = false;
+
+    timeoutTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const remain = totalMs - elapsed;
+
+      if (remain <= 0) {
+        if (timeoutTimerRef.current) {
+          clearInterval(timeoutTimerRef.current);
+          timeoutTimerRef.current = null;
+        }
+        setRemainingMs(0);
+
+        if (!timeoutSubmittedRef.current) {
+          timeoutSubmittedRef.current = true;
+
+          const finalAnswer = currentAnswerDraft ?? null;
+
+          if (roomCode && teamId != null && taskIndex != null) {
+            socket.emit(
+              "student:submitAnswer",
+              {
+                roomCode: roomCode.trim().toUpperCase(),
+                teamId,
+                taskIndex,
+                answer: finalAnswer,
+                isTimeout: true,
+              },
+              (ack) => {
+                console.log("Timeout submit ack:", ack);
+              }
+            );
+          }
+
+          setCurrentTask(null);
+          setStatusMessage("Time is up! Your answer was submitted.");
+        }
+      } else {
+        setRemainingMs(remain);
+      }
+    }, 250);
+
+    return () => {
+      if (timeoutTimerRef.current) {
+        clearInterval(timeoutTimerRef.current);
+        timeoutTimerRef.current = null;
+      }
+    };
+  }, [
+    currentTask,
+    timeLimitSeconds,
+    roomCode,
+    teamId,
+    taskIndex,
+    currentAnswerDraft,
+  ]);
 
   // Scanner activation logic – independent of scanError
   useEffect(() => {
@@ -431,7 +538,7 @@ export default function StudentApp() {
 
   // onCode handler: returns true to stop camera, false to keep scanning
   // For a scan to be correct, BOTH location and colour must match:
-  //   location = DEFAULT_LOCATION ("Classroom" for now)
+  //   location = (room's locationCode)
   //   colour   = derived from assignedStationId (station-1 → red, etc.)
   const handleScannedCode = (value) => {
     try {
@@ -553,6 +660,14 @@ export default function StudentApp() {
             }
           );
       });
+
+      if (timeoutTimerRef.current) {
+        clearInterval(timeoutTimerRef.current);
+        timeoutTimerRef.current = null;
+      }
+      setTimeLimitSeconds(null);
+      setRemainingMs(null);
+      timeoutSubmittedRef.current = false;
 
       setStatusMessage("Answer submitted! Wait for the next task.");
       setCurrentTask(null);
@@ -884,17 +999,33 @@ export default function StudentApp() {
             <h2
               style={{
                 marginTop: 0,
-                marginBottom: 8,
+                marginBottom: 4,
                 fontSize: "1rem",
               }}
             >
               Task
             </h2>
+
+            {timeLimitSeconds && timeLimitSeconds > 0 && (
+              <p
+                style={{
+                  margin: "0 0 8px",
+                  fontSize: "0.85rem",
+                  color: "#b91c1c",
+                }}
+              >
+                Time left: {formatRemainingMs(remainingMs)}
+              </p>
+            )}
+
             <TaskRunner
               task={currentTask}
               taskTypes={TASK_TYPES}
               onSubmit={handleSubmitAnswer}
               submitting={submitting}
+              // optional hooks – only used if TaskRunner supports them
+              onAnswerChange={setCurrentAnswerDraft}
+              answerDraft={currentAnswerDraft}
             />
           </section>
         )}

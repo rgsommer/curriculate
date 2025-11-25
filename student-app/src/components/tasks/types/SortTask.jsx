@@ -1,16 +1,33 @@
+// student-app/src/components/tasks/types/SortTask.jsx
 import React, { useState } from "react";
 
-export default function SortTask({ task, onSubmit, disabled }) {
+export default function SortTask({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
   const { buckets, items } = task.config;
   const [assignments, setAssignments] = useState(
     items.map((_, idx) => ({ itemIndex: idx, bucketIndex: null }))
   );
 
+  const pushDraft = (nextAssignments) => {
+    if (onAnswerChange) {
+      onAnswerChange({ assignments: nextAssignments });
+    }
+  };
+
   const setBucket = (itemIndex, bucketIndex) => {
     if (disabled) return;
-    setAssignments((prev) =>
-      prev.map((a) => (a.itemIndex === itemIndex ? { ...a, bucketIndex } : a))
-    );
+    setAssignments((prev) => {
+      const next = prev.map((a) =>
+        a.itemIndex === itemIndex ? { ...a, bucketIndex } : a
+      );
+      pushDraft(next);
+      return next;
+    });
   };
 
   const handleSubmit = () => {
@@ -32,7 +49,10 @@ export default function SortTask({ task, onSubmit, disabled }) {
                 assignments.find((a) => a.itemIndex === idx)?.bucketIndex ?? ""
               }
               onChange={(e) =>
-                setBucket(idx, e.target.value === "" ? null : Number(e.target.value))
+                setBucket(
+                  idx,
+                  e.target.value === "" ? null : Number(e.target.value)
+                )
               }
             >
               <option value="">Choose…</option>

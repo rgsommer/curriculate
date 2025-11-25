@@ -1,15 +1,20 @@
 // student-app/src/components/tasks/types/DrawMimeTask.jsx
 import React, { useState } from "react";
 
-export default function DrawMimeTask({ task, onSubmit, disabled }) {
+export default function DrawMimeTask({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
   const [description, setDescription] = useState("");
-  const [submitted, setSubmitted] = useState(false);
 
   const promptText =
     task?.prompt ||
     "Follow the teacher's instructions to draw or mime the idea. Then briefly describe what you did.";
 
-  const uiDisabled = disabled || submitted;
+  const uiDisabled = disabled || false; // no internal submitted flag here; StudentApp controls availability
 
   const handleSubmit = () => {
     if (uiDisabled) return;
@@ -17,7 +22,16 @@ export default function DrawMimeTask({ task, onSubmit, disabled }) {
     const text = description.trim() || "(no description provided)";
     const answerText = `[DRAW/MIME] ${text}`;
     onSubmit(answerText);
-    setSubmitted(true);
+  };
+
+  const handleChange = (e) => {
+    const raw = e.target.value;
+    setDescription(raw);
+    if (onAnswerChange) {
+      const text = raw.trim() || "(no description provided)";
+      const answerText = `[DRAW/MIME] ${text}`;
+      onAnswerChange(answerText);
+    }
   };
 
   return (
@@ -66,7 +80,7 @@ export default function DrawMimeTask({ task, onSubmit, disabled }) {
 
       <textarea
         value={description}
-        onChange={(e) => setDescription(e.target.value)}
+        onChange={handleChange}
         disabled={uiDisabled}
         rows={4}
         placeholder="Example: We drew the microscope with all its parts labeled and mimed how the light travels through it."
@@ -100,7 +114,7 @@ export default function DrawMimeTask({ task, onSubmit, disabled }) {
           cursor: uiDisabled ? "default" : "pointer",
         }}
       >
-        {submitted ? "Submitted" : "Submit"}
+        Submit
       </button>
     </div>
   );

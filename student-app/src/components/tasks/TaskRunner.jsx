@@ -83,9 +83,12 @@ function normalizeTaskType(raw) {
  * Unified runner for all task types.
  *
  * Props:
- *  - task:        the current task object from the server
- *  - onSubmit:    function(answer: any) => void
- *  - disabled:    boolean – if true, disable interaction & submit
+ *  - task:           the current task object from the server
+ *  - onSubmit:       function(answer: any) => void
+ *  - disabled:       boolean – if true, disable interaction & submit
+ *  - onAnswerChange: (optional) function(draft: any) => void
+ *                    used by StudentApp to track live drafts for timeout
+ *  - answerDraft:    (optional) current draft value from parent
  *
  * Anchored displays:
  *  The server sends each task with:
@@ -93,7 +96,13 @@ function normalizeTaskType(raw) {
  *    - task.displays     → array of { key, name, description, stationColor, ... }
  *  (emitted as: { ...task, displays: taskSet.displays })
  */
-export default function TaskRunner({ task, onSubmit, disabled }) {
+export default function TaskRunner({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
   if (!task) {
     return <div className="p-4 text-center">Waiting for next task…</div>;
   }
@@ -123,10 +132,15 @@ export default function TaskRunner({ task, onSubmit, disabled }) {
     );
   }
 
+  // Common props passed to all concrete task components.
+  // onAnswerChange + answerDraft are optional; components may ignore them
+  // if they do not support draft tracking.
   const commonProps = {
     task: t,
     onSubmit,
     disabled,
+    onAnswerChange,
+    answerDraft,
   };
 
   let content = null;

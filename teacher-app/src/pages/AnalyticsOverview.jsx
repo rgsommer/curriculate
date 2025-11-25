@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/client";
+import { useAuth } from "../auth/useAuth";
 
 export default function AnalyticsOverview() {
   const { user } = useAuth();
@@ -94,7 +95,12 @@ export default function AnalyticsOverview() {
                 </div>
                 <div className="text-right text-xs">
                   <div>Class avg score: {s.classAverageScore}%</div>
-                  <div>Engagement: {s.classAverageEngagement}%</div>
+                  <div>
+                    Engagement:{" "}
+                    {s.classAverageEngagement != null
+                      ? `${s.classAverageEngagement}%`
+                      : "–"}
+                  </div>
                 </div>
               </div>
             </Link>

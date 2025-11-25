@@ -1,7 +1,22 @@
+// student-app/src/components/tasks/types/SequenceTask.jsx
 import React, { useState } from "react";
 
-export default function SequenceTask({ task, onSubmit, disabled }) {
-  const [order, setOrder] = useState(task.config.items.map((_, idx) => idx));
+export default function SequenceTask({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
+  const [order, setOrder] = useState(
+    (task.config?.items || []).map((_, idx) => idx)
+  );
+
+  const pushDraft = (nextOrder) => {
+    if (onAnswerChange) {
+      onAnswerChange({ order: nextOrder });
+    }
+  };
 
   const move = (fromIdx, direction) => {
     if (disabled) return;
@@ -12,6 +27,7 @@ export default function SequenceTask({ task, onSubmit, disabled }) {
     newOrder[fromIdx] = newOrder[toIdx];
     newOrder[toIdx] = temp;
     setOrder(newOrder);
+    pushDraft(newOrder);
   };
 
   const handleSubmit = () => {

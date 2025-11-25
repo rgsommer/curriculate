@@ -61,7 +61,6 @@ export async function generateTaskset(req, res) {
       }
     }
 
-    // If we don't have a stored profile yet, fall back to request values
     const {
       gradeLevel,
       subject,
@@ -75,6 +74,7 @@ export async function generateTaskset(req, res) {
       curriculumLenses,
     } = req.body;
 
+    // If we don't have a stored profile yet, fall back to request values
     if (!profile) {
       profile = {
         defaultDifficulty: difficulty || "MEDIUM",
@@ -89,10 +89,6 @@ export async function generateTaskset(req, res) {
     // -----------------------------
     // Subscription / plan (simplified)
     // -----------------------------
-    // You don't have a separate SubscriptionPlan schema wired in here yet.
-    // So for now we just:
-    //  - always allow saving
-    //  - return a simple planName placeholder
     let planName = "FREE";
     let canSaveTasksets = true;
 
@@ -145,12 +141,13 @@ export async function generateTaskset(req, res) {
     // Stage 2: Create raw tasks
     // -------------------------
     const rawTasks = await createAiTasks({
-      gradeLevel: effectiveConfig.gradeLevel,
       subject: effectiveConfig.subject,
-      topicTitle: effectiveConfig.topicTitle,
-      learningGoal: effectiveConfig.learningGoal,
-      concepts: effectiveConfig.wordConceptList,
       taskPlan: plannedTasks,
+      gradeLevel: effectiveConfig.gradeLevel,
+      difficulty: effectiveConfig.difficulty,
+      learningGoal: effectiveConfig.learningGoal,
+      durationMinutes: effectiveConfig.durationMinutes,
+      topicTitle: effectiveConfig.topicTitle,
       curriculumLenses: effectiveConfig.curriculumLenses,
     });
 
@@ -199,13 +196,13 @@ export async function generateTaskset(req, res) {
       canSaveTasksets,
     });
   } catch (err) {
-  console.error("🔥 AI Taskset Generation Error:");
-  console.error(err.stack || err);
-  return res.status(500).json({
-    error: "Failed to generate taskset",
-    details: err.message,
-  });
-}
+    console.error("🔥 AI Taskset Generation Error:");
+    console.error(err.stack || err);
+    return res.status(500).json({
+      error: "Failed to generate taskset",
+      details: err.message,
+    });
+  }
 }
 
 export default { generateTaskset };

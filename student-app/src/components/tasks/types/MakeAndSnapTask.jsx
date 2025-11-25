@@ -1,7 +1,13 @@
 // student-app/src/components/tasks/types/MakeAndSnapTask.jsx
 import React, { useRef, useState } from "react";
 
-export default function MakeAndSnapTask({ task, onSubmit, disabled }) {
+export default function MakeAndSnapTask({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
   const [note, setNote] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
   const [submitted, setSubmitted] = useState(false);
@@ -12,6 +18,22 @@ export default function MakeAndSnapTask({ task, onSubmit, disabled }) {
     "Build, arrange, or create the object as instructed. Then take a photo of what you made.";
 
   const uiDisabled = disabled || submitted;
+
+  const buildAnswerText = (noteValue, hasPhoto) => {
+    const parts = [];
+    parts.push("[MAKE-AND-SNAP]");
+    parts.push(hasPhoto ? "[PHOTO TAKEN]" : "[NO PHOTO SELECTED]");
+    if (noteValue.trim()) {
+      parts.push(`Note: ${noteValue.trim()}`);
+    }
+    return parts.join(" ");
+  };
+
+  const pushDraftIfNeeded = (noteValue, hasPhoto) => {
+    if (!onAnswerChange) return;
+    const answerText = buildAnswerText(noteValue, hasPhoto);
+    onAnswerChange(answerText);
+  };
 
   const handlePickPhoto = () => {
     if (uiDisabled) return;
@@ -25,6 +47,7 @@ export default function MakeAndSnapTask({ task, onSubmit, disabled }) {
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result);
+      pushDraftIfNeeded(note, true);
     };
     reader.readAsDataURL(file);
   };
@@ -32,16 +55,15 @@ export default function MakeAndSnapTask({ task, onSubmit, disabled }) {
   const handleSubmit = () => {
     if (uiDisabled) return;
 
-    const parts = [];
-    parts.push("[MAKE-AND-SNAP]");
-    parts.push(imagePreview ? "[PHOTO TAKEN]" : "[NO PHOTO SELECTED]");
-    if (note.trim()) {
-      parts.push(`Note: ${note.trim()}`);
-    }
-
-    const answerText = parts.join(" ");
+    const answerText = buildAnswerText(note, !!imagePreview);
     onSubmit(answerText);
     setSubmitted(true);
+  };
+
+  const handleNoteChange = (e) => {
+    const next = e.target.value;
+    setNote(next);
+    pushDraftIfNeeded(next, !!imagePreview);
   };
 
   return (
@@ -138,7 +160,7 @@ export default function MakeAndSnapTask({ task, onSubmit, disabled }) {
       </label>
       <textarea
         value={note}
-        onChange={(e) => setNote(e.target.value)}
+        onChange={handleNoteChange}
         disabled={uiDisabled}
         rows={3}
         style={{

@@ -1,3 +1,4 @@
+// student-app/src/components/tasks/types/TrueFalseTask.jsx
 import React from "react";
 
 /**
@@ -10,6 +11,8 @@ export default function TrueFalseTask({
   task,
   onSubmit,
   disabled,
+  onAnswerChange,
+  answerDraft,
 }) {
   const [selected, setSelected] = React.useState(null); // "true" | "false" | null
 
@@ -22,6 +25,9 @@ export default function TrueFalseTask({
   const select = (val) => {
     if (disabled) return;
     setSelected(val);
+    if (onAnswerChange) {
+      onAnswerChange(val);
+    }
   };
 
   return (

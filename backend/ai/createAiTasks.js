@@ -2,10 +2,7 @@
 // Stage 2: Turn (concept + taskType) plan into full Curriculate tasks.
 
 import OpenAI from "openai";
-import {
-  TASK_TYPES,
-  TASK_TYPE_LABELS,
-} from "../../shared/taskTypes.js";
+import { TASK_TYPE_LABELS } from "../../shared/taskTypes.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -14,23 +11,74 @@ const client = new OpenAI({
 /**
  * AI builds complete task objects for Curriculate.
  *
- * @param {string} subject
- * @param {Array<{ concept: string, taskType: string, reason?: string }>} plan
- * @param {object} context
- * @param {string} [context.gradeLevel]
- * @param {string} [context.difficulty]
- * @param {string} [context.learningGoal]
- * @param {number} [context.durationMinutes]
- * @param {string} [context.topicTitle]
+ * Supports two signatures for backwards compatibility:
+ *
+ *   // OLD:
+ *   createAiTasks(subject, plan, context?)
+ *
+ *   // NEW:
+ *   createAiTasks({
+ *     subject,
+ *     taskPlan,
+ *     gradeLevel,
+ *     difficulty,
+ *     learningGoal,
+ *     durationMinutes,
+ *     topicTitle,
+ *     curriculumLenses,
+ *   })
+ *
  * @returns {Promise<Array<object>>}
  */
-export async function createAiTasks(subject, plan, context = {}) {
+export async function createAiTasks(subjectOrConfig, maybePlan, maybeContext) {
+  let subject;
+  let plan;
+  let context;
+
+  // -----------------------------
+  // Signature detection
+  // -----------------------------
+  if (
+    typeof subjectOrConfig === "string" ||
+    typeof subjectOrConfig === "undefined"
+  ) {
+    // OLD STYLE: (subject, plan, context)
+    subject = subjectOrConfig || "General";
+    plan = Array.isArray(maybePlan) ? maybePlan : [];
+    context = maybeContext || {};
+  } else if (
+    subjectOrConfig &&
+    typeof subjectOrConfig === "object" &&
+    !Array.isArray(subjectOrConfig)
+  ) {
+    // NEW STYLE: (configObject)
+    const cfg = subjectOrConfig;
+    subject = cfg.subject || "General";
+    plan = Array.isArray(cfg.taskPlan || cfg.plan)
+      ? cfg.taskPlan || cfg.plan
+      : [];
+    context = {
+      gradeLevel: cfg.gradeLevel,
+      difficulty: cfg.difficulty,
+      learningGoal: cfg.learningGoal,
+      durationMinutes: cfg.durationMinutes,
+      topicTitle: cfg.topicTitle,
+      curriculumLenses: cfg.curriculumLenses,
+    };
+  } else {
+    // Fallback – very defensive
+    subject = "General";
+    plan = [];
+    context = {};
+  }
+
   const {
     gradeLevel = "Grade 7",
     difficulty = "MEDIUM",
     learningGoal = "REVIEW",
     durationMinutes = 45,
     topicTitle = "",
+    curriculumLenses = [],
   } = context;
 
   const subjectLabel = subject || "General";
@@ -75,30 +123,10 @@ For each concept you MUST generate an object shaped like:
   "title": "Short task title, e.g. 'MC: Treaty of Utrecht'",
   "prompt": "Student-facing instructions, 1–3 short sentences",
   "taskType": "one of the taskType values from the plan",
-  "options": [
-    // For multiple-choice, sequence, sort and similar:
-    //   multiple-choice → 3–5 options, one clearly best
-    //   sequence → 3–6 steps that will later be ordered
-    //   sort → 3–6 items that can be grouped somehow
-    // For open-text, body-break, make-and-snap, etc., this is usually []
-  ],
-  "correctAnswer": null or number or string,
-  //   multiple-choice → index (0-based) of the correct option
-  //   sequence/sort → null or short string hint
-  //   other → usually null or short ideal answer
+  "options": [],
+  "correctAnswer": null,
   "recommendedTimeSeconds": number,
-  // rough guidance:
-  //   MC / short-answer: ~45–90
-  //   open-text: ~120–180
-  //   make-and-snap / photo: ~120–180
-  //   body-break / movement: ~45–90
   "recommendedPoints": number
-  // rough guidance:
-  //   MC: ~10
-  //   sequence / sort: ~12
-  //   creative tasks: ~12–15
-  //   physical tasks: ~8–10
-  //   quick inputs: ~8–10
 }
 
 You MUST return valid JSON with this shape ONLY:
@@ -117,11 +145,12 @@ You MUST return valid JSON with this shape ONLY:
     learningGoal,
     durationMinutes,
     topicTitle,
+    curriculumLenses,
     plan,
   };
 
   const completion = await client.chat.completions.create({
-    model: "gpt-5.1",
+    model: process.env.AI_TASK_MODEL || "gpt-5.1",
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },

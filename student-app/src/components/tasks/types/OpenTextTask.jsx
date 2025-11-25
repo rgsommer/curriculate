@@ -1,22 +1,41 @@
+// student-app/src/components/tasks/types/OpenTextTask.jsx
 import React, { useEffect, useState } from "react";
 
-export default function OpenTextTask({ task, onSubmit, answered }) {
-  const [value, setValue] = useState("");
+export default function OpenTextTask({
+  task,
+  onSubmit,
+  answered,
+  onAnswerChange,
+  answerDraft,
+}) {
+  const [value, setValue] = useState(answerDraft ?? "");
 
-  // reset when a new task comes in
+  // reset when a new task comes in or answerDraft changes
   useEffect(() => {
-    setValue("");
-  }, [task?.prompt, task?.id]);
+    setValue(answerDraft ?? "");
+  }, [task?.prompt, task?.id, answerDraft]);
 
   const handleClick = () => {
     if (answered) return; // don’t double-submit
-    onSubmit &&
-      onSubmit({
-        correct: false, // manual review
-        basePoints: task.points || 0,
-        response: value,
-      });
+    const payload = {
+      correct: false, // manual review
+      basePoints: task.points || 0,
+      response: value,
+    };
+    onSubmit && onSubmit(payload);
     setValue(""); // clear after submit
+  };
+
+  const handleChange = (e) => {
+    const next = e.target.value;
+    setValue(next);
+    if (onAnswerChange) {
+      onAnswerChange({
+        correct: false,
+        basePoints: task.points || 0,
+        response: next,
+      });
+    }
   };
 
   return (
@@ -31,8 +50,12 @@ export default function OpenTextTask({ task, onSubmit, answered }) {
       )}
       <textarea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder={answered ? "Submitted. Waiting for next task…" : "Type your answer…"}
+        onChange={handleChange}
+        placeholder={
+          answered
+            ? "Submitted. Waiting for next task…"
+            : "Type your answer…"
+        }
         disabled={answered}
         style={{
           width: "100%",

@@ -1,3 +1,4 @@
+// student-app/src/components/tasks/types/ShortAnswerTask.jsx
 import React from "react";
 
 /**
@@ -6,12 +7,30 @@ import React from "react";
  *  - Textarea for answer
  *  - Submit button that calls onSubmit(answerString)
  */
-export default function ShortAnswerTask({ task, onSubmit, disabled }) {
-  const [answer, setAnswer] = React.useState("");
+export default function ShortAnswerTask({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
+  const [answer, setAnswer] = React.useState(answerDraft ?? "");
+
+  React.useEffect(() => {
+    setAnswer(answerDraft ?? "");
+  }, [task?.id, task?.prompt, answerDraft]);
 
   const handleSubmitClick = () => {
     if (disabled) return;
     onSubmit(answer);
+  };
+
+  const handleChange = (e) => {
+    const next = e.target.value;
+    setAnswer(next);
+    if (onAnswerChange) {
+      onAnswerChange(next);
+    }
   };
 
   return (
@@ -24,7 +43,7 @@ export default function ShortAnswerTask({ task, onSubmit, disabled }) {
       <textarea
         className="border rounded-lg p-2 flex-1 resize-none"
         value={answer}
-        onChange={(e) => setAnswer(e.target.value)}
+        onChange={handleChange}
         disabled={disabled}
         placeholder="Type your answer here…"
       />

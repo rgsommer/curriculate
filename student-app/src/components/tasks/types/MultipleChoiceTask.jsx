@@ -1,3 +1,4 @@
+// student-app/src/components/tasks/types/MultipleChoiceTask.jsx
 import React from "react";
 
 /**
@@ -10,18 +11,27 @@ export default function MultipleChoiceTask({
   task,
   onSubmit,
   disabled,
+  onAnswerChange,
+  answerDraft,
 }) {
   const [selected, setSelected] = React.useState(null);
   const options = Array.isArray(task.options) ? task.options : [];
 
   const handleSubmitClick = () => {
     if (disabled) return;
-    // send the selected option text (or empty string)
     const value =
       selected != null && options[selected] != null
         ? String(options[selected])
         : "";
     onSubmit(value);
+  };
+
+  const handleSelect = (idx) => {
+    if (disabled) return;
+    setSelected(idx);
+    if (onAnswerChange && options[idx] != null) {
+      onAnswerChange(String(options[idx]));
+    }
   };
 
   return (
@@ -35,7 +45,7 @@ export default function MultipleChoiceTask({
           <button
             key={idx}
             type="button"
-            onClick={() => setSelected(idx)}
+            onClick={() => handleSelect(idx)}
             disabled={disabled}
             className="w-full text-left border rounded-lg px-3 py-2"
             style={{
