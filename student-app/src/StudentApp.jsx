@@ -13,21 +13,6 @@ export const socket = io(API_BASE_URL, {
 console.log("API_BASE_URL (student) =", API_BASE_URL);
 
 /* -----------------------------------------------------------
-   Station mapping – LOCATION + COLOUR → station-id
-   Edit this to match your actual posters.
-   Example: play.curriculate.net/Hallway/red
-   => location = "hallway", colour = "red" => "hallway-red"
------------------------------------------------------------ */
-
-const STATION_SLUGS = {
-  // slug          : stationId
-  "hallway-red": "station-1",
-  // "hallway-blue": "station-2",
-  // "classroom-red": "station-3",
-  // etc – fill this out to match how you assign stations
-};
-
-/* -----------------------------------------------------------
    Station colour helpers – numeric ids (station-1, station-2…)
 ----------------------------------------------------------- */
 
@@ -41,6 +26,9 @@ const COLOR_NAMES = [
   "teal",
   "pink",
 ];
+
+// For now, LiveSession-launched tasks are assumed to use "Classroom"
+const DEFAULT_LOCATION = "Classroom";
 
 function normalizeStationId(raw) {
   if (!raw) {
@@ -155,7 +143,7 @@ function QrScanner({ active, onCode, onError }) {
               console.error("Error in onCode callback", err);
             }
 
-            // ✅ Option A: only stop camera when handler says so
+            // ✅ Only stop camera when handler says so
             if (shouldStop) {
               cancelled = true;
               await stopCamera();
@@ -458,8 +446,18 @@ export default function StudentApp() {
   };
 
   // onCode handler: returns true to stop camera, false to keep scanning
+  // For a scan to be correct, BOTH location and colour must match:
+  //   location = DEFAULT_LOCATION ("Classroom" for now)
+  //   colour   = derived from assignedStationId (station-1 → red, etc.)
   const handleScannedCode = (value) => {
     try {
+      if (!assignedStationId) {
+        setScanError(
+          "No station has been assigned yet. Please wait for your teacher."
+        );
+        return false;
+      }
+
       // Normalise slashes first so we can handle backslash QR text
       let raw = (value || "").trim().replace(/\\/g, "/");
 
@@ -477,57 +475,32 @@ export default function StudentApp() {
         segments = raw.split("/").map((s) => s.trim()).filter(Boolean);
       }
 
-      let location = null;
-      let colour = null;
-
-      if (segments.length >= 2) {
-        location = segments[segments.length - 2].toLowerCase();
-        colour = segments[segments.length - 1].toLowerCase();
-      } else if (segments.length === 1) {
-        // Fallback: only have colour segment
-        colour = segments[0].toLowerCase();
-      }
-
-      let stationIdFromCode = null;
-
-      // If we have both location + colour, use them as slug
-      if (location && colour) {
-        const slug = `${location}-${colour}`;
-        stationIdFromCode = STATION_SLUGS[slug] || null;
-        if (!stationIdFromCode) {
-          setScanError(
-            `Unrecognized station code: "${location}/${colour}". Ask your teacher which QR to use.`
-          );
-          return false; // keep scanning
-        }
-      } else if (colour) {
-        // Fallback: colour-only behaviour using normalizeStationId
-        const normFromCode = normalizeStationId(colour);
-        stationIdFromCode = normFromCode.id;
-        if (!stationIdFromCode) {
-          setScanError(
-            `Unrecognized station colour: "${colour}". Ask your teacher which QR to use.`
-          );
-          return false;
-        }
-      } else {
+      if (segments.length < 2) {
         setScanError(
           `Unrecognized station code: "${raw}". Ask your teacher which QR to use.`
         );
         return false;
       }
 
-      // Now we have a concrete stationIdFromCode (e.g., "station-1").
-      // Compare to assignedStationId – this enforces LOCATION+COLOUR
-      if (assignedStationId && stationIdFromCode !== assignedStationId) {
-        const assignedNorm = normalizeStationId(assignedStationId);
-        const scannedNorm = normalizeStationId(stationIdFromCode);
+      // Keep ProperCase for location (e.g. "Classroom"), lowercase for colour (e.g. "red")
+      const location = segments[segments.length - 2];
+      const colour = segments[segments.length - 1].toLowerCase();
 
-        const scannedLabel =
-          (location && colour
-            ? `${location}/${colour}`
-            : scannedNorm.label || stationIdFromCode) || stationIdFromCode;
-        const correctLabel = assignedNorm.label || assignedStationId;
+      const assignedNorm = normalizeStationId(assignedStationId);
+      const assignedColour = assignedNorm.color; // "red", "blue", etc.
+      const assignedLocation = DEFAULT_LOCATION; // "Classroom" for now
+
+      if (!assignedColour) {
+        setScanError(
+          `The assigned station colour could not be determined. Please tell your teacher.`
+        );
+        return false;
+      }
+
+      // Enforce LOCATION + COLOUR
+      if (location !== assignedLocation || colour !== assignedColour) {
+        const scannedLabel = `${location}/${colour}`;
+        const correctLabel = `${assignedLocation}/${assignedColour}`;
 
         setScanError(
           `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\nThe correct station is: ${correctLabel}.\n\nPlease go to the correct station and try again.`
@@ -535,8 +508,8 @@ export default function StudentApp() {
         return false; // WRONG STATION → camera stays on
       }
 
-      const norm = normalizeStationId(stationIdFromCode);
-      setScannedStationId(norm.id);
+      // ✅ Correct location + colour for the currently assigned station
+      setScannedStationId(assignedStationId);
       setScanError(null);
 
       const nonEmptyMembers = members.map((m) => m.trim()).filter(Boolean);
@@ -550,11 +523,11 @@ export default function StudentApp() {
         socket.emit("station:scan", {
           roomCode: roomCode.trim().toUpperCase(),
           teamId,
-          stationId: norm.id,
+          stationId: assignedNorm.id || assignedStationId,
         });
       }
 
-      return true; // ✅ correct station (location+colour) → stop camera
+      return true; // ✅ correct station → stop camera
     } catch (err) {
       console.error("Error handling scanned code", err);
       setScanError("Something went wrong while scanning. Please try again.");
