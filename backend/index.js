@@ -679,7 +679,26 @@ io.on("connection", (socket) => {
       submittedAt,
     });
 
-    // Rebuild scores + broadcast updated room state
+    // 🔄 NEW LOGIC: if all teams have submitted for this task index,
+    // immediately rotate stations for the next round.
+    const teamIds = Object.keys(room.teams || {});
+    if (teamIds.length > 0 && typeof idx === "number" && idx >= 0) {
+      const submittedTeams = new Set(
+        room.submissions
+          .filter(
+            (s) =>
+              s.taskIndex === idx && s.teamId && teamIds.includes(s.teamId)
+          )
+          .map((s) => s.teamId)
+      );
+
+      if (submittedTeams.size === teamIds.length) {
+        // Everyone has submitted for this task: reassign stations now
+        reassignStations(room);
+      }
+    }
+
+    // Rebuild scores + broadcast updated room state (after any rotation)
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
