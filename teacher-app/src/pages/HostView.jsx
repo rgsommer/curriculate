@@ -226,7 +226,7 @@ export default function HostView({ roomCode }) {
           <p style={{ color: "#6b7280" }}>No scores yet.</p>
         ) : (
           <ol style={{ margin: 0, paddingLeft: 20 }}>
-            {scoresEntries.map(([teamId, pts]) => {
+            {scoresEntries.map(([teamId, pts], idx) => {
               const teamName = teamsById[teamId]?.teamName || teamId;
               return (
                 <li key={teamId} style={{ marginBottom: 4 }}>
