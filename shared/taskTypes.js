@@ -89,6 +89,14 @@ export const TASK_TYPE_META = {
   },
 };
 
+// Flat map of taskType → human-readable label
+export const TASK_TYPE_LABELS = Object.fromEntries(
+  Object.entries(TASK_TYPE_META).map(([type, meta]) => [
+    type,
+    meta.label || type,
+  ])
+);
+
 // Flat list for selector UIs
 export const IMPLEMENTED_TASK_TYPES = Object.values(TASK_TYPES);
 

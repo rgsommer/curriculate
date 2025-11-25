@@ -1,5 +1,7 @@
 // teacher-app/src/pages/HostView.jsx
-import React, { useEffect, useState } from "react";
+// MERGED VERSION: keeps original layout + adds join sound + locationCode
+
+import React, { useEffect, useRef, useState } from "react";
 import { socket } from "../socket";
 
 export default function HostView({ roomCode }) {
@@ -7,10 +9,41 @@ export default function HostView({ roomCode }) {
     stations: [],
     teams: {},
     scores: {},
+    taskIndex: -1,
+    locationCode: "Classroom",
   });
   const [submissions, setSubmissions] = useState([]);
 
+  const joinSoundRef = useRef(null);
+
+  // ------------------------------------------------------------
+  // Load join sound + unlock it on first click (autoplay-safe)
+  // ------------------------------------------------------------
+  useEffect(() => {
+    const audio = new Audio("/sounds/join.mp3");
+    audio.load();
+    joinSoundRef.current = audio;
+  }, []);
+
+  useEffect(() => {
+    const unlock = () => {
+      const a = joinSoundRef.current;
+      if (!a) return;
+      a.muted = true;
+      a.play().then(() => {
+        a.pause();
+        a.currentTime = 0;
+        a.muted = false;
+      }).catch(() => {});
+      window.removeEventListener("click", unlock);
+    };
+    window.addEventListener("click", unlock);
+    return () => window.removeEventListener("click", unlock);
+  }, []);
+
+  // ------------------------------------------------------------
   // Join as a host / viewer for this room
+  // ------------------------------------------------------------
   useEffect(() => {
     if (!roomCode) return;
 
@@ -23,7 +56,15 @@ export default function HostView({ roomCode }) {
     });
 
     const handleRoom = (state) => {
-      setRoomState(state || { stations: [], teams: {}, scores: {} });
+      setRoomState(
+        state || {
+          stations: [],
+          teams: {},
+          scores: {},
+          taskIndex: -1,
+          locationCode: "Classroom",
+        }
+      );
     };
 
     const handleSubmission = (sub) => {
@@ -31,14 +72,24 @@ export default function HostView({ roomCode }) {
       setSubmissions((prev) => [sub, ...prev].slice(0, 20));
     };
 
+    const handleTeamJoined = () => {
+      const a = joinSoundRef.current;
+      if (a) {
+        a.currentTime = 0;
+        a.play().catch(() => {});
+      }
+    };
+
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("taskSubmission", handleSubmission);
+    socket.on("team:joined", handleTeamJoined);
 
     return () => {
       socket.off("roomState", handleRoom);
       socket.off("room:state", handleRoom);
       socket.off("taskSubmission", handleSubmission);
+      socket.off("team:joined", handleTeamJoined);
     };
   }, [roomCode]);
 
@@ -62,9 +113,21 @@ export default function HostView({ roomCode }) {
       <div style={{ flex: 1, minWidth: 220 }}>
         <h1 style={{ marginTop: 0 }}>Host view</h1>
         {roomCode ? (
-          <p style={{ marginTop: 0 }}>
-            Room: <strong>{roomCode.toUpperCase()}</strong>
-          </p>
+          <>
+            <p style={{ marginTop: 0 }}>
+              Room: <strong>{roomCode.toUpperCase()}</strong>
+            </p>
+            <p
+              style={{
+                marginTop: 0,
+                fontSize: "0.85rem",
+                color: "#4b5563",
+              }}
+            >
+              Location:{" "}
+              <strong>{roomState.locationCode || "Classroom"}</strong>
+            </p>
+          </>
         ) : (
           <p style={{ color: "#b91c1c" }}>No room selected.</p>
         )}
@@ -155,7 +218,9 @@ export default function HostView({ roomCode }) {
                     }}
                   >
                     <div>
-                      <strong>{s.teamName || teamsById[s.teamId]?.teamName}</strong>{" "}
+                      <strong>
+                        {s.teamName || teamsById[s.teamId]?.teamName}
+                      </strong>{" "}
                       {s.correct === null
                         ? ""
                         : s.correct
@@ -226,7 +291,7 @@ export default function HostView({ roomCode }) {
           <p style={{ color: "#6b7280" }}>No scores yet.</p>
         ) : (
           <ol style={{ margin: 0, paddingLeft: 20 }}>
-            {scoresEntries.map(([teamId, pts], idx) => {
+            {scoresEntries.map(([teamId, pts]) => {
               const teamName = teamsById[teamId]?.teamName || teamId;
               return (
                 <li key={teamId} style={{ marginBottom: 4 }}>
