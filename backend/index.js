@@ -26,14 +26,11 @@ const server = http.createServer(app);
 //  CORS
 // ====================================================================
 const allowedOrigins = [
-  // Production frontends
   "https://set.curriculate.net",
   "https://play.curriculate.net",
   "https://curriculate.net",
   "https://www.curriculate.net",
   "https://api.curriculate.net",
-
-  // Local dev
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:4173",
@@ -64,8 +61,6 @@ app.options("*", cors(corsOptions));
 //  EXPRESS MIDDLEWARE
 // ====================================================================
 app.use(bodyParser.json({ limit: "3mb" }));
-
-// Subscription / MyPlan routes
 app.use("/api/subscription", subscriptionRoutes);
 
 // ====================================================================
@@ -94,25 +89,20 @@ mongoose
 // ====================================================================
 const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
 
-// Create a new room with a default set of stations
 function createRoom(roomCode, teacherSocketId) {
-  // Create 8 default stations: station-1 .. station-8
   const stations = {};
   const NUM_STATIONS = 8;
   for (let i = 1; i <= NUM_STATIONS; i++) {
     const id = `station-${i}`;
-    stations[id] = {
-      id,
-      assignedTeamId: null,
-    };
+    stations[id] = { id, assignedTeamId: null };
   }
 
   return {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    teams: {}, // teamId -> { teamId, teamName, members: [], currentStationId, ... }
-    stations, // stationId -> { id, assignedTeamId }
+    teams: {},
+    stations,
     taskset: null,
     taskIndex: -1,
     submissions: [],
@@ -121,19 +111,17 @@ function createRoom(roomCode, teacherSocketId) {
   };
 }
 
+// Old all-team rotation (kept for possible future use)
 function reassignStations(room) {
   const stationIds = Object.keys(room.stations || {});
   const teamIds = Object.keys(room.teams || {});
-
   if (stationIds.length === 0 || teamIds.length === 0) return;
 
-  // Keep track of rotation round
   if (typeof room._stationRound !== "number") {
     room._stationRound = 0;
   }
   room._stationRound += 1;
 
-  // Clear existing assignments
   stationIds.forEach((id) => {
     room.stations[id].assignedTeamId = null;
   });
@@ -148,8 +136,7 @@ function reassignStations(room) {
     if (!team) return;
 
     team.currentStationId = stationId;
-    team.lastScannedStationId = null; // force a new scan
-
+    team.lastScannedStationId = null;
     if (!room.stations[stationId]) {
       room.stations[stationId] = { id: stationId, assignedTeamId: null };
     }
@@ -157,7 +144,38 @@ function reassignStations(room) {
   });
 }
 
-// Build a transcript from a room
+// NEW: reassign only a single team's station (their next colour)
+function reassignStationForTeam(room, teamId) {
+  const stationIds = Object.keys(room.stations || {});
+  if (stationIds.length === 0) return;
+  const team = room.teams[teamId];
+  if (!team) return;
+
+  const current = team.currentStationId;
+  let nextIndex = 0;
+  if (current) {
+    const idx = stationIds.indexOf(current);
+    nextIndex = idx >= 0 ? (idx + 1) % stationIds.length : 0;
+  }
+  const nextStationId = stationIds[nextIndex];
+
+  if (
+    current &&
+    room.stations[current] &&
+    room.stations[current].assignedTeamId === teamId
+  ) {
+    room.stations[current].assignedTeamId = null;
+  }
+
+  team.currentStationId = nextStationId;
+  team.lastScannedStationId = null;
+
+  if (!room.stations[nextStationId]) {
+    room.stations[nextStationId] = { id: nextStationId, assignedTeamId: null };
+  }
+  room.stations[nextStationId].assignedTeamId = teamId;
+}
+
 function buildTranscript(room) {
   const taskset = room.taskset;
   const tasks = taskset?.tasks || [];
@@ -194,7 +212,6 @@ function buildTranscript(room) {
   };
 }
 
-// Per-participant stats
 function computePerParticipantStats(room, transcript) {
   const tasks = transcript.tasks || [];
   const tasksByIndex = {};
@@ -218,9 +235,7 @@ function computePerParticipantStats(room, transcript) {
 
     const entry = participants[key];
     entry.attempts += 1;
-    if (sub.correct) {
-      entry.correctCount += 1;
-    }
+    if (sub.correct) entry.correctCount += 1;
     entry.pointsEarned += sub.points ?? 0;
 
     const taskMeta = tasksByIndex[sub.taskIndex];
@@ -242,7 +257,6 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
-// Compact room state for clients
 function buildRoomState(room) {
   if (!room) {
     return { teams: {}, stations: {}, scores: {}, taskIndex: -1 };
@@ -266,14 +280,11 @@ function buildRoomState(room) {
 //  SOCKET.IO – EVENT HANDLERS
 // ====================================================================
 io.on("connection", (socket) => {
-  // --------------------------------------------------------------
-  // Teacher: create room (LiveSession)
-  // --------------------------------------------------------------
+  // Teacher creates room
   socket.on("teacher:createRoom", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     let room = rooms[code];
 
-    // Reuse an existing room if it already exists (preserve teams)
     if (room) {
       room.teacherSocketId = socket.id;
     } else {
@@ -290,9 +301,7 @@ io.on("connection", (socket) => {
     socket.emit("roomState", state);
   });
 
-  // --------------------------------------------------------------
-  // Generic joinRoom (HostView / viewer / reconnect)
-  // --------------------------------------------------------------
+  // Generic joinRoom for HostView / viewers
   socket.on("joinRoom", (payload = {}, ack) => {
     const { roomCode, role, name } = payload;
     const code = (roomCode || "").toUpperCase();
@@ -322,9 +331,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --------------------------------------------------------------
-  // Teacher loads a taskset
-  // --------------------------------------------------------------
   async function handleTeacherLoadTaskset({ roomCode, tasksetId }) {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -356,9 +362,6 @@ io.on("connection", (socket) => {
     handleTeacherLoadTaskset(payload || {});
   });
 
-  // --------------------------------------------------------------
-  // Teacher starts a session
-  // --------------------------------------------------------------
   socket.on("teacher:startSession", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -371,16 +374,12 @@ io.on("connection", (socket) => {
     io.to(code).emit("session:started");
   });
 
-  // --------------------------------------------------------------
-  // Teacher sends next task (and alias "launchTaskset")
-  // 👉 Stations are NOT reassigned here anymore – that happens on submit
-  // --------------------------------------------------------------
+  // Teacher next task – no station reassignment here anymore
   function handleTeacherNextTask({ roomCode }) {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) return;
 
-    // Move to next task in the set
     room.taskIndex += 1;
     const index = room.taskIndex;
 
@@ -391,7 +390,6 @@ io.on("connection", (socket) => {
 
     const task = room.taskset.tasks[index];
 
-    // Optionally broadcast state so UI sees the new task index
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
@@ -411,9 +409,7 @@ io.on("connection", (socket) => {
     handleTeacherNextTask(payload || {});
   });
 
-  // --------------------------------------------------------------
-  // Quick ad-hoc task from teacher
-  // --------------------------------------------------------------
+  // Quick ad-hoc task
   socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
     const code = (roomCode || "").toUpperCase();
     if (!code || !prompt) return;
@@ -445,15 +441,11 @@ io.on("connection", (socket) => {
     });
   });
 
-  // --------------------------------------------------------------
-  // Student joins room – assign a station immediately
-  // and clean up any old team with the same name
-  // --------------------------------------------------------------
+  // Student joins room
   socket.on("student:joinRoom", (payload, ack) => {
     const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
-    // Allow students to join first – create room if needed.
     let room = rooms[code];
     if (!room) {
       room = rooms[code] = createRoom(code, null);
@@ -463,7 +455,6 @@ io.on("connection", (socket) => {
     socket.data.role = "student";
     socket.data.roomCode = code;
 
-    // Use this socket as the canonical team id
     const teamId = socket.id;
     socket.data.teamId = teamId;
 
@@ -475,7 +466,7 @@ io.on("connection", (socket) => {
     const displayName =
       teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
 
-    // 💥 If there's an existing team with the same name, remove it and free its station
+    // Remove any old team with same name (device restart / rejoin)
     for (const [existingId, t] of Object.entries(room.teams)) {
       if (t.teamName === displayName && existingId !== teamId) {
         const oldStation = t.currentStationId;
@@ -504,7 +495,6 @@ io.on("connection", (socket) => {
       room.teams[teamId].members = cleanMembers;
     }
 
-    // Ensure stations exist (defensive – createRoom already does this)
     if (!room.stations || Object.keys(room.stations).length === 0) {
       room.stations = {};
       const NUM_STATIONS = 8;
@@ -514,7 +504,6 @@ io.on("connection", (socket) => {
       }
     }
 
-    // If this team has no current station yet, assign one.
     if (!room.teams[teamId].currentStationId) {
       const stationIds = Object.keys(room.stations);
       const taken = new Set(
@@ -531,14 +520,10 @@ io.on("connection", (socket) => {
       }
     }
 
-    // Build and broadcast updated room state
     const state = buildRoomState(room);
-
-    // Notify all clients in the room
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
-    // Notify teacher (if connected) that a team has joined
     if (room.teacherSocketId) {
       io.to(room.teacherSocketId).emit("team:joined", {
         teamId,
@@ -552,9 +537,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --------------------------------------------------------------
-  // Student scans a station QR
-  // --------------------------------------------------------------
+  // Student scans station
   socket.on("station:scan", (payload, ack) => {
     const { roomCode, teamId, stationId } = payload || {};
     const code = (roomCode || "").toUpperCase();
@@ -567,7 +550,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Work out which team this is
     const effectiveTeamId = teamId || socket.data.teamId || socket.id;
     const team = room.teams[effectiveTeamId];
     if (!team) {
@@ -577,7 +559,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Normalise station id: allow "1" or "station-1"
     let raw = String(stationId || "").trim().toLowerCase();
     if (!raw) {
       if (typeof ack === "function") {
@@ -596,12 +577,10 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Record the scan on the team + station
     team.currentStationId = raw;
     team.lastScannedStationId = raw;
     room.stations[raw].assignedTeamId = effectiveTeamId;
 
-    // Optional: log an event for the scan log UI
     const ev = {
       roomCode: code,
       teamId: effectiveTeamId,
@@ -611,7 +590,6 @@ io.on("connection", (socket) => {
     };
     io.to(code).emit("scanEvent", ev);
 
-    // Broadcast updated room state so LiveSession/HostView update
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
@@ -621,15 +599,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --------------------------------------------------------------
-  // Student submits answer
-  // 👉 After every submission we immediately reassign stations
-  //    and broadcast a new room:state, so StudentApp gets a
-  //    new colour + scan prompt right away.
-  // --------------------------------------------------------------
+  // Student submits answer – reassign only that team's station
   const handleStudentSubmit = async (payload, ack) => {
     const { roomCode, teamId, taskIndex, answer, timeMs } = payload || {};
-
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) {
@@ -639,7 +611,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Prefer explicit taskIndex; otherwise use the room's current index
     const idx =
       typeof taskIndex === "number" && taskIndex >= 0
         ? taskIndex
@@ -681,7 +652,6 @@ io.on("connection", (socket) => {
 
     const submittedAt = Date.now();
 
-    // Store full submission in the room
     room.submissions.push({
       roomCode: code,
       teamId: effectiveTeamId,
@@ -696,15 +666,13 @@ io.on("connection", (socket) => {
       submittedAt,
     });
 
-    // 🔄 Immediately rotate stations for the next round (no waiting)
-    reassignStations(room);
+    // 🔄 Only this team gets a new station assignment
+    reassignStationForTeam(room, effectiveTeamId);
 
-    // Rebuild scores + broadcast updated room state (after rotation)
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
-    // Emit a lightweight summary for HostView "Latest submissions"
     const submissionSummary = {
       roomCode: code,
       teamId: effectiveTeamId,
@@ -732,9 +700,7 @@ io.on("connection", (socket) => {
     handleStudentSubmit(payload);
   });
 
-  // --------------------------------------------------------------
-  // Teacher ends session + sends transcript email
-  // --------------------------------------------------------------
+  // Teacher ends session + email reports
   socket.on(
     "teacher:endSessionAndEmail",
     async ({
@@ -788,9 +754,7 @@ io.on("connection", (socket) => {
     }
   );
 
-  // --------------------------------------------------------------
   // Cleanup on disconnect – remove team & free station
-  // --------------------------------------------------------------
   socket.on("disconnect", () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;
@@ -885,7 +849,6 @@ app.put("/api/profile", async (req, res) => {
   }
 });
 
-// TaskSets CRUD
 app.post("/api/tasksets", async (req, res) => {
   try {
     const t = new TaskSet(req.body);
@@ -910,7 +873,7 @@ app.get("/api/tasksets", async (req, res) => {
 app.get("/api/tasksets/:id", async (req, res) => {
   try {
     const set = await TaskSet.findById(req.params.id).lean();
-  if (!set) {
+    if (!set) {
       return res.status(404).json({ error: "Task set not found" });
     }
     res.json(set);
@@ -927,7 +890,7 @@ app.put("/api/tasksets/:id", async (req, res) => {
       req.body,
       { new: true }
     ).lean();
-    if (!updated) {
+  if (!updated) {
       return res.status(404).json({ error: "Task set not found" });
     }
     res.json(updated);
@@ -947,10 +910,8 @@ app.delete("/api/tasksets/:id", async (req, res) => {
   }
 });
 
-// AI Taskset
 app.post("/api/ai/tasksets", generateAiTaskset);
 
-// Analytics stub
 app.get("/analytics/sessions", async (req, res) => {
   try {
     res.json({ sessions: [] });
@@ -960,9 +921,6 @@ app.get("/analytics/sessions", async (req, res) => {
   }
 });
 
-// ====================================================================
-//  Start Server
-// ====================================================================
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);

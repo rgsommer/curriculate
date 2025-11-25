@@ -190,7 +190,7 @@ function QrScanner({ active, onCode, onError }) {
     function stopCamera() {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+        rafRefRef = null;
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
@@ -252,7 +252,7 @@ export default function StudentApp() {
 
   const [currentTask, setCurrentTask] = useState(null);
   const [taskIndex, setTaskIndex] = useState(null);
-  const [taskSetMeta, setTaskSetMeta] = useState(null); // reserved for future
+  const [taskSetMeta, setTaskSetMeta] = useState(null); // reserved
 
   const [statusMessage, setStatusMessage] = useState(
     "Enter your room code and team name to begin."
@@ -277,7 +277,7 @@ export default function StudentApp() {
           box-shadow: 0 0 0 18px rgba(255,255,255,0);
         }
         100% {
-          box-shadow: 0 0 0 0 rgba(255,255,255,0);
+          box-shadow 0 0 0 0 rgba(255,255,255,0);
         }
       }
     `;
@@ -366,7 +366,6 @@ export default function StudentApp() {
 
     if (mustScan && !scanError) {
       setScannerActive(true);
-      // optional: a soft ping when they *need* to scan
       const a = sndAlert.current;
       a?.play().catch(() => {});
     } else {
@@ -379,7 +378,6 @@ export default function StudentApp() {
   const unlockAudioForBrowser = () => {
     const a = sndAlert.current;
     if (!a) return;
-    // Play muted once to satisfy autoplay policies, then reset
     a.muted = true;
     a
       .play()
@@ -388,9 +386,7 @@ export default function StudentApp() {
         a.currentTime = 0;
         a.muted = false;
       })
-      .catch(() => {
-        // ignore – if this fails, we'll just have no sound in stricter browsers
-      });
+      .catch(() => {});
   };
 
   /* ---------------- Handlers ---------------- */
@@ -418,7 +414,6 @@ export default function StudentApp() {
       return;
     }
 
-    // Unlock audio on this explicit user gesture
     unlockAudioForBrowser();
 
     const filteredMembers = members
@@ -448,7 +443,7 @@ export default function StudentApp() {
         setRoomCode(finalRoom);
         setJoined(true);
         setTeamId(ack.teamId || socket.id);
-        // ❌ Never tell them to wait for teacher
+        // Immediately instruct to scan (never “wait for teacher”)
         setStatusMessage("Scan the QR code at your assigned station.");
 
         const teams = ack.roomState?.teams || {};
@@ -489,8 +484,7 @@ export default function StudentApp() {
         setScanError(
           `Unrecognized station code: "${text}". Ask your teacher which QR to use.`
         );
-        // ❗ invalid → keep scanning
-        return false;
+        return false; // keep scanning
       }
 
       if (assignedStationId && stationIdFromCode !== assignedStationId) {
@@ -502,13 +496,20 @@ export default function StudentApp() {
         setScanError(
           `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\nThe correct station is: ${correctLabel}.\n\nPlease go to the correct station and try again.`
         );
-        // ❗ wrong station → keep scanning
-        return false;
+        return false; // WRONG STATION → camera stays on
       }
 
       const norm = normalizeStationId(stationIdFromCode);
       setScannedStationId(norm.id);
       setScanError(null);
+
+      // 🔶 After a correct scan, top message shows team members
+      const nonEmptyMembers = members.map((m) => m.trim()).filter(Boolean);
+      if (nonEmptyMembers.length > 0) {
+        setStatusMessage(`Team members: ${nonEmptyMembers.join(", ")}`);
+      } else {
+        setStatusMessage("Station confirmed.");
+      }
 
       if (roomCode) {
         socket.emit("station:scan", {
@@ -518,13 +519,11 @@ export default function StudentApp() {
         });
       }
 
-      // ✅ correct scan → stop camera
-      return true;
+      return true; // ✅ Correct scan → stop camera
     } catch (err) {
       console.error("Error handling scanned code", err);
       setScanError("Something went wrong while scanning. Please try again.");
-      // keep scanning in case of error
-      return false;
+      return false; // keep scanning
     }
   };
 
@@ -551,12 +550,10 @@ export default function StudentApp() {
             return;
           }
 
-          // ✅ Clear the current task UI after a successful submit
           setCurrentTask(null);
           setTaskIndex(null);
 
-          // The new station assignment & scan prompt will come immediately
-          // from the server via "room:state" after reassignStations(room).
+          // New station assignment & scan prompt come via room:state
           setStatusMessage("Answer submitted.");
         }
       );
