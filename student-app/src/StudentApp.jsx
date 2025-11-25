@@ -43,58 +43,43 @@ function normalizeStationId(raw) {
   if (m) {
     const idx = parseInt(m[1], 10) - 1;
     const color = COLOR_NAMES[idx] || null;
-    if (!color) {
-      return { id: `station-${m[1]}`, color: null, label: s };
-    }
-    const prettyColor = color.charAt(0).toUpperCase() + color.slice(1);
     return {
       id: `station-${m[1]}`,
       color,
-      label: `Station-${prettyColor}`,
+      label: color ? `Station-${color[0].toUpperCase()}${color.slice(1)}` : `Station-${m[1]}`,
     };
   }
 
-  // Case 2: plain number: "1", "2", ...
+  // Case 2: numeric only: "1", "2", ...
   m = /^(\d+)$/.exec(lower);
   if (m) {
     const idx = parseInt(m[1], 10) - 1;
     const color = COLOR_NAMES[idx] || null;
-    if (!color) {
-      return {
-        id: `station-${m[1]}`,
-        color: null,
-        label: `Station-${m[1]}`,
-      };
-    }
-    const prettyColor = color.charAt(0).toUpperCase() + color.slice(1);
     return {
       id: `station-${m[1]}`,
       color,
-      label: `Station-${prettyColor}`,
+      label: color ? `Station-${color[0].toUpperCase()}${color.slice(1)}` : `Station-${m[1]}`,
     };
   }
 
-  // Case 3: colour-based: "station-red" or "red"
-  if (lower.startsWith("station-")) {
-    lower = lower.slice("station-".length);
-  }
-  const colorIndex = COLOR_NAMES.indexOf(lower);
+  // Case 3: colour-based id: "station-red", "red", ...
+  const colorIndex = COLOR_NAMES.indexOf(lower.replace(/^station-/, ""));
   if (colorIndex >= 0) {
-    const id = `station-${colorIndex + 1}`;
-    const prettyColor = lower.charAt(0).toUpperCase() + lower.slice(1);
+    const n = colorIndex + 1;
+    const color = COLOR_NAMES[colorIndex];
     return {
-      id,
-      color: lower,
-      label: `Station-${prettyColor}`,
+      id: `station-${n}`,
+      color,
+      label: `Station-${color[0].toUpperCase()}${color.slice(1)}`,
     };
   }
 
-  // Fallback
+  // Fallback – unknown station format
   return { id: s, color: null, label: s };
 }
 
 /* -----------------------------------------------------------
-   QR Scanner – camera only stops when onCode(value) returns true
+   Minimal QR Scanner – camera only stops when onCode(value) returns true
 ----------------------------------------------------------- */
 
 function QrScanner({ active, onCode, onError }) {
@@ -128,81 +113,56 @@ function QrScanner({ active, onCode, onError }) {
         const barcodes = await detector.detect(videoRef.current);
         if (barcodes && barcodes.length > 0) {
           const value = barcodes[0].rawValue || "";
-          if (value) {
-            let shouldStop = true; // default if handler doesn’t return bool
-            try {
-              if (onCode) {
-                const result = onCode(value);
-                if (result instanceof Promise) {
-                  shouldStop = await result;
-                } else if (typeof result === "boolean") {
-                  shouldStop = result;
-                }
-              }
-            } catch (err) {
-              console.error("Error in onCode callback", err);
-            }
-
-            // ✅ Only stop camera when handler says so
-            if (shouldStop) {
-              cancelled = true;
-              await stopCamera();
-              return;
-            }
-            // ❗ Wrong / invalid → keep scanning
+          const shouldStop = await onCode(value);
+          if (shouldStop) {
+            await stopCamera();
+            return;
           }
         }
       } catch (err) {
-        console.warn("Barcode detection error", err);
+        console.warn("Barcode detect error", err);
+        onError?.("Could not read QR code. Try again or tell your teacher.");
       }
 
-      rafRef.current = requestAnimationFrame(() => detectLoop(detector));
+      if (!cancelled) {
+        rafRef.current = requestAnimationFrame(() => detectLoop(detector));
+      }
     }
 
     async function startCamera() {
-      if (!active || cancelled) return;
-
-      if (!navigator.mediaDevices?.getUserMedia) {
+      if (!active) return;
+      if (!("BarcodeDetector" in window)) {
         onError?.(
-          "Camera is not available in this browser. Try Chrome, Edge, or a modern mobile browser."
+          "This browser does not support QR scanning. Try another browser or device."
         );
         return;
       }
 
       try {
+        const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
         });
-        if (cancelled) {
+        if (!videoRef.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-
-        if ("BarcodeDetector" in window) {
-          const detector = new window.BarcodeDetector({
-            formats: ["qr_code", "code_128", "code_39", "ean_13"],
-          });
-          detectLoop(detector);
-        } else {
-          const msg =
-            "Camera is on, but this browser cannot auto-detect QR codes. Try Chrome or Edge.";
-          onError?.(msg);
-        }
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+        detectLoop(detector);
       } catch (err) {
-        console.error("Error starting camera", err);
-        const msg =
-          "Unable to access camera. Please allow camera access or use a different browser.";
-        onError?.(msg);
+        console.error("Camera start error", err);
+        onError?.(
+          "Unable to access camera. Check permissions or tell your teacher."
+        );
       }
     }
 
     if (active) {
       startCamera();
+    } else {
+      stopCamera();
     }
 
     return () => {
@@ -227,8 +187,8 @@ function QrScanner({ active, onCode, onError }) {
           width: "100%",
           height: "auto",
           display: "block",
-          background: "#000",
         }}
+        autoPlay
         playsInline
         muted
       />
@@ -246,6 +206,7 @@ export default function StudentApp() {
   const [teamName, setTeamName] = useState("");
   const [members, setMembers] = useState([""]);
   const [joined, setJoined] = useState(false);
+  const [joiningRoom, setJoiningRoom] = useState(false);
   const [teamId, setTeamId] = useState(null);
 
   const [assignedStationId, setAssignedStationId] = useState(null);
@@ -260,6 +221,8 @@ export default function StudentApp() {
     "Enter your room code and team name to begin."
   );
 
+  const [locationCode, setLocationCode] = useState(DEFAULT_LOCATION);
+
   const [submitting, setSubmitting] = useState(false);
   const sndAlert = useRef(null);
 
@@ -270,10 +233,10 @@ export default function StudentApp() {
 
     const style = document.createElement("style");
     style.id = styleId;
-    style.textContent = `
+    style.innerHTML = `
       @keyframes stationPulse {
-        0%   { box-shadow: 0 0 0 0 rgba(255,255,255,0.9); }
-        70%  { box-shadow: 0 0 0 18px rgba(255,255,255,0); }
+        0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.9); }
+        70% { box-shadow: 0 0 0 22px rgba(255,255,255,0); }
         100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
       }
     `;
@@ -299,6 +262,8 @@ export default function StudentApp() {
     });
 
     socket.on("room:state", (state) => {
+      setLocationCode(state?.locationCode || DEFAULT_LOCATION);
+
       const teams = state?.teams || {};
       const team = teams[teamId] || null;
 
@@ -417,6 +382,9 @@ export default function StudentApp() {
       socketConnected: connected,
     });
 
+    setJoiningRoom(true);
+    setStatusMessage(`Joining Room ${finalRoom}…`);
+
     socket.emit(
       "student:joinRoom",
       {
@@ -427,19 +395,35 @@ export default function StudentApp() {
       (ack) => {
         console.log("[Student] joinRoom ack:", ack);
         if (!ack || !ack.ok) {
+          setJoiningRoom(false);
           alert(ack?.error || "Unable to join room.");
           return;
         }
 
         setRoomCode(finalRoom);
         setJoined(true);
+        setJoiningRoom(false);
         setTeamId(ack.teamId || socket.id);
-        setStatusMessage("Scan the QR code at your assigned station.");
 
         const teams = ack.roomState?.teams || {};
         const team = teams[ack.teamId] || null;
+        const locLabel = (
+          ack.roomState?.locationCode ||
+          locationCode ||
+          DEFAULT_LOCATION
+        ).toUpperCase();
+
         if (team?.currentStationId) {
           setAssignedStationId(team.currentStationId);
+          const norm = normalizeStationId(team.currentStationId);
+          const colourLabel = norm.color ? norm.color.toUpperCase() : "";
+          if (colourLabel) {
+            setStatusMessage(`Scan your ${locLabel} ${colourLabel} station.`);
+          } else {
+            setStatusMessage(`Scan your ${locLabel} station.`);
+          }
+        } else {
+          setStatusMessage(`Scan your ${locLabel} station.`);
         }
       }
     );
@@ -488,7 +472,7 @@ export default function StudentApp() {
 
       const assignedNorm = normalizeStationId(assignedStationId);
       const assignedColour = assignedNorm.color; // "red", "blue", etc.
-      const assignedLocation = DEFAULT_LOCATION; // "Classroom" for now
+      const assignedLocation = locationCode || DEFAULT_LOCATION;
 
       if (!assignedColour) {
         setScanError(
@@ -503,7 +487,7 @@ export default function StudentApp() {
         const correctLabel = `${assignedLocation}/${assignedColour}`;
 
         setScanError(
-          `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\nThe correct station is: ${correctLabel}.\n\nPlease go to the correct station and try again.`
+          `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\n\nCorrect: ${correctLabel}.\n\nPlease go to the correct station and try again.`
         );
         return false; // WRONG STATION → camera stays on
       }
@@ -529,46 +513,55 @@ export default function StudentApp() {
 
       return true; // ✅ correct station → stop camera
     } catch (err) {
-      console.error("Error handling scanned code", err);
-      setScanError("Something went wrong while scanning. Please try again.");
-      return false; // keep scanning
+      console.error("Error handling scanned QR", err);
+      setScanError(
+        "Something went wrong reading that code. Please tell your teacher."
+      );
+      return false;
     }
   };
 
-  const handleSubmitAnswer = async (taskPayload) => {
-    if (!roomCode || !joined || taskIndex == null) return;
+  const handleSubmitAnswer = async (answerPayload) => {
+    if (!roomCode || !joined || !currentTask) return;
+    if (submitting) return;
 
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-      socket.emit(
-        "student:submitAnswer",
-        {
-          roomCode: roomCode.trim().toUpperCase(),
-          teamId,
-          taskIndex,
-          ...taskPayload,
-        },
-        (ack) => {
-          setSubmitting(false);
-          if (!ack || !ack.ok) {
-            alert(
-              ack?.error ||
-                "There was a problem submitting your answer. Please try again."
-            );
-            return;
-          }
+      await new Promise((resolve, reject) => {
+        socket
+          .timeout(8000)
+          .emit(
+            "student:submitAnswer",
+            {
+              roomCode: roomCode.trim().toUpperCase(),
+              teamId,
+              taskIndex,
+              answer: answerPayload,
+            },
+            (err, ack) => {
+              if (err) {
+                console.warn("Submit timeout/error:", err);
+                reject(err);
+                return;
+              }
+              if (!ack || !ack.ok) {
+                console.warn("Submit not OK:", ack);
+                reject(new Error(ack?.error || "Submit failed"));
+                return;
+              }
+              resolve();
+            }
+          );
+      });
 
-          setCurrentTask(null);
-          setTaskIndex(null);
-          setStatusMessage("Answer submitted.");
-        }
-      );
+      setStatusMessage("Answer submitted! Wait for the next task.");
+      setCurrentTask(null);
     } catch (err) {
-      console.error("Error submitting answer", err);
-      setSubmitting(false);
       alert(
-        "There was a problem submitting your answer. Please check your connection and try again."
+        "We couldn't submit your answer. Check your connection and tell your teacher."
       );
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -589,7 +582,7 @@ export default function StudentApp() {
         alignItems: "stretch",
         justifyContent: "flex-start",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        backgroundColor: "#fefce8",
+        backgroundColor: "#ffffff",
         color: "#111827",
       }}
     >
@@ -629,8 +622,17 @@ export default function StudentApp() {
               color: "#4b5563",
             }}
           >
-            {connected ? "Connected" : "Connecting…"}{" "}
-            {roomCode ? `· Room ${roomCode.toUpperCase()}` : null}
+            {joined
+              ? roomCode
+                ? `Connected · Room ${roomCode.toUpperCase()}`
+                : "Connected"
+              : joiningRoom
+                ? roomCode
+                  ? `Joining Room ${roomCode.toUpperCase()}…`
+                  : "Joining Room…"
+                : connected
+                  ? "Connected to server"
+                  : "Connecting…"}
           </p>
         </header>
 
@@ -640,10 +642,16 @@ export default function StudentApp() {
               marginBottom: 8,
               padding: 12,
               borderRadius: 12,
-              background: "#f3f4ff",
+              background: "#eff6ff",
             }}
           >
-            <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1.1rem",
+              }}
+            >
               Join your room
             </h2>
             <div
@@ -658,7 +666,9 @@ export default function StudentApp() {
                 <input
                   type="text"
                   value={roomCode}
-                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  onChange={(e) =>
+                    setRoomCode(e.target.value.toUpperCase())
+                  }
                   style={{
                     width: "100%",
                     padding: "4px 6px",
@@ -717,7 +727,7 @@ export default function StudentApp() {
                         padding: "4px 6px",
                         borderRadius: 6,
                         border: "1px solid #e5e7eb",
-                        fontSize: "0.9rem",
+                        fontSize: "0.95rem",
                       }}
                     />
                   ))}
@@ -726,12 +736,12 @@ export default function StudentApp() {
                   type="button"
                   onClick={addMemberField}
                   style={{
-                    marginTop: 6,
+                    marginTop: 4,
                     padding: "4px 8px",
                     borderRadius: 999,
                     border: "none",
-                    fontSize: "0.8rem",
                     background: "#e5e7eb",
+                    fontSize: "0.8rem",
                     cursor: "pointer",
                   }}
                 >
@@ -796,7 +806,11 @@ export default function StudentApp() {
               </div>
               {mustScan ? (
                 <div style={{ color: "#b91c1c", marginTop: 2 }}>
-                  Please scan the QR code at your assigned station.
+                  {`Scan your ${(locationCode || DEFAULT_LOCATION).toUpperCase()}${
+                    assignedNorm.color
+                      ? " " + assignedNorm.color.toUpperCase()
+                      : ""
+                  } station.`}
                 </div>
               ) : scannedStationId ? (
                 <div style={{ color: "#059669", marginTop: 2 }}>
@@ -811,11 +825,7 @@ export default function StudentApp() {
                 <div
                   style={{
                     marginTop: 6,
-                    padding: 6,
-                    borderRadius: 8,
-                    background: "#fee2e2",
-                    color: "#991b1b",
-                    whiteSpace: "pre-wrap",
+                    color: "#b91c1c",
                     fontSize: "0.8rem",
                   }}
                 >
@@ -865,13 +875,20 @@ export default function StudentApp() {
         {joined && currentTask && !mustScan && (
           <section
             style={{
+              marginBottom: 8,
               padding: 12,
               borderRadius: 12,
-              background: "#f1f5f9",
+              background: "#f9fafb",
             }}
           >
-            <h2 style={{ marginTop: 0, marginBottom: 8, fontSize: "1rem" }}>
-              Task {taskIndex != null ? taskIndex + 1 : ""}
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1rem",
+              }}
+            >
+              Task
             </h2>
             <TaskRunner
               task={currentTask}
