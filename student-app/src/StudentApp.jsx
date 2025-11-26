@@ -441,18 +441,20 @@ export default function StudentApp() {
   }, [joined, assignedStationId, scannedStationId]);
 
   const unlockAudioForBrowser = () => {
-    const a = sndAlert.current;
-    if (!a) return;
-    a.muted = true;
-    a
-      .play()
-      .then(() => {
-        a.pause();
-        a.currentTime = 0;
-        a.muted = false;
-      })
-      .catch(() => {});
-  };
+  const a = sndAlert.current;
+  if (!a) return;
+
+  a
+    .play()
+    .then(() => {
+      // Immediately stop and reset so they don't really “hear” the unlock too much
+      a.pause();
+      a.currentTime = 0;
+    })
+    .catch((err) => {
+      console.warn("Audio unlock failed", err);
+    });
+};
 
   const handleMemberChange = (idx, val) => {
     setMembers((prev) => {
