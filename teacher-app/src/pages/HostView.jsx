@@ -1,4 +1,3 @@
-// teacher-app/src/pages/HostView.jsx
 // MERGED VERSION: keeps original layout + adds join sound + locationCode
 
 import React, { useEffect, useRef, useState } from "react";

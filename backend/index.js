@@ -481,19 +481,9 @@ io.on("connection", (socket) => {
     const displayName =
       teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
 
-    for (const [existingId, t] of Object.entries(room.teams)) {
-      if (t.teamName === displayName && existingId !== teamId) {
-        const oldStation = t.currentStationId;
-        if (
-          oldStation &&
-          room.stations[oldStation] &&
-          room.stations[oldStation].assignedTeamId === existingId
-        ) {
-          room.stations[oldStation].assignedTeamId = null;
-        }
-        delete room.teams[existingId];
-      }
-    }
+    // ⚠️ IMPORTANT CHANGE:
+    // No deletion of existing teams based on name match.
+    // Multiple devices can legitimately use the same team name now.
 
     if (!room.teams[teamId]) {
       room.teams[teamId] = {

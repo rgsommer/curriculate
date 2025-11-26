@@ -1,7 +1,8 @@
 // teacher-app/src/pages/AiTasksetGenerator.jsx
+
 import { useEffect, useState } from "react";
 import { fetchMyProfile } from "../api/profile";
-import { API_BASE_URL } from "../config";
+import api from "../api/client";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
@@ -73,38 +74,44 @@ export default function AiTasksetGenerator() {
         presenterProfile: profile || undefined,
       };
 
-      const res = await fetch(`${API_BASE_URL}/api/ai/tasksets`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        credentials: "include",
-      });
-
-      if (!res.ok) {
-        let msg = `Server error (${res.status})`;
-        try {
-          const data = await res.json();
-          if (data?.message) msg = data.message;
-          else if (data?.error) msg = data.error;
-        } catch {
-          // ignore parse error
-        }
-        throw new Error(msg);
-      }
-
-      const data = await res.json();
+      // Use shared axios client so Authorization header is included
+      const response = await api.post("/api/ai/tasksets", payload);
+      const data = response.data;
       const taskset = data?.taskset || data;
+
       if (!taskset) {
         throw new Error(
           "Server did not return a taskset. Check /api/ai/tasksets on the backend."
         );
       }
+
       setResult(taskset);
     } catch (err) {
       console.error("AI taskset generation failed:", err);
-      setError(err.message || "Failed to generate TaskSet");
+
+      let msg = "Failed to generate TaskSet";
+
+      // Axios-style error handling
+      if (err.response) {
+        const status = err.response.status;
+        const data = err.response.data;
+
+        if (status === 401 || status === 403) {
+          msg =
+            data?.message ||
+            data?.error ||
+            "You may need to sign in or upgrade your subscription to use the AI generator.";
+        } else {
+          msg =
+            data?.message ||
+            data?.error ||
+            `Server error (${status}) while generating TaskSet.`;
+        }
+      } else if (err.message) {
+        msg = err.message;
+      }
+
+      setError(msg);
     } finally {
       setGenerating(false);
     }

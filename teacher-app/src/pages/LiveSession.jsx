@@ -1,4 +1,3 @@
-// teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 
@@ -61,6 +60,26 @@ export default function LiveSession({ roomCode }) {
     const audio = new Audio("/sounds/join.mp3");
     audio.load();
     joinSoundRef.current = audio;
+  }, []);
+
+  // NEW: unlock audio on first teacher click (for autoplay-restricted browsers)
+  useEffect(() => {
+    const unlock = () => {
+      const a = joinSoundRef.current;
+      if (!a) return;
+      a.muted = true;
+      a
+        .play()
+        .then(() => {
+          a.pause();
+          a.currentTime = 0;
+          a.muted = false;
+        })
+        .catch(() => {});
+      window.removeEventListener("click", unlock);
+    };
+    window.addEventListener("click", unlock);
+    return () => window.removeEventListener("click", unlock);
   }, []);
 
   // ----------------------------------------------------
@@ -157,11 +176,11 @@ export default function LiveSession({ roomCode }) {
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
-          localStorage.setItem("curriculateActiveTasksetId", meta._id);
-          localStorage.setItem(
-            "curriculateActiveTasksetMeta",
-            JSON.stringify(meta)
-          );
+            localStorage.setItem("curriculateActiveTasksetId", meta._id);
+            localStorage.setItem(
+              "curriculateActiveTasksetMeta",
+              JSON.stringify(meta)
+            );
           return meta;
         });
       }
@@ -313,7 +332,7 @@ export default function LiveSession({ roomCode }) {
     const hasScanForThisAssignment =
       scannedStationId && scannedStationId === assignedStationId;
 
-    // ---- NEW: use taskIndex + submission to derive detailed status ----
+    // ---- Status line based on scan + current task/submission ----
     const currentTaskIndex = roomState.taskIndex;
     const isCurrentTask =
       latest &&
@@ -342,7 +361,6 @@ export default function LiveSession({ roomCode }) {
     } else {
       statusLine = "Waiting…";
     }
-    // ---------------------------------------------------------------
 
     // Card background & text colours
     const bubbleBg =
@@ -514,7 +532,7 @@ export default function LiveSession({ roomCode }) {
           </div>
         )}
 
-        {/* 🔴 Persistent colour band at the bottom */}
+        {/* Colour band at the bottom */}
         <div
           style={{
             marginTop: 8,
