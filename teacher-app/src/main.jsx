@@ -1,13 +1,13 @@
-// teacher-app/src/main.jsx
+// teacher-app/src/main.jsx (or index.jsx)
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import TeacherApp from "./TeacherApp.jsx";
+import App from "./App";
+import { AuthProvider } from "./auth/useAuth";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <TeacherApp />
-    </BrowserRouter>
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </React.StrictMode>
 );

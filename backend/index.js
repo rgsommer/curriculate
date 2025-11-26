@@ -9,7 +9,6 @@ import cors from "cors";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 import bodyParser from "body-parser";
-import authRoutes from "./routes/auth.js";
 
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
@@ -19,10 +18,9 @@ import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import { generateTaskset as generateAiTaskset } from "./controllers/aiTasksetController.js";
-import {
-  listSessions,
-  getSessionDetails,
-} from "./controllers/analyticsController.js";
+import { listSessions, getSessionDetails } from "./controllers/analyticsController.js";
+import authRoutes from "./routes/auth.js";
+import { authRequired } from "./middleware/authRequired.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -77,7 +75,7 @@ const io = new Server(server, {
 });
 
 // --------------------------------------------------------------------
-//  MongoDB Connection
+// MongoDB Connection
 // --------------------------------------------------------------------
 const MONGO_URI = process.env.MONGO_URI;
 if (!MONGO_URI) {
@@ -151,7 +149,7 @@ function reassignStations(room) {
   });
 }
 
-// NEW: reassign only a single team's station (their next colour)
+// Reassign only a single team's station
 function reassignStationForTeam(room, teamId) {
   const stationIds = Object.keys(room.stations || {});
   if (stationIds.length === 0) return;
@@ -392,7 +390,6 @@ io.on("connection", (socket) => {
     io.to(code).emit("session:started");
   });
 
-  // Teacher next task – no station reassignment here anymore
   function handleTeacherNextTask({ roomCode }) {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -484,7 +481,6 @@ io.on("connection", (socket) => {
     const displayName =
       teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
 
-    // Remove any old team with same name (device restart / rejoin)
     for (const [existingId, t] of Object.entries(room.teams)) {
       if (t.teamName === displayName && existingId !== teamId) {
         const oldStation = t.currentStationId;
@@ -684,7 +680,6 @@ io.on("connection", (socket) => {
       submittedAt,
     });
 
-    // 🔄 Only this team gets a new station assignment
     reassignStationForTeam(room, effectiveTeamId);
 
     const state = buildRoomState(room);
@@ -772,7 +767,6 @@ io.on("connection", (socket) => {
     }
   );
 
-  // Cleanup on disconnect – remove team & free station
   socket.on("disconnect", () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;
@@ -928,11 +922,11 @@ app.delete("/api/tasksets/:id", async (req, res) => {
   }
 });
 
-app.post("/api/ai/tasksets", generateAiTaskset);
+app.post("/api/ai/tasksets", authRequired, generateAiTaskset);
 
-// Analytics API
-app.get("/analytics/sessions", listSessions);
-app.get("/analytics/sessions/:id", getSessionDetails);
+// Analytics API (protected)
+app.get("/analytics/sessions", authRequired, listSessions);
+app.get("/analytics/sessions/:id", authRequired, getSessionDetails);
 
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
