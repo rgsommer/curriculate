@@ -9,6 +9,7 @@ import cors from "cors";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 import bodyParser from "body-parser";
+import authRoutes from "./routes/auth.js";
 
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
@@ -66,6 +67,7 @@ app.options("*", cors(corsOptions));
 // ====================================================================
 app.use(bodyParser.json({ limit: "3mb" }));
 app.use("/api/subscription", subscriptionRoutes);
+app.use("/auth", authRoutes);
 
 // ====================================================================
 //  SOCKET.IO
