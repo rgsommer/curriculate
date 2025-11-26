@@ -18,7 +18,10 @@ import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import { generateTaskset as generateAiTaskset } from "./controllers/aiTasksetController.js";
-import { listSessions, getSessionDetails } from "./controllers/analyticsController.js";
+import {
+  listSessions,
+  getSessionDetails,
+} from "./controllers/analyticsController.js";
 import authRoutes from "./routes/auth.js";
 import { authRequired } from "./middleware/authRequired.js";
 
@@ -280,7 +283,10 @@ function buildRoomState(room) {
   const scores = {};
 
   Object.values(room.teams || {}).forEach((team) => {
-    scores[team.id] = team.score || 0;
+    // ✅ Use team.teamId, not team.id
+    const id = team.teamId || team.id;
+    if (!id) return;
+    scores[id] = team.score || 0;
   });
 
   // Derive an "overall" taskIndex for display:
@@ -444,6 +450,7 @@ io.on("connection", (socket) => {
     io.to(code).emit("session:started");
   });
 
+  // OLD global next-task handler (kept as optional override button)
   function handleTeacherNextTask({ roomCode }) {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -474,33 +481,30 @@ io.on("connection", (socket) => {
     handleTeacherNextTask(payload || {});
   });
 
-  socket.on("launchTaskset", (payload) => {
-    handleTeacherNextTask(payload || {});
-  });
-
+  // 🚨 IMPORTANT: only ONE launchTaskset handler, using per-team progression
   socket.on("launchTaskset", ({ roomCode }) => {
-  const code = (roomCode || "").trim().toUpperCase();
-  const room = rooms[code];
-  if (!room || !room.taskset) return;
+    const code = (roomCode || "").trim().toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.taskset) return;
 
-  // Mark the session as active
-  room.isActive = true;
-  room.startedAt = Date.now();
+    // Mark the session as active
+    room.isActive = true;
+    room.startedAt = Date.now();
 
-  // Reset per-team progress
-  Object.values(room.teams || {}).forEach((team) => {
-    team.taskIndex = -1;
+    // Reset per-team progress
+    Object.values(room.teams || {}).forEach((team) => {
+      team.taskIndex = -1;
+    });
+
+    // Send task 0 to every joined team
+    Object.keys(room.teams || {}).forEach((teamId) => {
+      sendTaskToTeam(room, teamId, 0);
+    });
+
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
   });
-
-  // Send task 0 to every joined team
-  Object.keys(room.teams || {}).forEach((teamId) => {
-    sendTaskToTeam(room, teamId, 0);
-  });
-
-  const state = buildRoomState(room);
-  io.to(code).emit("room:state", state);
-  io.to(code).emit("roomState", state);
-});
 
   // Quick ad-hoc task
   socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
@@ -568,6 +572,7 @@ io.on("connection", (socket) => {
         score: 0,
         stationColor: null,
         currentStationId: null,
+        taskIndex: -1,
       };
     } else {
       room.teams[teamId].teamName = displayName;
@@ -690,9 +695,15 @@ io.on("connection", (socket) => {
       return;
     }
 
+    const effectiveTeamId = teamId || socket.data.teamId || socket.id;
+    const team = room.teams[effectiveTeamId] || {};
+
+    // Use explicit taskIndex if provided, otherwise this team's current index
     const idx =
       typeof taskIndex === "number" && taskIndex >= 0
         ? taskIndex
+        : typeof team.taskIndex === "number" && team.taskIndex >= 0
+        ? team.taskIndex
         : room.taskIndex;
 
     const task = room.taskset.tasks[idx];
@@ -703,8 +714,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const effectiveTeamId = teamId || socket.data.teamId || socket.id;
-    const team = room.teams[effectiveTeamId] || {};
     const teamName =
       team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
 
@@ -755,20 +764,20 @@ io.on("connection", (socket) => {
 
     reassignStationForTeam(room, effectiveTeamId);
 
-  // --------------------------------------------------------
-  // Per-team progression: auto-advance THIS team only
-  // --------------------------------------------------------
-  if (room.taskset && Array.isArray(room.taskset.tasks)) {
-    const currentIndex =
-      typeof taskIndex === "number"
-        ? taskIndex
-        : typeof room.teams[effectiveTeamId]?.taskIndex === "number"
-        ? room.teams[effectiveTeamId].taskIndex
-        : -1;
+    // --------------------------------------------------------
+    // Per-team progression: auto-advance THIS team only
+    // --------------------------------------------------------
+    if (room.taskset && Array.isArray(room.taskset.tasks)) {
+      const currentIndex =
+        typeof taskIndex === "number" && taskIndex >= 0
+          ? taskIndex
+          : typeof team.taskIndex === "number" && team.taskIndex >= 0
+          ? team.taskIndex
+          : idx;
 
-    const nextIndex = currentIndex + 1;
-    sendTaskToTeam(room, effectiveTeamId, nextIndex);
-  }
+      const nextIndex = currentIndex + 1;
+      sendTaskToTeam(room, effectiveTeamId, nextIndex);
+    }
 
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
@@ -985,11 +994,9 @@ app.get("/api/tasksets/:id", async (req, res) => {
 
 app.put("/api/tasksets/:id", async (req, res) => {
   try {
-    const updated = await TaskSet.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    ).lean();
+    const updated = await TaskSet.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    }).lean();
     if (!updated) {
       return res.status(404).json({ error: "Task set not found" });
     }
