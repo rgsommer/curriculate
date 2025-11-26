@@ -262,51 +262,84 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
-buildRoomState(room) {
+function buildRoomState(room) {
   if (!room) {
     return {
+      code: null,
+      locationCode: "Classroom",
       teams: {},
-      stations: {},
+      stations: [],
       scores: {},
       taskIndex: -1,
-      locationCode: "Classroom",
-      recentSubmissions: [],
+      startedAt: null,
+      isActive: false,
     };
   }
 
-  // Aggregate scores from all submissions in this room
+  const stationsArray = Object.values(room.stations || {});
   const scores = {};
-  for (const sub of room.submissions || []) {
-    if (!scores[sub.teamId]) scores[sub.teamId] = 0;
-    scores[sub.teamId] += sub.points ?? 0;
+
+  Object.values(room.teams || {}).forEach((team) => {
+    scores[team.id] = team.score || 0;
+  });
+
+  // Derive an "overall" taskIndex for display:
+  // - Prefer room.taskIndex if present
+  // - Otherwise use the max per-team taskIndex
+  let overallTaskIndex =
+    typeof room.taskIndex === "number" ? room.taskIndex : -1;
+
+  const perTeamIndices = Object.values(room.teams || {}).map((t) =>
+    typeof t.taskIndex === "number" ? t.taskIndex : -1
+  );
+
+  if (perTeamIndices.length > 0) {
+    const maxTeamIndex = Math.max(...perTeamIndices);
+    if (maxTeamIndex > overallTaskIndex) {
+      overallTaskIndex = maxTeamIndex;
+    }
   }
 
-  // Take the last 20 submissions and convert them to the same
-  // summary shape that we emit via the "taskSubmission" socket event.
-  const recentSubmissions = (room.submissions || [])
-    .slice(-20)
-    .map((sub) => ({
-      roomCode: sub.roomCode,
-      teamId: sub.teamId,
-      teamName: sub.teamName,
-      taskIndex: sub.taskIndex,
-      answerText: String(sub.answer ?? ""),
-      correct: sub.correct,
-      points: sub.points ?? 0,
-      timeMs: sub.timeMs ?? null,
-      submittedAt: sub.submittedAt,
-    }));
-
-  const state = {
-    teams: room.teams,
-    stations: room.stations,
-    scores,
-    taskIndex: room.taskIndex,
+  return {
+    code: room.code,
     locationCode: room.locationCode || "Classroom",
-    recentSubmissions,
+    teams: room.teams || {},
+    stations: stationsArray,
+    scores,
+    taskIndex: overallTaskIndex,
+    startedAt: room.startedAt || null,
+    isActive: !!room.isActive,
   };
+}
 
-  return state;
+function sendTaskToTeam(room, teamId, index) {
+  if (!room || !room.taskset) return;
+  if (!room.teams || !room.teams[teamId]) return;
+
+  const tasks = room.taskset.tasks || [];
+
+  // If they've finished all tasks, mark complete for this team only
+  if (index >= tasks.length) {
+    room.teams[teamId].taskIndex = tasks.length;
+    io.to(teamId).emit("session:complete");
+    return;
+  }
+
+  const task = tasks[index];
+  room.teams[teamId].taskIndex = index;
+
+  const timeLimitSeconds =
+    typeof task.timeLimitSeconds === "number"
+      ? task.timeLimitSeconds
+      : typeof task.time_limit === "number"
+      ? task.time_limit
+      : null;
+
+  io.to(teamId).emit("task:launch", {
+    index,
+    task,
+    timeLimitSeconds,
+  });
 }
 
 // ====================================================================
@@ -444,6 +477,30 @@ io.on("connection", (socket) => {
   socket.on("launchTaskset", (payload) => {
     handleTeacherNextTask(payload || {});
   });
+
+  socket.on("launchTaskset", ({ roomCode }) => {
+  const code = (roomCode || "").trim().toUpperCase();
+  const room = rooms[code];
+  if (!room || !room.taskset) return;
+
+  // Mark the session as active
+  room.isActive = true;
+  room.startedAt = Date.now();
+
+  // Reset per-team progress
+  Object.values(room.teams || {}).forEach((team) => {
+    team.taskIndex = -1;
+  });
+
+  // Send task 0 to every joined team
+  Object.keys(room.teams || {}).forEach((teamId) => {
+    sendTaskToTeam(room, teamId, 0);
+  });
+
+  const state = buildRoomState(room);
+  io.to(code).emit("room:state", state);
+  io.to(code).emit("roomState", state);
+});
 
   // Quick ad-hoc task
   socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
@@ -697,6 +754,21 @@ io.on("connection", (socket) => {
     });
 
     reassignStationForTeam(room, effectiveTeamId);
+
+  // --------------------------------------------------------
+  // Per-team progression: auto-advance THIS team only
+  // --------------------------------------------------------
+  if (room.taskset && Array.isArray(room.taskset.tasks)) {
+    const currentIndex =
+      typeof taskIndex === "number"
+        ? taskIndex
+        : typeof room.teams[effectiveTeamId]?.taskIndex === "number"
+        ? room.teams[effectiveTeamId].taskIndex
+        : -1;
+
+    const nextIndex = currentIndex + 1;
+    sendTaskToTeam(room, effectiveTeamId, nextIndex);
+  }
 
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
