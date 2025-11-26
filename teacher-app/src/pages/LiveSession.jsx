@@ -1,5 +1,8 @@
+// teacher-app/src/pages/LiveSession.jsx
+
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
+import api from "../api/client";
 
 // Station colours in order: station-1 → red, station-2 → blue, etc.
 const COLORS = [
@@ -52,6 +55,11 @@ export default function LiveSession({ roomCode }) {
 
   // If TaskSets asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
+
+  // Room-setup visualization
+  const [roomSetupTaskset, setRoomSetupTaskset] = useState(null);
+  const [roomSetupLoading, setRoomSetupLoading] = useState(false);
+  const [showRoomSetup, setShowRoomSetup] = useState(false);
 
   // Join sound when a team joins
   const joinSoundRef = useRef(null);
@@ -193,7 +201,6 @@ export default function LiveSession({ roomCode }) {
     };
 
     const handleScanEvent = (ev) => {
-      // ev: { roomCode, teamId, teamName, stationId, timestamp }
       setScanEvents((prev) => {
         const next = [ev, ...prev];
         return next.slice(0, 30); // keep last 30
@@ -224,6 +231,39 @@ export default function LiveSession({ roomCode }) {
       socket.off("team:joined", handleTeamJoined);
     };
   }, []);
+
+  // Load full TaskSet details for room setup visualization whenever a new taskset is loaded
+  useEffect(() => {
+    if (!loadedTasksetId) {
+      setRoomSetupTaskset(null);
+      return;
+    }
+
+    let cancelled = false;
+    setRoomSetupLoading(true);
+
+    api
+      .get(`/api/tasksets/${loadedTasksetId}`)
+      .then((res) => {
+        if (cancelled) return;
+        setRoomSetupTaskset(res.data || null);
+      })
+      .catch((err) => {
+        console.error("Failed to load TaskSet for room setup:", err);
+        if (!cancelled) {
+          setRoomSetupTaskset(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRoomSetupLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedTasksetId]);
 
   const handleLaunchQuickTask = () => {
     if (!roomCode || !prompt.trim()) return;
@@ -265,12 +305,12 @@ export default function LiveSession({ roomCode }) {
   };
 
   // Derived helpers
+  const teamsById = roomState.teams || {};
+  const scores = roomState.scores || {};
+
   let stations = Array.isArray(roomState.stations)
     ? roomState.stations
     : Object.values(roomState.stations || {});
-
-  const teamsById = roomState.teams || {};
-  const scores = roomState.scores || {};
 
   // If there are no stations yet but there ARE teams,
   // show one pseudo-station card per team so joins are visible.
@@ -280,6 +320,13 @@ export default function LiveSession({ roomCode }) {
       assignedTeamId: teamId,
     }));
   }
+
+  const isFixedStation =
+    !!(
+      roomSetupTaskset &&
+      Array.isArray(roomSetupTaskset.displays) &&
+      roomSetupTaskset.displays.length > 0
+    );
 
   const renderStationCard = (station) => {
     const team = teamsById[station.assignedTeamId] || null;
@@ -321,16 +368,13 @@ export default function LiveSession({ roomCode }) {
     const latest = submissions[team.teamId];
     const score = scores[team.teamId] ?? 0;
 
-    // Where this team should currently be
     const assignedStationId = team.currentStationId || stationId;
     const assignedColor = stationIdToColor(assignedStationId);
 
-    // Last station they scanned (from QR)
     const scannedStationId = team.lastScannedStationId || null;
     const hasScanForThisAssignment =
       scannedStationId && scannedStationId === assignedStationId;
 
-    // ---- Status line based on scan + current task/submission ----
     const currentTaskIndex = roomState.taskIndex;
     const isCurrentTask =
       latest &&
@@ -360,7 +404,6 @@ export default function LiveSession({ roomCode }) {
       statusLine = "Waiting…";
     }
 
-    // Card background & text colours
     const bubbleBg =
       hasScanForThisAssignment && assignedColor ? assignedColor : "#f9fafb";
     const textColor =
@@ -587,6 +630,37 @@ export default function LiveSession({ roomCode }) {
           >
             Status: {status}
           </p>
+
+          <button
+            type="button"
+            disabled={!isFixedStation}
+            onClick={() => {
+              if (isFixedStation) setShowRoomSetup(true);
+            }}
+            style={{
+              marginTop: 8,
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "none",
+              fontSize: "0.8rem",
+              cursor: isFixedStation ? "pointer" : "default",
+              backgroundColor: isFixedStation ? "#3b82f6" : "#e5e7eb",
+              color: isFixedStation ? "#ffffff" : "#9ca3af",
+            }}
+          >
+            View Room Setup
+          </button>
+          {roomSetupLoading && (
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: "0.75rem",
+                color: "#6b7280",
+              }}
+            >
+              Loading room setup…
+            </div>
+          )}
         </div>
 
         {/* Quick task / taskset controls */}
@@ -861,6 +935,188 @@ export default function LiveSession({ roomCode }) {
           </div>
         </div>
       </div>
+
+      {/* Room setup overlay */}
+      {showRoomSetup && isFixedStation && roomSetupTaskset && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15,23,42,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: 12,
+              padding: 16,
+              maxWidth: 900,
+              width: "90%",
+              maxHeight: "90vh",
+              boxShadow: "0 10px 40px rgba(15,23,42,0.5)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "1rem",
+                }}
+              >
+                Room setup
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowRoomSetup(false)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  fontSize: "1.1rem",
+                  cursor: "pointer",
+                  padding: 4,
+                  lineHeight: 1,
+                  color: "#4b5563",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.85rem",
+                color: "#4b5563",
+              }}
+            >
+              {roomSetupTaskset?.name && (
+                <>
+                  Task set: <strong>{roomSetupTaskset.name}</strong>
+                </>
+              )}
+              {roomSetupTaskset?.roomLocation && (
+                <>
+                  {" "}
+                  • Room: {roomSetupTaskset.roomLocation}
+                </>
+              )}
+            </p>
+
+            {/* Classroom rectangle with stations around the perimeter */}
+            <div
+              style={{
+                marginTop: 8,
+                flex: 1,
+                minHeight: 260,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <div
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  maxWidth: 700,
+                  aspectRatio: "4 / 3",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: 16,
+                  backgroundColor: "#f9fafb",
+                  overflow: "hidden",
+                  padding: 16,
+                }}
+              >
+                {/* Inner dashed rectangle to suggest the room interior */}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: "20%",
+                    borderRadius: 12,
+                    border: "2px dashed #cbd5e1",
+                    backgroundColor: "rgba(255,255,255,0.85)",
+                  }}
+                />
+
+                {Array.isArray(roomSetupTaskset.displays) &&
+                  roomSetupTaskset.displays.map((disp, index) => {
+                    const count =
+                      roomSetupTaskset.displays.length || 1;
+                    const angle = (2 * Math.PI * index) / count;
+                    const radius = 38; // percent from centre
+                    const x = 50 + radius * Math.cos(angle);
+                    const y = 50 + radius * Math.sin(angle);
+
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          position: "absolute",
+                          top: `${y}%`,
+                          left: `${x}%`,
+                          transform: "translate(-50%, -50%)",
+                          borderRadius: 9999,
+                          padding: "6px 10px",
+                          backgroundColor: "#e0f2fe",
+                          border: "1px solid #38bdf8",
+                          fontSize: "0.75rem",
+                          maxWidth: 180,
+                          textAlign: "center",
+                          boxShadow:
+                            "0 2px 4px rgba(15,23,42,0.2)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            marginBottom: disp.description ? 2 : 0,
+                          }}
+                        >
+                          {disp.name ||
+                            disp.stationColor ||
+                            `Station ${index + 1}`}
+                        </div>
+                        {disp.description && (
+                          <div
+                            style={{
+                              opacity: 0.95,
+                            }}
+                          >
+                            {disp.description}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.75rem",
+                color: "#6b7280",
+              }}
+            >
+              Each bubble represents a fixed station placed around the
+              perimeter of the classroom.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
