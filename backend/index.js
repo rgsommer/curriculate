@@ -479,25 +479,23 @@ io.on("connection", (socket) => {
         : [];
 
     const displayName =
-      teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
+    teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
 
-    // ⚠️ IMPORTANT CHANGE:
-    // No deletion of existing teams based on name match.
-    // Multiple devices can legitimately use the same team name now.
+// ✅ No more deleting other teams based on name match
 
-    if (!room.teams[teamId]) {
-      room.teams[teamId] = {
-        teamId,
-        teamName: displayName,
-        members: cleanMembers,
-        score: 0,
-        stationColor: null,
-        currentStationId: null,
-      };
-    } else {
-      room.teams[teamId].teamName = displayName;
-      room.teams[teamId].members = cleanMembers;
-    }
+if (!room.teams[teamId]) {
+  room.teams[teamId] = {
+    teamId,
+    teamName: displayName,
+    members: cleanMembers,
+    score: 0,
+    stationColor: null,
+    currentStationId: null,
+  };
+} else {
+  room.teams[teamId].teamName = displayName;
+  room.teams[teamId].members = cleanMembers;
+}
 
     if (!room.stations || Object.keys(room.stations).length === 0) {
       room.stations = {};

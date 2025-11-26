@@ -268,91 +268,106 @@ export default function StudentApp() {
   }, []);
 
   // Socket events
-  useEffect(() => {
-    socket.on("connect", () => {
-      console.log("Student socket connected:", socket.id);
-      setConnected(true);
-    });
+  // Socket events
+useEffect(() => {
+  const handleConnect = () => {
+    console.log("Student socket connected:", socket.id);
+    setConnected(true);
+  };
 
-    socket.on("disconnect", () => {
-      console.log("Student socket disconnected");
-      setConnected(false);
-    });
+  const handleDisconnect = () => {
+    console.log("Student socket disconnected");
+    setConnected(false);
 
-    socket.on("room:state", (state) => {
-      setLocationCode(state?.locationCode || DEFAULT_LOCATION);
+    // We are no longer in the room on the server,
+    // so force the UI back to “not joined”.
+    setJoined(false);
+    setTeamId(null);
+    setAssignedStationId(null);
+    setScannedStationId(null);
+    setCurrentTask(null);
+    setTaskIndex(null);
+    setStatusMessage(
+      "Connection lost. Check Wi-Fi and tap READY again to rejoin your room."
+    );
+  };
 
-      const teams = state?.teams || {};
-      const team = teams[teamId] || null;
+  const handleRoomState = (state = {}) => {
+    // Update location (Classroom / Gym / etc.)
+    const loc = state.locationCode || DEFAULT_LOCATION;
+    setLocationCode(loc);
 
-      if (team) {
-        const newStation = team.currentStationId;
-        const oldStation = assignedStationId;
+    const teams = state.teams || {};
+    // On the backend, teamId === socket.id for this device
+    const me = teams[socket.id];
 
-        setAssignedStationId(newStation);
+    if (!me) {
+      // Server no longer has us as a team (e.g., teacher restarted room);
+      // leave joined as-is so the student can still see they need to rejoin.
+      return;
+    }
 
-        // If assigned station changed, clear previous scan & prompt
-        if (newStation && newStation !== oldStation) {
-          setScannedStationId(null);
-          setScanError(null);
-          setStatusMessage("New station assigned! Please scan the QR.");
-        }
+    const newAssigned = me.currentStationId || null;
+
+    // If the assigned station changed, clear the previous scan
+    setAssignedStationId((prev) => {
+      if (prev && prev !== newAssigned) {
+        setScannedStationId(null);
       }
+      return newAssigned;
     });
+  };
 
-    socket.on("task:launch", ({ index, task }) => {
-      console.log("[Student] task:launch", { index, task });
-      setCurrentTask(task || null);
-      setTaskIndex(index);
+  const handleTaskLaunch = ({ index, task, timeLimitSeconds }) => {
+    console.log("[Student] task:launch", { index, task, timeLimitSeconds });
 
-      // Reset any previous draft and timer
-      setCurrentAnswerDraft(null);
-      timeoutSubmittedRef.current = false;
+    setCurrentTask(task || null);
+    setTaskIndex(index ?? null);
 
-      const limit =
-        task?.timeLimitSeconds ?? task?.time_limit ?? null;
-      if (limit && limit > 0) {
-        setTimeLimitSeconds(limit);
-        setRemainingMs(limit * 1000);
-      } else {
-        setTimeLimitSeconds(null);
-        setRemainingMs(null);
-      }
-
-      const a = sndAlert.current;
-      if (a) {
-        a.currentTime = 0;
-        a
-          .play()
-          .then(() => {})
-          .catch((err) =>
-            console.warn("Student task sound play blocked/failed", err)
-          );
-      }
-
-      setStatusMessage(
-        "Task received! Read carefully and submit your best answer."
-      );
-    });
-
-    socket.on("session:complete", () => {
-      setCurrentTask(null);
+    // Time-limit handling (ties into your timeout effect)
+    if (timeLimitSeconds && timeLimitSeconds > 0) {
+      setTimeLimitSeconds(timeLimitSeconds);
+    } else {
       setTimeLimitSeconds(null);
       setRemainingMs(null);
-      timeoutSubmittedRef.current = false;
-      setStatusMessage(
-        "Task set complete! Wait for your teacher to show the results."
-      );
-    });
+    }
 
-    return () => {
-      socket.off("connect");
-      socket.off("disconnect");
-      socket.off("room:state");
-      socket.off("task:launch");
-      socket.off("session:complete");
-    };
-  }, [teamId, assignedStationId]);
+    // New task → clear any previous draft + timeout flag
+    setCurrentAnswerDraft(null);
+    timeoutSubmittedRef.current = false;
+
+    // Require a fresh scan for this task/rotation
+    setScannedStationId(null);
+
+    // Play alert sound on task arrival
+    const a = sndAlert.current;
+    if (a) {
+      a.currentTime = 0;
+      a
+        .play()
+        .then(() => {})
+        .catch((err) =>
+          console.warn("Student task sound play blocked/failed", err)
+        );
+    }
+
+    setStatusMessage(
+      "Task received! Read carefully and submit your best answer."
+    );
+  };
+
+  socket.on("connect", handleConnect);
+  socket.on("disconnect", handleDisconnect);
+  socket.on("room:state", handleRoomState);
+  socket.on("task:launch", handleTaskLaunch);
+
+  return () => {
+    socket.off("connect", handleConnect);
+    socket.off("disconnect", handleDisconnect);
+    socket.off("room:state", handleRoomState);
+    socket.off("task:launch", handleTaskLaunch);
+  };
+}, []); // important: register handlers once
 
   // Timeout timer effect
   useEffect(() => {
@@ -447,7 +462,6 @@ export default function StudentApp() {
   a
     .play()
     .then(() => {
-      // Immediately stop and reset so they don't really “hear” the unlock too much
       a.pause();
       a.currentTime = 0;
     })
