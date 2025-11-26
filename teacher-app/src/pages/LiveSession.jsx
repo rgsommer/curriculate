@@ -30,6 +30,8 @@ export default function LiveSession({ roomCode }) {
     scores: {},
     locationCode: "Classroom",
     taskIndex: -1,
+    startedAt: null,
+    isActive: false,
   });
 
   // All submissions by teamId: { [teamId]: Submission[] }
@@ -60,13 +62,16 @@ export default function LiveSession({ roomCode }) {
   // If TaskSets asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
 
-  // Room-setup visualization
+  // Room-setup visualization (and now also task timing)
   const [roomSetupTaskset, setRoomSetupTaskset] = useState(null);
   const [roomSetupLoading, setRoomSetupLoading] = useState(false);
   const [showRoomSetup, setShowRoomSetup] = useState(false);
 
   // Join sound when a team joins
   const joinSoundRef = useRef(null);
+
+  // Local clock for progress bars
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     const audio = new Audio("/sounds/join.mp3");
@@ -92,6 +97,14 @@ export default function LiveSession({ roomCode }) {
     };
     window.addEventListener("click", unlock);
     return () => window.removeEventListener("click", unlock);
+  }, []);
+
+  // Simple 1s tick for elapsed time
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(id);
   }, []);
 
   // Create the room + join it as teacher whenever roomCode changes
@@ -165,6 +178,8 @@ export default function LiveSession({ roomCode }) {
           scores: {},
           locationCode: "Classroom",
           taskIndex: -1,
+          startedAt: null,
+          isActive: false,
         };
       setRoomState(safe);
 
@@ -241,7 +256,7 @@ export default function LiveSession({ roomCode }) {
     };
   }, []);
 
-  // Load full TaskSet details for room setup visualization whenever a new taskset is loaded
+  // Load full TaskSet details for room setup visualization (and timing)
   useEffect(() => {
     if (!loadedTasksetId) {
       setRoomSetupTaskset(null);
@@ -309,8 +324,14 @@ export default function LiveSession({ roomCode }) {
       return;
     }
 
-    // If it IS already loaded, just launch the next task
+    // If it IS already loaded, just launch per-team progression
     socket.emit("launchTaskset", { roomCode: code });
+  };
+
+  const handleSkipNextTask = () => {
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    socket.emit("teacher:skipNextTask", { roomCode: code });
   };
 
   // Derived helpers
@@ -336,6 +357,67 @@ export default function LiveSession({ roomCode }) {
       Array.isArray(roomSetupTaskset.displays) &&
       roomSetupTaskset.displays.length > 0
     );
+
+  // -------- Progress bar calculations (expected vs actual) --------
+  const totalTasks =
+    (roomSetupTaskset?.tasks && roomSetupTaskset.tasks.length) ||
+    activeTasksetMeta?.numTasks ||
+    0;
+
+  let totalEstimatedSeconds = 0;
+  if (roomSetupTaskset?.tasks && roomSetupTaskset.tasks.length > 0) {
+    totalEstimatedSeconds = roomSetupTaskset.tasks.reduce((sum, t) => {
+      const sec =
+        typeof t.timeLimitSeconds === "number"
+          ? t.timeLimitSeconds
+          : typeof t.recommendedTimeSeconds === "number"
+          ? t.recommendedTimeSeconds
+          : 90; // fallback
+      return sum + (sec > 0 ? sec : 90);
+    }, 0);
+  } else if (activeTasksetMeta?.numTasks) {
+    // Rough fallback if we don't have full tasks yet
+    totalEstimatedSeconds = activeTasksetMeta.numTasks * 90;
+  }
+
+  const elapsedSeconds =
+    roomState.startedAt && roomState.isActive
+      ? Math.max(0, Math.floor((now - roomState.startedAt) / 1000))
+      : 0;
+
+  const expectedProgress =
+    totalEstimatedSeconds > 0
+      ? Math.min(1, elapsedSeconds / totalEstimatedSeconds)
+      : 0;
+
+  // Actual progress: average proportion of tasks completed per team
+  let actualProgress = 0;
+  const teamList = Object.values(teamsById);
+  if (totalTasks > 0 && teamList.length > 0) {
+    let sumCompleted = 0;
+    teamList.forEach((team) => {
+      const ti =
+        typeof team.taskIndex === "number" && team.taskIndex >= 0
+          ? team.taskIndex
+          : -1;
+      // completed tasks is index+1, capped at totalTasks
+      const completed = ti + 1;
+      const clamped = Math.max(0, Math.min(completed, totalTasks));
+      sumCompleted += clamped;
+    });
+    const avgCompleted = sumCompleted / teamList.length;
+    actualProgress = Math.max(0, Math.min(1, avgCompleted / totalTasks));
+  }
+
+  const expectedPercent = Math.round(expectedProgress * 100);
+  const actualPercent = Math.round(actualProgress * 100);
+  const pacingColor =
+    actualProgress + 0.01 >= expectedProgress ? "#22c55e" : "#ef4444";
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  const totalMinutes = totalEstimatedSeconds
+    ? Math.round(totalEstimatedSeconds / 60)
+    : null;
 
   const renderStationCard = (station) => {
     const team = teamsById[station.assignedTeamId] || null;
@@ -388,7 +470,11 @@ export default function LiveSession({ roomCode }) {
     const hasScanForThisAssignment =
       scannedStationId && scannedStationId === assignedStationId;
 
-    const currentTaskIndex = roomState.taskIndex;
+    const currentTaskIndex =
+      typeof team.taskIndex === "number"
+        ? team.taskIndex
+        : roomState.taskIndex;
+
     const isCurrentTask =
       latest &&
       typeof latest.taskIndex === "number" &&
@@ -852,7 +938,7 @@ export default function LiveSession({ roomCode }) {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <button
               type="button"
               onClick={handleLaunchQuickTask}
@@ -886,6 +972,124 @@ export default function LiveSession({ roomCode }) {
               Launch from taskset
             </button>
           </div>
+
+          {/* Progress bars + skip button */}
+          {totalTasks > 0 && (
+            <div
+              style={{
+                marginTop: 4,
+                paddingTop: 8,
+                borderTop: "1px solid #e5e7eb",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 6,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#4b5563",
+                  }}
+                >
+                  Time:{" "}
+                  {totalMinutes != null
+                    ? `${elapsedMinutes}/${totalMinutes} min`
+                    : `${elapsedMinutes} min`}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSkipNextTask}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#f97316",
+                    color: "#ffffff",
+                    fontSize: "0.75rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Skip next task
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                }}
+              >
+                {/* Expected progress (time-based) */}
+                <div>
+                  <div
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "#6b7280",
+                      marginBottom: 2,
+                    }}
+                  >
+                    By time ({expectedPercent}%)
+                  </div>
+                  <div
+                    style={{
+                      width: "100%",
+                      height: 8,
+                      borderRadius: 999,
+                      backgroundColor: "#e5e7eb",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${expectedPercent}%`,
+                        height: "100%",
+                        backgroundColor: "#3b82f6",
+                        transition: "width 0.4s ease",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Actual progress (team completion) */}
+                <div>
+                  <div
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "#6b7280",
+                      marginBottom: 2,
+                    }}
+                  >
+                    Actual ({actualPercent}%)
+                  </div>
+                  <div
+                    style={{
+                      width: "100%",
+                      height: 8,
+                      borderRadius: 999,
+                      backgroundColor: "#e5e7eb",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${actualPercent}%`,
+                        height: "100%",
+                        backgroundColor: pacingColor,
+                        transition: "width 0.4s ease",
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

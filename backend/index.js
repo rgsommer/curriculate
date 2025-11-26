@@ -810,6 +810,30 @@ io.on("connection", (socket) => {
     handleStudentSubmit(payload);
   });
 
+  //Teacher skips task
+    socket.on("teacher:skipNextTask", ({ roomCode }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.taskset) return;
+
+    const tasks = room.taskset.tasks || [];
+
+    // For each team, jump ahead by one task index
+    Object.entries(room.teams || {}).forEach(([teamId, team]) => {
+      const currentIndex =
+        typeof team.taskIndex === "number" && team.taskIndex >= 0
+          ? team.taskIndex
+          : -1;
+      const nextIndex = currentIndex + 1;
+      // sendTaskToTeam already handles ">= length" by emitting session:complete
+      sendTaskToTeam(room, teamId, nextIndex);
+    });
+
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+  });
+  
   // Teacher ends session + email reports
   socket.on(
     "teacher:endSessionAndEmail",
