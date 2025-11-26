@@ -62,7 +62,7 @@ export default function LiveSession({ roomCode }) {
     joinSoundRef.current = audio;
   }, []);
 
-  // NEW: unlock audio on first teacher click (for autoplay-restricted browsers)
+  // Unlock audio on first teacher click (for autoplay-restricted browsers)
   useEffect(() => {
     const unlock = () => {
       const a = joinSoundRef.current;
@@ -82,9 +82,7 @@ export default function LiveSession({ roomCode }) {
     return () => window.removeEventListener("click", unlock);
   }, []);
 
-  // ----------------------------------------------------
   // Create the room + join it as teacher whenever roomCode changes
-  // ----------------------------------------------------
   useEffect(() => {
     if (!roomCode) {
       setStatus("No room selected.");
@@ -176,11 +174,11 @@ export default function LiveSession({ roomCode }) {
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
-            localStorage.setItem("curriculateActiveTasksetId", meta._id);
-            localStorage.setItem(
-              "curriculateActiveTasksetMeta",
-              JSON.stringify(meta)
-            );
+          localStorage.setItem("curriculateActiveTasksetId", meta._id);
+          localStorage.setItem(
+            "curriculateActiveTasksetMeta",
+            JSON.stringify(meta)
+          );
           return meta;
         });
       }
@@ -744,15 +742,29 @@ export default function LiveSession({ roomCode }) {
             {leaderboard.length === 0 ? (
               <p style={{ color: "#6b7280" }}>No scores yet.</p>
             ) : (
-              <ol style={{ paddingLeft: 18, margin: 0 }}>
+              <ol style={{ paddingLeft: 20, margin: 0 }}>
                 {leaderboard.map(([teamId, pts]) => {
+                  const team = teamsById[teamId];
                   const teamName =
-                    teamsById[teamId]?.teamName ||
-                    teamsById[teamId]?.displayName ||
-                    teamId;
+                    team?.teamName ||
+                    team?.displayName ||
+                    `Team-${String(teamId).slice(-4)}`;
+
+                  const members = Array.isArray(team?.members)
+                    ? team.members.filter(Boolean)
+                    : [];
+
+                  const membersLabel = members.length
+                    ? ` (${members.join(", ")})`
+                    : "";
+
                   return (
                     <li key={teamId} style={{ marginBottom: 4 }}>
-                      <strong>{teamName}</strong> — {pts} pts
+                      <strong>
+                        {teamName}
+                        {membersLabel}
+                      </strong>{" "}
+                      — {pts} pts
                     </li>
                   );
                 })}

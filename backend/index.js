@@ -116,7 +116,7 @@ function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
   };
 }
 
-// Old all-team rotation (kept for possible future use)
+// All-team rotation (kept for possible future use)
 function reassignStations(room) {
   const stationIds = Object.keys(room.stations || {});
   const teamIds = Object.keys(room.teams || {});
@@ -479,23 +479,22 @@ io.on("connection", (socket) => {
         : [];
 
     const displayName =
-    teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
+      teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
 
-// ✅ No more deleting other teams based on name match
-
-if (!room.teams[teamId]) {
-  room.teams[teamId] = {
-    teamId,
-    teamName: displayName,
-    members: cleanMembers,
-    score: 0,
-    stationColor: null,
-    currentStationId: null,
-  };
-} else {
-  room.teams[teamId].teamName = displayName;
-  room.teams[teamId].members = cleanMembers;
-}
+    // No more deleting other teams based on name match
+    if (!room.teams[teamId]) {
+      room.teams[teamId] = {
+        teamId,
+        teamName: displayName,
+        members: cleanMembers,
+        score: 0,
+        stationColor: null,
+        currentStationId: null,
+      };
+    } else {
+      room.teams[teamId].teamName = displayName;
+      room.teams[teamId].members = cleanMembers;
+    }
 
     if (!room.stations || Object.keys(room.stations).length === 0) {
       room.stations = {};
@@ -654,6 +653,14 @@ if (!room.teams[teamId]) {
 
     const submittedAt = Date.now();
 
+    const basePoints = task.points ?? 10;
+    let pointsEarned = 0;
+    if (correct === true) {
+      pointsEarned = basePoints;
+    } else {
+      pointsEarned = 0;
+    }
+
     room.submissions.push({
       roomCode: code,
       teamId: effectiveTeamId,
@@ -662,7 +669,7 @@ if (!room.teams[teamId]) {
       taskIndex: idx,
       answer,
       correct,
-      points: task.points ?? 10,
+      points: pointsEarned,
       aiScore,
       timeMs: timeMs ?? null,
       submittedAt,
@@ -681,7 +688,7 @@ if (!room.teams[teamId]) {
       taskIndex: idx,
       answerText: String(answer || ""),
       correct,
-      points: task.points ?? 10,
+      points: pointsEarned,
       timeMs: timeMs ?? null,
       submittedAt,
     };
