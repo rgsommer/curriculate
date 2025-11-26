@@ -12,6 +12,11 @@ export default function AiTasksetGenerator() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [form, setForm] = useState({
+    // New fields
+    title: "",
+    roomLocation: "",
+    fixedStationsDescription: "",
+    // Existing fields
     gradeLevel: "",
     subject: "",
     difficulty: "MEDIUM",
@@ -32,11 +37,18 @@ export default function AiTasksetGenerator() {
         if (cancelled) return;
         setProfile(data || null);
 
+        // Pre-fill from presenter profile if available
         if (data?.defaultGradeLevel && !form.gradeLevel) {
           setForm((prev) => ({ ...prev, gradeLevel: data.defaultGradeLevel }));
         }
         if (data?.defaultSubject && !form.subject) {
           setForm((prev) => ({ ...prev, subject: data.defaultSubject }));
+        }
+        if (data?.defaultLocation && !form.roomLocation) {
+          setForm((prev) => ({
+            ...prev,
+            roomLocation: data.defaultLocation,
+          }));
         }
       } catch (err) {
         console.error("Failed to load profile for AI generator:", err);
@@ -65,12 +77,21 @@ export default function AiTasksetGenerator() {
 
     try {
       const payload = {
+        // New fields we want the AI to respect
+        title: form.title?.trim() || undefined,
+        roomLocation: form.roomLocation?.trim() || undefined,
+        fixedStationsDescription:
+          form.fixedStationsDescription?.trim() || undefined,
+
+        // Existing fields
         gradeLevel: form.gradeLevel,
         subject: form.subject,
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
         topicDescription: form.topicDescription,
         numberOfTasks: Number(form.numberOfTasks) || 8,
+
+        // Presenter profile context
         presenterProfile: profile || undefined,
       };
 
@@ -91,7 +112,6 @@ export default function AiTasksetGenerator() {
 
       let msg = "Failed to generate TaskSet";
 
-      // Axios-style error handling
       if (err.response) {
         const status = err.response.status;
         const data = err.response.data;
@@ -127,6 +147,67 @@ export default function AiTasksetGenerator() {
       {loadingProfile && <p>Loading presenter profile…</p>}
 
       <form onSubmit={handleSubmit} style={{ marginTop: 12 }}>
+        {/* Top row: title + room */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr",
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
+            >
+              Task set title
+            </label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => handleChange("title", e.target.value)}
+              placeholder="e.g., War of 1812 Station Rotation"
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
+            />
+          </div>
+
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 2,
+                color: "#4b5563",
+              }}
+            >
+              Room / location
+            </label>
+            <input
+              type="text"
+              value={form.roomLocation}
+              onChange={(e) => handleChange("roomLocation", e.target.value)}
+              placeholder="e.g., Classroom, Gym, Science lab"
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Grade, subject, difficulty, goal, numberOfTasks */}
         <div
           style={{
             display: "grid",
@@ -270,6 +351,7 @@ export default function AiTasksetGenerator() {
           </div>
         </div>
 
+        {/* Topic description */}
         <div style={{ marginBottom: 12 }}>
           <label
             style={{
@@ -294,6 +376,42 @@ export default function AiTasksetGenerator() {
               resize: "vertical",
             }}
           />
+        </div>
+
+        {/* NEW: fixed stations description */}
+        <div style={{ marginBottom: 12 }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: "0.8rem",
+              marginBottom: 2,
+              color: "#4b5563",
+            }}
+          >
+            Fixed stations (optional)
+          </label>
+          <textarea
+            value={form.fixedStationsDescription}
+            onChange={(e) =>
+              handleChange("fixedStationsDescription", e.target.value)
+            }
+            rows={4}
+            placeholder={`Describe each station and what is at it, one per line. For example:
+Red table – microscopes and prepared slides
+Blue table – primary source documents and highlighters
+Green table – dice and fraction manipulatives`}
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              resize: "vertical",
+            }}
+          />
+          <p style={{ marginTop: 4, fontSize: "0.75rem", color: "#6b7280" }}>
+            The AI uses this to design tasks that match the equipment or
+            materials at each station.
+          </p>
         </div>
 
         <button
@@ -325,7 +443,7 @@ export default function AiTasksetGenerator() {
             Draft TaskSet
           </h2>
           <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
-            This is what the server returned. You can refine it on the TaskSets
+            This is what the server returned. You can refine it on the Task Sets
             page.
           </p>
           <pre
