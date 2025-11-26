@@ -21,6 +21,7 @@ import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import { generateTaskset as generateAiTaskset } from "./controllers/aiTasksetController.js";
+import { listSessions, getSessionDetails } from "./controllers/analyticsController.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -49,46 +50,37 @@ const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
-      return callback(null, true);
+      callback(null, true);
+    } else {
+      console.warn("Blocked CORS origin:", origin);
+      callback(new Error("Not allowed by CORS"));
     }
-    console.warn("❌ Blocked CORS:", origin);
-    return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
 };
 
 app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+app.use(bodyParser.json({ limit: "1mb" }));
 
 // ====================================================================
-//  EXPRESS MIDDLEWARE
+//  MONGOOSE
 // ====================================================================
-app.use(bodyParser.json({ limit: "3mb" }));
-app.use("/api/subscription", subscriptionRoutes);
-
-// ====================================================================
-//  SOCKET.IO
-// ====================================================================
-const io = new Server(server, { cors: corsOptions });
-
-// --------------------------------------------------------------------
-// MongoDB Connection
-// --------------------------------------------------------------------
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error("❌ MONGO_URI missing");
-  process.exit(1);
-}
-
 mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("Mongo connected"))
-  .catch((err) => console.error("Mongo connection error:", err));
+  .connect(process.env.MONGODB_URI, {
+    serverSelectionTimeoutMS: 20000,
+  })
+  .then(() => {
+    console.log("MongoDB connected");
+  })
+  .catch((err) => {
+    console.error("MongoDB connection error:", err);
+  });
 
 // ====================================================================
 //  ROOM ENGINE
 // ====================================================================
-const rooms = {}; // rooms["AB"] = {...}
+//const rooms = {}; // rooms["AB"] = {...}
+const rooms = Object.create(null);
 
 function createRoom(roomCode, teacherSocketId) {
   const stations = {};
@@ -648,26 +640,28 @@ app.put("/api/tasksets/:id", async (req, res) => {
 
 app.delete("/api/tasksets/:id", async (req, res) => {
   try {
-    await TaskSet.findByIdAndDelete(req.params.id);
+    const id = req.params.id;
+    const userId = req.user?.id; // optional if auth not wired yet
+
+    const doc = await TaskSet.findOne({ _id: id, userId });
+    if (!doc) {
+      return res.status(404).json({ error: "Task set not found" });
+    }
+
+    await TaskSet.deleteOne({ _id: id });
     res.json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error("DELETE /api/tasksets/:id error:", err);
     res.status(500).json({ error: "Failed to delete task set" });
   }
 });
 
 app.post("/api/ai/tasksets", generateAiTaskset);
 
-app.get("/analytics/sessions", async (req, res) => {
-  try {
-    res.json({ sessions: [] });
-  } catch {
-    res.status(500).json({ error: "Failed to load analytics sessions" });
-  }
-});
+// Analytics API
+app.get("/analytics/sessions", listSessions);
+app.get("/analytics/sessions/:id", getSessionDetails);
 
-// ====================================================================
-//  SERVER START
-// ====================================================================
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
