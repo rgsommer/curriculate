@@ -32,9 +32,13 @@ export default function LiveSession({ roomCode }) {
     taskIndex: -1,
   });
 
-  const [submissions, setSubmissions] = useState({});
+  // All submissions by teamId: { [teamId]: Submission[] }
+  const [submissionsByTeam, setSubmissionsByTeam] = useState({});
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
+
+  // Which team's submissions drawer is open
+  const [openSubmissionsTeamId, setOpenSubmissionsTeamId] = useState(null);
 
   // Quick task fields
   const [prompt, setPrompt] = useState("");
@@ -194,10 +198,15 @@ export default function LiveSession({ roomCode }) {
 
     const handleSubmission = (sub) => {
       if (!sub?.teamId) return;
-      setSubmissions((prev) => ({
-        ...prev,
-        [sub.teamId]: sub,
-      }));
+
+      // Append to that team's submissions array
+      setSubmissionsByTeam((prev) => {
+        const existing = prev[sub.teamId] || [];
+        return {
+          ...prev,
+          [sub.teamId]: [...existing, sub],
+        };
+      });
     };
 
     const handleScanEvent = (ev) => {
@@ -365,7 +374,11 @@ export default function LiveSession({ roomCode }) {
       );
     }
 
-    const latest = submissions[team.teamId];
+    const teamSubs = submissionsByTeam[team.teamId] || [];
+    const latest = teamSubs.length
+      ? teamSubs[teamSubs.length - 1]
+      : null;
+
     const score = scores[team.teamId] ?? 0;
 
     const assignedStationId = team.currentStationId || stationId;
@@ -414,6 +427,7 @@ export default function LiveSession({ roomCode }) {
         : "#6b7280";
 
     const isCorrect = latest?.correct ?? null;
+    const drawerOpen = openSubmissionsTeamId === team.teamId;
 
     return (
       <div
@@ -573,17 +587,121 @@ export default function LiveSession({ roomCode }) {
           </div>
         )}
 
-        {/* Colour band at the bottom */}
+        {/* Bottom row: colour band + submissions drawer toggle */}
         <div
           style={{
             marginTop: 8,
-            height: 6,
-            borderRadius: 999,
-            backgroundColor: assignedColor
-              ? assignedColor
-              : "rgba(148,163,184,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
           }}
-        />
+        >
+          <div
+            style={{
+              flexGrow: 1,
+              height: 6,
+              borderRadius: 999,
+              backgroundColor: assignedColor
+                ? assignedColor
+                : "rgba(148,163,184,0.5)",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() =>
+              setOpenSubmissionsTeamId((prev) =>
+                prev === team.teamId ? null : team.teamId
+              )
+            }
+            style={{
+              flexShrink: 0,
+              borderRadius: 999,
+              border: "none",
+              padding: "3px 8px",
+              fontSize: "0.7rem",
+              cursor: teamSubs.length ? "pointer" : "default",
+              backgroundColor: teamSubs.length
+                ? "rgba(15,23,42,0.18)"
+                : "rgba(148,163,184,0.3)",
+              color: "#f9fafb",
+            }}
+            disabled={!teamSubs.length}
+          >
+            {teamSubs.length
+              ? drawerOpen
+                ? "Hide submissions"
+                : `Show submissions (${teamSubs.length})`
+              : "No submissions"}
+          </button>
+        </div>
+
+        {/* Submissions drawer */}
+        {drawerOpen && teamSubs.length > 0 && (
+          <div
+            style={{
+              marginTop: 8,
+              borderRadius: 8,
+              backgroundColor:
+                hasScanForThisAssignment && assignedColor
+                  ? "rgba(15,23,42,0.15)"
+                  : "rgba(15,23,42,0.04)",
+              padding: 6,
+              maxHeight: 160,
+              overflowY: "auto",
+              fontSize: "0.75rem",
+            }}
+          >
+            {teamSubs
+              .slice()
+              .reverse()
+              .map((sub, idx) => {
+                const isCorrectSub = sub.correct ?? null;
+                const label = isCorrectSub
+                  ? "✅"
+                  : isCorrectSub === false
+                  ? "❌"
+                  : "•";
+                return (
+                  <div
+                    key={`${sub.taskIndex}-${sub.submittedAt}-${idx}`}
+                    style={{
+                      padding: "2px 4px",
+                      borderBottom:
+                        idx === teamSubs.length - 1
+                          ? "none"
+                          : "1px dashed rgba(148,163,184,0.5)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        maxWidth: "65%",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={sub.answerText}
+                    >
+                      <span style={{ marginRight: 4 }}>{label}</span>
+                      <strong>T{(sub.taskIndex ?? 0) + 1}:</strong>{" "}
+                      {sub.answerText || "—"}
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div>{sub.points ?? 0} pts</div>
+                      {sub.timeMs != null && (
+                        <div>
+                          {(sub.timeMs / 1000).toFixed(1)}s
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
       </div>
     );
   };

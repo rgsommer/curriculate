@@ -262,7 +262,7 @@ function computePerParticipantStats(room, transcript) {
   }));
 }
 
-function buildRoomState(room) {
+buildRoomState(room) {
   if (!room) {
     return {
       teams: {},
@@ -270,22 +270,43 @@ function buildRoomState(room) {
       scores: {},
       taskIndex: -1,
       locationCode: "Classroom",
+      recentSubmissions: [],
     };
   }
 
+  // Aggregate scores from all submissions in this room
   const scores = {};
-  for (const sub of room.submissions) {
+  for (const sub of room.submissions || []) {
     if (!scores[sub.teamId]) scores[sub.teamId] = 0;
     scores[sub.teamId] += sub.points ?? 0;
   }
 
-  return {
+  // Take the last 20 submissions and convert them to the same
+  // summary shape that we emit via the "taskSubmission" socket event.
+  const recentSubmissions = (room.submissions || [])
+    .slice(-20)
+    .map((sub) => ({
+      roomCode: sub.roomCode,
+      teamId: sub.teamId,
+      teamName: sub.teamName,
+      taskIndex: sub.taskIndex,
+      answerText: String(sub.answer ?? ""),
+      correct: sub.correct,
+      points: sub.points ?? 0,
+      timeMs: sub.timeMs ?? null,
+      submittedAt: sub.submittedAt,
+    }));
+
+  const state = {
     teams: room.teams,
     stations: room.stations,
     scores,
     taskIndex: room.taskIndex,
     locationCode: room.locationCode || "Classroom",
+    recentSubmissions,
   };
+
+  return state;
 }
 
 // ====================================================================
