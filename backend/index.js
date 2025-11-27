@@ -941,7 +941,13 @@ async function getOrCreateProfile() {
 app.get("/api/profile/me", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-    res.json(profile);
+    const plain = profile.toObject();
+
+    // Ensure both fields are present for the frontend
+    plain.presenterTitle = plain.presenterTitle || plain.title || "";
+    plain.title = plain.title || plain.presenterTitle || "";
+
+    res.json(plain);
   } catch (err) {
     console.error("Profile fetch failed (/api/profile/me):", err);
     res.status(500).json({ error: "Failed to fetch profile" });
@@ -951,7 +957,12 @@ app.get("/api/profile/me", async (req, res) => {
 app.get("/api/profile", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-    res.json(profile);
+    const plain = profile.toObject();
+
+    plain.presenterTitle = plain.presenterTitle || plain.title || "";
+    plain.title = plain.title || plain.presenterTitle || "";
+
+    res.json(plain);
   } catch (err) {
     console.error("Profile fetch failed (/api/profile):", err);
     res.status(500).json({ error: "Failed to fetch profile" });
@@ -961,9 +972,25 @@ app.get("/api/profile", async (req, res) => {
 app.put("/api/profile/me", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-    Object.assign(profile, req.body);
+
+    // Keep presenterTitle and title in sync
+    const body = { ...req.body };
+
+    if (body.presenterTitle && !body.title) {
+      body.title = body.presenterTitle;
+    }
+    if (body.title && !body.presenterTitle) {
+      body.presenterTitle = body.title;
+    }
+
+    Object.assign(profile, body);
     await profile.save();
-    res.json(profile);
+
+    const plain = profile.toObject();
+    plain.presenterTitle = plain.presenterTitle || plain.title || "";
+    plain.title = plain.title || plain.presenterTitle || "";
+
+    res.json(plain);
   } catch (err) {
     console.error("Profile update failed (/api/profile/me):", err);
     res.status(500).json({ error: "Failed to update profile" });
@@ -973,9 +1000,23 @@ app.put("/api/profile/me", async (req, res) => {
 app.put("/api/profile", async (req, res) => {
   try {
     const profile = await getOrCreateProfile();
-    Object.assign(profile, req.body);
+
+    const body = { ...req.body };
+    if (body.presenterTitle && !body.title) {
+      body.title = body.presenterTitle;
+    }
+    if (body.title && !body.presenterTitle) {
+      body.presenterTitle = body.title;
+    }
+
+    Object.assign(profile, body);
     await profile.save();
-    res.json(profile);
+
+    const plain = profile.toObject();
+    plain.presenterTitle = plain.presenterTitle || plain.title || "";
+    plain.title = plain.title || plain.presenterTitle || "";
+
+    res.json(plain);
   } catch (err) {
     console.error("Profile update failed (/api/profile):", err);
     res.status(500).json({ error: "Failed to update profile" });
