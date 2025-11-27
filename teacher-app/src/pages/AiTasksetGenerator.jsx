@@ -418,7 +418,7 @@ export default function AiTasksetGenerator() {
             }}
           >
             Use this if students rotate while stations (equipment, posters,
-            manipulatives, etc.) stay in place. The AI needs to know what each
+            manipulatives, etc.) stay in  place. The AI needs to know what each
             station has so it can assign appropriate tasks.
           </p>
 
