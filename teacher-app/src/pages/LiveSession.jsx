@@ -298,26 +298,62 @@ export default function LiveSession({ roomCode }) {
     });
   };
 
+    // ----------------------------------------------------
+  // Derived helpers + ordering rule
   // ----------------------------------------------------
-  // Derived helpers
-  // ----------------------------------------------------
-  let stations = Array.isArray(roomState.stations)
+  const stationsRaw = Array.isArray(roomState.stations)
     ? roomState.stations
     : Object.values(roomState.stations || {});
 
   const teamsById = roomState.teams || {};
   const scores = roomState.scores || {};
 
-  const teamIdsForGrid =
+  // This should eventually be supplied by backend when the active taskset
+  // is fixed-station; if absent, it behaves as non-fixed.
+  const isFixedStationTaskset = !!roomState.isFixedStationTaskset;
+
+  const allTeamIds = Object.keys(teamsById);
+
+  // Join-order baseline (fallback to object order if we don't yet have a history)
+  const joinedOrder =
     teamOrder.length > 0
       ? teamOrder.filter((id) => !!teamsById[id])
-      : Object.keys(teamsById);
+      : allTeamIds;
 
-  // If there are no stations yet but there ARE teams,
-  // we still preserve this for any station-based UI, but
-  // the main grid is now team-anchored.
-  if (stations.length === 0 && Object.keys(teamsById).length > 0) {
-    stations = Object.keys(teamsById).map((teamId, index) => ({
+  let teamIdsForGrid = joinedOrder;
+
+  // If this is a fixed-station taskset, order the teams by station id:
+  // station-1’s team first, then station-2, etc. Any unassigned teams
+  // are appended later in join order.
+  if (isFixedStationTaskset && stationsRaw.length > 0) {
+    const sortedStations = [...stationsRaw].sort((a, b) =>
+      String(a.id || "").localeCompare(String(b.id || ""))
+    );
+    const seen = new Set();
+    const ordered = [];
+
+    sortedStations.forEach((st) => {
+      const teamId = st.assignedTeamId;
+      if (teamId && teamsById[teamId] && !seen.has(teamId)) {
+        ordered.push(teamId);
+        seen.add(teamId);
+      }
+    });
+
+    joinedOrder.forEach((id) => {
+      if (!seen.has(id)) {
+        ordered.push(id);
+        seen.add(id);
+      }
+    });
+
+    teamIdsForGrid = ordered;
+  }
+
+  // Keep a stations array around in case you still want station-based UI
+  let stations = stationsRaw;
+  if (stations.length === 0 && allTeamIds.length > 0) {
+    stations = allTeamIds.map((teamId, index) => ({
       id: `Team ${index + 1}`,
       assignedTeamId: teamId,
     }));
