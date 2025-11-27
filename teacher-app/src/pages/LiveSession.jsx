@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
+import { useAuth } from "../auth/useAuth";
+import { fetchMyProfile } from "../api/profile";
 import api from "../api/client";
 
 // Station colours in order: station-1 → red, station-2 → blue, etc.
@@ -39,9 +41,6 @@ export default function LiveSession({ roomCode }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
 
-  // Which team's submissions drawer is open
-  const [openSubmissionsTeamId, setOpenSubmissionsTeamId] = useState(null);
-
   // Quick task fields
   const [prompt, setPrompt] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
@@ -62,6 +61,16 @@ export default function LiveSession({ roomCode }) {
   // If TaskSets asked us to "launch now"
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
 
+  // NEW: profile + report-email state
+  const { user } = useAuth();
+  const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [sendingReports, setSendingReports] = useState(false);
+  const [reportStatus, setReportStatus] = useState("");
+
+  // Which team's submissions drawer is open
+  const [openSubmissionsTeamId, setOpenSubmissionsTeamId] = useState(null);
+
   // Room-setup visualization (and now also task timing)
   const [roomSetupTaskset, setRoomSetupTaskset] = useState(null);
   const [roomSetupLoading, setRoomSetupLoading] = useState(false);
@@ -77,6 +86,29 @@ export default function LiveSession({ roomCode }) {
     const audio = new Audio("/sounds/join.mp3");
     audio.load();
     joinSoundRef.current = audio;
+  }, []);
+
+  // Load presenter profile (email + report preferences)
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      try {
+        const data = await fetchMyProfile();
+        if (cancelled) return;
+        setProfile(data || null);
+      } catch (err) {
+        console.error("Failed to load profile in LiveSession:", err);
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    }
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Unlock audio on first teacher click (for autoplay-restricted browsers)
@@ -201,11 +233,11 @@ export default function LiveSession({ roomCode }) {
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
-          localStorage.setItem("curriculateActiveTasksetId", meta._id);
-          localStorage.setItem(
-            "curriculateActiveTasksetMeta",
-            JSON.stringify(meta)
-          );
+            localStorage.setItem("curriculateActiveTasksetId", meta._id);
+            localStorage.setItem(
+              "curriculateActiveTasksetMeta",
+              JSON.stringify(meta)
+            );
           return meta;
         });
       }
@@ -239,12 +271,32 @@ export default function LiveSession({ roomCode }) {
       }
     };
 
+    const handleTranscriptSent = (info) => {
+      setSendingReports(false);
+      setReportStatus(
+        info?.email
+          ? `Reports emailed to ${info.email}.`
+          : "Reports emailed."
+      );
+    };
+
+    const handleTranscriptError = (info) => {
+      setSendingReports(false);
+      setReportStatus(
+        (info && info.message) ||
+          "There was a problem sending reports."
+      );
+      console.error("Transcript error:", info);
+    };
+
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("tasksetLoaded", handleTasksetLoaded);
     socket.on("taskSubmission", handleSubmission);
     socket.on("scanEvent", handleScanEvent);
     socket.on("team:joined", handleTeamJoined);
+    socket.on("transcript:sent", handleTranscriptSent);
+    socket.on("transcript:error", handleTranscriptError);
 
     return () => {
       socket.off("roomState", handleRoom);
@@ -253,6 +305,8 @@ export default function LiveSession({ roomCode }) {
       socket.off("taskSubmission", handleSubmission);
       socket.off("scanEvent", handleScanEvent);
       socket.off("team:joined", handleTeamJoined);
+      socket.off("transcript:sent", handleTranscriptSent);
+      socket.off("transcript:error", handleTranscriptError);
     };
   }, []);
 
@@ -326,6 +380,50 @@ export default function LiveSession({ roomCode }) {
 
     // If it IS already loaded, just launch per-team progression
     socket.emit("launchTaskset", { roomCode: code });
+  };
+
+  const handleEndSessionAndEmail = () => {
+    if (!roomCode) return;
+
+    const code = roomCode.toUpperCase();
+
+    // Choose an email: profile overrides auth user
+    const teacherEmail =
+      (profile &&
+        (profile.reportEmail ||
+          profile.email ||
+          profile.contactEmail)) ||
+      (user && user.email);
+
+    if (!teacherEmail) {
+      alert(
+        "We couldn't find an email address for you.\n\nPlease set one in your Presenter profile first."
+      );
+      return;
+    }
+
+    // Try a few possible flag names; fall back to false.
+    const includeIndividualReports =
+      profile?.includeIndividualReports ??
+      profile?.includeStudentReports ??
+      profile?.studentReportsEnabled ??
+      false;
+
+    const assessmentCategories = profile?.assessmentCategories || [];
+    const perspectives = profile?.reportPerspectives || [];
+    const schoolName = profile?.schoolName || "";
+
+    setSendingReports(true);
+    setReportStatus("");
+
+    socket.emit("teacher:endSessionAndEmail", {
+      roomCode: code,
+      teacherEmail,
+      assessmentCategories,
+      includeIndividualReports,
+      schoolName,
+      perspectives,
+    });
   };
 
   const handleSkipNextTask = () => {
@@ -586,7 +684,9 @@ export default function LiveSession({ roomCode }) {
               <div
                 style={{
                   marginTop: 2,
-                  color: hasScanForThisAssignment ? "#bbf7d0" : subtleTextColor,
+                  color: hasScanForThisAssignment
+                    ? "#bbf7d0"
+                    : subtleTextColor,
                   fontStyle: hasScanForThisAssignment ? "normal" : "italic",
                 }}
               >
@@ -938,7 +1038,7 @@ export default function LiveSession({ roomCode }) {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             <button
               type="button"
               onClick={handleLaunchQuickTask}
@@ -971,6 +1071,68 @@ export default function LiveSession({ roomCode }) {
             >
               Launch from taskset
             </button>
+          </div>
+
+          {/* End session & email reports */}
+          <div
+            style={{
+              marginTop: 8,
+              paddingTop: 8,
+              borderTop: "1px solid #e5e7eb",
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleEndSessionAndEmail}
+              disabled={sendingReports || !roomState.startedAt}
+              style={{
+                alignSelf: "flex-start",
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                backgroundColor: sendingReports ? "#9ca3af" : "#4f46e5",
+                color: "#ffffff",
+                fontSize: "0.8rem",
+                cursor:
+                  sendingReports || !roomState.startedAt
+                    ? "default"
+                    : "pointer",
+                opacity: roomState.startedAt ? 1 : 0.7,
+              }}
+            >
+              {sendingReports
+                ? "Sending reports…"
+                : "End session & email reports"}
+            </button>
+
+            {reportStatus && (
+              <div
+                style={{
+                  fontSize: "0.7rem",
+                  color: reportStatus.includes("problem")
+                    ? "#b91c1c"
+                    : "#4b5563",
+                }}
+              >
+                {reportStatus}
+              </div>
+            )}
+
+            {!roomState.startedAt && !sendingReports && (
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: "0.7rem",
+                  color: "#9ca3af",
+                }}
+              >
+                Start a session and run at least one task to enable
+                reports.
+              </div>
+            )}
           </div>
 
           {/* Progress bars + skip button */}
