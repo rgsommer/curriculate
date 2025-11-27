@@ -3,6 +3,21 @@
 import { API_BASE_URL } from "../config";
 const API_BASE = API_BASE_URL;
 
+function buildAuthHeaders(base = {}) {
+  try {
+    const token =
+      localStorage.getItem("curriculate_token") ||
+      localStorage.getItem("token");
+    if (!token) return base;
+    return {
+      ...base,
+      Authorization: `Bearer ${token}`,
+    };
+  } catch {
+    return base;
+  }
+}
+
 async function parseJsonOrThrow(res, defaultMessage) {
   const text = await res.text();
 
@@ -14,12 +29,13 @@ async function parseJsonOrThrow(res, defaultMessage) {
     console.error("Status:", res.status, res.statusText);
     console.error("URL:", res.url);
     console.error("Body (first 300 chars):", text.slice(0, 300));
-    throw new Error(defaultMessage);
   }
 
   if (!res.ok) {
     console.error("Tasksets API error:", data);
-    throw new Error(data?.error || defaultMessage);
+    const message =
+      data?.message || data?.error || `${defaultMessage} (status ${res.status})`;
+    throw new Error(message);
   }
 
   return data;
@@ -31,8 +47,8 @@ export async function generateAiTaskset(payload) {
 
   const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // credentials are optional here since we don't require auth on this route
+    headers: buildAuthHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
     body: JSON.stringify(payload),
   });
 
@@ -43,11 +59,17 @@ export async function generateAiTaskset(payload) {
 
 // 🔹 List all tasksets
 export async function listMyTasksets() {
-  const res = await fetch(`${API_BASE}/api/tasksets`);
+  const res = await fetch(`${API_BASE}/api/tasksets`, {
+    headers: buildAuthHeaders(),
+    credentials: "include",
+  });
   return parseJsonOrThrow(res, "Failed to load task sets");
 }
 
 export async function fetchTaskset(id) {
-  const res = await fetch(`${API_BASE}/api/tasksets/${id}`);
+  const res = await fetch(`${API_BASE}/api/tasksets/${id}`, {
+    headers: buildAuthHeaders(),
+    credentials: "include",
+  });
   return parseJsonOrThrow(res, "Failed to load task set");
 }

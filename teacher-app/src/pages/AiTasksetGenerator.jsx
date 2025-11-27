@@ -1,8 +1,7 @@
 // teacher-app/src/pages/AiTasksetGenerator.jsx
-
 import { useEffect, useState } from "react";
 import { fetchMyProfile } from "../api/profile";
-import api from "../api/client";
+import { generateAiTaskset } from "../api/tasksets";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
@@ -12,23 +11,23 @@ export default function AiTasksetGenerator() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [form, setForm] = useState({
-    // New fields
-    title: "",
-    roomLocation: "",
-    fixedStationsDescription: "",
-    // Existing fields
+    name: "",
     gradeLevel: "",
     subject: "",
     difficulty: "MEDIUM",
     learningGoal: "REVIEW",
     topicDescription: "",
     numberOfTasks: 8,
+    isFixedStation: false,
   });
+
+  const [displays, setDisplays] = useState([]);
 
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
+  // Load presenter profile to prefill grade/subject where possible
   useEffect(() => {
     let cancelled = false;
     async function loadProfile() {
@@ -37,19 +36,16 @@ export default function AiTasksetGenerator() {
         if (cancelled) return;
         setProfile(data || null);
 
-        // Pre-fill from presenter profile if available
-        if (data?.defaultGradeLevel && !form.gradeLevel) {
-          setForm((prev) => ({ ...prev, gradeLevel: data.defaultGradeLevel }));
-        }
-        if (data?.defaultSubject && !form.subject) {
-          setForm((prev) => ({ ...prev, subject: data.defaultSubject }));
-        }
-        if (data?.defaultLocation && !form.roomLocation) {
-          setForm((prev) => ({
-            ...prev,
-            roomLocation: data.defaultLocation,
-          }));
-        }
+        setForm((prev) => {
+          let next = { ...prev };
+          if (data?.defaultGradeLevel && !next.gradeLevel) {
+            next.gradeLevel = data.defaultGradeLevel;
+          }
+          if (data?.defaultSubject && !next.subject) {
+            next.subject = data.defaultSubject;
+          }
+          return next;
+        });
       } catch (err) {
         console.error("Failed to load profile for AI generator:", err);
       } finally {
@@ -60,11 +56,29 @@ export default function AiTasksetGenerator() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const addDisplay = () => {
+    setDisplays((prev) => [
+      ...prev,
+      { name: "", stationColor: "", description: "" },
+    ]);
+  };
+
+  const updateDisplay = (index, field, value) => {
+    setDisplays((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...(copy[index] || {}), [field]: value };
+      return copy;
+    });
+  };
+
+  const removeDisplay = (index) => {
+    setDisplays((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e) => {
@@ -76,138 +90,101 @@ export default function AiTasksetGenerator() {
     setGenerating(true);
 
     try {
-      const payload = {
-        // New fields we want the AI to respect
-        title: form.title?.trim() || undefined,
-        roomLocation: form.roomLocation?.trim() || undefined,
-        fixedStationsDescription:
-          form.fixedStationsDescription?.trim() || undefined,
+      // Clean up displays if fixed-station
+      const cleanedDisplays =
+        form.isFixedStation || displays.length
+          ? displays
+              .map((d) => ({
+                name: (d.name || "").trim(),
+                stationColor: (d.stationColor || "").trim(),
+                description: (d.description || "").trim(),
+              }))
+              .filter(
+                (d) => d.name || d.stationColor || d.description
+              )
+          : [];
 
-        // Existing fields
+      const payload = {
         gradeLevel: form.gradeLevel,
         subject: form.subject,
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
         topicDescription: form.topicDescription,
         numberOfTasks: Number(form.numberOfTasks) || 8,
-
-        // Presenter profile context
         presenterProfile: profile || undefined,
+        // New: give the AI more session context
+        tasksetName: form.name || undefined,
+        isFixedStationTaskset:
+          form.isFixedStation || cleanedDisplays.length > 0,
+        displays: cleanedDisplays.length ? cleanedDisplays : undefined,
       };
 
-      // Use shared axios client so Authorization header is included
-      const response = await api.post("/api/ai/tasksets", payload);
-      const data = response.data;
-      const taskset = data?.taskset || data;
-
-      if (!taskset) {
-        throw new Error(
-          "Server did not return a taskset. Check /api/ai/tasksets on the backend."
-        );
-      }
-
-      setResult(taskset);
+      const data = await generateAiTaskset(payload);
+      setResult(data);
     } catch (err) {
-      console.error("AI taskset generation failed:", err);
-
-      let msg = "Failed to generate TaskSet";
-
-      if (err.response) {
-        const status = err.response.status;
-        const data = err.response.data;
-
-        if (status === 401 || status === 403) {
-          msg =
-            data?.message ||
-            data?.error ||
-            "You may need to sign in or upgrade your subscription to use the AI generator.";
-        } else {
-          msg =
-            data?.message ||
-            data?.error ||
-            `Server error (${status}) while generating TaskSet.`;
-        }
-      } else if (err.message) {
-        msg = err.message;
-      }
-
-      setError(msg);
+      console.error("AI Taskset generation error:", err);
+      setError(
+        err?.message ||
+          "Something went wrong while generating the task set."
+      );
     } finally {
       setGenerating(false);
     }
   };
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 4 }}>AI TaskSet Generator</h1>
-      <p style={{ marginTop: 0, color: "#6b7280" }}>
-        Describe what you want, and Curriculate will draft a TaskSet for you.
+    <div style={{ padding: 16 }}>
+      <h1 style={{ margin: 0, marginBottom: 4 }}>AI Task Set Generator</h1>
+      <p
+        style={{
+          margin: 0,
+          marginBottom: 12,
+          fontSize: "0.85rem",
+          color: "#4b5563",
+        }}
+      >
+        Describe the class context and what you want to cover. The AI will
+        propose a complete task set you can review and save.
       </p>
 
-      {loadingProfile && <p>Loading presenter profile…</p>}
+      {loadingProfile && (
+        <p style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 8 }}>
+          Loading presenter profile…
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} style={{ marginTop: 12 }}>
-        {/* Top row: title + room */}
+        {/* Basic context */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 1fr",
-            gap: 12,
             marginBottom: 12,
           }}
         >
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Task set title
-            </label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => handleChange("title", e.target.value)}
-              placeholder="e.g., War of 1812 Station Rotation"
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Room / location
-            </label>
-            <input
-              type="text"
-              value={form.roomLocation}
-              onChange={(e) => handleChange("roomLocation", e.target.value)}
-              placeholder="e.g., Classroom, Gym, Science lab"
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-          </div>
+          <label
+            style={{
+              display: "block",
+              fontSize: "0.8rem",
+              marginBottom: 2,
+              color: "#4b5563",
+            }}
+          >
+            Task set title
+          </label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => handleChange("name", e.target.value)}
+            placeholder="e.g. Grade 8 – Responsible Stewardship Stations"
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              marginBottom: 8,
+            }}
+          />
         </div>
 
-        {/* Grade, subject, difficulty, goal, numberOfTasks */}
         <div
           style={{
             display: "grid",
@@ -225,13 +202,15 @@ export default function AiTasksetGenerator() {
                 color: "#4b5563",
               }}
             >
-              Grade level
+              Grade / level
             </label>
             <input
               type="text"
               value={form.gradeLevel}
-              onChange={(e) => handleChange("gradeLevel", e.target.value)}
-              placeholder="e.g., Grade 7"
+              onChange={(e) =>
+                handleChange("gradeLevel", e.target.value)
+              }
+              placeholder="e.g. Grade 7, CE8, etc."
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -250,13 +229,13 @@ export default function AiTasksetGenerator() {
                 color: "#4b5563",
               }}
             >
-              Subject
+              Subject / course
             </label>
             <input
               type="text"
               value={form.subject}
               onChange={(e) => handleChange("subject", e.target.value)}
-              placeholder="e.g., History – War of 1812"
+              placeholder="e.g. Bible, Geography, Math"
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -279,7 +258,9 @@ export default function AiTasksetGenerator() {
             </label>
             <select
               value={form.difficulty}
-              onChange={(e) => handleChange("difficulty", e.target.value)}
+              onChange={(e) =>
+                handleChange("difficulty", e.target.value)
+              }
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -289,7 +270,7 @@ export default function AiTasksetGenerator() {
             >
               {DIFFICULTIES.map((d) => (
                 <option key={d} value={d}>
-                  {d}
+                  {d.charAt(0) + d.slice(1).toLowerCase()}
                 </option>
               ))}
             </select>
@@ -308,7 +289,9 @@ export default function AiTasksetGenerator() {
             </label>
             <select
               value={form.learningGoal}
-              onChange={(e) => handleChange("learningGoal", e.target.value)}
+              onChange={(e) =>
+                handleChange("learningGoal", e.target.value)
+              }
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -318,7 +301,7 @@ export default function AiTasksetGenerator() {
             >
               {LEARNING_GOALS.map((g) => (
                 <option key={g} value={g}>
-                  {g}
+                  {g.charAt(0) + g.slice(1).toLowerCase()}
                 </option>
               ))}
             </select>
@@ -338,9 +321,11 @@ export default function AiTasksetGenerator() {
             <input
               type="number"
               min={4}
-              max={20}
+              max={24}
               value={form.numberOfTasks}
-              onChange={(e) => handleChange("numberOfTasks", e.target.value)}
+              onChange={(e) =>
+                handleChange("numberOfTasks", e.target.value)
+              }
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -349,6 +334,225 @@ export default function AiTasksetGenerator() {
               }}
             />
           </div>
+        </div>
+
+        {/* Fixed-station configuration */}
+        <div
+          style={{
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            padding: 12,
+            marginBottom: 12,
+            background: "#f9fafb",
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              marginBottom: 6,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={form.isFixedStation}
+              onChange={(e) =>
+                handleChange("isFixedStation", e.target.checked)
+              }
+            />
+            This is a fixed-station task set (stations around the room)
+          </label>
+          <p
+            style={{
+              margin: 0,
+              marginBottom: 6,
+              fontSize: "0.75rem",
+              color: "#6b7280",
+            }}
+          >
+            Use this if students rotate while stations (equipment, posters,
+            manipulatives, etc.) stay in place. The AI can then assign tasks
+            that make sense for each station.
+          </p>
+
+          {form.isFixedStation && (
+            <div style={{ marginTop: 6 }}>
+              {displays.length === 0 && (
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#6b7280",
+                    marginBottom: 6,
+                  }}
+                >
+                  Add a few stations and what each one has available.
+                </p>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {displays.map((d, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb",
+                      padding: 8,
+                      background: "#ffffff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                          color: "#374151",
+                        }}
+                      >
+                        Station {index + 1}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeDisplay(index)}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          fontSize: "0.7rem",
+                          color: "#b91c1c",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 6,
+                      }}
+                    >
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.75rem",
+                            marginBottom: 2,
+                          }}
+                        >
+                          Name / label
+                        </label>
+                        <input
+                          type="text"
+                          value={d.name || ""}
+                          onChange={(e) =>
+                            updateDisplay(index, "name", e.target.value)
+                          }
+                          placeholder="e.g. Red Station, Microscope table"
+                          style={{
+                            width: "100%",
+                            padding: "4px 6px",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            fontSize: "0.8rem",
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.75rem",
+                            marginBottom: 2,
+                          }}
+                        >
+                          Station colour (optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={d.stationColor || ""}
+                          onChange={(e) =>
+                            updateDisplay(
+                              index,
+                              "stationColor",
+                              e.target.value
+                            )
+                          }
+                          placeholder="e.g. Red, Blue, etc."
+                          style={{
+                            width: "100%",
+                            padding: "4px 6px",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            fontSize: "0.8rem",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 4 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.75rem",
+                          marginBottom: 2,
+                        }}
+                      >
+                        Description / what's here
+                      </label>
+                      <textarea
+                        value={d.description || ""}
+                        onChange={(e) =>
+                          updateDisplay(
+                            index,
+                            "description",
+                            e.target.value
+                          )
+                        }
+                        rows={2}
+                        placeholder="e.g. Globe + atlases; microscope set; watercolor paints; etc."
+                        style={{
+                          width: "100%",
+                          padding: "4px 6px",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          fontSize: "0.8rem",
+                          resize: "vertical",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={addDisplay}
+                style={{
+                  marginTop: 8,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                }}
+              >
+                + Add station
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Topic description */}
@@ -361,11 +565,13 @@ export default function AiTasksetGenerator() {
               color: "#4b5563",
             }}
           >
-            Topic / description for the AI
+            Topic / unit focus and any constraints
           </label>
           <textarea
             value={form.topicDescription}
-            onChange={(e) => handleChange("topicDescription", e.target.value)}
+            onChange={(e) =>
+              handleChange("topicDescription", e.target.value)
+            }
             rows={4}
             placeholder="Explain what you want this TaskSet to cover, any key vocabulary, texts, or constraints…"
             style={{
@@ -378,42 +584,6 @@ export default function AiTasksetGenerator() {
           />
         </div>
 
-        {/* NEW: fixed stations description */}
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              marginBottom: 2,
-              color: "#4b5563",
-            }}
-          >
-            Fixed stations (optional)
-          </label>
-          <textarea
-            value={form.fixedStationsDescription}
-            onChange={(e) =>
-              handleChange("fixedStationsDescription", e.target.value)
-            }
-            rows={4}
-            placeholder={`Describe each station and what is at it, one per line. For example:
-Red table – microscopes and prepared slides
-Blue table – primary source documents and highlighters
-Green table – dice and fraction manipulatives`}
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              resize: "vertical",
-            }}
-          />
-          <p style={{ marginTop: 4, fontSize: "0.75rem", color: "#6b7280" }}>
-            The AI uses this to design tasks that match the equipment or
-            materials at each station.
-          </p>
-        </div>
-
         <button
           type="submit"
           disabled={generating}
@@ -421,41 +591,57 @@ Green table – dice and fraction manipulatives`}
             padding: "8px 16px",
             borderRadius: 999,
             border: "none",
-            background: "#0ea5e9",
+            backgroundColor: generating ? "#9ca3af" : "#2563eb",
             color: "#ffffff",
-            cursor: "pointer",
             fontSize: "0.9rem",
+            cursor: generating ? "default" : "pointer",
           }}
         >
-          {generating ? "Generating…" : "Generate TaskSet"}
+          {generating ? "Generating task set…" : "Generate task set"}
         </button>
-
-        {error && (
-          <p style={{ marginTop: 8, color: "#b91c1c", fontSize: "0.85rem" }}>
-            {error}
-          </p>
-        )}
       </form>
 
+      {error && (
+        <p
+          style={{
+            marginTop: 12,
+            fontSize: "0.8rem",
+            color: "#b91c1c",
+          }}
+        >
+          {error}
+        </p>
+      )}
+
       {result && (
-        <div style={{ marginTop: 24 }}>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 4 }}>
-            Draft TaskSet
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#f3f4f6",
+          }}
+        >
+          <h2
+            style={{
+              marginTop: 0,
+              marginBottom: 8,
+              fontSize: "0.95rem",
+            }}
+          >
+            AI task set preview (raw)
           </h2>
-          <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
-            This is what the server returned. You can refine it on the Task Sets
-            page.
-          </p>
           <pre
             style={{
-              marginTop: 8,
-              padding: 12,
-              borderRadius: 12,
+              margin: 0,
               background: "#111827",
               color: "#e5e7eb",
               fontSize: "0.8rem",
               overflowX: "auto",
               maxHeight: 320,
+              padding: 8,
+              borderRadius: 8,
             }}
           >
             {JSON.stringify(result, null, 2)}
