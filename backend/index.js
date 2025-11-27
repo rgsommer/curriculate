@@ -280,18 +280,15 @@ function buildRoomState(room) {
   }
 
   const stationsArray = Object.values(room.stations || {});
+
+  // 🔁 Build scores from submissions, not team.score
   const scores = {};
+  for (const sub of room.submissions || []) {
+    if (!scores[sub.teamId]) scores[sub.teamId] = 0;
+    scores[sub.teamId] += sub.points ?? 0;
+  }
 
-  Object.values(room.teams || {}).forEach((team) => {
-    // ✅ Use team.teamId, not team.id
-    const id = team.teamId || team.id;
-    if (!id) return;
-    scores[id] = team.score || 0;
-  });
-
-  // Derive an "overall" taskIndex for display:
-  // - Prefer room.taskIndex if present
-  // - Otherwise use the max per-team taskIndex
+  // Derive an "overall" taskIndex for display...
   let overallTaskIndex =
     typeof room.taskIndex === "number" ? room.taskIndex : -1;
 
@@ -749,20 +746,32 @@ io.on("connection", (socket) => {
     }
 
     room.submissions.push({
-      roomCode: code,
-      teamId: effectiveTeamId,
-      teamName,
-      playerId: socket.data.playerId || null,
-      taskIndex: idx,
-      answer,
-      correct,
-      points: pointsEarned,
-      aiScore,
-      timeMs: timeMs ?? null,
-      submittedAt,
-    });
+  roomCode: code,
+  teamId: effectiveTeamId,
+  teamName,
+  playerId: socket.data.playerId || null,
+  taskIndex: idx,
+  answer,
+  correct,
+  points: pointsEarned,
+  aiScore,
+  timeMs: timeMs ?? null,
+  submittedAt,
+});
 
-    reassignStationForTeam(room, effectiveTeamId);
+// 🚫 For full tasksets, advance each team to the next station.
+// ✅ For ad-hoc Quick Tasks, keep them at the same station
+//    so they are NOT prompted to rescan / recolour.
+const isQuickTaskset =
+  room.taskset && room.taskset.name === "Quick task";
+
+if (!isQuickTaskset) {
+  reassignStationForTeam(room, effectiveTeamId);
+}
+
+const state = buildRoomState(room);
+io.to(code).emit("room:state", state);
+io.to(code).emit("roomState", state);
 
     // --------------------------------------------------------
     // Per-team progression: auto-advance THIS team only
@@ -778,10 +787,6 @@ io.on("connection", (socket) => {
       const nextIndex = currentIndex + 1;
       sendTaskToTeam(room, effectiveTeamId, nextIndex);
     }
-
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
 
     const submissionSummary = {
       roomCode: code,

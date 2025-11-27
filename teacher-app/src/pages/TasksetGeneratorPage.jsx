@@ -1,4 +1,4 @@
-// teacher-app/src/pages/AiTasksetGenerator.jsx
+// src/pages/AiTasksetGenerator.jsx
 import { useEffect, useState } from "react";
 import { fetchMyProfile } from "../api/profile";
 import { generateAiTaskset } from "../api/tasksets";
@@ -11,685 +11,390 @@ export default function AiTasksetGenerator() {
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [form, setForm] = useState({
-    name: "",
-    roomLocation: "Classroom",
-    gradeLevel: "",
-    subject: "",
-    difficulty: "MEDIUM",
-    learningGoal: "REVIEW",
-    topicDescription: "",
-    durationMinutes: 45,
-    isFixedStation: false,
-  });
+  gradeLevel: "",
+  subject: "",
+  difficulty: "MEDIUM",
+  durationMinutes: 45,
+  topicTitle: "",
+  wordConceptText: "",
+  learningGoal: "REVIEW",
+  allowMovementTasks: true,
+  allowDrawingMimeTasks: true,
+  roomLabel: "Classroom",
+  fixedStations: false,
+  fixedStationsNotes: "",
+});
 
-  const [displays, setDisplays] = useState([]);
+const wordCount = form.wordConceptText
+  .split(/[,\n]/)
+  .map((w) => w.trim())
+  .filter(Boolean).length;
+const wordLimit = 10; // FREE tier limit for now
 
-  const [generating, setGenerating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  // Load presenter profile to prefill grade/subject/duration where possible
+  // ------------------------------------------------------
+  // Load teacher profile defaults
+  // ------------------------------------------------------
   useEffect(() => {
-    let cancelled = false;
-    async function loadProfile() {
+    let active = true;
+    (async () => {
       try {
-        const data = await fetchMyProfile();
-        if (cancelled) return;
-        setProfile(data || null);
+        const prof = await fetchMyProfile();
+        if (!active) return;
+        setProfile(prof);
 
-        setForm((prev) => {
-          let next = { ...prev };
+        setForm((prev) => ({
+          ...prev,
+          gradeLevel: prof.defaultGrade || "",
+          subject: prof.defaultSubject || "",
+          difficulty: prof.defaultDifficulty || "MEDIUM",
+          durationMinutes: prof.defaultDurationMinutes || 45,
+          learningGoal: prof.defaultLearningGoal || "REVIEW",
+          allowMovementTasks:
+            typeof prof.prefersMovementTasks === "boolean"
+              ? prof.prefersMovementTasks
+              : true,
+          allowDrawingMimeTasks:
+            typeof prof.prefersDrawingMimeTasks === "boolean"
+              ? prof.prefersDrawingMimeTasks
+              : true,
+          roomLabel: prof.defaultRoomLabel || "Classroom",
 
-          // Grade / subject prefill (support both old + new field names)
-          if ((data?.defaultGradeLevel || data?.defaultGrade) && !next.gradeLevel) {
-            next.gradeLevel = data.defaultGradeLevel || data.defaultGrade;
-          }
-          if (data?.defaultSubject && !next.subject) {
-            next.subject = data.defaultSubject;
-          } else if (Array.isArray(data?.subjectsTaught) && data.subjectsTaught.length && !next.subject) {
-            next.subject = data.subjectsTaught[0];
-          }
-
-          // Duration prefill
-          if (
-            typeof data?.defaultDurationMinutes === "number" &&
-            !prev.durationMinutes
-          ) {
-            next.durationMinutes = data.defaultDurationMinutes;
-          }
-
-          return next;
-        });
+        }));
       } catch (err) {
-        console.error("Failed to load profile for AI generator:", err);
+        console.error("Failed to load teacher profile for AI defaults:", err);
+        if (active)
+          setError("Failed to load teacher profile for defaults (AI).");
       } finally {
-        if (!cancelled) setLoadingProfile(false);
+        if (active) setLoadingProfile(false);
       }
-    }
-    loadProfile();
+    })();
+
     return () => {
-      cancelled = true;
+      active = false;
     };
   }, []);
 
-  const handleChange = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const addDisplay = () => {
-    setDisplays((prev) => [
+  // ------------------------------------------------------
+  // Handlers
+  // ------------------------------------------------------
+  function handleChange(e) {
+    const { name, value, type, checked } = e.target;
+    setForm((prev) => ({
       ...prev,
-      { name: "", stationColor: "", description: "" },
-    ]);
-  };
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
 
-  const updateDisplay = (index, field, value) => {
-    setDisplays((prev) => {
-      const copy = [...prev];
-      copy[index] = { ...(copy[index] || {}), [field]: value };
-      return copy;
-    });
-  };
-
-  const removeDisplay = (index) => {
-    setDisplays((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (generating) return;
-
+    setSubmitting(true);
     setError("");
     setResult(null);
-    setGenerating(true);
 
     try {
-      // Clean up displays if fixed-station
-      const cleanedDisplays =
-        form.isFixedStation || displays.length
-          ? displays
-              .map((d) => ({
-                name: (d.name || "").trim(),
-                stationColor: (d.stationColor || "").trim(),
-                description: (d.description || "").trim(),
-              }))
-              .filter((d) => d.name || d.stationColor || d.description)
-          : [];
-
-      const duration = Number(form.durationMinutes);
-      const totalDurationMinutes =
-        Number.isFinite(duration) && duration > 0 ? duration : 45;
-
-      // Derive a rough targetCount internally for backwards compatibility,
-      // but the AI is free to vary based on suitability.
-      const estimatedTaskCount = Math.max(
-        4,
-        Math.min(20, Math.round(totalDurationMinutes / 5))
-      );
-
       const payload = {
-        // Core planning context
-        gradeLevel: form.gradeLevel,
-        subject: form.subject,
+        gradeLevel: form.gradeLevel || profile?.defaultGrade,
+        subject: form.subject || profile?.defaultSubject,
         difficulty: form.difficulty,
+        durationMinutes: Number(form.durationMinutes),
+        topicTitle: form.topicTitle,
+        wordConceptList: form.wordConceptText
+          .split(",")
+          .map((w) => w.trim())
+          .filter(Boolean),
         learningGoal: form.learningGoal,
-        topicDescription: form.topicDescription,
-        presenterProfile: profile || undefined,
-
-        // Time-based control instead of user-facing "number of tasks"
-        totalDurationMinutes,
-        numberOfTasks: estimatedTaskCount, // still supplied for the planner, but hidden from UI
-
-        // Session / Room context
-        tasksetName: form.name || undefined,
-        roomLocation: form.roomLocation || "Classroom",
-        locationCode: form.roomLocation || "Classroom",
-
-        // Station context
-        isFixedStationTaskset:
-          form.isFixedStation || cleanedDisplays.length > 0,
-        displays: cleanedDisplays.length ? cleanedDisplays : undefined,
+        allowMovementTasks: form.allowMovementTasks,
+        allowDrawingMimeTasks: form.allowDrawingMimeTasks,
+        curriculumLenses: profile?.curriculumLenses || [],
+        roomLabel: form.roomLabel || profile?.defaultRoomLabel || "Classroom",
+        fixedStations: form.fixedStations,
+        fixedStationsNotes: form.fixedStationsNotes,
       };
 
       const data = await generateAiTaskset(payload);
-      setResult(data);
+      console.log("✅ AI taskset response in component:", data);
+
+      const taskset = data?.taskset || data;
+      if (!taskset) {
+        throw new Error(
+          "Server did not return a taskset object. Check backend /api/ai/tasksets."
+        );
+      }
+
+      setResult(taskset);
     } catch (err) {
-      console.error("AI Taskset generation error:", err);
-      setError(
-        err?.message || "Something went wrong while generating the task set."
-      );
+      console.error("AI TaskSet generation error:", err);
+      setError(err.message || "Failed to generate TaskSet");
     } finally {
-      setGenerating(false);
+      setSubmitting(false);
     }
-  };
+  }
 
+  if (loadingProfile) return <div>Loading defaults…</div>;
+
+  // ------------------------------------------------------
+  // Render
+  // ------------------------------------------------------
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
-      <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
-        Describe your class context. The AI will design a Task Set that fits
-        the room, stations, and time you specify.
-      </p>
+    <div className="max-w-4xl mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">AI Task Set Generator</h1>
 
-      {loadingProfile && <p>Loading presenter profile…</p>}
+      {error && <div className="mb-2 text-red-600">{error}</div>}
 
-      <form onSubmit={handleSubmit} style={{ marginTop: 12 }}>
-        {/* Title + Room */}
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              marginBottom: 2,
-              color: "#4b5563",
-            }}
-          >
-            Task set title
-          </label>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => handleChange("name", e.target.value)}
-            placeholder="e.g. Grade 8 – Responsible Stewardship Stations"
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              marginBottom: 8,
-            }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              marginBottom: 2,
-              color: "#4b5563",
-            }}
-          >
-            Room / location (default: Classroom)
-          </label>
-          <input
-            type="text"
-            value={form.roomLocation}
-            onChange={(e) => handleChange("roomLocation", e.target.value)}
-            placeholder="e.g. Classroom, Gym, Library"
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-            }}
-          />
+      {!profile && (
+        <div className="mb-4 text-yellow-700">
+          You don&apos;t have a teacher profile yet. Defaults will be minimal.
         </div>
+      )}
 
-        {/* Core planning parameters */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Grade / level
+      <form onSubmit={handleSubmit} className="space-y-6 mb-8">
+        <section>
+          <h2 className="font-semibold mb-2">Basic Settings</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="flex flex-col">
+              <span>Grade</span>
+              <input
+                className="border rounded px-2 py-1"
+                name="gradeLevel"
+                value={form.gradeLevel}
+                onChange={handleChange}
+                placeholder={profile?.defaultGrade || "e.g. 7"}
+              />
             </label>
-            <input
-              type="text"
-              value={form.gradeLevel}
-              onChange={(e) => handleChange("gradeLevel", e.target.value)}
-              placeholder="e.g. Grade 7, CE8, etc."
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-          </div>
 
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Subject / course
+            <label className="flex flex-col">
+              <span>Subject</span>
+              <input
+                className="border rounded px-2 py-1"
+                name="subject"
+                value={form.subject}
+                onChange={handleChange}
+                placeholder={profile?.defaultSubject || "e.g. History"}
+              />
             </label>
-            <input
-              type="text"
-              value={form.subject}
-              onChange={(e) => handleChange("subject", e.target.value)}
-              placeholder="e.g. Bible, Geography, Math"
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-          </div>
 
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Difficulty
-            </label>
-            <select
-              value={form.difficulty}
-              onChange={(e) => handleChange("difficulty", e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            >
-              {DIFFICULTIES.map((d) => (
-                <option key={d} value={d}>
-                  {d.charAt(0) + d.slice(1).toLowerCase()}
-                </option>
-              ))}
-            </select>
-          </div>
+<section className="mt-6">
+  <h2 className="font-semibold mb-2">Room & stations</h2>
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <label className="flex flex-col">
+      <span>Room / location label</span>
+      <input
+        className="border rounded px-2 py-1"
+        name="roomLabel"
+        value={form.roomLabel}
+        onChange={handleChange}
+        placeholder={profile?.defaultRoomLabel || "Classroom"}
+      />
+      <span className="text-xs text-gray-500 mt-1">
+        This will be used in station posters and AI prompts (e.g. "Classroom",
+        "Hallway", "Gym A").
+      </span>
+    </label>
 
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Learning goal
-            </label>
-            <select
-              value={form.learningGoal}
-              onChange={(e) => handleChange("learningGoal", e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            >
-              {LEARNING_GOALS.map((g) => (
-                <option key={g} value={g}>
-                  {g.charAt(0) + g.slice(1).toLowerCase()}
-                </option>
-              ))}
-            </select>
-          </div>
+    <label className="inline-flex items-start gap-2 mt-2">
+      <input
+        type="checkbox"
+        name="fixedStations"
+        checked={form.fixedStations}
+        onChange={handleChange}
+      />
+      <span>
+        Fixed stations for this set
+        <span className="block text-xs text-gray-500">
+          Check this if each colour will have a specific place and object
+          (e.g., Red – Table 1 – microscope).
+        </span>
+      </span>
+    </label>
+  </div>
 
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Total duration (minutes)
-            </label>
-            <input
-              type="number"
-              min={10}
-              max={120}
-              value={form.durationMinutes}
-              onChange={(e) =>
-                handleChange("durationMinutes", e.target.value)
-              }
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: "0.7rem",
-                color: "#6b7280",
-              }}
-            >
-              The AI will choose how many tasks fit into this time.
-            </div>
-          </div>
-        </div>
+  {form.fixedStations && (
+    <div className="mt-4">
+      <label className="flex flex-col">
+        <span>Where and what will be at each station?</span>
+        <textarea
+          className="border rounded px-2 py-1 min-h-[80px]"
+          name="fixedStationsNotes"
+          value={form.fixedStationsNotes}
+          onChange={handleChange}
+          placeholder={`Example: 
+Red – Table 1 – microscope
+Blue – Hallway – Picasso prints`}
+        />
+        <span className="text-xs text-gray-500 mt-1">
+          This note is for you and for the AI. It helps align what the tasks
+          ask students to do with what is actually at each station.
+        </span>
+      </label>
+    </div>
+  )}
+</section>
 
-        {/* Fixed-station configuration */}
-        <div
-          style={{
-            borderRadius: 10,
-            border: "1px solid #e5e7eb",
-            padding: 12,
-            marginBottom: 12,
-            background: "#f9fafb",
-          }}
-        >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              marginBottom: 6,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={form.isFixedStation}
-              onChange={(e) =>
-                handleChange("isFixedStation", e.target.checked)
-              }
-            />
-            This is a fixed-station task set (stations around the room)
-          </label>
-          <p
-            style={{
-              margin: 0,
-              marginBottom: 6,
-              fontSize: "0.75rem",
-              color: "#6b7280",
-            }}
-          >
-            Use this if students rotate while stations (equipment, posters,
-            manipulatives, etc.) stay in place. The AI needs to know what each
-            station has so it can assign appropriate tasks.
-          </p>
-
-          {form.isFixedStation && (
-            <div style={{ marginTop: 6 }}>
-              {displays.length === 0 && (
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "#6b7280",
-                    marginBottom: 6,
-                  }}
-                >
-                  Add a few stations and what each one has available.
-                </p>
-              )}
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {displays.map((d, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      borderRadius: 8,
-                      border: "1px solid #e5e7eb",
-                      padding: 8,
-                      background: "#ffffff",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 4,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: "0.8rem",
-                          fontWeight: 600,
-                          color: "#374151",
-                        }}
-                      >
-                        Station {index + 1}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeDisplay(index)}
-                        style={{
-                          border: "none",
-                          background: "transparent",
-                          fontSize: "0.7rem",
-                          color: "#b91c1c",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(180px, 1fr))",
-                        gap: 6,
-                      }}
-                    >
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.75rem",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Name / label
-                        </label>
-                        <input
-                          type="text"
-                          value={d.name || ""}
-                          onChange={(e) =>
-                            updateDisplay(index, "name", e.target.value)
-                          }
-                          placeholder="e.g. Red Station, Microscope table"
-                          style={{
-                            width: "100%",
-                            padding: "4px 6px",
-                            borderRadius: 6,
-                            border: "1px solid #d1d5db",
-                            fontSize: "0.8rem",
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.75rem",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Station colour (optional)
-                        </label>
-                        <input
-                          type="text"
-                          value={d.stationColor || ""}
-                          onChange={(e) =>
-                            updateDisplay(
-                              index,
-                              "stationColor",
-                              e.target.value
-                            )
-                          }
-                          placeholder="e.g. Red, Blue, etc."
-                          style={{
-                            width: "100%",
-                            padding: "4px 6px",
-                            borderRadius: 6,
-                            border: "1px solid #d1d5db",
-                            fontSize: "0.8rem",
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: 4 }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.75rem",
-                          marginBottom: 2,
-                        }}
-                      >
-                        Description / what’s here
-                      </label>
-                      <textarea
-                        value={d.description || ""}
-                        onChange={(e) =>
-                          updateDisplay(
-                            index,
-                            "description",
-                            e.target.value
-                          )
-                        }
-                        rows={2}
-                        placeholder="e.g. Globe + atlases; microscope set; watercolor paints; etc."
-                        style={{
-                          width: "100%",
-                          padding: "4px 6px",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          fontSize: "0.8rem",
-                          resize: "vertical",
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                type="button"
-                onClick={addDisplay}
-                style={{
-                  marginTop: 8,
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border: "1px solid #d1d5db",
-                  background: "#ffffff",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                }}
+            <label className="flex flex-col">
+              <span>Difficulty</span>
+              <select
+                className="border rounded px-2 py-1"
+                name="difficulty"
+                value={form.difficulty}
+                onChange={handleChange}
               >
-                + Add station
-              </button>
-            </div>
-          )}
-        </div>
+                {DIFFICULTIES.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        {/* Topic description */}
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              marginBottom: 2,
-              color: "#4b5563",
-            }}
-          >
-            Topic / unit focus and any constraints
+            <label className="flex flex-col">
+              <span>Duration (minutes)</span>
+              <input
+                type="number"
+                className="border rounded px-2 py-1"
+                name="durationMinutes"
+                value={form.durationMinutes}
+                onChange={handleChange}
+                min={5}
+                max={120}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="font-semibold mb-2">Topic & Concepts</h2>
+          <label className="flex flex-col mb-3">
+            <span>Topic Title</span>
+            <input
+              className="border rounded px-2 py-1"
+              name="topicTitle"
+              value={form.topicTitle}
+              onChange={handleChange}
+              placeholder="e.g. Expulsion of the Acadians"
+            />
           </label>
-          <textarea
-            value={form.topicDescription}
-            onChange={(e) =>
-              handleChange("topicDescription", e.target.value)
-            }
-            rows={4}
-            placeholder="Explain what you want this TaskSet to cover, key texts, vocabulary, or constraints…"
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              resize: "vertical",
-            }}
-          />
-        </div>
+
+          <label className="flex flex-col">
+            <span>Word / Concept List (comma-separated)</span>
+            <textarea
+              className="border rounded px-2 py-1 min-h-[80px]"
+              name="wordConceptText"
+              value={form.wordConceptText}
+              onChange={handleChange}
+              placeholder="Acadia, Treaty of Utrecht, deportation, oath of allegiance, Mi'kmaq, Grand Pré"
+            />
+          </label>
+          <label className="flex flex-col">
+  <span>Word / Concept List (comma-separated)</span>
+  <textarea
+    className="border rounded px-2 py-1 min-h-[80px]"
+    name="wordConceptText"
+    value={form.wordConceptText}
+    onChange={handleChange}
+    placeholder="e.g. fortress, expulsion, Acadia, deportation"
+  />
+  <span className="text-xs text-gray-600 mt-1">
+    Words in list: {wordCount} / {wordLimit}
+  </span>
+  <span className="text-xs text-gray-500">
+    On the Free plan, you can include up to {wordLimit} words. Longer lists are
+    available with Curriculate Plus and Pro.
+  </span>
+</label>
+
+        </section>
+
+        <section>
+          <h2 className="font-semibold mb-2">Learning Goal & Lenses</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+            <label className="flex flex-col">
+              <span>Learning Goal</span>
+              <select
+                className="border rounded px-2 py-1"
+                name="learningGoal"
+                value={form.learningGoal}
+                onChange={handleChange}
+              >
+                {LEARNING_GOALS.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="allowMovementTasks"
+                checked={form.allowMovementTasks}
+                onChange={handleChange}
+              />
+              <span>Allow movement / body tasks</span>
+            </label>
+
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                name="allowDrawingMimeTasks"
+                checked={form.allowDrawingMimeTasks}
+                onChange={handleChange}
+              />
+              <span>Allow drawing / mime tasks</span>
+            </label>
+          </div>
+        </section>
 
         <button
           type="submit"
-          disabled={generating}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 999,
-            border: "none",
-            backgroundColor: generating ? "#9ca3af" : "#2563eb",
-            color: "#ffffff",
-            fontSize: "0.9rem",
-            cursor: generating ? "default" : "pointer",
-          }}
+          disabled={submitting}
+          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
         >
-          {generating ? "Generating task set…" : "Generate task set"}
+          {submitting ? "Generating…" : "Generate Task Set"}
         </button>
       </form>
 
-      {error && (
-        <p
-          style={{
-            marginTop: 12,
-            fontSize: "0.8rem",
-            color: "#b91c1c",
-          }}
-        >
-          {error}
-        </p>
-      )}
-
       {result && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 12,
-            borderRadius: 10,
-            border: "1px solid #e5e7eb",
-            background: "#f3f4f6",
-          }}
-        >
-          <h2
-            style={{
-              marginTop: 0,
-              marginBottom: 8,
-              fontSize: "0.95rem",
-            }}
-          >
-            AI task set preview (raw)
+        <section className="border rounded p-4 bg-gray-50">
+          <h2 className="font-semibold mb-2">
+            Generated Task Set: {result.name || result.title || "(untitled)"}
           </h2>
-          <pre
-            style={{
-              margin: 0,
-              background: "#111827",
-              color: "#e5e7eb",
-              fontSize: "0.8rem",
-              overflowX: "auto",
-              maxHeight: 320,
-              padding: 8,
-              borderRadius: 8,
-            }}
-          >
-            {JSON.stringify(result, null, 2)}
-          </pre>
-        </div>
+          <p className="text-sm text-gray-700 mb-2">
+            Grade {result.gradeLevel || "?"} • {result.subject || "?"} •
+            Difficulty {result.difficulty || "?"} •{" "}
+            {result.durationMinutes || "?"} min
+          </p>
+          <p className="text-sm text-gray-500 mb-4">
+            Saved to your account. You can now edit it in the Task Sets
+            section.
+          </p>
+          <ol className="space-y-2 list-decimal pl-5">
+            {(result.tasks || []).map((t, idx) => (
+              <li
+                key={t.order ?? idx}
+                className="bg-white border rounded p-2"
+              >
+                <div className="text-xs text-gray-500 mb-1">
+                  {t.taskType} •{" "}
+                  {t.timeMinutes
+                    ? `~${t.timeMinutes} min`
+                    : t.timeLimitSeconds
+                    ? `~${Math.round(t.timeLimitSeconds / 60)} min`
+                    : "time n/a"}{" "}
+                  • {t.movement ? "Movement" : "Non-movement"} •{" "}
+                  {t.requiresDrawing ? "Drawing" : "No drawing"}
+                </div>
+                <div className="font-medium">{t.prompt}</div>
+              </li>
+            ))}
+          </ol>
+        </section>
       )}
     </div>
   );
