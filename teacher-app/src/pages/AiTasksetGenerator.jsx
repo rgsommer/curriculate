@@ -12,6 +12,7 @@ export default function AiTasksetGenerator() {
 
   const [form, setForm] = useState({
     name: "",
+    roomLocation: "Classroom",
     gradeLevel: "",
     subject: "",
     difficulty: "MEDIUM",
@@ -50,7 +51,10 @@ export default function AiTasksetGenerator() {
           }
 
           // Duration prefill
-          if (typeof data?.defaultDurationMinutes === "number" && !prev.durationMinutes) {
+          if (
+            typeof data?.defaultDurationMinutes === "number" &&
+            !prev.durationMinutes
+          ) {
             next.durationMinutes = data.defaultDurationMinutes;
           }
 
@@ -116,7 +120,15 @@ export default function AiTasksetGenerator() {
       const totalDurationMinutes =
         Number.isFinite(duration) && duration > 0 ? duration : 45;
 
+      // Derive a rough targetCount internally for backwards compatibility,
+      // but the AI is free to vary based on suitability.
+      const estimatedTaskCount = Math.max(
+        4,
+        Math.min(20, Math.round(totalDurationMinutes / 5))
+      );
+
       const payload = {
+        // Core planning context
         gradeLevel: form.gradeLevel,
         subject: form.subject,
         difficulty: form.difficulty,
@@ -124,11 +136,16 @@ export default function AiTasksetGenerator() {
         topicDescription: form.topicDescription,
         presenterProfile: profile || undefined,
 
-        // New: time-based control instead of fixed number of tasks
+        // Time-based control instead of user-facing "number of tasks"
         totalDurationMinutes,
+        numberOfTasks: estimatedTaskCount, // still supplied for the planner, but hidden from UI
 
-        // Give the AI more session context
+        // Session / Room context
         tasksetName: form.name || undefined,
+        roomLocation: form.roomLocation || "Classroom",
+        locationCode: form.roomLocation || "Classroom",
+
+        // Station context
         isFixedStationTaskset:
           form.isFixedStation || cleanedDisplays.length > 0,
         displays: cleanedDisplays.length ? cleanedDisplays : undefined,
@@ -147,39 +164,18 @@ export default function AiTasksetGenerator() {
   };
 
   return (
-    <div style={{ padding: 16 }}>
-      <h1 style={{ margin: 0, marginBottom: 4 }}>AI Task Set Generator</h1>
-      <p
-        style={{
-          margin: 0,
-          marginBottom: 12,
-          fontSize: "0.85rem",
-          color: "#4b5563",
-        }}
-      >
-        Describe the class context and what you want to cover. The AI will
-        propose a complete task set you can review and save.
+    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
+      <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
+      <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
+        Describe your class context. The AI will design a Task Set that fits
+        the room, stations, and time you specify.
       </p>
 
-      {loadingProfile && (
-        <p
-          style={{
-            fontSize: "0.8rem",
-            color: "#6b7280",
-            marginBottom: 8,
-          }}
-        >
-          Loading presenter profile…
-        </p>
-      )}
+      {loadingProfile && <p>Loading presenter profile…</p>}
 
       <form onSubmit={handleSubmit} style={{ marginTop: 12 }}>
-        {/* Basic context */}
-        <div
-          style={{
-            marginBottom: 12,
-          }}
-        >
+        {/* Title + Room */}
+        <div style={{ marginBottom: 12 }}>
           <label
             style={{
               display: "block",
@@ -203,8 +199,32 @@ export default function AiTasksetGenerator() {
               marginBottom: 8,
             }}
           />
+
+          <label
+            style={{
+              display: "block",
+              fontSize: "0.8rem",
+              marginBottom: 2,
+              color: "#4b5563",
+            }}
+          >
+            Room / location (default: Classroom)
+          </label>
+          <input
+            type="text"
+            value={form.roomLocation}
+            onChange={(e) => handleChange("roomLocation", e.target.value)}
+            placeholder="e.g. Classroom, Gym, Library"
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+            }}
+          />
         </div>
 
+        {/* Core planning parameters */}
         <div
           style={{
             display: "grid",
@@ -354,7 +374,7 @@ export default function AiTasksetGenerator() {
                 color: "#6b7280",
               }}
             >
-              The AI will choose the number of tasks that best fits this time.
+              The AI will choose how many tasks fit into this time.
             </div>
           </div>
         </div>
@@ -397,8 +417,8 @@ export default function AiTasksetGenerator() {
             }}
           >
             Use this if students rotate while stations (equipment, posters,
-            manipulatives, etc.) stay in place. The AI can then assign tasks
-            that make sense for each station.
+            manipulatives, etc.) stay in place. The AI needs to know what each
+            station has so it can assign appropriate tasks.
           </p>
 
           {form.isFixedStation && (
@@ -506,7 +526,11 @@ export default function AiTasksetGenerator() {
                           type="text"
                           value={d.stationColor || ""}
                           onChange={(e) =>
-                            updateDisplay(index, "stationColor", e.target.value)
+                            updateDisplay(
+                              index,
+                              "stationColor",
+                              e.target.value
+                            )
                           }
                           placeholder="e.g. Red, Blue, etc."
                           style={{
@@ -528,12 +552,16 @@ export default function AiTasksetGenerator() {
                           marginBottom: 2,
                         }}
                       >
-                        Description / what's here
+                        Description / what’s here
                       </label>
                       <textarea
                         value={d.description || ""}
                         onChange={(e) =>
-                          updateDisplay(index, "description", e.target.value)
+                          updateDisplay(
+                            index,
+                            "description",
+                            e.target.value
+                          )
                         }
                         rows={2}
                         placeholder="e.g. Globe + atlases; microscope set; watercolor paints; etc."
@@ -588,7 +616,7 @@ export default function AiTasksetGenerator() {
               handleChange("topicDescription", e.target.value)
             }
             rows={4}
-            placeholder="Explain what you want this TaskSet to cover, any key vocabulary, texts, or constraints…"
+            placeholder="Explain what you want this TaskSet to cover, key texts, vocabulary, or constraints…"
             style={{
               width: "100%",
               padding: "6px 8px",
