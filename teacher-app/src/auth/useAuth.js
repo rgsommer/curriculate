@@ -7,97 +7,77 @@ import React, {
 } from "react";
 import api from "../api/client";
 
-// Shape of the auth context:
-// {
-//   user: object | null,
-//   token: string | null,
-//   loading: boolean,
-//   isAuthenticated: boolean,
-//   login(email, password),
-//   logout()
-// }
-
 const AuthContext = createContext(null);
 
+const TOKEN_KEY = "curriculate_token";
+const USER_KEY = "curriculate_user";
+
 export function AuthProvider({ children }) {
+  const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(
-    () => localStorage.getItem("curriculate_token") || null
-  );
-  const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(true);
 
-  // On mount or when token changes, try to load current user
+  // Load from localStorage on first mount
   useEffect(() => {
-    let cancelled = false;
+    try {
+      const savedToken = localStorage.getItem(TOKEN_KEY);
+      const savedUser = localStorage.getItem(USER_KEY);
 
-    async function loadMe() {
-      if (!token) {
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      try {
-        // Adjust this path if your backend uses a different "me" endpoint
-        const res = await api.get("/api/auth/me");
-        if (!cancelled) {
-          setUser(res.data || null);
-        }
-      } catch (err) {
-        console.error("Failed to load current user", err);
-        if (!cancelled) {
-          // Token is probably invalid → clear it
-          localStorage.removeItem("curriculate_token");
-          setToken(null);
-          setUser(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+      if (savedToken) setToken(savedToken);
+      if (savedUser) setUser(JSON.parse(savedUser));
+    } catch {
+      // ignore JSON / storage errors
+    } finally {
+      setInitializing(false);
     }
-
-    loadMe();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  }, []);
 
   const login = async (email, password) => {
-    // Adjust this path/shape to match your backend's login route
+    // Adjust this path if your backend uses a different auth prefix
     const res = await api.post("/api/auth/login", { email, password });
 
-    const newToken = res.data?.token;
-    const userData = res.data?.user;
-
-    if (newToken) {
-      localStorage.setItem("curriculate_token", newToken);
+    // Axios: data is in res.data
+    const data = res?.data || {};
+    if (!data.token || !data.user) {
+      throw new Error(data.error || "Login failed");
     }
 
-    setToken(newToken || null);
-    setUser(userData || null);
+    const { token: newToken, user: newUser } = data;
+
+    setToken(newToken);
+    setUser(newUser);
+
+    try {
+      localStorage.setItem(TOKEN_KEY, newToken);
+      localStorage.setItem(USER_KEY, JSON.stringify(newUser));
+    } catch {
+      // ignore storage errors
+    }
+
+    return newUser;
   };
 
   const logout = () => {
-    localStorage.removeItem("curriculate_token");
     setToken(null);
     setUser(null);
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch {
+      // ignore
+    }
   };
 
   const value = {
     user,
     token,
-    loading,
-    isAuthenticated: !!user && !!token,
+    initializing,
+    isAuthenticated: !!token,
     login,
     logout,
   };
 
-  return (
-    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
