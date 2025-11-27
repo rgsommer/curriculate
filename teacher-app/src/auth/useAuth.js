@@ -1,7 +1,7 @@
 // teacher-app/src/auth/useAuth.js
 import React, { createContext, useContext } from "react";
 
-// Extremely simple "always logged in" auth stub for development.
+// Very simple "always logged in" auth stub for development.
 
 const AuthContext = createContext({
   user: { name: "Dev Presenter" },
