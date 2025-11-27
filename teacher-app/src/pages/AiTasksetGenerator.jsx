@@ -17,7 +17,7 @@ export default function AiTasksetGenerator() {
     difficulty: "MEDIUM",
     learningGoal: "REVIEW",
     topicDescription: "",
-    numberOfTasks: 8,
+    durationMinutes: 45,
     isFixedStation: false,
   });
 
@@ -27,7 +27,7 @@ export default function AiTasksetGenerator() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  // Load presenter profile to prefill grade/subject where possible
+  // Load presenter profile to prefill grade/subject/duration where possible
   useEffect(() => {
     let cancelled = false;
     async function loadProfile() {
@@ -38,12 +38,22 @@ export default function AiTasksetGenerator() {
 
         setForm((prev) => {
           let next = { ...prev };
-          if (data?.defaultGradeLevel && !next.gradeLevel) {
-            next.gradeLevel = data.defaultGradeLevel;
+
+          // Grade / subject prefill (support both old + new field names)
+          if ((data?.defaultGradeLevel || data?.defaultGrade) && !next.gradeLevel) {
+            next.gradeLevel = data.defaultGradeLevel || data.defaultGrade;
           }
           if (data?.defaultSubject && !next.subject) {
             next.subject = data.defaultSubject;
+          } else if (Array.isArray(data?.subjectsTaught) && data.subjectsTaught.length && !next.subject) {
+            next.subject = data.subjectsTaught[0];
           }
+
+          // Duration prefill
+          if (typeof data?.defaultDurationMinutes === "number" && !prev.durationMinutes) {
+            next.durationMinutes = data.defaultDurationMinutes;
+          }
+
           return next;
         });
       } catch (err) {
@@ -99,10 +109,12 @@ export default function AiTasksetGenerator() {
                 stationColor: (d.stationColor || "").trim(),
                 description: (d.description || "").trim(),
               }))
-              .filter(
-                (d) => d.name || d.stationColor || d.description
-              )
+              .filter((d) => d.name || d.stationColor || d.description)
           : [];
+
+      const duration = Number(form.durationMinutes);
+      const totalDurationMinutes =
+        Number.isFinite(duration) && duration > 0 ? duration : 45;
 
       const payload = {
         gradeLevel: form.gradeLevel,
@@ -110,9 +122,12 @@ export default function AiTasksetGenerator() {
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
         topicDescription: form.topicDescription,
-        numberOfTasks: Number(form.numberOfTasks) || 8,
         presenterProfile: profile || undefined,
-        // New: give the AI more session context
+
+        // New: time-based control instead of fixed number of tasks
+        totalDurationMinutes,
+
+        // Give the AI more session context
         tasksetName: form.name || undefined,
         isFixedStationTaskset:
           form.isFixedStation || cleanedDisplays.length > 0,
@@ -124,8 +139,7 @@ export default function AiTasksetGenerator() {
     } catch (err) {
       console.error("AI Taskset generation error:", err);
       setError(
-        err?.message ||
-          "Something went wrong while generating the task set."
+        err?.message || "Something went wrong while generating the task set."
       );
     } finally {
       setGenerating(false);
@@ -148,7 +162,13 @@ export default function AiTasksetGenerator() {
       </p>
 
       {loadingProfile && (
-        <p style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 8 }}>
+        <p
+          style={{
+            fontSize: "0.8rem",
+            color: "#6b7280",
+            marginBottom: 8,
+          }}
+        >
           Loading presenter profile…
         </p>
       )}
@@ -207,9 +227,7 @@ export default function AiTasksetGenerator() {
             <input
               type="text"
               value={form.gradeLevel}
-              onChange={(e) =>
-                handleChange("gradeLevel", e.target.value)
-              }
+              onChange={(e) => handleChange("gradeLevel", e.target.value)}
               placeholder="e.g. Grade 7, CE8, etc."
               style={{
                 width: "100%",
@@ -258,9 +276,7 @@ export default function AiTasksetGenerator() {
             </label>
             <select
               value={form.difficulty}
-              onChange={(e) =>
-                handleChange("difficulty", e.target.value)
-              }
+              onChange={(e) => handleChange("difficulty", e.target.value)}
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -289,9 +305,7 @@ export default function AiTasksetGenerator() {
             </label>
             <select
               value={form.learningGoal}
-              onChange={(e) =>
-                handleChange("learningGoal", e.target.value)
-              }
+              onChange={(e) => handleChange("learningGoal", e.target.value)}
               style={{
                 width: "100%",
                 padding: "6px 8px",
@@ -316,15 +330,15 @@ export default function AiTasksetGenerator() {
                 color: "#4b5563",
               }}
             >
-              Number of tasks
+              Total duration (minutes)
             </label>
             <input
               type="number"
-              min={4}
-              max={24}
-              value={form.numberOfTasks}
+              min={10}
+              max={120}
+              value={form.durationMinutes}
               onChange={(e) =>
-                handleChange("numberOfTasks", e.target.value)
+                handleChange("durationMinutes", e.target.value)
               }
               style={{
                 width: "100%",
@@ -333,6 +347,15 @@ export default function AiTasksetGenerator() {
                 border: "1px solid #d1d5db",
               }}
             />
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: "0.7rem",
+                color: "#6b7280",
+              }}
+            >
+              The AI will choose the number of tasks that best fits this time.
+            </div>
           </div>
         </div>
 
@@ -483,11 +506,7 @@ export default function AiTasksetGenerator() {
                           type="text"
                           value={d.stationColor || ""}
                           onChange={(e) =>
-                            updateDisplay(
-                              index,
-                              "stationColor",
-                              e.target.value
-                            )
+                            updateDisplay(index, "stationColor", e.target.value)
                           }
                           placeholder="e.g. Red, Blue, etc."
                           style={{
@@ -514,11 +533,7 @@ export default function AiTasksetGenerator() {
                       <textarea
                         value={d.description || ""}
                         onChange={(e) =>
-                          updateDisplay(
-                            index,
-                            "description",
-                            e.target.value
-                          )
+                          updateDisplay(index, "description", e.target.value)
                         }
                         rows={2}
                         placeholder="e.g. Globe + atlases; microscope set; watercolor paints; etc."
