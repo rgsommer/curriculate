@@ -67,6 +67,7 @@ export default function LiveSession({ roomCode }) {
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [sendingReports, setSendingReports] = useState(false);
   const [reportStatus, setReportStatus] = useState("");
+  const [reportsAutoTriggered, setReportsAutoTriggered] = useState(false);
 
   // Which team's submissions drawer is open
   const [openSubmissionsTeamId, setOpenSubmissionsTeamId] = useState(null);
@@ -233,11 +234,11 @@ export default function LiveSession({ roomCode }) {
             name: info.name || prev?.name || "Loaded Taskset",
             numTasks: info.numTasks ?? prev?.numTasks ?? 0,
           };
-            localStorage.setItem("curriculateActiveTasksetId", meta._id);
-            localStorage.setItem(
-              "curriculateActiveTasksetMeta",
-              JSON.stringify(meta)
-            );
+          localStorage.setItem("curriculateActiveTasksetId", meta._id);
+          localStorage.setItem(
+            "curriculateActiveTasksetMeta",
+            JSON.stringify(meta)
+          );
           return meta;
         });
       }
@@ -415,6 +416,7 @@ export default function LiveSession({ roomCode }) {
 
     setSendingReports(true);
     setReportStatus("");
+    setReportsAutoTriggered(true); // so we don't auto-trigger again
 
     socket.emit("teacher:endSessionAndEmail", {
       roomCode: code,
@@ -516,6 +518,29 @@ export default function LiveSession({ roomCode }) {
   const totalMinutes = totalEstimatedSeconds
     ? Math.round(totalEstimatedSeconds / 60)
     : null;
+
+  // 🔁 Auto-end & auto-email when all teams finished
+  useEffect(() => {
+    if (reportsAutoTriggered || sendingReports) return;
+    if (!roomState.startedAt) return;
+    if (!totalTasks) return;
+
+    const teams = Object.values(roomState.teams || {});
+    if (!teams.length) return;
+
+    const allFinished = teams.every((team) => {
+      const ti =
+        typeof team.taskIndex === "number" && team.taskIndex >= 0
+          ? team.taskIndex
+          : -1;
+      return ti >= totalTasks; // per-team sendTaskToTeam sets taskIndex to tasks.length on completion
+    });
+
+    if (allFinished) {
+      handleEndSessionAndEmail();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomState, totalTasks, reportsAutoTriggered, sendingReports]);
 
   const renderStationCard = (station) => {
     const team = teamsById[station.assignedTeamId] || null;
