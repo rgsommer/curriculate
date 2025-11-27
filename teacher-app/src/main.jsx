@@ -2,7 +2,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import App from "./TeacherApp";
+import App from "./App";
 import { AuthProvider } from "./auth/useAuth";
 
 ReactDOM.createRoot(document.getElementById("root")).render(

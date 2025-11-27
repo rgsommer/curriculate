@@ -2,20 +2,14 @@
 import React, { createContext, useContext } from "react";
 
 // Extremely simple "always logged in" auth stub for development.
-// This keeps TeacherApp working without a real login flow yet.
 
 const AuthContext = createContext({
   user: { name: "Dev Presenter" },
   token: null,
   initializing: false,
   isAuthenticated: true,
-  login: async () => {
-    // no-op login
-    return { name: "Dev Presenter" };
-  },
-  logout: () => {
-    // no-op logout
-  },
+  login: async () => ({ name: "Dev Presenter" }),
+  logout: () => {},
 });
 
 export function AuthProvider({ children }) {
