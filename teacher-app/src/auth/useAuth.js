@@ -23,8 +23,12 @@ export function AuthProvider({ children }) {
       const savedToken = localStorage.getItem(TOKEN_KEY);
       const savedUser = localStorage.getItem(USER_KEY);
 
-      if (savedToken) setToken(savedToken);
-      if (savedUser) setUser(JSON.parse(savedUser));
+      if (savedToken) {
+        setToken(savedToken);
+      }
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
     } catch {
       // ignore JSON / storage errors
     } finally {
@@ -77,7 +81,9 @@ export function AuthProvider({ children }) {
     logout,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
