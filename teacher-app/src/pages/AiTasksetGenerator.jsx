@@ -617,7 +617,7 @@ export default function AiTasksetGenerator() {
               handleChange("topicDescription", e.target.value)
             }
             rows={4}
-            placeholder="Explain what you want this TaskSet to cover, key texts, vocabulary, or constraints…"
+            placeholder="Explain what you want THIS TaskSet to cover, key texts, vocabulary, or constraints…"
             style={{
               width: "100%",
               padding: "6px 8px",
