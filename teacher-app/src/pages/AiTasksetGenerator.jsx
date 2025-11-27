@@ -28,19 +28,20 @@ export default function AiTasksetGenerator() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  // Load presenter profile to prefill grade/subject/duration where possible
+  // Load presenter profile to prefill defaults
   useEffect(() => {
     let cancelled = false;
+
     async function loadProfile() {
       try {
         const data = await fetchMyProfile();
         if (cancelled) return;
+
         setProfile(data || null);
 
         setForm((prev) => {
-          let next = { ...prev };
+          const next = { ...prev };
 
-          // Grade / subject prefill (support both old + new field names)
           if ((data?.defaultGradeLevel || data?.defaultGrade) && !next.gradeLevel) {
             next.gradeLevel = data.defaultGradeLevel || data.defaultGrade;
           }
@@ -50,12 +51,12 @@ export default function AiTasksetGenerator() {
             next.subject = data.subjectsTaught[0];
           }
 
-          // Duration prefill
-          if (
-            typeof data?.defaultDurationMinutes === "number" &&
-            !prev.durationMinutes
-          ) {
+          if (typeof data?.defaultDurationMinutes === "number" && !prev.durationMinutes) {
             next.durationMinutes = data.defaultDurationMinutes;
+          }
+
+          if (data?.defaultRoomLabel && !prev.roomLocation) {
+            next.roomLocation = data.defaultRoomLabel;
           }
 
           return next;
@@ -66,6 +67,7 @@ export default function AiTasksetGenerator() {
         if (!cancelled) setLoadingProfile(false);
       }
     }
+
     loadProfile();
     return () => {
       cancelled = true;
@@ -138,7 +140,7 @@ export default function AiTasksetGenerator() {
 
         // Time-based control instead of user-facing "number of tasks"
         totalDurationMinutes,
-        numberOfTasks: estimatedTaskCount, // still supplied for the planner, but hidden from UI
+        numberOfTasks: estimatedTaskCount, // still supplied for planner, but hidden from UI
 
         // Session / Room context
         tasksetName: form.name || undefined,
