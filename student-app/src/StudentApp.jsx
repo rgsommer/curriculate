@@ -46,7 +46,9 @@ function normalizeStationId(raw) {
     return {
       id: `station-${m[1]}`,
       color,
-      label: color ? `Station-${color[0].toUpperCase()}${color.slice(1)}` : `Station-${m[1]}`,
+      label: color
+        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
+        : `Station-${m[1]}`,
     };
   }
 
@@ -58,7 +60,9 @@ function normalizeStationId(raw) {
     return {
       id: `station-${m[1]}`,
       color,
-      label: color ? `Station-${color[0].toUpperCase()}${color.slice(1)}` : `Station-${m[1]}`,
+      label: color
+        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
+        : `Station-${m[1]}`,
     };
   }
 
@@ -235,13 +239,13 @@ export default function StudentApp() {
   const [submitting, setSubmitting] = useState(false);
   const sndAlert = useRef(null);
 
-  // NEW: timeout-related state
+  // timeout-related state
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
   const [remainingMs, setRemainingMs] = useState(null);
   const timeoutTimerRef = useRef(null);
   const timeoutSubmittedRef = useRef(false);
 
-  // NEW: draft answer tracking (for timeout auto-submit)
+  // draft answer tracking (for timeout auto-submit)
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState(null);
 
   // Pulse CSS for colour box
@@ -268,106 +272,106 @@ export default function StudentApp() {
   }, []);
 
   // Socket events
-  // Socket events
-useEffect(() => {
-  const handleConnect = () => {
-    console.log("Student socket connected:", socket.id);
-    setConnected(true);
-  };
+  useEffect(() => {
+    const handleConnect = () => {
+      console.log("Student socket connected:", socket.id);
+      setConnected(true);
+    };
 
-  const handleDisconnect = () => {
-    console.log("Student socket disconnected");
-    setConnected(false);
+    const handleDisconnect = () => {
+      console.log("Student socket disconnected");
+      setConnected(false);
 
-    // We are no longer in the room on the server,
-    // so force the UI back to “not joined”.
-    setJoined(false);
-    setTeamId(null);
-    setAssignedStationId(null);
-    setScannedStationId(null);
-    setCurrentTask(null);
-    setTaskIndex(null);
-    setStatusMessage(
-      "Connection lost. Check Wi-Fi and tap READY again to rejoin your room."
-    );
-  };
+      // We are no longer in the room on the server,
+      // so force the UI back to “not joined”.
+      setJoined(false);
+      setTeamId(null);
+      setAssignedStationId(null);
+      setScannedStationId(null);
+      setCurrentTask(null);
+      setTaskIndex(null);
+      setStatusMessage(
+        "Connection lost. Check Wi-Fi and tap READY again to rejoin your room."
+      );
+    };
 
-  const handleRoomState = (state = {}) => {
-    // Update location (Classroom / Gym / etc.)
-    const loc = state.locationCode || DEFAULT_LOCATION;
-    setLocationCode(loc);
+    const handleRoomState = (state = {}) => {
+      // Update location (Classroom / Gym / etc.)
+      const loc = state.locationCode || DEFAULT_LOCATION;
+      setLocationCode(loc);
 
-    const teams = state.teams || {};
-    // On the backend, teamId === socket.id for this device
-    const me = teams[socket.id];
+      const teams = state.teams || {};
+      // On the backend, teamId === socket.id for this device
+      const me = teams[socket.id];
 
-    if (!me) {
-      // Server no longer has us as a team (e.g., teacher restarted room);
-      // leave joined as-is so the student can still see they need to rejoin.
-      return;
-    }
-
-    const newAssigned = me.currentStationId || null;
-
-    // If the assigned station changed, clear the previous scan
-    setAssignedStationId((prev) => {
-      if (prev && prev !== newAssigned) {
-        setScannedStationId(null);
+      if (!me) {
+        // Server no longer has us as a team (e.g., teacher restarted room);
+        // leave joined as-is so the student can still see they need to rejoin.
+        return;
       }
-      return newAssigned;
-    });
-  };
 
-  const handleTaskLaunch = ({ index, task, timeLimitSeconds }) => {
-    console.log("[Student] task:launch", { index, task, timeLimitSeconds });
+      const newAssigned = me.currentStationId || null;
 
-    setCurrentTask(task || null);
-    setTaskIndex(index ?? null);
+      // If the assigned station changed, clear the previous scan
+      setAssignedStationId((prev) => {
+        if (prev && prev !== newAssigned) {
+          setScannedStationId(null);
+        }
+        return newAssigned;
+      });
+    };
 
-    // Time-limit handling (ties into your timeout effect)
-    if (timeLimitSeconds && timeLimitSeconds > 0) {
-      setTimeLimitSeconds(timeLimitSeconds);
-    } else {
-      setTimeLimitSeconds(null);
-      setRemainingMs(null);
-    }
+    const handleTaskLaunch = ({ index, task, timeLimitSeconds }) => {
+      console.log("[Student] task:launch", { index, task, timeLimitSeconds });
 
-    // New task → clear any previous draft + timeout flag
-    setCurrentAnswerDraft(null);
-    timeoutSubmittedRef.current = false;
+      setCurrentTask(task || null);
+      setTaskIndex(index ?? null);
 
-    // Require a fresh scan for this task/rotation
-    setScannedStationId(null);
+      // Time-limit handling (ties into your timeout effect)
+      if (timeLimitSeconds && timeLimitSeconds > 0) {
+        setTimeLimitSeconds(timeLimitSeconds);
+      } else {
+        setTimeLimitSeconds(null);
+        setRemainingMs(null);
+      }
 
-    // Play alert sound on task arrival
-    const a = sndAlert.current;
-    if (a) {
-      a.currentTime = 0;
-      a
-        .play()
-        .then(() => {})
-        .catch((err) =>
-          console.warn("Student task sound play blocked/failed", err)
-        );
-    }
+      // New task → clear any previous draft + timeout flag
+      setCurrentAnswerDraft(null);
+      timeoutSubmittedRef.current = false;
 
-    setStatusMessage(
-      "Task received! Read carefully and submit your best answer."
-    );
-  };
+      // IMPORTANT: do NOT clear scannedStationId here.
+      // If the team is still at the same station, they should NOT have to rescan
+      // just because a new task was delivered.
 
-  socket.on("connect", handleConnect);
-  socket.on("disconnect", handleDisconnect);
-  socket.on("room:state", handleRoomState);
-  socket.on("task:launch", handleTaskLaunch);
+      // Play alert sound on task arrival
+      const a = sndAlert.current;
+      if (a) {
+        a.currentTime = 0;
+        a
+          .play()
+          .then(() => {})
+          .catch((err) =>
+            console.warn("Student task sound play blocked/failed", err)
+          );
+      }
 
-  return () => {
-    socket.off("connect", handleConnect);
-    socket.off("disconnect", handleDisconnect);
-    socket.off("room:state", handleRoomState);
-    socket.off("task:launch", handleTaskLaunch);
-  };
-}, []); // important: register handlers once
+      setStatusMessage(
+        "Task received! Read carefully and submit your best answer."
+      );
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("room:state", handleRoomState);
+    socket.on("task:launch", handleTaskLaunch);
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("room:state", handleRoomState);
+      socket.off("task:launch", handleTaskLaunch);
+    };
+  }, []);
 
   // Timeout timer effect
   useEffect(() => {
@@ -456,19 +460,19 @@ useEffect(() => {
   }, [joined, assignedStationId, scannedStationId]);
 
   const unlockAudioForBrowser = () => {
-  const a = sndAlert.current;
-  if (!a) return;
+    const a = sndAlert.current;
+    if (!a) return;
 
-  a
-    .play()
-    .then(() => {
-      a.pause();
-      a.currentTime = 0;
-    })
-    .catch((err) => {
-      console.warn("Audio unlock failed", err);
-    });
-};
+    a
+      .play()
+      .then(() => {
+        a.pause();
+        a.currentTime = 0;
+      })
+      .catch((err) => {
+        console.warn("Audio unlock failed", err);
+      });
+  };
 
   const handleMemberChange = (idx, val) => {
     setMembers((prev) => {
@@ -541,21 +545,19 @@ useEffect(() => {
           const norm = normalizeStationId(team.currentStationId);
           const colourLabel = norm.color ? norm.color.toUpperCase() : "";
           if (colourLabel) {
-            setStatusMessage(`Scan your ${locLabel} ${colourLabel} station.`);
+            setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
           } else {
-            setStatusMessage(`Scan your ${locLabel} station.`);
+            setStatusMessage(`Scan a ${locLabel} station.`);
           }
         } else {
-          setStatusMessage(`Scan your ${locLabel} station.`);
+          setStatusMessage(`Scan a ${locLabel} station.`);
         }
       }
     );
   };
 
   // onCode handler: returns true to stop camera, false to keep scanning
-  // For a scan to be correct, BOTH location and colour must match:
-  //   location = (room's locationCode)
-  //   colour   = derived from assignedStationId (station-1 → red, etc.)
+  // For a scan to be correct, BOTH location and colour must match.
   const handleScannedCode = (value) => {
     try {
       if (!assignedStationId) {
@@ -589,7 +591,7 @@ useEffect(() => {
         return false;
       }
 
-      // Keep ProperCase for location (e.g. "Classroom"), lowercase for colour (e.g. "red")
+      // Keep ProperCase for location (e.g. "Classroom"), lowercase for colour
       const location = segments[segments.length - 2];
       const colour = segments[segments.length - 1].toLowerCase();
 
@@ -604,7 +606,6 @@ useEffect(() => {
         return false;
       }
 
-      // Enforce LOCATION + COLOUR
       if (location !== assignedLocation || colour !== assignedColour) {
         const scannedLabel = `${location}/${colour}`;
         const correctLabel = `${assignedLocation}/${assignedColour}`;
@@ -612,7 +613,7 @@ useEffect(() => {
         setScanError(
           `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\n\nCorrect: ${correctLabel}.\n\nPlease go to the correct station and try again.`
         );
-        return false; // WRONG STATION → camera stays on
+        return false; // wrong station → keep scanning
       }
 
       // ✅ Correct location + colour for the currently assigned station
@@ -634,7 +635,7 @@ useEffect(() => {
         });
       }
 
-      return true; // ✅ correct station → stop camera
+      return true; // correct station → stop camera
     } catch (err) {
       console.error("Error handling scanned QR", err);
       setScanError(
@@ -703,6 +704,13 @@ useEffect(() => {
   const mustScan =
     joined && !!assignedStationId && scannedStationId !== assignedStationId;
 
+  // Shared scan prompt string (used in text section + above scanner)
+  const locLabel = (locationCode || DEFAULT_LOCATION).toUpperCase();
+  const colourLabel = assignedNorm.color
+    ? ` ${assignedNorm.color.toUpperCase()}`
+    : "";
+  const scanPrompt = `Scan a ${locLabel}${colourLabel} station.`;
+
   return (
     <div
       style={{
@@ -758,12 +766,12 @@ useEffect(() => {
                 ? `Connected · Room ${roomCode.toUpperCase()}`
                 : "Connected"
               : joiningRoom
-                ? roomCode
-                  ? `Joining Room ${roomCode.toUpperCase()}…`
-                  : "Joining Room…"
-                : connected
-                  ? "Connected to server"
-                  : "Connecting…"}
+              ? roomCode
+                ? `Joining Room ${roomCode.toUpperCase()}…`
+                : "Joining Room…"
+              : connected
+              ? "Connected to server"
+              : "Connecting…"}
           </p>
         </header>
 
@@ -937,11 +945,7 @@ useEffect(() => {
               </div>
               {mustScan ? (
                 <div style={{ color: "#b91c1c", marginTop: 2 }}>
-                  {`Scan your ${(locationCode || DEFAULT_LOCATION).toUpperCase()}${
-                    assignedNorm.color
-                      ? " " + assignedNorm.color.toUpperCase()
-                      : ""
-                  } station.`}
+                  {scanPrompt}
                 </div>
               ) : scannedStationId ? (
                 <div style={{ color: "#059669", marginTop: 2 }}>
@@ -993,7 +997,7 @@ useEffect(() => {
                 color: assignedColor ? "#ffffff" : "#111827",
               }}
             >
-              Scan your station
+              {scanPrompt}
             </h2>
             <QrScanner
               active={scannerActive}
@@ -1039,7 +1043,6 @@ useEffect(() => {
               taskTypes={TASK_TYPES}
               onSubmit={handleSubmitAnswer}
               submitting={submitting}
-              // optional hooks – only used if TaskRunner supports them
               onAnswerChange={setCurrentAnswerDraft}
               answerDraft={currentAnswerDraft}
             />
