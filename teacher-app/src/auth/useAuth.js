@@ -29,8 +29,9 @@ export function AuthProvider({ children }) {
       if (savedUser) {
         setUser(JSON.parse(savedUser));
       }
-    } catch {
+    } catch (e) {
       // ignore JSON / storage errors
+      console.error("Error reading auth from storage", e);
     } finally {
       setInitializing(false);
     }
@@ -41,12 +42,13 @@ export function AuthProvider({ children }) {
     const res = await api.post("/api/auth/login", { email, password });
 
     // Axios: data is in res.data
-    const data = res?.data || {};
+    const data = (res && res.data) ? res.data : {};
     if (!data.token || !data.user) {
       throw new Error(data.error || "Login failed");
     }
 
-    const { token: newToken, user: newUser } = data;
+    const newToken = data.token;
+    const newUser = data.user;
 
     setToken(newToken);
     setUser(newUser);
@@ -54,8 +56,8 @@ export function AuthProvider({ children }) {
     try {
       localStorage.setItem(TOKEN_KEY, newToken);
       localStorage.setItem(USER_KEY, JSON.stringify(newUser));
-    } catch {
-      // ignore storage errors
+    } catch (e) {
+      console.error("Error saving auth to storage", e);
     }
 
     return newUser;
@@ -67,8 +69,8 @@ export function AuthProvider({ children }) {
     try {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error("Error clearing auth from storage", e);
     }
   };
 
@@ -81,9 +83,8 @@ export function AuthProvider({ children }) {
     logout,
   };
 
-  return (
-    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-  );
+  // No JSX here on purpose – avoids any parser issues if .js isn't JSX-enabled
+  return React.createElement(AuthContext.Provider, { value }, children);
 }
 
 export function useAuth() {
