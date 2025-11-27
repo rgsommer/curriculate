@@ -122,8 +122,7 @@ export default function AiTasksetGenerator() {
       const totalDurationMinutes =
         Number.isFinite(duration) && duration > 0 ? duration : 45;
 
-      // Derive a rough targetCount internally for backwards compatibility,
-      // but the AI is free to vary based on suitability.
+      // Rough task count for planner; AI can still vary internally
       const estimatedTaskCount = Math.max(
         4,
         Math.min(20, Math.round(totalDurationMinutes / 5))
@@ -140,7 +139,7 @@ export default function AiTasksetGenerator() {
 
         // Time-based control instead of user-facing "number of tasks"
         totalDurationMinutes,
-        numberOfTasks: estimatedTaskCount, // still supplied for planner, but hidden from UI
+        numberOfTasks: estimatedTaskCount,
 
         // Session / Room context
         tasksetName: form.name || undefined,
