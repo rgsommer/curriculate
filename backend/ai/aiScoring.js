@@ -87,22 +87,19 @@ Return ONLY JSON in this format:
 }
 `;
 
-  const response = await openai.responses.create({
-    model: DEFAULT_MODEL,
-    input: [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      {
-        role: "user",
-        content: userPrompt,
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
+  const response = await openai.chat.completions.create({
+  model: DEFAULT_MODEL,
+  messages: [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ],
+  response_format: { type: "json_object" },
+  temperature: 0,           // ← critical: scoring must be deterministic
+  max_tokens: 1024,
+});
 
-  const content = response.output[0]?.content[0]?.text || "{}";
+const content = response.choices[0]?.message?.content?.trim() || "{}";
+
   let parsed;
   try {
     parsed = JSON.parse(content);

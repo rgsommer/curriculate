@@ -1259,8 +1259,24 @@ export default function StudentApp() {
                 fontSize: "1rem",
               }}
             >
-              Task
+              {currentTask?.taskType === TASK_TYPES.JEOPARDY
+                ? "Jeopardy clue"
+                : "Task"}
             </h2>
+
+            {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
+              currentTask?.jeopardyConfig?.boardTitle && (
+                <p
+                  style={{
+                    margin: "0 0 6px",
+                    fontSize: "0.85rem",
+                    color: "#4b5563",
+                  }}
+                >
+                  Game:{" "}
+                  <strong>{currentTask.jeopardyConfig.boardTitle}</strong>
+                </p>
+              )}
 
             {timeLimitSeconds && timeLimitSeconds > 0 && (
               <p

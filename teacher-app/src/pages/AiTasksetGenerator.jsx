@@ -647,7 +647,6 @@ export default function AiTasksetGenerator() {
         >
           {generating ? "Generating task set…" : "Generate task set"}
         </button>
-        navigate('/tasksets');
       </form>
 
       {error && (

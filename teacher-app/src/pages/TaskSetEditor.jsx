@@ -696,6 +696,7 @@ export default function TaskSetEditor() {
                 </div>
 
                 {/* Points, time, display mapping, noise control */}
+                                {/* Points, time, display mapping, noise control */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-sm font-medium mb-1">
@@ -770,25 +771,26 @@ export default function TaskSetEditor() {
                     </label>
                   </div>
                 </div>
-                                {task.taskType === TASK_TYPES.JEOPARDY && (
+
+                                {/* Jeopardy configuration (only for Jeopardy tasks) */}
+                {task.taskType === TASK_TYPES.JEOPARDY && (
                   <div className="mt-3 p-3 border rounded bg-indigo-50 text-xs text-gray-700">
                     <p className="mb-1 font-semibold">Jeopardy configuration</p>
                     <p className="mb-2">
-                      The board (categories, clues, values) will be generated
-                      from this prompt. You can tweak or regenerate it in the
-                      Live Session view.
+                      This task will run as a Jeopardy-style game. Use these
+                      fields to give the game a clear identity and to guide AI
+                      when generating the board (categories &amp; clues).
                     </p>
                     <label className="block mb-2">
                       Board title (optional)
                       <input
                         type="text"
-                        value={task.jeopardyTitle || ""}
+                        value={task.jeopardyConfig?.boardTitle || ""}
                         onChange={(e) =>
-                          updateTask(
-                            task._tempId,
-                            "jeopardyTitle",
-                            e.target.value
-                          )
+                          updateTask(task._tempId, "jeopardyConfig", {
+                            ...(task.jeopardyConfig || {}),
+                            boardTitle: e.target.value,
+                          })
                         }
                         className="mt-1 w-full border rounded px-2 py-1 text-xs"
                         placeholder="e.g., Confederation Showdown"
@@ -797,21 +799,21 @@ export default function TaskSetEditor() {
                     <label className="block">
                       Notes to AI (optional)
                       <textarea
-                        value={task.jeopardyAiNotes || ""}
+                        value={task.jeopardyConfig?.aiNotes || ""}
                         onChange={(e) =>
-                          updateTask(
-                            task._tempId,
-                            "jeopardyAiNotes",
-                            e.target.value
-                          )
+                          updateTask(task._tempId, "jeopardyConfig", {
+                            ...(task.jeopardyConfig || {}),
+                            aiNotes: e.target.value,
+                          })
                         }
                         className="mt-1 w-full border rounded px-2 py-1 text-xs"
                         rows={3}
-                        placeholder="Any extra instructions about difficulty, category mix, etc."
+                        placeholder="Any extra instructions about difficulty, mix of categories, local examples, etc."
                       />
                     </label>
                   </div>
                 )}
+                
               </div>
             ))}
           </div>

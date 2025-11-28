@@ -18,13 +18,13 @@ const DisplaySchema = new Schema(
 // Individual Task schema
 const TaskSchema = new Schema(
   {
-    taskId: String,                       // your existing field
-    title: String,                        // short label for the task
+    taskId: String,                      // your existing field
+    title: String,                       // short label for the task
     prompt: { type: String, required: true },
-    taskType: { type: String, required: true }, // mcq, true_false, sequence, jeopardy_ai_ref, etc.
+    taskType: { type: String, required: true }, // mcq, true_false, sequence, etc.
 
-    options: [String],                   // for MCQ / SORT etc.
-    correctAnswer: Schema.Types.Mixed,   // was "answer" → now "correctAnswer"
+    options: [String],                  // for MCQ / SORT etc.
+    correctAnswer: Schema.Types.Mixed,  // was "answer" → now "correctAnswer"
     mediaUrl: String,
     timeLimitSeconds: Number,
     points: { type: Number, default: 10 },
@@ -33,43 +33,35 @@ const TaskSchema = new Schema(
     // Should match one of TaskSet.displays[].key if used
     displayKey: { type: String },
 
-    // EXTRA fields for AI-generated structure (optional)
-    order: Number,                       // task sequence within a set
-    timeMinutes: Number,                 // estimated time per task
-    movement: { type: Boolean, default: false },         // Body Break, move-around
-    requiresDrawing: { type: Boolean, default: false },  // drawing/mime tasks
-    notesForTeacher: String,             // AI teacher notes, not shown to students
-
-    // Noise-control hint: when true, this task should *not* be included
-    // in ambient-noise dimming (e.g., speaking / discussion tasks).
+    // Per-task ambient-noise override
+    // If true, this task will be ignored by the dimming/ambient-noise system
     ignoreNoise: { type: Boolean, default: false },
 
-    // Optional Jeopardy-style configuration for this task when taskType
-    // is something like "jeopardy_ai_ref".
+    // Jeopardy-style board configuration (optional).
+    // For non-Jeopardy tasks this remains undefined.
     jeopardyConfig: {
-      boardTitle: String,
-      // classic = teacher-refereed, aiRef = AI makes initial verdict
-      mode: {
-        type: String,
-        enum: ["classic", "aiRef"],
-        default: "aiRef",
-      },
-      // Default desired number of competing teams (2–8 recommended)
-      defaultContestantCount: { type: Number, default: 4 },
+      boardTitle: String,          // "Confederation Showdown", etc.
+      aiNotes: String,             // instructions for AI board generation
       categories: [
         {
-          name: String,
+          title: String,           // category name
           clues: [
             {
-              value: Number,              // 100 / 200 / 300, etc.
-              clue: String,
-              answer: String,
-              isDailyDouble: { type: Boolean, default: false },
+              value: Number,       // e.g. 100, 200, 300…
+              prompt: String,      // the clue text
+              answer: String,      // expected answer (for AI or manual scoring)
             },
           ],
         },
       ],
     },
+
+    // EXTRA fields for AI-generated structure (optional)
+    order: Number,                      // task sequence within a set
+    timeMinutes: Number,                // estimated time per task
+    movement: { type: Boolean, default: false },         // Body Break, move-around
+    requiresDrawing: { type: Boolean, default: false },  // drawing/mime tasks
+    notesForTeacher: String             // AI teacher notes, not shown to students
   },
   { _id: false }
 );
