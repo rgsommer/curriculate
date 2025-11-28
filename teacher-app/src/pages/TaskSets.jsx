@@ -58,6 +58,8 @@ export default function TaskSets() {
   const handleNew = () => navigate("/tasksets/create");
   const handleEdit = (id) => navigate(`/tasksets/${id}`);
 
+  const handleRefresh = () => loadSets();
+
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this task set? This cannot be undone.")) return;
 
@@ -66,16 +68,13 @@ export default function TaskSets() {
         method: "DELETE",
       });
       const text = await res.text();
-      let data = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        // ignore
-      }
-      if (!res.ok) throw new Error(data?.error || "Failed to delete task set");
-      setSets((prev) => prev.filter((s) => s._id !== id));
+
+      if (!res.ok) throw new Error("Failed to delete task set");
+
+      // Reload list after delete
+      loadSets();
     } catch (err) {
-      alert(err.message || "Delete failed");
+      setError(err.message || "Failed to delete task set");
     }
   };
 
@@ -275,6 +274,10 @@ export default function TaskSets() {
           </button>
         </div>
       </div>
+
+      <button onClick={handleRefresh} className="px-3 py-1 bg-blue-500 text-white rounded">
+        Refresh List
+      </button>
 
       {/* List */}
       {loading ? (

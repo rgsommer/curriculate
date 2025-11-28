@@ -197,7 +197,7 @@ export async function generateTaskset(req, res) {
     let saved = null;
     if (canSaveTasksets && userId) {
       const doc = new TaskSet({
-        userId,
+        userId: userId, 
         ...tasksetJson,
       });
       saved = await doc.save();

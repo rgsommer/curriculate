@@ -1,5 +1,6 @@
 // teacher-app/src/pages/AiTasksetGenerator.jsx
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom"; 
 import { fetchMyProfile } from "../api/profile";
 import { generateAiTaskset } from "../api/tasksets";
 
@@ -153,7 +154,10 @@ export default function AiTasksetGenerator() {
       };
 
       const data = await generateAiTaskset(payload);
+      setError("");
       setResult(data);
+      navigate('/tasksets');
+
     } catch (err) {
       console.error("AI Taskset generation error:", err);
       setError(
@@ -643,6 +647,7 @@ export default function AiTasksetGenerator() {
         >
           {generating ? "Generating task set…" : "Generate task set"}
         </button>
+        navigate('/tasksets');
       </form>
 
       {error && (
@@ -656,6 +661,18 @@ export default function AiTasksetGenerator() {
           {error}
         </p>
       )}
+
+      {result && (
+  <div className="mt-4 p-4 border rounded bg-green-50">
+    <h2 className="text-lg font-bold">Task Set Created!</h2>
+    <p>
+      "{result.taskset.name}" with {result.taskset.tasks.length} tasks for {result.taskset.durationMinutes} minutes can be found in Task Sets.
+    </p>
+    <button onClick={() => navigate('/tasksets')} className="mt-2 px-3 py-1 bg-blue-500 text-white rounded">
+      View in Task Sets
+    </button>
+  </div>
+)}
 
       {result && (
         <div
