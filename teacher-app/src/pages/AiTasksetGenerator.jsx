@@ -166,7 +166,7 @@ export default function AiTasksetGenerator() {
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ marginBottom: 4 }}>AI Task Set Generator V1.0</h1>
+      <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
       <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
         Describe your class context. The AI will design a Task Set that fits
         the room, stations, and time you specify.
@@ -617,7 +617,7 @@ export default function AiTasksetGenerator() {
               handleChange("topicDescription", e.target.value)
             }
             rows={4}
-            placeholder="Explain what you want THIS TaskSet to cover, key texts, vocabulary, or constraints…"
+            placeholder="Explain what you want this TaskSet to cover, key texts, vocabulary, or constraints…"
             style={{
               width: "100%",
               padding: "6px 8px",
