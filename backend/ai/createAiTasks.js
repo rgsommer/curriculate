@@ -10,24 +10,53 @@ const client = new OpenAI({
 
 /**
  * AI builds complete task objects for Curriculate.
+ *
+ * Supports two signatures for backwards compatibility:
+ *
+ *   // OLD:
+ *   createAiTasks(subject, plan, context?)
+ *
+ *   // NEW:
+ *   createAiTasks({
+ *     subject,
+ *     taskPlan,
+ *     gradeLevel,
+ *     difficulty,
+ *     learningGoal,
+ *     durationMinutes,
+ *     topicTitle,
+ *     curriculumLenses,
+ *   })
+ *
  * @returns {Promise<Array<object>>}
  */
 export async function createAiTasks(subjectOrConfig, maybePlan, maybeContext) {
-  // … (your existing signature detection code – unchanged) …
-  // ← keep everything up to the systemPrompt exactly as you had it
-
   let subject;
   let plan;
   let context;
 
-  if (typeof subjectOrConfig === "string" || typeof subjectOrConfig === "undefined") {
+  // -----------------------------
+  // Signature detection
+  // -----------------------------
+  if (
+    typeof subjectOrConfig === "string" ||
+    typeof subjectOrConfig === "undefined"
+  ) {
+    // OLD STYLE: (subject, plan, context)
     subject = subjectOrConfig || "General";
     plan = Array.isArray(maybePlan) ? maybePlan : [];
     context = maybeContext || {};
-  } else if (subjectOrConfig && typeof subjectOrConfig === "object" && !Array.isArray(subjectOrConfig)) {
+  } else if (
+    subjectOrConfig &&
+    typeof subjectOrConfig === "object" &&
+    !Array.isArray(subjectOrConfig)
+  ) {
+    // NEW STYLE: (configObject)
     const cfg = subjectOrConfig;
     subject = cfg.subject || "General";
-    plan = Array.isArray(cfg.taskPlan || cfg.plan) ? cfg.taskPlan || cfg.plan : [];
+    plan = Array.isArray(cfg.taskPlan || cfg.plan)
+      ? cfg.taskPlan || cfg.plan
+      : [];
     context = {
       gradeLevel: cfg.gradeLevel,
       difficulty: cfg.difficulty,
@@ -37,6 +66,7 @@ export async function createAiTasks(subjectOrConfig, maybePlan, maybeContext) {
       curriculumLenses: cfg.curriculumLenses,
     };
   } else {
+    // Fallback – very defensive
     subject = "General";
     plan = [];
     context = {};
@@ -57,7 +87,56 @@ export async function createAiTasks(subjectOrConfig, maybePlan, maybeContext) {
     .map(([value, label]) => `- ${value}: ${label}`)
     .join("\n");
 
-  const systemPrompt = `…`; // ← your long system prompt (unchanged)
+  const systemPrompt = `
+You are the Curriculate Task Architect, an expert at creating station-based classroom tasks.
+
+Your job:
+- Receive a subject, a grade level, and a "plan" listing concepts with a chosen taskType.
+- For EACH plan entry, generate ONE high-quality, classroom-ready task.
+- Follow the Curriculate task schema exactly.
+
+CONTEXT:
+- Subject: ${subjectLabel}
+- Grade: ${gradeLevel}
+- Difficulty: ${difficulty}
+- Learning goal: ${learningGoal}
+- Lesson duration (approx): ${durationMinutes} minutes
+- Topic title (optional): ${topicTitle || "(none provided)"}
+
+TASK TYPES:
+The platform understands these taskType values:
+${taskTypeDescription}
+
+GENERAL RULES:
+- All tasks must be achievable at a physical station in a classroom.
+- Use clear, student-facing language (no meta-comments about AI).
+- Ground tasks in the given subject and concepts; no random trivia.
+- Vary cognitive level: recall, understanding, application, analysis, creativity.
+- Avoid extremely long prompts; students should be able to grasp instructions quickly.
+- If a taskType implies movement or creativity, lean into that style.
+- If a taskType implies analysis, include "why/how" or compare/contrast thinking.
+
+CURRICULATE TASK SCHEMA (RAW):
+For each concept you MUST generate an object shaped like:
+
+{
+  "title": "Short task title, e.g. 'MC: Treaty of Utrecht'",
+  "prompt": "Student-facing instructions, 1–3 short sentences",
+  "taskType": "one of the taskType values from the plan",
+  "options": [],
+  "correctAnswer": null,
+  "recommendedTimeSeconds": number,
+  "recommendedPoints": number
+}
+
+You are a JSON API. You MUST return valid JSON with this shape ONLY:
+
+{
+  "tasks": [
+    { ...taskObject as above... }
+  ]
+}
+  `.trim();
 
   const userPrompt = {
     subject: subjectLabel,
@@ -70,18 +149,13 @@ export async function createAiTasks(subjectOrConfig, maybePlan, maybeContext) {
     plan,
   };
 
-  // ──────────────────────────────────────────────────────────────
-  // Main change starts here – try GPT-5.1, fall back to gpt-4o-mini
-  // ──────────────────────────────────────────────────────────────
   let completion;
-  const preferredModel = process.env.AI_TASK_MODEL || "gpt-5.1";
-
   try {
     completion = await client.chat.completions.create({
-      model: preferredModel,
+      model: process.env.AI_TASK_MODEL || "gpt-5.1",
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "You are a JSON API. Respond only with valid JSON." }, 
+        { role: "system", content: "You are a JSON API. Respond only with valid JSON." },
         { role: "system", content: systemPrompt },
         { role: "user", content: JSON.stringify(userPrompt) },
       ],
@@ -89,34 +163,44 @@ export async function createAiTasks(subjectOrConfig, maybePlan, maybeContext) {
   } catch (openaiErr) {
     if (
       openaiErr.message?.includes("model does not exist") ||
-      openaiErr.message?.includes("insufficient_quota") ||
-      openaiErr.status === 404 ||
-      openaiErr.status === 429
+      openaiErr.message?.includes("insufficient_quota")
     ) {
-      console.warn(`Model "${preferredModel}" unavailable – falling back to gpt-4o-mini`);
+      console.warn("GPT-5.1 unavailable — falling back to gpt-4o-mini");
       completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
         response_format: { type: "json_object" },
         messages: [
+          { role: "system", content: "You are a JSON API. Respond only with valid JSON." },
           { role: "system", content: systemPrompt },
           { role: "user", content: JSON.stringify(userPrompt) },
         ],
       });
     } else {
-      console.error("OpenAI error:", openaiErr);
-      throw openaiErr; // re-throw unexpected errors
+      throw openaiErr;
     }
   }
 
   const raw = completion.choices?.[0]?.message?.content || "{}";
+  console.log("Raw OpenAI response:", raw);
+
+  // Strip markdown code blocks if present
+  let cleanRaw = raw.trim();
+  if (cleanRaw.startsWith("```json")) cleanRaw = cleanRaw.slice(7);
+  if (cleanRaw.startsWith("```")) cleanRaw = cleanRaw.slice(3);
+  if (cleanRaw.endsWith("```")) cleanRaw = cleanRaw.slice(0, -3);
+  cleanRaw = cleanRaw.trim();
+
+  console.log("Cleaned response:", cleanRaw);
+
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(cleanRaw);
   } catch (err) {
-    console.error("[createAiTasks] Failed to parse JSON:", raw);
+    console.error("[createAiTasks] Failed to parse JSON:", cleanRaw);
     parsed = {};
   }
 
   const tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
+  console.log(`Generated ${tasks.length} tasks`);
   return tasks;
 }
