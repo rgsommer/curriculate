@@ -140,9 +140,11 @@ export default function TeacherProfile() {
     try {
       const includeReports = !!profile.includeIndividualReports;
 
-      const payload = {
+            const payload = {
         ...profile,
         defaultStations: Number(profile.defaultStations) || 8,
+        jeopardyDefaultContestantCount:
+          Number(profile.jeopardyDefaultContestantCount) || 3,
         assessmentCategories: profile.assessmentCategories
           .filter((c) => c.key.trim() || c.label.trim())
           .map((c) => ({
@@ -156,16 +158,37 @@ export default function TeacherProfile() {
         title: profile.presenterTitle,
       };
 
-      const updated = await updateMyProfile(payload);
+            const updated = await updateMyProfile(payload);
       setProfile((prev) => ({
         ...prev,
         ...updated,
-        presenterTitle: updated.presenterTitle || updated.title || prev.presenterTitle,
+        presenterTitle:
+          updated.presenterTitle || updated.title || prev.presenterTitle,
         includeIndividualReports:
           typeof updated.includeIndividualReports === "boolean"
             ? updated.includeIndividualReports
             : !!updated.includeStudentReports,
+
+        jeopardyDefaultContestantCount:
+          Number(
+            updated.jeopardyDefaultContestantCount ??
+              prev.jeopardyDefaultContestantCount ??
+              3
+          ),
+        jeopardyDefaultAnswerMode:
+          updated.jeopardyDefaultAnswerMode ||
+          prev.jeopardyDefaultAnswerMode ||
+          "buzz-first",
+        jeopardyAllowNegativeScores:
+          typeof updated.jeopardyAllowNegativeScores === "boolean"
+            ? updated.jeopardyAllowNegativeScores
+            : prev.jeopardyAllowNegativeScores ?? true,
+        jeopardyAllowRebound:
+          typeof updated.jeopardyAllowRebound === "boolean"
+            ? updated.jeopardyAllowRebound
+            : prev.jeopardyAllowRebound ?? true,
       }));
+
       setMessage("Profile saved.");
     } catch (err) {
       console.error("Failed to save profile:", err);
@@ -471,6 +494,117 @@ export default function TeacherProfile() {
             />
             Include individual student reports with class transcript
           </label>
+        </section>
+
+                <section style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            Jeopardy defaults
+          </h2>
+          <p
+            style={{
+              fontSize: "0.85rem",
+              color: "#6b7280",
+              marginBottom: 8,
+            }}
+          >
+            These settings are used whenever you run a Jeopardy-style game.
+            You can still override them per task or during a session.
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+              alignItems: "flex-start",
+            }}
+          >
+            <label style={{ fontSize: "0.85rem" }}>
+              Default teams in a Jeopardy game
+              <input
+                type="number"
+                min={2}
+                max={8}
+                value={profile.jeopardyDefaultContestantCount ?? 3}
+                onChange={(e) =>
+                  handleChange(
+                    "jeopardyDefaultContestantCount",
+                    e.target.value
+                  )
+                }
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  padding: "4px 6px",
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  width: 80,
+                }}
+              />
+            </label>
+
+            <label style={{ fontSize: "0.85rem" }}>
+              Answer mode
+              <select
+                value={profile.jeopardyDefaultAnswerMode || "buzz-first"}
+                onChange={(e) =>
+                  handleChange("jeopardyDefaultAnswerMode", e.target.value)
+                }
+                style={{
+                  display: "block",
+                  marginTop: 4,
+                  padding: "4px 6px",
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                }}
+              >
+                <option value="buzz-first">
+                  First team to buzz gets to answer
+                </option>
+                <option value="all-try">
+                  All teams answer; fastest correct gets full credit
+                </option>
+              </select>
+            </label>
+
+            <label
+              style={{
+                fontSize: "0.85rem",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!profile.jeopardyAllowNegativeScores}
+                onChange={(e) =>
+                  handleChange(
+                    "jeopardyAllowNegativeScores",
+                    e.target.checked
+                  )
+                }
+              />
+              Allow negative scores for wrong buzz-ins
+            </label>
+
+            <label
+              style={{
+                fontSize: "0.85rem",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!profile.jeopardyAllowRebound}
+                onChange={(e) =>
+                  handleChange("jeopardyAllowRebound", e.target.checked)
+                }
+              />
+              Allow rebound if a team misses a clue
+            </label>
+          </div>
         </section>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

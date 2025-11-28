@@ -9,6 +9,11 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { planTaskTypes } from "../ai/planTaskTypes.js";
 import { createAiTasks } from "../ai/createAiTasks.js";
 import { cleanTaskList } from "../ai/cleanTasks.js";
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 function validateGeneratePayload(body = {}) {
   const errors = [];

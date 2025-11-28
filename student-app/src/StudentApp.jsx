@@ -212,6 +212,127 @@ function QrScanner({ active, onCode, onError }) {
 /* -----------------------------------------------------------
    Student App main
 ----------------------------------------------------------- */
+function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const dataArrayRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastSentRef = useRef(0);
+
+  useEffect(() => {
+    if (!active || ignoreNoise) {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      analyserRef.current = null;
+      dataArrayRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    let stream = null;
+
+    async function setup() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        const AudioCtx =
+          window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioCtx();
+        const analyser = audioCtx.createAnalyser();
+        const source = audioCtx.createMediaStreamSource(stream);
+
+        analyser.fftSize = 512;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        source.connect(analyser);
+
+        audioContextRef.current = audioCtx;
+        analyserRef.current = analyser;
+        dataArrayRef.current = dataArray;
+
+        const loop = () => {
+          if (
+            cancelled ||
+            !analyserRef.current ||
+            !dataArrayRef.current
+          ) {
+            return;
+          }
+
+          analyserRef.current.getByteTimeDomainData(
+            dataArrayRef.current
+          );
+
+          let sum = 0;
+          for (let i = 0; i < dataArrayRef.current.length; i++) {
+            const v = dataArrayRef.current[i] - 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(
+            sum / dataArrayRef.current.length
+          );
+
+          // Approximate noise level 0–100
+          const level = Math.min(
+            100,
+            Math.max(0, Math.round((rms / 50) * 100))
+          );
+
+          const now = Date.now();
+          if (
+            roomCode &&
+            now - lastSentRef.current > 500 &&
+            !ignoreNoise
+          ) {
+            socket.emit("noise:sample", {
+              roomCode: roomCode.trim().toUpperCase(),
+              level,
+            });
+            lastSentRef.current = now;
+          }
+
+          rafRef.current = requestAnimationFrame(loop);
+        };
+
+        rafRef.current = requestAnimationFrame(loop);
+      } catch (err) {
+        console.warn("NoiseSensor getUserMedia failed:", err);
+      }
+    }
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+      analyserRef.current = null;
+      dataArrayRef.current = null;
+    };
+  }, [active, ignoreNoise, roomCode, socket]);
+
+  return null;
+}
 
 export default function StudentApp() {
   const [connected, setConnected] = useState(false);
@@ -234,13 +355,26 @@ export default function StudentApp() {
     "Enter your room code and team name to begin."
   );
 
-  const [locationCode, setLocationCode] = useState(DEFAULT_LOCATION);
+    const [locationCode, setLocationCode] = useState(DEFAULT_LOCATION);
 
   const [submitting, setSubmitting] = useState(false);
   const sndAlert = useRef(null);
+  const sndTreat = useRef(null);
+
+  // Ambient noise state pushed from server
+  const [noiseState, setNoiseState] = useState({
+    enabled: false,
+    brightness: 1,
+    level: 0,
+    threshold: 0,
+  });
+
+  // Random treat banner
+  const [treatMessage, setTreatMessage] = useState(null);
 
   // timeout-related state
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
+
   const [remainingMs, setRemainingMs] = useState(null);
   const timeoutTimerRef = useRef(null);
   const timeoutSubmittedRef = useRef(false);
@@ -268,6 +402,9 @@ export default function StudentApp() {
   useEffect(() => {
     if (sndAlert.current) {
       sndAlert.current.volume = 1.0;
+    }
+    if (sndTreat.current) {
+      sndTreat.current.volume = 1.0;
     }
   }, []);
 
@@ -360,18 +497,71 @@ export default function StudentApp() {
       );
     };
 
+        const handleNoiseLevel = (payload) => {
+      if (!payload) return;
+      const { brightness, enabled, level, threshold } = payload;
+
+      setNoiseState((prev) => ({
+        ...prev,
+        enabled: !!enabled,
+        brightness:
+          typeof brightness === "number"
+            ? Math.min(1, Math.max(0.3, brightness))
+            : prev.brightness,
+        level: typeof level === "number" ? level : prev.level,
+        threshold:
+          typeof threshold === "number" ? threshold : prev.threshold,
+      }));
+    };
+
+    const handleTreatAssigned = (payload) => {
+      if (!payload) return;
+
+      // Only respond if this is for our team & room
+      if (payload.teamId && payload.teamId !== teamId) return;
+
+      if (
+        payload.roomCode &&
+        roomCode &&
+        payload.roomCode.toUpperCase() !== roomCode.trim().toUpperCase()
+      ) {
+        return;
+      }
+
+      setTreatMessage(
+        payload.message || "See your teacher for a treat!"
+      );
+
+      try {
+        if (sndTreat.current) {
+          sndTreat.current.currentTime = 0;
+          sndTreat.current.play().catch((err) => {
+            console.warn("Unable to play treat sound:", err);
+          });
+        }
+      } catch (err) {
+        console.warn("Treat sound error:", err);
+      }
+    };
+
+      useEffect(() => {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("room:state", handleRoomState);
     socket.on("task:launch", handleTaskLaunch);
+    socket.on("session:noiseLevel", handleNoiseLevel);
+    socket.on("student:treatAssigned", handleTreatAssigned);
 
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("room:state", handleRoomState);
       socket.off("task:launch", handleTaskLaunch);
+      socket.off("session:noiseLevel", handleNoiseLevel);
+      socket.off("student:treatAssigned", handleTreatAssigned);
     };
-  }, []);
+    // roomCode/teamId so the handler always has fresh values
+  }, [roomCode, teamId]);
 
   // Timeout timer effect
   useEffect(() => {
@@ -711,7 +901,7 @@ export default function StudentApp() {
     : "";
   const scanPrompt = `Scan a ${locLabel}${colourLabel} station.`;
 
-  return (
+    return (
     <div
       style={{
         minHeight: "100vh",
@@ -723,12 +913,23 @@ export default function StudentApp() {
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         backgroundColor: "#ffffff",
         color: "#111827",
+        opacity: noiseState.enabled ? noiseState.brightness : 1,
+        transition: "opacity 120ms ease-out",
       }}
+
     >
       {/* Hidden audio element for task / scan sounds */}
       <audio
         ref={sndAlert}
         src="/sounds/scan-alert.mp3"
+        preload="auto"
+        style={{ display: "none" }}
+      />
+
+      {/* Hidden audio element for random-treat sound */}
+      <audio
+        ref={sndTreat}
+        src="/sounds/treat-chime.mp3"
         preload="auto"
         style={{ display: "none" }}
       />
@@ -774,6 +975,41 @@ export default function StudentApp() {
               : "Connecting…"}
           </p>
         </header>
+        
+        {treatMessage && (
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 10,
+              background: "#f97316",
+              color: "#ffffff",
+              fontSize: "0.9rem",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <div>
+              <strong style={{ marginRight: 4 }}>Treat time!</strong>
+              {treatMessage}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTreatMessage(null)}
+              style={{
+                border: "none",
+                background: "rgba(255,255,255,0.15)",
+                color: "#ffffff",
+                padding: "4px 8px",
+                borderRadius: 999,
+                fontSize: "0.8rem",
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        )}
 
         {!joined && (
           <section
@@ -1049,6 +1285,15 @@ export default function StudentApp() {
           </section>
         )}
       </div>
+
+      {joined && (
+        <NoiseSensor
+          active={noiseState.enabled}
+          roomCode={roomCode}
+          socket={socket}
+          ignoreNoise={!!currentTask?.ignoreNoise}
+        />
+      )}
 
       {/* Persistent colour band at the bottom (about half the screen) */}
       <div

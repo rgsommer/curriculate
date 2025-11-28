@@ -693,8 +693,8 @@ export default function TaskSetEditor() {
                   />
                 </div>
 
-                {/* Points, time, display mapping */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Points, time, display mapping, noise control */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-sm font-medium mb-1">
                       Points
@@ -714,6 +714,25 @@ export default function TaskSetEditor() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">
+                      Time limit (seconds, optional)
+                    </label>
+                    <input
+                      type="number"
+                      value={task.timeLimitSeconds ?? ""}
+                      onChange={(e) =>
+                        updateTask(
+                          task._tempId,
+                          "timeLimitSeconds",
+                          e.target.value === ""
+                            ? ""
+                            : Number(e.target.value) || 0
+                        )
+                      }
+                      className="w-full border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">
                       Display (optional)
                     </label>
                     <select
@@ -726,29 +745,71 @@ export default function TaskSetEditor() {
                       <option value="">(none)</option>
                       {displays.map((d) => (
                         <option key={d.key} value={d.key}>
-                          {d.name || d.stationColor || d.key}
+                          {d.title || d.key}
                         </option>
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Time limit (sec)
+                  <div className="flex items-center md:items-start mt-2 md:mt-6">
+                    <label className="inline-flex items-center text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        className="mr-2"
+                        checked={!!task.ignoreNoise}
+                        onChange={(e) =>
+                          updateTask(
+                            task._tempId,
+                            "ignoreNoise",
+                            e.target.checked
+                          )
+                        }
+                      />
+                      Ignore ambient-noise dimming
                     </label>
-                    <input
-                      type="number"
-                      value={task.timeLimitSeconds ?? ""}
-                      onChange={(e) =>
-                        updateTask(
-                          task._tempId,
-                          "timeLimitSeconds",
-                          e.target.value ? Number(e.target.value) : null
-                        )
-                      }
-                      className="w-full border rounded px-2 py-1 text-sm"
-                    />
                   </div>
                 </div>
+                                {task.taskType === TASK_TYPES.JEOPARDY && (
+                  <div className="mt-3 p-3 border rounded bg-indigo-50 text-xs text-gray-700">
+                    <p className="mb-1 font-semibold">Jeopardy configuration</p>
+                    <p className="mb-2">
+                      The board (categories, clues, values) will be generated
+                      from this prompt. You can tweak or regenerate it in the
+                      Live Session view.
+                    </p>
+                    <label className="block mb-2">
+                      Board title (optional)
+                      <input
+                        type="text"
+                        value={task.jeopardyTitle || ""}
+                        onChange={(e) =>
+                          updateTask(
+                            task._tempId,
+                            "jeopardyTitle",
+                            e.target.value
+                          )
+                        }
+                        className="mt-1 w-full border rounded px-2 py-1 text-xs"
+                        placeholder="e.g., Confederation Showdown"
+                      />
+                    </label>
+                    <label className="block">
+                      Notes to AI (optional)
+                      <textarea
+                        value={task.jeopardyAiNotes || ""}
+                        onChange={(e) =>
+                          updateTask(
+                            task._tempId,
+                            "jeopardyAiNotes",
+                            e.target.value
+                          )
+                        }
+                        className="mt-1 w-full border rounded px-2 py-1 text-xs"
+                        rows={3}
+                        placeholder="Any extra instructions about difficulty, category mix, etc."
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
             ))}
           </div>
