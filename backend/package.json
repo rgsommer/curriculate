@@ -1,8 +1,8 @@
 {
   "name": "curriculate-backend",
   "version": "1.0.0",
+  "type": "module",
   "description": "Curriculate cloud backend (Express + MongoDB + Socket.io)",
-  "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js",

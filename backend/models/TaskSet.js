@@ -1,4 +1,3 @@
-// models/TaskSet.js
 import mongoose from "mongoose";
 
 const { Schema } = mongoose;
@@ -11,7 +10,7 @@ const DisplaySchema = new Schema(
     description: { type: String },                // short description for students
     stationColor: { type: String },               // "red", "blue", "green", etc.
     notesForTeacher: { type: String },            // setup notes, only for teacher UI
-    imageUrl: { type: String }                    // optional reference image
+    imageUrl: { type: String },                   // optional reference image
   },
   { _id: false }
 );
@@ -19,13 +18,13 @@ const DisplaySchema = new Schema(
 // Individual Task schema
 const TaskSchema = new Schema(
   {
-    taskId: String,                      // your existing field
-    title: String,                       // short label for the task
+    taskId: String,                       // your existing field
+    title: String,                        // short label for the task
     prompt: { type: String, required: true },
-    taskType: { type: String, required: true }, // mcq, true_false, sequence, etc.
+    taskType: { type: String, required: true }, // mcq, true_false, sequence, jeopardy_ai_ref, etc.
 
-    options: [String],                  // for MCQ / SORT etc.
-    correctAnswer: Schema.Types.Mixed,  // was "answer" → now "correctAnswer"
+    options: [String],                   // for MCQ / SORT etc.
+    correctAnswer: Schema.Types.Mixed,   // was "answer" → now "correctAnswer"
     mediaUrl: String,
     timeLimitSeconds: Number,
     points: { type: Number, default: 10 },
@@ -35,11 +34,42 @@ const TaskSchema = new Schema(
     displayKey: { type: String },
 
     // EXTRA fields for AI-generated structure (optional)
-    order: Number,                      // task sequence within a set
-    timeMinutes: Number,                // estimated time per task
+    order: Number,                       // task sequence within a set
+    timeMinutes: Number,                 // estimated time per task
     movement: { type: Boolean, default: false },         // Body Break, move-around
     requiresDrawing: { type: Boolean, default: false },  // drawing/mime tasks
-    notesForTeacher: String             // AI teacher notes, not shown to students
+    notesForTeacher: String,             // AI teacher notes, not shown to students
+
+    // Noise-control hint: when true, this task should *not* be included
+    // in ambient-noise dimming (e.g., speaking / discussion tasks).
+    ignoreNoise: { type: Boolean, default: false },
+
+    // Optional Jeopardy-style configuration for this task when taskType
+    // is something like "jeopardy_ai_ref".
+    jeopardyConfig: {
+      boardTitle: String,
+      // classic = teacher-refereed, aiRef = AI makes initial verdict
+      mode: {
+        type: String,
+        enum: ["classic", "aiRef"],
+        default: "aiRef",
+      },
+      // Default desired number of competing teams (2–8 recommended)
+      defaultContestantCount: { type: Number, default: 4 },
+      categories: [
+        {
+          name: String,
+          clues: [
+            {
+              value: Number,              // 100 / 200 / 300, etc.
+              clue: String,
+              answer: String,
+              isDailyDouble: { type: Boolean, default: false },
+            },
+          ],
+        },
+      ],
+    },
   },
   { _id: false }
 );
@@ -88,7 +118,7 @@ const TaskSetSchema = new Schema(
 
     avgEngagementScore: { type: Number, default: null }, // 0–1 or 0–100; be consistent
     completionRate: { type: Number, default: null },      // 0–1 or 0–100; be consistent
-    avgScorePercent: { type: Number, default: null }      // 0–100
+    avgScorePercent: { type: Number, default: null },     // 0–100
   },
   { timestamps: true }
 );

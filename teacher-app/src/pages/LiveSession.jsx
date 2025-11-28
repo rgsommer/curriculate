@@ -1,4 +1,3 @@
-// teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 
@@ -28,6 +27,18 @@ export default function LiveSession({ roomCode }) {
     scores: {},
     locationCode: "Classroom",
     taskIndex: -1,
+    treatsConfig: {
+      enabled: true,
+      total: 4,
+      given: 0,
+    },
+    pendingTreatTeams: [],
+    noise: {
+      enabled: false,
+      threshold: 0,
+      level: 0,
+      brightness: 1,
+    },
   });
 
   const [submissions, setSubmissions] = useState({});
@@ -61,13 +72,31 @@ export default function LiveSession({ roomCode }) {
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
 
-  // Join sound when a team joins
+  // Join & treat sounds
   const joinSoundRef = useRef(null);
+  const treatSoundRef = useRef(null);
+
+  // Noise-control local UI state
+  const [noiseLevel, setNoiseLevel] = useState(0);
+  const [noiseThreshold, setNoiseThreshold] = useState(0);
+  const [noiseEnabled, setNoiseEnabled] = useState(false);
+  const [noiseBrightness, setNoiseBrightness] = useState(1);
+
+  // Treats UI state (mirrors roomState.treatsConfig)
+  const [treatsConfig, setTreatsConfig] = useState({
+    enabled: true,
+    total: 4,
+    given: 0,
+  });
 
   useEffect(() => {
     const audio = new Audio("/sounds/join.mp3");
     audio.load();
     joinSoundRef.current = audio;
+
+    const treatAudio = new Audio("/sounds/treat.mp3");
+    treatAudio.load();
+    treatSoundRef.current = treatAudio;
   }, []);
 
   // ----------------------------------------------------
@@ -121,12 +150,7 @@ export default function LiveSession({ roomCode }) {
     // At this point, the correct taskset is loaded in this room — launch it.
     socket.emit("launchTaskset", { roomCode: code });
     setAutoLaunchRequested(false);
-  }, [
-    autoLaunchRequested,
-    roomCode,
-    activeTasksetMeta,
-    loadedTasksetId,
-  ]);
+  }, [autoLaunchRequested, roomCode, activeTasksetMeta, loadedTasksetId]);
 
   // ----------------------------------------------------
   // Socket listeners
@@ -141,8 +165,42 @@ export default function LiveSession({ roomCode }) {
           scores: {},
           locationCode: "Classroom",
           taskIndex: -1,
+          treatsConfig: {
+            enabled: true,
+            total: 4,
+            given: 0,
+          },
+          pendingTreatTeams: [],
+          noise: {
+            enabled: false,
+            threshold: 0,
+            level: 0,
+            brightness: 1,
+          },
         };
       setRoomState(safe);
+
+      // Mirror noise state to local UI
+      const noise = safe.noise || {};
+      setNoiseLevel(typeof noise.level === "number" ? noise.level : 0);
+      setNoiseThreshold(typeof noise.threshold === "number" ? noise.threshold : 0);
+      setNoiseEnabled(!!noise.enabled);
+      setNoiseBrightness(
+        typeof noise.brightness === "number" ? noise.brightness : 1
+      );
+
+      const tCfg = safe.treatsConfig || {};
+      setTreatsConfig({
+        enabled: tCfg.enabled ?? true,
+        total:
+          typeof tCfg.total === "number" && !Number.isNaN(tCfg.total)
+            ? tCfg.total
+            : 4,
+        given:
+          typeof tCfg.given === "number" && !Number.isNaN(tCfg.given)
+            ? tCfg.given
+            : 0,
+      });
 
       // Maintain a stable team order based on first join time.
       setTeamOrder((prev) => {
@@ -226,6 +284,44 @@ export default function LiveSession({ roomCode }) {
       setIsEndingSession(false);
     };
 
+    const handleNoiseLevel = (payload) => {
+      if (!payload) return;
+      if (
+        payload.roomCode &&
+        roomCode &&
+        payload.roomCode.toUpperCase() !== roomCode.toUpperCase()
+      ) {
+        return;
+      }
+      setNoiseLevel(
+        typeof payload.level === "number" ? payload.level : noiseLevel
+      );
+      setNoiseBrightness(
+        typeof payload.brightness === "number"
+          ? payload.brightness
+          : noiseBrightness
+      );
+      setNoiseEnabled(!!payload.enabled);
+      if (typeof payload.threshold === "number") {
+        setNoiseThreshold(payload.threshold);
+      }
+    };
+
+    const handleTreatAssigned = (payload) => {
+      console.log("[LiveSession] treat assigned:", payload);
+      if (payload?.roomCode && roomCode) {
+        if (payload.roomCode.toUpperCase() !== roomCode.toUpperCase()) {
+          return;
+        }
+      }
+      if (treatSoundRef.current) {
+        treatSoundRef.current.currentTime = 0;
+        treatSoundRef.current.play().catch(() => {});
+      }
+      // Room state with pendingTreatTeams will arrive via room:state;
+      // we just play the sound here.
+    };
+
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("tasksetLoaded", handleTasksetLoaded);
@@ -234,6 +330,8 @@ export default function LiveSession({ roomCode }) {
     socket.on("scanEvent", handleScanEvent);
     socket.on("teacher:roomSetup", handleRoomSetup);
     socket.on("teacher:endSessionAndEmail:result", handleEndSessionAck);
+    socket.on("session:noiseLevel", handleNoiseLevel);
+    socket.on("teacher:treatAssigned", handleTreatAssigned);
 
     return () => {
       socket.off("roomState", handleRoom);
@@ -244,8 +342,10 @@ export default function LiveSession({ roomCode }) {
       socket.off("scanEvent", handleScanEvent);
       socket.off("teacher:roomSetup", handleRoomSetup);
       socket.off("teacher:endSessionAndEmail:result", handleEndSessionAck);
+      socket.off("session:noiseLevel", handleNoiseLevel);
+      socket.off("teacher:treatAssigned", handleTreatAssigned);
     };
-  }, []);
+  }, [roomCode, noiseLevel, noiseBrightness]);
 
   // ----------------------------------------------------
   // Actions
@@ -298,7 +398,53 @@ export default function LiveSession({ roomCode }) {
     });
   };
 
-    // ----------------------------------------------------
+  const handleNoiseSliderChange = (e) => {
+    const value = Number(e.target.value) || 0;
+    setNoiseThreshold(value);
+    const enabled = value > 0;
+    setNoiseEnabled(enabled);
+
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    socket.emit("teacher:updateNoiseControl", {
+      roomCode: code,
+      enabled,
+      threshold: value,
+    });
+  };
+
+  const handleToggleTreatsEnabled = (e) => {
+    const enabled = e.target.checked;
+    const next = { ...treatsConfig, enabled };
+    setTreatsConfig(next);
+
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    socket.emit("teacher:updateTreatsConfig", {
+      roomCode: code,
+      enabled,
+      totalTreats: next.total,
+    });
+  };
+
+  const handleTreatsTotalChange = (e) => {
+    const raw = e.target.value;
+    const parsed = Number(raw);
+    const cleanTotal = Number.isNaN(parsed) ? 0 : Math.max(0, Math.floor(parsed));
+
+    const next = { ...treatsConfig, total: cleanTotal };
+    setTreatsConfig(next);
+
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    socket.emit("teacher:updateTreatsConfig", {
+      roomCode: code,
+      enabled: next.enabled,
+      totalTreats: cleanTotal,
+    });
+  };
+
+  // ----------------------------------------------------
   // Derived helpers + ordering rule
   // ----------------------------------------------------
   const stationsRaw = Array.isArray(roomState.stations)
@@ -307,6 +453,10 @@ export default function LiveSession({ roomCode }) {
 
   const teamsById = roomState.teams || {};
   const scores = roomState.scores || {};
+
+  const pendingTreatTeams = Array.isArray(roomState.pendingTreatTeams)
+    ? roomState.pendingTreatTeams
+    : [];
 
   // This should eventually be supplied by backend when the active taskset
   // is fixed-station; if absent, it behaves as non-fixed.
@@ -593,6 +743,8 @@ export default function LiveSession({ roomCode }) {
       latest.answerText === "" &&
       latest.timeMs != null;
 
+    const hasTreatPending = pendingTreatTeams.includes(teamId);
+
     let statusLine = "";
     if (!hasScanForThisAssignment) {
       statusLine = "Waiting for a scan…";
@@ -729,9 +881,29 @@ export default function LiveSession({ roomCode }) {
             Station: {assignedStationId}
           </div>
         )}
+        {hasTreatPending && (
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: "0.8rem",
+              color: "#b45309",
+              fontWeight: 600,
+            }}
+          >
+            🍬 See teacher for a treat!
+          </div>
+        )}
       </div>
     );
   };
+
+  const noiseLabel = !noiseEnabled
+    ? "Off"
+    : noiseThreshold < 40
+    ? "Light"
+    : noiseThreshold < 70
+    ? "Moderate"
+    : "Strict";
 
   return (
     <div
@@ -886,7 +1058,7 @@ export default function LiveSession({ roomCode }) {
         </div>
       </div>
 
-      {/* Main body: teams + leaderboard + debug log */}
+      {/* Main body: teams + leaderboard + scan log */}
       <div
         style={{
           display: "flex",
@@ -906,6 +1078,9 @@ export default function LiveSession({ roomCode }) {
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
                 gap: 12,
+                // Optionally show noise-based dimming on teacher view as a cue
+                opacity: noiseEnabled ? noiseBrightness : 1,
+                transition: "opacity 0.15s ease-out",
               }}
             >
               {teamIdsForGrid.map((teamId) => renderTeamCard(teamId))}
@@ -913,7 +1088,7 @@ export default function LiveSession({ roomCode }) {
           )}
         </div>
 
-        {/* Right column: leaderboard + scan log */}
+        {/* Right column: classroom controls + leaderboard + scan log */}
         <div
           style={{
             flex: 1.2,
@@ -925,6 +1100,141 @@ export default function LiveSession({ roomCode }) {
             gap: 12,
           }}
         >
+          {/* Classroom controls: noise + treats */}
+          <div
+            style={{
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              padding: 8,
+              background: "#ffffff",
+              fontSize: "0.8rem",
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 600,
+                marginBottom: 6,
+              }}
+            >
+              Classroom controls
+            </div>
+
+            {/* Noise control */}
+            <div style={{ marginBottom: 8 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: 2,
+                }}
+              >
+                <span>Noise control</span>
+                <span style={{ color: "#6b7280" }}>
+                  {noiseLabel}
+                  {noiseEnabled && (
+                    <>
+                      {" "}
+                      • noise: {Math.round(noiseLevel)}
+                    </>
+                  )}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={noiseThreshold}
+                onChange={handleNoiseSliderChange}
+                style={{ width: "100%" }}
+              />
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: "0.7rem",
+                  color: "#6b7280",
+                }}
+              >
+                0 = off • higher = stricter noise expectations
+              </div>
+            </div>
+
+            {/* Treats control */}
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: 2,
+                }}
+              >
+                <span>Random treats</span>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: "0.75rem",
+                    color: "#374151",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={treatsConfig.enabled}
+                    onChange={handleToggleTreatsEnabled}
+                  />
+                  Enabled
+                </label>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <label
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#4b5563",
+                  }}
+                >
+                  Treats this session:{" "}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={treatsConfig.total}
+                  onChange={handleTreatsTotalChange}
+                  style={{
+                    width: 60,
+                    padding: "2px 4px",
+                    fontSize: "0.75rem",
+                    borderRadius: 4,
+                    border: "1px solid #d1d5db",
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#6b7280",
+                  }}
+                >
+                  Given: {treatsConfig.given}/{treatsConfig.total}
+                </span>
+              </div>
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: "0.7rem",
+                  color: "#6b7280",
+                }}
+              >
+                Students see a “See your teacher for a treat” prompt when
+                selected.
+              </div>
+            </div>
+          </div>
+
           {/* Leaderboard */}
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
@@ -1114,8 +1424,8 @@ export default function LiveSession({ roomCode }) {
               }}
             >
               {(roomSetup.stations || []).map((s, idx) => {
-                const angle = (2 * Math.PI * idx) /
-                  Math.max(1, roomSetup.stations.length);
+                const angle =
+                  (2 * Math.PI * idx) / Math.max(1, roomSetup.stations.length);
                 const cx = 50 + 40 * Math.cos(angle);
                 const cy = 50 + 40 * Math.sin(angle);
                 return (

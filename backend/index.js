@@ -116,6 +116,22 @@ function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
     startedAt: null,
     isActive: false,
     locationCode, // e.g. "Classroom"
+
+    // Random-treats state
+    treatsConfig: {
+      enabled: true,
+      total: 4,
+      given: 0,
+    },
+    pendingTreats: {}, // teamId -> true
+
+    // Noise-control state
+    noiseControl: {
+      enabled: false,
+      threshold: 0, // 0–100; 0 ⇒ off
+    },
+    noiseLevel: 0,        // smoothed noise measure (0–100)
+    noiseBrightness: 1,   // 1 = full bright, ~0.3 = dim
   };
 }
 
@@ -276,6 +292,18 @@ function buildRoomState(room) {
       taskIndex: -1,
       startedAt: null,
       isActive: false,
+      treatsConfig: {
+        enabled: true,
+        total: 4,
+        given: 0,
+      },
+      pendingTreatTeams: [],
+      noise: {
+        enabled: false,
+        threshold: 0,
+        level: 0,
+        brightness: 1,
+      },
     };
   }
 
@@ -303,6 +331,14 @@ function buildRoomState(room) {
     }
   }
 
+  const treatsConfig = room.treatsConfig || {
+    enabled: true,
+    total: 4,
+    given: 0,
+  };
+
+  const noiseControl = room.noiseControl || { enabled: false, threshold: 0 };
+
   return {
     code: room.code,
     locationCode: room.locationCode || "Classroom",
@@ -312,6 +348,38 @@ function buildRoomState(room) {
     taskIndex: overallTaskIndex,
     startedAt: room.startedAt || null,
     isActive: !!room.isActive,
+
+    // Random treats (for LiveSession UI)
+    treatsConfig: {
+      enabled: !!treatsConfig.enabled,
+      total:
+        typeof treatsConfig.total === "number" && !Number.isNaN(treatsConfig.total)
+          ? treatsConfig.total
+          : 4,
+      given:
+        typeof treatsConfig.given === "number" && !Number.isNaN(treatsConfig.given)
+          ? treatsConfig.given
+          : 0,
+    },
+    pendingTreatTeams: Object.keys(room.pendingTreats || {}),
+
+    // Noise-control state (for LiveSession + StudentApp)
+    noise: {
+      enabled: !!noiseControl.enabled && (noiseControl.threshold || 0) > 0,
+      threshold:
+        typeof noiseControl.threshold === "number" && !Number.isNaN(noiseControl.threshold)
+          ? noiseControl.threshold
+          : 0,
+      level:
+        typeof room.noiseLevel === "number" && !Number.isNaN(room.noiseLevel)
+          ? room.noiseLevel
+          : 0,
+      brightness:
+        typeof room.noiseBrightness === "number" &&
+        !Number.isNaN(room.noiseBrightness)
+          ? room.noiseBrightness
+          : 1,
+    },
   };
 }
 
@@ -343,6 +411,117 @@ function sendTaskToTeam(room, teamId, index) {
     task,
     timeLimitSeconds,
   });
+}
+
+// ------------------------------
+// Helpers: treats + noise
+// ------------------------------
+function ensureTreatsConfig(room) {
+  if (!room.treatsConfig) {
+    room.treatsConfig = {
+      enabled: true,
+      total: 4,
+      given: 0,
+    };
+  }
+  if (!room.pendingTreats) {
+    room.pendingTreats = {};
+  }
+}
+
+function maybeAwardTreat(code, room, teamId) {
+  ensureTreatsConfig(room);
+  const cfg = room.treatsConfig;
+  if (!cfg.enabled) return;
+  if (cfg.total <= 0) return;
+  if (cfg.given >= cfg.total) return;
+
+  // Simple probability model:
+  // Scale chance by remaining treats; clamp to keep it reasonable.
+  const remaining = cfg.total - cfg.given;
+  const base = Math.min(0.15 * remaining, 0.6); // 0.15, 0.3, 0.45, 0.6...
+  const alreadyPending = room.pendingTreats && room.pendingTreats[teamId];
+  const chance = alreadyPending ? base * 0.25 : base;
+
+  if (Math.random() > chance) return;
+
+  cfg.given += 1;
+  room.pendingTreats[teamId] = true;
+
+  const team = room.teams?.[teamId];
+  const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
+
+  // Notify teacher app (LiveSession) and student device.
+  io.to(code).emit("teacher:treatAssigned", {
+    roomCode: code,
+    teamId,
+    teamName,
+  });
+  io.to(teamId).emit("student:treatAssigned", {
+    roomCode: code,
+    teamId,
+    message: "See your teacher for a treat!",
+  });
+}
+
+function ensureNoiseControl(room) {
+  if (!room.noiseControl) {
+    room.noiseControl = {
+      enabled: false,
+      threshold: 0,
+    };
+  }
+  if (typeof room.noiseLevel !== "number") {
+    room.noiseLevel = 0;
+  }
+  if (typeof room.noiseBrightness !== "number") {
+    room.noiseBrightness = 1;
+  }
+}
+
+function updateNoiseDerivedState(code, room) {
+  ensureNoiseControl(room);
+  const control = room.noiseControl;
+
+  const enabled = !!control.enabled && (control.threshold || 0) > 0;
+  const threshold =
+    typeof control.threshold === "number" && !Number.isNaN(control.threshold)
+      ? control.threshold
+      : 0;
+  const level =
+    typeof room.noiseLevel === "number" && !Number.isNaN(room.noiseLevel)
+      ? room.noiseLevel
+      : 0;
+
+  let brightness = 1;
+  if (enabled) {
+    const center = threshold;
+    const band = 15; // +/- range around center
+    if (level <= center - band) {
+      brightness = 1;
+    } else if (level >= center + band) {
+      brightness = 0.3;
+    } else {
+      const t = (level - (center - band)) / (2 * band); // 0 → 1
+      brightness = 1 - t * 0.7; // 1 → 0.3
+    }
+  }
+
+  room.noiseBrightness = brightness;
+
+  // Emit direct noise status (for live meters / dimming)
+  io.to(code).emit("session:noiseLevel", {
+    roomCode: code,
+    level,
+    brightness,
+    enabled,
+    threshold,
+  });
+
+  // Also refresh room:state so LiveSession sees latest
+  const state = buildRoomState(room);
+  io.to(code).emit("room:state", state);
+  io.to(code).emit("roomState", state);
 }
 
 // ====================================================================
@@ -533,6 +712,83 @@ io.on("connection", (socket) => {
       task,
       timeLimitSeconds: task.timeLimitSeconds ?? 0,
     });
+  });
+
+  // --------------------------
+  // Teacher: random treats config
+  // --------------------------
+  socket.on("teacher:updateTreatsConfig", (payload = {}) => {
+    const { roomCode, enabled, totalTreats } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    ensureTreatsConfig(room);
+
+    if (typeof enabled === "boolean") {
+      room.treatsConfig.enabled = enabled;
+    }
+    if (typeof totalTreats === "number" && !Number.isNaN(totalTreats)) {
+      const clean = Math.max(0, Math.floor(totalTreats));
+      room.treatsConfig.total = clean;
+      if (room.treatsConfig.given > clean) {
+        room.treatsConfig.given = clean;
+      }
+    }
+
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+  });
+
+  // --------------------------
+  // Teacher: noise-control config
+  // --------------------------
+  socket.on("teacher:updateNoiseControl", (payload = {}) => {
+    const { roomCode, enabled, threshold } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    ensureNoiseControl(room);
+
+    if (typeof enabled === "boolean") {
+      room.noiseControl.enabled = enabled;
+    }
+    if (typeof threshold === "number" && !Number.isNaN(threshold)) {
+      room.noiseControl.threshold = Math.max(
+        0,
+        Math.min(100, Math.floor(threshold))
+      );
+    }
+
+    updateNoiseDerivedState(code, room);
+  });
+
+  // --------------------------
+  // Noise samples from student/teacher devices
+  // --------------------------
+  socket.on("noise:sample", (payload = {}) => {
+    const { roomCode, level } = payload;
+    const code =
+      (roomCode || socket.data?.roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    ensureNoiseControl(room);
+
+    const numeric =
+      typeof level === "number" ? level : Number(level) || 0;
+    const clamped = Math.max(0, Math.min(100, numeric));
+
+    if (typeof room.noiseLevel !== "number") {
+      room.noiseLevel = clamped;
+    } else {
+      // Exponential moving average to smooth spikes
+      room.noiseLevel = room.noiseLevel * 0.8 + clamped * 0.2;
+    }
+
+    updateNoiseDerivedState(code, room);
   });
 
   // Student joins room
@@ -746,32 +1002,35 @@ io.on("connection", (socket) => {
     }
 
     room.submissions.push({
-  roomCode: code,
-  teamId: effectiveTeamId,
-  teamName,
-  playerId: socket.data.playerId || null,
-  taskIndex: idx,
-  answer,
-  correct,
-  points: pointsEarned,
-  aiScore,
-  timeMs: timeMs ?? null,
-  submittedAt,
-});
+      roomCode: code,
+      teamId: effectiveTeamId,
+      teamName,
+      playerId: socket.data.playerId || null,
+      taskIndex: idx,
+      answer,
+      correct,
+      points: pointsEarned,
+      aiScore,
+      timeMs: timeMs ?? null,
+      submittedAt,
+    });
 
-// 🚫 For full tasksets, advance each team to the next station.
-// ✅ For ad-hoc Quick Tasks, keep them at the same station
-//    so they are NOT prompted to rescan / recolour.
-const isQuickTaskset =
-  room.taskset && room.taskset.name === "Quick task";
+    // 🚫 For full tasksets, advance each team to the next station.
+    // ✅ For ad-hoc Quick Tasks, keep them at the same station
+    //    so they are NOT prompted to rescan / recolour.
+    const isQuickTaskset =
+      room.taskset && room.taskset.name === "Quick task";
 
-if (!isQuickTaskset) {
-  reassignStationForTeam(room, effectiveTeamId);
-}
+    if (!isQuickTaskset) {
+      reassignStationForTeam(room, effectiveTeamId);
+    }
 
-const state = buildRoomState(room);
-io.to(code).emit("room:state", state);
-io.to(code).emit("roomState", state);
+    // Maybe award a random treat for this submission
+    maybeAwardTreat(code, room, effectiveTeamId);
+
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
 
     // --------------------------------------------------------
     // Per-team progression: auto-advance THIS team only
@@ -816,7 +1075,7 @@ io.to(code).emit("roomState", state);
   });
 
   //Teacher skips task
-    socket.on("teacher:skipNextTask", ({ roomCode }) => {
+  socket.on("teacher:skipNextTask", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) return;
@@ -838,7 +1097,7 @@ io.to(code).emit("roomState", state);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
   });
-  
+
   // Teacher ends session + email reports
   socket.on(
     "teacher:endSessionAndEmail",
@@ -913,6 +1172,9 @@ io.to(code).emit("roomState", state);
     }
 
     delete room.teams[teamId];
+    if (room.pendingTreats && room.pendingTreats[teamId]) {
+      delete room.pendingTreats[teamId];
+    }
 
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
