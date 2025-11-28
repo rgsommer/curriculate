@@ -185,12 +185,12 @@ You MUST return valid JSON with this shape ONLY:
 
   // Strip markdown code blocks if present
   let cleanRaw = raw.trim();
-  if (cleanRaw.startsWith("```json
-  if (cleanRaw.startsWith("```")) cleanRaw = cleanRaw.slice(3);
-  if (cleanRaw.endsWith("```")) cleanRaw = cleanRaw.slice(0, -3);
-  cleanRaw = cleanRaw.trim();
+    cleanRaw = cleanRaw.replace(/^```json\s*/i, "");
+    cleanRaw = cleanRaw.replace(/^```\s*/g, "");
+    cleanRaw = cleanRaw.replace(/```$/g, "");
+    cleanRaw = cleanRaw.trim();
 
-  console.log("Cleaned response:", cleanRaw);
+    console.log("Cleaned response:", cleanRaw);
 
   let parsed;
   try {
