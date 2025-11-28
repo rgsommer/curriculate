@@ -150,7 +150,7 @@ You MUST return valid JSON with this shape ONLY:
   };
 
   const completion = await client.chat.completions.create({
-    model: process.env.AI_TASK_MODEL || "gpt-5.1",
+    model: process.env.AI_TASK_MODEL || "gpt-4o-mini",
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
