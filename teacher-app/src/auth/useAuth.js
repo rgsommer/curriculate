@@ -20,8 +20,8 @@ export function AuthProvider({ children }) {
     isAuthenticated: true,
     login: async () => ({ name: "Dev Presenter" }),
     logout: () => {},
-  };
-
+  }; 
+  
   return (
     <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
   );
