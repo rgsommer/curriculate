@@ -5,12 +5,13 @@ import jwt from "jsonwebtoken";
 export function authRequired(req, res, next) {
   const authHeader = req.headers.authorization;
 
-  // ← DEV BYPASS — allow dummy token
-  if (authHeader === "Bearer dev-token") {
-    req.user = { _id: "dev-user-123", email: "dev@curriculate.net" }; // fake user
+  // TEMP DEV ONLY — remove before production launch
+  if (authHeader === "Bearer dev-token" || authHeader === "Bearer dev-token123") {
+    req.user = { _id: "dev-user-123", email: "dev@curriculate.net" };
     return next();
   }
 
+  // Real production JWT check
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Missing auth token" });
   }
@@ -22,6 +23,7 @@ export function authRequired(req, res, next) {
     req.user = payload;
     next();
   } catch (err) {
+    console.warn("Invalid token attempt:", err.message);
     return res.status(401).json({ error: "Invalid token" });
   }
 }
