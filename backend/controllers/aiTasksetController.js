@@ -26,7 +26,7 @@ function validateGeneratePayload(body = {}) {
   }
 
   const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
-  if (body.learningGoal && !goalsAllowed.include(body.learningGoal)) {
+  if (body.learningGoal && !goalsAllowed.includes(body.learningGoal)) {
     errors.push("learningGoal must be one of " + goalsAllowed.join(", "));
   }
 
