@@ -1,5 +1,7 @@
 import React, { createContext, useContext } from "react";
 
+// Very simple "always logged in" auth stub for development.
+
 const AuthContext = createContext({
   user: { name: "Dev Presenter" },
   token: null,
@@ -20,7 +22,9 @@ export function AuthProvider({ children }) {
   }; 
   
   return (
-    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+<AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 
