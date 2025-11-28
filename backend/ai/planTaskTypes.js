@@ -105,6 +105,7 @@ JSON SHAPE:
     model: process.env.AI_TASK_MODEL || "gpt-5.1",
     response_format: { type: "json_object" },
     messages: [
+      { role: "system", content: "You are a JSON API. Respond only with valid JSON." },
       { role: "system", content: systemPrompt },
       { role: "user", content: JSON.stringify(userPrompt) },
     ],

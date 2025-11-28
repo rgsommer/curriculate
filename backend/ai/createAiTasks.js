@@ -81,6 +81,7 @@ export async function createAiTasks(subjectOrConfig, maybePlan, maybeContext) {
       model: preferredModel,
       response_format: { type: "json_object" },
       messages: [
+        { role: "system", content: "You are a JSON API. Respond only with valid JSON." }, 
         { role: "system", content: systemPrompt },
         { role: "user", content: JSON.stringify(userPrompt) },
       ],
