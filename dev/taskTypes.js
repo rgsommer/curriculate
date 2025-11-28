@@ -78,6 +78,11 @@ export const TASK_TYPE_META = {
     implemented: true,
     category: "input",
   },
+  [TASK_TYPES.JEOPARDY]: {
+    label: "Jeopardy",
+    implemented: true,
+    category: "input",
+  },
 
   // Planned
   [TASK_TYPES.DRAW]: {

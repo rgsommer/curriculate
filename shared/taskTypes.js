@@ -10,6 +10,7 @@ export const TASK_TYPES = {
   PHOTO: "photo",
   MAKE_AND_SNAP: "make-and-snap",     // build/draw something then snap a photo
   BODY_BREAK: "body-break",           // movement break
+  JEOPARDY: "jeopardy",
 };
 
 // Category labels (for grouping & UI)
@@ -79,11 +80,23 @@ export const TASK_TYPE_META = {
     maxTime: 240,
     maxTimeSeconds: 240,
   },
-  [TASK_TYPES.BODY_BREAK]: {
+    [TASK_TYPES.BODY_BREAK]: {
     label: "Body break",
     category: CATEGORY.MOVEMENT,
     hasOptions: false,
     expectsText: false,
+    maxTime: 60,
+    maxTimeSeconds: 60,
+  },
+
+  [TASK_TYPES.JEOPARDY]: {
+    label: "Jeopardy game",
+    category: CATEGORY.QUESTION,
+    // The Jeopardy board itself (categories, clues, values) is stored in
+    // task.jeopardyConfig; this metadata just tells the editor/runtime how
+    // to treat the *response* shape.
+    hasOptions: false,          // answers are free-text, not pre-defined options
+    expectsText: true,          // the team types an answer
     maxTime: 60,
     maxTimeSeconds: 60,
   },
@@ -146,6 +159,14 @@ export function normalizeTaskType(value) {
   }
   if (v === "body_break" || v === "body-break") {
     return TASK_TYPES.BODY_BREAK;
+  }
+  if (
+    v === "jeopardy" ||
+    v === "jeopardy_ai_ref" ||
+    v === "jeopardy-ai-ref" ||
+    v === "jp"
+  ) {
+    return TASK_TYPES.JEOPARDY;
   }
 
   // Fallback: if it matches a known key exactly

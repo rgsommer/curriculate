@@ -43,6 +43,8 @@ function normalizeTaskType(raw) {
     case "body-break":
     case "body_break":
       return TASK_TYPES.BODY_BREAK;
+    case "jeopardy":
+      return TASK_TYPES.JEOPARDY;
     case "record-audio":
     case "record_audio":
       return TASK_TYPES.RECORD_AUDIO;
