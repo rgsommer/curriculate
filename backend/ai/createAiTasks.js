@@ -129,7 +129,7 @@ For each concept you MUST generate an object shaped like:
   "recommendedPoints": number
 }
 
-You are a JSON API. You MUST return valid JSON with this shape ONLY:
+You MUST return valid JSON with this shape ONLY:
 
 {
   "tasks": [
@@ -185,7 +185,7 @@ You are a JSON API. You MUST return valid JSON with this shape ONLY:
 
   // Strip markdown code blocks if present
   let cleanRaw = raw.trim();
-  if (cleanRaw.startsWith("```json")) cleanRaw = cleanRaw.slice(7);
+  if (cleanRaw.startsWith("```json
   if (cleanRaw.startsWith("```")) cleanRaw = cleanRaw.slice(3);
   if (cleanRaw.endsWith("```")) cleanRaw = cleanRaw.slice(0, -3);
   cleanRaw = cleanRaw.trim();
