@@ -17,7 +17,7 @@ const PERSPECTIVE_OPTIONS = [
 const EMPTY_CATEGORY = { key: "", label: "", weight: 0 };
 
 export default function TeacherProfile() {
-  const [profile, setProfile] = useState({
+    const [profile, setProfile] = useState({
     presenterName: "",
     presenterTitle: "",
     email: "",
@@ -26,6 +26,12 @@ export default function TeacherProfile() {
     perspectives: [],
     assessmentCategories: [EMPTY_CATEGORY],
     includeIndividualReports: false,
+
+    // Jeopardy defaults
+    jeopardyDefaultContestantCount: 3,
+    jeopardyDefaultAnswerMode: "buzz-first", // or "all-try"
+    jeopardyAllowNegativeScores: true,
+    jeopardyAllowRebound: true,
   });
 
   const [loading, setLoading] = useState(true);
@@ -43,7 +49,7 @@ export default function TeacherProfile() {
 
         if (cancelled || !data) return;
 
-        const merged = {
+                const merged = {
           presenterName: data.presenterName || data.name || "",
           presenterTitle: data.presenterTitle || data.title || "",
           email: data.email || "",
@@ -61,6 +67,20 @@ export default function TeacherProfile() {
             typeof data.includeIndividualReports === "boolean"
               ? data.includeIndividualReports
               : !!data.includeStudentReports,
+
+          // Jeopardy defaults (with safe fallbacks)
+          jeopardyDefaultContestantCount:
+            Number(data.jeopardyDefaultContestantCount) || 3,
+          jeopardyDefaultAnswerMode:
+            data.jeopardyDefaultAnswerMode || "buzz-first",
+          jeopardyAllowNegativeScores:
+            typeof data.jeopardyAllowNegativeScores === "boolean"
+              ? data.jeopardyAllowNegativeScores
+              : true,
+          jeopardyAllowRebound:
+            typeof data.jeopardyAllowRebound === "boolean"
+              ? data.jeopardyAllowRebound
+              : true,
         };
 
         setProfile(merged);
