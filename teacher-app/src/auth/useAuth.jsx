@@ -4,7 +4,7 @@ import React, { createContext, useContext } from "react";
 
 const AuthContext = createContext({
   user: { name: "Dev Presenter" },
-  token: null,
+  token: "dev-token",  // ← Add dummy token here for dev API calls
   initializing: false,
   isAuthenticated: true,
   login: async () => ({ name: "Dev Presenter" }),
@@ -14,7 +14,7 @@ const AuthContext = createContext({
 export function AuthProvider({ children }) {
   const value = {
     user: { name: "Dev Presenter" },
-    token: null,
+    token: "dev-token",  // ← Same here
     initializing: false,
     isAuthenticated: true,
     login: async () => ({ name: "Dev Presenter" }),
