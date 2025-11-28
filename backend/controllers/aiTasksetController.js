@@ -88,18 +88,43 @@ export async function generateTaskset(req, res) {
 
     // ... (truncated, but assume the rest is as before) ...
 
-    const planResult = await planTaskTypes(
-      effectiveConfig.subject,
-      effectiveConfig.wordConceptList,
-      Object.keys(TASK_TYPES),  // ← FIX: Pass array of keys if TASK_TYPES is object
-      {
-        includePhysicalMovement: true,
-        includeCreative: true,
-        includeAnalytical: true,
-        includeInputTasks: true,
-      },
-      effectiveConfig.wordConceptList.length
-    );
+    // Extract key concepts from topicDescription using a quick prompt
+const conceptPrompt = `Extract 6–10 key historical concepts/people/events from this topic as a simple bullet list (one per line). Only return the list, no extra text:
+
+"${effectiveConfig.topicTitle || effectiveConfig.topicDescription || 'General History'}"
+
+Examples:
+- French and Indian War
+- George Washington
+- Albany Plan of Union
+- Proclamation of 1763`;
+
+const conceptResponse = await client.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: [{ role: "user", content: conceptPrompt }],
+});
+
+const conceptText = conceptResponse.choices[0].message.content.trim();
+const concepts = conceptText
+  .split("\n")
+  .map(l => l.replace(/^-?\s*/, "").trim())
+  .filter(Boolean)
+  .slice(0, 10);
+
+console.log("Extracted concepts:", concepts);
+
+const planResult = await planTaskTypes(
+  effectiveConfig.subject,
+  concepts.length > 0 ? concepts : ["general topic"], // fallback
+  Object.keys(TASK_TYPES),
+  {
+    includePhysicalMovement: true,
+    includeCreative: true,
+    includeAnalytical: true,
+    includeInputTasks: true,
+  },
+  8 // target ~8 tasks
+);
 
     const { plannedTasks, implementedTypes } = planResult;
 

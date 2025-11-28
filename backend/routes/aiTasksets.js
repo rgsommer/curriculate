@@ -76,52 +76,23 @@ router.post("/", async (req, res) => {
       targetCount
     );
 
-    // Sanitize plan and trim
-    const plan = (Array.isArray(rawPlan) ? rawPlan : [])
-      .filter(
-        (item) =>
-          item &&
-          typeof item.concept === "string" &&
-          IMPLEMENTED_TASK_TYPES.includes(item.taskType)
-      )
-      .slice(0, targetCount);
+    const plan = rawPlan || [];
 
-    if (plan.length === 0) {
-      return res
-        .status(500)
-        .json({ error: "AI did not return any usable plan entries." });
-    }
-
-    // 2) AI: create full tasks (prompt, options, time, points, etc.)
-    const aiTasksRaw = await createAiTasks(safeSubject, plan, {
+    // 2) AI: taskType plan -> full tasks
+    const tasks = await createAiTasks(safeSubject, plan, {
       gradeLevel,
       difficulty,
-      durationMinutes,
       learningGoal,
+      durationMinutes,
+      topicTitle: safeTitle,
     });
 
-    if (!Array.isArray(aiTasksRaw) || aiTasksRaw.length === 0) {
-      return res
-        .status(500)
-        .json({ error: "AI did not generate any task content." });
-    }
+    // 3) Normalize tasks to Curriculate format
+    const normalizedTasks = tasks.map((t, index) => {
+      const type = t.taskType || "short-answer";
 
-    // 3) Validate & map into TaskSet schema
-    let tasks = aiTasksRaw.map((t, index) => {
-      let type = t.taskType;
-      if (!IMPLEMENTED_TASK_TYPES.includes(type)) {
-        type = TASK_TYPES.SHORT_ANSWER;
-      }
-
-      const time = Math.min(
-        300,
-        Math.max(20, Number(t.recommendedTimeSeconds) || 60)
-      );
-
-      const points = Math.min(
-        20,
-        Math.max(1, Number(t.recommendedPoints) || 10)
-      );
+      const time = t.recommendedTimeSeconds || 300; // 5min default
+      const points = t.recommendedPoints || 1;
 
       const options = Array.isArray(t.options) ? t.options : [];
 
@@ -162,7 +133,7 @@ router.post("/", async (req, res) => {
 
     // 4) Optional polish with your existing cleaner
     if (typeof cleanTaskList === "function") {
-      tasks = await cleanTaskList(tasks, {
+      tasks = await cleanTaskList(normalizedTasks, {
         gradeLevel,
         subject: safeSubject,
         difficulty,
