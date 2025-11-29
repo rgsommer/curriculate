@@ -12,6 +12,7 @@ export const TASK_TYPES = {
   BODY_BREAK: "body-break",           // movement break
   JEOPARDY: "jeopardy",
   COLLABORATION: "collaboration",
+  MUSICAL_CHAIRS: "musical-chairs",
 };
 
 // Category labels (for grouping & UI)
@@ -104,6 +105,11 @@ export const TASK_TYPE_META = {
     label: "Collaboration (Pair & Respond)",
     implemented: true,
     category: "creative",
+  },
+  [TASK_TYPES.MUSICAL_CHAIRS]: {
+    label: "Musical Chairs (Race!)",
+    implemented: true,
+    category: "physical",
   },
 };
 

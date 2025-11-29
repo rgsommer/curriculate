@@ -23,6 +23,7 @@ const TASK_TYPES = [
   "matching",
   "timeline",
   "collaboration",
+  "musical-chairs",
 ];
 
 export default function AiTasksetGenerator() {

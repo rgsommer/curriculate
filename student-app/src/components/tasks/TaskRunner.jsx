@@ -14,6 +14,7 @@ import SortTask from "./types/SortTask";
 import TrueFalseTask from "./types/TrueFalseTask";
 import DrawMimeTask from "./types/DrawMimeTask";
 import CollaborationTask from "./types/CollaborationTask";
+import MusicalChairsTask from "./types/MusicalChairsTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -73,17 +74,6 @@ function normalizeTaskType(raw) {
     case "act":
     case "act-out":
       return TASK_TYPES.MIME;
-
-    case TASK_TYPES.COLLABORATION:
-      content = (
-        <CollaborationTask
-          {...commonProps}
-          partnerAnswer={task.partnerAnswer}
-          showPartnerReply={!!task.partnerAnswer}
-          onPartnerReply={(reply) => onSubmit({ reply })}
-        />
-      );
-      break;
 
     default:
       // Already canonical, or truly unknown
@@ -203,6 +193,28 @@ export default function TaskRunner({
     case TASK_TYPES.SHORT_ANSWER:
       content = <ShortAnswerTask {...commonProps} />;
       break;
+
+    case TASK_TYPES.COLLABORATION:
+      content = (
+        <CollaborationTask
+          {...commonProps}
+          partnerAnswer={task.partnerAnswer}
+          showPartnerReply={!!task.partnerAnswer}
+          onPartnerReply={(reply) => onSubmit({ reply })}
+        />
+      );
+      
+    case TASK_TYPES.MUSICAL_CHAIRS:
+      content = (
+        <MusicalChairsTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={disabled}
+          socket={socket}
+        />
+      );
+      break;
+
 
     default:
       // Unknown / typo / not in registry at all

@@ -1246,6 +1246,45 @@ io.on("connection", (socket) => {
     socket.emit("collaboration-bonus", { bonus: bonus.totalScore });
   });
 
+  socket.on("start-musical-chairs", ({ roomCode, task }) => {
+    const session = getSessionByRoomCode(roomCode);
+    let stationsLeft = session.teams.length;
+
+    const runRound = () => {
+      if (stationsLeft <= 1) {
+        io.to(roomCode).emit("musical-chairs-end", { winner: session.teams[0]?.name });
+        return;
+      }
+
+      const scanned = new Set();
+      const timeout = setTimeout(() => {
+        const notScanned = session.teams.filter(t => !scanned.has(t.id));
+        const winner = notScanned.length > 0 ? notScanned[0] : session.teams[0];
+        const loser = scanned.size > 0 ? session.teams.find(t => scanned.has(t.id)) : null;
+
+        // Award +5 to last to scan (winner)
+        if (winner) updateTeamScore(session, winner.id, 5);
+
+        io.to(roomCode).emit("musical-chairs-result", {
+          winnerTeam: winner?.name || "Unknown",
+          eliminatedTeam: loser?.name,
+          stationsLeft: --stationsLeft,
+        });
+
+        setTimeout(runRound, 4000);
+      }, 15000); // 15s to scan
+
+      socket.on("musical-chairs-scan", () => {
+        const team = session.teams.find(t => t.socketId === socket.id);
+        if (team && !scanned.has(team.id)) {
+          scanned.add(team.id);
+        }
+      });
+    };
+
+    runRound();
+  });
+
   socket.on("disconnect", () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;
