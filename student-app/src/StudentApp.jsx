@@ -355,7 +355,7 @@ export default function StudentApp() {
     "Enter your room code and team name to begin."
   );
 
-    const [locationCode, setLocationCode] = useState(DEFAULT_LOCATION);
+  const [locationCode, setLocationCode] = useState(DEFAULT_LOCATION);
 
   const [submitting, setSubmitting] = useState(false);
   const sndAlert = useRef(null);
@@ -409,6 +409,7 @@ export default function StudentApp() {
   }, []);
 
   // Socket events
+    // Socket events
   useEffect(() => {
     const handleConnect = () => {
       console.log("Student socket connected:", socket.id);
@@ -497,7 +498,7 @@ export default function StudentApp() {
       );
     };
 
-        const handleNoiseLevel = (payload) => {
+    const handleNoiseLevel = (payload) => {
       if (!payload) return;
       const { brightness, enabled, level, threshold } = payload;
 
@@ -535,16 +536,17 @@ export default function StudentApp() {
       try {
         if (sndTreat.current) {
           sndTreat.current.currentTime = 0;
-          sndTreat.current.play().catch((err) => {
-            console.warn("Unable to play treat sound:", err);
-          });
+          sndTreat.current
+            .play()
+            .catch((err) =>
+              console.warn("Unable to play treat sound:", err)
+            );
         }
       } catch (err) {
         console.warn("Treat sound error:", err);
       }
     };
 
-      useEffect(() => {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("room:state", handleRoomState);

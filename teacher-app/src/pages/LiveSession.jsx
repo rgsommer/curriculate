@@ -350,6 +350,12 @@ export default function LiveSession({ roomCode }) {
   // ----------------------------------------------------
   // Actions
   // ----------------------------------------------------
+  const handleSkipTask = () => {
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    socket.emit("teacher:skipNextTask", { roomCode: code });
+  };
+
   const handleLaunchQuickTask = () => {
     if (!roomCode || !prompt.trim()) return;
     setIsLaunchingQuick(true);
@@ -447,6 +453,10 @@ export default function LiveSession({ roomCode }) {
   // ----------------------------------------------------
   // Derived helpers + ordering rule
   // ----------------------------------------------------
+  // Is there an active task running for this room right now?
+  const taskFlowActive =
+    typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
+
   const stationsRaw = Array.isArray(roomState.stations)
     ? roomState.stations
     : Object.values(roomState.stations || {});
@@ -1019,41 +1029,95 @@ export default function LiveSession({ roomCode }) {
             />
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={handleLaunchQuickTask}
-              style={{
-                flex: 1,
-                padding: "6px 8px",
-                borderRadius: 6,
-                border: "none",
-                background: "#0ea5e9",
-                color: "#ffffff",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-                opacity: isLaunchingQuick ? 0.7 : 1,
-              }}
-              disabled={isLaunchingQuick}
-            >
-              {isLaunchingQuick ? "Launching…" : "Launch quick task"}
-            </button>
-            <button
-              type="button"
-              onClick={handleLaunchTaskset}
-              style={{
-                flex: 1,
-                padding: "6px 8px",
-                borderRadius: 6,
-                border: "none",
-                background: "#10b981",
-                color: "#ffffff",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-              }}
-            >
-              Launch from taskset
-            </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleLaunchQuickTask}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#0ea5e9",
+                  color: "#ffffff",
+                  fontSize: "0.85rem",
+                  cursor:
+                    isLaunchingQuick || taskFlowActive
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity: isLaunchingQuick || taskFlowActive ? 0.5 : 1,
+                }}
+                disabled={isLaunchingQuick || taskFlowActive}
+              >
+                {isLaunchingQuick ? "Launching…" : "Launch quick task"}
+              </button>
+              <button
+                type="button"
+                onClick={handleLaunchTaskset}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#10b981",
+                  color: "#ffffff",
+                  fontSize: "0.85rem",
+                  cursor: taskFlowActive ? "not-allowed" : "pointer",
+                  opacity:
+                    !activeTasksetMeta || taskFlowActive ? 0.5 : 1,
+                }}
+                disabled={!activeTasksetMeta || taskFlowActive}
+              >
+                Launch from taskset
+              </button>
+            </div>
+
+            {/* New row: skip + end session, only active once a taskset is running */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleSkipTask}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#6b7280",
+                  color: "#ffffff",
+                  fontSize: "0.8rem",
+                  cursor: taskFlowActive ? "pointer" : "not-allowed",
+                  opacity: taskFlowActive ? 1 : 0.4,
+                }}
+                disabled={!taskFlowActive}
+              >
+                Skip current task
+              </button>
+              <button
+                type="button"
+                onClick={handleEndSessionAndEmail}
+                style={{
+                  flex: 1,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#ef4444",
+                  color: "#ffffff",
+                  fontSize: "0.8rem",
+                  cursor:
+                    taskFlowActive && !isEndingSession
+                      ? "pointer"
+                      : "not-allowed",
+                  opacity:
+                    taskFlowActive && !isEndingSession ? 1 : 0.4,
+                }}
+                disabled={!taskFlowActive || isEndingSession}
+              >
+                {isEndingSession
+                  ? "Ending session…"
+                  : "End session & email reports"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
