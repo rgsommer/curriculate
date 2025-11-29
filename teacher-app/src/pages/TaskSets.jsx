@@ -284,8 +284,22 @@ export default function TaskSets() {
                 return (
                   <tr key={id} className="border-t hover:bg-gray-50 transition">
                     <td className="px-4 py-4">
-                      <div className="font-medium text-gray-900">
-                        {s.name || s.title || "Untitled Task Set"}
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {s.name || s.title || "Untitled Task Set"}
+                        </div>
+                        {s.requiredTaskTypes && s.requiredTaskTypes.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {s.requiredTaskTypes.map((type) => (
+                              <span
+                                key={type}
+                                className="inline-block px-2 py-0.5 text-xs font-medium text-indigo-700 bg-indigo-100 rounded-full"
+                              >
+                                {type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {s.description && <div className="text-sm text-gray-500 mt-1">{s.description}</div>}
                       {isActive && (

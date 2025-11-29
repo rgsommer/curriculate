@@ -193,8 +193,8 @@ export default function AiTasksetGenerator() {
         // Time-based control instead of user-facing "number of tasks"
         totalDurationMinutes,
         numberOfTasks: estimatedTaskCount,
-        requiredTaskTypes,   // tells AI to only use these task types
-
+        requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,  // ← saved permanently
+        
         // Session / Room context
         tasksetName: form.name || undefined,
         roomLocation: form.roomLocation || "Classroom",
@@ -802,12 +802,40 @@ export default function AiTasksetGenerator() {
           <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: "#059669" }}>
             Can be found in Task Sets
           </p>
-          <button
-            onClick={() => navigate('/tasksets')}
-            className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-          >
-            View in Task Sets →
-          </button>
+                  <div className="mt-4 p-4 border rounded bg-green-50">
+          <h2 className="text-lg font-bold">Task Set Created!</h2>
+          <p>
+            "{result.taskset.name}" with <strong>{result.taskset.tasks.length}</strong> task{result.taskset.tasks.length !== 1 ? "s" : ""} for {result.taskset.durationMinutes} minutes
+            {limitTasks && selectedTaskTypes.length > 0 && (
+              <> — using only: <strong>{selectedTaskTypes.map(t => t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())).join(", ")}</strong></>
+            )}
+            .
+          </p>
+          <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: "#059669" }}>
+            Can be found in Task Sets
+          </p>
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={() => navigate('/tasksets')}
+              className="px-5 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition font-medium"
+            >
+              View in Task Sets →
+            </button>
+            <button
+              onClick={() => {
+                setResult(null);
+                setGenerating(false);
+                setError("");
+                // Scroll to top so they see the form again
+                window.scrollTo(0, 0);
+              }}
+              className="px-5 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-medium"
+            >
+              Regenerate with Same Settings
+            </button>
+          </div>
+        </div>
+        
         </div>
       )}
 
