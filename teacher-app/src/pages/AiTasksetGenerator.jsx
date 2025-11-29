@@ -24,6 +24,7 @@ const TASK_TYPES = [
   "timeline",
   "collaboration",
   "musical-chairs",
+  "mystery-clues",
 ];
 
 export default function AiTasksetGenerator() {

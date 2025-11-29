@@ -480,6 +480,11 @@ function ensureNoiseControl(room) {
   }
 }
 
+// Simple deep equal for arrays (for mystery card task)
+function Arrays.deepEqual(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function updateNoiseDerivedState(code, room) {
   ensureNoiseControl(room);
   const control = room.noiseControl;
@@ -1283,6 +1288,53 @@ io.on("connection", (socket) => {
     };
 
     runRound();
+  });
+
+  // ————————————————————————————————
+  // Mystery Clue Cards — Memory Bonus
+  // ————————————————————————————————
+
+  // Store per-team clues during session
+  const teamClues = new Map(); // teamId → [clue1, clue2, ...]
+
+  // When a mystery-clues task starts (non-final)
+  socket.on("mystery-clues-start", ({ roomCode, taskId, teamId }) => {
+    if (taskId && !taskId.includes("final")) {
+      const clues = ["Apple", "Cat", "Rocket", "Pizza", "Ghost", "Lightning"]
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 2 + Math.floor(Math.random() * 2)); // 2–3 clues
+
+      teamClues.set(teamId, clues);
+
+      socket.emit("mystery-clues-reveal", {
+        taskId,
+        clues,
+        duration: 8000
+      });
+    }
+  });
+
+  // Final memory challenge at end of taskset
+  socket.on("start-final-mystery-challenge", ({ roomCode }) => {
+    // Send to all teams
+    io.to(roomCode).emit("mystery-clues-final", {
+      type: "mystery-clues",
+      isFinal: true,
+      clueCount: teamClues.get(socket.teamId)?.length || 3
+    });
+  });
+
+  // Student submits their guess
+  socket.on("mystery-clues-submit", ({ roomCode, selected }) => {
+    const correctClues = teamClues.get(socket.teamId) || [];
+    const isPerfect = Arrays.deepEqual(selected.sort(), correctClues.sort());
+
+    if (isPerfect) {
+      updateTeamScore(socket.teamId, 10);
+      socket.emit("bonus-awarded", { points: 10, reason: "Perfect Memory!" });
+    }
+
+    socket.emit("mystery-clues-result", { correct: isPerfect });
   });
 
   socket.on("disconnect", () => {

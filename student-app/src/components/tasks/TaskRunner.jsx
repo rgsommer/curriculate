@@ -15,6 +15,7 @@ import TrueFalseTask from "./types/TrueFalseTask";
 import DrawMimeTask from "./types/DrawMimeTask";
 import CollaborationTask from "./types/CollaborationTask";
 import MusicalChairsTask from "./types/MusicalChairsTask";
+import MysteryCluesTask from "./types/MysteryCluesTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -203,6 +204,8 @@ export default function TaskRunner({
           onPartnerReply={(reply) => onSubmit({ reply })}
         />
       );
+      break;
+
       
     case TASK_TYPES.MUSICAL_CHAIRS:
       content = (
@@ -215,6 +218,9 @@ export default function TaskRunner({
       );
       break;
 
+    case TASK_TYPES.MYSTERY_CLUES:
+      content = <MysteryCluesTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      break;
 
     default:
       // Unknown / typo / not in registry at all

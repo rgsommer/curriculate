@@ -13,6 +13,7 @@ export const TASK_TYPES = {
   JEOPARDY: "jeopardy",
   COLLABORATION: "collaboration",
   MUSICAL_CHAIRS: "musical-chairs",
+  MYSTERY_CLUES: "mystery-clues",
 };
 
 // Category labels (for grouping & UI)
@@ -110,6 +111,11 @@ export const TASK_TYPE_META = {
     label: "Musical Chairs (Race!)",
     implemented: true,
     category: "physical",
+  },
+  [TASK_TYPES.MYSTERY_CLUES]: {
+    label: "Mystery Clue Cards (Memory Bonus)",
+    implemented: true,
+    category: "creative",
   },
 };
 
