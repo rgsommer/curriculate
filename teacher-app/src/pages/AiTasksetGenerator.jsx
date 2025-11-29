@@ -779,16 +779,28 @@ export default function AiTasksetGenerator() {
       )}
 
       {result && (
-  <div className="mt-4 p-4 border rounded bg-green-50">
-    <h2 className="text-lg font-bold">Task Set Created!</h2>
-    <p>
-      "{result.taskset.name}" with {result.taskset.tasks.length} tasks for {result.taskset.durationMinutes} minutes can be found in Task Sets.
-    </p>
-    <button onClick={() => navigate('/tasksets')} className="mt-2 px-3 py-1 bg-blue-500 text-white rounded">
-      View in Task Sets
-    </button>
-  </div>
-)}
+        <div className="mt-4 p-4 border rounded bg-green-50">
+          <h2 className="text-lg font-bold">Task Set Created!</h2>
+          <p>
+            "{result.taskset.name}" with <strong>{result.taskset.tasks.length}</strong> task{result.taskset.tasks.length !== 1 ? "s" : ""} for {result.taskset.durationMinutes} minutes
+            {limitTasks && selectedTaskTypes.length > 0 && (
+              <>
+                {" "}— using only: <strong>{selectedTaskTypes.map(t => t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())).join(", ")}</strong>
+              </>
+            )}
+            .
+          </p>
+          <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: "#059669" }}>
+            Can be found in Task Sets
+          </p>
+          <button
+            onClick={() => navigate('/tasksets')}
+            className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+          >
+            View in Task Sets →
+          </button>
+        </div>
+      )}
 
       {result && (
         <div
