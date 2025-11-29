@@ -696,7 +696,15 @@ export default function AiTasksetGenerator() {
               <p style={{ fontSize: "0.8rem", margin: "0 0 10px 0", color: "#4b5563" }}>
                 Select <strong>one or more</strong> task types the AI must use. Only these types will appear in the task set.
               </p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+              <div 
+              style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", 
+                gap: 10,
+                minHeight: 0,           // ← critical: allows grid to shrink/grow properly inside flex/scroll
+                paddingBottom: 8        // ← small buffer so last item isn't cut off
+              }}
+            >
                 {TASK_TYPES.map((type) => {
                   const isChecked = selectedTaskTypes.includes(type);
 
