@@ -18,14 +18,14 @@ const DisplaySchema = new Schema(
 // Individual Task schema
 const TaskSchema = new Schema(
   {
-    taskId: String,                      // your existing field
-    title: String,                       // short label for the task
-    prompt: { type: String, required: true },
-      taskType: {
-        type: String,
-        required: true,
-        enum: {
-          values: [
+    taskId: String,
+    title: String,
+    prompt: { type: String, required: true },  // ← fixed: closed properly
+    taskType: {
+      type: String,
+      required: true,
+      enum: {
+        values: [
             // === Core Academic (9) ===
             "multiple_choice",
             "true-false",
@@ -65,14 +65,16 @@ const TaskSchema = new Schema(
 
             // === Advanced / Special (3) ===
             "mind-mapper",
-            "hidenseek",
             "scan-and-confirm", // meta task
-          ],
-          message: "Invalid taskType: {VALUE}",
-        },
+            "hidenseek"
+        ],
+        message: "Invalid taskType: {VALUE}",
       },
-        { _id: false }
-    };
+    },
+    // ... rest of fields
+  },
+  { _id: false }
+);
 
     options: [String],                  // for MCQ / SORT etc.
     correctAnswer: Schema.Types.Mixed,  // was "answer" → now "correctAnswer"
