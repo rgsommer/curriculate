@@ -1,0 +1,24 @@
+/*student-app/index.css
+/* ==========================================================================
+   Curriculate Student App – Global Styles
+   ========================================================================== */
+
+/* Grade 4 and under: Clean printing font (like handwriting worksheets) */
+.font-printing {
+  font-family: 'Comic Neue', 'Comic Sans MS', cursive;
+  font-weight: bold;
+  font-size: 2.4em;
+  line-height: 1.5;
+  letter-spacing: 0.5px;
+}
+
+/* Grade 5 and up: Real handwriting feel */
+.font-handwriting {
+  font-family: 'Permanent Marker', cursive;
+  font-size: 2.3em;
+  line-height: 1.5;
+  letter-spacing: 0.8px;
+}
+
+/* Load Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Permanent+Marker&display=swap');

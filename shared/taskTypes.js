@@ -19,6 +19,7 @@ export const TASK_TYPES = {
   LIVE_DEBATE: "live-debate",
   FLASHCARDS: "flashcards",  
   TIMELINE: "timeline",
+  BRAIN_SPARK_NOTES: "brain-spark-notes",
 };
 
 // Category labels (for grouping & UI)
@@ -146,6 +147,11 @@ export const TASK_TYPE_META = {
     label: "Timeline – Drag to Order",
     implemented: true,
     category: "ordering",
+  },
+    [TASK_TYPES.BRAIN_SPARK_NOTES]: {
+    label: "Brain Spark Notes (Write in Notebook!)",
+    implemented: true,
+    category: "introduction",
   },
 };
 
