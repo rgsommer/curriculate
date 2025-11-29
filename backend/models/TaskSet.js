@@ -21,10 +21,11 @@ const TaskSchema = new Schema(
     taskId: String,                      // your existing field
     title: String,                       // short label for the task
     prompt: { type: String, required: true },
-        taskType: {
-          type: String,
-          required: true,
-          enum: [
+      taskType: {
+        type: String,
+        required: true,
+        enum: {
+          values: [
             // === Core Academic (9) ===
             "multiple_choice",
             "true-false",
@@ -66,12 +67,10 @@ const TaskSchema = new Schema(
             "mind-mapper",
             "hidenseek",
             "scan-and-confirm", // meta task
-
-            // Future-proof placeholder (optional)
-            // "custom-task"
           ],
           message: "Invalid taskType: {VALUE}",
         },
+    },
     options: [String],                  // for MCQ / SORT etc.
     correctAnswer: Schema.Types.Mixed,  // was "answer" → now "correctAnswer"
     mediaUrl: String,
