@@ -180,6 +180,29 @@ const planResult = await planTaskTypes(
         });
       }
 
+      if (selectedTypes.includes("pet-feeding")) {
+        const animals = ["dog", "cat", "dragon"];
+        const petType = animals[Math.floor(Math.random() * animals.length)];
+
+        const treatOptions = ["Bone", "Fish", "Pizza", "Cookie", "Chicken", "Ice Cream"];
+        const shuffled = treatOptions.sort(() => Math.random() - 0.5);
+        const correctCount = 2 + Math.floor(Math.random() * 2); // 2–3 correct
+
+        const treats = shuffled.slice(0, 5).map((name, i) => ({
+          name,
+          correct: i < correctCount,
+        }));
+
+        tasks.push({
+          type: "pet-feeding",
+          prompt: "Feed your hungry pet!",
+          petType,
+          treats,
+          points: 10,
+          ignoreNoise: true,
+        });
+      }
+
     // -------------------------
     // Stage 3: Clean & normalize
     // -------------------------

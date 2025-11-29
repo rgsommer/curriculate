@@ -20,6 +20,7 @@ export const TASK_TYPES = {
   FLASHCARDS: "flashcards",  
   TIMELINE: "timeline",
   BRAIN_SPARK_NOTES: "brain-spark-notes",
+  PET_FEEDING: "pet-feeding",
 };
 
 // Category labels (for grouping & UI)
@@ -152,6 +153,11 @@ export const TASK_TYPE_META = {
     label: "Brain Spark Notes (Write in Notebook!)",
     implemented: true,
     category: "introduction",
+  },
+    [TASK_TYPES.PET_FEEDING]: {
+    label: "Feed the Pet! (Fun Break)",
+    implemented: true,
+    category: "movement",
   },
 };
 

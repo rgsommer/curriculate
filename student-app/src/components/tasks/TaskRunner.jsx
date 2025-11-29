@@ -21,6 +21,7 @@ import MadDashSequenceTask from "./types/MadDashSequenceTask";
 import LiveDebateTask from "./types/LiveDebateTask";
 import FlashcardsTask from "./types/FlashcardsTask";
 import TimelineTask from "./types/TimelineTask";
+import PetFeedingTask from "./types/PetFeedingTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -267,6 +268,10 @@ export default function TaskRunner({
 
     case TASK_TYPES.TIMELINE:
       content = <TimelineTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      break;
+
+    case TASK_TYPES.PET_FEEDING:
+      content = <PetFeedingTask task={task} onSubmit={onSubmit} disabled={disabled} />;
       break;
 
     default:
