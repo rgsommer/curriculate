@@ -18,6 +18,7 @@ export const TASK_TYPES = {
   MAD_DASH: "mad-dash",
   LIVE_DEBATE: "live-debate",
   FLASHCARDS: "flashcards",  
+  TIMELINE: "timeline",
 };
 
 // Category labels (for grouping & UI)
@@ -140,6 +141,11 @@ export const TASK_TYPE_META = {
     label: "Flashcards – Shout to Answer!",
     implemented: true,
     category: "review",
+  },
+    [TASK_TYPES.TIMELINE]: {
+    label: "Timeline – Drag to Order",
+    implemented: true,
+    category: "ordering",
   },
 };
 

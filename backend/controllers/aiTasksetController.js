@@ -147,6 +147,39 @@ const planResult = await planTaskTypes(
       curriculumLenses: effectiveConfig.curriculumLenses,
     });
 
+    if (selectedTypes.includes("timeline")) {
+    const timelinePrompt = `
+      Generate a timeline of 6 historical events (or steps in a process) about ${topicDescription || subject}.
+      Return ONLY JSON:
+      {
+        "instructions": "Put these events in chronological order",
+        "items": [
+          { "id": 1, "text": "World War I begins" },
+          { "id": 2, "text": "Treaty of Versailles signed" },
+          ...
+        ],
+        "correctOrder": [3, 1, 5, 2, 6, 4]
+      }
+      `;
+
+        const response = await client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: timelinePrompt }],
+        });
+
+        const data = JSON.parse(response.choices[0].message.content);
+
+        // Shuffle for students
+        const shuffled = [...data.items].sort(() => Math.random() - 0.5);
+
+        tasks.push({
+          type: "timeline",
+          instructions: data.instructions,
+          shuffledItems: shuffled,
+          correctOrder: data.items.map(i => i.id),
+        });
+      }
+
     // -------------------------
     // Stage 3: Clean & normalize
     // -------------------------
