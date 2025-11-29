@@ -11,6 +11,7 @@ export const TASK_TYPES = {
   MAKE_AND_SNAP: "make-and-snap",     // build/draw something then snap a photo
   BODY_BREAK: "body-break",           // movement break
   JEOPARDY: "jeopardy",
+  COLLABORATION: "collaboration",
 };
 
 // Category labels (for grouping & UI)
@@ -88,7 +89,6 @@ export const TASK_TYPE_META = {
     maxTime: 60,
     maxTimeSeconds: 60,
   },
-
   [TASK_TYPES.JEOPARDY]: {
     label: "Jeopardy game",
     category: CATEGORY.QUESTION,
@@ -99,6 +99,11 @@ export const TASK_TYPE_META = {
     expectsText: true,          // the team types an answer
     maxTime: 60,
     maxTimeSeconds: 60,
+  },
+    [TASK_TYPES.COLLABORATION]: {
+    label: "Collaboration (Pair & Respond)",
+    implemented: true,
+    category: "creative",
   },
 };
 

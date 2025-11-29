@@ -1177,6 +1177,75 @@ io.on("connection", (socket) => {
     }
   );
 
+  // ──────────────────────────────────────────────────────────────
+  // Collaboration task: Random pairing + bonus for quality replies
+  // ──────────────────────────────────────────────────────────────
+
+  // When teacher launches a collaboration task (from frontend)
+  socket.on("start-collaboration-task", ({ roomCode, taskId }) => {
+    // Get active teams (adjust to your Session/Team model)
+    const session = getSessionByRoomCode(roomCode); // Implement: fetch from DB
+    const teams = session.teams || []; // Assume teams array with id, socketId, name
+
+    if (teams.length < 2) {
+      socket.emit("error", { message: "Need at least 2 teams for collaboration" });
+      return;
+    }
+
+    // Random pairing (shuffle and group into pairs)
+    const shuffled = [...teams].sort(() => Math.random() - 0.5);
+    const pairs = [];
+    for (let i = 0; i < shuffled.length; i += 2) {
+      pairs.push([shuffled[i], shuffled[i + 1] || shuffled[0]]); // Odd team pairs back to first
+    }
+
+    // Notify each team of their partner
+    for (const [teamA, teamB] of pairs) {
+      io.to(teamA.socketId).emit("collaboration-paired", {
+        partnerTeam: teamB.name,
+        taskId,
+      });
+      io.to(teamB.socketId).emit("collaboration-paired", {
+        partnerTeam: teamA.name,
+        taskId,
+      });
+    }
+  });
+
+  // When a team submits their main answer → send to partner
+  socket.on("collaboration-main-submit", ({ roomCode, taskId, mainAnswer }) => {
+    const session = getSessionByRoomCode(roomCode);
+    const team = session.teams.find(t => t.socketId === socket.id);
+    const partner = findPartnerForTeam(session, team.id); // Implement: get paired team
+
+    io.to(partner.socketId).emit("collaboration-partner-answer", {
+      partnerName: team.name,
+      partnerAnswer: mainAnswer,
+    });
+
+    // Save main answer (adjust to your model)
+    saveTeamSubmission(session, team.id, taskId, { main: mainAnswer });
+  });
+
+  // When a team submits their reply → AI score bonus + update score
+  socket.on("collaboration-reply", async ({ roomCode, taskId, reply }) => {
+    const session = getSessionByRoomCode(roomCode);
+    const team = session.teams.find(t => t.socketId === socket.id);
+
+    // AI score the reply (using your aiScoring.js)
+    const bonus = await generateAIScore({
+      task: { prompt: "Score this peer reply 0-5: thoughtful, specific, kind, and helpful." },
+      rubric: { maxPoints: 5, criteria: [{ id: "quality", maxPoints: 5 }] },
+      submission: { answerText: reply },
+    });
+
+    // Update score + save reply
+    updateTeamScore(session, team.id, bonus.totalScore);
+    saveTeamSubmission(session, team.id, taskId, { reply });
+
+    socket.emit("collaboration-bonus", { bonus: bonus.totalScore });
+  });
+
   socket.on("disconnect", () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;

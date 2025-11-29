@@ -22,6 +22,7 @@ const TASK_TYPES = [
   "sorting",
   "matching",
   "timeline",
+  "collaboration",
 ];
 
 export default function AiTasksetGenerator() {
