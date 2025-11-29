@@ -687,7 +687,7 @@ export default function AiTasksetGenerator() {
             />
             Limit task set to only include specific task types
           </label>
-            {limitTasks && (
+                      {limitTasks && (
             <div
               className="mt-6"
               style={{
@@ -704,7 +704,9 @@ export default function AiTasksetGenerator() {
                 Select at least one task type:
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <div 
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+              >
                 {TASK_TYPES.map((type) => {
                   const isChecked = selectedTaskTypes.includes(type);
                   return (
@@ -768,21 +770,27 @@ export default function AiTasksetGenerator() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={generating}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 999,
-            border: "none",
-            backgroundColor: generating ? "#9ca3af" : "#2563eb",
-            color: "#ffffff",
-            fontSize: "0.9rem",
-            cursor: generating ? "default" : "pointer",
-          }}
-        >
-          {generating ? "Generating task set…" : "Generate task set"}
-        </button>
+                <button
+                  type="submit"
+                  disabled={generating || (limitTasks && selectedTaskTypes.length === 0)}
+                  style={{
+                    padding: "12px 24px",
+                    borderRadius: 999,
+                    border: "none",
+                    backgroundColor: 
+                      generating || (limitTasks && selectedTaskTypes.length === 0)
+                        ? "#9ca3af"
+                        : "#2563eb",
+                    color: "#ffffff",
+                    fontSize: "1.1rem",
+                    fontWeight: "bold",
+                    cursor: generating || (limitTasks && selectedTaskTypes.length === 0) ? "not-allowed" : "pointer",
+                    opacity: generating || (limitTasks && selectedTaskTypes.length === 0) ? 0.6 : 1,
+                    transition: "all 0.3s ease",
+                  }}
+                >
+                  {generating ? "Generating task set…" : "Generate task set"}
+                </button>
       </form>
 
       {error && (
