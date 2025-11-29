@@ -71,6 +71,34 @@ export default function LiveSession({ roomCode }) {
   // End-session / email reports UI
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
+  const endSession = async () => {
+  if (!roomCode || ending) return;
+  setEnding(true);
+
+  try {
+    // 1. Tell backend to finalize everything
+    const response = await fetch(`/api/sessions/${roomCode}/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+    });
+
+    const result = await response.json();
+
+    // 2. Show final leaderboard
+    setFinalLeaderboard(result.leaderboard);
+    setSessionEnded(true);
+
+    // 3. Play victory music
+    new Audio("/sounds/final-victory.mp3").play();
+  } catch (err) {
+    console.error("Failed to end session", err);
+    alert("Session ended locally — analytics will still save on refresh");
+    setSessionEnded(true);
+  } finally {
+    setEnding(false);
+  }
+};
 
   // Join & treat sounds
   const joinSoundRef = useRef(null);
@@ -120,6 +148,29 @@ export default function LiveSession({ roomCode }) {
     setStatus("Connected.");
   }, [roomCode]);
 
+  //Quick-launch
+  const quickLaunch = async (task) => {
+  if (!roomCode || launchingTask) return;
+
+  setLaunchingTask(task._id);
+
+  try {
+    // Use the EXACT event name your backend expects
+    socket.emit("start-task", {
+      roomCode,
+      taskId: task._id || task.taskId,
+      taskType: task.taskType,
+      taskData: task, // full task object — backend uses this
+    });
+
+    // Optional: show feedback
+    setTimeout(() => setLaunchingTask(null), 3000);
+  } catch (err) {
+    console.error("Quick launch failed", err);
+    setLaunchingTask(null);
+  }
+};
+  
   // On first mount, check if TaskSets asked us to auto-launch
   useEffect(() => {
     const flag = localStorage.getItem("curriculateLaunchImmediately");
@@ -1051,6 +1102,17 @@ export default function LiveSession({ roomCode }) {
                 disabled={isLaunchingQuick || taskFlowActive}
               >
                 {isLaunchingQuick ? "Launching…" : "Launch quick task"}
+              </button>
+              <button
+                onClick={() => quickLaunch(task)}
+                disabled={launchingTask === task._id}
+                className={`px-6 py-3 rounded-lg font-bold transition ${
+                  launchingTask === task._id
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-green-600 hover:bg-green-700 text-white"
+                }`}
+              >
+                {launchingTask === task._id ? "Launching..." : "Quick Launch"}
               </button>
               <button
                 type="button"

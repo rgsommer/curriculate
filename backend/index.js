@@ -1116,6 +1116,33 @@ io.on("connection", (socket) => {
     handleStudentSubmit(payload);
   });
 
+  socket.on("start-speed-draw", ({ roomCode, task }) => {
+    io.to(roomCode).emit("speed-draw-question", task);
+  });
+
+socket.on("speed-draw-answer", ({ roomCode, index, correct }) => {
+  if (correct && !raceWinner[roomCode]) {
+    raceWinner[roomCode] = socket.teamName;
+    io.to(roomCode).emit("speed-draw-winner", { winner: socket.teamName });
+    updateTeamScore(roomCode, socket.teamName, 25);
+  }
+});
+
+//Quick launch socket
+socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
+  const session = getSessionByRoomCode(roomCode);
+  if (!session) return;
+
+  // Broadcast to all students in room
+  io.to(roomCode).emit("new-task", {
+    taskId,
+    taskType,
+    ...taskData,
+  });
+
+  console.log(`Task launched in ${roomCode}:`, taskType)  ;
+  });
+
   //Teacher skips task
   socket.on("teacher:skipNextTask", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
@@ -1645,6 +1672,41 @@ app.delete("/api/tasksets/:id", async (req, res) => {
 });
 
 app.post("/api/ai/tasksets", authRequired, generateAiTaskset);
+
+// END SESSION — FINAL ANALYTICS SAVE
+app.post("/api/sessions/:roomCode/end", authRequired, async (req, res) => {
+  try {
+    const { roomCode } = req.params;
+    const session = await LiveSession.findOne({ roomCode: roomCode });
+
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    // FINALIZE ALL TEAMS
+    const leaderboard = session.teams.map(team => ({
+      teamName: team.name,
+      score: team.score || 0,
+      tasksCompleted: team.tasksCompleted || 0,
+      avgResponseTime: team.totalResponseTime / (team.tasksCompleted || 1),
+      perfectTasks: team.perfectTasks || 0,
+    }));
+
+    // UPDATE SESSION RECORD
+    session.endedAt = new Date();
+    session.leaderboard = leaderboard;
+    session.totalTasks = session.tasks.length;
+    session.completedTasks = session.teams.reduce((sum, t) => sum + (t.tasksCompleted || 0), 0);
+
+    await session.save();
+
+    // BROADCAST FINAL RESULT
+    io.to(roomCode).emit("session-ended", { leaderboard });
+
+    res.json({ success: true, leaderboard });
+  } catch (err) {
+    console.error("End session error:", err);
+    res.status(500).json({ error: "Failed to save analytics" });
+  }
+});
 
 // Analytics API (protected)
 app.get("/analytics/sessions", authRequired, listSessions);

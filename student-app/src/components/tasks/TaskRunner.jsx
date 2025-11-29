@@ -25,6 +25,7 @@ import PetFeedingTask from "./types/PetFeedingTask";
 import MotionMissionTask from "./types/MotionMissionTask";
 import BrainstormBattleTask from "./types/BrainstormBattleTask";
 import MindMapperTask from "./types/MindMapperTask";
+import SpeedDrawTask from "./types/SpeedDrawTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -159,52 +160,75 @@ export default function TaskRunner({
 
   switch (type) {
     case TASK_TYPES.MULTIPLE_CHOICE:
-      content = <MultipleChoiceTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <MultipleChoiceTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.TRUE_FALSE:
-      content = <TrueFalseTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <TrueFalseTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.SORT:
-      content = <SortTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <SortTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.SEQUENCE:
-      content = <SequenceTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <SequenceTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.PHOTO:
-      content = <PhotoTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <PhotoTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.MAKE_AND_SNAP:
-      content = <MakeAndSnapTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <MakeAndSnapTask {...commonProps} />;
+      </div>
       break;
 
     // DRAW and MIME both use the unified DrawMimeTask UI
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
-      content = <DrawMimeTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <DrawMimeTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.BODY_BREAK:
-      content = <BodyBreakTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <BodyBreakTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.OPEN_TEXT:
-      content = <OpenTextTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <OpenTextTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.RECORD_AUDIO:
-      content = <RecordAudioTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <RecordAudioTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.SHORT_ANSWER:
-      content = <ShortAnswerTask {...commonProps} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <ShortAnswerTask {...commonProps} />;
+      </div>
       break;
 
     case TASK_TYPES.COLLABORATION:
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <CollaborationTask
           {...commonProps}
@@ -212,10 +236,12 @@ export default function TaskRunner({
           showPartnerReply={!!task.partnerAnswer}
           onPartnerReply={(reply) => onSubmit({ reply })}
         />
-      );
+        );
+        </div>
       break;
       
     case TASK_TYPES.MUSICAL_CHAIRS:
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <MusicalChairsTask
           task={task}
@@ -224,13 +250,17 @@ export default function TaskRunner({
           socket={socket}
         />
       );
+      </div>
       break;
 
     case TASK_TYPES.MYSTERY_CLUES:
-      content = <MysteryCluesTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <MysteryCluesTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      </div>
       break;
 
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <TrueFalseTicTacToeTask
           task={task}
@@ -240,9 +270,11 @@ export default function TaskRunner({
           teamRole={task.teamRole}
         />
       );
+      </div>
       break;
 
     case TASK_TYPES.MAD_DASH_SEQUENCE:
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <MadDashSequenceTask
           task={task}
@@ -250,10 +282,12 @@ export default function TaskRunner({
           disabled={disabled}
           socket={socket}
         />
-      );
+        );
+      </div>
       break;
 
     case TASK_TYPES.LIVE_DEBATE:
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <LiveDebateTask
           task={task}
@@ -262,31 +296,50 @@ export default function TaskRunner({
           socket={socket}
           teamMembers={task.teamMembers || ["Alice", "Bob", "Charlie", "Dana"]}
         />
-      );
+        );
+      </div>
       break;
 
     case TASK_TYPES.FLASHCARDS:
-      content = <FlashcardsTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <FlashcardsTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      </div>
       break;
 
     case TASK_TYPES.TIMELINE:
-      content = <TimelineTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <TimelineTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      </div>
       break;
 
     case TASK_TYPES.PET_FEEDING:
-      content = <PetFeedingTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <PetFeedingTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      </div>
       break;
 
     case TASK_TYPES.MOTION_MISSION:
-      content = <MotionMissionTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <MotionMissionTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      </div>
       break;
 
     case TASK_TYPES.BRAINSTORM_BATTLE:
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = <BrainstormBattleTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      </div>
       break;
 
     case TASK_TYPES.MIND_MAPPER:
-      content = <MindMapperTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <MindMapperTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      </div>
+      break;
+ 
+    case TASK_TYPES.SPEED_DRAW:
+      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+        content = <SpeedDrawTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      </div>
       break;
 
     default:

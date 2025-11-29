@@ -49,6 +49,10 @@ export default function SessionAnalyticsPage() {
         </div>
       </div>
 
+<p>Tasks Completed: {session.totalTasks} → {session.completedTasks} ({Math.round((session.completedTasks / session.totalTasks) * 100)}%)</p>
+<p>Fastest Average Response: {Math.min(...session.teams.map(t => t.avgResponseTime || 999)).toFixed(1)}s</p>
+<p>Perfect Task Rate: {(session.teams.reduce((s,t) => s + t.perfectTasks, 0) / session.completedTasks * 100).toFixed(1)}%</p>
+
       {/* Task breakdown */}
       <section>
         <h2 className="text-xl font-semibold mb-2">Task Breakdown</h2>

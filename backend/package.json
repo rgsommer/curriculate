@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Curriculate cloud backend (Express + MongoDB + Socket.io)",
-  "type": "module",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
@@ -24,10 +23,11 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.6.0",
-    "openai": "^4.54.1",
-    "pdfkit": "^0.15.0",
-    "papaparse": "^5.5.3",
     "nodemailer": "^6.9.8",
+    "openai": "^4.54.1",
+    "papaparse": "^5.5.3",
+    "pdfkit": "^0.15.0",
+    "react-confetti": "^6.4.0",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5"
   },

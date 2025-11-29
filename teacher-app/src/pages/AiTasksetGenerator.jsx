@@ -35,6 +35,7 @@ const TASK_TYPES = [
   "brainstorm-battle",
   "mind-mapper",
   "hidenseek",
+  "speed-draw",  
 ];
 
 export default function AiTasksetGenerator() {

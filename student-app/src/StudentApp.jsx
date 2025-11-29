@@ -12,6 +12,25 @@ export const socket = io(API_BASE_URL, {
 
 console.log("API_BASE_URL (student) =", API_BASE_URL);
 
+import { ThemeProvider } from "./contexts/ThemeContext";
+import KidMode from "./KidMode.jsx";
+
+function StudentApp() {
+  const { isKidMode } = useAuth(); // or detect from URL
+
+  return isKidMode ? <KidMode /> : <CurrentStudentApp />;
+
+  useEffect(() => {
+    const handleUnload = () => {
+      navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+    }, [roomCode]);    
+
+
+}
+
 /* -----------------------------------------------------------
    Station colour helpers – numeric ids (station-1, station-2…)
 ----------------------------------------------------------- */

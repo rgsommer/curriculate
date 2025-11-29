@@ -149,6 +149,17 @@ const planResult = await planTaskTypes(
       curriculumLenses: effectiveConfig.curriculumLenses,
     });
 
+    if (selectedTypes.includes("speed-draw")) {
+      const q = await generateMCQ(difficulty, subject, topic);
+      tasks.push({
+        type: "speed-draw",
+        question: q.question,
+        options: q.options,
+        correctIndex: q.correctIndex,
+        points: 25,
+      });
+    }
+
     if (selectedTypes.includes("timeline")) {
     const timelinePrompt = `
       Generate a timeline of 6 historical events (or steps in a process) about ${topicDescription || subject}.

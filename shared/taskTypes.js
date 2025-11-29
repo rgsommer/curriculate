@@ -25,6 +25,7 @@ export const TASK_TYPES = {
   BRAINSTORM_BATTLE: "brainstorm-battle",
   MIND_MAPPER: "mind-mapper",
   HIDENSEEK: "hidenseek",
+  SPEED_DRAW: "speed-draw",  
 };
 
 // Category labels (for grouping & UI)
@@ -182,6 +183,11 @@ export const TASK_TYPE_META = {
     label: "HideNSeek – Find & Explain!",
     implemented: true,
     category: "physical",
+  },
+    [TASK_TYPES.SPEED_DRAW]: {
+    label: "Speed Draw – First to Answer Wins!",
+    implemented: true,
+    category: "competitive",
   },
 };
 

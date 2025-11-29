@@ -92,6 +92,14 @@ function TeacherApp() {
   );
 }
 
+useEffect(() => {
+  const handleUnload = () => {
+    navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
+  };
+  window.addEventListener("beforeunload", handleUnload);
+  return () => window.removeEventListener("beforeunload", handleUnload);
+}, [roomCode]);
+
 function EnterRoomMessage() {
   return (
     <div style={{ padding: 16 }}>
