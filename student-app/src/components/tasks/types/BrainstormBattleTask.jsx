@@ -18,6 +18,41 @@ export default function BrainstormBattleTask({
   const seedWords = task.seedWords || ["energy", "motion", "force"];
   const prompt = task.prompt || "What comes to mind?";
 
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  // Speech Recognition Setup (same as Live Debate — works perfectly)
+  useEffect(() => {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognitionRef.current = new SpeechRecognition();
+    recognitionRef.current.continuous = true;
+    recognitionRef.current.interimResults = true;
+    recognitionRef.current.lang = "en-US";
+
+    recognitionRef.current.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map(result => result[0].transcript)
+        .join("");
+      setMyIdea(transcript);
+    };
+
+    recognitionRef.current.onend = () => setIsListening(false);
+
+    return () => recognitionRef.current?.stop();
+  }, []);
+
+  const startListening = () => {
+    recognitionRef.current?.start();
+    setIsListening(true);
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  };
+
   // Main timer
   useEffect(() => {
     const timer = setInterval(() => {
@@ -114,22 +149,36 @@ export default function BrainstormBattleTask({
         </div>
       </div>
 
-      <div className="flex gap-4">
-        <input
-          value={myIdea}
-          onChange={e => setMyIdea(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && submitIdea()}
-          placeholder="Shout your idea!"
-          className="flex-1 text-4xl p-6 rounded-2xl border-4 border-white focus:outline-none"
-          disabled={disabled}
-        />
-        <button
-          onClick={submitIdea}
-          disabled={disabled || !myIdea.trim()}
-          className="px-12 py-6 bg-yellow-400 text-purple-900 rounded-2xl text-5xl font-bold hover:bg-yellow-300"
-        >
-          GO!
-        </button>
+            {/* VOICE-POWERED INPUT — THE ULTIMATE UPGRADE */}
+      <div className="mt-8 flex flex-col items-center gap-6">
+        <div className="relative w-full max-w-2xl">
+          <input
+            value={myIdea}
+            onChange={e => setMyIdea(e.target.value)}
+            placeholder="Or click the mic and SHOUT your idea!"
+            className="w-full text-5xl p-8 rounded-3xl border-8 border-white bg-white/90 text-center font-bold focus:outline-none"
+            disabled={disabled || isListening}
+          />
+          
+          {/* GIANT MIC BUTTON */}
+          <button
+            onClick={isListening ? stopListening : startListening}
+            disabled={disabled}
+            className={`absolute -bottom-12 left-1/2 transform -translate-x-1/2 w-32 h-32 rounded-full shadow-2xl transition-all
+              ${isListening 
+                ? "bg-red-600 animate-pulse ring-8 ring-red-400" 
+                : "bg-indigo-600 hover:bg-indigo-700 hover:scale-110"
+              }`}
+          >
+            <span className="text-8xl text-white">{isListening ? "⏹" : "🎤"}</span>
+          </button>
+        </div>
+
+        {isListening && (
+          <p className="text-6xl font-bold text-white animate-pulse">
+            LISTENING...
+          </p>
+        )}
       </div>
     </div>
   );
