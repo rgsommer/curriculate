@@ -15,6 +15,7 @@ export const TASK_TYPES = {
   MUSICAL_CHAIRS: "musical-chairs",
   MYSTERY_CLUES: "mystery-clues",
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
+  MAD_DASH: "mad-dash",
 };
 
 // Category labels (for grouping & UI)
@@ -122,6 +123,11 @@ export const TASK_TYPE_META = {
     label: "True/False Tic-Tac-Toe Battle",
     implemented: true,
     category: "competitive",
+  },
+    [TASK_TYPES.MAD_DASH]: {
+    label: "Mad Dash – Race to Scan!",
+    implemented: true,
+    category: "physical",
   },
 };
 

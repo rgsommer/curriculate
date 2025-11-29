@@ -17,6 +17,7 @@ import CollaborationTask from "./types/CollaborationTask";
 import MusicalChairsTask from "./types/MusicalChairsTask";
 import MysteryCluesTask from "./types/MysteryCluesTask";
 import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
+import MadDashSequenceTask from "./types/MadDashSequenceTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -230,6 +231,17 @@ export default function TaskRunner({
           disabled={disabled}
           socket={socket}
           teamRole={task.teamRole}
+        />
+      );
+      break;
+
+    case TASK_TYPES.MAD_DASH_SEQUENCE:
+      content = (
+        <MadDashSequenceTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={disabled}
+          socket={socket}
         />
       );
       break;

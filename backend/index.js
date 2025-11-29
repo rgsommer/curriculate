@@ -1379,6 +1379,39 @@ io.on("connection", (socket) => {
     }
   });
 
+    socket.on("start-mad-dash-sequence", ({ roomCode }) => {
+    const session = getSessionByRoomCode(roomCode);
+    const colors = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"];
+    const length = 3 + Math.floor(Math.random() * 3); // 3–5
+    const sequence = [];
+
+    for (let i = 0; i < length; i++) {
+      let color;
+      do {
+        color = colors[Math.floor(Math.random() * colors.length)];
+      } while (color === session.teams.find(t => t.socketId === socket.id)?.color);
+      sequence.push(color);
+    }
+
+    io.to(roomCode).emit("mad-dash-sequence-start", {
+      type: "mad-dash-sequence",
+      sequence,
+    });
+
+    const completed = new Set();
+
+    socket.on("mad-dash-complete", () => {
+      const team = session.teams.find(t => t.socketId === socket.id);
+      if (team && !completed.has(team.id)) {
+        completed.add(team.id);
+        if (completed.size === 1) {
+          updateTeamScore(session, team.id, 10);
+          io.to(roomCode).emit("mad-dash-winner", { winnerTeam: team.name });
+        }
+      }
+    });
+  });
+
   socket.on("disconnect", () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;
