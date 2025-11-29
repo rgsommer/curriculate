@@ -284,7 +284,9 @@ export default function TaskSets() {
                 return (
                   <tr key={id} className="border-t hover:bg-gray-50 transition">
                     <td className="px-4 py-4">
-                      <div className="font-medium text-gray-900">{s.name}</div>
+                      <div className="font-medium text-gray-900">
+                        {s.name || s.title || "Untitled Task Set"}
+                      </div>
                       {s.description && <div className="text-sm text-gray-500 mt-1">{s.description}</div>}
                       {isActive && (
                         <span className="inline-block mt-1 px-2 py-0.5 text-xs font-semibold text-emerald-700 bg-emerald-100 rounded-full">

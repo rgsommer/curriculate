@@ -25,7 +25,6 @@ const TASK_TYPES = [
 ];
 
 export default function AiTasksetGenerator() {
-  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
@@ -126,7 +125,11 @@ export default function AiTasksetGenerator() {
     setError("");
     setResult(null);
     setGenerating(true);
-
+      if (!form.name.trim()) {
+        setError("Task set name is required.");
+        setGenerating(false);
+        return;
+      }
     try {
       // Clean up displays if fixed-station
       const cleanedDisplays =
@@ -161,9 +164,15 @@ export default function AiTasksetGenerator() {
           return;
         }
 
-        // When limiting, use the exact number of selected types
-        estimatedTaskCount = selectedTaskTypes.length;
+        // Allow repeats to fill time: set min tasks to selected.length, max to more
+        estimatedTaskCount = Math.max(
+          selectedTaskTypes.length,
+          Math.min(20, Math.round(totalDurationMinutes / 5))
+        );
         requiredTaskTypes = selectedTaskTypes;
+
+        // Append strict instructions to AI prompt
+        form.topicDescription = `${form.topicDescription.trim()}\n\nIMPORTANT: Use ONLY these task types: ${selectedTaskTypes.join(", ")}. Repeat types if needed to fill the duration. Do not use any other types.`;
       }
 
       // Rough task count for planner; AI can still vary internally
