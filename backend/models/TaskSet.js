@@ -3,23 +3,17 @@ import mongoose from "mongoose";
 
 const { Schema } = mongoose;
 
-// Display schema – fixed for Mongoose 7/8
+// Display schema – fixed
 const DisplaySchema = new Schema({
-  key: {
-    type: String,
-    required: [true, "Display key is required"],
-  },
-  name: {
-    type: String,
-    required: [true, "Display name is required"],
-  },
+  key: { type: String, required: [true, "Display key is required"] },
+  name: { type: String, required: [true, "Display name is required"] },
   description: String,
   stationColor: String,
   notesForTeacher: String,
   imageUrl: String,
 }, { _id: false });
 
-// Task schema – all required fields fixed
+// Task schema – ALL required: true → [true, "..."]
 const TaskSchema = new Schema({
   taskId: String,
   title: String,
@@ -35,8 +29,8 @@ const TaskSchema = new Schema({
         "multiple_choice","true-false","short-answer","open-text","sort","sequence","matching","fill-in-the-blank","jeopardy",
         "photo","make-and-snap","audio-recording","video-clip","draw","pet-feeding","brain-spark-notes","flashcards",
         "body-break","motion-mission","around-the-room-scavenger","station-physical-challenge",
-        "mad-dash-sequence","true-false-tictactoe","live-debate","mystery-clues","collaborative-swap","three-card-reveal","random-treat","timeline",
-        "mind-mapper","scan-and-confirm","hidenseek"
+        "mad-dash-sequence","true-false-tictactoe","live-debate","mystery-clues","collaborative-swap","three-card-reveal",
+        "random-treat","timeline","mind-mapper","scan-and-confirm","hidenseek"
       ],
       message: "Invalid taskType: {VALUE}",
     },
@@ -64,7 +58,7 @@ const TaskSchema = new Schema({
     hidenseekClues: [{
       taskIndex: Number,
       clue: String,
-      required: true
+      required: [true, "HideNSeek clue is required"]   // ← THIS WAS THE CULPRIT
     }]
   },
 
@@ -77,7 +71,8 @@ const TaskSchema = new Schema({
 
 // Main TaskSet schema
 const TaskSetSchema = new Schema({
-  name: { type: String, required: true },
+  name: { type: String, required: true },  // top-level is still safe with shorthand
+
   ownerId: { type: Schema.Types.ObjectId, ref: "User" },
 
   locationKey: { type: String, default: "classroom" },
@@ -102,7 +97,7 @@ const TaskSetSchema = new Schema({
   avgScorePercent: Number,
 }, { timestamps: true });
 
-// Prevent OverwriteModelError on hot reloads
+// Safe model registration
 const TaskSet = mongoose.models.TaskSet || mongoose.model("TaskSet", TaskSetSchema);
 
 export default TaskSet;
