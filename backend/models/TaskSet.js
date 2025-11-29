@@ -70,7 +70,10 @@ const TaskSchema = new Schema(
           ],
           message: "Invalid taskType: {VALUE}",
         },
-    },
+      },
+        { _id: false }
+    };
+
     options: [String],                  // for MCQ / SORT etc.
     correctAnswer: Schema.Types.Mixed,  // was "answer" → now "correctAnswer"
     mediaUrl: String,
