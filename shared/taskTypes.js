@@ -14,6 +14,7 @@ export const TASK_TYPES = {
   COLLABORATION: "collaboration",
   MUSICAL_CHAIRS: "musical-chairs",
   MYSTERY_CLUES: "mystery-clues",
+  TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
 };
 
 // Category labels (for grouping & UI)
@@ -116,6 +117,11 @@ export const TASK_TYPE_META = {
     label: "Mystery Clue Cards (Memory Bonus)",
     implemented: true,
     category: "creative",
+  },
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: {
+    label: "True/False Tic-Tac-Toe Battle",
+    implemented: true,
+    category: "competitive",
   },
 };
 

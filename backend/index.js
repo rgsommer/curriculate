@@ -1337,6 +1337,48 @@ io.on("connection", (socket) => {
     socket.emit("mystery-clues-result", { correct: isPerfect });
   });
 
+    socket.on("start-true-false-tictactoe", ({ roomCode, task }) => {
+    const session = getSessionByRoomCode(roomCode);
+    const teams = session.teams.filter(t => t.active);
+    if (teams.length < 2) return;
+
+    // Randomly pair two teams
+    const [teamA, teamB] = teams.sort(() => Math.random() - 0.5).slice(0, 2);
+
+    // Generate 8 statements (4 true, 4 false)
+    const statements = task.statements || generateTrueFalseStatements();
+
+    io.to(teamA.socketId).emit("tictactoe-start", {
+      type: "true-false-tictactoe",
+      teamRole: "X",
+      opponent: teamB.name,
+      statements,
+      board: Array(9).fill(null)
+    });
+
+    io.to(teamB.socketId).emit("tictactoe-start", {
+      type: "true-false-tictactoe",
+      teamRole: "O",
+      opponent: teamA.name,
+      statements,
+      board: Array(9).fill(null)
+    });
+  });
+
+  socket.on("tictactoe-move", ({ roomCode, index, teamRole }) => {
+    // Broadcast move to both players
+    io.to(roomCode).emit("tictactoe-update", { index, symbol: teamRole });
+  });
+
+  socket.on("tictactoe-winner", ({ roomCode, winnerRole }) => {
+    const session = getSessionByRoomCode(roomCode);
+    const winnerTeam = session.teams.find(t => t.role === winnerRole);
+    if (winnerTeam) {
+      updateTeamScore(session, winnerTeam.id, 10);
+      io.to(roomCode).emit("bonus-awarded", { team: winnerTeam.name, points: 10 });
+    }
+  });
+
   socket.on("disconnect", () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;

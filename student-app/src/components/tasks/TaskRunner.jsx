@@ -16,6 +16,7 @@ import DrawMimeTask from "./types/DrawMimeTask";
 import CollaborationTask from "./types/CollaborationTask";
 import MusicalChairsTask from "./types/MusicalChairsTask";
 import MysteryCluesTask from "./types/MysteryCluesTask";
+import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -205,7 +206,6 @@ export default function TaskRunner({
         />
       );
       break;
-
       
     case TASK_TYPES.MUSICAL_CHAIRS:
       content = (
@@ -220,6 +220,18 @@ export default function TaskRunner({
 
     case TASK_TYPES.MYSTERY_CLUES:
       content = <MysteryCluesTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      break;
+
+    case TASK_TYPES.TRUE_FALSE_TICTACTOE:
+      content = (
+        <TrueFalseTicTacToeTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={disabled}
+          socket={socket}
+          teamRole={task.teamRole}
+        />
+      );
       break;
 
     default:
