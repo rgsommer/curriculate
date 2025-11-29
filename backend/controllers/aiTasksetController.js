@@ -173,6 +173,64 @@ const planResult = await planTaskTypes(
       },
     };
 
+    // ————————————————————————————————
+    // Flashcards – 100% AI Generated
+    // ————————————————————————————————
+    if (selectedTypes.includes("flashcards")) {
+      const numCards = 4 + Math.floor(Math.random() * 3); // 4–6 cards
+
+      const flashcardPrompt = `
+    Generate exactly ${numCards} flashcard questions and answers.
+    Grade level: ${gradeLevel}
+    Subject: ${subject}
+    Topic: ${topicDescription || "general review"}
+
+    Rules:
+    - One short, clear question per card
+    - One short, exact answer
+    - Perfect for shouting out loud
+    - Variety encouraged
+
+    Return ONLY valid JSON in this exact format:
+    [
+      { "question": "7 × 8 = ?", "answer": "56" },
+      { "question": "Capital of France?", "answer": "Paris" },
+      ...
+    ]
+    `;
+
+      let cards = [];
+
+      try {
+        const response = await client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: flashcardPrompt }],
+          temperature: 0.7,
+          max_tokens: 1000,
+        });
+
+        const raw = response.choices[0]?.message?.content?.trim() || "[]";
+        cards = JSON.parse(raw);
+
+        // Safety: if AI gave wrong format, fall back to a few safe ones
+        if (!Array.isArray(cards) || cards.length === 0) throw new Error("Invalid AI response");
+      } catch (err) {
+        console.warn("Flashcards AI failed, using safe fallback:", err.message);
+        cards = [
+          { question: "What is 5 + 7?", answer: "12" },
+          { question: "Capital of Brazil?", answer: "Brasília" },
+          { question: "Largest planet?", answer: "Jupiter" },
+          { question: "Opposite of 'hot'?", answer: "cold" },
+        ].slice(0, numCards);
+      }
+
+      tasks.push({
+        type: "flashcards",
+        prompt: "SHOUT the answer to each flashcard!",
+        cards,
+      });
+    }
+
     // -------------------------
     // Stage 4: Save (for now, always)
     // -------------------------

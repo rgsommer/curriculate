@@ -28,6 +28,7 @@ const TASK_TYPES = [
   "true-false-tictactoe",
   "mad-dash-sequence",
   "live-debate",
+  "flashcards",
 ];
 
 export default function AiTasksetGenerator() {

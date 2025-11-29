@@ -17,6 +17,7 @@ export const TASK_TYPES = {
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
   MAD_DASH: "mad-dash",
   LIVE_DEBATE: "live-debate",
+  FLASHCARDS: "flashcards",  
 };
 
 // Category labels (for grouping & UI)
@@ -134,6 +135,11 @@ export const TASK_TYPE_META = {
     label: "Live AI-Judged Debate",
     implemented: true,
     category: "argumentation",
+  },
+    [TASK_TYPES.FLASHCARDS]: {
+    label: "Flashcards – Shout to Answer!",
+    implemented: true,
+    category: "review",
   },
 };
 

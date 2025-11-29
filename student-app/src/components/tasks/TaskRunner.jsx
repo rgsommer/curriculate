@@ -19,6 +19,7 @@ import MysteryCluesTask from "./types/MysteryCluesTask";
 import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
 import MadDashSequenceTask from "./types/MadDashSequenceTask";
 import LiveDebateTask from "./types/LiveDebateTask";
+import FlashcardsTask from "./types/FlashcardsTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -259,7 +260,11 @@ export default function TaskRunner({
       );
       break;
 
-      default:
+    case TASK_TYPES.FLASHCARDS:
+      content = <FlashcardsTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      break;
+
+    default:
       // Unknown / typo / not in registry at all
       return (
         <div className="p-4 text-center text-red-600 space-y-2">
