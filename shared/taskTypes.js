@@ -23,7 +23,8 @@ export const TASK_TYPES = {
   PET_FEEDING: "pet-feeding",
   MOTION_MISSION: "motion-mission",
   BRAINSTORM_BATTLE: "brainstorm-battle",
-  MIND_MAPPER: "mind-mapper",  
+  MIND_MAPPER: "mind-mapper",
+  HIDENSEEK: "hidenseek",
 };
 
 // Category labels (for grouping & UI)
@@ -176,6 +177,11 @@ export const TASK_TYPE_META = {
     label: "Mind Mapper – Organize Ideas!",
     implemented: true,
     category: "organization",
+  },
+    [TASK_TYPES.HIDENSEEK]: {
+    label: "HideNSeek – Find & Explain!",
+    implemented: true,
+    category: "physical",
   },
 };
 

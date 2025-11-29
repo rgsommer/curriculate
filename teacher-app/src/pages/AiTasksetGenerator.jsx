@@ -33,7 +33,8 @@ const TASK_TYPES = [
   "pet-feeding", 
   "motion-mission",
   "brainstorm-battle",
-  "mind-mapper",  
+  "mind-mapper",
+  "hidenseek",
 ];
 
 export default function AiTasksetGenerator() {

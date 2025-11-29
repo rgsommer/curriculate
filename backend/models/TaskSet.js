@@ -21,8 +21,57 @@ const TaskSchema = new Schema(
     taskId: String,                      // your existing field
     title: String,                       // short label for the task
     prompt: { type: String, required: true },
-    taskType: { type: String, required: true }, // mcq, true_false, sequence, etc.
+        taskType: {
+          type: String,
+          required: true,
+          enum: [
+            // === Core Academic (9) ===
+            "multiple_choice",
+            "true-false",
+            "short-answer",
+            "open-text",
+            "sort",
+            "sequence",
+            "matching",
+            "fill-in-the-blank",
+            "jeopardy",
 
+            // === Evidence & Creative (8) ===
+            "photo",
+            "make-and-snap",
+            "audio-recording",
+            "video-clip",
+            "draw",
+            "pet-feeding",
+            "brain-spark-notes",
+            "flashcards",
+
+            // === Physical / Movement (4) ===
+            "body-break",
+            "motion-mission",
+            "around-the-room-scavenger",
+            "station-physical-challenge",
+
+            // === Competitive / Game-Based (8) ===
+            "mad-dash-sequence",
+            "true-false-tictactoe",
+            "live-debate",
+            "mystery-clues",
+            "collaborative-swap",
+            "three-card-reveal",
+            "random-treat",
+            "timeline",
+
+            // === Advanced / Special (3) ===
+            "mind-mapper",
+            "hidenseek",
+            "scan-and-confirm", // meta task
+
+            // Future-proof placeholder (optional)
+            // "custom-task"
+          ],
+          message: "Invalid taskType: {VALUE}",
+        },
     options: [String],                  // for MCQ / SORT etc.
     correctAnswer: Schema.Types.Mixed,  // was "answer" → now "correctAnswer"
     mediaUrl: String,
@@ -54,6 +103,11 @@ const TaskSchema = new Schema(
           ],
         },
       ],
+      hidenseekClues: [{
+        taskIndex: Number,     // which HideNSeek task (in case of multiple)
+        clue: String,
+        required: true
+      }]
     },
 
     // EXTRA fields for AI-generated structure (optional)
