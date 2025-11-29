@@ -623,6 +623,79 @@ export default function AiTasksetGenerator() {
           )}
         </div>
 
+        {/* ────────────────────────────────────────────────────── */}
+        {/* Limit to specific task types (1+ tasks) */}
+        {/* ────────────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "flex", alignItems: "center", fontSize: "0.85rem", color: "#4b5563" }}>
+            <input
+              type="checkbox"
+              checked={limitTasks}
+              onChange={(e) => {
+                setLimitTasks(e.target.checked);
+                if (!e.target.checked) {
+                  setSelectedTaskTypes([]);
+                }
+              }}
+              style={{ marginRight: 8 }}
+            />
+            Limit task set to only include specific task types
+          </label>
+
+          {limitTasks && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: 12,
+                border: "1px solid #d1d5db",
+                borderRadius: 8,
+                backgroundColor: "#f9fafb",
+              }}
+            >
+              <p style={{ fontSize: "0.8rem", margin: "0 0 10px 0", color: "#4b5563" }}>
+                Select <strong>one or more</strong> task types the AI must use. Only these types will appear in the task set.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                {TASK_TYPES.map((type) => {
+                  const isChecked = selectedTaskTypes.includes(type);
+
+                  return (
+                    <label
+                      key={type}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        fontSize: "0.82rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            setSelectedTaskTypes(prev => prev.filter(t => t !== type));
+                          } else {
+                            setSelectedTaskTypes(prev => [...prev, type]);
+                          }
+                        }}
+                        style={{ marginRight: 6 }}
+                      />
+                      {type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                    </label>
+                  );
+                })}
+              </div>
+
+              {selectedTaskTypes.length === 0 && (
+                <p style={{ marginTop: 8, fontSize: "0.78rem", color: "#b91c1c" }}>
+                  Warning: You must select at least one task type.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Topic description */}
         <div style={{ marginBottom: 12 }}>
           <label
