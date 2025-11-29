@@ -481,8 +481,12 @@ function ensureNoiseControl(room) {
 }
 
 // Simple deep equal for arrays (for mystery card task)
-function Arrays.deepEqual(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
+function arraysDeepEqual(a, b) {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch (e) {
+    return false;
+  }
 }
 
 function updateNoiseDerivedState(code, room) {
@@ -1327,7 +1331,7 @@ io.on("connection", (socket) => {
   // Student submits their guess
   socket.on("mystery-clues-submit", ({ roomCode, selected }) => {
     const correctClues = teamClues.get(socket.teamId) || [];
-    const isPerfect = Arrays.deepEqual(selected.sort(), correctClues.sort());
+    const isPerfect = arraysDeepEqual(selected.sort(), correctClues.sort());
 
     if (isPerfect) {
       updateTeamScore(socket.teamId, 10);
