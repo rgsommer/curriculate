@@ -796,7 +796,55 @@ export default function AiTasksetGenerator() {
           {error}
         </p>
       )}
+  
+      {result && (
+        <div className="mt-8 p-8 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl text-white">
+          <h2 className="text-4xl font-bold mb-6 text-center">Task Set Created!</h2>
+          
+          {/* HideNSeek Clue Popup */}
+          {result.taskset.tasks.some(t => t.type === "hidenseek") && (
+            <div className="mt-8 bg-white/20 backdrop-blur-lg rounded-2xl p-8 border-4 border-white/50">
+              <h3 className="text-3xl font-bold mb-6 text-yellow-300">
+                HideNSeek Task Detected!
+              </h3>
+              {result.taskset.tasks
+                .filter(t => t.type === "hidenseek")
+                .map((task, i) => (
+                  <div key={i} className="mb-6">
+                    <p className="text-2xl mb-4">
+                      Task {task.order || i + 1}: HideNSeek
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="e.g. Page 72, Figure 4 | The globe by the window"
+                      defaultValue={task.clue || ""}
+                      onChange={(e) => {
+                        // Save to result so it's persistent
+                        result.taskset.tasks.find(t => t === task).clue = e.target.value;
+                      }}
+                      className="w-full p-6 text-3xl rounded-2xl text-black font-medium"
+                    />
+                  </div>
+                ))}
+              <p className="text-xl mt-6 opacity-90">
+                This clue will be saved with your taskset.
+              </p>
+            </div>
+          )}
 
+          {/* Rest of success UI */}
+          <p className="text-3xl text-center mt-8">
+            "{result.taskset.name}" is ready!
+          </p>
+          <div className="flex justify-center gap-8 mt-8">
+            <button onClick={() => navigate('/tasksets')} 
+              className="px-12 py-6 bg-white text-indigo-600 rounded-2xl text-3xl font-bold hover:bg-gray-100">
+              View Task Sets
+            </button>
+          </div>
+        </div>
+      )}
+      
       {result && (
         <div className="mt-4 p-4 border rounded bg-green-50">
           <h2 className="text-lg font-bold">Task Set Created!</h2>
