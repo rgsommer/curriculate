@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/MusicalChairsTask.jsx
 import React, { useEffect, useState } from "react";
+import VictoryScreen from "./VictoryScreen";
 
 export default function MusicalChairsTask({
   task,
@@ -8,11 +9,14 @@ export default function MusicalChairsTask({
   socket,
 }) {
   const [scanned, setScanned] = useState(false);
+  const [showVictory, setShowVictory] = useState(false);
 
   useEffect(() => {
     if (task.winnerTeam) {
       if (task.winnerTeam === "current") {
         new Audio("/sounds/victory.mp3").play();
+        setShowVictory(true);
+        setTimeout(() => setShowVictory(false), 5000);
       } else if (task.winnerTeam !== "eliminated") {
         new Audio("/sounds/lose.mp3").play();
       }
@@ -80,6 +84,7 @@ export default function MusicalChairsTask({
           )}
         </div>
       )}
+      {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
     </div>
   );
 }

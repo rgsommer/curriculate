@@ -1,5 +1,6 @@
 //student-app/src/components/tasks/types/MadDashSequenceTask.jsx
 import React, { useEffect, useState } from "react";
+import VictoryScreen from "./VictoryScreen";
 
 const COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"];
 
@@ -13,8 +14,8 @@ export default function MadDashSequenceTask({
   const [scanned, setScanned] = useState([]);
   const [showSequence, setShowSequence] = useState(true);
   const [isWinner, setIsWinner] = useState(null);
+  const [showVictory, setShowVictory] = useState(false);
 
-  // Show sequence for 10 seconds
   useEffect(() => {
     if (task.sequence && showSequence) {
       const timer = setTimeout(() => setShowSequence(false), 10000);
@@ -27,6 +28,8 @@ export default function MadDashSequenceTask({
       if (task.winnerTeam === "current") {
         new Audio("/sounds/victory.mp3").play();
         setIsWinner(true);
+        setShowVictory(true);
+        setTimeout(() => setShowVictory(false), 5000);
       } else if (task.winnerTeam !== "racing") {
         new Audio("/sounds/lose.mp3").play();
         setIsWinner(false);
@@ -66,10 +69,10 @@ export default function MadDashSequenceTask({
       </h2>
 
       {showSequence ? (
-        <div className="space-y-8">
-          <p className="text-3xl font-bold text-indigo-700">
+        <div className="space-y-12">
+          <div className="text-5xl font-bold text-indigo-700">
             MEMORIZE THIS SEQUENCE!
-          </p>
+          </div>
           <div className="flex gap-8 justify-center text-9xl">
             {sequence.map((color, i) => (
               <div key={i} className="animate-bounce" style={{ animationDelay: `${i * 0.5}s` }}>
@@ -116,6 +119,7 @@ export default function MadDashSequenceTask({
           )}
         </div>
       )}
+      {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
     </div>
   );
 }

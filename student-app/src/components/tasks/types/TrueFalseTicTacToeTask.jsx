@@ -1,20 +1,24 @@
 // student-app/src/components/tasks/types/TrueFalseTicTacToeTask.jsx
 import React, { useState, useEffect } from "react";
+import VictoryScreen from "./VictoryScreen";
 
 export default function TrueFalseTicTacToeTask({
   task,
   onSubmit,
   disabled,
   socket,
-  teamRole, // "X" or "O" — sent from backend
+  teamRole,
 }) {
   const [board, setBoard] = useState(task.board || Array(9).fill(null));
   const [draggedStatement, setDraggedStatement] = useState(null);
+  const [showVictory, setShowVictory] = useState(false);
 
   useEffect(() => {
     if (task.winner) {
       if (task.winner === teamRole) {
         new Audio("/sounds/victory.mp3").play();
+        setShowVictory(true);
+        setTimeout(() => setShowVictory(false), 5000);
       } else {
         new Audio("/sounds/lose.mp3").play();
       }
@@ -33,15 +37,13 @@ export default function TrueFalseTicTacToeTask({
     const shouldBeFalse = teamRole === "X";
 
     if ((shouldBeFalse && isFalse) || (!shouldBeFalse && !isFalse)) {
-      // Correct team — place it
       const newBoard = [...board];
       newBoard[index] = teamRole;
       setBoard(newBoard);
       socket.emit("tictactoe-move", { roomCode: task.roomCode, index, teamRole });
     } else {
-      // Wrong team — still place it, but it helps opponent!
       const newBoard = [...board];
-      newBoard[index] = teamRole === "X" ? "O" : "X"; // opponent symbol
+      newBoard[index] = teamRole === "X" ? "O" : "X";
       setBoard(newBoard);
       socket.emit("tictactoe-move", { roomCode: task.roomCode, index, teamRole: teamRole === "X" ? "O" : "X" });
     }
@@ -101,6 +103,8 @@ export default function TrueFalseTicTacToeTask({
           )}
         </div>
       )}
+
+      {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
     </div>
   );
 }

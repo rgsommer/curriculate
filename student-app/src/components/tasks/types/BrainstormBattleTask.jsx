@@ -1,5 +1,6 @@
 //student-app/src/components/tasks/types/BrainstormBattleTask.jsx
 import React, { useState, useEffect } from "react";
+import VictoryScreen from "./VictoryScreen";
 
 export default function BrainstormBattleTask({
   task,
@@ -20,6 +21,7 @@ export default function BrainstormBattleTask({
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
+  const [showVictory, setShowVictory] = useState(false);
 
   // Speech Recognition Setup (same as Live Debate — works perfectly)
   useEffect(() => {
@@ -60,6 +62,9 @@ export default function BrainstormBattleTask({
         if (t <= 30 && !showOthers) setShowOthers(true);
         if (t <= 1) {
           onSubmit({ ideas });
+          setShowVictory(true);
+          new Audio("/sounds/victory.mp3").play(); 
+          setTimeout(() => setShowVictory(false), 5000); 
           return 0;
         }
         return t - 1;
@@ -180,6 +185,7 @@ export default function BrainstormBattleTask({
           </p>
         )}
       </div>
+            {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
     </div>
   );
 }

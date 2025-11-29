@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/MysteryCluesTask.jsx
 import React, { useState, useEffect } from "react";
+import VictoryScreen from "./VictoryScreen";
 
 const CARD_EMOJIS = ["Apple", "Banana", "Cat", "Dog", "Elephant", "Frog", "Ghost", "Heart", "Ice Cream", "Joker", "Key", "Lightning", "Moon", "Pizza", "Rocket", "Sun", "Tree", "Umbrella", "Volcano", "Watermelon"];
 
@@ -11,14 +12,14 @@ export default function MysteryCluesTask({
   const [selected, setSelected] = useState([]);
   const [revealedClues, setRevealedClues] = useState(task.revealedClues || []);
   const [showResult, setShowResult] = useState(false);
+  const [showVictory, setShowVictory] = useState(false);
 
-  // Show clues briefly when task starts
   useEffect(() => {
     if (!task.isFinal && revealedClues.length === 0 && task.clues) {
       setRevealedClues(task.clues);
       const timer = setTimeout(() => {
         setRevealedClues([]);
-      }, 8000); // Show for 8 seconds
+      }, 8000);
       return () => clearTimeout(timer);
     }
   }, [task]);
@@ -38,6 +39,12 @@ export default function MysteryCluesTask({
                     selected.every(s => task.clues.includes(s));
     setShowResult(true);
     onSubmit({ correct, selected });
+
+    if (correct) {
+      setShowVictory(true);
+      new Audio("/sounds/victory.mp3").play();
+      setTimeout(() => setShowVictory(false), 5000);
+    }
   };
 
   return (
@@ -104,6 +111,8 @@ export default function MysteryCluesTask({
           )}
         </>
       )}
+
+      {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
     </div>
   );
 }

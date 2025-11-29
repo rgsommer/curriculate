@@ -1,5 +1,6 @@
 //student-app/src/components/tasks/types/SpeedDrawTask.jsx
 import React, { useState, useEffect } from "react";
+import VictoryScreen from "./VictoryScreen";
 
 export default function SpeedDrawTask({
   task,
@@ -11,6 +12,7 @@ export default function SpeedDrawTask({
   const [locked, setLocked] = useState(false);
   const [timeLeft, setTimeLeft] = useState(30);
   const [winner, setWinner] = useState(task.winner);
+  const [showVictory, setShowVictory] = useState(false);
 
   const { question, options, correctIndex } = task;
 
@@ -26,6 +28,8 @@ export default function SpeedDrawTask({
       setWinner(task.winner);
       if (task.winner === "myTeam") {
         new Audio("/sounds/victory.mp3").play();
+        setShowVictory(true);
+        setTimeout(() => setShowVictory(false), 5000);
       } else if (task.winner !== "none") {
         new Audio("/sounds/wrong.mp3").play();
       }
@@ -91,6 +95,7 @@ export default function SpeedDrawTask({
           {winner === "myTeam" ? "YOU WIN! +25" : `${winner} WINS!`}
         </div>
       )}
+      {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
     </div>
   );
 }
