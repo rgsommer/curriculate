@@ -236,6 +236,37 @@ const planResult = await planTaskTypes(
       });
     }
 
+    if (selectedTypes.includes("mind-mapper")) {
+    const types = ["mind-map", "hierarchy", "fishbone", "flowchart", "venn", "web"];
+    const organizerType = types[Math.floor(Math.random() * types.length)];
+
+    const prompt = `
+      Generate 9 related terms for "${topicDescription || subject}" at ${gradeLevel} level.
+      Include one main idea, supporting ideas, and details.
+      Return JSON:
+      {
+        "organizerType": "${organizerType}",
+        "items": [
+          { "id": "1", "text": "Photosynthesis", "correctIndex": 0 },
+          ...
+        ]
+      }
+      `;
+
+        const response = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "user", content: prompt }] });
+        const data = JSON.parse(response.choices[0].message.content);
+
+        // Shuffle for students
+        const shuffled = data.items.sort(() => Math.random() - 0.5);
+
+        tasks.push({
+          type: "mind-mapper",
+          organizerType: data.organizerType,
+          shuffledItems: shuffled,
+          correctOrder: data.items.map(i => i.id),
+        });
+      }
+
     // -------------------------
     // Stage 3: Clean & normalize
     // -------------------------
