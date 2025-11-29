@@ -24,6 +24,7 @@ import {
 } from "./controllers/analyticsController.js";
 import authRoutes from "./routes/auth.js";
 import { authRequired } from "./middleware/authRequired.js";
+import { TASK_TYPE_META } from "../shared/taskTypes.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -983,7 +984,7 @@ io.on("connection", (socket) => {
       }
     }
 
-    const correct = (() => {
+        const correct = (() => {
       if (aiScore && typeof aiScore.totalScore === "number") {
         return aiScore.totalScore > 0;
       }
@@ -994,8 +995,32 @@ io.on("connection", (socket) => {
     const submittedAt = Date.now();
 
     const basePoints = task.points ?? 10;
+
+    // Look up the task meta so we can treat evidence tasks differently
+    const meta = TASK_TYPE_META?.[task.taskType];
+
+    // “Evidence tasks” are ones that don’t expect text and don’t have options,
+    // e.g. photo, make-and-snap, body-break, etc.
+    const isEvidenceTask =
+      !!meta && meta.expectsText === false && meta.hasOptions === false;
+
+    // Did the team actually submit *something*?
+    const hasEvidence =
+      answer != null &&
+      (typeof answer === "string"
+        ? answer.trim().length > 0
+        : typeof answer === "object"
+        ? Object.keys(answer).length > 0
+        : true);
+
     let pointsEarned = 0;
     if (correct === true) {
+      // Normal case: AI or exact match says it's correct → full points
+      pointsEarned = basePoints;
+    } else if (correct === null && isEvidenceTask && hasEvidence) {
+      // No objective correctness (no AI / no correctAnswer),
+      // but this is an evidence task and they submitted something:
+      // assume good faith and award full points.
       pointsEarned = basePoints;
     } else {
       pointsEarned = 0;
