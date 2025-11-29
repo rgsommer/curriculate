@@ -202,6 +202,23 @@ const planResult = await planTaskTypes(
           ignoreNoise: true,
         });
       }
+    if (selectedTypes.includes("motion-mission")) {
+      const activities = [
+        { name: "Jump 10 times", target: 10 },
+        { name: "Run on the spot for 15 seconds", target: 15 },
+        { name: "Do 8 squats", target: 8 },
+        { name: "Dance wildly!", target: 12 },
+      ];
+      const activity = activities[Math.floor(Math.random() * activities.length)];
+
+      tasks.push({
+        type: "motion-mission",
+        prompt: "Complete the motion challenge!",
+        activity,
+        points: 15,
+        ignoreNoise: true,
+      });
+    }
 
     // -------------------------
     // Stage 3: Clean & normalize

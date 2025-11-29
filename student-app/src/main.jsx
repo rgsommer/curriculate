@@ -1,8 +1,33 @@
-import React from "react";
+// student-app/src/main.jsx
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./StudentApp.jsx";
-import './index.css';
+import "./index.css";
 
-// student-app/src/main.jsx
+// Motion permission request — must be inside a component
+function MotionPermissionWrapper() {
+  const [permissionAsked, setPermissionAsked] = React.useState(false);
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  const requestPermission = () => {
+    if (typeof DeviceMotionEvent.requestPermission === "function" && !permissionAsked) {
+      DeviceMotionEvent.requestPermission()
+        .then(state => {
+          if (state === "granted") console.log("Motion granted");
+        })
+        .catch(console.error)
+        .finally(() => setPermissionAsked(true));
+    }
+  };
+
+  return (
+    <div onClick={requestPermission} onTouchStart={requestPermission}>
+      <App />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <MotionPermissionWrapper />
+  </React.StrictMode>
+);

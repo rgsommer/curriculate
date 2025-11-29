@@ -21,6 +21,7 @@ export const TASK_TYPES = {
   TIMELINE: "timeline",
   BRAIN_SPARK_NOTES: "brain-spark-notes",
   PET_FEEDING: "pet-feeding",
+  MOTION_MISSION: "motion-mission",  
 };
 
 // Category labels (for grouping & UI)
@@ -158,6 +159,11 @@ export const TASK_TYPE_META = {
     label: "Feed the Pet! (Fun Break)",
     implemented: true,
     category: "movement",
+  },
+    [TASK_TYPES.MOTION_MISSION]: {
+    label: "Motion Mission – Move to Win!",
+    implemented: true,
+    category: "physical",
   },
 };
 
