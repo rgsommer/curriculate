@@ -23,6 +23,7 @@ import FlashcardsTask from "./types/FlashcardsTask";
 import TimelineTask from "./types/TimelineTask";
 import PetFeedingTask from "./types/PetFeedingTask";
 import MotionMissionTask from "./types/MotionMissionTask";
+import BrainstormBattleTask from "./types/BrainstormBattleTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -277,6 +278,10 @@ export default function TaskRunner({
 
     case TASK_TYPES.MOTION_MISSION:
       content = <MotionMissionTask task={task} onSubmit={onSubmit} disabled={disabled} />;
+      break;
+
+    case TASK_TYPES.BRAINSTORM_BATTLE:
+      content = <BrainstormBattleTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
       break;
 
     default:

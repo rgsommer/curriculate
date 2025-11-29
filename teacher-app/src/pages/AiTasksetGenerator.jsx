@@ -32,6 +32,7 @@ const TASK_TYPES = [
   "brain-spark-notes", 
   "pet-feeding", 
   "motion-mission",
+  "brainstorm-battle",
 ];
 
 export default function AiTasksetGenerator() {

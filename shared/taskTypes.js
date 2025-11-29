@@ -21,7 +21,8 @@ export const TASK_TYPES = {
   TIMELINE: "timeline",
   BRAIN_SPARK_NOTES: "brain-spark-notes",
   PET_FEEDING: "pet-feeding",
-  MOTION_MISSION: "motion-mission",  
+  MOTION_MISSION: "motion-mission",
+  BRAINSTORM_BATTLE: "brainstorm-battle",
 };
 
 // Category labels (for grouping & UI)
@@ -164,6 +165,11 @@ export const TASK_TYPE_META = {
     label: "Motion Mission – Move to Win!",
     implemented: true,
     category: "physical",
+  },
+    [TASK_TYPES.BRAINSTORM_BATTLE]: {
+    label: "Brainstorm Battle – Shout Ideas!",
+    implemented: true,
+    category: "introduction",
   },
 };
 

@@ -220,6 +220,22 @@ const planResult = await planTaskTypes(
       });
     }
 
+    if (selectedTypes.includes("brainstorm-battle")) {
+      const prompts = [
+        "What comes to mind when you think of energy?",
+        "How do living things survive?",
+        "What makes a story exciting?"
+      ];
+      const prompt = prompts[Math.floor(Math.random() * prompts.length)];
+
+      tasks.push({
+        type: "brainstorm-battle",
+        prompt,
+        seedWords: ["think", "create", "imagine", "connect"],
+        durationSeconds: 90,
+      });
+    }
+
     // -------------------------
     // Stage 3: Clean & normalize
     // -------------------------

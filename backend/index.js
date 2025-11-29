@@ -977,6 +977,14 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Randomly trigger every 20–40 seconds
+    setInterval(() => {
+      const prompts = ["word about power", "animal that flies", "type of energy"];
+      const randomPrompt = prompts[Math.random() * prompts.length | 0];
+      const randomTeam = getRandomTeam(roomCode);
+      io.to(roomCode).emit("lightning-round", { prompt: randomPrompt, teamName: randomTeam.name });
+    }, 30000);
+
     const teamName =
       team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
 
@@ -993,7 +1001,7 @@ io.on("connection", (socket) => {
       }
     }
 
-        const correct = (() => {
+    const correct = (() => {
       if (aiScore && typeof aiScore.totalScore === "number") {
         return aiScore.totalScore > 0;
       }
