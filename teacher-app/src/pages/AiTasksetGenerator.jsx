@@ -27,6 +27,7 @@ const TASK_TYPES = [
   "mystery-clues",
   "true-false-tictactoe",
   "mad-dash-sequence",
+  "live-debate",
 ];
 
 export default function AiTasksetGenerator() {

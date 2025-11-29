@@ -1416,6 +1416,29 @@ io.on("connection", (socket) => {
     });
   });
 
+    socket.on("start-live-debate", ({ roomCode, postulate }) => {
+    const session = getSessionByRoomCode(roomCode);
+    const teams = session.teams;
+    const half = Math.ceil(teams.length / 2);
+    teams.forEach((t, i) => {
+      const side = i < half ? "for" : "against";
+      io.to(t.socketId).emit("debate-start", {
+        type: "live-debate",
+        postulate,
+        mySide: side,
+        myTeamName: t.name,
+        teamMembers: t.members || ["Member 1", "Member 2", "Member 3"],
+        responses: []
+      });
+    });
+  });
+
+  socket.on("debate-response", async (data) => {
+    io.to(data.roomCode).emit("debate-new-response", data);
+    // When all teams have 3 responses → judge
+    // (Implement count check + call generateAIScore with rubric)
+  });
+
   socket.on("disconnect", () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;

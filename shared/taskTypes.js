@@ -16,6 +16,7 @@ export const TASK_TYPES = {
   MYSTERY_CLUES: "mystery-clues",
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
   MAD_DASH: "mad-dash",
+  LIVE_DEBATE: "live-debate",
 };
 
 // Category labels (for grouping & UI)
@@ -128,6 +129,11 @@ export const TASK_TYPE_META = {
     label: "Mad Dash – Race to Scan!",
     implemented: true,
     category: "physical",
+  },
+    [TASK_TYPES.LIVE_DEBATE]: {
+    label: "Live AI-Judged Debate",
+    implemented: true,
+    category: "argumentation",
   },
 };
 
