@@ -116,7 +116,9 @@ const concepts = conceptText
   .filter(Boolean)
   .slice(0, 10);
 
-console.log("Extracted concepts:", concepts);
+if (process.env.NODE_ENV !== "production") {
+  console.log("Generated taskset:", JSON.stringify(tasksetJson, null, 2));
+}
 
 const planResult = await planTaskTypes(
   effectiveConfig.subject,
