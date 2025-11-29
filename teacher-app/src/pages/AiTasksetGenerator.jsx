@@ -6,6 +6,23 @@ import { generateAiTaskset } from "../api/tasksets";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
+// ──────────────────────────────────────────────────────────────
+// Available task types the teacher can force-include
+// ──────────────────────────────────────────────────────────────
+const TASK_TYPES = [
+  "multiple_choice",
+  "open_text",
+  "photo_description",
+  "scavenger_hunt",
+  "jeopardy_game",
+  "body_break",
+  "sequence",
+  "draw",
+  "record_audio",
+  "sorting",
+  "matching",
+  "timeline",
+];
 
 export default function AiTasksetGenerator() {
   const [profile, setProfile] = useState(null);
@@ -28,6 +45,9 @@ export default function AiTasksetGenerator() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  // New feature: limit to 1–2 specific task types
+  const [limitTasks, setLimitTasks] = useState(false);
+  const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
 
   // Load presenter profile to prefill defaults
   useEffect(() => {
