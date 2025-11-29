@@ -685,64 +685,55 @@ export default function AiTasksetGenerator() {
             Limit task set to only include specific task types
           </label>
 
-          {limitTasks && (
+                    {limitTasks && (
             <div
+              className="mt-4"
               style={{
-                marginTop: 10,
-                padding: 12,
-                border: "1px solid #d1d5db",
-                borderRadius: 8,
-                backgroundColor: "#f9fafb",
-                maxHeight: "60vh",           // ← this is the key
-                overflowY: "auto",           // ← enables scroll
-                paddingRight: 8,             // prevents scrollbar from eating content
+                maxHeight: "70vh",
+                overflowY: "auto",
+                padding: "16px",
+                border: "2px solid #e5e7eb",
+                borderRadius: "12px",
+                backgroundColor: "#f8fafc",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
               }}
             >
-              <p style={{ fontSize: "0.8rem", margin: "0 0 10px 0", color: "#4b5563" }}>
-                Select <strong>one or more</strong> task types the AI must use. Only these types will appear in the task set.
+              <p className="text-lg font-semibold text-gray-700 mb-4">
+                Select task types to include (at least one required):
               </p>
+
               <div 
-              style={{ 
-                display: "grid", 
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", 
-                gap: 10,
-                minHeight: 0,           // ← critical: allows grid to shrink/grow properly inside flex/scroll
-                paddingBottom: 8        // ← small buffer so last item isn't cut off
-              }}
-            >
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+                style={{ minHeight: "auto" }}
+              >
                 {TASK_TYPES.map((type) => {
                   const isChecked = selectedTaskTypes.includes(type);
-
                   return (
                     <label
                       key={type}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        fontSize: "0.82rem",
-                        cursor: "pointer",
-                      }}
+                      className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-gray-300 hover:bg-indigo-50 cursor-pointer transition"
                     >
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => {
-                          if (isChecked) {
-                            setSelectedTaskTypes(prev => prev.filter(t => t !== type));
-                          } else {
-                            setSelectedTaskTypes(prev => [...prev, type]);
-                          }
+                          setSelectedTaskTypes(prev =>
+                            isChecked ? prev.filter(t => t !== type) : [...prev, type]
+                          );
                         }}
-                        style={{ marginRight: 6 }}
+                        className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
                       />
-                      {type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                      <span className="text-base font-medium text-gray-800">
+                        {type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                      </span>
                     </label>
                   );
                 })}
               </div>
 
+              {/* THIS IS THE MISSING WARNING — NOW RESTORED */}
               {selectedTaskTypes.length === 0 && (
-                <p style={{ marginTop: 8, fontSize: "0.78rem", color: "#b91c1c" }}>
+                <p className="mt-6 text-sm font-medium text-red-600 text-center animate-pulse">
                   Warning: You must select at least one task type.
                 </p>
               )}
