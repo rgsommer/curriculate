@@ -9,6 +9,7 @@ import cors from "cors";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 import bodyParser from "body-parser";
+import Session from "./models/Session.js"; // Or LiveSession if renamed
 
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
@@ -46,6 +47,8 @@ const allowedOrigins = [
   "http://localhost:3000",
 ];
 
+let raceWinner = {};
+
 function isVercelPreview(origin) {
   return origin && origin.endsWith(".vercel.app");
 }
@@ -76,7 +79,23 @@ app.use("/auth", authRoutes);
 //  SOCKET.IO
 // ====================================================================
 const io = new Server(server, {
-  cors: corsOptions,
+  cors: {
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, Postman)
+      if (!origin) return callback(null, true);
+
+      const allowed = allowedOrigins;
+
+      if (allowed.some(allowedOrigin => origin.startsWith(allowedOrigin)) || 
+          origin.endsWith(".vercel.app")) {
+        callback(null, true);
+      } else {
+        console.warn("Socket.IO CORS blocked:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  },
 });
 
 // --------------------------------------------------------------------
@@ -832,7 +851,8 @@ io.on("connection", (socket) => {
       room = rooms[code] = await createRoom(code, null);
     }
 
-    socket.join(code);
+    // socket.join(code);
+    socket.join(teamId); // Or teamSessionId
     socket.data.role = "student";
     socket.data.roomCode = code;
 
@@ -938,7 +958,8 @@ io.on("connection", (socket) => {
     // Re-attach socket
     socket.data.teamId = team._id.toString();
     socket.data.roomCode = code;
-    socket.join(code);
+    // socket.join(code);
+    socket.join(teamId); // Or teamSessionId
 
     // Update DB
     team.status = "online";
@@ -1268,6 +1289,9 @@ socket.on("speed-draw-answer", ({ roomCode, index, correct }) => {
   }
 });
 
+// Store per-team clues during session
+  const teamClues = new Map(); // teamId → [clue1, clue2, ...]
+
 //Quick launch socket
 socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
   const session = getSessionByRoomCode(roomCode);
@@ -1472,9 +1496,6 @@ socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
   // ————————————————————————————————
   // Mystery Clue Cards — Memory Bonus
   // ————————————————————————————————
-
-  // Store per-team clues during session
-  const teamClues = new Map(); // teamId → [clue1, clue2, ...]
 
   // When a mystery-clues task starts (non-final)
   socket.on("mystery-clues-start", ({ roomCode, taskId, teamId }) => {
