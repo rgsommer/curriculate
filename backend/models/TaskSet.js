@@ -58,7 +58,6 @@ const TaskSchema = new Schema({
     hidenseekClues: [{
       taskIndex: Number,
       clue: String,
-      required: [true, "HideNSeek clue is required"]   // ← THIS WAS THE CULPRIT
     }]
   },
 
