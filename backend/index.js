@@ -13,6 +13,7 @@ import bodyParser from "body-parser";
 import TaskSet from "./models/TaskSet.js";
 import TeacherProfile from "./models/TeacherProfile.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
+import TeamSession from "./models/TeamSession.js"; // NEW IMPORT
 
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
@@ -96,8 +97,9 @@ mongoose
 //  ROOM ENGINE (In-Memory)
 // ====================================================================
 const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
+const OFFLINE_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
 
-function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
+async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
   const stations = {};
   const NUM_STATIONS = 8;
   for (let i = 1; i <= NUM_STATIONS; i++) {
@@ -105,7 +107,7 @@ function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
     stations[id] = { id, assignedTeamId: null };
   }
 
-  return {
+  const room = {
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
@@ -134,6 +136,25 @@ function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
     noiseLevel: 0,        // smoothed noise measure (0–100)
     noiseBrightness: 1,   // 1 = full bright, ~0.3 = dim
   };
+
+  // Load existing teams from DB
+  const existingTeams = await TeamSession.find({ roomCode });
+  for (const t of existingTeams) {
+    const teamId = t._id.toString();
+    room.teams[teamId] = {
+      teamId,
+      teamName: t.teamName,
+      members: t.playerNames,
+      score: 0,
+      stationColor: null,
+      currentStationId: null,
+      taskIndex: -1,
+      status: t.status,
+      lastSeenAt: t.lastSeenAt,
+    };
+  }
+
+  return room;
 }
 
 // All-team rotation (kept for possible future use)
@@ -539,7 +560,7 @@ function updateNoiseDerivedState(code, room) {
 // ====================================================================
 io.on("connection", (socket) => {
   // Teacher creates room
-  socket.on("teacher:createRoom", (payload = {}) => {
+  socket.on("teacher:createRoom", async (payload = {}) => {
     const { roomCode, locationCode } = payload;
     const code = (roomCode || "").toUpperCase();
     let room = rooms[code];
@@ -550,7 +571,7 @@ io.on("connection", (socket) => {
         room.locationCode = locationCode;
       }
     } else {
-      room = rooms[code] = createRoom(code, socket.id, locationCode);
+      room = rooms[code] = await createRoom(code, socket.id, locationCode);
     }
 
     socket.join(code);
@@ -801,22 +822,19 @@ io.on("connection", (socket) => {
     updateNoiseDerivedState(code, room);
   });
 
-  // Student joins room
-  socket.on("student:joinRoom", (payload, ack) => {
+  // Student joins room (NEW PERSISTENT VERSION)
+  socket.on("student:joinRoom", async (payload, ack) => {
     const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
     let room = rooms[code];
     if (!room) {
-      room = rooms[code] = createRoom(code, null);
+      room = rooms[code] = await createRoom(code, null);
     }
 
     socket.join(code);
     socket.data.role = "student";
     socket.data.roomCode = code;
-
-    const teamId = socket.id;
-    socket.data.teamId = teamId;
 
     const cleanMembers =
       Array.isArray(members) && members.length > 0
@@ -824,23 +842,31 @@ io.on("connection", (socket) => {
         : [];
 
     const displayName =
-      teamName || cleanMembers[0] || `Team-${String(teamId).slice(-4)}`;
+      teamName || cleanMembers[0] || `Team-${String(socket.id).slice(-4)}`;
 
-    // No more deleting other teams based on name match
-    if (!room.teams[teamId]) {
-      room.teams[teamId] = {
-        teamId,
-        teamName: displayName,
-        members: cleanMembers,
-        score: 0,
-        stationColor: null,
-        currentStationId: null,
-        taskIndex: -1,
-      };
-    } else {
-      room.teams[teamId].teamName = displayName;
-      room.teams[teamId].members = cleanMembers;
-    }
+    // Create persistent team session
+    const team = await TeamSession.create({
+      roomCode: code,
+      teamName: displayName,
+      playerNames: cleanMembers,
+      status: "online",
+      lastSeenAt: new Date(),
+    });
+
+    const teamId = team._id.toString();
+    socket.data.teamId = teamId;
+
+    room.teams[teamId] = {
+      teamId,
+      teamName: displayName,
+      members: cleanMembers,
+      score: 0,
+      stationColor: null,
+      currentStationId: null,
+      taskIndex: -1,
+      status: "online",
+      lastSeenAt: new Date(),
+    };
 
     if (!room.stations || Object.keys(room.stations).length === 0) {
       room.stations = {};
@@ -876,11 +902,125 @@ io.on("connection", (socket) => {
         teamId,
         teamName: displayName,
         members: cleanMembers,
+        status: "online",
       });
     }
 
     if (typeof ack === "function") {
-      ack({ ok: true, roomState: state, teamId });
+      ack({ ok: true, roomState: state, teamId, teamSessionId: teamId });
+    }
+  });
+
+  // Resume team session
+  socket.on("resume-team-session", async (data, ack) => {
+    const { roomCode, teamSessionId } = data;
+    const code = (roomCode || "").toUpperCase();
+
+    if (!code || !teamSessionId) {
+      return ack({ success: false, error: "Missing data" });
+    }
+
+    const room = rooms[code];
+    if (!room) {
+      return ack({ success: false, error: "Room not found" });
+    }
+
+    const team = await TeamSession.findById(teamSessionId);
+    if (!team || team.roomCode !== code) {
+      return ack({ success: false, error: "Team not found" });
+    }
+
+    const liveSession = await LiveSession.findOne({ roomCode: code });
+    if (!liveSession || liveSession.status === "ended") {
+      return ack({ success: false, error: "Room ended" });
+    }
+
+    // Re-attach socket
+    socket.data.teamId = team._id.toString();
+    socket.data.roomCode = code;
+    socket.join(code);
+
+    // Update DB
+    team.status = "online";
+    team.lastSeenAt = new Date();
+    await team.save();
+
+    // Update in-memory if not present
+    const teamId = team._id.toString();
+    if (!room.teams[teamId]) {
+      room.teams[teamId] = {
+        teamId,
+        teamName: team.teamName,
+        members: team.playerNames,
+        score: 0,
+        stationColor: null,
+        currentStationId: null,
+        taskIndex: -1,
+        status: "online",
+        lastSeenAt: new Date(),
+      };
+    } else {
+      room.teams[teamId].status = "online";
+      room.teams[teamId].lastSeenAt = new Date();
+    }
+
+    // Cancel any pending offline timeout
+    if (room.teams[teamId].offlineTimeout) {
+      clearTimeout(room.teams[teamId].offlineTimeout);
+      room.teams[teamId].offlineTimeout = null;
+    }
+
+    // Notify teacher
+    io.to(code).emit("team-status-updated", {
+      teamSessionId: teamId,
+      status: "online",
+    });
+
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+
+    ack({
+      success: true,
+      teamSessionId: teamId,
+      teamName: team.teamName,
+      members: team.playerNames,
+    });
+  });
+
+  // Explicit leave
+  socket.on("leave-room", async (data, ack) => {
+    const { teamSessionId } = data || {};
+    const teamId = teamSessionId || socket.data.teamId;
+
+    if (!teamId) return;
+
+    const code = socket.data.roomCode;
+    const room = rooms[code];
+    if (!room) return;
+
+    try {
+      const team = await TeamSession.findById(teamId);
+      if (team) {
+        await TeamSession.deleteOne({ _id: teamId });
+        io.to(code).emit("team-removed", { teamSessionId: teamId });
+      }
+
+      if (room.teams[teamId]) {
+        delete room.teams[teamId];
+      }
+
+      socket.leave(code);
+      delete socket.data.teamId;
+      delete socket.data.roomCode;
+
+      const state = buildRoomState(room);
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
+
+      if (ack) ack({ success: true });
+    } catch (err) {
+      console.error("leave-room error:", err);
     }
   });
 
@@ -897,7 +1037,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const effectiveTeamId = teamId || socket.data.teamId || socket.id;
+    const effectiveTeamId = teamId || socket.data.teamId;
     const team = room.teams[effectiveTeamId];
     if (!team) {
       if (typeof ack === "function") {
@@ -958,7 +1098,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const effectiveTeamId = teamId || socket.data.teamId || socket.id;
+    const effectiveTeamId = teamId || socket.data.teamId;
     const team = room.teams[effectiveTeamId] || {};
 
     // Use explicit taskIndex if provided, otherwise this team's current index
@@ -1474,7 +1614,7 @@ socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
     // (Implement count check + call generateAIScore with rubric)
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     const code = socket.data?.roomCode;
     const teamId = socket.data?.teamId;
     if (!code || !teamId) return;
@@ -1482,25 +1622,49 @@ socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
     const room = rooms[code];
     if (!room || !room.teams[teamId]) return;
 
-    const team = room.teams[teamId];
-    const stationId = team.currentStationId;
+    room.teams[teamId].status = "offline";
+    room.teams[teamId].lastSeenAt = new Date();
 
-    if (
-      stationId &&
-      room.stations[stationId] &&
-      room.stations[stationId].assignedTeamId === teamId
-    ) {
-      room.stations[stationId].assignedTeamId = null;
+    // Save to DB
+    const dbTeam = await TeamSession.findById(teamId);
+    if (dbTeam) {
+      dbTeam.status = "offline";
+      dbTeam.lastSeenAt = new Date();
+      await dbTeam.save();
     }
 
-    delete room.teams[teamId];
-    if (room.pendingTreats && room.pendingTreats[teamId]) {
-      delete room.pendingTreats[teamId];
-    }
+    // Notify teacher
+    io.to(code).emit("team-status-updated", {
+      teamSessionId: teamId,
+      status: "offline",
+    });
 
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
+
+    // Schedule auto-removal after timeout
+    const timeoutId = setTimeout(async () => {
+      try {
+        const stillOffline = await TeamSession.findById(teamId);
+        if (stillOffline && stillOffline.status === "offline") {
+          await TeamSession.deleteOne({ _id: teamId });
+          if (room.teams[teamId]) {
+            delete room.teams[teamId];
+          }
+          io.to(code).emit("team-removed", { teamSessionId: teamId });
+
+          const updatedState = buildRoomState(room);
+          io.to(code).emit("room:state", updatedState);
+          io.to(code).emit("roomState", updatedState);
+        }
+      } catch (err) {
+        console.error("TTL cleanup error:", err);
+      }
+    }, OFFLINE_TIMEOUT_MS);
+
+    // Store timeout for possible cancel on reconnect
+    room.teams[teamId].offlineTimeout = timeoutId;
   });
 });
 
