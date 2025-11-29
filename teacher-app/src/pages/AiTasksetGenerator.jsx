@@ -688,6 +688,9 @@ export default function AiTasksetGenerator() {
                 border: "1px solid #d1d5db",
                 borderRadius: 8,
                 backgroundColor: "#f9fafb",
+                maxHeight: "60vh",           // ← this is the key
+                overflowY: "auto",           // ← enables scroll
+                paddingRight: 8,             // prevents scrollbar from eating content
               }}
             >
               <p style={{ fontSize: "0.8rem", margin: "0 0 10px 0", color: "#4b5563" }}>
@@ -807,7 +810,7 @@ export default function AiTasksetGenerator() {
           <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: "#059669" }}>
             Can be found in Task Sets
           </p>
-                  <div className="mt-4 p-4 border rounded bg-green-50">
+          <div className="mt-4 p-4 border rounded bg-green-50">
           <h2 className="text-lg font-bold">Task Set Created!</h2>
           <p>
             "{result.taskset.name}" with <strong>{result.taskset.tasks.length}</strong> task{result.taskset.tasks.length !== 1 ? "s" : ""} for {result.taskset.durationMinutes} minutes
