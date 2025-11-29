@@ -24,6 +24,7 @@ import TimelineTask from "./types/TimelineTask";
 import PetFeedingTask from "./types/PetFeedingTask";
 import MotionMissionTask from "./types/MotionMissionTask";
 import BrainstormBattleTask from "./types/BrainstormBattleTask";
+import MindMapperTask from "./types/MindMapperTask";
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -282,6 +283,10 @@ export default function TaskRunner({
 
     case TASK_TYPES.BRAINSTORM_BATTLE:
       content = <BrainstormBattleTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
+      break;
+
+    case TASK_TYPES.MIND_MAPPER:
+      content = <MindMapperTask task={task} onSubmit={onSubmit} disabled={disabled} />;
       break;
 
     default:
