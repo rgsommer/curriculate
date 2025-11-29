@@ -25,6 +25,7 @@ const TASK_TYPES = [
 ];
 
 export default function AiTasksetGenerator() {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
@@ -143,6 +144,28 @@ export default function AiTasksetGenerator() {
       const totalDurationMinutes =
         Number.isFinite(duration) && duration > 0 ? duration : 45;
 
+      // ————————————————————————————————————————————————
+      // Handle "Limit to specific task types" feature
+      // ————————————————————————————————————————————————
+      let estimatedTaskCount = Math.max(
+        4,
+        Math.min(20, Math.round(totalDurationMinutes / 5))
+      );
+
+      let requiredTaskTypes = [];
+
+      if (limitTasks) {
+        if (selectedTaskTypes.length === 0) {
+          setError("Please select at least one task type when limiting task types.");
+          setGenerating(false);
+          return;
+        }
+
+        // When limiting, use the exact number of selected types
+        estimatedTaskCount = selectedTaskTypes.length;
+        requiredTaskTypes = selectedTaskTypes;
+      }
+
       // Rough task count for planner; AI can still vary internally
       const estimatedTaskCount = Math.max(
         4,
@@ -161,6 +184,7 @@ export default function AiTasksetGenerator() {
         // Time-based control instead of user-facing "number of tasks"
         totalDurationMinutes,
         numberOfTasks: estimatedTaskCount,
+        requiredTaskTypes,   // tells AI to only use these task types
 
         // Session / Room context
         tasksetName: form.name || undefined,
