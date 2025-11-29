@@ -686,34 +686,30 @@ export default function AiTasksetGenerator() {
             />
             Limit task set to only include specific task types
           </label>
-
-                    {limitTasks && (
+            {limitTasks && (
             <div
-              className="mt-4"
+              className="mt-6"
               style={{
-                maxHeight: "70vh",
+                maxHeight: "75vh",
                 overflowY: "auto",
-                padding: "16px",
-                border: "2px solid #e5e7eb",
-                borderRadius: "12px",
-                backgroundColor: "#f8fafc",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                padding: "20px",
+                border: "3px solid #6366f1",
+                borderRadius: "16px",
+                backgroundColor: "#eef2ff",
+                boxShadow: "0 10px 25px rgba(99, 102, 241, 0.2)",
               }}
             >
-              <p className="text-lg font-semibold text-gray-700 mb-4">
-                Select task types to include (at least one required):
+              <p className="text-xl font-bold text-indigo-800 mb-6 text-center">
+                Select at least one task type:
               </p>
 
-              <div 
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-                style={{ minHeight: "auto" }}
-              >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {TASK_TYPES.map((type) => {
                   const isChecked = selectedTaskTypes.includes(type);
                   return (
                     <label
                       key={type}
-                      className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-gray-300 hover:bg-indigo-50 cursor-pointer transition"
+                      className="flex items-center space-x-4 p-5 bg-white rounded-xl border-2 border-gray-300 hover:border-indigo-500 cursor-pointer transition-all hover:shadow-lg"
                     >
                       <input
                         type="checkbox"
@@ -723,9 +719,9 @@ export default function AiTasksetGenerator() {
                             isChecked ? prev.filter(t => t !== type) : [...prev, type]
                           );
                         }}
-                        className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
+                        className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500"
                       />
-                      <span className="text-base font-medium text-gray-800">
+                      <span className="text-lg font-medium text-gray-800">
                         {type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
                       </span>
                     </label>
@@ -733,10 +729,9 @@ export default function AiTasksetGenerator() {
                 })}
               </div>
 
-              {/* THIS IS THE MISSING WARNING — NOW RESTORED */}
               {selectedTaskTypes.length === 0 && (
-                <p className="mt-6 text-sm font-medium text-red-600 text-center animate-pulse">
-                  Warning: You must select at least one task type.
+                <p className="mt-8 text-center text-red-600 font-bold text-xl animate-pulse">
+                  You must select at least one task type!
                 </p>
               )}
             </div>
