@@ -1,4 +1,20 @@
 // backend/controllers/aiTasksetController.js
+import TeacherProfile from "../models/TeacherProfile.js";
+import TaskSet from "../models/TaskSet.js";
+import { authRequired } from "../middleware/authRequired.js";   // ← THIS WAS MISSING!
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+function validateGeneratePayload(payload = {}) {
+  const errors = [];
+  if (!payload.gradeLevel) errors.push("gradeLevel is required");
+  if (!payload.subject) errors.push("subject is required");
+  return errors;
+}
+
 export const generateAiTaskset = [
   authRequired,
   async (req, res) => {
