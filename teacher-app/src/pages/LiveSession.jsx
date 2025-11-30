@@ -1,3 +1,4 @@
+//teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 
@@ -71,34 +72,6 @@ export default function LiveSession({ roomCode }) {
   // End-session / email reports UI
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
-  const endSession = async () => {
-  if (!roomCode || ending) return;
-  setEnding(true);
-
-  try {
-    // 1. Tell backend to finalize everything
-    const response = await fetch(`/api/sessions/${roomCode}/end`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-    });
-
-    const result = await response.json();
-
-    // 2. Show final leaderboard
-    setFinalLeaderboard(result.leaderboard);
-    setSessionEnded(true);
-
-    // 3. Play victory music
-    new Audio("/sounds/final-victory.mp3").play();
-  } catch (err) {
-    console.error("Failed to end session", err);
-    alert("Session ended locally — analytics will still save on refresh");
-    setSessionEnded(true);
-  } finally {
-    setEnding(false);
-  }
-};
 
   // Join & treat sounds
   const joinSoundRef = useRef(null);
@@ -148,29 +121,6 @@ export default function LiveSession({ roomCode }) {
     setStatus("Connected.");
   }, [roomCode]);
 
-  //Quick-launch
-  const quickLaunch = async (task) => {
-  if (!roomCode || launchingTask) return;
-
-  setLaunchingTask(task._id);
-
-  try {
-    // Use the EXACT event name your backend expects
-    socket.emit("start-task", {
-      roomCode,
-      taskId: task._id || task.taskId,
-      taskType: task.taskType,
-      taskData: task, // full task object — backend uses this
-    });
-
-    // Optional: show feedback
-    setTimeout(() => setLaunchingTask(null), 3000);
-  } catch (err) {
-    console.error("Quick launch failed", err);
-    setLaunchingTask(null);
-  }
-};
-  
   // On first mount, check if TaskSets asked us to auto-launch
   useEffect(() => {
     const flag = localStorage.getItem("curriculateLaunchImmediately");
@@ -187,134 +137,142 @@ export default function LiveSession({ roomCode }) {
 
     const code = roomCode.toUpperCase();
 
-    // If the correct taskset isn't loaded yet, load it first.
-    if (loadedTasksetId !== activeTasksetMeta._id) {
-      socket.emit("loadTaskset", {
-        roomCode: code,
-        tasksetId: activeTasksetMeta._id,
-      });
-      // When the backend emits "tasksetLoaded", loadedTasksetId will update
-      // and this effect will run again.
-      return;
-    }
+    // Ask backend to load the taskset into this room
+    socket.emit(
+      "teacher:loadTaskset",
+      { roomCode: code, tasksetId: activeTasksetMeta._id },
+      (resp) => {
+        if (!resp || !resp.ok) {
+          console.error("Failed to load taskset for auto-launch:", resp);
+          return;
+        }
 
-    // At this point, the correct taskset is loaded in this room — launch it.
-    socket.emit("launchTaskset", { roomCode: code });
+        // Immediately launch the first task
+        socket.emit(
+          "teacher:launchNextTask",
+          { roomCode: code },
+          (launchResp) => {
+            if (!launchResp || !launchResp.ok) {
+              console.error("Failed to auto-launch first task:", launchResp);
+            }
+          }
+        );
+      }
+    );
+
     setAutoLaunchRequested(false);
-  }, [autoLaunchRequested, roomCode, activeTasksetMeta, loadedTasksetId]);
+  }, [autoLaunchRequested, roomCode, activeTasksetMeta]);
 
   // ----------------------------------------------------
-  // Socket listeners
+  // Socket listeners: keep room state + leaderboard in sync
   // ----------------------------------------------------
   useEffect(() => {
+    if (!roomCode) return;
+
+    const code = roomCode.toUpperCase();
+
     const handleRoom = (state) => {
-      console.log("[LiveSession] room state received:", state);
-      const safe =
-        state || {
-          stations: [],
-          teams: {},
-          scores: {},
-          locationCode: "Classroom",
-          taskIndex: -1,
-          treatsConfig: {
-            enabled: true,
-            total: 4,
-            given: 0,
-          },
-          pendingTreatTeams: [],
-          noise: {
-            enabled: false,
-            threshold: 0,
-            level: 0,
-            brightness: 1,
-          },
-        };
-      setRoomState(safe);
+      if (!state) return;
 
-      // Mirror noise state to local UI
-      const noise = safe.noise || {};
-      setNoiseLevel(typeof noise.level === "number" ? noise.level : 0);
-      setNoiseThreshold(typeof noise.threshold === "number" ? noise.threshold : 0);
-      setNoiseEnabled(!!noise.enabled);
-      setNoiseBrightness(
-        typeof noise.brightness === "number" ? noise.brightness : 1
-      );
+      setRoomState((prev) => ({
+        ...prev,
+        stations: state.stations || [],
+        teams: state.teams || {},
+        scores: state.scores || {},
+        locationCode: state.locationCode || prev.locationCode || "Classroom",
+        taskIndex:
+          typeof state.taskIndex === "number"
+            ? state.taskIndex
+            : prev.taskIndex,
+        treatsConfig: state.treatsConfig || prev.treatsConfig,
+        pendingTreatTeams: state.pendingTreatTeams || [],
+        noise: state.noise || prev.noise,
+      }));
 
-      const tCfg = safe.treatsConfig || {};
-      setTreatsConfig({
-        enabled: tCfg.enabled ?? true,
-        total:
-          typeof tCfg.total === "number" && !Number.isNaN(tCfg.total)
-            ? tCfg.total
-            : 4,
-        given:
-          typeof tCfg.given === "number" && !Number.isNaN(tCfg.given)
-            ? tCfg.given
-            : 0,
+      const scores = state.scores || {};
+      const teams = state.teams || {};
+      const leaderboardArr = Object.entries(scores)
+        .map(([teamId, score]) => ({
+          teamId,
+          score,
+          name: teams[teamId]?.teamName || "Team",
+        }))
+        .sort((a, b) => b.score - a.score);
+      setLeaderboard(leaderboardArr);
+
+      const currentTeamIds = Object.keys(teams);
+      setTeamOrder((prevOrder) => {
+        const stillThere = prevOrder.filter((id) =>
+          currentTeamIds.includes(id)
+        );
+        const newOnes = currentTeamIds.filter((id) => !stillThere.includes(id));
+        return [...stillThere, ...newOnes];
       });
 
-      // Maintain a stable team order based on first join time.
-      setTeamOrder((prev) => {
-        const next = [...prev];
-        const seen = new Set(next);
-        Object.keys(safe.teams || {}).forEach((teamId) => {
-          if (!seen.has(teamId)) {
-            next.push(teamId);
-            seen.add(teamId);
-          }
-        });
-        // Drop teams that no longer exist in roomState
-        return next.filter((id) => !!safe.teams[id]);
-      });
+      if (state.treatsConfig) {
+        setTreatsConfig((prevCfg) => ({
+          ...prevCfg,
+          ...state.treatsConfig,
+        }));
+      }
 
-      const entries = Object.entries(safe.scores || {}).sort(
-        (a, b) => b[1] - a[1]
-      );
-      setLeaderboard(entries);
-    };
-
-    const handleTasksetLoaded = (info) => {
-      console.log("Taskset loaded:", info);
-      if (info && info.tasksetId) {
-        setLoadedTasksetId(info.tasksetId);
-        setActiveTasksetMeta((prev) => {
-          const meta = {
-            _id: info.tasksetId,
-            name: info.name || prev?.name || "Loaded Taskset",
-            numTasks: info.numTasks ?? prev?.numTasks ?? 0,
-          };
-          localStorage.setItem("curriculateActiveTasksetId", meta._id);
-          localStorage.setItem(
-            "curriculateActiveTasksetMeta",
-            JSON.stringify(meta)
-          );
-          return meta;
-        });
+      if (state.noise) {
+        setNoiseEnabled(!!state.noise.enabled);
+        setNoiseThreshold(
+          typeof state.noise.threshold === "number"
+            ? state.noise.threshold
+            : noiseThreshold
+        );
+        setNoiseLevel(
+          typeof state.noise.level === "number"
+            ? state.noise.level
+            : noiseLevel
+        );
+        setNoiseBrightness(
+          typeof state.noise.brightness === "number"
+            ? state.noise.brightness
+            : noiseBrightness
+        );
       }
     };
 
-    const handleSubmission = (sub) => {
-      if (!sub?.teamId) return;
+    const handleTasksetLoaded = (payload) => {
+      if (payload?.tasksetId) {
+        setLoadedTasksetId(payload.tasksetId);
+      }
+    };
+
+    const handleSubmission = (submission) => {
+      if (!submission) return;
       setSubmissions((prev) => ({
         ...prev,
-        [sub.teamId]: sub,
+        [submission.teamId || submission.team]: submission,
       }));
     };
 
-    const handleScanEvent = (ev) => {
-      // ev: { roomCode, teamId, teamName, stationId, timestamp }
-      setScanEvents((prev) => {
-        const next = [ev, ...prev];
-        return next.slice(0, 30); // keep last 30
-      });
-    };
+    const handleTeamJoined = (data) => {
+      const { teamId, teamName } = data || {};
+      if (!teamId) return;
 
-    const handleTeamJoined = (info) => {
-      console.log("[LiveSession] team joined:", info);
+      setTeamOrder((prev) =>
+        prev.includes(teamId) ? prev : [...prev, teamId]
+      );
+
       if (joinSoundRef.current) {
         joinSoundRef.current.currentTime = 0;
         joinSoundRef.current.play().catch(() => {});
       }
+    };
+
+    const handleScanEvent = (event) => {
+      if (!event) return;
+      setScanEvents((prev) => [
+        {
+          ...event,
+          timestamp: event.timestamp || Date.now(),
+        },
+        ...prev.slice(0, 199),
+      ]);
     };
 
     const handleRoomSetup = (payload) => {
@@ -416,17 +374,17 @@ export default function LiveSession({ roomCode }) {
       "teacher:launchQuickTask",
       {
         roomCode: code,
-        prompt: prompt.trim(),
-        correctAnswer: correctAnswer.trim() || null,
+        prompt,
+        correctAnswer: correctAnswer || null,
       },
-      (ack) => {
+      (resp) => {
         setIsLaunchingQuick(false);
-        if (!ack || !ack.ok) {
-          console.error("Quick task launch failed:", ack);
-          setStatus("Quick task launch failed.");
-        } else {
-          setStatus("Quick task launched.");
+        if (!resp || !resp.ok) {
+          console.error("Failed to launch quick task:", resp);
+          return;
         }
+        setPrompt("");
+        setCorrectAnswer("");
       }
     );
   };
@@ -434,529 +392,70 @@ export default function LiveSession({ roomCode }) {
   const handleLaunchTaskset = () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
-    socket.emit("launchTaskset", { roomCode: code });
-  };
 
-  const handleRequestRoomSetup = () => {
-    if (!roomCode) return;
-    const code = roomCode.toUpperCase();
-    socket.emit("teacher:getRoomSetup", { roomCode: code });
-    setShowRoomSetup(true);
+    socket.emit(
+      "teacher:loadTaskset",
+      { roomCode: code, tasksetId: activeTasksetMeta._id },
+      (resp) => {
+        if (!resp || !resp.ok) {
+          console.error("Failed to load taskset:", resp);
+          return;
+        }
+        setLoadedTasksetId(activeTasksetMeta._id);
+        socket.emit("teacher:launchNextTask", { roomCode: code });
+      }
+    );
   };
 
   const handleEndSessionAndEmail = () => {
-    if (!roomCode) return;
+    if (!roomCode || isEndingSession) return;
     const code = roomCode.toUpperCase();
     setIsEndingSession(true);
     setEndSessionMessage("");
 
-    socket.emit("teacher:endSessionAndEmail", {
-      roomCode: code,
-    });
+    socket.emit("teacher:endSessionAndEmail", { roomCode: code });
   };
 
-  const handleNoiseSliderChange = (e) => {
-    const value = Number(e.target.value) || 0;
-    setNoiseThreshold(value);
-    const enabled = value > 0;
-    setNoiseEnabled(enabled);
-
+  const handleGiveTreat = () => {
     if (!roomCode) return;
     const code = roomCode.toUpperCase();
-    socket.emit("teacher:updateNoiseControl", {
+    socket.emit("teacher:giveTreat", { roomCode: code });
+  };
+
+  const handleToggleNoise = () => {
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    const nextEnabled = !noiseEnabled;
+
+    socket.emit("teacher:setNoiseControl", {
       roomCode: code,
-      enabled,
+      enabled: nextEnabled,
+      threshold: noiseThreshold,
+    });
+
+    setNoiseEnabled(nextEnabled);
+  };
+
+  const handleNoiseThresholdChange = (e) => {
+    const value = Number(e.target.value) || 0;
+    setNoiseThreshold(value);
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+
+    socket.emit("teacher:setNoiseControl", {
+      roomCode: code,
+      enabled: noiseEnabled,
       threshold: value,
     });
   };
 
-  const handleToggleTreatsEnabled = (e) => {
-    const enabled = e.target.checked;
-    const next = { ...treatsConfig, enabled };
-    setTreatsConfig(next);
-
-    if (!roomCode) return;
-    const code = roomCode.toUpperCase();
-    socket.emit("teacher:updateTreatsConfig", {
-      roomCode: code,
-      enabled,
-      totalTreats: next.total,
-    });
-  };
-
-  const handleTreatsTotalChange = (e) => {
-    const raw = e.target.value;
-    const parsed = Number(raw);
-    const cleanTotal = Number.isNaN(parsed) ? 0 : Math.max(0, Math.floor(parsed));
-
-    const next = { ...treatsConfig, total: cleanTotal };
-    setTreatsConfig(next);
-
-    if (!roomCode) return;
-    const code = roomCode.toUpperCase();
-    socket.emit("teacher:updateTreatsConfig", {
-      roomCode: code,
-      enabled: next.enabled,
-      totalTreats: cleanTotal,
-    });
-  };
-
-  // ----------------------------------------------------
-  // Derived helpers + ordering rule
-  // ----------------------------------------------------
-  // Is there an active task running for this room right now?
+  // Derived helpers
+  const teams = roomState.teams || {};
+  const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
 
-  const stationsRaw = Array.isArray(roomState.stations)
-    ? roomState.stations
-    : Object.values(roomState.stations || {});
-
-  const teamsById = roomState.teams || {};
-  const scores = roomState.scores || {};
-
-  const pendingTreatTeams = Array.isArray(roomState.pendingTreatTeams)
-    ? roomState.pendingTreatTeams
-    : [];
-
-  // This should eventually be supplied by backend when the active taskset
-  // is fixed-station; if absent, it behaves as non-fixed.
-  const isFixedStationTaskset = !!roomState.isFixedStationTaskset;
-
-  const allTeamIds = Object.keys(teamsById);
-
-  // Join-order baseline (fallback to object order if we don't yet have a history)
-  const joinedOrder =
-    teamOrder.length > 0
-      ? teamOrder.filter((id) => !!teamsById[id])
-      : allTeamIds;
-
-  let teamIdsForGrid = joinedOrder;
-
-  // If this is a fixed-station taskset, order the teams by station id:
-  // station-1’s team first, then station-2, etc. Any unassigned teams
-  // are appended later in join order.
-  if (isFixedStationTaskset && stationsRaw.length > 0) {
-    const sortedStations = [...stationsRaw].sort((a, b) =>
-      String(a.id || "").localeCompare(String(b.id || ""))
-    );
-    const seen = new Set();
-    const ordered = [];
-
-    sortedStations.forEach((st) => {
-      const teamId = st.assignedTeamId;
-      if (teamId && teamsById[teamId] && !seen.has(teamId)) {
-        ordered.push(teamId);
-        seen.add(teamId);
-      }
-    });
-
-    joinedOrder.forEach((id) => {
-      if (!seen.has(id)) {
-        ordered.push(id);
-        seen.add(id);
-      }
-    });
-
-    teamIdsForGrid = ordered;
-  }
-
-  // Keep a stations array around in case you still want station-based UI
-  let stations = stationsRaw;
-  if (stations.length === 0 && allTeamIds.length > 0) {
-    stations = allTeamIds.map((teamId, index) => ({
-      id: `Team ${index + 1}`,
-      assignedTeamId: teamId,
-    }));
-  }
-
-  const renderStationCard = (station) => {
-    const team = teamsById[station.assignedTeamId] || null;
-    const stationId = station.id;
-
-    if (!team) {
-      return (
-        <div
-          key={station.id}
-          style={{
-            borderRadius: 12,
-            border: "1px dashed #cbd5f5",
-            padding: 12,
-            minWidth: 180,
-            minHeight: 90,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: 4,
-            background: "#f9fafb",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              color: "#6b7280",
-            }}
-          >
-            {station.id}
-          </div>
-          <div style={{ color: "#9ca3af" }}>No team yet</div>
-        </div>
-      );
-    }
-
-    const latest = submissions[team.teamId];
-    const score = scores[team.teamId] ?? 0;
-
-    // Where this team should currently be
-    const assignedStationId = team.currentStationId || stationId;
-    const assignedColor = stationIdToColor(assignedStationId);
-
-    // Last station they scanned (from QR)
-    const scannedStationId = team.lastScannedStationId || null;
-    const hasScanForThisAssignment =
-      scannedStationId && scannedStationId === assignedStationId;
-
-    // ---- use taskIndex + submission to derive detailed status ----
-    const currentTaskIndex = roomState.taskIndex;
-    const isCurrentTask =
-      latest &&
-      typeof latest.taskIndex === "number" &&
-      latest.taskIndex === currentTaskIndex &&
-      latest.answerText !== "";
-
-    const timedOut =
-      latest &&
-      typeof latest.taskIndex === "number" &&
-      latest.taskIndex === currentTaskIndex &&
-      latest.answerText === "" &&
-      latest.timeMs != null;
-
-    let statusLine = "";
-    if (!hasScanForThisAssignment) {
-      statusLine = "Waiting for a scan…";
-    } else if (hasScanForThisAssignment && currentTaskIndex < 0) {
-      statusLine = "Scanned and ready";
-    } else if (hasScanForThisAssignment && timedOut) {
-      statusLine = "Timed out";
-    } else if (hasScanForThisAssignment && isCurrentTask) {
-      statusLine = "Answer submitted";
-    } else if (hasScanForThisAssignment && currentTaskIndex >= 0) {
-      statusLine = "Awaiting task response";
-    } else {
-      statusLine = "Waiting…";
-    }
-
-    const subtleTextColor = "#6b7280";
-
-    return (
-      <div
-        key={station.id}
-        style={{
-          borderRadius: 12,
-          padding: 12,
-          minWidth: 220,
-          minHeight: 130,
-          background: "#ffffff",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          boxShadow: "0 1px 3px rgba(15,23,42,0.16)",
-          border: hasScanForThisAssignment
-            ? "2px solid rgba(15,23,42,0.25)"
-            : "1px solid #e5e7eb",
-          transition: "background 0.2s ease, border 0.2s ease",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 8,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: "0.75rem",
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                color: subtleTextColor,
-              }}
-            >
-              {station.id}
-            </div>
-            <div style={{ fontWeight: 700 }}>
-              {team.teamName || "Team"}
-            </div>
-            {Array.isArray(team.members) && team.members.length > 0 && (
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: "0.8rem",
-                  color: subtleTextColor,
-                }}
-              >
-                ({team.members.join(", ")})
-              </div>
-            )}
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontSize: "0.75rem",
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                color: subtleTextColor,
-              }}
-            >
-              Score
-            </div>
-            <div
-              style={{
-                fontSize: "1.2rem",
-                fontWeight: 700,
-              }}
-            >
-              {score}
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            marginTop: 6,
-            fontSize: "0.8rem",
-            color: "#374151",
-          }}
-        >
-          {statusLine}
-        </div>
-
-        <div
-          style={{
-            marginTop: 6,
-            fontSize: "0.75rem",
-          }}
-        >
-          <div>
-            <strong>Assigned to:</strong>{" "}
-            {assignedColor
-              ? `${assignedColor.toUpperCase()} (${assignedStationId})`
-              : assignedStationId || "—"}
-          </div>
-          <div
-            style={{
-              marginTop: 2,
-              color: subtleTextColor,
-            }}
-          >
-            Last scanned: {scannedStationId || "—"}
-          </div>
-        </div>
-
-        {/* Colour band at the bottom */}
-        <div
-          style={{
-            marginTop: 8,
-            height: 6,
-            borderRadius: 999,
-            backgroundColor: assignedColor
-              ? assignedColor
-              : "rgba(148,163,184,0.5)",
-          }}
-        />
-      </div>
-    );
-  };
-
-  // NEW: render a card anchored by TEAM (stable position),
-  // using currentStationId just for colour/station info.
-  const renderTeamCard = (teamId) => {
-    const team = teamsById[teamId];
-    if (!team) return null;
-
-    const assignedStationId = team.currentStationId || null;
-    const assignedColor = stationIdToColor(assignedStationId);
-
-    const latest = submissions[teamId];
-    const score = scores[teamId] ?? 0;
-
-    const scannedStationId = team.lastScannedStationId || null;
-    const hasScanForThisAssignment =
-      scannedStationId && scannedStationId === assignedStationId;
-
-    const currentTaskIndex = roomState.taskIndex;
-
-    const isCurrentTask =
-      latest &&
-      typeof latest.taskIndex === "number" &&
-      latest.taskIndex === currentTaskIndex &&
-      latest.answerText !== "";
-
-    const timedOut =
-      latest &&
-      typeof latest.taskIndex === "number" &&
-      latest.taskIndex === currentTaskIndex &&
-      latest.answerText === "" &&
-      latest.timeMs != null;
-
-    const hasTreatPending = pendingTreatTeams.includes(teamId);
-
-    let statusLine = "";
-    if (!hasScanForThisAssignment) {
-      statusLine = "Waiting for a scan…";
-    } else if (hasScanForThisAssignment && currentTaskIndex < 0) {
-      statusLine = "Scanned and ready";
-    } else if (hasScanForThisAssignment && timedOut) {
-      statusLine = "Timed out";
-    } else if (hasScanForThisAssignment && isCurrentTask) {
-      statusLine = "Answer submitted";
-    } else if (hasScanForThisAssignment && currentTaskIndex >= 0) {
-      statusLine = "Awaiting task response";
-    } else {
-      statusLine = "Waiting…";
-    }
-
-    const bubbleBg = hasScanForThisAssignment
-      ? isCurrentTask
-        ? "#ecfdf5"
-        : "#eff6ff"
-      : "#ffffff";
-
-    const textColor = "#111827";
-
-    const members = Array.isArray(team.members) ? team.members : [];
-
-    return (
-      <div
-        key={teamId}
-        style={{
-          borderRadius: 12,
-          padding: 12,
-          minWidth: 220,
-          minHeight: 130,
-          background: bubbleBg,
-          color: textColor,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          boxShadow: "0 1px 3px rgba(15,23,42,0.16)",
-          border: hasScanForThisAssignment
-            ? "2px solid rgba(15,23,42,0.25)"
-            : "1px solid #e5e7eb",
-          transition: "background 0.2s ease, border 0.2s ease",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            gap: 8,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: "0.75rem",
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                color: "#6b7280",
-              }}
-            >
-              Team
-            </div>
-            <div
-              style={{
-                fontSize: "1rem",
-                fontWeight: 600,
-              }}
-            >
-              {team.teamName || "Team"}
-            </div>
-            {members.length > 0 && (
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  color: "#4b5563",
-                  marginTop: 2,
-                }}
-              >
-                ({members.join(", ")})
-              </div>
-            )}
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontSize: "0.7rem",
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                color: "#6b7280",
-              }}
-            >
-              Score
-            </div>
-            <div
-              style={{
-                fontSize: "1.1rem",
-                fontWeight: 700,
-              }}
-            >
-              {score}
-            </div>
-            {assignedColor && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: "0.75rem",
-                  color: "#6b7280",
-                }}
-              >
-                {assignedColor.toUpperCase()}
-              </div>
-            )}
-          </div>
-        </div>
-        <div
-          style={{
-            marginTop: 6,
-            fontSize: "0.8rem",
-            color: "#374151",
-          }}
-        >
-          {statusLine}
-        </div>
-        {assignedStationId && (
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: "0.75rem",
-              color: "#6b7280",
-            }}
-          >
-            Station: {assignedStationId}
-          </div>
-        )}
-        {hasTreatPending && (
-          <div
-            style={{
-              marginTop: 6,
-              fontSize: "0.8rem",
-              color: "#b45309",
-              fontWeight: 600,
-            }}
-          >
-            🍬 See teacher for a treat!
-          </div>
-        )}
-      </div>
-    );
-  };
+  const pendingTreatTeams = roomState.pendingTreatTeams || [];
 
   const noiseLabel = !noiseEnabled
     ? "Off"
@@ -966,154 +465,332 @@ export default function LiveSession({ roomCode }) {
     ? "Moderate"
     : "Strict";
 
-  return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        padding: 16,
-        gap: 16,
-        fontFamily: "system-ui",
-      }}
-    >
-      {/* Header */}
+  const renderTeamCard = (teamId) => {
+    const team = teams[teamId];
+    if (!team) return null;
+
+    const score = roomState.scores?.[teamId] ?? 0;
+    const currentStationId = team.currentStationId || null;
+    const color = stationIdToColor(currentStationId);
+    const isPendingTreat = pendingTreatTeams.includes(teamId);
+
+    const lastScan =
+      scanEvents.find((ev) => ev.teamId === teamId) || null;
+
+    return (
       <div
+        key={teamId}
         style={{
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          padding: 12,
+          background: "#ffffff",
+          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
           display: "flex",
-          justifyContent: "space-between",
-          gap: 16,
-          alignItems: "flex-start",
+          flexDirection: "column",
+          gap: 6,
         }}
       >
-        <div>
-          <h1 style={{ margin: 0 }}>Live session</h1>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.9rem",
-              color: "#4b5563",
-            }}
-          >
-            {roomCode
-              ? `Room: ${roomCode.toUpperCase()}`
-              : "No room selected."}
-          </p>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.8rem",
-              color: "#6b7280",
-            }}
-          >
-            Status: {status}
-          </p>
-        </div>
-
-        {/* Quick task / taskset controls */}
         <div
           style={{
-            marginBottom: 0,
-            padding: 12,
-            borderRadius: 8,
-            border: "1px solid #e5e7eb",
-            background: "#f9fafb",
-            minWidth: 280,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
           }}
         >
           <div
             style={{
-              fontSize: "0.8rem",
-              marginBottom: 8,
-              color: "#374151",
+              fontWeight: 600,
+              fontSize: "0.95rem",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
             }}
           >
-            <strong>Active taskset:</strong>{" "}
-            {activeTasksetMeta ? (
-              <>
-                {activeTasksetMeta.name}{" "}
-                {activeTasksetMeta.numTasks != null && (
-                  <span style={{ color: "#6b7280" }}>
-                    ({activeTasksetMeta.numTasks} tasks)
-                  </span>
-                )}
-                {loadedTasksetId === activeTasksetMeta._id ? (
-                  <span style={{ color: "#059669" }}>
-                    {" "}
-                    – loaded in room
-                  </span>
-                ) : (
-                  <span> – not yet loaded in this room</span>
-                )}
-              </>
-            ) : (
-              <>No active taskset. Set one on the Task Sets page.</>
+            <span>{team.teamName || "Team"}</span>
+            {team.members && team.members.length > 0 && (
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  color: "#6b7280",
+                }}
+              >
+                ({team.members.join(", ")})
+              </span>
             )}
           </div>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: "1.1rem",
+              color: "#111827",
+            }}
+          >
+            {score}
+          </div>
+        </div>
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input
-              type="text"
-              placeholder="Quick task prompt…"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              style={{
-                flex: 2,
-                padding: "4px 6px",
-                borderRadius: 4,
-                border: "1px solid #d1d5db",
-                fontSize: "0.8rem",
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Correct answer (optional)"
-              value={correctAnswer}
-              onChange={(e) => setCorrectAnswer(e.target.value)}
-              style={{
-                flex: 1.3,
-                padding: "4px 6px",
-                borderRadius: 4,
-                border: "1px solid #d1d5db",
-                fontSize: "0.8rem",
-              }}
-            />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 4,
+          }}
+        >
+          <div
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 999,
+              border: "2px solid #e5e7eb",
+              background: color || "#f9fafb",
+              boxShadow: color
+                ? `0 0 0 0 rgba(255,255,255,0.9)`
+                : "none",
+              animation: color ? "stationPulse 1.8s ease-out infinite" : "none",
+            }}
+          />
+          <div
+            style={{
+              fontSize: "0.8rem",
+              color: "#4b5563",
+            }}
+          >
+            {currentStationId
+              ? `At station ${currentStationId.toUpperCase()}`
+              : "Waiting for station…"}
+          </div>
+        </div>
+
+        {lastScan && (
+          <div
+            style={{
+              fontSize: "0.75rem",
+              color: "#6b7280",
+            }}
+          >
+            Last scan:{" "}
+            <strong>
+              {stationIdToColor(lastScan.stationId) ||
+                lastScan.stationId ||
+                "Unknown"}
+            </strong>{" "}
+            at{" "}
+            {lastScan.timestamp
+              ? new Date(lastScan.timestamp).toLocaleTimeString()
+              : ""}
+          </div>
+        )}
+
+        {isPendingTreat && (
+          <div
+            style={{
+              marginTop: 6,
+              padding: "4px 8px",
+              borderRadius: 999,
+              background: "#fef3c7",
+              color: "#92400e",
+              fontSize: "0.75rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            🍬 Treat ready – see teacher!
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        padding: 16,
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        height: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          borderBottom: "1px solid #e5e7eb",
+          paddingBottom: 8,
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.25rem",
+            }}
+          >
+            Live Session
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.9rem",
+              color: "#6b7280",
+            }}
+          >
+            Room <strong>{roomCode}</strong> · {status}
+          </p>
+        </div>
+        {roomState.locationCode && (
+          <div
+            style={{
+              fontSize: "0.85rem",
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "#eff6ff",
+              color: "#1d4ed8",
+            }}
+          >
+            Location: {roomState.locationCode}
+          </div>
+        )}
+      </header>
+
+      {/* Top controls: quick task, taskset launch, noise/treats summary */}
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          alignItems: "flex-start",
+        }}
+      >
+        {/* Quick task + taskset launch panel */}
+        <div
+          style={{
+            flex: 1.5,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            padding: 12,
+            background: "#ffffff",
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 600,
+              marginBottom: 8,
+              fontSize: "0.9rem",
+            }}
+          >
+            Task controls
           </div>
 
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                onClick={handleLaunchQuickTask}
-                style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#0ea5e9",
-                  color: "#ffffff",
-                  fontSize: "0.85rem",
-                  cursor:
-                    isLaunchingQuick || taskFlowActive
-                      ? "not-allowed"
-                      : "pointer",
-                  opacity: isLaunchingQuick || taskFlowActive ? 0.5 : 1,
-                }}
-                disabled={isLaunchingQuick || taskFlowActive}
-              >
-                {isLaunchingQuick ? "Launching…" : "Launch quick task"}
-              </button>
-              <button
-                onClick={() => quickLaunch(task)}
-                disabled={launchingTask === task._id}
-                className={`px-6 py-3 rounded-lg font-bold transition ${
-                  launchingTask === task._id
-                    ? "bg-gray-400 cursor-not-allowed"
-                    : "bg-green-600 hover:bg-green-700 text-white"
-                }`}
-              >
-                {launchingTask === task._id ? "Launching..." : "Quick Launch"}
-              </button>
+          {/* Quick task */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              marginBottom: 8,
+            }}
+          >
+            <label
+              style={{
+                fontSize: "0.8rem",
+                color: "#374151",
+              }}
+            >
+              Quick prompt
+            </label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={2}
+              placeholder="Ask something simple all teams can respond to…"
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                resize: "vertical",
+                fontSize: "0.85rem",
+              }}
+            />
+            <input
+              type="text"
+              value={correctAnswer}
+              onChange={(e) => setCorrectAnswer(e.target.value)}
+              placeholder="Optional: correct answer (for auto-scoring)"
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 6,
+                fontSize: "0.85rem",
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleLaunchQuickTask}
+              style={{
+                marginTop: 4,
+                alignSelf: "flex-start",
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                background: "#0ea5e9",
+                color: "#ffffff",
+                fontSize: "0.8rem",
+                cursor:
+                  !prompt.trim() || isLaunchingQuick ? "not-allowed" : "pointer",
+                opacity: !prompt.trim() || isLaunchingQuick ? 0.5 : 1,
+              }}
+              disabled={!prompt.trim() || isLaunchingQuick}
+            >
+              {isLaunchingQuick ? "Launching…" : "Launch quick task"}
+            </button>
+          </div>
+
+          {/* Taskset launch + skip */}
+          <div
+            style={{
+              marginTop: 8,
+              borderTop: "1px solid #f3f4f6",
+              paddingTop: 8,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "0.8rem",
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>Taskset</span>
+              {activeTasksetMeta ? (
+                <span style={{ color: "#6b7280" }}>
+                  Active:{" "}
+                  <strong>{activeTasksetMeta.title || "Untitled set"}</strong>
+                </span>
+              ) : (
+                <span style={{ color: "#9ca3af" }}>
+                  No active taskset selected.
+                </span>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+              }}
+            >
               <button
                 type="button"
                 onClick={handleLaunchTaskset}
@@ -1182,6 +859,121 @@ export default function LiveSession({ roomCode }) {
             </div>
           </div>
         </div>
+
+        {/* Noise + treats summary / controls */}
+        <div
+          style={{
+            flex: 1,
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            padding: 12,
+            background: "#ffffff",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          {/* Noise */}
+          <div>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                marginBottom: 4,
+              }}
+            >
+              Noise control
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "0.8rem",
+                marginBottom: 4,
+              }}
+            >
+              <span>Mode: {noiseLabel}</span>
+              <button
+                type="button"
+                onClick={handleToggleNoise}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: noiseEnabled ? "#22c55e" : "#e5e7eb",
+                  color: noiseEnabled ? "#ffffff" : "#374151",
+                  fontSize: "0.75rem",
+                  cursor: "pointer",
+                }}
+              >
+                {noiseEnabled ? "Disable" : "Enable"}
+              </button>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={noiseThreshold}
+              onChange={handleNoiseThresholdChange}
+              style={{ width: "100%" }}
+            />
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "#6b7280",
+                marginTop: 2,
+              }}
+            >
+              Live level: {noiseLevel} · Brightness factor:{" "}
+              {noiseEnabled ? noiseBrightness.toFixed(2) : "1.00"}
+            </div>
+          </div>
+
+          {/* Treats */}
+          <div>
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                marginBottom: 4,
+              }}
+            >
+              Treats
+            </div>
+            <div
+              style={{
+                fontSize: "0.8rem",
+                marginBottom: 4,
+              }}
+            >
+              {treatsConfig.enabled ? (
+                <>
+                  {treatsConfig.given} / {treatsConfig.total} treats given.
+                </>
+              ) : (
+                <>Treats disabled.</>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleGiveTreat}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                background: "#f97316",
+                color: "#ffffff",
+                fontSize: "0.8rem",
+                cursor: treatsConfig.enabled ? "pointer" : "not-allowed",
+                opacity: treatsConfig.enabled ? 1 : 0.5,
+              }}
+              disabled={!treatsConfig.enabled}
+            >
+              Give random treat
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Main body: teams + leaderboard + scan log */}
@@ -1245,7 +1037,7 @@ export default function LiveSession({ roomCode }) {
               Classroom controls
             </div>
 
-            {/* Noise control */}
+            {/* Noise control summary */}
             <div style={{ marginBottom: 8 }}>
               <div
                 style={{
@@ -1260,31 +1052,15 @@ export default function LiveSession({ roomCode }) {
                   {noiseEnabled && (
                     <>
                       {" "}
-                      • noise: {Math.round(noiseLevel)}
+                      • noise: {Math.round(noiseLevel)} / thr:{" "}
+                      {noiseThreshold}
                     </>
                   )}
                 </span>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={noiseThreshold}
-                onChange={handleNoiseSliderChange}
-                style={{ width: "100%" }}
-              />
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: "0.7rem",
-                  color: "#6b7280",
-                }}
-              >
-                0 = off • higher = stricter noise expectations
-              </div>
             </div>
 
-            {/* Treats control */}
+            {/* Treats summary */}
             <div>
               <div
                 style={{
@@ -1293,116 +1069,71 @@ export default function LiveSession({ roomCode }) {
                   marginBottom: 2,
                 }}
               >
-                <span>Random treats</span>
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    fontSize: "0.75rem",
-                    color: "#374151",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={treatsConfig.enabled}
-                    onChange={handleToggleTreatsEnabled}
-                  />
-                  Enabled
-                </label>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <label
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "#4b5563",
-                  }}
-                >
-                  Treats this session:{" "}
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={treatsConfig.total}
-                  onChange={handleTreatsTotalChange}
-                  style={{
-                    width: 60,
-                    padding: "2px 4px",
-                    fontSize: "0.75rem",
-                    borderRadius: 4,
-                    border: "1px solid #d1d5db",
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "#6b7280",
-                  }}
-                >
-                  Given: {treatsConfig.given}/{treatsConfig.total}
+                <span>Treats</span>
+                <span style={{ color: "#6b7280" }}>
+                  {treatsConfig.enabled
+                    ? `${treatsConfig.given}/${treatsConfig.total} given`
+                    : "Disabled"}
                 </span>
-              </div>
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: "0.7rem",
-                  color: "#6b7280",
-                }}
-              >
-                Students see a “See your teacher for a treat” prompt when
-                selected.
               </div>
             </div>
           </div>
 
           {/* Leaderboard */}
-          <div>
-            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Leaderboard</h2>
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              padding: 8,
+              background: "#ffffff",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                marginBottom: 4,
+              }}
+            >
+              Leaderboard
+            </div>
             {leaderboard.length === 0 ? (
-              <p style={{ color: "#6b7280" }}>No scores yet.</p>
+              <p
+                style={{
+                  color: "#6b7280",
+                  fontSize: "0.8rem",
+                }}
+              >
+                No scores yet.
+              </p>
             ) : (
               <ol
                 style={{
-                  listStyle: "none",
-                  padding: 0,
                   margin: 0,
-                  fontSize: "0.85rem",
+                  paddingLeft: 16,
+                  fontSize: "0.8rem",
+                  overflowY: "auto",
                 }}
               >
-                {leaderboard.map(([teamId, score], idx) => {
-                  const team = teamsById[teamId] || {};
-                  const name = team.teamName || `Team ${idx + 1}`;
-                  const members = Array.isArray(team.members)
-                    ? team.members
-                    : [];
-                  return (
-                    <li
-                      key={teamId}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        padding: "4px 0",
-                        borderBottom: "1px dashed #e5e7eb",
-                      }}
-                    >
-                      <div>
-                        <strong>{name}</strong>
-                        {members.length > 0 && (
-                          <span style={{ color: "#6b7280", marginLeft: 4 }}>
-                            ({members.join(", ")})
-                          </span>
-                        )}
-                      </div>
-                      <div>{score} pts</div>
-                    </li>
-                  );
-                })}
+                {leaderboard.map((entry, idx) => (
+                  <li
+                    key={entry.teamId}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "2px 0",
+                    }}
+                  >
+                    <span>
+                      {idx + 1}. {entry.name}
+                    </span>
+                    <span>{entry.score}</span>
+                  </li>
+                ))}
               </ol>
             )}
           </div>
