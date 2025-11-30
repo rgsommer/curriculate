@@ -42,6 +42,14 @@ function TeacherApp() {
     setRoomCode(generateRoomCode());
   };
 
+  useEffect(() => {
+    const handleUnload = () => {
+      navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, [roomCode]);
+
   const onLive =
     location.pathname === "/" || location.pathname.startsWith("/live");
   const onHost = location.pathname.startsWith("/host");
@@ -91,14 +99,6 @@ function TeacherApp() {
     </div>
   );
 }
-
-useEffect(() => {
-  const handleUnload = () => {
-    navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
-  };
-  window.addEventListener("beforeunload", handleUnload);
-  return () => window.removeEventListener("beforeunload", handleUnload);
-}, [roomCode]);
 
 function EnterRoomMessage() {
   return (
