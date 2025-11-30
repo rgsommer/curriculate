@@ -13,7 +13,7 @@ import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
 import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
 import Login from "./pages/Login.jsx";
-import { useAuth } from "./auth/useAuth";
+import { useAuth } from "../auth/useAuth";
 
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
 
@@ -28,7 +28,7 @@ function generateRoomCode() {
     }
     if (!DISALLOWED_ROOM_CODES.has(code)) {
       return code;
-    }
+    } 
   }
   return "AA"; // ultra-fallback
 }
@@ -36,7 +36,6 @@ function generateRoomCode() {
 function TeacherApp() {
   const [roomCode, setRoomCode] = useState(() => generateRoomCode());
   const location = useLocation();
-  const { isAuthenticated, user, logout } = useAuth();
 
   const handleNewCode = () => {
     setRoomCode(generateRoomCode());
@@ -168,86 +167,78 @@ function TeacherApp() {
           <NavLinkButton to="/teacher/ai-tasksets" active={onAiTasksets}>
             AI task set generator
           </NavLinkButton>
-
-          {/* Login link (if not authenticated) */}
-          {!isAuthenticated && (
-            <NavLinkButton to="/login" active={location.pathname === "/login"}>
-              Login
-            </NavLinkButton>
-          )}
         </div>
       </aside>
 
-      {/* RIGHT SIDE: header + main content */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <HeaderBar isAuthenticated={isAuthenticated} user={user} logout={logout} />
+      {/* MAIN AREA */}
+      <main
+        style={{
+          flex: 1,
+          background: "#f8fafc",
+          padding: 32,
+        }}
+      >
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        <main
-          style={{
-            flex: 1,
-            background: "#f8fafc",
-            padding: 32,
-          }}
-        >
-          <Routes>
-            {/* Login page */}
-            <Route path="/login" element={<Login />} />
+          <Route path="/" element={
+            isAuthenticated ? <Dashboard /> : <Login />
+          }/>
 
-            {/* Redirect base path to /live */}
-            <Route path="/" element={<Navigate to="/live" replace />} />
+          {/* Redirect base path to /live */}
+          <Route path="/" element={<Navigate to="/live" replace />} />
 
-            {/* Live / Room view */}
-            <Route
-              path="/live"
-              element={
-                roomCode ? (
-                  <LiveSession roomCode={roomCode} />
-                ) : (
-                  <EnterRoomMessage />
-                )
-              }
-            />
+          {/* Live / Room view */}
+          <Route
+            path="/live"
+            element={
+              roomCode ? (
+                <LiveSession roomCode={roomCode} />
+              ) : (
+                <EnterRoomMessage />
+              )
+            }
+          />
 
-            {/* Host / Projector */}
-            <Route
-              path="/host"
-              element={
-                roomCode ? (
-                  <HostView roomCode={roomCode} />
-                ) : (
-                  <EnterRoomMessage />
-                )
-              }
-            />
+          {/* Host / Projector */}
+          <Route
+            path="/host"
+            element={
+              roomCode ? (
+                <HostView roomCode={roomCode} />
+              ) : (
+                <EnterRoomMessage />
+              )
+            }
+          />
 
-            {/* Task sets list + editor */}
-            <Route path="/tasksets" element={<TaskSets />} />
-            <Route path="/tasksets/:id" element={<TaskSetEditor />} />
+          {/* Task sets list + editor */}
+          <Route path="/tasksets" element={<TaskSets />} />
+          <Route path="/tasksets/:id" element={<TaskSetEditor />} />
 
-            {/* Reports (analytics) */}
-            <Route path="/reports" element={<AnalyticsOverview />} />
-            <Route
-              path="/reports/:sessionId"
-              element={<SessionAnalyticsPage />}
-            />
+          {/* Reports (analytics) */}
+          <Route path="/reports" element={<AnalyticsOverview />} />
+          <Route
+            path="/reports/:sessionId"
+            element={<SessionAnalyticsPage />}
+          />
 
-            {/* My Plan */}
-            <Route path="/my-plan" element={<MyPlanPage />} />
+          {/* My Plan */}
+          <Route path="/my-plan" element={<MyPlanPage />} />
 
-            {/* Presenter profile */}
-            <Route path="/teacher/profile" element={<TeacherProfile />} />
+          {/* Presenter profile */}
+          <Route path="/teacher/profile" element={<TeacherProfile />} />
 
-            {/* AI TaskSet generator */}
-            <Route
-              path="/teacher/ai-tasksets"
-              element={<AiTasksetGenerator />}
-            />
+          {/* AI TaskSet generator */}
+          <Route
+            path="/teacher/ai-tasksets"
+            element={<AiTasksetGenerator />}
+          />
 
-            {/* Station posters */}
-            <Route path="/station-posters" element={<StationPosters />} />
-          </Routes>
-        </main>
-      </div>
+          {/* Station posters */}
+          <Route path="/station-posters" element={<StationPosters />} />
+        </Routes>
+      </main>
     </div>
   );
 }
@@ -287,31 +278,6 @@ function NavLinkButton({ to, active, children }) {
   );
 }
 
-function HeaderBar({ isAuthenticated, user, logout }) {
-  return (
-    <div className="flex justify-between items-center p-3 bg-gray-800 text-white">
-      <div className="font-bold">Curriculate Teacher</div>
-
-      {isAuthenticated ? (
-        <div className="flex items-center gap-4">
-          <span className="text-sm">{user?.email}</span>
-          <button
-            onClick={logout}
-            className="text-sm border px-2 py-1 rounded hover:bg-gray-700"
-          >
-            Logout
-          </button>
-        </div>
-      ) : (
-        <a
-          href="/login"
-          className="text-sm border px-2 py-1 rounded hover:bg-gray-700"
-        >
-          Login
-        </a>
-      )}
-    </div>
-  );
-}
-
 export default TeacherApp;
+
+
