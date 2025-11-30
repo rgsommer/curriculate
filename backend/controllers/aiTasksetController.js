@@ -1,44 +1,4 @@
 // backend/controllers/aiTasksetController.js
-
-import TeacherProfile from "../models/TeacherProfile.js";
-import TaskSet from "../models/TaskSet.js";
-import { authRequired } from "../middleware/authRequired.js";
-// NOTE: Not using UserSubscription yet; keep it out until subscription plans are finalized.
-// import UserSubscription from "../models/UserSubscription.js";
-
-import { TASK_TYPES } from "../../shared/taskTypes.js";
-import { planTaskTypes } from "../ai/planTaskTypes.js";
-import { createAiTasks } from "../ai/createAiTasks.js";
-import { cleanTaskList } from "../ai/cleanTasks.js";
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-function validateGeneratePayload(payload = {}) {
-  const errors = [];
-
-  if (!payload.gradeLevel) errors.push("gradeLevel is required");
-  if (!payload.subject) errors.push("subject is required");
-
-  const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
-  if (payload.difficulty && !difficultiesAllowed.includes(payload.difficulty)) {
-    errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
-  }
-
-  if (payload.durationMinutes && Number(payload.durationMinutes) <= 0) {
-    errors.push("durationMinutes must be a positive number");
-  }
-
-  const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
-  if (payload.learningGoal && !goalsAllowed.includes(payload.learningGoal)) {
-    errors.push("learningGoal must be one of " + goalsAllowed.join(", "));
-  }
-
-  return errors;
-}
-
 export const generateAiTaskset = [
   authRequired,
   async (req, res) => {
@@ -47,28 +7,12 @@ export const generateAiTaskset = [
         subject,
         gradeLevel,
         numTasks = 8,
-        selectedTypes = [],        // ← default to empty array
+        selectedTypes = [],
         customInstructions = "",
         difficulty = "medium",
       } = req.body;
 
-      // Safety: always have an array
       const typesToUse = Array.isArray(selectedTypes) ? selectedTypes : [];
-
-      if (!subject || !gradeLevel) {
-        return res.status(400).json({
-          error: "subject and gradeLevel are required",
-        });
-      }
-
-      console.log("Generating AI taskset:", {
-        subject,
-        gradeLevel,
-        numTasks,
-        typesToUse,
-        difficulty,
-        userId: req.user?.id,
-      });
 
       const taskset = await generateTaskset({
         subject,
@@ -91,7 +35,7 @@ export const generateAiTaskset = [
       console.error("AI Taskset generation failed:", err);
       res.status(500).json({
         error: "Failed to generate taskset",
-        details: err.message || String(err),
+        details: err.message,
       });
     }
   },
@@ -102,17 +46,10 @@ export async function generateTaskset(options) {
     subject,
     gradeLevel,
     numTasks = 8,
-    selectedTypes = [],  // NEW: Destructure with default
-    customInstructions = "",  // NEW: Destructure with default
-    difficulty = "MEDIUM",  // NEW: Default added
-    teacherId,  // NEW: Renamed from userId for clarity
-    durationMinutes = 45,  // NEW: Default added
-    topicTitle = "",  // NEW: Default added
-    wordConceptList = [],  // NEW: Default added
-    learningGoal = "REVIEW",  // NEW: Default added
-    curriculumLenses = [],  // NEW: Default added
-    // NEW: Add topicDescription (used in flashcards, assumed from truncation)
-    topicDescription = "",
+    selectedTypes = [],
+    customInstructions = "",
+    difficulty = "MEDIUM",
+    teacherId,
   } = options;  // NEW: Destructure from options object instead of req.body
 
   try {
