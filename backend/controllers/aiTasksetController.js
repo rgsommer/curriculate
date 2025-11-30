@@ -1,12 +1,13 @@
 // backend/controllers/aiTasksetController.js
 import TeacherProfile from "../models/TeacherProfile.js";
 import TaskSet from "../models/TaskSet.js";
-import { authRequired } from "../middleware/authRequired.js";   // ← THIS WAS MISSING!
+import { authRequired } from "../middleware/authRequired.js";   // THIS LINE WAS MISSING
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const client = getOpenAIClient();
+//const client = new OpenAI({
+//  apiKey: process.env.OPENAI_API_KEY,
+//});
 
 function validateGeneratePayload(payload = {}) {
   const errors = [];
