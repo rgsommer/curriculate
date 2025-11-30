@@ -365,24 +365,26 @@ export default function LiveSession({ roomCode }) {
   };
 
   const handleLaunchQuickTask = () => {
-  if (!roomCode || !prompt.trim()) return;
-  setIsLaunchingQuick(true);
-  const code = roomCode.toUpperCase();
+    if (!roomCode || !prompt.trim()) return;
+    setIsLaunchingQuick(true);
+    const code = roomCode.toUpperCase();
 
-  // Use existing backend handler "teacherLaunchTask"
-  socket.emit("teacherLaunchTask", {
-    roomCode: code,
-    prompt: prompt.trim(),
-    correctAnswer: correctAnswer.trim() || null,
-  });
+    // Use the existing backend Socket.io event "teacherLaunchTask"
+    // which does not send an ack. We clear the loading state manually.
+    socket.emit("teacherLaunchTask", {
+      roomCode: code,
+      prompt: prompt.trim(),
+      correctAnswer: (correctAnswer || "").trim() || null,
+    });
 
-  // Legacy handler doesn’t send an ack,
-  // so just clear the loading state after a moment.
-  setTimeout(() => {
-    setIsLaunchingQuick(false);
-    setStatus("Quick task launched.");
-  }, 300);
-};
+    // Clear prompt fields and loading state shortly after emit
+    setTimeout(() => {
+      setIsLaunchingQuick(false);
+      setPrompt("");
+      setCorrectAnswer("");
+      setStatus("Quick task launched.");
+    }, 200);
+  };
 
   const handleLaunchTaskset = () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
@@ -412,7 +414,7 @@ export default function LiveSession({ roomCode }) {
   };
 
   const handleGiveTreat = () => {
-    if (!roomCode) return;
+    if (!roomCode || !canGiveTreat) return;
     const code = roomCode.toUpperCase();
     socket.emit("teacher:giveTreat", { roomCode: code });
   };
@@ -445,10 +447,19 @@ export default function LiveSession({ roomCode }) {
   };
 
   // Derived helpers
+    // Derived helpers
   const teams = roomState.teams || {};
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
+
+  // Random-treat availability: enabled and at least one treat remaining
+  const canGiveTreat =
+    treatsConfig.enabled &&
+    (typeof treatsConfig.total === "number" &&
+    typeof treatsConfig.given === "number"
+      ? treatsConfig.given < treatsConfig.total
+      : true);
 
   const pendingTreatTeams = roomState.pendingTreatTeams || [];
 
@@ -962,10 +973,10 @@ export default function LiveSession({ roomCode }) {
                 background: "#f97316",
                 color: "#ffffff",
                 fontSize: "0.8rem",
-                cursor: treatsConfig.enabled ? "pointer" : "not-allowed",
-                opacity: treatsConfig.enabled ? 1 : 0.5,
+                cursor: canGiveTreat ? "pointer" : "not-allowed",
+                opacity: canGiveTreat ? 1 : 0.5,
               }}
-              disabled={!treatsConfig.enabled}
+              disabled={!canGiveTreat}
             >
               Give random treat
             </button>
