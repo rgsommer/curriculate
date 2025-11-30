@@ -16,48 +16,6 @@ function validateGeneratePayload(payload = {}) {
   return errors;
 }
 
-export const generateAiTaskset = [
-  authRequired,
-  async (req, res) => {
-    try {
-      const {
-        subject,
-        gradeLevel,
-        numTasks = 8,
-        selectedTypes = [],
-        customInstructions = "",
-        difficulty = "medium",
-      } = req.body;
-
-      const typesToUse = Array.isArray(selectedTypes) ? selectedTypes : [];
-
-      const taskset = await generateTaskset({
-        subject,
-        gradeLevel,
-        numTasks,
-        selectedTypes: typesToUse,
-        customInstructions,
-        difficulty,
-        teacherId: req.user?.id,
-      });
-
-      const saved = await TaskSet.create({
-        ...taskset,
-        ownerId: req.user?.id || null,
-        isPublic: false,
-      });
-
-      res.json({ ok: true, taskset: saved });
-    } catch (err) {
-      console.error("AI Taskset generation failed:", err);
-      res.status(500).json({
-        error: "Failed to generate taskset",
-        details: err.message,
-      });
-    }
-  },
-];
-
 export async function generateTaskset(options) {
   const {
     subject,
