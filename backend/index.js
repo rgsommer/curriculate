@@ -896,6 +896,7 @@ io.on("connection", (socket) => {
 
   // Student joins room (NEW PERSISTENT VERSION)
   socket.on("student:joinRoom", async (payload, ack) => {
+  try {
     const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
@@ -903,11 +904,6 @@ io.on("connection", (socket) => {
     if (!room) {
       room = rooms[code] = await createRoom(code, null);
     }
-
-    // socket.join(code);
-    socket.join(teamId); // Or teamSessionId
-    socket.data.role = "student";
-    socket.data.roomCode = code;
 
     const cleanMembers =
       Array.isArray(members) && members.length > 0
@@ -927,8 +923,18 @@ io.on("connection", (socket) => {
     });
 
     const teamId = team._id.toString();
+
+    // Attach metadata to this socket
+    socket.data.role = "student";
+    socket.data.roomCode = code;
     socket.data.teamId = teamId;
 
+    // Join rooms: the roomCode room (for broadcast) AND the teamId room (for direct sends)
+    socket.join(code);
+    socket.join(teamId);
+
+    // In-memory representation
+    if (!room.teams) room.teams = {};
     room.teams[teamId] = {
       teamId,
       teamName: displayName,
@@ -941,6 +947,7 @@ io.on("connection", (socket) => {
       lastSeenAt: new Date(),
     };
 
+    // Ensure stations exist
     if (!room.stations || Object.keys(room.stations).length === 0) {
       room.stations = {};
       const NUM_STATIONS = 8;
@@ -950,6 +957,7 @@ io.on("connection", (socket) => {
       }
     }
 
+    // Auto-assign first free station if none
     if (!room.teams[teamId].currentStationId) {
       const stationIds = Object.keys(room.stations);
       const taken = new Set(
@@ -982,45 +990,54 @@ io.on("connection", (socket) => {
     if (typeof ack === "function") {
       ack({ ok: true, roomState: state, teamId, teamSessionId: teamId });
     }
-  });
+  } catch (err) {
+    console.error("Error in student:joinRoom:", err);
+    if (typeof ack === "function") {
+      ack({ ok: false, error: "Server error while joining room." });
+    }
+  }
+});
 
   // Resume team session
   socket.on("resume-team-session", async (data, ack) => {
-    const { roomCode, teamSessionId } = data;
+  try {
+    const { roomCode, teamSessionId } = data || {};
     const code = (roomCode || "").toUpperCase();
 
     if (!code || !teamSessionId) {
-      return ack({ success: false, error: "Missing data" });
+      return ack && ack({ success: false, error: "Missing data" });
     }
 
     const room = rooms[code];
     if (!room) {
-      return ack({ success: false, error: "Room not found" });
+      return ack && ack({ success: false, error: "Room not found" });
     }
 
     const team = await TeamSession.findById(teamSessionId);
     if (!team || team.roomCode !== code) {
-      return ack({ success: false, error: "Team not found" });
+      return ack && ack({ success: false, error: "Team not found" });
     }
 
     const liveSession = await Session.findOne({ roomCode: code });
     if (!liveSession || liveSession.status === "ended") {
-      return ack({ success: false, error: "Room ended" });
+      return ack && ack({ success: false, error: "Room ended" });
     }
 
+    const teamId = team._id.toString();
+
     // Re-attach socket
-    socket.data.teamId = team._id.toString();
+    socket.data.teamId = teamId;
     socket.data.roomCode = code;
-    // socket.join(code);
-    socket.join(teamId); // Or teamSessionId
+    socket.join(code);
+    socket.join(teamId);
 
     // Update DB
     team.status = "online";
     team.lastSeenAt = new Date();
     await team.save();
 
-    // Update in-memory if not present
-    const teamId = team._id.toString();
+    // Update in-memory
+    if (!room.teams) room.teams = {};
     if (!room.teams[teamId]) {
       room.teams[teamId] = {
         teamId,
@@ -1044,7 +1061,7 @@ io.on("connection", (socket) => {
       room.teams[teamId].offlineTimeout = null;
     }
 
-    // Notify teacher
+    // Notify teacher + broadcast state
     io.to(code).emit("team-status-updated", {
       teamSessionId: teamId,
       status: "online",
@@ -1054,13 +1071,18 @@ io.on("connection", (socket) => {
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
-    ack({
-      success: true,
-      teamSessionId: teamId,
-      teamName: team.teamName,
-      members: team.playerNames,
-    });
-  });
+    if (ack) {
+      ack({
+        success: true,
+        teamId,
+        roomState: state,
+      });
+    }
+  } catch (err) {
+    console.error("Error in resume-team-session:", err);
+    if (ack) ack({ success: false, error: "Server error while resuming team." });
+  }
+});
 
   // Explicit leave
   socket.on("leave-room", async (data, ack) => {
