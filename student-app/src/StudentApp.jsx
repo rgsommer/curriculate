@@ -12,23 +12,6 @@ export const socket = io(API_BASE_URL, {
 
 console.log("API_BASE_URL (student) =", API_BASE_URL);
 
-import { ThemeProvider } from "./contexts/ThemeContext";
-import KidMode from "./KidMode.jsx";
-
-function StudentApp() {
-  const { isKidMode } = useAuth(); // or detect from URL
-
-  return isKidMode ? <KidMode /> : <CurrentStudentApp />;
-
-  useEffect(() => {
-    const handleUnload = () => {
-      navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
-    };
-    window.addEventListener("beforeunload", handleUnload);
-    return () => window.removeEventListener("beforeunload", handleUnload);
-  }, [roomCode]);
-}
-
 /* -----------------------------------------------------------
    Station colour helpers – numeric ids (station-1, station-2…)
 ----------------------------------------------------------- */
@@ -227,8 +210,9 @@ function QrScanner({ active, onCode, onError }) {
 }
 
 /* -----------------------------------------------------------
-   Student App main
+   Noise Sensor
 ----------------------------------------------------------- */
+
 function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
@@ -338,6 +322,10 @@ function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
   return null;
 }
 
+/* -----------------------------------------------------------
+   Student App main
+----------------------------------------------------------- */
+
 export default function StudentApp() {
   const [connected, setConnected] = useState(false);
   const [roomCode, setRoomCode] = useState("");
@@ -379,7 +367,6 @@ export default function StudentApp() {
 
   // timeout-related state
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
-
   const [remainingMs, setRemainingMs] = useState(null);
   const timeoutTimerRef = useRef(null);
   const timeoutSubmittedRef = useRef(false);
@@ -423,6 +410,24 @@ export default function StudentApp() {
       localStorage.removeItem("teamSession");
     }
   }, []);
+
+  // 🔔 Clean beforeunload ping, tied to the real roomCode + API_BASE_URL
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const handleUnload = () => {
+      try {
+        navigator.sendBeacon(
+          `${API_BASE_URL}/api/sessions/${roomCode.trim().toUpperCase()}/ping`
+        );
+      } catch (err) {
+        // sendBeacon failures are non-fatal; ignore
+      }
+    };
+
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, [roomCode]);
 
   // Pulse CSS for colour box
   useEffect(() => {
