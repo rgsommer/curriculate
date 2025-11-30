@@ -365,28 +365,24 @@ export default function LiveSession({ roomCode }) {
   };
 
   const handleLaunchQuickTask = () => {
-    if (!roomCode || !prompt.trim()) return;
-    setIsLaunchingQuick(true);
-    const code = roomCode.toUpperCase();
+  if (!roomCode || !prompt.trim()) return;
+  setIsLaunchingQuick(true);
+  const code = roomCode.toUpperCase();
 
-    socket.emit(
-      "teacher:launchQuickTask",
-      {
-        roomCode: code,
-        prompt,
-        correctAnswer: correctAnswer || null,
-      },
-      (resp) => {
-        setIsLaunchingQuick(false);
-        if (!resp || !resp.ok) {
-          console.error("Failed to launch quick task:", resp);
-          return;
-        }
-        setPrompt("");
-        setCorrectAnswer("");
-      }
-    );
-  };
+  // Use existing backend handler "teacherLaunchTask"
+  socket.emit("teacherLaunchTask", {
+    roomCode: code,
+    prompt: prompt.trim(),
+    correctAnswer: correctAnswer.trim() || null,
+  });
+
+  // Legacy handler doesn’t send an ack,
+  // so just clear the loading state after a moment.
+  setTimeout(() => {
+    setIsLaunchingQuick(false);
+    setStatus("Quick task launched.");
+  }, 300);
+};
 
   const handleLaunchTaskset = () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
