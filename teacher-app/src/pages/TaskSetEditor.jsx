@@ -1,6 +1,6 @@
 // teacher-app/src/pages/TaskSetEditor.jsx
 import React, { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+//import { useNavigate, useParams } from "react-router-dom";
 
 import {
   TASK_TYPES,
@@ -66,7 +66,7 @@ function prettyCategory(typeValue) {
 
 export default function TaskSetEditor() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  //const navigate = useNavigate();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
