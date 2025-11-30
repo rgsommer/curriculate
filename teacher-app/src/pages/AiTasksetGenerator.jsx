@@ -41,6 +41,7 @@ const TASK_TYPES = [
 export default function AiTasksetGenerator() {
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const navigate = useNavigate();
 
   const [form, setForm] = useState({
     name: "",
