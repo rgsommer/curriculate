@@ -1,6 +1,6 @@
 // teacher-app/src/TeacherApp.jsx
 import React, { useState } from "react";
-import { Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 
 import LiveSession from "./pages/LiveSession.jsx";
 import HostView from "./pages/HostView.jsx";

@@ -6,8 +6,6 @@ import { API_BASE_URL } from "../config";
 const API_BASE = API_BASE_URL;
 
 export default function TaskSets() {
-  const navigate = useNavigate();
-
   const [sets, setSets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -22,6 +20,7 @@ export default function TaskSets() {
 
   const [sortBy, setSortBy] = useState("updatedAt");
   const [sortDir, setSortDir] = useState("desc");
+  const navigate = useNavigate();
 
   // Load all task sets
   const loadSets = useCallback(async () => {

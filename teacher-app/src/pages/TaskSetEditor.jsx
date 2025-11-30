@@ -1,6 +1,6 @@
 // teacher-app/src/pages/TaskSetEditor.jsx
 import React, { useEffect, useState } from "react";
-//import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import {
   TASK_TYPES,
@@ -66,8 +66,7 @@ function prettyCategory(typeValue) {
 
 export default function TaskSetEditor() {
   const { id } = useParams();
-  //const navigate = useNavigate();
-
+  
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tasks, setTasks] = useState([]);
@@ -75,6 +74,7 @@ export default function TaskSetEditor() {
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   const userId = localStorage.getItem("userId");
   const token = localStorage.getItem("token");

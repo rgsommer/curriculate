@@ -42,7 +42,6 @@ export default function AiTasksetGenerator() {
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const navigate = useNavigate();
-
   const [form, setForm] = useState({
     name: "",
     roomLocation: "Classroom",
@@ -56,14 +55,13 @@ export default function AiTasksetGenerator() {
   });
 
   const [displays, setDisplays] = useState([]);
-
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   // New feature: limit to 1–2 specific task types
   const [limitTasks, setLimitTasks] = useState(false);
   const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
-
+  
   // Load presenter profile to prefill defaults
   useEffect(() => {
     let cancelled = false;
