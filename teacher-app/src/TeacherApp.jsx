@@ -64,9 +64,15 @@ function TeacherApp() {
   const onProfile = location.pathname.startsWith("/teacher/profile");
   const onAiTasksets = location.pathname.startsWith("/teacher/ai-tasksets");
 
+  const requireAuth = (element) =>
+    isAuthenticated ? element : <Login />;
+
+  const requireRoom = (element) =>
+    roomCode ? element : <EnterRoomMessage />;
+
   return (
     <div className="flex min-h-screen font-sans bg-gray-100">
-      {/* Sidebar — now fixed, no overlay */}
+      {/* Sidebar — fixed on the left */}
       <div className="w-64 p-4 bg-gray-800 text-white h-screen fixed overflow-y-auto z-50 shadow-2xl">
         {/* Room Code Section */}
         <div className="mb-8">
@@ -108,15 +114,86 @@ function TeacherApp() {
         </nav>
       </div>
 
-      {/* Main Content — flexes right, no overlap */}
+      {/* Main Content — shifted right of sidebar */}
       <main className="flex-1 ml-64 p-8 overflow-y-auto">
         <HeaderBar
           isAuthenticated={isAuthenticated}
           user={user}
           logout={logout}
         />
+
         <Routes>
-          {/* ... all your routes unchanged ... */}
+          {/* Live session (default) */}
+          <Route
+            path="/"
+            element={requireAuth(requireRoom(<LiveSession roomCode={roomCode} />))}
+          />
+          <Route
+            path="/live"
+            element={requireAuth(requireRoom(<LiveSession roomCode={roomCode} />))}
+          />
+
+          {/* Host view */}
+          <Route
+            path="/host"
+            element={requireAuth(requireRoom(<HostView roomCode={roomCode} />))}
+          />
+
+          {/* Task sets */}
+          <Route
+            path="/tasksets"
+            element={requireAuth(<TaskSets />)}
+          />
+          <Route
+            path="/tasksets/new"
+            element={requireAuth(<TaskSetEditor />)}
+          />
+          <Route
+            path="/tasksets/:id"
+            element={requireAuth(<TaskSetEditor />)}
+          />
+
+          {/* Reports / Analytics */}
+          <Route
+            path="/reports"
+            element={requireAuth(<AnalyticsOverview />)}
+          />
+          <Route
+            path="/reports/:sessionId"
+            element={requireAuth(<SessionAnalyticsPage />)}
+          />
+
+          {/* My Plan */}
+          <Route
+            path="/my-plan"
+            element={requireAuth(<MyPlanPage />)}
+          />
+
+          {/* Teacher profile */}
+          <Route
+            path="/teacher/profile"
+            element={requireAuth(<TeacherProfile />)}
+          />
+
+          {/* AI Taskset Generator */}
+          <Route
+            path="/teacher/ai-tasksets"
+            element={requireAuth(
+              <AiTasksetGenerator roomCode={roomCode} />
+            )}
+          />
+
+          {/* Station posters (not in sidebar, but accessible) */}
+          <Route
+            path="/station-posters"
+            element={requireAuth(
+              requireRoom(<StationPosters roomCode={roomCode} />)
+            )}
+          />
+
+          {/* Login + catch-all */}
+          <Route path="/login" element={<Login />} />
+          <Route path="*" element={<EnterRoomMessage />} />
         </Routes>
       </main>
     </div>
