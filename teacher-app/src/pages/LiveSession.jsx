@@ -610,7 +610,7 @@ export default function LiveSession({ roomCode }) {
         display: "flex",
         flexDirection: "column",
         gap: 16,
-        height: "100%",
+        minHeight: "100%",
         boxSizing: "border-box",
       }}
     >
