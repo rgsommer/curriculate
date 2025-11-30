@@ -932,6 +932,7 @@ io.on("connection", (socket) => {
       playerNames: cleanMembers,
       status: "online",
       lastSeenAt: new Date(),
+      teamColor: "unassigned", // ✅ satisfy required field
     });
 
     const teamId = teamDoc._id.toString();
