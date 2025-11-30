@@ -26,9 +26,7 @@ function StudentApp() {
     };
     window.addEventListener("beforeunload", handleUnload);
     return () => window.removeEventListener("beforeunload", handleUnload);
-    }, [roomCode]);    
-
-
+  }, [roomCode]);
 }
 
 /* -----------------------------------------------------------
@@ -264,8 +262,7 @@ function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
           return;
         }
 
-        const AudioCtx =
-          window.AudioContext || window.webkitAudioContext;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
         const audioCtx = new AudioCtx();
         const analyser = audioCtx.createAnalyser();
         const source = audioCtx.createMediaStreamSource(stream);
@@ -281,26 +278,18 @@ function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
         dataArrayRef.current = dataArray;
 
         const loop = () => {
-          if (
-            cancelled ||
-            !analyserRef.current ||
-            !dataArrayRef.current
-          ) {
+          if (cancelled || !analyserRef.current || !dataArrayRef.current) {
             return;
           }
 
-          analyserRef.current.getByteTimeDomainData(
-            dataArrayRef.current
-          );
+          analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
 
           let sum = 0;
           for (let i = 0; i < dataArrayRef.current.length; i++) {
             const v = dataArrayRef.current[i] - 128;
             sum += v * v;
           }
-          const rms = Math.sqrt(
-            sum / dataArrayRef.current.length
-          );
+          const rms = Math.sqrt(sum / dataArrayRef.current.length);
 
           // Approximate noise level 0–100
           const level = Math.min(
@@ -309,11 +298,7 @@ function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
           );
 
           const now = Date.now();
-          if (
-            roomCode &&
-            now - lastSentRef.current > 500 &&
-            !ignoreNoise
-          ) {
+          if (roomCode && now - lastSentRef.current > 500 && !ignoreNoise) {
             socket.emit("noise:sample", {
               roomCode: roomCode.trim().toUpperCase(),
               level,
@@ -361,6 +346,7 @@ export default function StudentApp() {
   const [joined, setJoined] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [teamId, setTeamId] = useState(null);
+  const [teamSessionId, setTeamSessionId] = useState(null);
 
   const [assignedStationId, setAssignedStationId] = useState(null);
   const [scannedStationId, setScannedStationId] = useState(null);
@@ -401,6 +387,43 @@ export default function StudentApp() {
   // draft answer tracking (for timeout auto-submit)
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState(null);
 
+  // 🔁 NEW: try to resume a saved team session on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("teamSession");
+      if (!saved) return;
+
+      const { roomCode: savedRoomCode, teamSessionId: savedTeamSessionId } =
+        JSON.parse(saved) || {};
+
+      if (!savedRoomCode || !savedTeamSessionId) return;
+
+      socket.emit(
+        "resume-team-session",
+        { roomCode: savedRoomCode, teamSessionId: savedTeamSessionId },
+        (resp) => {
+          if (resp && resp.success) {
+            console.log("Resumed session!", resp);
+            setRoomCode(savedRoomCode);
+            setTeamSessionId(savedTeamSessionId);
+            // if backend provides a specific teamId, use it; otherwise fall back
+            setTeamId(resp.teamId || savedTeamSessionId || null);
+            setJoined(true);
+            setScannerActive(false);
+            setStatusMessage(
+              "Reconnected to your room. Wait for your next task."
+            );
+          } else {
+            localStorage.removeItem("teamSession");
+          }
+        }
+      );
+    } catch (err) {
+      console.warn("Failed to restore saved session:", err);
+      localStorage.removeItem("teamSession");
+    }
+  }, []);
+
   // Pulse CSS for colour box
   useEffect(() => {
     const styleId = "station-pulse-style";
@@ -428,7 +451,6 @@ export default function StudentApp() {
   }, []);
 
   // Socket events
-    // Socket events
   useEffect(() => {
     const handleConnect = () => {
       console.log("Student socket connected:", socket.id);
@@ -548,9 +570,7 @@ export default function StudentApp() {
         return;
       }
 
-      setTreatMessage(
-        payload.message || "See your teacher for a treat!"
-      );
+      setTreatMessage(payload.message || "See your teacher for a treat!");
 
       try {
         if (sndTreat.current) {
@@ -743,6 +763,21 @@ export default function StudentApp() {
         setJoiningRoom(false);
         setTeamId(ack.teamId || socket.id);
 
+        // NEW: persist session so we can resume later
+        const sessionIdToStore = ack.teamSessionId || ack.teamId || socket.id;
+        setTeamSessionId(ack.teamSessionId || null);
+        try {
+          localStorage.setItem(
+            "teamSession",
+            JSON.stringify({
+              roomCode: finalRoom,
+              teamSessionId: sessionIdToStore,
+            })
+          );
+        } catch (err) {
+          console.warn("Unable to persist teamSession:", err);
+        }
+
         const teams = ack.roomState?.teams || {};
         const team = teams[ack.teamId] || null;
         const locLabel = (
@@ -922,7 +957,7 @@ export default function StudentApp() {
     : "";
   const scanPrompt = `Scan a ${locLabel}${colourLabel} station.`;
 
-    return (
+  return (
     <div
       style={{
         minHeight: "100vh",
@@ -937,7 +972,6 @@ export default function StudentApp() {
         opacity: noiseState.enabled ? noiseState.brightness : 1,
         transition: "opacity 120ms ease-out",
       }}
-
     >
       {/* Hidden audio element for task / scan sounds */}
       <audio
@@ -996,7 +1030,7 @@ export default function StudentApp() {
               : "Connecting…"}
           </p>
         </header>
-        
+
         {treatMessage && (
           <div
             style={{
