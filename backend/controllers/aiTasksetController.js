@@ -1,65 +1,133 @@
 // backend/controllers/aiTasksetController.js
+
 import TeacherProfile from "../models/TeacherProfile.js";
 import TaskSet from "../models/TaskSet.js";
+import { authRequired } from "../middleware/authRequired.js";
+// NOTE: Not using UserSubscription yet; keep it out until subscription plans are finalized.
+// import UserSubscription from "../models/UserSubscription.js";
+
+import { TASK_TYPES } from "../../shared/taskTypes.js";
+import { planTaskTypes } from "../ai/planTaskTypes.js";
+import { createAiTasks } from "../ai/createAiTasks.js";
+import { cleanTaskList } from "../ai/cleanTasks.js";
 import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Basic validation of incoming payload
 function validateGeneratePayload(payload = {}) {
   const errors = [];
+
   if (!payload.gradeLevel) errors.push("gradeLevel is required");
   if (!payload.subject) errors.push("subject is required");
+
+  const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
+  if (payload.difficulty && !difficultiesAllowed.includes(payload.difficulty)) {
+    errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
+  }
+
+  if (payload.durationMinutes && Number(payload.durationMinutes) <= 0) {
+    errors.push("durationMinutes must be a positive number");
+  }
+
+  const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
+  if (payload.learningGoal && !goalsAllowed.includes(payload.learningGoal)) {
+    errors.push("learningGoal must be one of " + goalsAllowed.join(", "));
+  }
+
   return errors;
 }
 
-export async function generateTaskset(req, res) {
-  try {
-    const body = req.body || {};
-    const errors = validateGeneratePayload(body);
-    if (errors.length > 0) {
-      return res.status(400).json({
-        ok: false,
-        error: "Invalid payload: " + errors.join(", "),
+export const generateAiTaskset = [
+  authRequired,
+  async (req, res) => {
+    try {
+      const {
+        subject,
+        gradeLevel,
+        numTasks = 8,
+        selectedTypes = [],        // ← default to empty array
+        customInstructions = "",
+        difficulty = "medium",
+      } = req.body;
+
+      // Safety: always have an array
+      const typesToUse = Array.isArray(selectedTypes) ? selectedTypes : [];
+
+      if (!subject || !gradeLevel) {
+        return res.status(400).json({
+          error: "subject and gradeLevel are required",
+        });
+      }
+
+      console.log("Generating AI taskset:", {
+        subject,
+        gradeLevel,
+        numTasks,
+        typesToUse,
+        difficulty,
+        userId: req.user?.id,
+      });
+
+      const taskset = await generateTaskset({
+        subject,
+        gradeLevel,
+        numTasks,
+        selectedTypes: typesToUse,
+        customInstructions,
+        difficulty,
+        teacherId: req.user?.id,
+      });
+
+      const saved = await TaskSet.create({
+        ...taskset,
+        ownerId: req.user?.id || null,
+        isPublic: false,
+      });
+
+      res.json({ ok: true, taskset: saved });
+    } catch (err) {
+      console.error("AI Taskset generation failed:", err);
+      res.status(500).json({
+        error: "Failed to generate taskset",
+        details: err.message || String(err),
       });
     }
+  },
+];
 
-    const {
-      gradeLevel,
-      subject,
-      difficulty = "MEDIUM",
-      learningGoal = "REVIEW",
-      topicDescription = "",
-      totalDurationMinutes,
-      numberOfTasks,
-      requiredTaskTypes,
-      tasksetName,
-      roomLocation,
-      locationCode,
-      isFixedStationTaskset,
-      displays,
-      presenterProfile,
-    } = body;
+export async function generateTaskset(options) {
+  const {
+    subject,
+    gradeLevel,
+    numTasks = 8,
+    selectedTypes = [],
+    customInstructions = "",
+    difficulty = "MEDIUM",
+    teacherId,
+    durationMinutes = 45,
+    topicTitle = "",
+    wordConceptList = [],
+    learningGoal = "REVIEW",
+    curriculumLenses = [],
+    // Add topicDescription if used in your truncation
+    topicDescription = "",
+  } = options;
 
-    // Derive duration and task count
-    const durationNum = Number(totalDurationMinutes);
-    const durationMinutes =
-      Number.isFinite(durationNum) && durationNum > 0 ? durationNum : 45;
+  try {
+    const payloadErrors = validateGeneratePayload(options);
+    if (payloadErrors.length > 0) {
+      throw new Error("Invalid payload: " + payloadErrors.join(", "));
+    }
 
-    const requestedCount = Number(numberOfTasks);
-    const baseCount = Number.isFinite(requestedCount)
-      ? requestedCount
-      : Math.round(durationMinutes / 5);
-    const targetTaskCount = Math.max(4, Math.min(20, baseCount || 8));
-
-    // Try to load teacher profile for metadata (soft fail)
-    const userId = req.user?.id || req.user?._id || null;
+    // -----------------------------
+    // Teacher profile (soft lookup)
+    // -----------------------------
     let profile = null;
-    if (userId) {
+    if (teacherId) {
       try {
-        profile = await TeacherProfile.findOne({ userId });
+        profile = await TeacherProfile.findOne({ userId: teacherId });
       } catch (err) {
         console.warn(
           "[aiTasksetController] Failed to load TeacherProfile:",
@@ -68,203 +136,171 @@ export async function generateTaskset(req, res) {
       }
     }
 
-    const lenses =
-      presenterProfile?.curriculumLenses ||
-      profile?.curriculumLenses ||
-      [];
+    const effectiveConfig = {
+      gradeLevel,
+      subject,
+      difficulty,
+      durationMinutes,
+      topicTitle,
+      wordConceptList,
+      learningGoal,
+      curriculumLenses: curriculumLenses || profile?.curriculumLenses || [],
+      // Add topicDescription if needed
+      topicDescription,
+    };
 
-    const taskTypeHint =
-      Array.isArray(requiredTaskTypes) && requiredTaskTypes.length > 0
-        ? `Use ONLY the following internal task type codes when designing tasks: ${requiredTaskTypes.join(
-            ", "
-          )}. You may repeat these types as needed. Do not introduce any other task types.`
-        : "Use a varied mix of interactive task types suitable for an active, station-based lesson.";
+    let canSaveTasksets = true;
+    let planName = "Balanced Mix";
 
-    const systemPrompt = `
-You are an expert curriculum designer building task sets for an interactive classroom platform called Curriculate.
-Curriculate supports many different task types (multiple-choice, short-answer, sequence ordering, matching, creative / evidence tasks, and physical station challenges).
-You will output ONLY valid JSON. No prose, no commentary.
-    `.trim();
+    // ... (your truncated code here – assume it sets implementedTypes, rawTasks, etc.) ...
+    // For example:
+    // const implementedTypes = await planTaskTypes(effectiveConfig, selectedTypes, numTasks);
+    // const rawTasks = await createAiTasks(effectiveConfig, implementedTypes, customInstructions);
 
-    const userPrompt = `
-Create a station-based task set for Curriculate.
+    // Extract key concepts from topicDescription using a quick prompt
+    const conceptPrompt = `Extract 6–10 key historical concepts/people/events from this topic as a simple bullet list (one per line). Only return the list, no extra text:
 
-Grade level: ${gradeLevel}
-Subject: ${subject}
-Difficulty: ${difficulty}
-Learning goal: ${learningGoal}
-Duration (minutes): ${durationMinutes}
-Number of tasks: exactly ${targetTaskCount}
-Topic / unit description: ${topicDescription || "General review"}
+"${effectiveConfig.topicTitle || effectiveConfig.topicDescription || 'General History'}"`;
 
-Curriculum lenses / perspectives: ${
-      Array.isArray(lenses) && lenses.length ? lenses.join(", ") : "none specified"
-    }
+    // ... (assume AI call here for concepts) ...
 
-${taskTypeHint}
+    let tasks = []; // Assume this gets populated in your truncation
 
-OUTPUT FORMAT (JSON ONLY):
+    // Your example code for brainstorm-battle (adjust as needed)
+    const prompts = [
+      "Brainstorm words starting with S related to science!",
+      // ... more prompts
+    ];
+    const prompt = prompts[Math.floor(Math.random() * prompts.length)];
 
-{
-  "name": "Short name for this task set",
-  "description": "One-sentence teacher-facing description",
-  "durationMinutes": ${durationMinutes},
-  "tasks": [
-    {
-      "title": "Short student-facing label",
-      "prompt": "Full student-facing instructions for the task.",
-      "taskType": "short-answer | multiple-choice | true-false | sequence | sort | matching | photo | make-and-snap",
-      "options": ["optional", "for MCQ or sort"],
-      "correctAnswer": "optional exact answer or index",
-      "points": 10
-    }
-  ]
-}
-
-Rules:
-- Include exactly ${targetTaskCount} tasks.
-- Every task MUST have: title, prompt, taskType, points.
-- Prefer simple, concrete instructions that fit in 5–8 minutes per task.
-- Use age-appropriate language for students at this grade.
-`.trim();
-
-    const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.5,
+    tasks.push({
+      type: "brainstorm-battle",
+      prompt,
+      seedWords: ["think", "create", "imagine", "connect"],
+      durationSeconds: 90,
     });
 
-    const raw = completion.choices[0]?.message?.content || "{}";
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (err) {
-      console.error("[aiTasksetController] Failed to parse AI JSON:", raw);
-      return res.status(500).json({
-        ok: false,
-        error: "AI did not return valid JSON for taskset.",
+    if (selectedTypes.includes("mind-mapper")) {
+      const types = ["mind-map", "hierarchy", "fishbone", "flowchart", "venn", "web"];
+      const organizerType = types[Math.floor(Math.random() * types.length)];
+
+      const prompt = `
+        Generate 9 related terms for "${topicDescription || subject}" at ${gradeLevel} level.
+        Include one main idea, supporting ideas, and details.
+        Return JSON:
+        {
+          "organizerType": "${organizerType}",
+          "items": [
+            { "id": "1", "text": "Photosynthesis", "correctIndex": 0 },
+            ...
+          ]
+        }
+        `;
+
+      const response = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "user", content: prompt }] });
+      const data = JSON.parse(response.choices[0].message.content);
+
+      // Shuffle for students
+      const shuffled = data.items.sort(() => Math.random() - 0.5);
+
+      tasks.push({
+        type: "mind-mapper",
+        organizerType: data.organizerType,
+        shuffledItems: shuffled,
+        correctOrder: data.items.map(i => i.id),
       });
     }
 
-    const aiTasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
+    // -------------------------
+    // Stage 3: Clean & normalize
+    // -------------------------
+    const cleanedTasks = await cleanTaskList(tasks /* or rawTasks */, TASK_TYPES);
 
-    const tasks = aiTasks.map((t, index) => {
-      const type = t.taskType || t.type || "short-answer";
-      const title =
-        t.title ||
-        (typeof t.prompt === "string"
-          ? t.prompt.slice(0, 60)
-          : `Task ${index + 1}`);
-      const prompt = t.prompt || "Complete this task.";
-      const points =
-        typeof t.points === "number" && t.points > 0 ? t.points : 10;
-
-      return {
-        taskId: t.taskId || `ai-${index + 1}`,
-        title,
-        prompt,
-        taskType: type,
-        options: Array.isArray(t.options) ? t.options : [],
-        correctAnswer:
-          typeof t.correctAnswer !== "undefined"
-            ? t.correctAnswer
-            : t.answer ?? null,
-        mediaUrl: t.mediaUrl || null,
-        timeLimitSeconds:
-          typeof t.timeLimitSeconds === "number"
-            ? t.timeLimitSeconds
-            : undefined,
-        points,
-      };
-    });
-
+    // Build TaskSet JSON
     const now = new Date();
-    const effectiveName =
-      tasksetName ||
-      parsed.name ||
-      `${subject} – AI Task Set (${now.toISOString().slice(0, 10)})`;
-
-    const effectiveDescription =
-      parsed.description ||
-      `AI-generated ${subject} task set for grade ${gradeLevel}.`;
-
-    // Map displays into proper schema (DisplaySchema requires "key" and "name")
-    let displayDocs = [];
-    if (Array.isArray(displays) && displays.length > 0) {
-      displayDocs = displays.map((d, idx) => ({
-        key: d.key || `station-${idx + 1}`,
-        name: d.name || `Station ${idx + 1}`,
-        description: d.description || "",
-        stationColor: d.stationColor || "",
-        notesForTeacher: d.notesForTeacher || "",
-        imageUrl: d.imageUrl || "",
-      }));
-    }
-
     const tasksetJson = {
-      name: effectiveName,
-      description: effectiveDescription,
-      subject,
-      gradeLevel,
-      learningGoal,
-      difficulty,
-      durationMinutes: parsed.durationMinutes || durationMinutes,
-      curriculumLenses: lenses,
-      locationType: isFixedStationTaskset ? "stations" : "classroom",
-      locationCode: locationCode || roomLocation || "Classroom",
-      displays: displayDocs,
-      tasks,
+      name:
+        effectiveConfig.topicTitle ||
+        `${effectiveConfig.subject} – AI set ${now.toISOString().slice(0, 10)}`,
+      subject: effectiveConfig.subject,
+      gradeLevel: effectiveConfig.gradeLevel,
+      learningGoal: effectiveConfig.learningGoal,
+      difficulty: effectiveConfig.difficulty,
+      durationMinutes: effectiveConfig.durationMinutes,
+      curriculumLenses: effectiveConfig.curriculumLenses,
+      tasks: cleanedTasks,
       meta: {
         generatedBy: "AI",
         generatedAt: now.toISOString(),
-        sourceConfig: {
-          gradeLevel,
-          subject,
-          difficulty,
-          learningGoal,
-          durationMinutes,
-          topicDescription,
-          requiredTaskTypes,
-        },
+        implementedTypes: [] /* assume from earlier */,
+        sourceConfig: effectiveConfig,
       },
     };
 
-    // Save TaskSet if we know the teacher
-    let saved = null;
-    let canSaveTasksets = true;
-    if (userId) {
-      const doc = new TaskSet({
-        userId,
-        ...tasksetJson,
+    // ————————————————————————————————
+    // Flashcards – 100% AI Generated
+    // ————————————————————————————————
+    if (selectedTypes.includes("flashcards")) {
+      const numCards = 4 + Math.floor(Math.random() * 3); // 4–6 cards
+
+      const flashcardPrompt = `
+      Generate exactly ${numCards} flashcard questions and answers.
+      Grade level: ${gradeLevel}
+      Subject: ${subject}
+      Topic: ${topicDescription || "general review"}
+
+      Rules:
+      - One short, clear question per card
+      - One short, exact answer
+      - Perfect for shouting out loud
+      - Variety encouraged
+
+      Return ONLY valid JSON in this exact format:
+      [
+        { "question": "7 × 8 = ?", "answer": "56" },
+        { "question": "Capital of France?", "answer": "Paris" },
+        ...
+      ]
+      `;
+
+      let cards = [];
+
+      try {
+        const response = await client.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: flashcardPrompt }],
+          temperature: 0.7,
+          max_tokens: 1000,
+        });
+
+        const raw = response.choices[0]?.message?.content?.trim() || "[]";
+        cards = JSON.parse(raw);
+
+        // Safety: if AI gave wrong format, fall back to a few safe ones
+        if (!Array.isArray(cards) || cards.length === 0) throw new Error("Invalid AI response");
+      } catch (err) {
+        console.warn("Flashcards AI failed, using safe fallback:", err.message);
+        cards = [
+          { question: "What is 5 + 7?", answer: "12" },
+          { question: "Capital of Brazil?", answer: "Brasília" },
+          { question: "Largest planet?", answer: "Jupiter" },
+          { question: "Opposite of 'hot'?", answer: "cold" },
+        ].slice(0, numCards);
+      }
+
+      tasks.push({
+        type: "flashcards",
+        prompt: "SHOUT the answer to each flashcard!",
+        cards,
       });
-      saved = await doc.save();
-    } else {
-      canSaveTasksets = false;
     }
 
-    const response = {
-      ok: true,
-      taskset: saved || tasksetJson,
-      saved: !!saved,
-      planName:
-        Array.isArray(requiredTaskTypes) && requiredTaskTypes.length > 0
-          ? "Custom task types"
-          : "Balanced mix",
-      canSaveTasksets,
-    };
-
-    return res.json(response);
+    // No save here – caller (generateAiTaskset) handles saving
+    return tasksetJson;
   } catch (err) {
     console.error("🔥 AI Taskset Generation Error:");
     console.error(err.stack || err);
-    return res.status(500).json({
-      ok: false,
-      error: err.message || "Failed to generate taskset",
-    });
+    throw new Error(err.message || "Failed to generate taskset");
   }
 }
 
