@@ -3,9 +3,9 @@
 // ====================================================================
 
 import "dotenv/config";
+import cors from "cors";
 import express from "express";
 import http from "http";
-import cors from "cors";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 import bodyParser from "body-parser";
@@ -19,7 +19,7 @@ import TeamSession from "./models/TeamSession.js"; // NEW IMPORT
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
-import { generateTaskset as generateAiTaskset } from "./controllers/aiTasksetController.js";
+import { generateAiTaskset } from "./controllers/aiTasksetController.js";
 import {
   listSessions,
   getSessionDetails,
@@ -1911,7 +1911,7 @@ app.delete("/api/tasksets/:id", async (req, res) => {
   }
 });
 
-app.post("/api/ai/tasksets", authRequired, generateAiTaskset);
+app.post("/api/ai/tasksets", generateAiTaskset);
 
 // END SESSION — FINAL ANALYTICS SAVE
 app.post("/api/sessions/:roomCode/end", authRequired, async (req, res) => {

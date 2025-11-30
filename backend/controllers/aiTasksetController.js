@@ -49,7 +49,7 @@ export const generateAiTaskset = [
         numTasks = 8,
         selectedTypes = [],        // ← default to empty array
         customInstructions = "",
-        difficulty = "medium",
+        difficulty = "MEDIUM",
       } = req.body;
 
       // Safety: always have an array
