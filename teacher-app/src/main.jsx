@@ -1,15 +1,15 @@
-// teacher-app/src/main.jsx
+// teacher-app/src/main.jsx (or index.jsx)
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import App from "./TeacherApp";
-import { AuthProvider } from "./auth/useAuth.jsx";
+import TeacherApp from "./TeacherApp.jsx";
+import { AuthProvider } from "./auth/AuthProvider.jsx"; // whatever your provider file is
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <App />
+        <TeacherApp />
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>

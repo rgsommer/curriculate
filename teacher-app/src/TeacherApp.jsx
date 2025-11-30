@@ -13,8 +13,8 @@ import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
 import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
 import Login from "./pages/Login.jsx";
-import { useAuth } from "./auth/useAuth";
 
+import { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
 
 function generateRoomCode() {
@@ -30,31 +30,37 @@ function generateRoomCode() {
       return code;
     }
   }
-  return "AA"; // ultra-fallback
+  // ultra fallback
+  return "AA";
 }
 
 function TeacherApp() {
   const [roomCode, setRoomCode] = useState(() => generateRoomCode());
   const location = useLocation();
+
   const { isAuthenticated, user, logout } = useAuth();
 
-  const handleNewCode = () => {
-    setRoomCode(generateRoomCode());
-  };
-
-  // beforeunload ping tied to the current roomCode
+  // ping on unload (keep the session alive / graceful close)
   useEffect(() => {
     if (!roomCode) return;
 
     const handleUnload = () => {
-      // If you prefer, you can change this to your API_BASE_URL later
-      navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
+      try {
+        navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
+      } catch (e) {
+        // ignore
+      }
     };
 
     window.addEventListener("beforeunload", handleUnload);
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, [roomCode]);
 
+  const handleNewCode = () => {
+    setRoomCode(generateRoomCode());
+  };
+
+  // which nav item is active
   const onLive =
     location.pathname === "/" || location.pathname.startsWith("/live");
   const onHost = location.pathname.startsWith("/host");
@@ -72,9 +78,9 @@ function TeacherApp() {
 
   return (
     <div className="flex min-h-screen font-sans bg-gray-100">
-      {/* Sidebar — fixed on the left */}
+      {/* LEFT SIDEBAR (this is the one you’re missing) */}
       <div className="w-64 p-4 bg-gray-800 text-white h-screen fixed overflow-y-auto z-50 shadow-2xl">
-        {/* Room Code Section */}
+        {/* Room Code */}
         <div className="mb-8">
           <div className="text-sm font-medium mb-2">Room Code</div>
           <div className="bg-white text-gray-900 font-mono text-2xl p-3 rounded-lg text-center shadow">
@@ -88,8 +94,8 @@ function TeacherApp() {
           </button>
         </div>
 
-        {/* Nav Links */}
-        <nav className="space-y-3">
+        {/* Navigation */}
+        <nav className="space-y-3 text-sm">
           <NavLinkButton to="/" active={onLive}>
             Live
           </NavLinkButton>
@@ -114,7 +120,7 @@ function TeacherApp() {
         </nav>
       </div>
 
-      {/* Main Content — shifted right of sidebar */}
+      {/* MAIN AREA (shifted to the right of the sidebar) */}
       <main className="flex-1 ml-64 p-8 overflow-y-auto">
         <HeaderBar
           isAuthenticated={isAuthenticated}
@@ -123,20 +129,26 @@ function TeacherApp() {
         />
 
         <Routes>
-          {/* Live session (default) */}
+          {/* Live session */}
           <Route
             path="/"
-            element={requireAuth(requireRoom(<LiveSession roomCode={roomCode} />))}
+            element={requireAuth(
+              requireRoom(<LiveSession roomCode={roomCode} />)
+            )}
           />
           <Route
             path="/live"
-            element={requireAuth(requireRoom(<LiveSession roomCode={roomCode} />))}
+            element={requireAuth(
+              requireRoom(<LiveSession roomCode={roomCode} />)
+            )}
           />
 
           {/* Host view */}
           <Route
             path="/host"
-            element={requireAuth(requireRoom(<HostView roomCode={roomCode} />))}
+            element={requireAuth(
+              requireRoom(<HostView roomCode={roomCode} />)
+            )}
           />
 
           {/* Task sets */}
@@ -153,7 +165,7 @@ function TeacherApp() {
             element={requireAuth(<TaskSetEditor />)}
           />
 
-          {/* Reports / Analytics */}
+          {/* Reports / analytics */}
           <Route
             path="/reports"
             element={requireAuth(<AnalyticsOverview />)}
@@ -183,7 +195,7 @@ function TeacherApp() {
             )}
           />
 
-          {/* Station posters (not in sidebar, but accessible) */}
+          {/* Station posters (reachable via link/button, not sidebar) */}
           <Route
             path="/station-posters"
             element={requireAuth(
@@ -191,8 +203,10 @@ function TeacherApp() {
             )}
           />
 
-          {/* Login + catch-all */}
+          {/* Auth routes */}
           <Route path="/login" element={<Login />} />
+
+          {/* Fallback */}
           <Route path="*" element={<EnterRoomMessage />} />
         </Routes>
       </main>
@@ -216,19 +230,12 @@ function NavLinkButton({ to, active, children }) {
   return (
     <Link
       to={to}
-      style={{
-        display: "block",
-        width: "100%",
-        textAlign: "left",
-        marginBottom: 8,
-        padding: "6px 10px",
-        borderRadius: 6,
-        background: active ? "#0ea5e9" : "transparent",
-        color: "#fff",
-        cursor: "pointer",
-        textDecoration: "none",
-        fontSize: "0.9rem",
-      }}
+      className={`block w-full text-left mb-1 px-3 py-2 rounded ${
+        active
+          ? "bg-sky-500 text-white"
+          : "text-white hover:bg-gray-700 hover:text-white"
+      } text-sm`}
+      style={{ textDecoration: "none" }}
     >
       {children}
     </Link>
@@ -237,7 +244,7 @@ function NavLinkButton({ to, active, children }) {
 
 function HeaderBar({ isAuthenticated, user, logout }) {
   return (
-    <div className="flex justify-between items-center p-3 bg-gray-800 text-white">
+    <div className="flex justify-between items-center p-3 bg-gray-800 text-white rounded-lg mb-4">
       <div className="font-bold">Curriculate Teacher</div>
 
       {isAuthenticated ? (
