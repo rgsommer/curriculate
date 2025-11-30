@@ -222,7 +222,7 @@ export default function AiTasksetGenerator() {
       const data = await generateAiTaskset(payload);
       setError("");
       setResult(data);
-      navigate('/tasksets');
+      // navigate('/tasksets');
 
     } catch (err) {
       console.error("AI Taskset generation error:", err);
