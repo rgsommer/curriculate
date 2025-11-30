@@ -42,18 +42,14 @@ function TeacherApp() {
     setRoomCode(generateRoomCode());
   };
 
-  // beforeunload ping tied to the current roomCode
   useEffect(() => {
-    if (!roomCode) return;
-
     const handleUnload = () => {
-      // If you prefer, you can change this to your API_BASE_URL later
       navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
     };
-
     window.addEventListener("beforeunload", handleUnload);
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, [roomCode]);
+
 
   const onLive =
     location.pathname === "/" || location.pathname.startsWith("/live");
@@ -64,7 +60,7 @@ function TeacherApp() {
   const onProfile = location.pathname.startsWith("/teacher/profile");
   const onAiTasksets = location.pathname.startsWith("/teacher/ai-tasksets");
 
-  return (
+    return (
     <div className="flex min-h-screen font-sans bg-gray-100">
       {/* Sidebar — now fixed, no overlay */}
       <div className="w-64 p-4 bg-gray-800 text-white h-screen fixed overflow-y-auto z-50 shadow-2xl">
@@ -84,37 +80,19 @@ function TeacherApp() {
 
         {/* Nav Links */}
         <nav className="space-y-3">
-          <NavLinkButton to="/" active={onLive}>
-            Live
-          </NavLinkButton>
-          <NavLinkButton to="/host" active={onHost}>
-            Host
-          </NavLinkButton>
-          <NavLinkButton to="/tasksets" active={onTasksets}>
-            Task Sets
-          </NavLinkButton>
-          <NavLinkButton to="/reports" active={onReports}>
-            Reports
-          </NavLinkButton>
-          <NavLinkButton to="/my-plan" active={onMyPlan}>
-            My Plan
-          </NavLinkButton>
-          <NavLinkButton to="/teacher/profile" active={onProfile}>
-            Profile
-          </NavLinkButton>
-          <NavLinkButton to="/teacher/ai-tasksets" active={onAiTasksets}>
-            AI Task Sets
-          </NavLinkButton>
+          <NavLinkButton to="/" active={onLive}>Live</NavLinkButton>
+          <NavLinkButton to="/host" active={onHost}>Host</NavLinkButton>
+          <NavLinkButton to="/tasksets" active={onTasksets}>Task Sets</NavLinkButton>
+          <NavLinkButton to="/reports" active={onReports}>Reports</NavLinkButton>
+          <NavLinkButton to="/my-plan" active={onMyPlan}>My Plan</NavLinkButton>
+          <NavLinkButton to="/teacher/profile" active={onProfile}>Profile</NavLinkButton>
+          <NavLinkButton to="/teacher/ai-tasksets" active={onAiTasksets}>AI Task Sets</NavLinkButton>
         </nav>
       </div>
 
       {/* Main Content — flexes right, no overlap */}
       <main className="flex-1 ml-64 p-8 overflow-y-auto">
-        <HeaderBar
-          isAuthenticated={isAuthenticated}
-          user={user}
-          logout={logout}
-        />
+        <HeaderBar isAuthenticated={isAuthenticated} user={user} logout={logout} />
         <Routes>
           {/* ... all your routes unchanged ... */}
         </Routes>
