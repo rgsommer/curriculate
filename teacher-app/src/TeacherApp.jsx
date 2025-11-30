@@ -30,7 +30,6 @@ function generateRoomCode() {
       return code;
     }
   }
-  // ultra fallback
   return "AA";
 }
 
@@ -40,14 +39,14 @@ function TeacherApp() {
 
   const { isAuthenticated, user, logout } = useAuth();
 
-  // ping on unload (keep the session alive / graceful close)
+  // optional ping on unload (non-critical)
   useEffect(() => {
     if (!roomCode) return;
 
     const handleUnload = () => {
       try {
         navigator.sendBeacon(`/api/sessions/${roomCode}/ping`);
-      } catch (e) {
+      } catch {
         // ignore
       }
     };
@@ -60,7 +59,6 @@ function TeacherApp() {
     setRoomCode(generateRoomCode());
   };
 
-  // which nav item is active
   const onLive =
     location.pathname === "/" || location.pathname.startsWith("/live");
   const onHost = location.pathname.startsWith("/host");
@@ -77,25 +75,88 @@ function TeacherApp() {
     roomCode ? element : <EnterRoomMessage />;
 
   return (
-    <div className="flex min-h-screen font-sans bg-gray-100">
-      {/* LEFT SIDEBAR (this is the one you’re missing) */}
-      <div className="w-64 p-4 bg-gray-800 text-white h-screen fixed overflow-y-auto z-50 shadow-2xl">
-        {/* Room Code */}
-        <div className="mb-8">
-          <div className="text-sm font-medium mb-2">Room Code</div>
-          <div className="bg-white text-gray-900 font-mono text-2xl p-3 rounded-lg text-center shadow">
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        fontFamily:
+          "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        backgroundColor: "#f3f4f6",
+      }}
+    >
+      {/* SIDEBAR – fixed on the left */}
+      <div
+        style={{
+          width: 260,
+          padding: 16,
+          backgroundColor: "#111827",
+          color: "#f9fafb",
+          position: "fixed",
+          left: 0,
+          top: 0,
+          height: "100vh",
+          overflowY: "auto",
+          boxShadow: "0 0 25px rgba(0,0,0,0.6)",
+          zIndex: 50,
+        }}
+      >
+        {/* App label */}
+        <div
+          style={{
+            fontSize: "0.95rem",
+            fontWeight: 700,
+            marginBottom: 16,
+          }}
+        >
+          Curriculate Teacher
+        </div>
+
+        {/* Room code box */}
+        <div style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              fontSize: "0.8rem",
+              fontWeight: 500,
+              marginBottom: 4,
+              color: "#e5e7eb",
+            }}
+          >
+            Room Code
+          </div>
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              color: "#111827",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco",
+              fontSize: "1.7rem",
+              padding: 12,
+              borderRadius: 8,
+              textAlign: "center",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+            }}
+          >
             {roomCode}
           </div>
           <button
             onClick={handleNewCode}
-            className="mt-3 w-full text-sm border px-3 py-2 rounded hover:bg-gray-700 transition"
+            style={{
+              marginTop: 10,
+              width: "100%",
+              fontSize: "0.85rem",
+              borderRadius: 6,
+              padding: "6px 10px",
+              border: "1px solid rgba(156,163,175,0.9)",
+              backgroundColor: "transparent",
+              color: "#e5e7eb",
+              cursor: "pointer",
+            }}
           >
             New Code
           </button>
         </div>
 
-        {/* Navigation */}
-        <nav className="space-y-3 text-sm">
+        {/* Navigation links */}
+        <nav>
           <NavLinkButton to="/" active={onLive}>
             Live
           </NavLinkButton>
@@ -120,8 +181,15 @@ function TeacherApp() {
         </nav>
       </div>
 
-      {/* MAIN AREA (shifted to the right of the sidebar) */}
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
+      {/* MAIN CONTENT – pushed to the right */}
+      <main
+        style={{
+          flex: 1,
+          marginLeft: 260,
+          padding: 24,
+          overflowY: "auto",
+        }}
+      >
         <HeaderBar
           isAuthenticated={isAuthenticated}
           user={user}
@@ -129,7 +197,7 @@ function TeacherApp() {
         />
 
         <Routes>
-          {/* Live session */}
+          {/* Live */}
           <Route
             path="/"
             element={requireAuth(
@@ -143,7 +211,7 @@ function TeacherApp() {
             )}
           />
 
-          {/* Host view */}
+          {/* Host */}
           <Route
             path="/host"
             element={requireAuth(
@@ -151,7 +219,7 @@ function TeacherApp() {
             )}
           />
 
-          {/* Task sets */}
+          {/* Tasksets */}
           <Route
             path="/tasksets"
             element={requireAuth(<TaskSets />)}
@@ -187,7 +255,7 @@ function TeacherApp() {
             element={requireAuth(<TeacherProfile />)}
           />
 
-          {/* AI Taskset Generator */}
+          {/* AI Taskset generator */}
           <Route
             path="/teacher/ai-tasksets"
             element={requireAuth(
@@ -195,7 +263,7 @@ function TeacherApp() {
             )}
           />
 
-          {/* Station posters (reachable via link/button, not sidebar) */}
+          {/* Station posters (linked from inside app) */}
           <Route
             path="/station-posters"
             element={requireAuth(
@@ -203,7 +271,7 @@ function TeacherApp() {
             )}
           />
 
-          {/* Auth routes */}
+          {/* Auth */}
           <Route path="/login" element={<Login />} />
 
           {/* Fallback */}
@@ -230,12 +298,19 @@ function NavLinkButton({ to, active, children }) {
   return (
     <Link
       to={to}
-      className={`block w-full text-left mb-1 px-3 py-2 rounded ${
-        active
-          ? "bg-sky-500 text-white"
-          : "text-white hover:bg-gray-700 hover:text-white"
-      } text-sm`}
-      style={{ textDecoration: "none" }}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        marginBottom: 6,
+        padding: "6px 10px",
+        borderRadius: 6,
+        textDecoration: "none",
+        fontSize: "0.9rem",
+        backgroundColor: active ? "#0ea5e9" : "transparent",
+        color: "#e5e7eb",
+        cursor: "pointer",
+      }}
     >
       {children}
     </Link>
@@ -244,15 +319,40 @@ function NavLinkButton({ to, active, children }) {
 
 function HeaderBar({ isAuthenticated, user, logout }) {
   return (
-    <div className="flex justify-between items-center p-3 bg-gray-800 text-white rounded-lg mb-4">
-      <div className="font-bold">Curriculate Teacher</div>
-
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: 12,
+        backgroundColor: "#111827",
+        color: "#f9fafb",
+        borderRadius: 10,
+        marginBottom: 16,
+      }}
+    >
+      <div style={{ fontWeight: 700 }}>Curriculate Teacher</div>
       {isAuthenticated ? (
-        <div className="flex items-center gap-4">
-          <span className="text-sm">{user?.email}</span>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontSize: "0.9rem",
+          }}
+        >
+          <span>{user?.email}</span>
           <button
             onClick={logout}
-            className="text-sm border px-2 py-1 rounded hover:bg-gray-700"
+            style={{
+              fontSize: "0.85rem",
+              borderRadius: 6,
+              border: "1px solid rgba(156,163,175,0.9)",
+              padding: "4px 8px",
+              backgroundColor: "transparent",
+              color: "#e5e7eb",
+              cursor: "pointer",
+            }}
           >
             Logout
           </button>
@@ -260,7 +360,15 @@ function HeaderBar({ isAuthenticated, user, logout }) {
       ) : (
         <a
           href="/login"
-          className="text-sm border px-2 py-1 rounded hover:bg-gray-700"
+          style={{
+            fontSize: "0.85rem",
+            borderRadius: 6,
+            border: "1px solid rgba(156,163,175,0.9)",
+            padding: "4px 8px",
+            backgroundColor: "transparent",
+            color: "#e5e7eb",
+            cursor: "pointer",
+          }}
         >
           Login
         </a>
