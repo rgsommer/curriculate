@@ -900,6 +900,14 @@ io.on("connection", (socket) => {
     const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
+    if (!code) {
+      if (typeof ack === "function") {
+        return ack({ ok: false, error: "Missing room code." });
+      }
+      return;
+    }
+
+    // Ensure we have a room
     let room = rooms[code];
     if (!room) {
       room = rooms[code] = await createRoom(code, null);
@@ -907,14 +915,18 @@ io.on("connection", (socket) => {
 
     const cleanMembers =
       Array.isArray(members) && members.length > 0
-        ? members.map((m) => String(m).trim()).filter(Boolean)
+        ? members
+            .map((m) => String(m).trim())
+            .filter(Boolean)
         : [];
 
     const displayName =
-      teamName || cleanMembers[0] || `Team-${String(socket.id).slice(-4)}`;
+      (teamName && teamName.trim()) ||
+      cleanMembers[0] ||
+      `Team-${String(socket.id).slice(-4)}`;
 
-    // Create persistent team session
-    const team = await TeamSession.create({
+    // Create persistent TeamSession in Mongo
+    const teamDoc = await TeamSession.create({
       roomCode: code,
       teamName: displayName,
       playerNames: cleanMembers,
@@ -922,19 +934,21 @@ io.on("connection", (socket) => {
       lastSeenAt: new Date(),
     });
 
-    const teamId = team._id.toString();
+    const teamId = teamDoc._id.toString();
 
     // Attach metadata to this socket
     socket.data.role = "student";
     socket.data.roomCode = code;
     socket.data.teamId = teamId;
 
-    // Join rooms: the roomCode room (for broadcast) AND the teamId room (for direct sends)
+    // Join both the room and a per-team room
     socket.join(code);
     socket.join(teamId);
 
-    // In-memory representation
+    // Ensure in-memory room.teams exists
     if (!room.teams) room.teams = {};
+
+    // Register / update team in room state
     room.teams[teamId] = {
       teamId,
       teamName: displayName,
@@ -957,7 +971,7 @@ io.on("connection", (socket) => {
       }
     }
 
-    // Auto-assign first free station if none
+    // Auto-assign first available station
     if (!room.teams[teamId].currentStationId) {
       const stationIds = Object.keys(room.stations);
       const taken = new Set(
@@ -974,12 +988,14 @@ io.on("connection", (socket) => {
       }
     }
 
+    // Broadcast new room state
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
+    // Notify teacher (for join sound / banner)
     if (room.teacherSocketId) {
-      io.to(room.teacherSocketId).emit("team:joined", {
+      io.to(room.teacherSocketId).emit("teamJoined", {
         teamId,
         teamName: displayName,
         members: cleanMembers,
@@ -987,8 +1003,14 @@ io.on("connection", (socket) => {
       });
     }
 
+    // Ack to the student
     if (typeof ack === "function") {
-      ack({ ok: true, roomState: state, teamId, teamSessionId: teamId });
+      ack({
+        ok: true,
+        roomState: state,
+        teamId,
+        teamSessionId: teamId,
+      });
     }
   } catch (err) {
     console.error("Error in student:joinRoom:", err);
