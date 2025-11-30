@@ -132,107 +132,107 @@ export default function AiTasksetGenerator() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (generating) return;
+  e.preventDefault();
+  if (generating) return;
 
-    setError("");
-    setResult(null);
-    setGenerating(true);
-      if (!form.name.trim()) {
-        setError("Task set name is required.");
+  setError("");
+  setResult(null);
+  setGenerating(true);
+
+  if (!form.name.trim()) {
+    setError("Task set name is required.");
+    setGenerating(false);
+    return;
+  }
+
+  try {
+    // Clean up displays if fixed-station
+    const cleanedDisplays =
+      form.isFixedStation || displays.length
+        ? displays
+            .map((d) => ({
+              name: (d.name || "").trim(),
+              stationColor: (d.stationColor || "").trim(),
+              description: (d.description || "").trim(),
+            }))
+            .filter((d) => d.name || d.stationColor || d.description)
+        : [];
+
+    const duration = Number(form.durationMinutes);
+    const totalDurationMinutes =
+      Number.isFinite(duration) && duration > 0 ? duration : 45;
+
+    // Base task count estimate
+    let estimatedTaskCount = Math.max(
+      4,
+      Math.min(20, Math.round(totalDurationMinutes / 5))
+    );
+
+    let requiredTaskTypes = [];
+    let topicDescriptionForAi = (form.topicDescription || "").trim();
+
+    // ————————————————————————————————————————————————
+    // Handle "Limit to specific task types" feature
+    // ————————————————————————————————————————————————
+    if (limitTasks) {
+      if (selectedTaskTypes.length === 0) {
+        setError(
+          "Please select at least one task type when limiting task types."
+        );
         setGenerating(false);
         return;
       }
-    try {
-      // Clean up displays if fixed-station
-      const cleanedDisplays =
-        form.isFixedStation || displays.length
-          ? displays
-              .map((d) => ({
-                name: (d.name || "").trim(),
-                stationColor: (d.stationColor || "").trim(),
-                description: (d.description || "").trim(),
-              }))
-              .filter((d) => d.name || d.stationColor || d.description)
-          : [];
 
-      const duration = Number(form.durationMinutes);
-      const totalDurationMinutes =
-        Number.isFinite(duration) && duration > 0 ? duration : 45;
-
-      // ————————————————————————————————————————————————
-      // Handle "Limit to specific task types" feature
-      // ————————————————————————————————————————————————
-      let estimatedTaskCount = Math.max(
-        4,
+      // Ensure at least as many tasks as selected types
+      estimatedTaskCount = Math.max(
+        selectedTaskTypes.length,
         Math.min(20, Math.round(totalDurationMinutes / 5))
       );
+      requiredTaskTypes = selectedTaskTypes;
 
-      let requiredTaskTypes = [];
-
-      if (limitTasks) {
-        if (selectedTaskTypes.length === 0) {
-          setError("Please select at least one task type when limiting task types.");
-          setGenerating(false);
-          return;
-        }
-
-        // Allow repeats to fill time: set min tasks to selected.length, max to more
-        estimatedTaskCount = Math.max(
-          selectedTaskTypes.length,
-          Math.min(20, Math.round(totalDurationMinutes / 5))
-        );
-        requiredTaskTypes = selectedTaskTypes;
-
-        // Append strict instructions to AI prompt
-        form.topicDescription = `${form.topicDescription.trim()}\n\nIMPORTANT: Use ONLY these task types: ${selectedTaskTypes.join(", ")}. Repeat types if needed to fill the duration. Do not use any other types.`;
-      }
-
-      // Rough task count for planner; AI can still vary internally
-      const estimatedTaskCount = Math.max(
-        4,
-        Math.min(20, Math.round(totalDurationMinutes / 5))
-      );
-
-      const payload = {
-        // Core planning context
-        gradeLevel: form.gradeLevel,
-        subject: form.subject,
-        difficulty: form.difficulty,
-        learningGoal: form.learningGoal,
-        topicDescription: form.topicDescription,
-        presenterProfile: profile || undefined,
-
-        // Time-based control instead of user-facing "number of tasks"
-        totalDurationMinutes,
-        numberOfTasks: estimatedTaskCount,
-        requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,  // ← saved permanently
-        
-        // Session / Room context
-        tasksetName: form.name || undefined,
-        roomLocation: form.roomLocation || "Classroom",
-        locationCode: form.roomLocation || "Classroom",
-
-        // Station context
-        isFixedStationTaskset:
-          form.isFixedStation || cleanedDisplays.length > 0,
-        displays: cleanedDisplays.length ? cleanedDisplays : undefined,
-      };
-
-      const data = await generateAiTaskset(payload);
-      setError("");
-      setResult(data);
-      // navigate('/tasksets');
-
-    } catch (err) {
-      console.error("AI Taskset generation error:", err);
-      setError(
-        err?.message || "Something went wrong while generating the task set."
-      );
-    } finally {
-      setGenerating(false);
+      // Append strict instructions to AI prompt (without mutating state)
+      topicDescriptionForAi = `${topicDescriptionForAi}\n\nIMPORTANT: Use ONLY these task types: ${selectedTaskTypes.join(
+        ", "
+      )}. Repeat types if needed to fill the duration. Do not use any other types.`;
     }
-  };
+
+    const payload = {
+      // Core planning context
+      gradeLevel: form.gradeLevel,
+      subject: form.subject,
+      difficulty: form.difficulty,
+      learningGoal: form.learningGoal,
+      topicDescription: topicDescriptionForAi,
+      presenterProfile: profile || undefined,
+
+      // Time-based control instead of user-facing "number of tasks"
+      totalDurationMinutes,
+      numberOfTasks: estimatedTaskCount,
+      requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
+
+      // Session / Room context
+      tasksetName: form.name || undefined,
+      roomLocation: form.roomLocation || "Classroom",
+      locationCode: form.roomLocation || "Classroom",
+
+      // Station context
+      isFixedStationTaskset:
+        form.isFixedStation || cleanedDisplays.length > 0,
+      displays: cleanedDisplays.length ? cleanedDisplays : undefined,
+    };
+
+    const data = await generateAiTaskset(payload);
+    setError("");
+    setResult(data);
+  } catch (err) {
+    console.error("AI Taskset generation error:", err);
+    setError(
+      err?.message || "Something went wrong while generating the task set."
+    );
+  } finally {
+    setGenerating(false);
+  }
+};
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
