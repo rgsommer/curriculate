@@ -1,4 +1,3 @@
-//teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 
@@ -597,7 +596,7 @@ export default function LiveSession({ roomCode }) {
               gap: 4,
             }}
           >
-            🍬 Treat ready – see teacher!
+            🍬 See teacher for a treat!
           </div>
         )}
       </div>
@@ -744,10 +743,12 @@ export default function LiveSession({ roomCode }) {
                 color: "#ffffff",
                 fontSize: "0.8rem",
                 cursor:
-                  !prompt.trim() || isLaunchingQuick ? "not-allowed" : "pointer",
-                opacity: !prompt.trim() || isLaunchingQuick ? 0.5 : 1,
+                  isLaunchingQuick || taskFlowActive
+                    ? "not-allowed"
+                    : "pointer",
+                opacity: isLaunchingQuick || taskFlowActive ? 0.5 : 1,
               }}
-              disabled={!prompt.trim() || isLaunchingQuick}
+              disabled={isLaunchingQuick || taskFlowActive}
             >
               {isLaunchingQuick ? "Launching…" : "Launch quick task"}
             </button>
