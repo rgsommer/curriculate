@@ -64,6 +64,11 @@ export default function LiveSession({ roomCode }) {
   });
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
+  const activeTasksetName =
+    activeTasksetMeta?.name ||
+    activeTasksetMeta?.title ||
+    activeTasksetMeta?.tasksetName ||
+    "Untitled set";
 
   // Room setup / fixed-station helper
   const [roomSetup, setRoomSetup] = useState(null);
@@ -785,8 +790,7 @@ export default function LiveSession({ roomCode }) {
               <span style={{ fontWeight: 600 }}>Taskset</span>
               {activeTasksetMeta ? (
                 <span style={{ color: "#6b7280" }}>
-                  Active:{" "}
-                  <strong>{activeTasksetMeta.title || "Untitled set"}</strong>
+                  Active: <strong>{activeTasksetName}</strong>
                 </span>
               ) : (
                 <span style={{ color: "#9ca3af" }}>
