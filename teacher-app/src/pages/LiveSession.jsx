@@ -409,6 +409,7 @@ export default function LiveSession({ roomCode }) {
         socket.emit("teacher:launchNextTask", { roomCode: code });
       }
     );
+     setAutoLaunchRequested(true);
   };
 
   const handleEndSessionAndEmail = () => {
