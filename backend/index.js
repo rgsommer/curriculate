@@ -736,40 +736,41 @@ io.on("connection", (socket) => {
     handleTeacherNextTask(payload || {});
   });
 
-  // 🚨 IMPORTANT: only ONE launchTaskset handler, using per-team progression
-  socket.on("launchTaskset", ({ roomCode }) => {
-  const code = (roomCode || "").trim().toUpperCase();
-  const room = rooms[code];
-  if (!room || !room.taskset) return;
+  // 🚨 IMPORTANT: shared helper to start a taskset for all teams
+  function startTasksetForRoom(roomCode) {
+    const code = (roomCode || "").trim().toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.taskset) return;
 
-  room.isActive = true;
-  room.startedAt = Date.now();
+    room.isActive = true;
+    room.startedAt = Date.now();
 
-  // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
-  // START LIGHTNING ROUND — ONLY ONCE PER ROOM
-  // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
-  if (!room.lightningInterval) {
-    room.lightningInterval = setInterval(() => {
-      const prompts = [
-        "word about power",
-        "animal that flies",
-        "type of energy",
-        "something that floats",
-        "a loud sound",
-        "a cold place",
-        "a fast vehicle",
-        "something green"
-      ];
-      const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-      const randomTeam = getRandomTeam(code);
+    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+    // START LIGHTNING ROUND — ONLY ONCE PER ROOM
+    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+    if (!room.lightningInterval) {
+      room.lightningInterval = setInterval(() => {
+        const prompts = [
+          "word about power",
+          "animal that flies",
+          "type of energy",
+          "something that floats",
+          "a loud sound",
+          "a cold place",
+          "a fast vehicle",
+          "something green",
+        ];
+        const randomPrompt =
+          prompts[Math.floor(Math.random() * prompts.length)];
+        const randomTeam = getRandomTeam(code);
 
-      io.to(code).emit("lightning-round", {
-        prompt: randomPrompt,
-        teamName: randomTeam?.teamName || "Someone",
-      });
-    }, 30000 + Math.random() * 10000); // 30–40 seconds
-  }
-  
+        io.to(code).emit("lightning-round", {
+          prompt: randomPrompt,
+          teamName: randomTeam?.teamName || "Someone",
+        });
+      }, 30000 + Math.random() * 10000); // 30–40 seconds
+    }
+
     // Reset per-team progress
     Object.values(room.teams || {}).forEach((team) => {
       team.taskIndex = -1;
@@ -783,6 +784,16 @@ io.on("connection", (socket) => {
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
+  }
+
+  // Legacy entry point used by older clients
+  socket.on("launchTaskset", ({ roomCode }) => {
+    startTasksetForRoom(roomCode);
+  });
+
+  // Used by the new LiveSession green "Launch from taskset" button
+  socket.on("teacher:launchNextTask", ({ roomCode }) => {
+    startTasksetForRoom(roomCode);
   });
 
   // Quick ad-hoc task
