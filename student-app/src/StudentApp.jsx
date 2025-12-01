@@ -478,14 +478,16 @@ export default function StudentApp() {
       );
     };
 
-    const handleRoomState = (state = {}) => {
+        const handleRoomState = (state = {}) => {
       // Update location (Classroom / Gym / etc.)
       const loc = state.locationCode || DEFAULT_LOCATION;
       setLocationCode(loc);
 
       const teams = state.teams || {};
-      // On the backend, teamId === DB _id for this teamSession
-      const me = teams[teamId];
+
+      // Prefer our persistent teamId (TeamSession._id), fall back to socket.id
+      const meKey = teamId || socket.id;
+      const me = teams[meKey];
 
       if (!me) {
         // Server no longer has us as a team (e.g., teacher restarted room);
@@ -938,8 +940,13 @@ export default function StudentApp() {
       setRemainingMs(null);
       timeoutSubmittedRef.current = false;
 
-      setStatusMessage("Answer submitted! Wait for the next task.");
+      // After a submission, hide the task and force a rescan for the next colour.
       setCurrentTask(null);
+      setScannedStationId(null);
+      setStatusMessage(
+        "Answer submitted! Find your next station colour and scan it."
+      );
+
     } catch (err) {
       alert(
         "We couldn't submit your answer. Check your connection and tell your teacher."
@@ -962,6 +969,30 @@ export default function StudentApp() {
     ? ` ${assignedNorm.color.toUpperCase()}`
     : "";
   const scanPrompt = `Scan a ${locLabel}${colourLabel} station.`;
+
+  // ---------------- Font scaling for younger grades ----------------
+  let responseFontSize = "1rem";
+  let responseHeadingFontSize = "1rem";
+  const gradeRaw =
+    currentTask?.gradeLevel ?? currentTask?.meta?.gradeLevel ?? null;
+  const parsedGrade =
+    gradeRaw != null ? parseInt(String(gradeRaw), 10) : null;
+
+  if (!Number.isNaN(parsedGrade) && parsedGrade > 0) {
+    if (parsedGrade <= 4) {
+      responseFontSize = "1.15rem";
+      responseHeadingFontSize = "1.2rem";
+    } else if (parsedGrade <= 6) {
+      responseFontSize = "1.08rem";
+      responseHeadingFontSize = "1.15rem";
+    } else if (parsedGrade <= 8) {
+      responseFontSize = "1.02rem";
+      responseHeadingFontSize = "1.1rem";
+    } else {
+      responseFontSize = "0.98rem";
+      responseHeadingFontSize = "1.05rem";
+    }
+  }
 
   return (
     <div
@@ -1307,22 +1338,26 @@ export default function StudentApp() {
         {joined && currentTask && !mustScan && (
           <section
             style={{
-              marginBottom: 8,
-              padding: 12,
-              borderRadius: 12,
-              background: "#f9fafb",
+              marginBottom: 12,
+              padding: 14,
+              borderRadius: 20,
+              background:
+                "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)",
+              boxShadow: "0 10px 25px rgba(15,23,42,0.18)",
+              border: "1px solid rgba(129,140,248,0.35)",
             }}
           >
             <h2
               style={{
                 marginTop: 0,
-                marginBottom: 4,
-                fontSize: "1rem",
+                marginBottom: 6,
+                fontSize: responseHeadingFontSize,
+                letterSpacing: 0.2,
               }}
             >
               {currentTask?.taskType === TASK_TYPES.JEOPARDY
                 ? "Jeopardy clue"
-                : "Task"}
+                : "Your task"}
             </h2>
 
             {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
@@ -1330,7 +1365,7 @@ export default function StudentApp() {
                 <p
                   style={{
                     margin: "0 0 6px",
-                    fontSize: "0.85rem",
+                    fontSize: "0.88rem",
                     color: "#4b5563",
                   }}
                 >
@@ -1342,23 +1377,37 @@ export default function StudentApp() {
             {timeLimitSeconds && timeLimitSeconds > 0 && (
               <p
                 style={{
-                  margin: "0 0 8px",
-                  fontSize: "0.85rem",
+                  margin: "0 0 10px",
+                  fontSize: "0.9rem",
                   color: "#b91c1c",
+                  fontWeight: 500,
                 }}
               >
                 Time left: {formatRemainingMs(remainingMs)}
               </p>
             )}
 
-            <TaskRunner
-              task={currentTask}
-              taskTypes={TASK_TYPES}
-              onSubmit={handleSubmitAnswer}
-              submitting={submitting}
-              onAnswerChange={setCurrentAnswerDraft}
-              answerDraft={currentAnswerDraft}
-            />
+            {/* Inner bubble that holds the actual response UI */}
+            <div
+              style={{
+                marginTop: 6,
+                padding: 12,
+                borderRadius: 16,
+                background: "rgba(255,255,255,0.98)",
+                border: "1px solid rgba(209,213,219,0.9)",
+                fontSize: responseFontSize,
+                lineHeight: 1.5,
+              }}
+            >
+              <TaskRunner
+                task={currentTask}
+                taskTypes={TASK_TYPES}
+                onSubmit={handleSubmitAnswer}
+                submitting={submitting}
+                onAnswerChange={setCurrentAnswerDraft}
+                answerDraft={currentAnswerDraft}
+              />
+            </div>
           </section>
         )}
       </div>

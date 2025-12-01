@@ -1341,7 +1341,9 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
 
     // --------------------------------------------------------
-    // Per-team progression: auto-advance THIS team only
+    // Per-team progression:
+    //   • Quick task → send completion immediately.
+    //   • Full taskset → store next index and wait for new station scan.
     // --------------------------------------------------------
     if (room.taskset && Array.isArray(room.taskset.tasks)) {
       const currentIndex =
@@ -1352,7 +1354,21 @@ io.on("connection", (socket) => {
           : idx;
 
       const nextIndex = currentIndex + 1;
-      sendTaskToTeam(room, effectiveTeamId, nextIndex);
+
+      const isQuickTaskset =
+        room.taskset && room.taskset.name === "Quick task";
+
+      if (isQuickTaskset) {
+        // One-off quick task: let sendTaskToTeam handle "session complete".
+        sendTaskToTeam(room, effectiveTeamId, nextIndex);
+      } else {
+        // For normal tasksets, remember the next index and let the
+        // next colour scan trigger delivery of the new task.
+        if (!room.teams[effectiveTeamId]) {
+          room.teams[effectiveTeamId] = {};
+        }
+        room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
+      }
     }
 
     const submissionSummary = {
