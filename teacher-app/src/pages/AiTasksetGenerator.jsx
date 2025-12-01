@@ -1,14 +1,12 @@
 // teacher-app/src/pages/AiTasksetGenerator.jsx
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom"; 
+import { useNavigate } from "react-router-dom";
 import { fetchMyProfile } from "../api/profile";
-import { generateAiTaskset } from "../api/tasksets";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
-// ──────────────────────────────────────────────────────────────
+
 // Available task types the teacher can force-include
-// ──────────────────────────────────────────────────────────────
 const TASK_TYPES = [
   "multiple_choice",
   "open_text",
@@ -29,19 +27,20 @@ const TASK_TYPES = [
   "mad-dash-sequence",
   "live-debate",
   "flashcards",
-  "brain-spark-notes", 
-  "pet-feeding", 
+  "brain-spark-notes",
+  "pet-feeding",
   "motion-mission",
   "brainstorm-battle",
   "mind-mapper",
   "hidenseek",
-  "speed-draw",  
+  "speed-draw",
 ];
 
 export default function AiTasksetGenerator() {
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const navigate = useNavigate();
+
   const [form, setForm] = useState({
     name: "",
     roomLocation: "Classroom",
@@ -58,10 +57,11 @@ export default function AiTasksetGenerator() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
-  // New feature: limit to 1–2 specific task types
+
+  // Limit to specific task types
   const [limitTasks, setLimitTasks] = useState(false);
   const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
-  
+
   // Load presenter profile to prefill defaults
   useEffect(() => {
     let cancelled = false;
@@ -76,16 +76,26 @@ export default function AiTasksetGenerator() {
         setForm((prev) => {
           const next = { ...prev };
 
-          if ((data?.defaultGradeLevel || data?.defaultGrade) && !next.gradeLevel) {
+          if (
+            (data?.defaultGradeLevel || data?.defaultGrade) &&
+            !next.gradeLevel
+          ) {
             next.gradeLevel = data.defaultGradeLevel || data.defaultGrade;
           }
           if (data?.defaultSubject && !next.subject) {
             next.subject = data.defaultSubject;
-          } else if (Array.isArray(data?.subjectsTaught) && data.subjectsTaught.length && !next.subject) {
+          } else if (
+            Array.isArray(data?.subjectsTaught) &&
+            data.subjectsTaught.length &&
+            !next.subject
+          ) {
             next.subject = data.subjectsTaught[0];
           }
 
-          if (typeof data?.defaultDurationMinutes === "number" && !prev.durationMinutes) {
+          if (
+            typeof data?.defaultDurationMinutes === "number" &&
+            !prev.durationMinutes
+          ) {
             next.durationMinutes = data.defaultDurationMinutes;
           }
 
@@ -108,9 +118,8 @@ export default function AiTasksetGenerator() {
     };
   }, []);
 
-  const handleChange = (field, value) => {
+  const handleChange = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
-  };
 
   const addDisplay = () => {
     setDisplays((prev) => [
@@ -131,813 +140,729 @@ export default function AiTasksetGenerator() {
     setDisplays((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (generating) return;
-
-  setError("");
-  setResult(null);
-  setGenerating(true);
-
-  if (!form.name.trim()) {
-    setError("Task set name is required.");
-    setGenerating(false);
-    return;
-  }
-
-  try {
-    // Clean up displays if fixed-station
-    const cleanedDisplays =
-      form.isFixedStation || displays.length
-        ? displays
-            .map((d) => ({
-              name: (d.name || "").trim(),
-              stationColor: (d.stationColor || "").trim(),
-              description: (d.description || "").trim(),
-            }))
-            .filter((d) => d.name || d.stationColor || d.description)
-        : [];
-
-    const duration = Number(form.durationMinutes);
-    const totalDurationMinutes =
-      Number.isFinite(duration) && duration > 0 ? duration : 45;
-
-    // Base task count estimate
-    let estimatedTaskCount = Math.max(
-      4,
-      Math.min(20, Math.round(totalDurationMinutes / 5))
+  const toggleTaskType = (type) => {
+    setSelectedTaskTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
     );
+  };
 
-    let requiredTaskTypes = [];
-    let topicDescriptionForAi = (form.topicDescription || "").trim();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (generating) return;
 
-    // ————————————————————————————————————————————————
-    // Handle "Limit to specific task types" feature
-    // ————————————————————————————————————————————————
-    if (limitTasks) {
-      if (selectedTaskTypes.length === 0) {
-        setError(
-          "Please select at least one task type when limiting task types."
-        );
-        setGenerating(false);
-        return;
-      }
+    setError("");
+    setResult(null);
+    setGenerating(true);
 
-      // Ensure at least as many tasks as selected types
-      estimatedTaskCount = Math.max(
-        selectedTaskTypes.length,
-        Math.min(20, Math.round(totalDurationMinutes / 5))
-      );
-      requiredTaskTypes = selectedTaskTypes;
-
-      // Append strict instructions to AI prompt (without mutating state)
-      topicDescriptionForAi = `${topicDescriptionForAi}\n\nIMPORTANT: Use ONLY these task types: ${selectedTaskTypes.join(
-        ", "
-      )}. Repeat types if needed to fill the duration. Do not use any other types.`;
+    if (!form.name.trim()) {
+      setError("Task set name is required.");
+      setGenerating(false);
+      return;
     }
 
-    const payload = {
-      // Core planning context
-      gradeLevel: form.gradeLevel,
-      subject: form.subject,
-      difficulty: form.difficulty,
-      learningGoal: form.learningGoal,
-      topicDescription: topicDescriptionForAi,
-      presenterProfile: profile || undefined,
+    try {
+      // Clean up displays if fixed-station
+      const cleanedDisplays =
+        form.isFixedStation || displays.length
+          ? displays
+              .map((d) => ({
+                name: (d.name || "").trim(),
+                stationColor: (d.stationColor || "").trim(),
+                description: (d.description || "").trim(),
+              }))
+              .filter((d) => d.name || d.stationColor || d.description)
+          : [];
 
-      // Time-based control instead of user-facing "number of tasks"
-      totalDurationMinutes,
-      numberOfTasks: estimatedTaskCount,
-      requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
+      const duration = Number(form.durationMinutes);
+      const totalDurationMinutes =
+        Number.isFinite(duration) && duration > 0 ? duration : 45;
 
-      // Session / Room context
-      tasksetName: form.name || undefined,
-      roomLocation: form.roomLocation || "Classroom",
-      locationCode: form.roomLocation || "Classroom",
+      // Base task count estimate
+      let estimatedTaskCount = Math.max(
+        4,
+        Math.min(20, Math.round(totalDurationMinutes / 5))
+      );
 
-      // Station context
-      isFixedStationTaskset:
-        form.isFixedStation || cleanedDisplays.length > 0,
-      displays: cleanedDisplays.length ? cleanedDisplays : undefined,
-    };
+      let requiredTaskTypes = [];
+      let topicDescriptionForAi = (form.topicDescription || "").trim();
 
-    const data = await generateAiTaskset(payload);
-    setError("");
-    setResult(data);
-  } catch (err) {
-    console.error("AI Taskset generation error:", err);
-    setError(
-      err?.message || "Something went wrong while generating the task set."
-    );
-  } finally {
-    setGenerating(false);
-  }
-};
+      // Limit to specific task types
+      if (limitTasks) {
+        if (selectedTaskTypes.length === 0) {
+          setError(
+            "Please select at least one task type when limiting task types."
+          );
+          setGenerating(false);
+          return;
+        }
+
+        estimatedTaskCount = Math.max(
+          selectedTaskTypes.length,
+          Math.min(20, Math.round(totalDurationMinutes / 5))
+        );
+        requiredTaskTypes = selectedTaskTypes;
+
+        topicDescriptionForAi = `${topicDescriptionForAi}\n\nIMPORTANT: Use ONLY these task types: ${selectedTaskTypes.join(
+          ", "
+        )}. Repeat types if needed to fill the duration. Do not use any other types.`;
+      }
+
+      const payload = {
+        // Core planning context
+        gradeLevel: form.gradeLevel,
+        subject: form.subject,
+        difficulty: form.difficulty,
+        learningGoal: form.learningGoal,
+        topicDescription: topicDescriptionForAi,
+        presenterProfile: profile || undefined,
+
+        // Time-based control
+        totalDurationMinutes,
+        numberOfTasks: estimatedTaskCount,
+        requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
+
+        // Session / Room context
+        tasksetName: form.name || undefined,
+        roomLocation: form.roomLocation || "Classroom",
+        locationCode: form.roomLocation || "Classroom",
+
+        // Station context
+        isFixedStationTaskset:
+          form.isFixedStation || cleanedDisplays.length > 0,
+        displays: cleanedDisplays.length ? cleanedDisplays : undefined,
+      };
+
+      // -----------------------------
+      // Direct API call with auth
+      // -----------------------------
+      const apiBase =
+        import.meta.env.VITE_API_BASE_URL ||
+        import.meta.env.VITE_API_URL ||
+        "";
+
+      const url = apiBase
+        ? `${apiBase.replace(/\/$/, "")}/api/ai/tasksets`
+        : "/api/ai/tasksets";
+
+      const token =
+        localStorage.getItem("authToken") ||
+        localStorage.getItem("token") ||
+        "";
+
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const resp = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        let msg = `Request failed (${resp.status})`;
+        try {
+          const body = await resp.json();
+          if (body?.message) msg = body.message;
+        } catch {
+          // ignore JSON parse error
+        }
+        throw new Error(msg);
+      }
+
+      const data = await resp.json();
+      setError("");
+      setResult(data);
+    } catch (err) {
+      console.error("AI Taskset generation error:", err);
+      setError(
+        err?.message ||
+          "Something went wrong while generating the task set."
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
+    <div style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
       <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
-      <p style={{ marginTop: 0, color: "#6b7280", fontSize: "0.9rem" }}>
-        Describe your class context. The AI will design a Task Set that fits
-        the room, stations, and time you specify.
+      <p style={{ marginTop: 0, color: "#4b5563", fontSize: "0.95rem" }}>
+        Describe your class and topic, and let the AI build a station-based
+        task set for you. You can optionally constrain which task types it
+        uses.
       </p>
 
-      {loadingProfile && <p>Loading presenter profile…</p>}
-
-      <form onSubmit={handleSubmit} style={{ marginTop: 12 }}>
-        {/* Title + Room */}
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              marginBottom: 2,
-              color: "#4b5563",
-            }}
-          >
-            Task set title
-          </label>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => handleChange("name", e.target.value)}
-            placeholder="e.g. Grade 8 – Responsible Stewardship Stations"
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              marginBottom: 8,
-            }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              marginBottom: 2,
-              color: "#4b5563",
-            }}
-          >
-            Room / location (default: Classroom)
-          </label>
-          <input
-            type="text"
-            value={form.roomLocation}
-            onChange={(e) => handleChange("roomLocation", e.target.value)}
-            placeholder="e.g. Classroom, Gym, Library"
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-            }}
-          />
-        </div>
-
-        {/* Core planning parameters */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Grade / level
-            </label>
-            <input
-              type="text"
-              value={form.gradeLevel}
-              onChange={(e) => handleChange("gradeLevel", e.target.value)}
-              placeholder="e.g. Grade 7, CE8, etc."
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Subject / course
-            </label>
-            <input
-              type="text"
-              value={form.subject}
-              onChange={(e) => handleChange("subject", e.target.value)}
-              placeholder="e.g. Bible, Geography, Math"
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Difficulty
-            </label>
-            <select
-              value={form.difficulty}
-              onChange={(e) => handleChange("difficulty", e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            >
-              {DIFFICULTIES.map((d) => (
-                <option key={d} value={d}>
-                  {d.charAt(0) + d.slice(1).toLowerCase()}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Learning goal
-            </label>
-            <select
-              value={form.learningGoal}
-              onChange={(e) => handleChange("learningGoal", e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            >
-              {LEARNING_GOALS.map((g) => (
-                <option key={g} value={g}>
-                  {g.charAt(0) + g.slice(1).toLowerCase()}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.8rem",
-                marginBottom: 2,
-                color: "#4b5563",
-              }}
-            >
-              Total duration (minutes)
-            </label>
-            <input
-              type="number"
-              min={10}
-              max={120}
-              value={form.durationMinutes}
-              onChange={(e) =>
-                handleChange("durationMinutes", e.target.value)
-              }
-              style={{
-                width: "100%",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
-            />
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: "0.7rem",
-                color: "#6b7280",
-              }}
-            >
-              The AI will choose how many tasks fit into this time.
-            </div>
-          </div>
-        </div>
-
-        {/* Fixed-station configuration */}
-        <div
-          style={{
-            borderRadius: 10,
-            border: "1px solid #e5e7eb",
-            padding: 12,
-            marginBottom: 12,
-            background: "#f9fafb",
-          }}
-        >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              marginBottom: 6,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={form.isFixedStation}
-              onChange={(e) =>
-                handleChange("isFixedStation", e.target.checked)
-              }
-            />
-            This is a fixed-station task set (stations around the room)
-          </label>
-          <p
-            style={{
-              margin: 0,
-              marginBottom: 6,
-              fontSize: "0.75rem",
-              color: "#6b7280",
-            }}
-          >
-            Use this if students rotate while stations (equipment, posters,
-            manipulatives, etc.) stay in  place. The AI needs to know what each
-            station has so it can assign appropriate tasks.
-          </p>
-
-          {form.isFixedStation && (
-            <div style={{ marginTop: 6 }}>
-              {displays.length === 0 && (
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "#6b7280",
-                    marginBottom: 6,
-                  }}
-                >
-                  Add a few stations and what each one has available.
-                </p>
-              )}
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {displays.map((d, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      borderRadius: 8,
-                      border: "1px solid #e5e7eb",
-                      padding: 8,
-                      background: "#ffffff",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 4,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: "0.8rem",
-                          fontWeight: 600,
-                          color: "#374151",
-                        }}
-                      >
-                        Station {index + 1}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeDisplay(index)}
-                        style={{
-                          border: "none",
-                          background: "transparent",
-                          fontSize: "0.7rem",
-                          color: "#b91c1c",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(180px, 1fr))",
-                        gap: 6,
-                      }}
-                    >
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.75rem",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Name / label
-                        </label>
-                        <input
-                          type="text"
-                          value={d.name || ""}
-                          onChange={(e) =>
-                            updateDisplay(index, "name", e.target.value)
-                          }
-                          placeholder="e.g. Red Station, Microscope table"
-                          style={{
-                            width: "100%",
-                            padding: "4px 6px",
-                            borderRadius: 6,
-                            border: "1px solid #d1d5db",
-                            fontSize: "0.8rem",
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.75rem",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Station colour (optional)
-                        </label>
-                        <input
-                          type="text"
-                          value={d.stationColor || ""}
-                          onChange={(e) =>
-                            updateDisplay(
-                              index,
-                              "stationColor",
-                              e.target.value
-                            )
-                          }
-                          placeholder="e.g. Red, Blue, etc."
-                          style={{
-                            width: "100%",
-                            padding: "4px 6px",
-                            borderRadius: 6,
-                            border: "1px solid #d1d5db",
-                            fontSize: "0.8rem",
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: 4 }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.75rem",
-                          marginBottom: 2,
-                        }}
-                      >
-                        Description / what’s here
-                      </label>
-                      <textarea
-                        value={d.description || ""}
-                        onChange={(e) =>
-                          updateDisplay(
-                            index,
-                            "description",
-                            e.target.value
-                          )
-                        }
-                        rows={2}
-                        placeholder="e.g. Globe + atlases; microscope set; watercolor paints; etc."
-                        style={{
-                          width: "100%",
-                          padding: "4px 6px",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          fontSize: "0.8rem",
-                          resize: "vertical",
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                type="button"
-                onClick={addDisplay}
-                style={{
-                  marginTop: 8,
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border: "1px solid #d1d5db",
-                  background: "#ffffff",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                }}
-              >
-                + Add station
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* ────────────────────────────────────────────────────── */}
-        {/* Limit to specific task types (1+ tasks) */}
-        {/* ────────────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "flex", alignItems: "center", fontSize: "0.85rem", color: "#4b5563" }}>
-            <input
-              type="checkbox"
-              checked={limitTasks}
-              onChange={(e) => {
-                setLimitTasks(e.target.checked);
-                if (!e.target.checked) {
-                  setSelectedTaskTypes([]);
-                }
-              }}
-              style={{ marginRight: 8 }}
-            />
-            Limit task set to only include specific task types
-          </label>
-                      {limitTasks && (
-            <div
-              className="mt-6"
-              style={{
-                maxHeight: "75vh",
-                overflowY: "auto",
-                padding: "20px",
-                border: "3px solid #6366f1",
-                borderRadius: "16px",
-                backgroundColor: "#eef2ff",
-                boxShadow: "0 10px 25px rgba(99, 102, 241, 0.2)",
-              }}
-            >
-              <p className="text-xl font-bold text-indigo-800 mb-6 text-center">
-                Select at least one task type:
-              </p>
-
-              <div 
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
-              >
-                {TASK_TYPES.map((type) => {
-                  const isChecked = selectedTaskTypes.includes(type);
-                  return (
-                    <label
-                      key={type}
-                      className="flex items-center space-x-4 p-5 bg-white rounded-xl border-2 border-gray-300 hover:border-indigo-500 cursor-pointer transition-all hover:shadow-lg"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {
-                          setSelectedTaskTypes(prev =>
-                            isChecked ? prev.filter(t => t !== type) : [...prev, type]
-                          );
-                        }}
-                        className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500"
-                      />
-                      <span className="text-lg font-medium text-gray-800">
-                        {type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-
-              {selectedTaskTypes.length === 0 && (
-                <p className="mt-8 text-center text-red-600 font-bold text-xl animate-pulse">
-                  You must select at least one task type!
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Topic description */}
-        <div style={{ marginBottom: 12 }}>
-          <label
-            style={{
-              display: "block",
-              fontSize: "0.8rem",
-              marginBottom: 2,
-              color: "#4b5563",
-            }}
-          >
-            Topic / unit focus and any constraints
-          </label>
-          <textarea
-            value={form.topicDescription}
-            onChange={(e) =>
-              handleChange("topicDescription", e.target.value)
-            }
-            rows={4}
-            placeholder="Explain what you want this TaskSet to cover, key texts, vocabulary, or constraints…"
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              resize: "vertical",
-            }}
-          />
-        </div>
-
-                <button
-                  type="submit"
-                  disabled={generating || (limitTasks && selectedTaskTypes.length === 0)}
-                  style={{
-                    padding: "12px 24px",
-                    borderRadius: 999,
-                    border: "none",
-                    backgroundColor: 
-                      generating || (limitTasks && selectedTaskTypes.length === 0)
-                        ? "#9ca3af"
-                        : "#2563eb",
-                    color: "#ffffff",
-                    fontSize: "1.1rem",
-                    fontWeight: "bold",
-                    cursor: generating || (limitTasks && selectedTaskTypes.length === 0) ? "not-allowed" : "pointer",
-                    opacity: generating || (limitTasks && selectedTaskTypes.length === 0) ? 0.6 : 1,
-                    transition: "all 0.3s ease",
-                  }}
-                >
-                  {generating ? "Generating task set…" : "Generate task set"}
-                </button>
-      </form>
+      {loadingProfile && (
+        <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+          Loading your presenter profile…
+        </p>
+      )}
 
       {error && (
-        <p
+        <div
           style={{
-            marginTop: 12,
-            fontSize: "0.8rem",
+            margin: "8px 0",
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "#fef2f2",
             color: "#b91c1c",
+            fontSize: "0.85rem",
           }}
         >
           {error}
-        </p>
+        </div>
       )}
-  
-      {result && (
-        <div className="mt-8 p-8 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl text-white">
-          <h2 className="text-4xl font-bold mb-6 text-center">Task Set Created!</h2>
-          
-          {/* HideNSeek Clue Popup */}
-          {result.taskset.tasks.some(t => t.type === "hidenseek") && (
-            <div className="mt-8 bg-white/20 backdrop-blur-lg rounded-2xl p-8 border-4 border-white/50">
-              <h3 className="text-3xl font-bold mb-6 text-yellow-300">
-                HideNSeek Task Detected!
-              </h3>
-              {result.taskset.tasks
-                .filter(t => t.type === "hidenseek")
-                .map((task, i) => (
-                  <div key={i} className="mb-6">
-                    <p className="text-2xl mb-4">
-                      Task {task.order || i + 1}: HideNSeek
-                    </p>
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", gap: 24 }}>
+        {/* Left column: core details */}
+        <div style={{ flex: 2, minWidth: 0 }}>
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+            >
+              Task set name
+            </label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => handleChange("name", e.target.value)}
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
+                }}
+              >
+                Grade level
+              </label>
+              <input
+                type="text"
+                value={form.gradeLevel}
+                onChange={(e) => handleChange("gradeLevel", e.target.value)}
+                placeholder="e.g., 7, 8, 7/8"
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
+                }}
+              >
+                Subject
+              </label>
+              <input
+                type="text"
+                value={form.subject}
+                onChange={(e) => handleChange("subject", e.target.value)}
+                placeholder="e.g., Geography, Bible, Math"
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                }}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
+                }}
+              >
+                Difficulty
+              </label>
+              <select
+                value={form.difficulty}
+                onChange={(e) => handleChange("difficulty", e.target.value)}
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                  background: "#ffffff",
+                }}
+              >
+                {DIFFICULTIES.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
+                }}
+              >
+                Learning goal
+              </label>
+              <select
+                value={form.learningGoal}
+                onChange={(e) =>
+                  handleChange("learningGoal", e.target.value)
+                }
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                  background: "#ffffff",
+                }}
+              >
+                {LEARNING_GOALS.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+            >
+              Topic / unit description
+            </label>
+            <textarea
+              value={form.topicDescription}
+              onChange={(e) =>
+                handleChange("topicDescription", e.target.value)
+              }
+              rows={5}
+              placeholder="Summarize what your students are learning and any important constraints (e.g., 'Stations must be mostly quiet', 'We have limited space', 'They just did a test and need lighter tasks')."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+                resize: "vertical",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
+                }}
+              >
+                Total duration (minutes)
+              </label>
+              <input
+                type="number"
+                min={10}
+                max={180}
+                value={form.durationMinutes}
+                onChange={(e) =>
+                  handleChange("durationMinutes", Number(e.target.value))
+                }
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
+                }}
+              >
+                Room / location label
+              </label>
+              <input
+                type="text"
+                value={form.roomLocation}
+                onChange={(e) =>
+                  handleChange("roomLocation", e.target.value)
+                }
+                placeholder="e.g., Classroom, Library, Gym"
+                style={{
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  padding: 8,
+                  fontSize: "0.9rem",
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: "0.85rem",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={form.isFixedStation}
+                onChange={(e) =>
+                  handleChange("isFixedStation", e.target.checked)
+                }
+              />
+              Fixed station layout (each station has a dedicated display /
+              equipment)
+            </label>
+          </div>
+
+          <button
+            type="submit"
+            disabled={generating}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 999,
+              border: "none",
+              background: "#0ea5e9",
+              color: "#ffffff",
+              fontSize: "0.9rem",
+              cursor: generating ? "wait" : "pointer",
+              opacity: generating ? 0.7 : 1,
+            }}
+          >
+            {generating ? "Generating task set…" : "Generate task set"}
+          </button>
+        </div>
+
+        {/* Right column: displays + task-type limiting */}
+        <div style={{ flex: 1.4, minWidth: 0 }}>
+          {/* Displays / station layout */}
+          <div
+            style={{
+              marginBottom: 16,
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              padding: 10,
+              background: "#ffffff",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "0.9rem",
+                fontWeight: 600,
+                marginBottom: 6,
+              }}
+            >
+              Displays / stations (optional)
+            </div>
+            <p
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "0.8rem",
+                color: "#6b7280",
+              }}
+            >
+              If you have named stations or specific screen locations, list
+              them here so the AI can map tasks to physical spots.
+            </p>
+            {displays.length === 0 && (
+              <p
+                style={{
+                  fontSize: "0.8rem",
+                  color: "#9ca3af",
+                  margin: 0,
+                }}
+              >
+                No displays added yet.
+              </p>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {displays.map((d, i) => (
+                <div
+                  key={i}
+                  style={{
+                    borderRadius: 8,
+                    border: "1px solid #e5e7eb",
+                    padding: 8,
+                    background: "#f9fafb",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 6,
+                      marginBottom: 6,
+                    }}
+                  >
                     <input
                       type="text"
-                      placeholder="e.g. Page 72, Figure 4 | The globe by the window"
-                      defaultValue={task.clue || ""}
-                      onChange={(e) => {
-                        // Save to result so it's persistent
-                        result.taskset.tasks.find(t => t === task).clue = e.target.value;
+                      value={d.name}
+                      onChange={(e) =>
+                        updateDisplay(i, "name", e.target.value)
+                      }
+                      placeholder="Station name (e.g., Red, Bible, Quiet corner)"
+                      style={{
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                        padding: 6,
+                        fontSize: "0.8rem",
                       }}
-                      className="w-full p-6 text-3xl rounded-2xl text-black font-medium"
+                    />
+                    <input
+                      type="text"
+                      value={d.stationColor}
+                      onChange={(e) =>
+                        updateDisplay(i, "stationColor", e.target.value)
+                      }
+                      placeholder="Colour or marker (e.g., red, blue)"
+                      style={{
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                        padding: 6,
+                        fontSize: "0.8rem",
+                      }}
                     />
                   </div>
-                ))}
-              <p className="text-xl mt-6 opacity-90">
-                This clue will be saved with your taskset.
-              </p>
+                  <textarea
+                    value={d.description}
+                    onChange={(e) =>
+                      updateDisplay(i, "description", e.target.value)
+                    }
+                    placeholder="Equipment or constraints (e.g., 'Chromebook station', 'quiet reading zone', 'hands-on area')."
+                    rows={2}
+                    style={{
+                      width: "100%",
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      padding: 6,
+                      fontSize: "0.8rem",
+                    }}
+                  />
+                  <div style={{ marginTop: 4, textAlign: "right" }}>
+                    <button
+                      type="button"
+                      onClick={() => removeDisplay(i)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "#b91c1c",
+                        fontSize: "0.75rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-
-          {/* Rest of success UI */}
-          <p className="text-3xl text-center mt-8">
-            "{result.taskset.name}" is ready!
-          </p>
-          <div className="flex justify-center gap-8 mt-8">
-            <button onClick={() => navigate('/tasksets')} 
-              className="px-12 py-6 bg-white text-indigo-600 rounded-2xl text-3xl font-bold hover:bg-gray-100">
-              View Task Sets
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {result && (
-        <div className="mt-4 p-4 border rounded bg-green-50">
-          <h2 className="text-lg font-bold">Task Set Created!</h2>
-          <p>
-            "{result.taskset.name}" with <strong>{result.taskset.tasks.length}</strong> task{result.taskset.tasks.length !== 1 ? "s" : ""} for {result.taskset.durationMinutes} minutes
-            {limitTasks && selectedTaskTypes.length > 0 && (
-              <>
-                {" "}— using only: <strong>{selectedTaskTypes.map(t => t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())).join(", ")}</strong>
-              </>
-            )}
-            .
-          </p>
-          <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: "#059669" }}>
-            Can be found in Task Sets
-          </p>
-          <div className="mt-4 p-4 border rounded bg-green-50">
-          <h2 className="text-lg font-bold">Task Set Created!</h2>
-          <p>
-            "{result.taskset.name}" with <strong>{result.taskset.tasks.length}</strong> task{result.taskset.tasks.length !== 1 ? "s" : ""} for {result.taskset.durationMinutes} minutes
-            {limitTasks && selectedTaskTypes.length > 0 && (
-              <> — using only: <strong>{selectedTaskTypes.map(t => t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())).join(", ")}</strong></>
-            )}
-            .
-          </p>
-          <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: "#059669" }}>
-            Can be found in Task Sets
-          </p>
-          <div className="mt-4 flex gap-3">
             <button
-              onClick={() => navigate('/tasksets')}
-              className="px-5 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition font-medium"
-            >
-              View in Task Sets →
-            </button>
-            <button
-              onClick={() => {
-                setResult(null);
-                setGenerating(false);
-                setError("");
-                // Scroll to top so they see the form again
-                window.scrollTo(0, 0);
+              type="button"
+              onClick={addDisplay}
+              style={{
+                marginTop: 8,
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: "1px dashed #9ca3af",
+                background: "transparent",
+                fontSize: "0.8rem",
+                cursor: "pointer",
               }}
-              className="px-5 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition font-medium"
             >
-              Regenerate with Same Settings
+              + Add display / station
             </button>
           </div>
-        </div>
-        
-        </div>
-      )}
 
+          {/* Task-type limiting */}
+          <div
+            style={{
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              padding: 10,
+              background: "#ffffff",
+            }}
+          >
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: "0.85rem",
+                marginBottom: 6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={limitTasks}
+                onChange={(e) => setLimitTasks(e.target.checked)}
+              />
+              Limit to specific task types
+            </label>
+            <p
+              style={{
+                marginTop: 0,
+                marginBottom: 6,
+                fontSize: "0.8rem",
+                color: "#6b7280",
+              }}
+            >
+              If enabled, the AI will only use the types you pick and will
+              repeat them as needed to fill the time.
+            </p>
+            <div
+              style={{
+                maxHeight: 220,
+                overflowY: "auto",
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
+                padding: 6,
+                background: "#f9fafb",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  fontSize: "0.8rem",
+                }}
+              >
+                {TASK_TYPES.map((type) => {
+                  const active = selectedTaskTypes.includes(type);
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => toggleTaskType(type)}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: active
+                          ? "1px solid #0ea5e9"
+                          : "1px solid #d1d5db",
+                        background: active ? "#e0f2fe" : "#ffffff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {type}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+
+      {/* Result preview */}
       {result && (
         <div
           style={{
-            marginTop: 16,
-            padding: 12,
+            marginTop: 24,
             borderRadius: 10,
             border: "1px solid #e5e7eb",
-            background: "#f3f4f6",
+            padding: 12,
+            background: "#ffffff",
           }}
         >
           <h2
             style={{
               marginTop: 0,
+              fontSize: "1rem",
               marginBottom: 8,
-              fontSize: "0.95rem",
             }}
           >
-            AI task set preview (raw)
+            Generated task set
           </h2>
-          <pre
+          <p
             style={{
-              margin: 0,
-              background: "#111827",
-              color: "#e5e7eb",
-              fontSize: "0.8rem",
-              overflowX: "auto",
-              maxHeight: 320,
-              padding: 8,
-              borderRadius: 8,
+              marginTop: 0,
+              fontSize: "0.85rem",
+              color: "#6b7280",
             }}
           >
-            {JSON.stringify(result, null, 2)}
-          </pre>
+            The task set has been generated. You can review and edit it on the
+            Task Sets page.
+          </p>
+          {result.tasksetId && (
+            <button
+              type="button"
+              onClick={() => navigate(`/tasksets/${result.tasksetId}`)}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                background: "#10b981",
+                color: "#ffffff",
+                fontSize: "0.85rem",
+                cursor: "pointer",
+              }}
+            >
+              Open generated task set
+            </button>
+          )}
         </div>
       )}
     </div>

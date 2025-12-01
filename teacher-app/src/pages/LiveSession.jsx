@@ -1,3 +1,4 @@
+//teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 
@@ -68,7 +69,7 @@ export default function LiveSession({ roomCode }) {
   const [roomSetup, setRoomSetup] = useState(null);
   const [showRoomSetup, setShowRoomSetup] = useState(false);
 
-  // End-session / email reports UI
+  // End-session / email reports logic (UI removed)
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
 
@@ -110,7 +111,6 @@ export default function LiveSession({ roomCode }) {
 
     socket.emit("teacher:createRoom", { roomCode: code });
 
-    // Join that room as the teacher so we receive room:state updates
     socket.emit("joinRoom", {
       roomCode: code,
       name: "Teacher",
@@ -136,7 +136,6 @@ export default function LiveSession({ roomCode }) {
 
     const code = roomCode.toUpperCase();
 
-    // Ask backend to load the taskset into this room
     socket.emit(
       "teacher:loadTaskset",
       { roomCode: code, tasksetId: activeTasksetMeta._id },
@@ -146,7 +145,6 @@ export default function LiveSession({ roomCode }) {
           return;
         }
 
-        // Immediately launch the first task
         socket.emit(
           "teacher:launchNextTask",
           { roomCode: code },
@@ -167,8 +165,6 @@ export default function LiveSession({ roomCode }) {
   // ----------------------------------------------------
   useEffect(() => {
     if (!roomCode) return;
-
-    const code = roomCode.toUpperCase();
 
     const handleRoom = (state) => {
       if (!state) return;
@@ -250,7 +246,7 @@ export default function LiveSession({ roomCode }) {
     };
 
     const handleTeamJoined = (data) => {
-      const { teamId, teamName } = data || {};
+      const { teamId } = data || {};
       if (!teamId) return;
 
       setTeamOrder((prev) =>
@@ -275,7 +271,6 @@ export default function LiveSession({ roomCode }) {
     };
 
     const handleRoomSetup = (payload) => {
-      // room setup info for fixed-station tasksets
       setRoomSetup(payload || null);
     };
 
@@ -326,8 +321,6 @@ export default function LiveSession({ roomCode }) {
         treatSoundRef.current.currentTime = 0;
         treatSoundRef.current.play().catch(() => {});
       }
-      // Room state with pendingTreatTeams will arrive via room:state;
-      // we just play the sound here.
     };
 
     socket.on("roomState", handleRoom);
@@ -369,15 +362,12 @@ export default function LiveSession({ roomCode }) {
     setIsLaunchingQuick(true);
     const code = roomCode.toUpperCase();
 
-    // Use the existing backend Socket.io event "teacherLaunchTask"
-    // which does not send an ack. We clear the loading state manually.
     socket.emit("teacherLaunchTask", {
       roomCode: code,
       prompt: prompt.trim(),
       correctAnswer: (correctAnswer || "").trim() || null,
     });
 
-    // Clear prompt fields and loading state shortly after emit
     setTimeout(() => {
       setIsLaunchingQuick(false);
       setPrompt("");
@@ -446,14 +436,14 @@ export default function LiveSession({ roomCode }) {
     });
   };
 
+  // ----------------------------------------------------
   // Derived helpers
-    // Derived helpers
+  // ----------------------------------------------------
   const teams = roomState.teams || {};
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
 
-  // Random-treat availability: enabled and at least one treat remaining
   const canGiveTreat =
     treatsConfig.enabled &&
     (typeof treatsConfig.total === "number" &&
@@ -479,7 +469,6 @@ export default function LiveSession({ roomCode }) {
     const currentStationId = team.currentStationId || null;
     const color = stationIdToColor(currentStationId);
     const isPendingTreat = pendingTreatTeams.includes(teamId);
-
     const lastScan =
       scanEvents.find((ev) => ev.teamId === teamId) || null;
 
@@ -579,6 +568,7 @@ export default function LiveSession({ roomCode }) {
             Last scan:{" "}
             <strong>
               {stationIdToColor(lastScan.stationId) ||
+                lastScan.stationLabel ||
                 lastScan.stationId ||
                 "Unknown"}
             </strong>{" "}
@@ -820,7 +810,6 @@ export default function LiveSession({ roomCode }) {
               </button>
             </div>
 
-            {/* New row: skip + end session, only active once a taskset is running */}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
@@ -839,30 +828,6 @@ export default function LiveSession({ roomCode }) {
                 disabled={!taskFlowActive}
               >
                 Skip current task
-              </button>
-              <button
-                type="button"
-                onClick={handleEndSessionAndEmail}
-                style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#ef4444",
-                  color: "#ffffff",
-                  fontSize: "0.8rem",
-                  cursor:
-                    taskFlowActive && !isEndingSession
-                      ? "pointer"
-                      : "not-allowed",
-                  opacity:
-                    taskFlowActive && !isEndingSession ? 1 : 0.4,
-                }}
-                disabled={!taskFlowActive || isEndingSession}
-              >
-                {isEndingSession
-                  ? "Ending session…"
-                  : "End session & email reports"}
               </button>
             </div>
           </div>
@@ -984,7 +949,7 @@ export default function LiveSession({ roomCode }) {
         </div>
       </div>
 
-      {/* Main body: teams + leaderboard + scan log */}
+      {/* Main body: teams + right column */}
       <div
         style={{
           display: "flex",
@@ -1002,11 +967,11 @@ export default function LiveSession({ roomCode }) {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+                gridTemplateColumns:
+                  "repeat(auto-fill, minmax(180px, 1fr))",
+                minHeight: 120,
                 gap: 12,
-                // Optionally show noise-based dimming on teacher view as a cue
-                opacity: noiseEnabled ? noiseBrightness : 1,
-                transition: "opacity 0.15s ease-out",
+                width: "100%",
               }}
             >
               {teamIdsForGrid.map((teamId) => renderTeamCard(teamId))}
@@ -1014,237 +979,150 @@ export default function LiveSession({ roomCode }) {
           )}
         </div>
 
-        {/* Right column: classroom controls + leaderboard + scan log */}
+        {/* Right column: leaderboard + scan log */}
         <div
           style={{
-            flex: 1.2,
+            flex: 2,
             minWidth: 260,
-            borderLeft: "1px solid #e5e7eb",
-            paddingLeft: 12,
             display: "flex",
             flexDirection: "column",
-            gap: 12,
+            gap: 16,
           }}
         >
-          {/* Classroom controls: noise + treats */}
-          <div
-            style={{
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              padding: 8,
-              background: "#ffffff",
-              fontSize: "0.8rem",
-            }}
-          >
-            <div
-              style={{
-                fontWeight: 600,
-                marginBottom: 6,
-              }}
-            >
-              Classroom controls
-            </div>
-
-            {/* Noise control summary */}
-            <div style={{ marginBottom: 8 }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 2,
-                }}
-              >
-                <span>Noise control</span>
-                <span style={{ color: "#6b7280" }}>
-                  {noiseLabel}
-                  {noiseEnabled && (
-                    <>
-                      {" "}
-                      • noise: {Math.round(noiseLevel)} / thr:{" "}
-                      {noiseThreshold}
-                    </>
-                  )}
-                </span>
-              </div>
-            </div>
-
-            {/* Treats summary */}
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 2,
-                }}
-              >
-                <span>Treats</span>
-                <span style={{ color: "#6b7280" }}>
-                  {treatsConfig.enabled
-                    ? `${treatsConfig.given}/${treatsConfig.total} given`
-                    : "Disabled"}
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* Leaderboard */}
-          <div
+          <section
             style={{
-              flex: 1,
-              minHeight: 0,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              padding: 8,
+              width: "100%",
+              border: "1px solid #d1d5db",
+              borderRadius: 10,
+              padding: 12,
               background: "#ffffff",
-              display: "flex",
-              flexDirection: "column",
             }}
           >
-            <div
+            <h2
               style={{
-                fontSize: "0.8rem",
+                marginTop: 0,
+                marginBottom: 10,
+                fontSize: "1.1rem",
                 fontWeight: 600,
-                marginBottom: 4,
               }}
             >
               Leaderboard
-            </div>
-            {leaderboard.length === 0 ? (
-              <p
-                style={{
-                  color: "#6b7280",
-                  fontSize: "0.8rem",
-                }}
-              >
-                No scores yet.
-              </p>
-            ) : (
-              <ol
-                style={{
-                  margin: 0,
-                  paddingLeft: 16,
-                  fontSize: "0.8rem",
-                  overflowY: "auto",
-                }}
-              >
-                {leaderboard.map((entry, idx) => (
-                  <li
-                    key={entry.teamId}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      padding: "2px 0",
-                    }}
-                  >
-                    <span>
-                      {idx + 1}. {entry.name}
-                    </span>
-                    <span>{entry.score}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
+            </h2>
 
-          {/* Scan log */}
-          <div
+            <div style={{ fontSize: "0.9rem", color: "#4b5563" }}>
+              {leaderboard.length > 0 ? (
+                <ul style={{ paddingLeft: 16, margin: 0 }}>
+                  {leaderboard.map((team, idx) => (
+                    <li key={team.teamId} style={{ marginBottom: 4 }}>
+                      <strong>{idx + 1}.</strong>{" "}
+                      {teams[team.teamId]?.teamName || team.name} —{" "}
+                      {team.score} pts
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No scores yet.</p>
+              )}
+            </div>
+          </section>
+
+          {/* Scan log – fixed height with scroll */}
+          <section
             style={{
-              flex: 1,
-              minHeight: 0,
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              padding: 8,
-              background: "#f9fafb",
-              display: "flex",
-              flexDirection: "column",
+              width: "100%",
+              border: "1px solid #d1d5db",
+              borderRadius: 10,
+              padding: 12,
+              background: "#ffffff",
             }}
           >
-            <div
+            <h2
               style={{
-                fontSize: "0.8rem",
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1.1rem",
                 fontWeight: 600,
-                marginBottom: 4,
               }}
             >
               Scan log
-            </div>
-            {scanEvents.length === 0 ? (
-              <p style={{ color: "#6b7280", fontSize: "0.8rem" }}>
-                No scans yet.
-              </p>
-            ) : (
-              <div
-                style={{
-                  flex: 1,
-                  overflowY: "auto",
-                  fontSize: "0.8rem",
-                }}
-              >
-                {scanEvents.map((ev, idx) => {
-                  const color = stationIdToColor(ev.stationId);
-                  const when = ev.timestamp
-                    ? new Date(ev.timestamp).toLocaleTimeString()
-                    : "";
-                  return (
-                    <div
-                      key={idx}
-                      style={{
-                        padding: "2px 0",
-                        borderBottom: "1px dashed #e5e7eb",
-                      }}
-                    >
-                      <div>
-                        <strong>{ev.teamName || "Team"}</strong> scanned{" "}
-                        {color
-                          ? color.toUpperCase()
-                          : ev.stationId || "unknown station"}{" "}
-                        <span style={{ color: "#9ca3af" }}>{when}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+            </h2>
 
-          {/* End session & email reports */}
-          <div
-            style={{
-              borderTop: "1px solid #e5e7eb",
-              paddingTop: 8,
-              fontSize: "0.8rem",
-            }}
-          >
-            <button
-              type="button"
-              onClick={handleEndSessionAndEmail}
-              disabled={isEndingSession}
+            <div
               style={{
+                maxHeight: 200,
+                overflowY: "auto",
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
                 padding: "6px 8px",
-                borderRadius: 6,
-                border: "none",
-                background: "#ef4444",
-                color: "#ffffff",
-                fontSize: "0.8rem",
-                cursor: "pointer",
-                opacity: isEndingSession ? 0.7 : 1,
+                background: "#f9fafb",
+                fontSize: "0.85rem",
+                color: "#4b5563",
               }}
             >
-              {isEndingSession
-                ? "Ending session & emailing reports…"
-                : "End session & email reports"}
-            </button>
-            {endSessionMessage && (
-              <p
-                style={{
-                  marginTop: 4,
-                  color: "#374151",
-                }}
-              >
-                {endSessionMessage}
-              </p>
-            )}
-          </div>
+              {scanEvents.length === 0 ? (
+                <p style={{ margin: 0, color: "#9ca3af" }}>
+                  No scans yet.
+                </p>
+              ) : (
+                <ul
+                  style={{
+                    listStyle: "none",
+                    paddingLeft: 0,
+                    margin: 0,
+                  }}
+                >
+                  {scanEvents.map((entry, idx) => {
+                    const teamName =
+                      entry.teamName ||
+                      teams[entry.teamId]?.teamName ||
+                      "Team";
+                    const station =
+                      entry.stationLabel ||
+                      stationIdToColor(entry.stationId) ||
+                      entry.stationId ||
+                      "a station";
+                    const time = entry.timestamp
+                      ? new Date(entry.timestamp).toLocaleTimeString()
+                      : "";
+
+                    return (
+                      <li
+                        key={entry.id || `${entry.teamId}-${idx}`}
+                        style={{
+                          padding: "4px 0",
+                          borderBottom:
+                            idx === scanEvents.length - 1
+                              ? "none"
+                              : "1px solid #e5e7eb",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <span>
+                          <strong>{teamName}</strong> scanned{" "}
+                          <span style={{ fontWeight: 500 }}>
+                            {station}
+                          </span>
+                        </span>
+                        {time && (
+                          <span
+                            style={{
+                              color: "#9ca3af",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {time}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
         </div>
       </div>
 
@@ -1277,7 +1155,6 @@ export default function LiveSession({ roomCode }) {
               Classroom layout with station bubbles and their required
               equipment.
             </p>
-            {/* Simple rectangle with station labels around perimeter */}
             <div
               style={{
                 marginTop: 12,
@@ -1290,7 +1167,8 @@ export default function LiveSession({ roomCode }) {
             >
               {(roomSetup.stations || []).map((s, idx) => {
                 const angle =
-                  (2 * Math.PI * idx) / Math.max(1, roomSetup.stations.length);
+                  (2 * Math.PI * idx) /
+                  Math.max(1, roomSetup.stations.length);
                 const cx = 50 + 40 * Math.cos(angle);
                 const cy = 50 + 40 * Math.sin(angle);
                 return (
