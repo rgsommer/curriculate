@@ -812,11 +812,10 @@ export default function LiveSession({ roomCode }) {
                   background: "#10b981",
                   color: "#ffffff",
                   fontSize: "0.85rem",
-                  cursor: taskFlowActive ? "not-allowed" : "pointer",
-                  opacity:
-                    !activeTasksetMeta || taskFlowActive ? 0.5 : 1,
+                  cursor: activeTasksetMeta ? "pointer" : "not-allowed",
+                  opacity: activeTasksetMeta ? 1 : 0.5,
                 }}
-                disabled={!activeTasksetMeta || taskFlowActive}
+                disabled={!activeTasksetMeta}
               >
                 Launch from taskset
               </button>

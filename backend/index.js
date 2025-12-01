@@ -1318,15 +1318,9 @@ io.on("connection", (socket) => {
     }, 30000);
 
 
-    // 🚫 For full tasksets, advance each team to the next station.
-    // ✅ For ad-hoc Quick Tasks, keep them at the same station
-    //    so they are NOT prompted to rescan / recolour.
-    const isQuickTaskset =
-      room.taskset && room.taskset.name === "Quick task";
-
-    if (!isQuickTaskset) {
-      reassignStationForTeam(room, effectiveTeamId);
-    }
+    // ✅ After every graded submission (quick or full taskset),
+    //    advance THIS team to the next station so they must rescan.
+    reassignStationForTeam(room, effectiveTeamId);
 
     // Maybe award a random treat for this submission
     maybeAwardTreat(code, room, effectiveTeamId);
