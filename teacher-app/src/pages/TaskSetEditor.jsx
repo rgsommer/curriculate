@@ -66,7 +66,8 @@ function prettyCategory(typeValue) {
 
 export default function TaskSetEditor() {
   const { id } = useParams();
-  
+  const navigate = useNavigate();
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tasks, setTasks] = useState([]);
@@ -74,7 +75,6 @@ export default function TaskSetEditor() {
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const navigate = useNavigate();
 
   const userId = localStorage.getItem("userId");
   const token = localStorage.getItem("token");
@@ -179,6 +179,8 @@ export default function TaskSetEditor() {
         timeLimitSeconds: null,
         linear: true,
         displayKey: "",
+        ignoreNoise: false,
+        jeopardyConfig: {},
       },
     ]);
   };
@@ -348,7 +350,7 @@ export default function TaskSetEditor() {
 
   if (error) {
     return (
-      <div>
+      <div className="taskset-editor max-w-4xl mx-auto">
         <p className="text-red-600 mb-2">{error}</p>
         <button
           onClick={() => navigate("/tasksets")}
@@ -369,7 +371,7 @@ export default function TaskSetEditor() {
   });
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="taskset-editor max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex justify-between items-center mb-2">
         <h1 className="text-2xl font-bold">
@@ -558,6 +560,7 @@ export default function TaskSetEditor() {
                       type="button"
                       onClick={() => moveTask(task._tempId, "up")}
                       className="px-2 py-1 text-xs border rounded"
+                      disabled={index === 0}
                     >
                       ↑
                     </button>
@@ -565,6 +568,7 @@ export default function TaskSetEditor() {
                       type="button"
                       onClick={() => moveTask(task._tempId, "down")}
                       className="px-2 py-1 text-xs border rounded"
+                      disabled={index === tasks.length - 1}
                     >
                       ↓
                     </button>
@@ -590,7 +594,7 @@ export default function TaskSetEditor() {
                         updateTask(task._tempId, "title", e.target.value)
                       }
                       className="w-full border rounded px-2 py-1 text-sm"
-                      placeholder="e.g. Predict the outcome"
+                      placeholder="e.g. Understanding inertia"
                     />
                   </div>
                   <div>
@@ -696,7 +700,6 @@ export default function TaskSetEditor() {
                 </div>
 
                 {/* Points, time, display mapping, noise control */}
-                                {/* Points, time, display mapping, noise control */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-sm font-medium mb-1">
@@ -748,7 +751,7 @@ export default function TaskSetEditor() {
                       <option value="">(none)</option>
                       {displays.map((d) => (
                         <option key={d.key} value={d.key}>
-                          {d.title || d.key}
+                          {d.name || d.key}
                         </option>
                       ))}
                     </select>
@@ -772,7 +775,7 @@ export default function TaskSetEditor() {
                   </div>
                 </div>
 
-                                {/* Jeopardy configuration (only for Jeopardy tasks) */}
+                {/* Jeopardy configuration (only for Jeopardy tasks) */}
                 {task.taskType === TASK_TYPES.JEOPARDY && (
                   <div className="mt-3 p-3 border rounded bg-indigo-50 text-xs text-gray-700">
                     <p className="mb-1 font-semibold">Jeopardy configuration</p>
@@ -813,7 +816,6 @@ export default function TaskSetEditor() {
                     </label>
                   </div>
                 )}
-                
               </div>
             ))}
           </div>

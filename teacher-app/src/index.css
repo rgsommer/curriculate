@@ -2,3 +2,207 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;    
+
+/* Overall editor layout */
+.taskset-editor {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+.taskset-section + .taskset-section {
+  margin-top: 2rem;
+}
+
+.taskset-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.taskset-section-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.taskset-section-subtitle {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: #6b7280; /* gray-500 */
+}
+
+.taskset-empty {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+/* Buttons */
+.btn-primary {
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  border: none;
+  background: #2563eb; /* blue-600 */
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8; /* blue-700 */
+}
+
+.btn-icon {
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.btn-icon[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-icon:hover:not([disabled]) {
+  background: #f3f4f6;
+}
+
+.btn-icon-danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.btn-icon-danger:hover:not([disabled]) {
+  background: #fee2e2;
+}
+
+/* Task cards grid */
+.task-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 900px) {
+  .task-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Individual card */
+.task-card {
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb; /* gray-200 */
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  padding: 0.75rem 0.9rem 0.9rem;
+}
+
+.task-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.task-card-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #eff6ff; /* blue-50 */
+  color: #1d4ed8; /* blue-700 */
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.task-card-title {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.task-card-header-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.task-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* Form controls inside card */
+.task-card-body label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.75rem;
+  color: #374151; /* gray-700 */
+  gap: 0.15rem;
+}
+
+.task-card-body input[type="text"],
+.task-card-body select,
+.task-card-body textarea {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db; /* gray-300 */
+  background: #f9fafb;
+}
+
+.task-card-body input[type="text"]:focus,
+.task-card-body select:focus,
+.task-card-body textarea:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  background: #ffffff;
+}
+
+/* Layout rows */
+.task-card-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (min-width: 700px) {
+  .task-card-row {
+    flex-direction: row;
+  }
+
+  .task-card-row > label {
+    flex: 1;
+  }
+}
+
+.task-card-full {
+  width: 100%;
+}
+
+.task-card-full textarea {
+  min-height: 70px;
+}
+
+.task-card-subheading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4b5563; /* gray-600 */
+  margin-bottom: 0.15rem;
+}
