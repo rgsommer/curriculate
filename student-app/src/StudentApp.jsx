@@ -478,15 +478,17 @@ export default function StudentApp() {
       );
     };
 
-    const handleRoomState = (state = {}) => {
+      const handleRoomState = (state = {}) => {
       // Update location (Classroom / Gym / etc.)
       const loc = state.locationCode || DEFAULT_LOCATION;
       setLocationCode(loc);
 
       const teams = state.teams || {};
 
-      // Prefer our persistent teamId (TeamSession._id), fall back to socket.id
+      // Prefer our persistent teamId (TeamSession _id) when available,
+      // but fall back to socket.id for older sessions.
       const meKey = teamId || socket.id;
+
       const me = teams[meKey];
 
       if (!me) {
@@ -932,7 +934,7 @@ export default function StudentApp() {
           );
       });
 
-      if (timeoutTimerRef.current) {
+            if (timeoutTimerRef.current) {
         clearInterval(timeoutTimerRef.current);
         timeoutTimerRef.current = null;
       }

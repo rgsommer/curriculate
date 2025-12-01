@@ -654,11 +654,21 @@ io.on("connection", (socket) => {
     socket.data.displayName = name || role || "Viewer";
 
     const state = buildRoomState(room);
-    socket.emit("room:state", state);
-    socket.emit("roomState", state);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+
+    // If this team has a pending next task (full taskset flow),
+    // deliver it now that they have arrived at the new station.
+    if (room.taskset && Array.isArray(room.taskset.tasks)) {
+      const pending = team.nextTaskIndex;
+      if (typeof pending === "number") {
+        sendTaskToTeam(room, effectiveTeamId, pending);
+        delete team.nextTaskIndex;
+      }
+    }
 
     if (typeof ack === "function") {
-      ack({ ok: true, roomState: state });
+      ack({ ok: true });
     }
   });
 
@@ -1346,7 +1356,7 @@ io.on("connection", (socket) => {
     // Maybe award a random treat for this submission
     maybeAwardTreat(code, room, effectiveTeamId);
 
-    const state = buildRoomState(room);
+        const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
@@ -1364,9 +1374,6 @@ io.on("connection", (socket) => {
           : idx;
 
       const nextIndex = currentIndex + 1;
-
-      const isQuickTaskset =
-        room.taskset && room.taskset.name === "Quick task";
 
       if (isQuickTaskset) {
         // One-off quick task: let sendTaskToTeam handle "session complete".
