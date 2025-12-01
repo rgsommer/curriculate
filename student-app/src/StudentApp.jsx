@@ -5,9 +5,23 @@ import TaskRunner from "./components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
+// Simple UUID v4 generator (no external lib needed)
+function generateUUID() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // Shared socket instance for this app
 export const socket = io(API_BASE_URL, {
   withCredentials: true,
+  // Important: keep the connection alive across reloads
+  transports: ["websocket"],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 });
 
 console.log("API_BASE_URL (student) =", API_BASE_URL);
@@ -888,8 +902,6 @@ export default function StudentApp() {
           stationId: assignedNorm.id || assignedStationId,
         });
       }
-
-      socket.emit("task:requestNext", { roomCode, teamId: teamSessionId });
 
       return true; // correct station → stop camera
     } catch (err) {

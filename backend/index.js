@@ -1222,16 +1222,6 @@ io.on("connection", (socket) => {
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
-    // If this team has a pending next task (full taskset flow),
-    // deliver it now that they have arrived at the new station.
-    if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const pending = team.nextTaskIndex;
-      if (typeof pending === "number") {
-        sendTaskToTeam(room, effectiveTeamId, pending);
-        delete team.nextTaskIndex;
-      }
-    }
-
     if (typeof ack === "function") {
       ack({ ok: true });
     }
@@ -1339,16 +1329,7 @@ io.on("connection", (socket) => {
       timeMs: timeMs ?? null,
       submittedAt,
     });
-
-    // Randomly trigger every 20–40 seconds
-    setInterval(() => {
-      const prompts = ["word about power", "animal that flies", "type of energy"];
-      const randomPrompt = prompts[Math.random() * prompts.length | 0];
-      const randomTeam = getRandomTeam(roomCode);
-      io.to(roomCode).emit("lightning-round", { prompt: randomPrompt, teamName: randomTeam.name });
-    }, 30000);
-
-
+    
     // ✅ After every graded submission (quick or full taskset),
     //    advance THIS team to the next station so they must rescan.
     reassignStationForTeam(room, effectiveTeamId);
