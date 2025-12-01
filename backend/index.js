@@ -1199,7 +1199,7 @@ io.on("connection", (socket) => {
     team.lastScannedStationId = raw;
     room.stations[raw].assignedTeamId = effectiveTeamId;
 
-    const ev = {
+        const ev = {
       roomCode: code,
       teamId: effectiveTeamId,
       teamName: team.teamName,
@@ -1211,6 +1211,16 @@ io.on("connection", (socket) => {
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
+
+    // If this team has a pending next task (full taskset flow),
+    // deliver it now that they have arrived at the new station.
+    if (room.taskset && Array.isArray(room.taskset.tasks)) {
+      const pending = team.nextTaskIndex;
+      if (typeof pending === "number") {
+        sendTaskToTeam(room, effectiveTeamId, pending);
+        delete team.nextTaskIndex;
+      }
+    }
 
     if (typeof ack === "function") {
       ack({ ok: true });

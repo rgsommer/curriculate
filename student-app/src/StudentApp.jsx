@@ -478,7 +478,7 @@ export default function StudentApp() {
       );
     };
 
-        const handleRoomState = (state = {}) => {
+    const handleRoomState = (state = {}) => {
       // Update location (Classroom / Gym / etc.)
       const loc = state.locationCode || DEFAULT_LOCATION;
       setLocationCode(loc);
