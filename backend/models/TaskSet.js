@@ -30,7 +30,7 @@ const TaskSchema = new Schema({
         "photo","make-and-snap","audio-recording","video-clip","draw","pet-feeding","brain-spark-notes","flashcards",
         "body-break","motion-mission","around-the-room-scavenger","station-physical-challenge",
         "mad-dash-sequence","true-false-tictactoe","live-debate","mystery-clues","collaborative-swap","three-card-reveal",
-        "random-treat","timeline","mind-mapper","scan-and-confirm","hidenseek"
+        "random-treat","timeline","mind-mapper","scan-and-confirm","hidenseek","brainstorm-battle","mind-mapper","speed-draw"
       ],
       message: "Invalid taskType: {VALUE}",
     },
