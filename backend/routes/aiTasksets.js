@@ -14,7 +14,20 @@ const router = express.Router();
 
 /**
  * POST /api/ai/tasksets
- * Body:
+ * Body can be in either of these shapes:
+ *
+ * (A) Newer frontend (AiTasksetGenerator.jsx):
+ * {
+ *   gradeLevel,
+ *   subject,
+ *   difficulty,
+ *   learningGoal,
+ *   topicDescription,              // free-text description
+ *   totalDurationMinutes,
+ *   numberOfTasks
+ * }
+ *
+ * (B) Older / original API:
  * {
  *   gradeLevel,
  *   subject,
@@ -22,12 +35,7 @@ const router = express.Router();
  *   durationMinutes,
  *   topicTitle,
  *   wordConceptList?: string[],
- *   lenses?: {
- *     includePhysicalMovement?: boolean,
- *     includeCreative?: boolean,
- *     includeAnalytical?: boolean,
- *     includeInputTasks?: boolean
- *   },
+ *   lenses?: { ... },
  *   learningGoal?: string,
  *   approxTaskCount?: number
  * }
@@ -44,16 +52,43 @@ router.post("/", async (req, res) => {
       lenses = {},
       learningGoal,
       approxTaskCount,
+
+      // NEW fields used by AiTasksetGenerator.jsx
+      topicDescription,
+      numberOfTasks,
+      totalDurationMinutes,
     } = req.body || {};
 
-    const words = Array.isArray(wordConceptList)
-      ? wordConceptList.filter((w) => w && String(w).trim().length > 0)
+    // -----------------------------
+    // 1) Derive concept words
+    // -----------------------------
+    let words = Array.isArray(wordConceptList)
+      ? wordConceptList
+          .map((w) => (w == null ? "" : String(w)))
+          .map((w) => w.trim())
+          .filter((w) => w.length > 0)
       : [];
 
+    // If no explicit wordConceptList, derive from topicDescription
+    if (words.length === 0 && typeof topicDescription === "string") {
+      const fromDesc = topicDescription
+        .split(/[,;\n]/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+      if (fromDesc.length > 0) {
+        words = fromDesc;
+      }
+    }
+
+    // Last fallback: subject itself as a concept
+    if (words.length === 0 && subject) {
+      words = [subject];
+    }
+
     if (words.length === 0) {
-      return res
-        .status(400)
-        .json({ error: "wordConceptList must include at least one concept." });
+      return res.status(400).json({
+        error: "wordConceptList must include at least one concept.",
+      });
     }
 
     const safeSubject = subject || "our topic";
@@ -61,13 +96,29 @@ router.post("/", async (req, res) => {
       topicTitle ||
       (subject ? `${subject} – AI Task Set` : "AI-Generated Task Set");
 
-    // Decide how many tasks (same basic idea as your old version)
+    // -----------------------------
+    // 2) Decide how many tasks to generate
+    // -----------------------------
+    const safeDuration =
+      typeof totalDurationMinutes === "number" && totalDurationMinutes > 0
+        ? totalDurationMinutes
+        : durationMinutes;
+
+    const baseDuration =
+      typeof safeDuration === "number" && safeDuration > 0
+        ? safeDuration
+        : 45;
+
     const targetCount =
       typeof approxTaskCount === "number" && approxTaskCount > 0
         ? approxTaskCount
-        : Math.max(6, Math.min(16, (durationMinutes || 45) / 4));
+        : typeof numberOfTasks === "number" && numberOfTasks > 0
+        ? numberOfTasks
+        : Math.max(6, Math.min(16, baseDuration / 4));
 
-    // 1) AI: concept -> taskType plan
+    // -----------------------------
+    // 3) AI: concept -> taskType plan
+    // -----------------------------
     const rawPlan = await planTaskTypes(
       safeSubject,
       words,
@@ -78,20 +129,24 @@ router.post("/", async (req, res) => {
 
     const plan = rawPlan || [];
 
-    // 2) AI: taskType plan -> full tasks
-    const tasks = await createAiTasks(safeSubject, plan, {
+    // -----------------------------
+    // 4) AI: taskType plan -> full tasks
+    // -----------------------------
+    const aiTasks = await createAiTasks(safeSubject, plan, {
       gradeLevel,
       difficulty,
       learningGoal,
-      durationMinutes,
+      durationMinutes: baseDuration,
       topicTitle: safeTitle,
     });
 
-    // 3) Normalize tasks to Curriculate format
-    const normalizedTasks = tasks.map((t, index) => {
+    // -----------------------------
+    // 5) Normalize tasks to Curriculate format
+    // -----------------------------
+    const normalizedTasks = aiTasks.map((t, index) => {
       const type = t.taskType || "short-answer";
 
-      const time = t.recommendedTimeSeconds || 300; // 5min default
+      const time = t.recommendedTimeSeconds || 300; // 5 min default
       const points = t.recommendedPoints || 1;
 
       const options = Array.isArray(t.options) ? t.options : [];
@@ -105,7 +160,10 @@ router.post("/", async (req, res) => {
           const idx = options.findIndex(
             (o) =>
               o &&
-              o.toString().trim().toLowerCase() ===
+              o
+                .toString()
+                .trim()
+                .toLowerCase() ===
                 t.correctAnswer.toString().trim().toLowerCase()
           );
           correctAnswer = idx >= 0 ? idx : 0;
@@ -131,29 +189,34 @@ router.post("/", async (req, res) => {
       };
     });
 
-    // 4) Optional polish with your existing cleaner
+    // -----------------------------
+    // 6) Optional polish with cleaner
+    // -----------------------------
+    let finalTasks = normalizedTasks;
     if (typeof cleanTaskList === "function") {
-      tasks = await cleanTaskList(normalizedTasks, {
+      finalTasks = await cleanTaskList(normalizedTasks, {
         gradeLevel,
         subject: safeSubject,
         difficulty,
-        durationMinutes,
+        durationMinutes: baseDuration,
         learningGoal,
       });
     }
 
-    // 5) Save taskset
+    // -----------------------------
+    // 7) Save taskset
+    // -----------------------------
     const doc = await TaskSet.create({
       name: safeTitle,
       description:
         learningGoal ||
         `AI-generated mix of task types for ${safeSubject}.`,
-      tasks,
+      tasks: finalTasks,
       displays: [],
       gradeLevel,
       subject,
       difficulty,
-      durationMinutes,
+      durationMinutes: baseDuration,
       learningGoal,
       isPublic: false,
     });
@@ -161,10 +224,8 @@ router.post("/", async (req, res) => {
     return res.status(201).json({ taskset: doc });
   } catch (err) {
     console.error("AI taskset generation failed:", err);
-    return res
-      .status(500)
-      .json({ error: "AI taskset generation failed" });
+    return res.status(500).json({ error: "AI taskset generation failed" });
   }
 });
- 
+
 export default router;
