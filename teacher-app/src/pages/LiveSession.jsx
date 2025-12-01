@@ -71,11 +71,19 @@ export default function LiveSession({ roomCode }) {
   // "tasksetLoaded" before calling teacher:launchNextTask.
   const [launchAfterLoad, setLaunchAfterLoad] = useState(false);
 
-  const activeTasksetName =
+    const activeTasksetName =
     activeTasksetMeta?.name ||
     activeTasksetMeta?.title ||
     activeTasksetMeta?.tasksetName ||
     "Untitled set";
+
+  const totalTasksInActiveSet =
+    (Array.isArray(activeTasksetMeta?.tasks) && activeTasksetMeta.tasks.length) ||
+    (typeof activeTasksetMeta?.taskCount === "number" && activeTasksetMeta.taskCount > 0
+      ? activeTasksetMeta.taskCount
+      : null) ||
+    (Array.isArray(activeTasksetMeta?.taskList) && activeTasksetMeta.taskList.length) ||
+    null;
 
   // Room setup / fixed-station helper
   const [roomSetup, setRoomSetup] = useState(null);
@@ -603,18 +611,31 @@ export default function LiveSession({ roomCode }) {
               animation: color ? "stationPulse 1.8s ease-out infinite" : "none",
             }}
           />
-          <div
+                    <div
             style={{
               fontSize: "0.8rem",
               color: "#4b5563",
             }}
           >
-            {currentStationId
-              ? `At station ${currentStationId.toUpperCase()}`
-              : "Waiting for station…"}
+            {currentStationId ? (
+              <>
+                <span>{`Station ${currentStationId.toUpperCase()}`}</span>
+                {color && (
+                  <span style={{ marginLeft: 6 }}>
+                    • {color.charAt(0).toUpperCase() + color.slice(1)} station
+                  </span>
+                )}
+              </>
+            ) : (
+              "Waiting for station…"
+            )}
             {typeof team.taskIndex === "number" && team.taskIndex >= 0 && (
               <span style={{ marginLeft: 6, color: "#1d4ed8" }}>
                 · Task {team.taskIndex + 1}
+                {typeof totalTasksInActiveSet === "number" &&
+                totalTasksInActiveSet > 0
+                  ? ` of ${totalTasksInActiveSet}`
+                  : ""}
               </span>
             )}
           </div>
