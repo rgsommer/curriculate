@@ -374,7 +374,7 @@ export default function StudentApp() {
   // draft answer tracking (for timeout auto-submit)
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState(null);
 
-  // 🔁 NEW: try to resume a saved team session on mount
+  // 🔁 Try to resume a saved team session on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem("teamSession");
@@ -393,7 +393,6 @@ export default function StudentApp() {
             console.log("Resumed session!", resp);
             setRoomCode(savedRoomCode);
             setTeamSessionId(savedTeamSessionId);
-            // if backend provides a specific teamId, use it; otherwise fall back
             setTeamId(resp.teamId || savedTeamSessionId || null);
             setJoined(true);
             setScannerActive(false);
@@ -485,8 +484,8 @@ export default function StudentApp() {
       setLocationCode(loc);
 
       const teams = state.teams || {};
-      // On the backend, teamId === socket.id for this device
-      const me = teams[socket.id];
+      // On the backend, teamId === DB _id for this teamSession
+      const me = teams[teamId];
 
       if (!me) {
         // Server no longer has us as a team (e.g., teacher restarted room);
@@ -655,8 +654,6 @@ export default function StudentApp() {
               (ack) => {
                 console.log("Timeout submit ack:", ack);
               }
-              setAwaitingScan(true);
-              setCurrentTask(null);
             );
           }
 
@@ -696,18 +693,6 @@ export default function StudentApp() {
       setScannerActive(false);
     }
   }, [joined, assignedStationId, scannedStationId]);
-
-  useEffect(() => {
-  socket.on("task:launch", (payload) => {
-    setCurrentTask(payload.task);
-    setTaskIndex(payload.index);
-    setAwaitingScan(false);    // ← IMPORTANT
-  });
-
-    return () => {
-      socket.off("task:launch");
-    };
-  }, []);
 
   const unlockAudioForBrowser = () => {
     const a = sndAlert.current;
