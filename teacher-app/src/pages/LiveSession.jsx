@@ -63,7 +63,14 @@ export default function LiveSession({ roomCode }) {
     }
   });
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
+
+  // "Launch immediately" flag coming from TaskSets via localStorage
   const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
+
+  // When true, we have requested a taskset launch and are waiting for
+  // "tasksetLoaded" before calling teacher:launchNextTask.
+  const [launchAfterLoad, setLaunchAfterLoad] = useState(false);
+
   const activeTasksetName =
     activeTasksetMeta?.name ||
     activeTasksetMeta?.title ||
@@ -74,7 +81,7 @@ export default function LiveSession({ roomCode }) {
   const [roomSetup, setRoomSetup] = useState(null);
   const [showRoomSetup, setShowRoomSetup] = useState(false);
 
-  // End-session / email reports logic (UI removed)
+  // End-session / email reports logic
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
 
@@ -146,7 +153,7 @@ export default function LiveSession({ roomCode }) {
     }
   }, []);
 
-  // If auto-launch is requested, load + launch the active taskset
+  // If auto-launch is requested, load the active taskset and then launch
   useEffect(() => {
     if (!autoLaunchRequested) return;
     if (!roomCode || !activeTasksetMeta?._id) return;
@@ -154,38 +161,15 @@ export default function LiveSession({ roomCode }) {
     const code = roomCode.toUpperCase();
     setStatus("Loading taskset…");
 
-    socket.emit(
-      "loadTaskset",
-      { roomCode: code, tasksetId: activeTasksetMeta._id },
-      (resp) => {
-        if (!resp || !resp.ok) {
-          console.error("Failed to load taskset for auto-launch:", resp);
-          setStatus("Failed to load taskset.");
-          setAutoLaunchRequested(false);
-          return;
-        }
+    // We don't rely on an ack here; the "tasksetLoaded" event will
+    // actually trigger the launch via launchAfterLoad.
+    setLaunchAfterLoad(true);
+    socket.emit("loadTaskset", {
+      roomCode: code,
+      tasksetId: activeTasksetMeta._id,
+    });
 
-        setLoadedTasksetId(activeTasksetMeta._id);
-        setStatus("Launching first task…");
-
-        socket.emit(
-          "teacher:launchNextTask",
-          { roomCode: code },
-          (launchResp) => {
-            if (!launchResp || !launchResp.ok) {
-              console.error(
-                "Failed to auto-launch first task:",
-                launchResp
-              );
-              setStatus("Failed to launch taskset.");
-            } else {
-              setStatus("Taskset launched.");
-            }
-            setAutoLaunchRequested(false);
-          }
-        );
-      }
-    );
+    setAutoLaunchRequested(false);
   }, [autoLaunchRequested, roomCode, activeTasksetMeta]);
 
   // ----------------------------------------------------
@@ -262,6 +246,22 @@ export default function LiveSession({ roomCode }) {
     const handleTasksetLoaded = (payload) => {
       if (payload?.tasksetId) {
         setLoadedTasksetId(payload.tasksetId);
+      }
+
+      // If we requested a launch and the loaded taskset matches the
+      // active one, immediately launch the first task.
+      if (
+        launchAfterLoad &&
+        activeTasksetMeta &&
+        payload?.tasksetId === activeTasksetMeta._id &&
+        roomCode
+      ) {
+        const code = roomCode.toUpperCase();
+        setStatus("Launching first task…");
+
+        socket.emit("teacher:launchNextTask", { roomCode: code });
+        setLaunchAfterLoad(false);
+        setStatus("Taskset launched.");
       }
     };
 
@@ -374,7 +374,13 @@ export default function LiveSession({ roomCode }) {
       socket.off("session:noiseLevel", handleNoiseLevel);
       socket.off("teacher:treatAssigned", handleTreatAssigned);
     };
-  }, [roomCode, noiseLevel, noiseBrightness]);
+  }, [
+    roomCode,
+    noiseLevel,
+    noiseBrightness,
+    launchAfterLoad,
+    activeTasksetMeta,
+  ]);
 
   // ----------------------------------------------------
   // Actions
@@ -409,34 +415,14 @@ export default function LiveSession({ roomCode }) {
     const code = roomCode.toUpperCase();
 
     setStatus("Loading taskset…");
+    setLaunchAfterLoad(true);
 
-    socket.emit(
-      "loadTaskset",
-      { roomCode: code, tasksetId: activeTasksetMeta._id },
-      (resp) => {
-        if (!resp || !resp.ok) {
-          console.error("Failed to load taskset:", resp);
-          setStatus("Failed to load taskset.");
-          return;
-        }
-
-        setLoadedTasksetId(activeTasksetMeta._id);
-        setStatus("Launching first task…");
-
-        socket.emit(
-          "teacher:launchNextTask",
-          { roomCode: code },
-          (launchResp) => {
-            if (!launchResp || !launchResp.ok) {
-              console.error("Failed to launch taskset:", launchResp);
-              setStatus("Failed to launch taskset.");
-              return;
-            }
-            setStatus("Taskset launched.");
-          }
-        );
-      }
-    );
+    // Fire-and-forget; once the server finishes loading it will emit
+    // "tasksetLoaded" and our listener will call teacher:launchNextTask.
+    socket.emit("loadTaskset", {
+      roomCode: code,
+      tasksetId: activeTasksetMeta._id,
+    });
   };
 
   const handleEndSessionAndEmail = () => {
@@ -482,7 +468,7 @@ export default function LiveSession({ roomCode }) {
   };
 
   // ----------------------------------------------------
-  // Derived helpers
+  // Derived helpers + button state
   // ----------------------------------------------------
   const teams = roomState.teams || {};
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
@@ -505,6 +491,32 @@ export default function LiveSession({ roomCode }) {
     : noiseThreshold < 70
     ? "Moderate"
     : "Strict";
+
+  // Launch button state machine
+  let launchBtnLabel = "Launch from taskset";
+  let launchBtnBg = "#10b981"; // green
+  let launchBtnOnClick = handleLaunchTaskset;
+  let launchBtnDisabled = !activeTasksetMeta;
+
+  if (!activeTasksetMeta) {
+    // No active set selected at all
+    launchBtnDisabled = true;
+    launchBtnBg = "#9ca3af";
+    launchBtnLabel = "Launch from taskset";
+    launchBtnOnClick = null;
+  } else if (taskFlowActive) {
+    // A task is in progress – turn into red END SESSION button
+    launchBtnLabel = "End Task Session & Generate Reports";
+    launchBtnBg = "#dc2626"; // red-600
+    launchBtnOnClick = handleEndSessionAndEmail;
+    launchBtnDisabled = isEndingSession;
+  } else if (launchAfterLoad) {
+    // We're in the middle of loading & launching
+    launchBtnLabel = "Launching taskset…";
+    launchBtnBg = "#10b981";
+    launchBtnOnClick = null;
+    launchBtnDisabled = true;
+  }
 
   const renderTeamCard = (teamId) => {
     const team = teams[teamId];
@@ -684,6 +696,17 @@ export default function LiveSession({ roomCode }) {
           >
             Room <strong>{roomCode}</strong> · {status}
           </p>
+          {endSessionMessage && (
+            <p
+              style={{
+                margin: "4px 0 0",
+                fontSize: "0.8rem",
+                color: "#16a34a",
+              }}
+            >
+              {endSessionMessage}
+            </p>
+          )}
         </div>
         {roomState.locationCode && (
           <div
@@ -835,21 +858,21 @@ export default function LiveSession({ roomCode }) {
             >
               <button
                 type="button"
-                onClick={handleLaunchTaskset}
+                onClick={launchBtnOnClick || undefined}
                 style={{
                   flex: 1,
                   padding: "6px 8px",
                   borderRadius: 6,
                   border: "none",
-                  background: "#10b981",
+                  background: launchBtnBg,
                   color: "#ffffff",
                   fontSize: "0.85rem",
-                  cursor: activeTasksetMeta ? "pointer" : "not-allowed",
-                  opacity: activeTasksetMeta ? 1 : 0.5,
+                  cursor: launchBtnDisabled ? "not-allowed" : "pointer",
+                  opacity: launchBtnDisabled ? 0.5 : 1,
                 }}
-                disabled={!activeTasksetMeta}
+                disabled={launchBtnDisabled}
               >
-                Launch from taskset
+                {launchBtnLabel}
               </button>
             </div>
 
@@ -992,7 +1015,7 @@ export default function LiveSession({ roomCode }) {
         </div>
       </div>
 
-      {/* Main body: teams + leaderboard + debug log */}
+      {/* Main body: teams + leaderboard + scan log */}
       <div
         style={{
           display: "flex",
