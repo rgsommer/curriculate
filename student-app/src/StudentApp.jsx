@@ -655,6 +655,8 @@ export default function StudentApp() {
               (ack) => {
                 console.log("Timeout submit ack:", ack);
               }
+              setAwaitingScan(true);
+              setCurrentTask(null);
             );
           }
 
@@ -694,6 +696,18 @@ export default function StudentApp() {
       setScannerActive(false);
     }
   }, [joined, assignedStationId, scannedStationId]);
+
+  useEffect(() => {
+  socket.on("task:launch", (payload) => {
+    setCurrentTask(payload.task);
+    setTaskIndex(payload.index);
+    setAwaitingScan(false);    // ← IMPORTANT
+  });
+
+    return () => {
+      socket.off("task:launch");
+    };
+  }, []);
 
   const unlockAudioForBrowser = () => {
     const a = sndAlert.current;
@@ -885,6 +899,8 @@ export default function StudentApp() {
           stationId: assignedNorm.id || assignedStationId,
         });
       }
+
+      socket.emit("task:requestNext", { roomCode, teamId: teamSessionId });
 
       return true; // correct station → stop camera
     } catch (err) {

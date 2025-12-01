@@ -612,6 +612,11 @@ export default function LiveSession({ roomCode }) {
             {currentStationId
               ? `At station ${currentStationId.toUpperCase()}`
               : "Waiting for station…"}
+            {typeof team.taskIndex === "number" && team.taskIndex >= 0 && (
+              <span style={{ marginLeft: 6, color: "#1d4ed8" }}>
+                · Task {team.taskIndex + 1}
+              </span>
+            )}
           </div>
         </div>
 

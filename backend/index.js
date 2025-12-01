@@ -1378,6 +1378,22 @@ io.on("connection", (socket) => {
     handleStudentSubmit(payload, ack);
   });
 
+  io.to(code).emit("room:state", state);
+  io.to(code).emit("roomState", state);
+
+  socket.on("task:requestNext", ({ roomCode, teamId }) => {
+  const code = (roomCode || "").toUpperCase();
+  const room = rooms[code];
+  if (!room || !room.taskset) return;
+
+  const team = room.teams[teamId];
+  if (!team) return;
+
+  const nextIndex = team.taskIndex;
+
+  sendTaskToTeam(room, teamId, nextIndex);
+});
+
   socket.on("task:submit", (payload) => {
     handleStudentSubmit(payload);
   });
