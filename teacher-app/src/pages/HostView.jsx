@@ -113,157 +113,92 @@ export default function HostView({ roomCode }) {
     roomState;
 
   const teamsArray = Object.values(teams);
-  const scoresEntries = Object.entries(scores).sort(
-    (a, b) => b[1] - a[1]
-  );
+  const scoresEntries = Object.entries(scores).sort((a, b) => b[1] - a[1]);
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        padding: 16,
-        gap: 16,
-        fontFamily: "system-ui",
-      }}
-    >
+    <div className="h-full flex flex-col p-4 md:p-6 gap-4 md:gap-6 font-sans">
+      {/* Accessible page title (hidden visually – top bar already shows it) */}
+      <h1 className="sr-only">Host view</h1>
+
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 16,
-          alignItems: "flex-start",
-        }}
-      >
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
         <div>
-          <h1 style={{ margin: 0 }}>Host view</h1>
           {roomCode ? (
             <>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: "0.9rem",
-                  color: "#4b5563",
-                }}
-              >
-                Room: {roomCode.toUpperCase()}
+              <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                Room {roomCode.toUpperCase()}
               </p>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: "0.8rem",
-                  color: "#6b7280",
-                }}
-              >
-                Location: {locationCode || "Classroom"} • Task index:{" "}
-                {taskIndex >= 0 ? taskIndex + 1 : "—"}
+              <p className="text-sm text-gray-700">
+                Location:{" "}
+                <span className="font-medium">
+                  {locationCode || "Classroom"}
+                </span>
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Task index:{" "}
+                {taskIndex >= 0 ? (
+                  <span className="font-mono">{taskIndex + 1}</span>
+                ) : (
+                  "—"
+                )}
               </p>
             </>
           ) : (
-            <p style={{ color: "#b91c1c" }}>No room selected.</p>
+            <p className="text-sm text-red-700">
+              No room selected. Choose a room from the main bar.
+            </p>
           )}
         </div>
 
         {/* Simple legend / status */}
-        <div
-          style={{
-            padding: 8,
-            borderRadius: 8,
-            border: "1px solid #e5e7eb",
-            background: "#f9fafb",
-            fontSize: "0.8rem",
-            minWidth: 220,
-          }}
-        >
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>
-            Session summary
+        <div className="min-w-[220px] rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs md:text-sm">
+          <div className="font-semibold mb-1">Session summary</div>
+          <div>
+            Teams joined:{" "}
+            <span className="font-semibold">{teamsArray.length}</span>
           </div>
           <div>
-            Teams joined: <strong>{teamsArray.length}</strong>
-          </div>
-          <div>
-            Stations: <strong>{stations.length}</strong>
+            Stations: <span className="font-semibold">{stations.length}</span>
           </div>
           <div>
             Latest submissions:{" "}
-            <strong>{submissions.length}</strong>
+            <span className="font-semibold">{submissions.length}</span>
           </div>
         </div>
       </div>
 
       {/* Main body: stations/teams + submissions + scores */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 2fr 1.4fr",
-          gap: 16,
-          flex: 1,
-          minHeight: 0,
-        }}
-      >
+      <div className="grid gap-4 flex-1 min-h-0 grid-cols-1 lg:grid-cols-3">
         {/* Stations column */}
-        <div
-          style={{
-            borderRight: "1px solid #e5e7eb",
-            paddingRight: 12,
-            minWidth: 0,
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Stations</h2>
+        <div className="lg:border-r border-gray-200 lg:pr-4 min-w-0">
+          <h2 className="text-sm font-semibold text-gray-800 mb-2">
+            Stations
+          </h2>
           {stations.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>
+            <p className="text-sm text-gray-500">
               No stations are defined yet.
             </p>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
+            <div className="flex flex-col gap-2">
               {stations.map((s) => {
                 const team = teams[s.assignedTeamId] || null;
                 return (
                   <div
                     key={s.id}
-                    style={{
-                      borderRadius: 8,
-                      border: "1px solid #e5e7eb",
-                      padding: 8,
-                      background: "#ffffff",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      fontSize: "0.85rem",
-                    }}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 flex items-center justify-between text-xs md:text-sm"
                   >
                     <div>
-                      <div
-                        style={{
-                          fontSize: "0.7rem",
-                          textTransform: "uppercase",
-                          letterSpacing: 1,
-                          color: "#6b7280",
-                        }}
-                      >
+                      <div className="text-[10px] uppercase tracking-wide text-gray-500">
                         {s.id}
                       </div>
-                      <div>
+                      <div className="text-gray-800">
                         {team
                           ? team.teamName || team.teamId
                           : "No team assigned"}
                       </div>
                     </div>
                     {team && (
-                      <div
-                        style={{
-                          fontSize: "0.75rem",
-                          color: "#6b7280",
-                        }}
-                      >
+                      <div className="text-[11px] text-gray-500">
                         Score: {scores[team.teamId] ?? 0}
                       </div>
                     )}
@@ -275,59 +210,30 @@ export default function HostView({ roomCode }) {
         </div>
 
         {/* Teams column */}
-        <div
-          style={{
-            borderRight: "1px solid #e5e7eb",
-            paddingRight: 12,
-            minWidth: 0,
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Teams</h2>
+        <div className="lg:border-r border-gray-200 lg:pr-4 min-w-0">
+          <h2 className="text-sm font-semibold text-gray-800 mb-2">Teams</h2>
           {teamsArray.length === 0 ? (
-            <p style={{ color: "#6b7280" }}>No teams joined yet.</p>
+            <p className="text-sm text-gray-500">No teams joined yet.</p>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
+            <div className="flex flex-col gap-2">
               {teamsArray.map((team) => (
                 <div
                   key={team.teamId}
-                  style={{
-                    borderRadius: 8,
-                    border: "1px solid #e5e7eb",
-                    background: "#ffffff",
-                    padding: 8,
-                    fontSize: "0.85rem",
-                  }}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm"
                 >
-                  <div style={{ fontWeight: 600 }}>
+                  <div className="font-semibold text-gray-900">
                     {team.teamName || team.teamId}
                   </div>
-                  {Array.isArray(team.members) &&
-                    team.members.length > 0 && (
-                      <div
-                        style={{
-                          marginTop: 2,
-                          fontSize: "0.75rem",
-                          color: "#6b7280",
-                        }}
-                      >
-                        {team.members.join(", ")}
-                      </div>
-                    )}
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: "0.75rem",
-                      color: "#6b7280",
-                    }}
-                  >
+                  {Array.isArray(team.members) && team.members.length > 0 && (
+                    <div className="mt-1 text-[11px] text-gray-500">
+                      {team.members.join(", ")}
+                    </div>
+                  )}
+                  <div className="mt-1 text-[11px] text-gray-500">
                     Current station:{" "}
-                    {team.currentStationId || "—"}
+                    <span className="font-mono">
+                      {team.currentStationId || "—"}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -336,38 +242,19 @@ export default function HostView({ roomCode }) {
         </div>
 
         {/* Right column: latest submissions + scores */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            minWidth: 0,
-          }}
-        >
+        <div className="flex flex-col gap-4 min-w-0">
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 4 }}>
+            <h2 className="text-sm font-semibold text-gray-800 mb-2">
               Latest submissions
             </h2>
             {submissions.length === 0 ? (
-              <p style={{ color: "#9ca3af", fontSize: "0.85rem" }}>
+              <p className="text-xs md:text-sm text-gray-400">
                 No submissions yet.
               </p>
             ) : (
-              <div
-                style={{
-                  maxHeight: 220,
-                  overflowY: "auto",
-                  borderRadius: 8,
-                  border: "1px solid #e5e7eb",
-                  background: "#f9fafb",
-                  padding: 6,
-                  fontSize: "0.8rem",
-                }}
-              >
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
                 {submissions.map((sub, idx) => {
-                  const t = sub.submittedAt
-                    ? new Date(sub.submittedAt)
-                    : null;
+                  const t = sub.submittedAt ? new Date(sub.submittedAt) : null;
                   const timeStr = t
                     ? t.toLocaleTimeString([], {
                         hour: "2-digit",
@@ -386,44 +273,24 @@ export default function HostView({ roomCode }) {
                   return (
                     <div
                       key={`${sub.teamId}-${sub.taskIndex}-${idx}`}
-                      style={{
-                        padding: "3px 4px",
-                        borderBottom:
-                          idx === submissions.length - 1
-                            ? "none"
-                            : "1px dashed #e5e7eb",
-                      }}
+                      className={`px-1 py-1 border-b border-dashed border-gray-200 last:border-none`}
                     >
                       <div>
                         <strong>{sub.teamName || sub.teamId}</strong>{" "}
                         {timeStr && (
-                          <span
-                            style={{
-                              fontSize: "0.7rem",
-                              color: "#6b7280",
-                            }}
-                          >
+                          <span className="text-[10px] text-gray-500">
                             • {timeStr}
                           </span>
                         )}
                       </div>
                       <div
-                        style={{
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
+                        className="truncate"
                         title={sub.answerText}
                       >
                         {isCorrect} T{(sub.taskIndex ?? 0) + 1}:{" "}
                         {sub.answerText || "—"}
                       </div>
-                      <div
-                        style={{
-                          fontSize: "0.7rem",
-                          color: "#6b7280",
-                        }}
-                      >
+                      <div className="text-[10px] text-gray-500">
                         {sub.points ?? 0} pts{" "}
                         {sub.timeMs != null &&
                           `• ${(sub.timeMs / 1000).toFixed(1)}s`}
@@ -436,24 +303,19 @@ export default function HostView({ roomCode }) {
           </div>
 
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 4 }}>Scores</h2>
+            <h2 className="text-sm font-semibold text-gray-800 mb-2">
+              Scores
+            </h2>
             {scoresEntries.length === 0 ? (
-              <p style={{ color: "#6b7280", fontSize: "0.85rem" }}>
+              <p className="text-xs md:text-sm text-gray-500">
                 No scores yet.
               </p>
             ) : (
-              <ol
-                style={{
-                  paddingLeft: 20,
-                  margin: 0,
-                  fontSize: "0.85rem",
-                }}
-              >
+              <ol className="pl-5 text-xs md:text-sm">
                 {scoresEntries.map(([teamId, pts]) => {
-                  const teamName =
-                    teams[teamId]?.teamName || teamId;
+                  const teamName = teams[teamId]?.teamName || teamId;
                   return (
-                    <li key={teamId} style={{ marginBottom: 4 }}>
+                    <li key={teamId} className="mb-1">
                       <strong>{teamName}</strong> — {pts} pts
                     </li>
                   );

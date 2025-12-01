@@ -1,4 +1,4 @@
-// src/pages/SessionAnalyticsPage.jsx
+// teacher-app/src/pages/SessionAnalyticsPage.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../api/client";
@@ -30,18 +30,23 @@ export default function SessionAnalyticsPage() {
   if (!session) return <div className="p-4">Session not found.</div>;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
-          <Link to="/analytics" className="text-xs text-blue-600 underline">
+          <Link
+            to="/analytics"
+            className="text-xs text-blue-600 underline inline-block mb-1"
+          >
             ← Back to Analytics
           </Link>
-          <h1 className="text-2xl font-bold mt-1">{session.classroomName}</h1>
-          <p className="text-sm text-gray-600">
+          <h1 className="text-lg sm:text-2xl font-bold mt-1">
+            {session.classroomName}
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-600">
             {session.taskSetName} –{" "}
             {new Date(session.startedAt).toLocaleString()}
           </p>
-          <p className="mt-2 text-sm">
+          <p className="mt-2 text-xs sm:text-sm">
             <strong>Class Avg Score:</strong> {session.classAverageScore}%{" "}
             &nbsp;|&nbsp;
             <strong>Accuracy:</strong> {session.classAverageAccuracy}%
@@ -49,84 +54,121 @@ export default function SessionAnalyticsPage() {
         </div>
       </div>
 
-<p>Tasks Completed: {session.totalTasks} → {session.completedTasks} ({Math.round((session.completedTasks / session.totalTasks) * 100)}%)</p>
-<p>Fastest Average Response: {Math.min(...session.teams.map(t => t.avgResponseTime || 999)).toFixed(1)}s</p>
-<p>Perfect Task Rate: {(session.teams.reduce((s,t) => s + t.perfectTasks, 0) / session.completedTasks * 100).toFixed(1)}%</p>
+      <div className="text-xs sm:text-sm space-y-1">
+        <p>
+          Tasks Completed: {session.totalTasks} → {session.completedTasks} (
+          {Math.round(
+            (session.completedTasks / session.totalTasks) * 100
+          )}
+          %)
+        </p>
+        <p>
+          Fastest Average Response:{" "}
+          {Math.min(
+            ...session.teams.map((t) => t.avgResponseTime || 999)
+          ).toFixed(1)}
+          s
+        </p>
+        <p>
+          Perfect Task Rate:{" "}
+          {(
+            (session.teams.reduce(
+              (s, t) => s + t.perfectTasks,
+              0
+            ) /
+              session.completedTasks) *
+            100
+          ).toFixed(1)}
+          %
+        </p>
+      </div>
 
       {/* Task breakdown */}
       <section>
-        <h2 className="text-xl font-semibold mb-2">Task Breakdown</h2>
-        <div className="border rounded-lg overflow-hidden bg-white">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="p-2 text-left">#</th>
-                <th className="p-2 text-left">Prompt</th>
-                <th className="p-2 text-right">Avg Score</th>
-                <th className="p-2 text-right">Accuracy</th>
-                <th className="p-2 text-right">Submissions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {session.tasks.map((t, idx) => (
-                <tr key={t.taskId} className="border-t">
-                  <td className="p-2 align-top">{idx + 1}</td>
-                  <td className="p-2 align-top">
-                    <span className="uppercase text-[10px] text-gray-500 mr-1">
-                      [{t.type}]
-                    </span>
-                    {t.prompt}
-                  </td>
-                  <td className="p-2 align-top text-right">{t.avgScore}%</td>
-                  <td className="p-2 align-top text-right">
-                    {t.avgCorrectPct}%
-                  </td>
-                  <td className="p-2 align-top text-right">
-                    {t.submissionsCount}
-                  </td>
+        <h2 className="text-base sm:text-xl font-semibold mb-2">
+          Task Breakdown
+        </h2>
+        <div className="border rounded-lg bg-white overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] sm:text-xs">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="p-2 text-left">#</th>
+                  <th className="p-2 text-left">Prompt</th>
+                  <th className="p-2 text-right">Avg Score</th>
+                  <th className="p-2 text-right">Accuracy</th>
+                  <th className="p-2 text-right">Submissions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {session.tasks.map((t, idx) => (
+                  <tr key={t.taskId} className="border-t">
+                    <td className="p-2 align-top">{idx + 1}</td>
+                    <td className="p-2 align-top max-w-xs sm:max-w-none">
+                      <span className="uppercase text-[9px] text-gray-500 mr-1">
+                        [{t.type}]
+                      </span>
+                      {t.prompt}
+                    </td>
+                    <td className="p-2 align-top text-right">
+                      {t.avgScore}%
+                    </td>
+                    <td className="p-2 align-top text-right">
+                      {t.avgCorrectPct}%
+                    </td>
+                    <td className="p-2 align-top text-right">
+                      {t.submissionsCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
       {/* Student summaries */}
       <section>
-        <h2 className="text-xl font-semibold mb-2">Student Performance</h2>
+        <h2 className="text-base sm:text-xl font-semibold mb-2">
+          Student Performance
+        </h2>
         <div className="border rounded-lg bg-white overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="p-2 text-left">Student</th>
-                <th className="p-2 text-right">Score</th>
-                <th className="p-2 text-right">Accuracy</th>
-                <th className="p-2 text-right">Tasks</th>
-                <th className="p-2 text-right">Avg Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {studentAnalytics.map((s) => (
-                <tr
-                  key={s._id}
-                  className="border-t cursor-pointer hover:bg-gray-50"
-                  onClick={() => setSelectedStudent(s)}
-                >
-                  <td className="p-2">{s.studentName}</td>
-                  <td className="p-2 text-right">
-                    {s.totalPoints}/{s.maxPoints}
-                  </td>
-                  <td className="p-2 text-right">{s.accuracyPct}%</td>
-                  <td className="p-2 text-right">
-                    {s.tasksCompleted}/{s.tasksAssigned}
-                  </td>
-                  <td className="p-2 text-right">
-                    {Math.round(s.avgLatencyMs)} ms
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] sm:text-xs">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="p-2 text-left">Student</th>
+                  <th className="p-2 text-right">Score</th>
+                  <th className="p-2 text-right">Accuracy</th>
+                  <th className="p-2 text-right">Tasks</th>
+                  <th className="p-2 text-right">Avg Time</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {studentAnalytics.map((s) => (
+                  <tr
+                    key={s._id}
+                    className="border-t cursor-pointer hover:bg-gray-50"
+                    onClick={() => setSelectedStudent(s)}
+                  >
+                    <td className="p-2">{s.studentName}</td>
+                    <td className="p-2 text-right">
+                      {s.totalPoints}/{s.maxPoints}
+                    </td>
+                    <td className="p-2 text-right">
+                      {s.accuracyPct}%
+                    </td>
+                    <td className="p-2 text-right">
+                      {s.tasksCompleted}/{s.tasksAssigned}
+                    </td>
+                    <td className="p-2 text-right">
+                      {Math.round(s.avgLatencyMs)} ms
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Student transcript modal */}
@@ -134,7 +176,7 @@ export default function SessionAnalyticsPage() {
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-lg max-w-xl w-full max-h-[80vh] overflow-auto p-4">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-lg font-semibold">
+                <h3 className="text-base sm:text-lg font-semibold">
                   {selectedStudent.studentName} –{" "}
                   {selectedStudent.accuracyPct}%
                 </h3>
@@ -145,15 +187,17 @@ export default function SessionAnalyticsPage() {
                   Close
                 </button>
               </div>
-              <p className="text-xs mb-2">
+              <p className="text-[11px] sm:text-xs mb-2">
                 Total Points: {selectedStudent.totalPoints}/
                 {selectedStudent.maxPoints} &nbsp;|&nbsp; Tasks:{" "}
                 {selectedStudent.tasksCompleted}/
                 {selectedStudent.tasksAssigned} &nbsp;|&nbsp; Avg time:{" "}
                 {Math.round(selectedStudent.avgLatencyMs)} ms
               </p>
-              <h4 className="font-semibold mb-1 text-sm">Task Transcript</h4>
-              <ul className="text-xs space-y-1">
+              <h4 className="font-semibold mb-1 text-xs sm:text-sm">
+                Task Transcript
+              </h4>
+              <ul className="text-[11px] sm:text-xs space-y-1">
                 {selectedStudent.perTask.map((pt, idx) => (
                   <li key={idx}>
                     <strong>{idx + 1}.</strong>{" "}
