@@ -1,4 +1,4 @@
-//teacher-app/src/pages/LiveSession.jsx
+// teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 
@@ -95,7 +95,7 @@ export default function LiveSession({ roomCode }) {
     given: 0,
   });
 
-    const [isNarrow, setIsNarrow] = useState(
+  const [isNarrow, setIsNarrow] = useState(
     typeof window !== "undefined" ? window.innerWidth < 900 : false
   );
 
@@ -152,29 +152,40 @@ export default function LiveSession({ roomCode }) {
     if (!roomCode || !activeTasksetMeta?._id) return;
 
     const code = roomCode.toUpperCase();
+    setStatus("Loading taskset…");
 
     socket.emit(
-      "teacher:loadTaskset",
+      "loadTaskset",
       { roomCode: code, tasksetId: activeTasksetMeta._id },
       (resp) => {
         if (!resp || !resp.ok) {
           console.error("Failed to load taskset for auto-launch:", resp);
+          setStatus("Failed to load taskset.");
+          setAutoLaunchRequested(false);
           return;
         }
+
+        setLoadedTasksetId(activeTasksetMeta._id);
+        setStatus("Launching first task…");
 
         socket.emit(
           "teacher:launchNextTask",
           { roomCode: code },
           (launchResp) => {
             if (!launchResp || !launchResp.ok) {
-              console.error("Failed to auto-launch first task:", launchResp);
+              console.error(
+                "Failed to auto-launch first task:",
+                launchResp
+              );
+              setStatus("Failed to launch taskset.");
+            } else {
+              setStatus("Taskset launched.");
             }
+            setAutoLaunchRequested(false);
           }
         );
       }
     );
-
-    setAutoLaunchRequested(false);
   }, [autoLaunchRequested, roomCode, activeTasksetMeta]);
 
   // ----------------------------------------------------
@@ -397,19 +408,35 @@ export default function LiveSession({ roomCode }) {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
 
+    setStatus("Loading taskset…");
+
     socket.emit(
-      "teacher:loadTaskset",
+      "loadTaskset",
       { roomCode: code, tasksetId: activeTasksetMeta._id },
       (resp) => {
         if (!resp || !resp.ok) {
           console.error("Failed to load taskset:", resp);
+          setStatus("Failed to load taskset.");
           return;
         }
+
         setLoadedTasksetId(activeTasksetMeta._id);
-        socket.emit("teacher:launchNextTask", { roomCode: code });
+        setStatus("Launching first task…");
+
+        socket.emit(
+          "teacher:launchNextTask",
+          { roomCode: code },
+          (launchResp) => {
+            if (!launchResp || !launchResp.ok) {
+              console.error("Failed to launch taskset:", launchResp);
+              setStatus("Failed to launch taskset.");
+              return;
+            }
+            setStatus("Taskset launched.");
+          }
+        );
       }
     );
-     setAutoLaunchRequested(true);
   };
 
   const handleEndSessionAndEmail = () => {
@@ -975,7 +1002,6 @@ export default function LiveSession({ roomCode }) {
           flexDirection: isNarrow ? "column" : "row",
         }}
       >
-
         {/* Teams grid */}
         <div style={{ flex: 3, minWidth: 0 }}>
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Teams</h2>
@@ -1011,7 +1037,6 @@ export default function LiveSession({ roomCode }) {
             gap: 12,
           }}
         >
-
           {/* Leaderboard */}
           <section
             style={{
