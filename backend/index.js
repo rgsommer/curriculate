@@ -1378,9 +1378,6 @@ io.on("connection", (socket) => {
     handleStudentSubmit(payload, ack);
   });
 
-  io.to(code).emit("room:state", state);
-  io.to(code).emit("roomState", state);
-
   socket.on("task:requestNext", ({ roomCode, teamId }) => {
   const code = (roomCode || "").toUpperCase();
   const room = rooms[code];
