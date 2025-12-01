@@ -90,6 +90,18 @@ export default function LiveSession({ roomCode }) {
     given: 0,
   });
 
+    const [isNarrow, setIsNarrow] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 900 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsNarrow(window.innerWidth < 900);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   useEffect(() => {
     const audio = new Audio("/sounds/join.mp3");
     audio.load();
@@ -949,15 +961,17 @@ export default function LiveSession({ roomCode }) {
         </div>
       </div>
 
-      {/* Main body: teams + right column */}
+      {/* Main body: teams + leaderboard + debug log */}
       <div
         style={{
           display: "flex",
           gap: 16,
           flex: 1,
           minHeight: 0,
+          flexDirection: isNarrow ? "column" : "row",
         }}
       >
+
         {/* Teams grid */}
         <div style={{ flex: 3, minWidth: 0 }}>
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Teams</h2>
@@ -982,13 +996,18 @@ export default function LiveSession({ roomCode }) {
         {/* Right column: leaderboard + scan log */}
         <div
           style={{
-            flex: 2,
-            minWidth: 260,
+            flex: isNarrow ? "none" : 1.2,
+            minWidth: isNarrow ? "100%" : 260,
+            borderLeft: isNarrow ? "none" : "1px solid #e5e7eb",
+            borderTop: isNarrow ? "1px solid #e5e7eb" : "none",
+            paddingLeft: isNarrow ? 0 : 12,
+            paddingTop: isNarrow ? 12 : 0,
             display: "flex",
             flexDirection: "column",
-            gap: 16,
+            gap: 12,
           }}
         >
+
           {/* Leaderboard */}
           <section
             style={{

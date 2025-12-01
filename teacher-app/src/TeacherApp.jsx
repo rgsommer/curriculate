@@ -39,6 +39,18 @@ function TeacherApp() {
 
   const { isAuthenticated, user, logout } = useAuth();
 
+    const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 768 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   // optional ping on unload (non-critical)
   useEffect(() => {
     if (!roomCode) return;
@@ -74,6 +86,8 @@ function TeacherApp() {
   const requireRoom = (element) =>
     roomCode ? element : <EnterRoomMessage />;
 
+  const sidebarWidth = isMobile ? "18vw" : 220; // ~1/5 of phone, narrower desktop
+
   return (
     <div
       style={{
@@ -87,8 +101,10 @@ function TeacherApp() {
       {/* SIDEBAR – fixed on the left */}
       <div
         style={{
-          width: 260,
-          padding: 16,
+          width: sidebarWidth,
+          minWidth: isMobile ? 80 : 180,
+          maxWidth: isMobile ? "22vw" : 260,
+          padding: isMobile ? 10 : 16,
           backgroundColor: "#111827",
           color: "#f9fafb",
           position: "fixed",
@@ -108,7 +124,7 @@ function TeacherApp() {
             marginBottom: 16,
           }}
         >
-          Curriculate Teacher
+          Curriculate Presenter
         </div>
 
         {/* Room code box */}
@@ -185,8 +201,8 @@ function TeacherApp() {
       <main
         style={{
           flex: 1,
-          marginLeft: 260,
-          padding: 24,
+          marginLeft: sidebarWidth,
+          padding: isMobile ? 16 : 24,
           overflowY: "auto",
         }}
       >
@@ -331,7 +347,7 @@ function HeaderBar({ isAuthenticated, user, logout }) {
         marginBottom: 16,
       }}
     >
-      <div style={{ fontWeight: 700 }}>Curriculate Teacher</div>
+      <div style={{ fontWeight: 700 }}>Curriculate Presenter</div>
       {isAuthenticated ? (
         <div
           style={{

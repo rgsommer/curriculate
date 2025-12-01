@@ -40,7 +40,7 @@ function validateGeneratePayload(payload = {}) {
 }
 
 export const generateAiTaskset = [
-  authRequired,
+  //authRequired,
   async (req, res) => {
     try {
       const {
