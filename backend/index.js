@@ -194,6 +194,9 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     },
     noiseLevel: 0,        // smoothed noise measure (0–100)
     noiseBrightness: 1,   // 1 = full bright, ~0.3 = dim
+    tasks: [],                    // ← critical
+    currentTaskIndex: -1,         // ← critical
+    selectedRooms: null,          // ← prevents crash in join-room
   };
 
   // Load existing teams from DB
@@ -619,7 +622,6 @@ function updateNoiseDerivedState(code, room) {
 // ====================================================================
 io.on("connection", (socket) => {
   // Teacher creates room
-    // Teacher creates the actual room object
   socket.on("teacher:createRoom", async ({ roomCode }) => {
     const code = roomCode?.toUpperCase();
     if (!code) return;
@@ -635,6 +637,7 @@ io.on("connection", (socket) => {
     console.log(`Teacher created room ${code}`);
     const room = await createRoom(code, socket.id);
     rooms[code] = room;
+    console.log(`Room ${code} is now READY for students`);
     socket.join(code);
 
     // Broadcast initial empty state so LiveSession renders correctly
@@ -720,6 +723,12 @@ io.on("connection", (socket) => {
     const { roomCode, teamId } = data;
     const code = roomCode.toUpperCase();
     const room = rooms[code];
+
+    if (!room) {
+      console.log(`Student tried to join ${code} but room not ready yet`);
+      if (typeof ack === "function") ack({ ok: false, error: "Room not ready yet — please wait a moment" });
+      return;
+    }
 
     if (!room || !room.teams[teamId]) {
       socket.emit("session-resume-failed");
