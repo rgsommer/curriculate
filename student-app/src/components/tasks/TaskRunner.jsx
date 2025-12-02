@@ -1,7 +1,7 @@
 // student-app/src/components/tasks/TaskRunner.jsx
 import React from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
-import VictoryScreen from "./types/VictoryScreen.jsx";
+import VictoryScreen from "./VictoryScreen.jsx";
 
 import BodyBreakTask from "./types/BodyBreakTask";
 import MakeAndSnapTask from "./types/MakeAndSnapTask";
