@@ -1,5 +1,6 @@
 // student-app/src/components/QrScanner.jsx
 import React, { useEffect, useRef, useState } from "react";
+import jsQR from "jsqr";
 
 /**
  * Props:
@@ -14,52 +15,24 @@ export default function QrScanner({ active, onCode, onError }) {
   const canvasRef = useRef(null);
 
   const [cameraError, setCameraError] = useState(null);
-  const [supportsDetector, setSupportsDetector] = useState(true);
   const [manualValue, setManualValue] = useState("");
 
   useEffect(() => {
     let stream = null;
     let animationId = null;
-    let detector = null;
     let stopped = false;
     let isMounted = true;
 
     async function start() {
-      if (!active) return;
-      if (!isMounted) return;
+      if (!active || !isMounted) return;
       if (typeof window === "undefined" || typeof navigator === "undefined") {
         return;
       }
 
-      // Check getUserMedia
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         if (!isMounted) return;
         setCameraError(
           "This device does not support camera access in the browser. Please type the code instead."
-        );
-        return;
-      }
-
-      // Check BarcodeDetector
-      if (!("BarcodeDetector" in window)) {
-        console.warn("[QrScanner] BarcodeDetector not available – manual mode only.");
-        if (!isMounted) return;
-        setSupportsDetector(false);
-        setCameraError(
-          "Live QR scanning is not supported on this browser. Please type the code instead."
-        );
-        return;
-      }
-
-      try {
-        // eslint-disable-next-line no-undef
-        detector = new BarcodeDetector({ formats: ["qr_code"] });
-      } catch (err) {
-        console.warn("[QrScanner] Failed to construct BarcodeDetector:", err);
-        if (!isMounted) return;
-        setSupportsDetector(false);
-        setCameraError(
-          "Live QR scanning is not available. Please type the code instead."
         );
         return;
       }
@@ -78,7 +51,6 @@ export default function QrScanner({ active, onCode, onError }) {
         return;
       }
 
-      // After the async call, re-check that we're still mounted and active
       if (!isMounted || !active) {
         if (stream) {
           stream.getTracks().forEach((t) => t.stop());
@@ -89,13 +61,11 @@ export default function QrScanner({ active, onCode, onError }) {
 
       const video = videoRef.current;
       if (!video) {
-        // Most likely unmounted / ref cleared while camera was starting
         console.warn("[QrScanner] videoRef missing after getUserMedia (component changed)");
         if (stream) {
           stream.getTracks().forEach((t) => t.stop());
           stream = null;
         }
-        // Don't set a permanent error here; just quietly stop
         return;
       }
 
@@ -103,7 +73,6 @@ export default function QrScanner({ active, onCode, onError }) {
       video.muted = true;
       video.setAttribute("playsInline", "true");
 
-      // Wait for video metadata so we have correct dimensions
       await new Promise((resolve) => {
         const handleLoaded = () => {
           video.removeEventListener("loadedmetadata", handleLoaded);
@@ -135,14 +104,10 @@ export default function QrScanner({ active, onCode, onError }) {
 
       const loop = async () => {
         if (stopped || !isMounted) return;
-        if (!active) {
-          animationId = requestAnimationFrame(loop);
-          return;
-        }
 
         const v = videoRef.current;
         const c = canvasRef.current;
-        if (!v || !c || !detector) {
+        if (!v || !c) {
           animationId = requestAnimationFrame(loop);
           return;
         }
@@ -152,7 +117,6 @@ export default function QrScanner({ active, onCode, onError }) {
         const vh = v.videoHeight || 0;
 
         if (vw === 0 || vh === 0) {
-          // Video not ready yet; try again on next frame
           animationId = requestAnimationFrame(loop);
           return;
         }
@@ -162,27 +126,30 @@ export default function QrScanner({ active, onCode, onError }) {
         ctx.drawImage(v, 0, 0, c.width, c.height);
 
         try {
-          const barcodes = await detector.detect(c);
-          if (barcodes && barcodes.length > 0) {
-            const rawValue = barcodes[0].rawValue || "";
-            if (rawValue) {
-              console.log("[QrScanner] detected QR:", rawValue);
-              const accepted = onCode ? onCode(rawValue) : true;
-              if (accepted !== false) {
-                stop();
-                return;
-              }
+          const imageData = ctx.getImageData(0, 0, c.width, c.height);
+          const qr = jsQR(imageData.data, c.width, c.height);
+
+          if (qr && qr.data) {
+            const rawValue = qr.data;
+            console.log("[QrScanner] jsQR detected:", rawValue);
+            const accepted = onCode ? onCode(rawValue) : true;
+            if (accepted !== false) {
+              stop();
+              return;
             }
           }
         } catch (err) {
-          console.warn("[QrScanner] detect error:", err);
+          console.warn("[QrScanner] jsQR detect error:", err);
           onError &&
             onError(
               "There was a problem reading that code. Try holding it steady and closer."
             );
         }
 
-        animationId = requestAnimationFrame(loop);
+        // To avoid pegging the CPU, run at ~10 fps instead of every repaint
+        animationId = window.setTimeout(() => {
+          requestAnimationFrame(loop);
+        }, 100);
       };
 
       animationId = requestAnimationFrame(loop);
@@ -191,7 +158,13 @@ export default function QrScanner({ active, onCode, onError }) {
     function stop() {
       stopped = true;
       if (animationId) {
-        cancelAnimationFrame(animationId);
+        // animationId can be from setTimeout wrapper or requestAnimationFrame.
+        // clear both just to be safe.
+        try {
+          cancelAnimationFrame(animationId);
+        } catch (e) {
+          clearTimeout(animationId);
+        }
         animationId = null;
       }
       if (stream) {
@@ -215,7 +188,7 @@ export default function QrScanner({ active, onCode, onError }) {
     return null;
   }
 
-  const showManualOnly = !!cameraError || !supportsDetector;
+  const showManualOnly = !!cameraError;
 
   return (
     <div
@@ -268,18 +241,6 @@ export default function QrScanner({ active, onCode, onError }) {
               }}
             >
               {cameraError}
-            </p>
-          )}
-          {!cameraError && (
-            <p
-              style={{
-                margin: 0,
-                fontSize: "0.85rem",
-                color: "#b91c1c",
-              }}
-            >
-              Camera scanning is not available on this device. Type the code
-              from the station&apos;s QR label instead.
             </p>
           )}
           <input
