@@ -9,13 +9,13 @@ import { API_BASE_URL } from "./config.js";
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
     const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8;
+      v = c === "x" ? r : (r & 0x3 | 0x8;
     return v.toString(16);
   });
 }
 
 // Shared socket instance for this app
-export const socket = io(API_BASE_URL, {
+const socket = io(API_BASE_URL, {
   withCredentials: true,
   // Important: keep the connection alive across reloads
   transports: ["websocket"],
@@ -80,395 +80,69 @@ function normalizeStationId(raw) {
     };
   }
 
-  // Case 3: colour-based id: "station-red", "red", ...
-  const colorIndex = COLOR_NAMES.indexOf(lower.replace(/^station-/, ""));
-  if (colorIndex >= 0) {
-    const n = colorIndex + 1;
-    const color = COLOR_NAMES[colorIndex];
+  // Case 3: colour name: "red", "blue", ...
+  const colourIdx = COLOR_NAMES.indexOf(lower);
+  if (colourIdx >= 0) {
     return {
-      id: `station-${n}`,
-      color,
-      label: `Station-${color[0].toUpperCase()}${color.slice(1)}`,
+      id: `station-${colourIdx + 1}`,
+      color: lower,
+      label: `Station-${lower[0].toUpperCase()}${lower.slice(1)}`,
     };
   }
 
-  // Fallback – unknown station format
-  return { id: s, color: null, label: s };
-}
-
-// Format remaining time nicely as M:SS
-function formatRemainingMs(ms) {
-  if (ms == null || ms <= 0) return "0:00";
-  const totalSeconds = Math.ceil(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-/* -----------------------------------------------------------
-   Minimal QR Scanner – camera only stops when onCode(value) returns true
------------------------------------------------------------ */
-
-function QrScanner({ active, onCode, onError }) {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef = useRef(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function stopCamera() {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-    }
-
-    async function detectLoop(detector) {
-      if (cancelled) return;
-
-      if (!videoRef.current || videoRef.current.readyState < 2) {
-        rafRef.current = requestAnimationFrame(() => detectLoop(detector));
-        return;
-      }
-
-      try {
-        const barcodes = await detector.detect(videoRef.current);
-        if (barcodes && barcodes.length > 0) {
-          const value = barcodes[0].rawValue || "";
-          const shouldStop = await onCode(value);
-          if (shouldStop) {
-            await stopCamera();
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("Barcode detect error", err);
-        onError?.("Could not read QR code. Try again or tell your teacher.");
-      }
-
-      if (!cancelled) {
-        rafRef.current = requestAnimationFrame(() => detectLoop(detector));
-      }
-    }
-
-    async function startCamera() {
-      if (!active) return;
-      if (!("BarcodeDetector" in window)) {
-        onError?.(
-          "This browser does not support QR scanning. Try another browser or device."
-        );
-        return;
-      }
-
-      try {
-        const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
-        if (!videoRef.current) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        detectLoop(detector);
-      } catch (err) {
-        console.error("Camera start error", err);
-        onError?.(
-          "Unable to access camera. Check permissions or tell your teacher."
-        );
-      }
-    }
-
-    if (active) {
-      startCamera();
-    } else {
-      stopCamera();
-    }
-
-    return () => {
-      cancelled = true;
-      stopCamera();
+  // Case 4: "station-red", "station-blue", ...
+  m = /^station-(\w+)$/.exec(lower);
+  if (m && COLOR_NAMES.includes(m[1])) {
+    const colourIdx = COLOR_NAMES.indexOf(m[1]) + 1;
+    return {
+      id: `station-${colourIdx}`,
+      color: m[1],
+      label: `Station-${m[1][0].toUpperCase()}${m[1].slice(1)}`,
     };
-  }, [active, onCode, onError]);
+  }
 
-  return (
-    <div
-      style={{
-        borderRadius: 12,
-        overflow: "hidden",
-        background: "#000",
-        maxWidth: 360,
-        margin: "0 auto",
-      }}
-    >
-      <video
-        ref={videoRef}
-        style={{
-          width: "100%",
-          height: "auto",
-          display: "block",
-        }}
-        autoPlay
-        playsInline
-        muted
-      />
-    </div>
-  );
+  // Default fallback
+  return { id: s, color: null, label: s.toUpperCase() };
 }
 
-/* -----------------------------------------------------------
-   Noise Sensor
------------------------------------------------------------ */
-
-function NoiseSensor({ active, roomCode, socket, ignoreNoise }) {
-  const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
-  const dataArrayRef = useRef(null);
-  const rafRef = useRef(null);
-  const lastSentRef = useRef(0);
-
-  useEffect(() => {
-    if (!active || ignoreNoise) {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
-      analyserRef.current = null;
-      dataArrayRef.current = null;
-      return;
-    }
-
-    let cancelled = false;
-    let stream = null;
-
-    async function setup() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        const analyser = audioCtx.createAnalyser();
-        const source = audioCtx.createMediaStreamSource(stream);
-
-        analyser.fftSize = 512;
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-
-        source.connect(analyser);
-
-        audioContextRef.current = audioCtx;
-        analyserRef.current = analyser;
-        dataArrayRef.current = dataArray;
-
-        const loop = () => {
-          if (cancelled || !analyserRef.current || !dataArrayRef.current) {
-            return;
-          }
-
-          analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
-
-          let sum = 0;
-          for (let i = 0; i < dataArrayRef.current.length; i++) {
-            const v = dataArrayRef.current[i] - 128;
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / dataArrayRef.current.length);
-
-          // Approximate noise level 0–100
-          const level = Math.min(
-            100,
-            Math.max(0, Math.round((rms / 50) * 100))
-          );
-
-          const now = Date.now();
-          if (roomCode && now - lastSentRef.current > 500 && !ignoreNoise) {
-            socket.emit("noise:sample", {
-              roomCode: roomCode.trim().toUpperCase(),
-              level,
-            });
-            lastSentRef.current = now;
-          }
-
-          rafRef.current = requestAnimationFrame(loop);
-        };
-
-        rafRef.current = requestAnimationFrame(loop);
-      } catch (err) {
-        console.warn("NoiseSensor getUserMedia failed:", err);
-      }
-    }
-
-    setup();
-
-    return () => {
-      cancelled = true;
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-      }
-      analyserRef.current = null;
-      dataArrayRef.current = null;
-    };
-  }, [active, ignoreNoise, roomCode, socket]);
-
-  return null;
-}
-
-/* -----------------------------------------------------------
-   Student App main
------------------------------------------------------------ */
-
-export default function StudentApp() {
+function StudentApp() {
   const [connected, setConnected] = useState(false);
-  const [roomCode, setRoomCode] = useState("");
-  const [teamName, setTeamName] = useState("");
-  const [members, setMembers] = useState([""]);
   const [joined, setJoined] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [members, setMembers] = useState(["", "", ""]);
   const [teamId, setTeamId] = useState(null);
   const [teamSessionId, setTeamSessionId] = useState(null);
-
   const [assignedStationId, setAssignedStationId] = useState(null);
-  const [scannedStationId, setScannedStationId] = useState(null);
-  const [scanError, setScanError] = useState(null);
-  const [scannerActive, setScannerActive] = useState(false);
-
+  const [assignedLocation, setAssignedLocation] = useState("any");
+  const [assignedColor, setAssignedColor] = useState(null);
   const [currentTask, setCurrentTask] = useState(null);
-  const [taskIndex, setTaskIndex] = useState(null);
-
-  const [statusMessage, setStatusMessage] = useState(
-    "Enter your room code and team name to begin."
-  );
-
-  const [locationCode, setLocationCode] = useState(DEFAULT_LOCATION);
-
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
+  const [remainingMs, setRemainingMs] = useState(0);
+  const timerInterval = useRef(null);
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const sndAlert = useRef(null);
-  const sndTreat = useRef(null);
-
-  // Ambient noise state pushed from server
+  const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
+  const [answerStatus, setAnswerStatus] = useState(null);
   const [noiseState, setNoiseState] = useState({
     enabled: false,
-    brightness: 1,
-    level: 0,
     threshold: 0,
+    level: 0,
+    brightness: 1,
   });
+  const [lightningPrompt, setLightningPrompt] = useState("");
+  const [lightningTimer, setLightningTimer] = useState(0);
+  const [responseFontSize, setResponseFontSize] = useState("1rem");
+  const [leaderboard, setLeaderboard] = useState(null);
+  const [audioContext, setAudioContext] = useState(null);
 
-  // Random treat banner
-  const [treatMessage, setTreatMessage] = useState(null);
+  // Persistent team identity
+  const persistedTeamId = localStorage.getItem("curriculate_teamId");
+  const persistedRoomCode = localStorage.getItem("curriculate_roomCode");
+  const [teamId, setTeamId] = useState(persistedTeamId || null);
 
-  // timeout-related state
-  const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
-  const [remainingMs, setRemainingMs] = useState(null);
-  const timeoutTimerRef = useRef(null);
-  const timeoutSubmittedRef = useRef(false);
-
-  // draft answer tracking (for timeout auto-submit)
-  const [currentAnswerDraft, setCurrentAnswerDraft] = useState(null);
-
-  // 🔁 Try to resume a saved team session on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("teamSession");
-      if (!saved) return;
-
-      const { roomCode: savedRoomCode, teamSessionId: savedTeamSessionId } =
-        JSON.parse(saved) || {};
-
-      if (!savedRoomCode || !savedTeamSessionId) return;
-
-      socket.emit(
-        "resume-team-session",
-        { roomCode: savedRoomCode, teamSessionId: savedTeamSessionId },
-        (resp) => {
-          if (resp && resp.success) {
-            console.log("Resumed session!", resp);
-            setRoomCode(savedRoomCode);
-            setTeamSessionId(savedTeamSessionId);
-            setTeamId(resp.teamId || savedTeamSessionId || null);
-            setJoined(true);
-            setScannerActive(false);
-            setStatusMessage(
-              "Reconnected to your room. Wait for your next task."
-            );
-          } else {
-            localStorage.removeItem("teamSession");
-          }
-        }
-      );
-    } catch (err) {
-      console.warn("Failed to restore saved session:", err);
-      localStorage.removeItem("teamSession");
-    }
-  }, []);
-
-  // 🔔 Clean beforeunload ping, tied to the real roomCode + API_BASE_URL
-  useEffect(() => {
-    if (!roomCode) return;
-
-    const handleUnload = () => {
-      try {
-        navigator.sendBeacon(
-          `${API_BASE_URL}/api/sessions/${roomCode.trim().toUpperCase()}/ping`
-        );
-      } catch (err) {
-        // sendBeacon failures are non-fatal; ignore
-      }
-    };
-
-    window.addEventListener("beforeunload", handleUnload);
-    return () => window.removeEventListener("beforeunload", handleUnload);
-  }, [roomCode]);
-
-  // Pulse CSS for colour box
-  useEffect(() => {
-    const styleId = "station-pulse-style";
-    if (document.getElementById(styleId)) return;
-
-    const style = document.createElement("style");
-    style.id = styleId;
-    style.innerHTML = `
-      @keyframes stationPulse {
-        0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.9); }
-        70% { box-shadow: 0 0 0 22px rgba(255,255,255,0); }
-        100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
-      }
-    `;
-    document.head.appendChild(style);
-  }, []);
-
-  useEffect(() => {
-    if (sndAlert.current) {
-      sndAlert.current.volume = 1.0;
-    }
-    if (sndTreat.current) {
-      sndTreat.current.volume = 1.0;
-    }
-  }, []);
-
-  // Socket events
   useEffect(() => {
     // Generate persistent teamId the first time they join
     if (!teamId && joined && roomCode) {
@@ -480,7 +154,6 @@ export default function StudentApp() {
 
     socket.on("connect", () => {
       setConnected(true);
-      console.log("Socket connected"); // ← ADD LOGGING
       // Try to resume if we have a teamId and room
       if (teamId && roomCode) {
         socket.emit("resume-session", {
@@ -492,7 +165,6 @@ export default function StudentApp() {
 
     socket.on("disconnect", () => {
       setConnected(false);
-      console.log("Socket disconnected"); // ← ADD LOGGING
     });
 
     // Teacher ended the session → wipe local data
@@ -514,128 +186,102 @@ export default function StudentApp() {
       setTeamId(null);
     });
 
-    // NEW: Handle station assignment
-    socket.on("station-assigned", (data) => {
-      console.log("Station assigned:", data); // ← ADD LOGGING
-      const { stationId, color, location = "any" } = data;
-      const { label } = normalizeStationId(stationId);
-      setAssignedStation({ id: stationId, color, label });
-      setAssignedColor(color ? `var(--${color}-500)` : null);
-      setAssignedLocation(location);
-
-      if (location !== "any") {
-        alert(`Go to: ${location.toUpperCase()}!`);
-      }
-    });
-
     return () => {
       socket.off("connect");
       socket.off("disconnect");
       socket.off("session-ended");
       socket.off("session-resume-failed");
-      socket.off("station-assigned");
     };
   }, [teamId, roomCode, joined]);
 
-  // Timeout timer effect
-  useEffect(() => {
-    if (!currentTask || !timeLimitSeconds || timeLimitSeconds <= 0) {
-      if (timeoutTimerRef.current) {
-        clearInterval(timeoutTimerRef.current);
-        timeoutTimerRef.current = null;
-      }
-      setRemainingMs(null);
-      timeoutSubmittedRef.current = false;
+  const handleJoin = () => {
+    const finalRoom = roomCode.trim().toUpperCase();
+    if (!finalRoom || !teamName.trim()) {
+      alert("Please enter both a room code and team name.");
+      return;
+    }
+    if (!connected) {
+      alert("Not connected to server yet. Please wait a moment.");
       return;
     }
 
-    const totalMs = timeLimitSeconds * 1000;
-    const start = Date.now();
-    setRemainingMs(totalMs);
-    timeoutSubmittedRef.current = false;
+    unlockAudioForBrowser();
 
-    timeoutTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - start;
-      const remain = totalMs - elapsed;
+    const filteredMembers = members
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0);
 
-      if (remain <= 0) {
-        if (timeoutTimerRef.current) {
-          clearInterval(timeoutTimerRef.current);
-          timeoutTimerRef.current = null;
+    console.log("[Student] Ready click", {
+      finalRoom,
+      realMembersCount: filteredMembers.length,
+      socketConnected: connected,
+    });
+
+    setJoiningRoom(true);
+    setStatusMessage(`Joining Room ${finalRoom}…`);
+
+    socket.emit(
+      "join-room",
+      {
+        roomCode: finalRoom,
+        name: teamName.trim(),
+        teamId,
+      },
+      (ack) => {
+        console.log("[Student] join-room ack:", ack);
+        if (!ack || !ack.ok) {
+          setJoiningRoom(false);
+          alert(ack?.error || "Unable to join room.");
+          return;
         }
-        setRemainingMs(0);
 
-        if (!timeoutSubmittedRef.current) {
-          timeoutSubmittedRef.current = true;
+        setRoomCode(finalRoom);
+        setJoined(true);
+        setJoiningRoom(false);
+        setTeamId(ack.teamId || socket.id);
 
-          const finalAnswer = currentAnswerDraft ?? null;
+        // NEW: persist session so we can resume later
+        const sessionIdToStore = ack.teamId || socket.id;
+        try {
+          localStorage.setItem(
+            "teamSession",
+            JSON.stringify({
+              roomCode: finalRoom,
+              teamSessionId: sessionIdToStore,
+            })
+          );
+        } catch (err) {
+          console.warn("Unable to persist teamSession:", err);
+        }
 
-          if (roomCode && teamId != null && taskIndex != null) {
-            socket.emit(
-              "student:submitAnswer",
-              {
-                roomCode: roomCode.trim().toUpperCase(),
-                teamId,
-                taskIndex,
-                answer: finalAnswer,
-                isTimeout: true,
-              },
-              (ack) => {
-                console.log("Timeout submit ack:", ack);
-              }
-            );
+        // Station assignment (colour + location)
+        if (ack.stationId) {
+          setAssignedStationId(ack.stationId);
+          const norm = normalizeStationId(ack.stationId);
+          const colourLabel = norm.color ? norm.color.toUpperCase() : "";
+          const locLabel = (ack.location || "any") !== "any" 
+            ? ack.location.toUpperCase() 
+            : (locationCode || DEFAULT_LOCATION).toUpperCase();
+
+          if (colourLabel) {
+            setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
+          } else {
+            setStatusMessage(`Scan a ${locLabel} station.`);
           }
-
-          setCurrentTask(null);
-          setStatusMessage("Time is up! Your answer was submitted.");
+        } else {
+          setStatusMessage(`Scan a ${locLabel} station.`);
         }
-      } else {
-        setRemainingMs(remain);
       }
-    }, 250);
-
-    return () => {
-      if (timeoutTimerRef.current) {
-        clearInterval(timeoutTimerRef.current);
-        timeoutTimerRef.current = null;
-      }
-    };
-  }, [
-    currentTask,
-    timeLimitSeconds,
-    roomCode,
-    teamId,
-    taskIndex,
-    currentAnswerDraft,
-  ]);
-
-  // Scanner activation logic – independent of scanError
-  useEffect(() => {
-    const mustScan =
-      joined && !!assignedStationId && scannedStationId !== assignedStationId;
-
-    if (mustScan) {
-      setScannerActive(true);
-      const a = sndAlert.current;
-      a?.play().catch(() => {});
-    } else {
-      setScannerActive(false);
-    }
-  }, [joined, assignedStationId, scannedStationId]);
+    );
+  };
 
   const unlockAudioForBrowser = () => {
-    const a = sndAlert.current;
-    if (!a) return;
-
-    a
-      .play()
-      .then(() => {
-        a.pause();
-        a.currentTime = 0;
-      })
-      .catch((err) => {
-        console.warn("Audio unlock failed", err);
-      });
+    if (audioContext) return;
+    const newContext = new (window.AudioContext || window.webkitAudioContext)();
+    newContext.resume().then(() => {
+      console.log("AudioContext unlocked");
+      setAudioContext(newContext);
+    }).catch(err => console.warn("AudioContext unlock failed:", err));
   };
 
   const handleMemberChange = (idx, val) => {
