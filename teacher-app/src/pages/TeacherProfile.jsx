@@ -26,6 +26,7 @@ export default function TeacherProfile() {
     perspectives: [],
     assessmentCategories: [EMPTY_CATEGORY],
     includeIndividualReports: false,
+    locationOptions: [],
 
     // Jeopardy defaults
     jeopardyDefaultContestantCount: 3,
@@ -54,9 +55,12 @@ export default function TeacherProfile() {
           presenterTitle: data.presenterTitle || data.title || "",
           email: data.email || "",
           schoolName: data.schoolName || "",
-          defaultStations: data.defaultStations || 8,
+                    defaultStations: data.defaultStations || 8,
           perspectives: Array.isArray(data.perspectives)
             ? data.perspectives
+            : [],
+          locationOptions: Array.isArray(data.locationOptions)
+            ? data.locationOptions
             : [],
           assessmentCategories:
             Array.isArray(data.assessmentCategories) &&
@@ -140,9 +144,15 @@ export default function TeacherProfile() {
     try {
       const includeReports = !!profile.includeIndividualReports;
 
-            const payload = {
+      const payload = {
         ...profile,
+        locationOptions: Array.isArray(profile.locationOptions)
+          ? profile.locationOptions
+              .map((s) => s && s.toString().trim())
+              .filter((s) => s)
+          : [],
         defaultStations: Number(profile.defaultStations) || 8,
+
         jeopardyDefaultContestantCount:
           Number(profile.jeopardyDefaultContestantCount) || 3,
         assessmentCategories: profile.assessmentCategories
@@ -158,7 +168,7 @@ export default function TeacherProfile() {
         title: profile.presenterTitle,
       };
 
-            const updated = await updateMyProfile(payload);
+      const updated = await updateMyProfile(payload);
       setProfile((prev) => ({
         ...prev,
         ...updated,
@@ -474,6 +484,38 @@ export default function TeacherProfile() {
 
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            Room / location options
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+            Define the locations you might use for sessions (e.g., Classroom,
+            Gym, Hallway, Gym &amp; Hallway). These will appear as quick
+            selection bubbles in Live Session so you can override the location
+            for a particular run.
+          </p>
+          <input
+            type="text"
+            value={profile.locationOptions.join(", ")}
+            onChange={(e) => {
+              const raw = e.target.value || "";
+              const parts = raw
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+              handleChange("locationOptions", parts);
+            }}
+            placeholder="Classroom, Gym, Hallway, Gym & Hallway"
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              fontSize: "0.85rem",
+            }}
+          />
+        </section>
+
+        <section style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Reporting options
           </h2>
           <label
@@ -605,6 +647,47 @@ export default function TeacherProfile() {
               Allow rebound if a team misses a clue
             </label>
           </div>
+        </section>
+
+        <section style={{ marginTop: 32 }}>
+          <h3 style={{ fontSize: "1.1rem", marginBottom: 12 }}>
+            Available Rooms for Scavenger Hunts
+          </h3>
+          <p style={{ fontSize: "0.85rem", color: "#4b5563", marginBottom: 12 }}>
+            Add/edit rooms (e.g., Hallway, Gym).
+          </p>
+          {(profile.locationOptions || []).map((room, idx) => (
+            <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input
+                type="text"
+                value={room}
+                onChange={(e) => {
+                  const newRooms = [...profile.locationOptions];
+                  newRooms[idx] = e.target.value;
+                  handleChange("locationOptions", newRooms);
+                }}
+                placeholder="e.g. Hallway"
+                style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const newRooms = profile.locationOptions.filter((_, i) => i !== idx);
+                  handleChange("locationOptions", newRooms);
+                }}
+                style={{ color: "#b91c1c", fontSize: "0.85rem" }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => handleChange("locationOptions", [...(profile.locationOptions || []), ""])}
+            style={{ fontSize: "0.85rem", color: "#0ea5e9", marginTop: 8 }}
+          >
+            + Add Room
+          </button>
         </section>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

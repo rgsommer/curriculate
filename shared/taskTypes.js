@@ -25,7 +25,8 @@ export const TASK_TYPES = {
   BRAINSTORM_BATTLE: "brainstorm-battle",
   MIND_MAPPER: "mind-mapper",
   HIDENSEEK: "hidenseek",
-  SPEED_DRAW: "speed-draw",  
+  SPEED_DRAW: "speed-draw",
+  MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
 };
 
 // Category labels (for grouping & UI)
@@ -188,6 +189,16 @@ export const TASK_TYPE_META = {
     label: "Speed Draw – First to Answer Wins!",
     implemented: true,
     category: "competitive",
+  },
+    [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: {
+    label: "Multi-Room Scavenger Hunt",
+    category: CATEGORY.MOVEMENT,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 300, // 5 minutes default
+    maxTimeSeconds: 300,
+    // No AI generation flag (checked in generators)
+    aiEligible: false,
   },
 };
 

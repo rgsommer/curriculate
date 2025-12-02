@@ -634,43 +634,108 @@ io.on("connection", (socket) => {
 
   // Generic joinRoom for HostView / viewers
   socket.on("joinRoom", (payload = {}, ack) => {
-    const { roomCode, role, name } = payload;
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
+  const { roomCode, role, name, teamId: clientTeamId } = payload;
+  const code = roomCode?.toUpperCase();
 
-    if (!room) {
-      const error = { ok: false, error: "Room not found" };
-      if (typeof ack === "function") {
-        ack(error);
-      } else {
-        socket.emit("join:error", { message: error.error });
+  if (!code || !rooms[code]) {
+    return ack({ success: false, message: "Invalid room code" });
+  }
+
+  const room = rooms[code];
+
+  // Persistent teamId from localStorage (client sends it), fallback to new
+  const teamId = clientTeamId || generateUUID();
+
+  // Create team if first time
+  if (!room.teams[teamId]) {
+    room.teams[teamId] = {
+      name: name || `Team ${Object.keys(room.teams).length + 1}`,
+      role: role || "student",
+      members: [],
+      score: 0,
+      currentTaskIndex: 0,
+      station: null,
+      location: "any",
+      disconnectedAt: null,
+    };
+  }
+
+  const team = room.teams[teamId];
+
+  // Re-attach this socket
+  team.members = team.members.filter(id => id !== socket.id);
+  team.members.push(socket.id);
+  team.disconnectedAt = null;
+
+  socket.join(code);
+  socket.teamId = teamId;
+  socket.roomCode = code;
+
+  // ——— RANDOM COLOUR ASSIGNMENT (never sequential) ———
+  const usedStations = Object.values(room.teams)
+    .map(t => t.station)
+    .filter(Boolean);
+
+  const available = COLORS.filter((_, i) => 
+    !usedStations.includes(`station-${i + 1}`)
+  );
+
+  const colorIndex = available.length > 0
+    ? COLORS.indexOf(available[Math.floor(Math.random() * available.length)])
+    : Math.floor(Math.random() * COLORS.length);
+
+  team.station = `station-${colorIndex + 1}`;
+
+  // ——— LOCATION ASSIGNMENT (only for multi-room scavenger) ———
+  const currentTask = room.tasks[room.currentTaskIndex];
+  const enforceLocation = currentTask?.enforceLocation || false;
+
+  if (enforceLocation && room.selectedRooms && room.selectedRooms.length > 0) {
+    // Balanced random from teacher's selected rooms
+    const counts = {};
+    Object.values(room.teams).forEach(t => {
+      if (t.location && t.location !== "any") {
+        counts[t.location] = (counts[t.location] || 0) + 1;
       }
-      return;
-    }
+    });
 
-    socket.join(code);
-    socket.data.roomCode = code;
-    socket.data.role = role || "viewer";
-    socket.data.displayName = name || role || "Viewer";
-
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
-
-    // If this team has a pending next task (full taskset flow),
-    // deliver it now that they have arrived at the new station.
-    if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const pending = team.nextTaskIndex;
-      if (typeof pending === "number") {
-        sendTaskToTeam(room, effectiveTeamId, pending);
-        delete team.nextTaskIndex;
+    const shuffled = [...room.selectedRooms].sort(() => Math.random() - 0.5);
+    let chosen = shuffled[0];
+    for (const loc of shuffled) {
+      if (!counts[loc] || counts[loc] < (counts[chosen] || 0)) {
+        chosen = loc;
       }
     }
+    team.location = chosen;
+  } else if (enforceLocation && currentTask?.requiredLocation && currentTask.requiredLocation !== "any") {
+    team.location = currentTask.requiredLocation;
+  } else {
+    team.location = "any";
+  }
 
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+  // Respond to client
+  ack({
+    success: true,
+    teamId,
+    stationId: team.station,
+    color: COLORS[colorIndex],
+    location: team.location,
   });
+
+  // Broadcast update
+  io.to(code).emit("team-update", {
+    teamId,
+    name: team.name,
+    station: team.station,
+    location: team.location,
+    score: team.score,
+  });
+
+  // If session already running, send current task
+  if (room.currentTaskIndex >= 0 && room.tasks[room.currentTaskIndex]) {
+    socket.emit("task", room.tasks[room.currentTaskIndex]);
+  }
+});
 
   async function handleTeacherLoadTaskset({ roomCode, tasksetId }) {
     const code = (roomCode || "").toUpperCase();
@@ -1167,65 +1232,50 @@ io.on("connection", (socket) => {
 
   // Student scans station
   socket.on("station:scan", (payload, ack) => {
-    const { roomCode, teamId, stationId } = payload || {};
-    const code = (roomCode || "").toUpperCase();
+  const { roomCode, teamId, stationId } = payload || {};
+  const code = roomCode?.toUpperCase();
 
-    const room = rooms[code];
-    if (!room) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Room not found" });
-      }
-      return;
-    }
+  if (!code || !teamId || !rooms[code]?.teams[teamId]) {
+    return ack({ success: false, message: "Invalid session" });
+  }
 
-    const effectiveTeamId = teamId || socket.data.teamId;
-    const team = room.teams[effectiveTeamId];
-    if (!team) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Team not found in room" });
-      }
-      return;
-    }
+  const room = rooms[code];
+  const team = room.teams[teamId];
+  const currentTask = room.tasks[room.currentTaskIndex] || {};
 
-    let raw = String(stationId || "").trim().toLowerCase();
-    if (!raw) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "No station id" });
-      }
-      return;
-    }
-    if (!raw.startsWith("station-")) {
-      raw = `station-${raw}`;
-    }
+  // Parse: "station-3-gym" or "station-5-any"
+  const parts = (stationId || "").split("-");
+  const scannedStation = parts.slice(0, 2).join("-");
+  const scannedLocation = parts.slice(2).join("-") || "any";
 
-    if (!room.stations[raw]) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: `Unknown station: ${raw}` });
-      }
-      return;
-    }
+  // 1. Check colour
+  if (scannedStation !== team.station) {
+    return ack({ success: false, message: "Wrong colour!" });
+  }
 
-    team.currentStationId = raw;
-    team.lastScannedStationId = raw;
-    room.stations[raw].assignedTeamId = effectiveTeamId;
+  // 2. Check location (only if task enforces it)
+  const enforce = currentTask.enforceLocation || false;
+  const required = currentTask.requiredLocation || "any";
 
-        const ev = {
-      roomCode: code,
-      teamId: effectiveTeamId,
-      teamName: team.teamName,
-      stationId: raw,
-      timestamp: Date.now(),
-    };
-    io.to(code).emit("scanEvent", ev);
+  if (enforce && required !== "any" && scannedLocation !== required) {
+    return ack({
+      success: false,
+      message: `Wrong room! This task is in: ${required.toUpperCase()}`,
+    });
+  }
 
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
-
-    if (typeof ack === "function") {
-      ack({ ok: true });
-    }
+  // Success
+  ack({
+    success: true,
+    message: enforce ? `Correct! Found in ${scannedLocation.toUpperCase()}` : "Correct station!",
   });
+
+  // Auto-complete scan-and-confirm tasks
+  if (currentTask.taskType === "scan-and-confirm") {
+    updateTeamScore(room, teamId, currentTask.points || 10);
+    // your existing advance logic here
+  }
+});
 
   // Student submits answer – reassign only that team's station
   const handleStudentSubmit = async (payload, ack) => {

@@ -1,6 +1,7 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
+import { fetchMyProfile } from "../api/profile";
 
 // Station colours in order: station-1 → red, station-2 → blue, etc.
 const COLORS = [
@@ -46,11 +47,13 @@ export default function LiveSession({ roomCode }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
   const [teamOrder, setTeamOrder] = useState([]);
-
+  
   // Quick task fields
   const [prompt, setPrompt] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
   const [isLaunchingQuick, setIsLaunchingQuick] = useState(false);
+  const [selectedRooms, setSelectedRooms] = useState([]);
+  const [teacherRooms, setTeacherRooms] = useState([]);
 
   // Active taskset meta
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
@@ -110,6 +113,10 @@ export default function LiveSession({ roomCode }) {
     given: 0,
   });
 
+  // Location override (multi-room presets from Presenter Profile)
+  const [locationOptions, setLocationOptions] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+
   const [isNarrow, setIsNarrow] = useState(
     typeof window !== "undefined" ? window.innerWidth < 900 : false
   );
@@ -130,6 +137,41 @@ export default function LiveSession({ roomCode }) {
     const treatAudio = new Audio("/sounds/treat.mp3");
     treatAudio.load();
     treatSoundRef.current = treatAudio;
+  }, []);
+
+  useEffect(() => {
+  async function loadTeacherRooms() {
+    const profile = await fetchMyProfile();
+    setTeacherRooms(profile.locationOptions || []);
+  }
+  loadTeacherRooms();
+}, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPresenterLocations() {
+      try {
+        const data = await fetchMyProfile();
+        if (cancelled || !data) return;
+
+        if (Array.isArray(data.locationOptions) && data.locationOptions.length) {
+          setLocationOptions(
+            data.locationOptions.map((s) => (s || "").toString().trim()).filter(Boolean)
+          );
+        }
+      } catch (err) {
+        console.error(
+          "[LiveSession] Failed to load presenter profile for locations:",
+          err
+        );
+      }
+    }
+
+    loadPresenterLocations();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ----------------------------------------------------
@@ -203,6 +245,10 @@ export default function LiveSession({ roomCode }) {
         pendingTreatTeams: state.pendingTreatTeams || [],
         noise: state.noise || prev.noise,
       }));
+      // If no explicit override chosen yet, default to the room's location
+      if (!selectedLocation && state.locationCode) {
+        setSelectedLocation((prev) => prev || state.locationCode);
+      }
 
       const scores = state.scores || {};
       const teams = state.teams || {};
@@ -267,7 +313,10 @@ export default function LiveSession({ roomCode }) {
         const code = roomCode.toUpperCase();
         setStatus("Launching first task…");
 
-        socket.emit("teacher:launchNextTask", { roomCode: code });
+        socket.emit("teacher:launchNextTask", { 
+          roomCode: code,
+          selectedRooms,  
+        });
         setLaunchAfterLoad(false);
         setStatus("Taskset launched.");
       }
@@ -388,6 +437,7 @@ export default function LiveSession({ roomCode }) {
     noiseBrightness,
     launchAfterLoad,
     activeTasksetMeta,
+    selectedLocation,
   ]);
 
   // ----------------------------------------------------
@@ -418,6 +468,20 @@ export default function LiveSession({ roomCode }) {
     }, 200);
   };
 
+  const handleLocationOverrideClick = (loc) => {
+    setSelectedLocation(loc);
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+
+    // This event can be implemented on the backend to actually update
+    // room.locationCode and broadcast to students. For now it is safe
+    // even if the server ignores it.
+    socket.emit("teacher:setLocationOverride", {
+      roomCode: code,
+      locationCode: loc,
+    });
+  };
+
   const handleLaunchTaskset = () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
@@ -430,6 +494,7 @@ export default function LiveSession({ roomCode }) {
     socket.emit("loadTaskset", {
       roomCode: code,
       tasksetId: activeTasksetMeta._id,
+      selectedRooms,
     });
   };
 
@@ -734,7 +799,7 @@ export default function LiveSession({ roomCode }) {
             </p>
           )}
         </div>
-        {roomState.locationCode && (
+        {(selectedLocation || roomState.locationCode) && (
           <div
             style={{
               fontSize: "0.85rem",
@@ -744,10 +809,55 @@ export default function LiveSession({ roomCode }) {
               color: "#1d4ed8",
             }}
           >
-            Location: {roomState.locationCode}
+            Location: {selectedLocation || roomState.locationCode}
           </div>
         )}
       </header>
+
+      {/* Location override selection */}
+      {locationOptions.length > 0 && (
+        <div
+          style={{
+            marginTop: 8,
+            marginBottom: 4,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "0.8rem",
+              color: "#4b5563",
+            }}
+          >
+            Location override:
+          </span>
+          {locationOptions.map((loc) => {
+            const active =
+              (selectedLocation || roomState.locationCode) === loc;
+            return (
+              <button
+                key={loc}
+                type="button"
+                onClick={() => handleLocationOverrideClick(loc)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: active ? "none" : "1px solid #d1d5db",
+                  background: active ? "#0ea5e9" : "#f9fafb",
+                  color: active ? "#fff" : "#374151",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                }}
+              >
+                {loc}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Top controls: quick task, taskset launch, noise/treats summary */}
       <div
@@ -901,6 +1011,39 @@ export default function LiveSession({ roomCode }) {
                 {launchBtnLabel}
               </button>
             </div>
+
+          {/* MULTI-ROOM SCAVENGER HUNT ROOM SELECTOR */}
+          {roomState.taskType === "multi-room-scavenger-hunt" && (
+            <div style={{ marginTop: 16, padding: 16, borderRadius: 12, background: "#f0f9ff", border: "2px solid #0ea5e9" }}>
+              <h3 style={{ margin: "0 0 12px 0", fontSize: "1.1rem" }}>Select rooms for this hunt</h3>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {teacherRooms.map((room) => (
+                  <button
+                    key={room}
+                    onClick={() =>
+                      setSelectedRooms((prev) =>
+                        prev.includes(room) ? prev.filter((r) => r !== room) : [...prev, room]
+                      )
+                    }
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: 999,
+                      fontWeight: 600,
+                      background: selectedRooms.includes(room) ? "#0ea5e9" : "#e5e7eb",
+                      color: selectedRooms.includes(room) ? "white" : "#111827",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {room}
+                  </button>
+                ))}
+              </div>
+              {selectedRooms.length === 0 && (
+                <p style={{ color: "#b91c1c", marginTop: 8 }}>Please select at least one room</p>
+              )}
+            </div>
+          )}
 
             <div style={{ display: "flex", gap: 8 }}>
               <button

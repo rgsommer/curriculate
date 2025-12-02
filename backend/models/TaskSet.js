@@ -39,6 +39,20 @@ const TaskSchema = new Schema(
     displayKey: String,
     ignoreNoise: { type: Boolean, default: false },
 
+    // NEW: Only enforce QR location for specific tasks (e.g. scavenger hunt)
+    enforceLocation: {
+      type: Boolean,
+      default: false,
+      description: "If true, QR scan must include correct locationKey (e.g. 'gym')",
+    },
+
+    // Optional: let teacher explicitly set required location per task
+    requiredLocation: {
+      type: String,
+      default: "any",
+      enum: ["any", "classroom", "hallway", "gym", "library", "playground", "room-212", "room-211", "cafeteria", "courtyard"],
+    },
+
     // Keep this as a flexible blob for now.
     jeopardyConfig: Schema.Types.Mixed,
 
