@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import Lottie from "lottie-react";
 
-import jumpAnimation from "../animations/jump.json";
+import jumpAnimation from "../../animations/jump.json";
 import squatAnimation from "../../animations/squat.json";
 import runAnimation from "../../animations/run.json";
 import danceAnimation from "../../animations/dance.json";
