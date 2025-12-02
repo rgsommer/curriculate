@@ -154,6 +154,7 @@ function StudentApp() {
 
     socket.on("connect", () => {
       setConnected(true);
+      console.log("Socket connected");
       // Try to resume if we have a teamId and room
       if (teamId && roomCode) {
         socket.emit("resume-session", {
@@ -165,6 +166,7 @@ function StudentApp() {
 
     socket.on("disconnect", () => {
       setConnected(false);
+      console.log("Socket disconnected");
     });
 
     // Teacher ended the session → wipe local data
@@ -186,11 +188,25 @@ function StudentApp() {
       setTeamId(null);
     });
 
+    socket.on("station-assigned", (data) => {
+      console.log("Station assigned:", data);
+      const { stationId, color, location = "any" } = data;
+      const { label } = normalizeStationId(stationId);
+      setAssignedStation({ id: stationId, color, label });
+      setAssignedColor(color ? `var(--${color}-500)` : null);
+      setAssignedLocation(location);
+
+      if (location !== "any") {
+        alert(`Go to: ${location.toUpperCase()}!`);
+      }
+    });
+
     return () => {
       socket.off("connect");
       socket.off("disconnect");
       socket.off("session-ended");
       socket.off("session-resume-failed");
+      socket.off("station-assigned");
     };
   }, [teamId, roomCode, joined]);
 
@@ -322,13 +338,14 @@ function StudentApp() {
     setJoiningRoom(true);
     setStatusMessage(`Joining Room ${finalRoom}…`);
 
-    // ←←← ONLY THESE TWO LINES CHANGED
+    const [assignedLocation, setAssignedLocation] = useState("any");
+
     socket.emit(
-      "join-room",  // ← changed from "student:joinRoom"
+      "join-room", // Changed to "join-room"
       {
         roomCode: finalRoom,
-        name: teamName.trim(),  // ← changed from teamName to name
-        teamId,                 // ← send persisted teamId so we keep same team/color
+        name: teamName.trim(),
+        teamId: teamId, // Send persisted teamId
       },
       (ack) => {
         console.log("[Student] join-room ack:", ack);
@@ -362,10 +379,7 @@ function StudentApp() {
           setAssignedStationId(ack.stationId);
           const norm = normalizeStationId(ack.stationId);
           const colourLabel = norm.color ? norm.color.toUpperCase() : "";
-          const locLabel = (ack.location || "any") !== "any" 
-            ? ack.location.toUpperCase() 
-            : (locationCode || DEFAULT_LOCATION).toUpperCase();
-
+          const locLabel = (ack.location || "any") !== "any" ? ack.location.toUpperCase() : (locationCode || DEFAULT_LOCATION).toUpperCase();
           if (colourLabel) {
             setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
           } else {
@@ -420,8 +434,6 @@ function StudentApp() {
       const assignedNorm = normalizeStationId(assignedStationId);
       const assignedColour = assignedNorm.color; // "red", "blue", etc.
       //const assignedLocation = locationCode || DEFAULT_LOCATION;
-
-      const [assignedLocation, setAssignedLocation] = useState("any");
 
       if (!assignedColour) {
         setScanError(

@@ -419,6 +419,17 @@ export default function LiveSession({ roomCode }) {
     socket.on("session:noiseLevel", handleNoiseLevel);
     socket.on("teacher:treatAssigned", handleTreatAssigned);
 
+    socket.on("team-update", (data) => {
+      console.log("Team update received:", data); // LOG
+      setRoomState(prev => ({
+        ...prev,
+        teams: {
+          ...prev.teams,
+          [data.teamId]: data,
+        },
+      }));
+    });
+
     return () => {
       socket.off("roomState", handleRoom);
       socket.off("room:state", handleRoom);
@@ -430,6 +441,7 @@ export default function LiveSession({ roomCode }) {
       socket.off("teacher:endSessionAndEmail:result", handleEndSessionAck);
       socket.off("session:noiseLevel", handleNoiseLevel);
       socket.off("teacher:treatAssigned", handleTreatAssigned);
+      socket.off("team-update");
     };
   }, [
     roomCode,
