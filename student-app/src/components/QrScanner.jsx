@@ -20,12 +20,14 @@ export default function QrScanner({ active, onCode, onError }) {
     let stream = null;
     let animationId = null;
     let detector = null;
+    let stopped = false;
 
     async function start() {
       try {
         if (!active) return;
 
         if (!("mediaDevices" in navigator) || !navigator.mediaDevices.getUserMedia) {
+          console.warn("[QrScanner] mediaDevices or getUserMedia not available");
           setSupportsCamera(false);
           return;
         }
@@ -35,7 +37,7 @@ export default function QrScanner({ active, onCode, onError }) {
           // eslint-disable-next-line no-undef
           detector = new BarcodeDetector({ formats: ["qr_code"] });
         } else {
-          // No detector → fall back to manual mode
+          console.warn("[QrScanner] BarcodeDetector not available, using manual mode");
           setSupportsCamera(false);
           return;
         }
@@ -45,34 +47,82 @@ export default function QrScanner({ active, onCode, onError }) {
           audio: false,
         });
 
+        if (!videoRef.current) {
+          console.warn("[QrScanner] videoRef missing after getUserMedia");
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+          return;
+        }
+
+        const video = videoRef.current;
+        video.srcObject = stream;
+        // Make sure mobile browsers are happy
+        video.muted = true;
+        video.setAttribute("playsInline", "true");
+
+        // Wait for metadata so width/height are available
+        await new Promise((resolve) => {
+          const handleLoaded = () => {
+            video.removeEventListener("loadedmetadata", handleLoaded);
+            resolve();
+          };
+          if (video.readyState >= 1) {
+            resolve();
+          } else {
+            video.addEventListener("loadedmetadata", handleLoaded);
+          }
+        });
+
+        try {
+          const playPromise = video.play();
+          if (playPromise && typeof playPromise.then === "function") {
+            await playPromise;
+          }
+        } catch (err) {
+          console.warn("[QrScanner] video.play() failed:", err);
+        }
+
+        console.log(
+          "[QrScanner] video started",
+          "videoWidth=",
+          video.videoWidth,
+          "videoHeight=",
+          video.videoHeight
+        );
+
         setSupportsCamera(true);
 
-        if (!videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-
         const loop = async () => {
+          if (stopped) return;
           if (!active || !videoRef.current || !canvasRef.current || !detector) {
+            animationId = requestAnimationFrame(loop);
             return;
           }
 
-          const video = videoRef.current;
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext("2d");
+          const v = videoRef.current;
+          const c = canvasRef.current;
+          const ctx = c.getContext("2d");
 
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 360;
+          // Sometimes videoWidth/videoHeight start at 0 – skip detection until ready
+          const vw = v.videoWidth || 0;
+          const vh = v.videoHeight || 0;
+          if (vw === 0 || vh === 0) {
+            animationId = requestAnimationFrame(loop);
+            return;
+          }
 
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          c.width = vw;
+          c.height = vh;
+          ctx.drawImage(v, 0, 0, c.width, c.height);
 
           try {
-            const barcodes = await detector.detect(canvas);
+            const barcodes = await detector.detect(c);
             if (barcodes && barcodes.length > 0) {
               const rawValue = barcodes[0].rawValue || "";
               if (rawValue) {
+                console.log("[QrScanner] detected QR:", rawValue);
                 const accepted = onCode ? onCode(rawValue) : true;
                 if (accepted !== false) {
-                  // Stop scanning if the parent accepted the code
                   stop();
                   return;
                 }
@@ -95,6 +145,7 @@ export default function QrScanner({ active, onCode, onError }) {
     }
 
     function stop() {
+      stopped = true;
       if (animationId) {
         cancelAnimationFrame(animationId);
         animationId = null;
@@ -133,7 +184,7 @@ export default function QrScanner({ active, onCode, onError }) {
             ref={videoRef}
             style={{
               width: "100%",
-              maxHeight: 260,
+              height: 260, // fixed height to avoid weird zero-height cases
               borderRadius: 12,
               border: "1px solid #e5e7eb",
               objectFit: "cover",
