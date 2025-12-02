@@ -8,8 +8,8 @@ import { API_BASE_URL } from "./config.js";
 // Simple UUID v4 generator (no external lib needed)
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-    const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3 | 0x8;
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : ((r & 0x3) | 0x8);
     return v.toString(16);
   });
 }
@@ -116,7 +116,7 @@ function StudentApp() {
   const [teamName, setTeamName] = useState("");
   const [members, setMembers] = useState(["", "", ""]);
   const [teamId, setTeamId] = useState(null);
-  const [teamSessionId, setTeamSessionId] = useState(null);
+  
   const [assignedStationId, setAssignedStationId] = useState(null);
   const [assignedLocation, setAssignedLocation] = useState("any");
   const [assignedColor, setAssignedColor] = useState(null);
@@ -237,6 +237,10 @@ function StudentApp() {
 
   const handleJoin = () => {
   const finalRoom = roomCode.trim().toUpperCase();
+  const filteredMembers = members
+  .map((m) => m.trim())
+  .filter((m) => m.length > 0);
+
   if (!finalRoom || !teamName.trim()) {
     alert("Please enter both a room code and team name.");
     return;
@@ -286,7 +290,8 @@ function StudentApp() {
 });
 
   // Debug: confirm emit actually went out
-  console.log("STUDENT: socket.emit('join-room') called");
+  console.log("STUDENT: socket.emit('student:join-room') called");
+
 };
 
   const unlockAudioForBrowser = () => {
