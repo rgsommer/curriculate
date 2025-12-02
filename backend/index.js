@@ -43,7 +43,7 @@ const app = express();
 const server = http.createServer(app);
 
 //const raceWinner = {};
-const teamClues = new Map(); // ← now global!
+const teamClues = new Map(); // ← global map for mystery-clues
 
 function getSessionByRoomCode(code) {
   return rooms[code.toUpperCase()];
@@ -126,8 +126,8 @@ const io = new Server(server, {
 
       const allowed = allowedOrigins;
 
-      if (allowed.some(allowedOrigin => origin.startsWith(allowedOrigin)) || 
-          origin.endsWith(".vercel.app")) {
+      if (allowed.some(allowedOrigin => origin.startsWith(allowedOrigin)) ||
+        origin.endsWith(".vercel.app")) {
         callback(null, true);
       } else {
         console.warn("Socket.IO CORS blocked:", origin);
@@ -194,9 +194,9 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     },
     noiseLevel: 0,        // smoothed noise measure (0–100)
     noiseBrightness: 1,   // 1 = full bright, ~0.3 = dim
-    tasks: [],                    // ← critical
-    currentTaskIndex: -1,         // ← critical
-    selectedRooms: null,          // ← prevents crash in join-room
+    tasks: [],
+    currentTaskIndex: -1,
+    selectedRooms: null,
   };
 
   // Load existing teams from DB
@@ -487,8 +487,8 @@ function sendTaskToTeam(room, teamId, index) {
     typeof task.timeLimitSeconds === "number"
       ? task.timeLimitSeconds
       : typeof task.time_limit === "number"
-      ? task.time_limit
-      : null;
+        ? task.time_limit
+        : null;
 
   io.to(teamId).emit("task:launch", {
     index,
@@ -646,12 +646,12 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
   });
 
-  //Student joins room
+  // Legacy student joins room (old path)
   socket.on("join-room", (payload = {}, ack) => {
     console.log("join-room received:", payload);
 
     const { roomCode, name, teamId: clientTeamId } = payload;
-    const code = roomCode.toUpperCase();
+    const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
 
     if (!room) {
@@ -681,12 +681,12 @@ io.on("connection", (socket) => {
     // Random color
     const used = Object.values(room.teams).map(t => t.station).filter(Boolean);
     const available = COLORS.filter((_, i) => !used.includes(`station-${i + 1}`));
-    const idx = available.length > 0 
+    const idx = available.length > 0
       ? COLORS.indexOf(available[Math.floor(Math.random() * available.length)])
       : Math.floor(Math.random() * COLORS.length);
     team.station = `station-${idx + 1}`;
 
-    // Location assignment
+    // Location assignment (legacy)
     const currentTask = room.tasks?.[room.currentTaskIndex] || {};
     const enforceLocation = currentTask.enforceLocation || false;
 
@@ -707,26 +707,39 @@ io.on("connection", (socket) => {
       team.location = "any";
     }
 
-    // Safe ack back to client
-    const response = { ok: true, teamId, stationId: team.station, color: COLORS[idx], location: team.location };
+    const response = {
+      ok: true,
+      teamId,
+      stationId: team.station,
+      color: COLORS[idx],
+      location: team.location,
+    };
     if (typeof ack === "function") ack(response);
 
-    io.to(code).emit("team-update", { teamId, name: team.name, station: team.station, location: team.location, score: team.score });
+    io.to(code).emit("team-update", {
+      teamId,
+      name: team.name,
+      station: team.station,
+      location: team.location,
+      score: team.score,
+    });
 
     if (room.currentTaskIndex >= 0 && room.tasks?.[room.currentTaskIndex]) {
       socket.emit("task", room.tasks[room.currentTaskIndex]);
     }
   });
 
-  // Re-join room if possible
-  socket.on("resume-session", (data) => {
+  // Re-join room if possible (legacy)
+  socket.on("resume-session", (data, ack) => {
     const { roomCode, teamId } = data;
-    const code = roomCode.toUpperCase();
+    const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
 
     if (!room) {
       console.log(`Student tried to join ${code} but room not ready yet`);
-      if (typeof ack === "function") ack({ ok: false, error: "Room not ready yet — please wait a moment" });
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room not ready yet — please wait a moment" });
+      }
       return;
     }
 
@@ -744,7 +757,7 @@ io.on("connection", (socket) => {
     // Re-send assignment
     socket.emit("station-assigned", {
       stationId: team.station,
-      color: COLORS[parseInt(team.station.split("-")[1]) - 1],
+      color: COLORS[parseInt(team.station.split("-")[1], 10) - 1],
       location: team.location || "any",
     });
 
@@ -756,19 +769,22 @@ io.on("connection", (socket) => {
     console.log(`Resumed team ${teamId} in ${code}`);
   });
 
-  async function handleTeacherLoadTaskset({ roomCode, tasksetId }) {
+  // Load taskset for a room (teacher)
+  async function handleTeacherLoadTaskset(payload = {}) {
+    const { roomCode, tasksetId, selectedRooms } = payload;
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
-    
+
     if (!room) return;
 
-    // ←←← ADD THESE LINES (the only change you need!)
-    if (Array.isArray(payload.selectedRooms) && payload.selectedRooms.length > 0) {
-      room.selectedRooms = payload.selectedRooms;
-      console.log(`Room ${code} → Multi-room scavenger hunt:`, payload.selectedRooms);
+    // Multi-room scavenger hunt / location override
+    if (Array.isArray(selectedRooms) && selectedRooms.length > 0) {
+      room.selectedRooms = selectedRooms;
+      console.log(`Room ${code} → Multi-room scavenger hunt:`, selectedRooms);
     } else {
       room.selectedRooms = null;
     }
+
     const taskset = await TaskSet.findById(tasksetId).lean();
     if (!taskset) {
       socket.emit("taskset:error", { message: "Task Set not found" });
@@ -847,9 +863,7 @@ io.on("connection", (socket) => {
     room.isActive = true;
     room.startedAt = Date.now();
 
-    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
     // START LIGHTNING ROUND — ONLY ONCE PER ROOM
-    // ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
     if (!room.lightningInterval) {
       room.lightningInterval = setInterval(() => {
         const prompts = [
@@ -899,13 +913,13 @@ io.on("connection", (socket) => {
   });
 
   // Quick ad-hoc task
-  socket.on("teacherLaunchTask", ({ roomCode, prompt, correctAnswer }) => {
+  socket.on("teacherLaunchTask", async ({ roomCode, prompt, correctAnswer }) => {
     const code = (roomCode || "").toUpperCase();
     if (!code || !prompt) return;
 
     let room = rooms[code];
     if (!room) {
-      room = rooms[code] = createRoom(code, socket.id);
+      room = rooms[code] = await createRoom(code, socket.id);
     }
 
     const task = {
@@ -1009,176 +1023,64 @@ io.on("connection", (socket) => {
 
   // Student joins room (NEW PERSISTENT VERSION)
   socket.on("student:join-room", async (payload, ack) => {
-  try {
-    const { roomCode, teamName, members } = payload || {};
-    const code = (roomCode || "").toUpperCase();
+    try {
+      const { roomCode, teamName, members } = payload || {};
+      const code = (roomCode || "").toUpperCase();
 
-    if (!code) {
-      if (typeof ack === "function") {
-        return ack({ ok: false, error: "Missing room code." });
+      if (!code) {
+        if (typeof ack === "function") {
+          return ack({ ok: false, error: "Missing room code." });
+        }
+        return;
       }
-      return;
-    }
 
-    // Ensure we have a room
-    let room = rooms[code];
-    if (!room) {
-      room = rooms[code] = await createRoom(code, null);
-    }
+      // Ensure we have a room
+      let room = rooms[code];
+      if (!room) {
+        room = rooms[code] = await createRoom(code, null);
+      }
 
-    const cleanMembers =
-      Array.isArray(members) && members.length > 0
-        ? members
+      const cleanMembers =
+        Array.isArray(members) && members.length > 0
+          ? members
             .map((m) => String(m).trim())
             .filter(Boolean)
-        : [];
+          : [];
 
-    const displayName =
-      (teamName && teamName.trim()) ||
-      cleanMembers[0] ||
-      `Team-${String(socket.id).slice(-4)}`;
+      const displayName =
+        (teamName && teamName.trim()) ||
+        cleanMembers[0] ||
+        `Team-${String(socket.id).slice(-4)}`;
 
-    // Create persistent TeamSession in Mongo
-    const teamDoc = await TeamSession.create({
-      roomCode: code,
-      teamName: displayName,
-      playerNames: cleanMembers,
-      status: "online",
-      lastSeenAt: new Date(),
-      teamColor: "unassigned", // ✅ satisfy required field
-    });
+      // Create persistent TeamSession in Mongo
+      const teamDoc = await TeamSession.create({
+        roomCode: code,
+        teamName: displayName,
+        playerNames: cleanMembers,
+        status: "online",
+        lastSeenAt: new Date(),
+        teamColor: "unassigned", // ✅ satisfy required field
+      });
 
-    const teamId = teamDoc._id.toString();
+      const teamId = teamDoc._id.toString();
 
-    // Attach metadata to this socket
-    socket.data.role = "student";
-    socket.data.roomCode = code;
-    socket.data.teamId = teamId;
+      // Attach metadata to this socket
+      socket.data.role = "student";
+      socket.data.roomCode = code;
+      socket.data.teamId = teamId;
 
-    // Join both the room and a per-team room
-    socket.join(code);
-    socket.join(teamId);
+      // Join both the room and a per-team room
+      socket.join(code);
+      socket.join(teamId);
 
-    // Ensure in-memory room.teams exists
-    if (!room.teams) room.teams = {};
+      // Ensure in-memory room.teams exists
+      if (!room.teams) room.teams = {};
 
-    // Register / update team in room state
-    room.teams[teamId] = {
-      teamId,
-      teamName: displayName,
-      members: cleanMembers,
-      score: 0,
-      stationColor: null,
-      currentStationId: null,
-      taskIndex: -1,
-      status: "online",
-      lastSeenAt: new Date(),
-    };
-
-    // Ensure stations exist
-    if (!room.stations || Object.keys(room.stations).length === 0) {
-      room.stations = {};
-      const NUM_STATIONS = 8;
-      for (let i = 1; i <= NUM_STATIONS; i++) {
-        const id = `station-${i}`;
-        room.stations[id] = { id, assignedTeamId: null };
-      }
-    }
-
-    // Auto-assign first available station
-    if (!room.teams[teamId].currentStationId) {
-      const stationIds = Object.keys(room.stations);
-      const taken = new Set(
-        Object.values(room.teams)
-          .map((t) => t.currentStationId)
-          .filter(Boolean)
-      );
-      const available = stationIds.filter((id) => !taken.has(id));
-      const assignedId = available[0] || stationIds[0] || null;
-
-      room.teams[teamId].currentStationId = assignedId;
-      if (assignedId && room.stations[assignedId]) {
-        room.stations[assignedId].assignedTeamId = teamId;
-      }
-    }
-
-    // Broadcast new room state
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
-
-    // Notify teacher (for join sound / banner)
-    if (room.teacherSocketId) {
-      io.to(room.teacherSocketId).emit("teamJoined", {
+      // Register / update team in room state
+      room.teams[teamId] = {
         teamId,
         teamName: displayName,
         members: cleanMembers,
-        status: "online",
-      });
-    }
-
-    // Ack to the student
-    if (typeof ack === "function") {
-      ack({
-        ok: true,
-        roomState: state,
-        teamId,
-        teamSessionId: teamId,
-      });
-    }
-  } catch (err) {
-    console.error("Error in student:join-room:", err);
-    if (typeof ack === "function") {
-      ack({ ok: false, error: "Server error while joining room." });
-    }
-  }
-});
-
-  // Resume team session
-  socket.on("resume-team-session", async (data, ack) => {
-  try {
-    const { roomCode, teamSessionId } = data || {};
-    const code = (roomCode || "").toUpperCase();
-
-    if (!code || !teamSessionId) {
-      return ack && ack({ success: false, error: "Missing data" });
-    }
-
-    const room = rooms[code];
-    if (!room) {
-      return ack && ack({ success: false, error: "Room not found" });
-    }
-
-    const team = await TeamSession.findById(teamSessionId);
-    if (!team || team.roomCode !== code) {
-      return ack && ack({ success: false, error: "Team not found" });
-    }
-
-    const liveSession = await Session.findOne({ roomCode: code });
-    if (!liveSession || liveSession.status === "ended") {
-      return ack && ack({ success: false, error: "Room ended" });
-    }
-
-    const teamId = team._id.toString();
-
-    // Re-attach socket
-    socket.data.teamId = teamId;
-    socket.data.roomCode = code;
-    socket.join(code);
-    socket.join(teamId);
-
-    // Update DB
-    team.status = "online";
-    team.lastSeenAt = new Date();
-    await team.save();
-
-    // Update in-memory
-    if (!room.teams) room.teams = {};
-    if (!room.teams[teamId]) {
-      room.teams[teamId] = {
-        teamId,
-        teamName: team.teamName,
-        members: team.playerNames,
         score: 0,
         stationColor: null,
         currentStationId: null,
@@ -1186,46 +1088,159 @@ io.on("connection", (socket) => {
         status: "online",
         lastSeenAt: new Date(),
       };
-    } else {
-      room.teams[teamId].status = "online";
-      room.teams[teamId].lastSeenAt = new Date();
+
+      // Ensure stations exist
+      if (!room.stations || Object.keys(room.stations).length === 0) {
+        room.stations = {};
+        const NUM_STATIONS = 8;
+        for (let i = 1; i <= NUM_STATIONS; i++) {
+          const id = `station-${i}`;
+          room.stations[id] = { id, assignedTeamId: null };
+        }
+      }
+
+      // Auto-assign first available station
+      if (!room.teams[teamId].currentStationId) {
+        const stationIds = Object.keys(room.stations);
+        const taken = new Set(
+          Object.values(room.teams)
+            .map((t) => t.currentStationId)
+            .filter(Boolean)
+        );
+        const available = stationIds.filter((id) => !taken.has(id));
+        const assignedId = available[0] || stationIds[0] || null;
+
+        room.teams[teamId].currentStationId = assignedId;
+        if (assignedId && room.stations[assignedId]) {
+          room.stations[assignedId].assignedTeamId = teamId;
+        }
+      }
+
+      // Broadcast new room state
+      const state = buildRoomState(room);
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
+
+      // Notify teacher (for join sound / banner)
+      if (room.teacherSocketId) {
+        io.to(room.teacherSocketId).emit("teamJoined", {
+          teamId,
+          teamName: displayName,
+          members: cleanMembers,
+          status: "online",
+        });
+      }
+
+      // Ack to the student
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          roomState: state,
+          teamId,
+          teamSessionId: teamId,
+        });
+      }
+    } catch (err) {
+      console.error("Error in student:join-room:", err);
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Server error while joining room." });
+      }
     }
+  });
 
-    // Cancel any pending offline timeout
-    if (room.teams[teamId].offlineTimeout) {
-      clearTimeout(room.teams[teamId].offlineTimeout);
-      room.teams[teamId].offlineTimeout = null;
-    }
+  // Resume team session
+  socket.on("resume-team-session", async (data, ack) => {
+    try {
+      const { roomCode, teamSessionId } = data || {};
+      const code = (roomCode || "").toUpperCase();
 
-    // Notify teacher + broadcast state
-    io.to(code).emit("team-status-updated", {
-      teamSessionId: teamId,
-      status: "online",
-    });
+      if (!code || !teamSessionId) {
+        return ack && ack({ success: false, error: "Missing data" });
+      }
 
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
+      const room = rooms[code];
+      if (!room) {
+        return ack && ack({ success: false, error: "Room not found" });
+      }
 
-    if (ack) {
-      ack({
-        success: true,
-        teamId,
-        roomState: state,
+      const team = await TeamSession.findById(teamSessionId);
+      if (!team || team.roomCode !== code) {
+        return ack && ack({ success: false, error: "Team not found" });
+      }
+
+      const liveSession = await Session.findOne({ roomCode: code });
+      if (!liveSession || liveSession.status === "ended") {
+        return ack && ack({ success: false, error: "Room ended" });
+      }
+
+      const teamId = team._id.toString();
+
+      // Re-attach socket
+      socket.data.teamId = teamId;
+      socket.data.roomCode = code;
+      socket.join(code);
+      socket.join(teamId);
+
+      // Update DB
+      team.status = "online";
+      team.lastSeenAt = new Date();
+      await team.save();
+
+      // Update in-memory
+      if (!room.teams) room.teams = {};
+      if (!room.teams[teamId]) {
+        room.teams[teamId] = {
+          teamId,
+          teamName: team.teamName,
+          members: team.playerNames,
+          score: 0,
+          stationColor: null,
+          currentStationId: null,
+          taskIndex: -1,
+          status: "online",
+          lastSeenAt: new Date(),
+        };
+      } else {
+        room.teams[teamId].status = "online";
+        room.teams[teamId].lastSeenAt = new Date();
+      }
+
+      // Cancel any pending offline timeout
+      if (room.teams[teamId].offlineTimeout) {
+        clearTimeout(room.teams[teamId].offlineTimeout);
+        room.teams[teamId].offlineTimeout = null;
+      }
+
+      // Notify teacher + broadcast state
+      io.to(code).emit("team-status-updated", {
+        teamSessionId: teamId,
+        status: "online",
       });
-    }
-  } catch (err) {
-    console.error("Error in resume-team-session:", err);
-    if (ack) ack({ success: false, error: "Server error while resuming team." });
-  }
-});
 
-  // Explicit leave
-    socket.on("station:scan", (payload, ack) => {
-    const { roomCode, teamId, stationId } = payload || {};
+      const state = buildRoomState(room);
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
+
+      if (ack) {
+        ack({
+          success: true,
+          teamId,
+          roomState: state,
+        });
+      }
+    } catch (err) {
+      console.error("Error in resume-team-session:", err);
+      if (ack) ack({ success: false, error: "Server error while resuming team." });
+    }
+  });
+
+  // Student scans station (unified handler)
+  socket.on("station:scan", (payload = {}, ack) => {
+    console.log("station:scan received:", payload);
+    const { roomCode, teamId, stationId } = payload;
     const code = (roomCode || "").toUpperCase();
 
-    if (!code || !teamId || !rooms[code] || !rooms[code].teams[teamId]) {
+    if (!code || !teamId) {
       if (typeof ack === "function") {
         ack({ ok: false, error: "Invalid session" });
       }
@@ -1233,98 +1248,38 @@ io.on("connection", (socket) => {
     }
 
     const room = rooms[code];
-    const team = room.teams[teamId];
-    const currentTask = room.tasks?.[room.currentTaskIndex] || {};
+    const team = room?.teams?.[teamId];
 
-    // Parse scanned ID
-    const parts = (stationId || "").split("-");
-    const scannedStation = parts.slice(0, 2).join("-");
-    const scannedLocation = parts.slice(2).join("-") || "any";
-
-    // Check colour
-    if (scannedStation !== team.station) {
+    if (!room || !team) {
+      console.error("Invalid scan:", { code, teamId });
       if (typeof ack === "function") {
-        ack({ ok: false, error: "Wrong colour!" });
+        ack({ ok: false, error: "Invalid session" });
       }
       return;
     }
 
-    // Check location
-    const enforce = currentTask.enforceLocation || false;
-    const required = currentTask.requiredLocation || "any";
-
-    if (enforce && required !== "any" && scannedLocation !== required) {
+    const expected = team.currentStationId;
+    if (!expected) {
       if (typeof ack === "function") {
-        ack({ ok: false, error: `Wrong room! Go to: ${required.toUpperCase()}` });
+        ack({ ok: false, error: "No station assigned yet." });
       }
       return;
     }
 
-    // Success
+    if (stationId !== expected) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Wrong station colour." });
+      }
+      return;
+    }
+
+    // Mark last scanned
+    team.lastScannedStationId = expected;
+
     if (typeof ack === "function") {
-      ack({ ok: true, message: "Correct!" });
-    }
-
-    // Auto-complete if scan-and-confirm
-    if (currentTask.taskType === "scan-and-confirm") {
-      updateTeamScore(room, teamId, currentTask.points || 10);
-      // your advance logic here
+      ack({ ok: true, message: "Correct station!" });
     }
   });
-
-  // Student scans station
-  socket.on("station:scan", (payload, ack) => {
-  console.log("station:scan received:", payload); // ← ADD LOGGING
-  const { roomCode, teamId, stationId } = payload || {};
-  const code = (roomCode || "").toUpperCase();
-
-  if (!code || !teamId || !rooms[code]?.teams[teamId]) {
-    console.error("Invalid scan:", { code, teamId }); // ← ADD LOGGING
-    if (typeof ack === "function") {
-      ack({ ok: false, error: "Invalid session" });
-    }
-    return;
-  }
-
-  const room = rooms[code];
-  const team = room.teams[teamId];
-  const currentTask = room.tasks?.[room.currentTaskIndex] || {};
-
-  // Parse
-  const parts = (stationId || "").split("-");
-  const scannedStation = parts.slice(0, 2).join("-");
-  const scannedLocation = parts.slice(2).join("-") || "any";
-
-  // Check colour
-  if (scannedStation !== team.station) {
-    if (typeof ack === "function") {
-      ack({ ok: false, error: "Wrong colour!" });
-    }
-    return;
-  }
-
-  // Check location
-  const enforce = currentTask.enforceLocation || false;
-  const required = currentTask.requiredLocation || "any";
-
-  if (enforce && required !== "any" && scannedLocation !== required) {
-    if (typeof ack === "function") {
-      ack({ ok: false, error: `Wrong room! Go to: ${required.toUpperCase()}` });
-    }
-    return;
-  }
-
-  // Success
-  if (typeof ack === "function") {
-    ack({ ok: true, message: "Correct!" });
-  }
-
-  // Auto-complete
-  if (currentTask.taskType === "scan-and-confirm") {
-    updateTeamScore(room, teamId, currentTask.points || 10);
-    // advance logic
-  }
-});
 
   // Student submits answer – reassign only that team's station
   const handleStudentSubmit = async (payload, ack) => {
@@ -1346,8 +1301,8 @@ io.on("connection", (socket) => {
       typeof taskIndex === "number" && taskIndex >= 0
         ? taskIndex
         : typeof team.taskIndex === "number" && team.taskIndex >= 0
-        ? team.taskIndex
-        : room.taskIndex;
+          ? team.taskIndex
+          : room.taskIndex;
 
     const task = room.taskset.tasks[idx];
     if (!task) {
@@ -1399,8 +1354,8 @@ io.on("connection", (socket) => {
       (typeof answer === "string"
         ? answer.trim().length > 0
         : typeof answer === "object"
-        ? Object.keys(answer).length > 0
-        : true);
+          ? Object.keys(answer).length > 0
+          : true);
 
     let pointsEarned = 0;
     if (correct === true) {
@@ -1428,15 +1383,14 @@ io.on("connection", (socket) => {
       timeMs: timeMs ?? null,
       submittedAt,
     });
-    
-    // ✅ After every graded submission (quick or full taskset),
-    //    advance THIS team to the next station so they must rescan.
+
+    // ✅ Advance THIS team to the next station so they must rescan.
     reassignStationForTeam(room, effectiveTeamId);
 
     // Maybe award a random treat for this submission
     maybeAwardTreat(code, room, effectiveTeamId);
 
-        const state = buildRoomState(room);
+    const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
@@ -1450,10 +1404,15 @@ io.on("connection", (socket) => {
         typeof taskIndex === "number" && taskIndex >= 0
           ? taskIndex
           : typeof team.taskIndex === "number" && team.taskIndex >= 0
-          ? team.taskIndex
-          : idx;
+            ? team.taskIndex
+            : idx;
 
       const nextIndex = currentIndex + 1;
+
+      const isQuickTaskset =
+        room.taskset &&
+        (room.taskset.name === "Quick task" ||
+          (room.taskset.tasks || []).length === 1);
 
       if (isQuickTaskset) {
         // One-off quick task: let sendTaskToTeam handle "session complete".
@@ -1492,17 +1451,17 @@ io.on("connection", (socket) => {
   });
 
   socket.on("task:requestNext", ({ roomCode, teamId }) => {
-  const code = (roomCode || "").toUpperCase();
-  const room = rooms[code];
-  if (!room || !room.taskset) return;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.taskset) return;
 
-  const team = room.teams[teamId];
-  if (!team) return;
+    const team = room.teams[teamId];
+    if (!team) return;
 
-  const nextIndex = team.taskIndex;
+    const nextIndex = team.taskIndex;
 
-  sendTaskToTeam(room, teamId, nextIndex);
-});
+    sendTaskToTeam(room, teamId, nextIndex);
+  });
 
   socket.on("task:submit", (payload) => {
     handleStudentSubmit(payload);
@@ -1512,30 +1471,27 @@ io.on("connection", (socket) => {
     io.to(roomCode).emit("speed-draw-question", task);
   });
 
-socket.on("speed-draw-answer", ({ roomCode, index, correct }) => {
-  if (correct && !raceWinner[roomCode]) {
-    raceWinner[roomCode] = socket.teamName;
-    io.to(roomCode).emit("speed-draw-winner", { winner: socket.teamName });
-    updateTeamScore(roomCode, socket.teamName, 25);
-  }
-});
-
-// Store per-team clues during session
-  const teamClues = new Map(); // teamId → [clue1, clue2, ...]
-
-//Quick launch socket
-socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
-  const session = getSessionByRoomCode(roomCode);
-  if (!session) return;
-
-  // Broadcast to all students in room
-  io.to(roomCode).emit("new-task", {
-    taskId,
-    taskType,
-    ...taskData,
+  socket.on("speed-draw-answer", ({ roomCode, index, correct }) => {
+    if (correct && !raceWinner[roomCode]) {
+      raceWinner[roomCode] = socket.teamName;
+      io.to(roomCode).emit("speed-draw-winner", { winner: socket.teamName });
+      updateTeamScore(roomCode, socket.teamName, 25);
+    }
   });
 
-  console.log(`Task launched in ${roomCode}:`, taskType)  ;
+  //Quick launch socket
+  socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
+    const session = getSessionByRoomCode(roomCode);
+    if (!session) return;
+
+    // Broadcast to all students in room
+    io.to(roomCode).emit("new-task", {
+      taskId,
+      taskType,
+      ...taskData,
+    });
+
+    console.log(`Task launched in ${roomCode}:`, taskType);
   });
 
   //Teacher skips task
@@ -1624,7 +1580,7 @@ socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
   socket.on("start-collaboration-task", ({ roomCode, taskId }) => {
     // Get active teams (adjust to your Session/Team model)
     const session = getSessionByRoomCode(roomCode); // Implement: fetch from DB
-    const teams = session.teams || []; // Assume teams array with id, socketId, name
+    const teams = session?.teams || []; // Assume teams array with id, socketId, name
 
     if (teams.length < 2) {
       socket.emit("error", { message: "Need at least 2 teams for collaboration" });
@@ -1682,457 +1638,4 @@ socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
     updateTeamScore(session, team.id, bonus.totalScore);
     saveTeamSubmission(session, team.id, taskId, { reply });
 
-    socket.emit("collaboration-bonus", { bonus: bonus.totalScore });
-  });
-
-  socket.on("start-musical-chairs", ({ roomCode, task }) => {
-    const session = getSessionByRoomCode(roomCode);
-    let stationsLeft = session.teams.length;
-
-    const runRound = () => {
-      if (stationsLeft <= 1) {
-        io.to(roomCode).emit("musical-chairs-end", { winner: session.teams[0]?.name });
-        return;
-      }
-
-      const scanned = new Set();
-      const timeout = setTimeout(() => {
-        const notScanned = session.teams.filter(t => !scanned.has(t.id));
-        const winner = notScanned.length > 0 ? notScanned[0] : session.teams[0];
-        const loser = scanned.size > 0 ? session.teams.find(t => scanned.has(t.id)) : null;
-
-        // Award +5 to last to scan (winner)
-        if (winner) updateTeamScore(session, winner.id, 5);
-
-        io.to(roomCode).emit("musical-chairs-result", {
-          winnerTeam: winner?.name || "Unknown",
-          eliminatedTeam: loser?.name,
-          stationsLeft: --stationsLeft,
-        });
-
-        setTimeout(runRound, 4000);
-      }, 15000); // 15s to scan
-
-      socket.on("musical-chairs-scan", () => {
-        const team = session.teams.find(t => t.socketId === socket.id);
-        if (team && !scanned.has(team.id)) {
-          scanned.add(team.id);
-        }
-      });
-    };
-
-    runRound();
-  });
-
-  // ————————————————————————————————
-  // Mystery Clue Cards — Memory Bonus
-  // ————————————————————————————————
-
-  // When a mystery-clues task starts (non-final)
-  socket.on("mystery-clues-start", ({ roomCode, taskId, teamId }) => {
-    if (taskId && !taskId.includes("final")) {
-      const clues = ["Apple", "Cat", "Rocket", "Pizza", "Ghost", "Lightning"]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 2 + Math.floor(Math.random() * 2)); // 2–3 clues
-
-      teamClues.set(teamId, clues);
-
-      socket.emit("mystery-clues-reveal", {
-        taskId,
-        clues,
-        duration: 8000
-      });
-    }
-  });
-
-  // Final memory challenge at end of taskset
-  socket.on("start-final-mystery-challenge", ({ roomCode }) => {
-    // Send to all teams
-    io.to(roomCode).emit("mystery-clues-final", {
-      type: "mystery-clues",
-      isFinal: true,
-      clueCount: teamClues.get(socket.teamId)?.length || 3
-    });
-  });
-
-  // Student submits their guess
-  socket.on("mystery-clues-submit", ({ roomCode, selected }) => {
-    const correctClues = teamClues.get(socket.teamId) || [];
-    const isPerfect = arraysDeepEqual(selected.sort(), correctClues.sort());
-
-    if (isPerfect) {
-      updateTeamScore(socket.teamId, 10);
-      socket.emit("bonus-awarded", { points: 10, reason: "Perfect Memory!" });
-    }
-
-    socket.emit("mystery-clues-result", { correct: isPerfect });
-  });
-
-    socket.on("start-true-false-tictactoe", ({ roomCode, task }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const teams = session.teams.filter(t => t.active);
-    if (teams.length < 2) return;
-
-    // Randomly pair two teams
-    const [teamA, teamB] = teams.sort(() => Math.random() - 0.5).slice(0, 2);
-
-    // Generate 8 statements (4 true, 4 false)
-    const statements = task.statements || generateTrueFalseStatements();
-
-    io.to(teamA.socketId).emit("tictactoe-start", {
-      type: "true-false-tictactoe",
-      teamRole: "X",
-      opponent: teamB.name,
-      statements,
-      board: Array(9).fill(null)
-    });
-
-    io.to(teamB.socketId).emit("tictactoe-start", {
-      type: "true-false-tictactoe",
-      teamRole: "O",
-      opponent: teamA.name,
-      statements,
-      board: Array(9).fill(null)
-    });
-  });
-
-  socket.on("tictactoe-move", ({ roomCode, index, teamRole }) => {
-    // Broadcast move to both players
-    io.to(roomCode).emit("tictactoe-update", { index, symbol: teamRole });
-  });
-
-  socket.on("tictactoe-winner", ({ roomCode, winnerRole }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const winnerTeam = session.teams.find(t => t.role === winnerRole);
-    if (winnerTeam) {
-      updateTeamScore(session, winnerTeam.id, 10);
-      io.to(roomCode).emit("bonus-awarded", { team: winnerTeam.name, points: 10 });
-    }
-  });
-
-    socket.on("start-mad-dash-sequence", ({ roomCode }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const colors = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"];
-    const length = 3 + Math.floor(Math.random() * 3); // 3–5
-    const sequence = [];
-
-    for (let i = 0; i < length; i++) {
-      let color;
-      do {
-        color = colors[Math.floor(Math.random() * colors.length)];
-      } while (color === session.teams.find(t => t.socketId === socket.id)?.color);
-      sequence.push(color);
-    }
-
-    io.to(roomCode).emit("mad-dash-sequence-start", {
-      type: "mad-dash-sequence",
-      sequence,
-    });
-
-    const completed = new Set();
-
-    socket.on("mad-dash-complete", () => {
-      const team = session.teams.find(t => t.socketId === socket.id);
-      if (team && !completed.has(team.id)) {
-        completed.add(team.id);
-        if (completed.size === 1) {
-          updateTeamScore(session, team.id, 10);
-          io.to(roomCode).emit("mad-dash-winner", { winnerTeam: team.name });
-        }
-      }
-    });
-  });
-
-    socket.on("start-live-debate", ({ roomCode, postulate }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const teams = session.teams;
-    const half = Math.ceil(teams.length / 2);
-    teams.forEach((t, i) => {
-      const side = i < half ? "for" : "against";
-      io.to(t.socketId).emit("debate-start", {
-        type: "live-debate",
-        postulate,
-        mySide: side,
-        myTeamName: t.name,
-        teamMembers: t.members || ["Member 1", "Member 2", "Member 3"],
-        responses: []
-      });
-    });
-  });
-
-  socket.on("debate-response", async (data) => {
-    io.to(data.roomCode).emit("debate-new-response", data);
-    // When all teams have 3 responses → judge
-    // (Implement count check + call generateAIScore with rubric)
-  });
-
-  socket.on("disconnect", async () => {
-    const code = socket.data?.roomCode;
-    const teamId = socket.data?.teamId;
-    if (!code || !teamId) return;
-
-    const room = rooms[code];
-    if (!room || !room.teams[teamId]) return;
-
-    room.teams[teamId].status = "offline";
-    room.teams[teamId].lastSeenAt = new Date();
-
-    // Save to DB
-    const dbTeam = await TeamSession.findById(teamId);
-    if (dbTeam) {
-      dbTeam.status = "offline";
-      dbTeam.lastSeenAt = new Date();
-      await dbTeam.save();
-    }
-
-    // Notify teacher
-    io.to(code).emit("team-status-updated", {
-      teamSessionId: teamId,
-      status: "offline",
-    });
-
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
-
-    // Schedule auto-removal after timeout
-    const timeoutId = setTimeout(async () => {
-      try {
-        const stillOffline = await TeamSession.findById(teamId);
-        if (stillOffline && stillOffline.status === "offline") {
-          await TeamSession.deleteOne({ _id: teamId });
-          if (room.teams[teamId]) {
-            delete room.teams[teamId];
-          }
-          io.to(code).emit("team-removed", { teamSessionId: teamId });
-
-          const updatedState = buildRoomState(room);
-          io.to(code).emit("room:state", updatedState);
-          io.to(code).emit("roomState", updatedState);
-        }
-      } catch (err) {
-        console.error("TTL cleanup error:", err);
-      }
-    }, OFFLINE_TIMEOUT_MS);
-
-    // Store timeout for possible cancel on reconnect
-    room.teams[teamId].offlineTimeout = timeoutId;
-  });
-});
-
-// ====================================================================
-//  REST ROUTES – Profile, TaskSets, AI, Analytics
-// ====================================================================
-
-app.get("/db-check", async (req, res) => {
-  try {
-    await mongoose.connection.db.admin().ping();
-    res.json({ ok: true, db: "reachable" });
-  } catch (err) {
-    console.error("DB check failed:", err);
-    res.status(500).json({ ok: false, error: "DB unreachable" });
-  }
-});
-
-async function getOrCreateProfile() {
-  let profile = await TeacherProfile.findOne();
-  if (!profile) {
-    profile = new TeacherProfile({});
-    await profile.save();
-  }
-  return profile;
-}
-
-app.get("/api/profile/me", async (req, res) => {
-  try {
-    const profile = await getOrCreateProfile();
-    const plain = profile.toObject();
-
-    // Ensure both fields are present for the frontend
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile fetch failed (/api/profile/me):", err);
-    res.status(500).json({ error: "Failed to fetch profile" });
-  }
-});
-
-app.get("/api/profile", async (req, res) => {
-  try {
-    const profile = await getOrCreateProfile();
-    const plain = profile.toObject();
-
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile fetch failed (/api/profile):", err);
-    res.status(500).json({ error: "Failed to fetch profile" });
-  }
-});
-
-app.put("/api/profile/me", async (req, res) => {
-  try {
-    const profile = await getOrCreateProfile();
-
-    // Keep presenterTitle and title in sync
-    const body = { ...req.body };
-
-    if (body.presenterTitle && !body.title) {
-      body.title = body.presenterTitle;
-    }
-    if (body.title && !body.presenterTitle) {
-      body.presenterTitle = body.title;
-    }
-
-    Object.assign(profile, body);
-    await profile.save();
-
-    const plain = profile.toObject();
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile update failed (/api/profile/me):", err);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-app.put("/api/profile", async (req, res) => {
-  try {
-    const profile = await getOrCreateProfile();
-
-    const body = { ...req.body };
-    if (body.presenterTitle && !body.title) {
-      body.title = body.presenterTitle;
-    }
-    if (body.title && !body.presenterTitle) {
-      body.presenterTitle = body.title;
-    }
-
-    Object.assign(profile, body);
-    await profile.save();
-
-    const plain = profile.toObject();
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile update failed (/api/profile):", err);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-app.post("/api/tasksets", async (req, res) => {
-  try {
-    const t = new TaskSet(req.body);
-    await t.save();
-    res.status(201).json(t);
-  } catch (err) {
-    console.error("POST /api/tasksets error:", err);
-    res.status(500).json({ error: "Failed to create task set" });
-  }
-});
-
-app.get("/api/tasksets", async (req, res) => {
-  try {
-    const sets = await TaskSet.find().sort({ createdAt: -1 }).lean();
-    res.json(sets);
-  } catch (err) {
-    console.error("GET /api/tasksets error:", err);
-    res.status(500).json({ error: "Failed to load task sets" });
-  }
-});
-
-app.get("/api/tasksets/:id", async (req, res) => {
-  try {
-    const set = await TaskSet.findById(req.params.id).lean();
-    if (!set) {
-      return res.status(404).json({ error: "Task set not found" });
-    }
-    res.json(set);
-  } catch (err) {
-    console.error("GET /api/tasksets/:id error:", err);
-    res.status(500).json({ error: "Failed to load task set" });
-  }
-});
-
-app.put("/api/tasksets/:id", async (req, res) => {
-  try {
-    const updated = await TaskSet.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-    }).lean();
-    if (!updated) {
-      return res.status(404).json({ error: "Task set not found" });
-    }
-    res.json(updated);
-  } catch (err) {
-    console.error("PUT /api/tasksets/:id error:", err);
-    res.status(500).json({ error: "Failed to update task set" });
-  }
-});
-
-app.delete("/api/tasksets/:id", async (req, res) => {
-  try {
-    await TaskSet.findByIdAndDelete(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("DELETE /api/tasksets/:id error:", err);
-    res.status(500).json({ error: "Failed to delete task set" });
-  }
-});
-
-app.post("/api/ai/tasksets", generateAiTaskset);
-
-// END SESSION — FINAL ANALYTICS SAVE
-app.post("/api/sessions/:roomCode/end", authRequired, async (req, res) => {
-  try {
-    const { roomCode } = req.params;
-    const code = roomCode.toUpperCase();
-    const room = rooms[code];
-
-    if (room?.lightningInterval) {
-      clearInterval(room.lightningInterval);
-      room.lightningInterval = null;
-      console.log("Cleared lightning interval for room", code); // Optional debug
-    }
-
-    const session = await Session.findOne({ roomCode: code });
-    if (!session) return res.status(404).json({ error: "Session not found" });
-
-    const leaderboard = session.teams.map(team => ({
-      teamName: team.name,
-      score: team.score || 0,
-      tasksCompleted: team.tasksCompleted || 0,
-      avgResponseTime: team.totalResponseTime / (team.tasksCompleted || 1),
-      perfectTasks: team.perfectTasks || 0,
-    }));
-
-    session.endedAt = new Date();
-    session.leaderboard = leaderboard;
-    session.totalTasks = session.tasks.length;
-    session.completedTasks = session.teams.reduce((sum, t) => sum + (t.tasksCompleted || 0), 0);
-
-    await session.save();
-
-    io.to(code).emit("session-ended", { leaderboard });
-    res.json({ success: true, leaderboard });
-  } catch (err) {
-    console.error("End session error:", err);
-    res.status(500).json({ error: "Failed to end session" });
-  }
-});
-
-// Analytics API (protected)
-app.get("/analytics/sessions", authRequired, listSessions);
-app.get("/analytics/sessions/:id", authRequired, getSessionDetails);
-
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-  console.log("Curriculate backend running on port", PORT);
-});
+    socket
