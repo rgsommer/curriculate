@@ -240,8 +240,8 @@ function StudentApp() {
       "join-room",
       {
         roomCode: finalRoom,
-        name: teamName.trim(),
-        teamId,
+        name: teamName.trim(), // Changed teamName to name
+        teamId: teamId, // Send persisted teamId
       },
       (ack) => {
         console.log("[Student] join-room ack:", ack);
@@ -338,14 +338,12 @@ function StudentApp() {
     setJoiningRoom(true);
     setStatusMessage(`Joining Room ${finalRoom}…`);
 
-    const [assignedLocation, setAssignedLocation] = useState("any");
-
     socket.emit(
-      "join-room", // Changed to "join-room"
+      "join-room",
       {
         roomCode: finalRoom,
         name: teamName.trim(),
-        teamId: teamId, // Send persisted teamId
+        teamId: teamId,
       },
       (ack) => {
         console.log("[Student] join-room ack:", ack);
@@ -374,12 +372,18 @@ function StudentApp() {
           console.warn("Unable to persist teamSession:", err);
         }
 
-        // Station assignment (colour + location)
-        if (ack.stationId) {
-          setAssignedStationId(ack.stationId);
-          const norm = normalizeStationId(ack.stationId);
+        const teams = ack.roomState?.teams || {};
+        const team = teams[ack.teamId] || null;
+        const locLabel = (
+          ack.roomState?.locationCode ||
+          locationCode ||
+          DEFAULT_LOCATION
+        ).toUpperCase();
+
+        if (team?.currentStationId) {
+          setAssignedStationId(team.currentStationId);
+          const norm = normalizeStationId(team.currentStationId);
           const colourLabel = norm.color ? norm.color.toUpperCase() : "";
-          const locLabel = (ack.location || "any") !== "any" ? ack.location.toUpperCase() : (locationCode || DEFAULT_LOCATION).toUpperCase();
           if (colourLabel) {
             setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
           } else {
