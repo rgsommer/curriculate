@@ -676,15 +676,16 @@ export default function StudentApp() {
     setJoiningRoom(true);
     setStatusMessage(`Joining Room ${finalRoom}…`);
 
+    // ←←← ONLY THESE TWO LINES CHANGED
     socket.emit(
-      "student:joinRoom",
+      "join-room",  // ← changed from "student:joinRoom"
       {
         roomCode: finalRoom,
-        teamName: teamName.trim(),
-        members: filteredMembers,
+        name: teamName.trim(),  // ← changed from teamName to name
+        teamId,                 // ← send persisted teamId so we keep same team/color
       },
       (ack) => {
-        console.log("[Student] joinRoom ack:", ack);
+        console.log("[Student] join-room ack:", ack);
         if (!ack || !ack.ok) {
           setJoiningRoom(false);
           alert(ack?.error || "Unable to join room.");
@@ -697,8 +698,7 @@ export default function StudentApp() {
         setTeamId(ack.teamId || socket.id);
 
         // NEW: persist session so we can resume later
-        const sessionIdToStore = ack.teamSessionId || ack.teamId || socket.id;
-        setTeamSessionId(ack.teamSessionId || null);
+        const sessionIdToStore = ack.teamId || socket.id;
         try {
           localStorage.setItem(
             "teamSession",
@@ -711,18 +711,15 @@ export default function StudentApp() {
           console.warn("Unable to persist teamSession:", err);
         }
 
-        const teams = ack.roomState?.teams || {};
-        const team = teams[ack.teamId] || null;
-        const locLabel = (
-          ack.roomState?.locationCode ||
-          locationCode ||
-          DEFAULT_LOCATION
-        ).toUpperCase();
-
-        if (team?.currentStationId) {
-          setAssignedStationId(team.currentStationId);
-          const norm = normalizeStationId(team.currentStationId);
+        // Station assignment (colour + location)
+        if (ack.stationId) {
+          setAssignedStationId(ack.stationId);
+          const norm = normalizeStationId(ack.stationId);
           const colourLabel = norm.color ? norm.color.toUpperCase() : "";
+          const locLabel = (ack.location || "any") !== "any" 
+            ? ack.location.toUpperCase() 
+            : (locationCode || DEFAULT_LOCATION).toUpperCase();
+
           if (colourLabel) {
             setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
           } else {
