@@ -265,72 +265,25 @@ function StudentApp() {
     alert("Join timed out. Is the teacher in the room?");
   }, 8000);
 
-  socket.emit(
-    "join-room",
-    {
-      roomCode: finalRoom,
-      name: teamName.trim(),
-      teamId: teamId || undefined,
-    },
-    (ack) => {
-      clearTimeout(timeout); // cancel timeout
+  socket.emit("student:join-room", {
+  roomCode: finalRoom,
+  teamName: teamName.trim(),
+  members: filteredMembers,
+}, ack => {
+  console.log("ACK FROM SERVER:", ack);
+  if (!ack?.ok) {
+    alert(ack.error || "Unable to join room.");
+    setJoiningRoom(false);
+    return;
+  }
 
-      console.log("STUDENT: Received ack from server:", ack);
-
-      if (!ack) {
-        console.error("STUDENT: Ack is null/undefined");
-        setJoiningRoom(false);
-        setStatusMessage("Join failed");
-        alert("Server didn't respond properly.");
-        return;
-      }
-
-      if (!ack.ok) {
-        console.error("STUDENT: Join rejected:", ack.error || "Unknown error");
-        setJoiningRoom(false);
-        setStatusMessage(`Join failed: ${ack.error || "Error"}`);
-        alert(ack.error || "Unable to join room.");
-        return;
-      }
-
-      console.log("STUDENT: JOIN SUCCESSFUL!");
-      console.log("STUDENT: Assigned teamId:", ack.teamId);
-      console.log("STUDENT: Station:", ack.stationId);
-      console.log("STUDENT: Color:", ack.color);
-      console.log("STUDENT: Location:", ack.location);
-
-      setRoomCode(finalRoom);
-      setJoined(true);
-      setJoiningRoom(false);
-      setTeamId(ack.teamId || socket.id);
-
-      // Persist
-      try {
-        localStorage.setItem(
-          "teamSession",
-          JSON.stringify({
-            roomCode: finalRoom,
-            teamSessionId: ack.teamId || socket.id,
-          })
-        );
-        console.log("STUDENT: Session persisted to localStorage");
-      } catch (err) {
-        console.warn("STUDENT: Failed to persist session:", err);
-      }
-
-      // Show station
-      if (ack.stationId) {
-        const norm = normalizeStationId(ack.stationId);
-        const colourLabel = norm.color ? norm.color.toUpperCase() : "";
-        const locLabel = (ack.location || "any") !== "any" 
-          ? ack.location.toUpperCase() 
-          : "Classroom";
-
-        setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
-        console.log(`STUDENT: Now waiting for scan: ${locLabel} ${colourLabel}`);
-      }
-    }
+  setJoined(true);
+  setTeamId(ack.teamSessionId);
+  setTeamSessionId(ack.teamSessionId);
+  setAssignedStationId(
+    ack.roomState?.teams?.[ack.teamSessionId]?.currentStationId ?? null
   );
+});
 
   // Debug: confirm emit actually went out
   console.log("STUDENT: socket.emit('join-room') called");
@@ -355,90 +308,6 @@ function StudentApp() {
 
   const addMemberField = () => {
     setMembers((prev) => [...prev, ""]);
-  };
-
-  const handleJoin = () => {
-    const finalRoom = roomCode.trim().toUpperCase();
-    if (!finalRoom || !teamName.trim()) {
-      alert("Please enter both a room code and team name.");
-      return;
-    }
-    if (!connected) {
-      alert("Not connected to server yet. Please wait a moment.");
-      return;
-    }
-
-    unlockAudioForBrowser();
-
-    const filteredMembers = members
-      .map((m) => m.trim())
-      .filter((m) => m.length > 0);
-
-    console.log("[Student] Ready click", {
-      finalRoom,
-      realMembersCount: filteredMembers.length,
-      socketConnected: connected,
-    });
-
-    setJoiningRoom(true);
-    setStatusMessage(`Joining Room ${finalRoom}…`);
-
-    socket.emit(
-      "join-room",
-      {
-        roomCode: finalRoom,
-        name: teamName.trim(),
-        teamId: teamId,
-      },
-      (ack) => {
-        console.log("[Student] join-room ack:", ack);
-        if (!ack || !ack.ok) {
-          setJoiningRoom(false);
-          alert(ack?.error || "Unable to join room.");
-          return;
-        }
-
-        setRoomCode(finalRoom);
-        setJoined(true);
-        setJoiningRoom(false);
-        setTeamId(ack.teamId || socket.id);
-
-        // NEW: persist session so we can resume later
-        const sessionIdToStore = ack.teamId || socket.id;
-        try {
-          localStorage.setItem(
-            "teamSession",
-            JSON.stringify({
-              roomCode: finalRoom,
-              teamSessionId: sessionIdToStore,
-            })
-          );
-        } catch (err) {
-          console.warn("Unable to persist teamSession:", err);
-        }
-
-        const teams = ack.roomState?.teams || {};
-        const team = teams[ack.teamId] || null;
-        const locLabel = (
-          ack.roomState?.locationCode ||
-          locationCode ||
-          DEFAULT_LOCATION
-        ).toUpperCase();
-
-        if (team?.currentStationId) {
-          setAssignedStationId(team.currentStationId);
-          const norm = normalizeStationId(team.currentStationId);
-          const colourLabel = norm.color ? norm.color.toUpperCase() : "";
-          if (colourLabel) {
-            setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
-          } else {
-            setStatusMessage(`Scan a ${locLabel} station.`);
-          }
-        } else {
-          setStatusMessage(`Scan a ${locLabel} station.`);
-        }
-      }
-    );
   };
 
   // onCode handler: returns true to stop camera, false to keep scanning
