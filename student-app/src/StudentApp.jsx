@@ -5,6 +5,29 @@ import TaskRunner from "./components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
+// DEBUG: Log all socket events
+useEffect(() => {
+  const logEvent = (event) => {
+    console.log(`SOCKET EVENT → ${event}`);
+  };
+
+  socket.on("connect", () => console.log("SOCKET: Connected"));
+  socket.on("disconnect", () => console.log("SOCKET: Disconnected"));
+  socket.on("connect_error", (err) => console.log("SOCKET: Connect error:", err.message));
+  socket.on("station-assigned", (data) => console.log("SOCKET: station-assigned", data));
+  socket.on("task", (task) => console.log("SOCKET: task received", task));
+  socket.on("team-update", (data) => console.log("SOCKET: team-update", data));
+
+  return () => {
+    socket.off("connect");
+    socket.off("disconnect");
+    socket.off("connect_error");
+    socket.off("station-assigned");
+    socket.off("task");
+    socket.off("team-update");
+  };
+}, []);
+
 // Simple UUID v4 generator (no external lib needed)
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
@@ -211,85 +234,105 @@ function StudentApp() {
   }, [teamId, roomCode, joined]);
 
   const handleJoin = () => {
-    const finalRoom = roomCode.trim().toUpperCase();
-    if (!finalRoom || !teamName.trim()) {
-      alert("Please enter both a room code and team name.");
-      return;
-    }
-    if (!connected) {
-      alert("Not connected to server yet. Please wait a moment.");
-      return;
-    }
+  const finalRoom = roomCode.trim().toUpperCase();
+  if (!finalRoom || !teamName.trim()) {
+    alert("Please enter both a room code and team name.");
+    return;
+  }
+  if (!connected) {
+    alert("Not connected to server yet. Please wait a moment.");
+    return;
+  }
 
-    unlockAudioForBrowser();
+  unlockAudioForBrowser();
 
-    const filteredMembers = members
-      .map((m) => m.trim())
-      .filter((m) => m.length > 0);
+  console.log("STUDENT: Attempting to join room:", finalRoom);
+  console.log("STUDENT: Team name:", teamName.trim());
+  console.log("STUDENT: Persisted teamId:", teamId || "(none)");
+  console.log("STUDENT: Socket ID:", socket.id);
+  console.log("STUDENT: Socket connected:", socket.connected);
 
-    console.log("[Student] Ready click", {
-      finalRoom,
-      realMembersCount: filteredMembers.length,
-      socketConnected: connected,
-    });
+  setJoiningRoom(true);
+  setStatusMessage(`Joining Room ${finalRoom}…`);
 
-    setJoiningRoom(true);
-    setStatusMessage(`Joining Room ${finalRoom}…`);
+  // TIMEOUT SAFETY — if no ack in 8 seconds, fail
+  const timeout = setTimeout(() => {
+    console.error("STUDENT: JOIN TIMEOUT — no response from server after 8s");
+    setJoiningRoom(false);
+    setStatusMessage("Join failed — timeout");
+    alert("Join timed out. Is the teacher in the room?");
+  }, 8000);
 
-    socket.emit(
-      "join-room",
-      {
-        roomCode: finalRoom,
-        name: teamName.trim(), // Changed teamName to name
-        teamId: teamId, // Send persisted teamId
-      },
-      (ack) => {
-        console.log("[Student] join-room ack:", ack);
-        if (!ack || !ack.ok) {
-          setJoiningRoom(false);
-          alert(ack?.error || "Unable to join room.");
-          return;
-        }
+  socket.emit(
+    "join-room",
+    {
+      roomCode: finalRoom,
+      name: teamName.trim(),
+      teamId: teamId || undefined,
+    },
+    (ack) => {
+      clearTimeout(timeout); // cancel timeout
 
-        setRoomCode(finalRoom);
-        setJoined(true);
+      console.log("STUDENT: Received ack from server:", ack);
+
+      if (!ack) {
+        console.error("STUDENT: Ack is null/undefined");
         setJoiningRoom(false);
-        setTeamId(ack.teamId || socket.id);
-
-        // NEW: persist session so we can resume later
-        const sessionIdToStore = ack.teamId || socket.id;
-        try {
-          localStorage.setItem(
-            "teamSession",
-            JSON.stringify({
-              roomCode: finalRoom,
-              teamSessionId: sessionIdToStore,
-            })
-          );
-        } catch (err) {
-          console.warn("Unable to persist teamSession:", err);
-        }
-
-        // Station assignment (colour + location)
-        if (ack.stationId) {
-          setAssignedStationId(ack.stationId);
-          const norm = normalizeStationId(ack.stationId);
-          const colourLabel = norm.color ? norm.color.toUpperCase() : "";
-          const locLabel = (ack.location || "any") !== "any" 
-            ? ack.location.toUpperCase() 
-            : (locationCode || DEFAULT_LOCATION).toUpperCase();
-
-          if (colourLabel) {
-            setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
-          } else {
-            setStatusMessage(`Scan a ${locLabel} station.`);
-          }
-        } else {
-          setStatusMessage(`Scan a ${locLabel} station.`);
-        }
+        setStatusMessage("Join failed");
+        alert("Server didn't respond properly.");
+        return;
       }
-    );
-  };
+
+      if (!ack.ok) {
+        console.error("STUDENT: Join rejected:", ack.error || "Unknown error");
+        setJoiningRoom(false);
+        setStatusMessage(`Join failed: ${ack.error || "Error"}`);
+        alert(ack.error || "Unable to join room.");
+        return;
+      }
+
+      console.log("STUDENT: JOIN SUCCESSFUL!");
+      console.log("STUDENT: Assigned teamId:", ack.teamId);
+      console.log("STUDENT: Station:", ack.stationId);
+      console.log("STUDENT: Color:", ack.color);
+      console.log("STUDENT: Location:", ack.location);
+
+      setRoomCode(finalRoom);
+      setJoined(true);
+      setJoiningRoom(false);
+      setTeamId(ack.teamId || socket.id);
+
+      // Persist
+      try {
+        localStorage.setItem(
+          "teamSession",
+          JSON.stringify({
+            roomCode: finalRoom,
+            teamSessionId: ack.teamId || socket.id,
+          })
+        );
+        console.log("STUDENT: Session persisted to localStorage");
+      } catch (err) {
+        console.warn("STUDENT: Failed to persist session:", err);
+      }
+
+      // Show station
+      if (ack.stationId) {
+        const norm = normalizeStationId(ack.stationId);
+        const colourLabel = norm.color ? norm.color.toUpperCase() : "";
+        const locLabel = (ack.location || "any") !== "any" 
+          ? ack.location.toUpperCase() 
+          : "Classroom";
+
+        setStatusMessage(`Scan a ${locLabel} ${colourLabel} station.`);
+        console.log(`STUDENT: Now waiting for scan: ${locLabel} ${colourLabel}`);
+      }
+    }
+  );
+
+  // Debug: confirm emit actually went out
+  console.log("STUDENT: socket.emit('join-room') called");
+};
 
   const unlockAudioForBrowser = () => {
     if (audioContext) return;
