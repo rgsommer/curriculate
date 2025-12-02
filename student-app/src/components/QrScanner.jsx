@@ -22,15 +22,18 @@ export default function QrScanner({ active, onCode, onError }) {
     let animationId = null;
     let detector = null;
     let stopped = false;
+    let isMounted = true;
 
     async function start() {
       if (!active) return;
+      if (!isMounted) return;
       if (typeof window === "undefined" || typeof navigator === "undefined") {
         return;
       }
 
       // Check getUserMedia
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (!isMounted) return;
         setCameraError(
           "This device does not support camera access in the browser. Please type the code instead."
         );
@@ -40,6 +43,7 @@ export default function QrScanner({ active, onCode, onError }) {
       // Check BarcodeDetector
       if (!("BarcodeDetector" in window)) {
         console.warn("[QrScanner] BarcodeDetector not available – manual mode only.");
+        if (!isMounted) return;
         setSupportsDetector(false);
         setCameraError(
           "Live QR scanning is not supported on this browser. Please type the code instead."
@@ -52,6 +56,7 @@ export default function QrScanner({ active, onCode, onError }) {
         detector = new BarcodeDetector({ formats: ["qr_code"] });
       } catch (err) {
         console.warn("[QrScanner] Failed to construct BarcodeDetector:", err);
+        if (!isMounted) return;
         setSupportsDetector(false);
         setCameraError(
           "Live QR scanning is not available. Please type the code instead."
@@ -66,20 +71,31 @@ export default function QrScanner({ active, onCode, onError }) {
         });
       } catch (err) {
         console.error("[QrScanner] getUserMedia error:", err);
+        if (!isMounted) return;
         setCameraError(
           "We couldn't access the camera. Check permissions and try again, or type the code instead."
         );
         return;
       }
 
+      // After the async call, re-check that we're still mounted and active
+      if (!isMounted || !active) {
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+        return;
+      }
+
       const video = videoRef.current;
       if (!video) {
-        console.warn("[QrScanner] videoRef missing after getUserMedia");
-        stream.getTracks().forEach((t) => t.stop());
-        stream = null;
-        setCameraError(
-          "There was a problem attaching the camera. Please try again or type the code."
-        );
+        // Most likely unmounted / ref cleared while camera was starting
+        console.warn("[QrScanner] videoRef missing after getUserMedia (component changed)");
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+        // Don't set a permanent error here; just quietly stop
         return;
       }
 
@@ -118,7 +134,11 @@ export default function QrScanner({ active, onCode, onError }) {
       );
 
       const loop = async () => {
-        if (stopped) return;
+        if (stopped || !isMounted) return;
+        if (!active) {
+          animationId = requestAnimationFrame(loop);
+          return;
+        }
 
         const v = videoRef.current;
         const c = canvasRef.current;
@@ -185,6 +205,7 @@ export default function QrScanner({ active, onCode, onError }) {
     }
 
     return () => {
+      isMounted = false;
       stop();
     };
   }, [active, onCode, onError]);
