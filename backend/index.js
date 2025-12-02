@@ -619,6 +619,31 @@ function updateNoiseDerivedState(code, room) {
 // ====================================================================
 io.on("connection", (socket) => {
   // Teacher creates room
+    // Teacher creates the actual room object
+  socket.on("teacher:createRoom", async ({ roomCode }) => {
+    const code = roomCode?.toUpperCase();
+    if (!code) return;
+
+    if (rooms[code]) {
+      // Room already exists — just attach teacher
+      rooms[code].teacherSocketId = socket.id;
+      socket.join(code);
+      console.log(`Teacher re-joined existing room ${code}`);
+      return;
+    }
+
+    console.log(`Teacher created room ${code}`);
+    const room = await createRoom(code, socket.id);
+    rooms[code] = room;
+    socket.join(code);
+
+    // Broadcast initial empty state so LiveSession renders correctly
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+  });
+
+  //Student joins room
   socket.on("join-room", (payload = {}, ack) => {
     console.log("join-room received:", payload);
 
