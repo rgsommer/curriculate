@@ -628,6 +628,27 @@ function updateNoiseDerivedState(code, room) {
 //  SOCKET.IO – EVENT HANDLERS
 // ====================================================================
 io.on("connection", (socket) => {
+  console.log(
+    "[SOCKET] New connection",
+    socket.id,
+    "origin:",
+    socket.handshake.headers.origin,
+    "referer:",
+    socket.handshake.headers.referer
+  );
+
+  // LOG EVERY EVENT THIS SOCKET EMITS
+  socket.onAny((event, ...args) => {
+    console.log(
+      `[SOCKET ${socket.id}] event:`,
+      event,
+      "payload keys:",
+      args[0] && typeof args[0] === "object"
+        ? Object.keys(args[0])
+        : typeof args[0]
+    );
+  });
+
   // Teacher creates room
   socket.on("teacher:createRoom", async ({ roomCode }) => {
     const code = roomCode?.toUpperCase();
