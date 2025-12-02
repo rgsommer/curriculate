@@ -469,162 +469,72 @@ export default function StudentApp() {
   }, []);
 
   // Socket events
-  useEffect(() => {
-    const handleConnect = () => {
-      console.log("Student socket connected:", socket.id);
+    useEffect(() => {
+    // Generate persistent teamId the first time they join
+    if (!teamId && joined && roomCode) {
+      const newId = generateUUID();
+      setTeamId(newId);
+      localStorage.setItem("curriculate_teamId", newId);
+      localStorage.setItem("curriculate_roomCode", roomCode);
+    }
+
+    socket.on("connect", () => {
       setConnected(true);
-    };
+      // Try to resume if we have a teamId and room
+      if (teamId && roomCode) {
+        socket.emit("resume-session", {
+          roomCode: roomCode.toUpperCase(),
+          teamId,
+        });
+      }
+    });
 
-    const handleDisconnect = () => {
-      console.log("Student socket disconnected");
+    socket.on("disconnect", () => {
       setConnected(false);
+    });
 
-      // We are no longer in the room on the server,
-      // so force the UI back to “not joined”.
-      setJoined(false);
+    // Teacher ended the session → wipe local data
+    socket.on("session-ended", () => {
+      localStorage.removeItem("curriculate_teamId");
+      localStorage.removeItem("curriculate_roomCode");
       setTeamId(null);
-      setAssignedStationId(null);
-      setScannedStationId(null);
+      setJoined(false);
+      setAssignedStation(null);
       setCurrentTask(null);
-      setTaskIndex(null);
-      setStatusMessage(
-        "Connection lost. Check Wi-Fi and tap READY again to rejoin your room."
-      );
-    };
+      alert("This session has ended. Thanks for playing!");
+    });
 
-      const handleRoomState = (state = {}) => {
-      // Update location (Classroom / Gym / etc.)
-      const loc = state.locationCode || DEFAULT_LOCATION;
-      setLocationCode(loc);
+    socket.on("session-resume-failed", () => {
+      // Handle if resume fails (e.g., session ended)
+      alert("Couldn't resume — please re-join the room.");
+      localStorage.removeItem("curriculate_teamId");
+      localStorage.removeItem("curriculate_roomCode");
+      setTeamId(null);
+    });
 
-      const teams = state.teams || {};
+    // NEW: Handle station (colour/location) assignment from backend
+    socket.on("station-assigned", (data) => {
+      const { stationId, color, location = "any" } = data;
+      const { label } = normalizeStationId(stationId);
+      setAssignedStation({ id: stationId, color, label });
+      setAssignedColor(color ? `var(--${color}-500)` : null);
+      //setAssignedLocation(location);
+      const [assignedLocation, setAssignedLocation] = useState("any");
 
-      // Prefer our persistent teamId (TeamSession _id) when available,
-      // but fall back to socket.id for older sessions.
-      const meKey = teamId || socket.id;
-
-      const me = teams[meKey];
-
-      if (!me) {
-        // Server no longer has us as a team (e.g., teacher restarted room);
-        // leave joined as-is so the student can still see they need to rejoin.
-        return;
+      // Show alert if location is enforced
+      if (location !== "any") {
+        alert(`Go to: ${location.toUpperCase()}!`);
       }
-
-      const newAssigned = me.currentStationId || null;
-
-      // If the assigned station changed, clear the previous scan
-      setAssignedStationId((prev) => {
-        if (prev && prev !== newAssigned) {
-          setScannedStationId(null);
-        }
-        return newAssigned;
-      });
-    };
-
-    const handleTaskLaunch = ({ index, task, timeLimitSeconds }) => {
-      console.log("[Student] task:launch", { index, task, timeLimitSeconds });
-
-      setCurrentTask(task || null);
-      setTaskIndex(index ?? null);
-
-      // Time-limit handling (ties into your timeout effect)
-      if (timeLimitSeconds && timeLimitSeconds > 0) {
-        setTimeLimitSeconds(timeLimitSeconds);
-      } else {
-        setTimeLimitSeconds(null);
-        setRemainingMs(null);
-      }
-
-      // New task → clear any previous draft + timeout flag
-      setCurrentAnswerDraft(null);
-      timeoutSubmittedRef.current = false;
-
-      // IMPORTANT: do NOT clear scannedStationId here.
-      // If the team is still at the same station, they should NOT have to rescan
-      // just because a new task was delivered.
-
-      // Play alert sound on task arrival
-      const a = sndAlert.current;
-      if (a) {
-        a.currentTime = 0;
-        a
-          .play()
-          .then(() => {})
-          .catch((err) =>
-            console.warn("Student task sound play blocked/failed", err)
-          );
-      }
-
-      setStatusMessage(
-        "Task received! Read carefully and submit your best answer."
-      );
-    };
-
-    const handleNoiseLevel = (payload) => {
-      if (!payload) return;
-      const { brightness, enabled, level, threshold } = payload;
-
-      setNoiseState((prev) => ({
-        ...prev,
-        enabled: !!enabled,
-        brightness:
-          typeof brightness === "number"
-            ? Math.min(1, Math.max(0.3, brightness))
-            : prev.brightness,
-        level: typeof level === "number" ? level : prev.level,
-        threshold:
-          typeof threshold === "number" ? threshold : prev.threshold,
-      }));
-    };
-
-    const handleTreatAssigned = (payload) => {
-      if (!payload) return;
-
-      // Only respond if this is for our team & room
-      if (payload.teamId && payload.teamId !== teamId) return;
-
-      if (
-        payload.roomCode &&
-        roomCode &&
-        payload.roomCode.toUpperCase() !== roomCode.trim().toUpperCase()
-      ) {
-        return;
-      }
-
-      setTreatMessage(payload.message || "See your teacher for a treat!");
-
-      try {
-        if (sndTreat.current) {
-          sndTreat.current.currentTime = 0;
-          sndTreat.current
-            .play()
-            .catch((err) =>
-              console.warn("Unable to play treat sound:", err)
-            );
-        }
-      } catch (err) {
-        console.warn("Treat sound error:", err);
-      }
-    };
-
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("room:state", handleRoomState);
-    socket.on("task:launch", handleTaskLaunch);
-    socket.on("session:noiseLevel", handleNoiseLevel);
-    socket.on("student:treatAssigned", handleTreatAssigned);
+    });
 
     return () => {
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("room:state", handleRoomState);
-      socket.off("task:launch", handleTaskLaunch);
-      socket.off("session:noiseLevel", handleNoiseLevel);
-      socket.off("student:treatAssigned", handleTreatAssigned);
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("session-ended");
+      socket.off("session-resume-failed");
+      socket.off("station-assigned"); // Cleanup new listener
     };
-    // roomCode/teamId so the handler always has fresh values
-  }, [roomCode, teamId]);
+  }, [teamId, roomCode, joined]);
 
   // Timeout timer effect
   useEffect(() => {
@@ -865,7 +775,9 @@ export default function StudentApp() {
 
       const assignedNorm = normalizeStationId(assignedStationId);
       const assignedColour = assignedNorm.color; // "red", "blue", etc.
-      const assignedLocation = locationCode || DEFAULT_LOCATION;
+      //const assignedLocation = locationCode || DEFAULT_LOCATION;
+
+      const [assignedLocation, setAssignedLocation] = useState("any");
 
       if (!assignedColour) {
         setScanError(
