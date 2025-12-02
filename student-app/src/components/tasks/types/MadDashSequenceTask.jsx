@@ -1,6 +1,6 @@
 //student-app/src/components/tasks/types/MadDashSequenceTask.jsx
 import React, { useEffect, useState } from "react";
-import VictoryScreen from "../VictoryScreen";
+//import VictoryScreen from "../VictoryScreen";
 
 const COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange"];
 
