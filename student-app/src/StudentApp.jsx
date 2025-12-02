@@ -7,18 +7,12 @@ import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
-// Simple UUID v4 generator (kept in case we ever need a local id)
-function generateUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : ((r & 0x3) | 0x8);
-    return v.toString(16);
-  });
-}
+// Build marker so you can confirm the deployed bundle
+console.log("STUDENT BUILD MARKER v2025-12-02-A, API_BASE_URL:", API_BASE_URL);
 
-/* -----------------------------------------------------------
-   Station colour helpers – numeric ids (station-1, station-2…)
------------------------------------------------------------ */
+// ---------------------------------------------------------------------
+// Station colour helpers – numeric ids (station-1, station-2…)
+// ---------------------------------------------------------------------
 
 const COLOR_NAMES = [
   "red",
@@ -95,7 +89,9 @@ function normalizeStationId(raw) {
   return { id: s, color: null, label: s.toUpperCase() };
 }
 
-// Shared socket instance for this app
+// ---------------------------------------------------------------------
+// Shared socket instance – same host as backend
+// ---------------------------------------------------------------------
 const socket = io(API_BASE_URL, {
   withCredentials: true,
   transports: ["websocket"],
@@ -104,7 +100,9 @@ const socket = io(API_BASE_URL, {
   reconnectionDelay: 1000,
 });
 
-console.log("API_BASE_URL (student) =", API_BASE_URL);
+// ---------------------------------------------------------------------
+// Utility helpers
+// ---------------------------------------------------------------------
 
 function formatRemainingMs(ms) {
   if (!ms || ms <= 0) return "00:00";
@@ -113,6 +111,10 @@ function formatRemainingMs(ms) {
   const secs = totalSeconds % 60;
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
+
+// ---------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------
 
 function StudentApp() {
   console.log("STUDENTAPP COMPONENT RENDERED — CLEAN VERSION");
@@ -126,15 +128,18 @@ function StudentApp() {
   const [teamName, setTeamName] = useState("");
   const [members, setMembers] = useState(["", "", ""]);
 
-  const [teamId, setTeamId] = useState(null); // This will hold the TeamSession _id from the backend
+  // Persistent identifiers
+  const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
   const [teamSessionId, setTeamSessionId] = useState(null);
 
+  // Station + scanner state
   const [assignedStationId, setAssignedStationId] = useState(null);
   const [assignedColor, setAssignedColor] = useState(null);
   const [scannedStationId, setScannedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
 
+  // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
@@ -142,30 +147,33 @@ function StudentApp() {
   const [submitting, setSubmitting] = useState(false);
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
 
+  // Noise + treats
   const [noiseState, setNoiseState] = useState({
     enabled: false,
     threshold: 0,
     level: 0,
     brightness: 1,
   });
-
   const [treatMessage, setTreatMessage] = useState(null);
-  const [audioContext, setAudioContext] = useState(null);
 
-  const countdownTimerRef = useRef(null);
+  // Audio
+  const [audioContext, setAudioContext] = useState(null);
   const sndAlert = useRef(null);
   const sndTreat = useRef(null);
 
+  // Timer ref
+  const countdownTimerRef = useRef(null);
+
   // ─────────────────────────────────────────────
-  // Persistent session resume via localStorage
+  // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
 
   useEffect(() => {
     const handleConnect = () => {
-      console.log("SOCKET: Connected");
+      console.log("SOCKET: Connected", socket.id);
       setConnected(true);
 
-      // Try to resume a previous team session
+      // Try to resume from localStorage
       try {
         const stored = localStorage.getItem("teamSession");
         if (stored) {
@@ -194,9 +202,11 @@ function StudentApp() {
                 const myTeam =
                   ack.roomState?.teams?.[ack.teamId] || null;
                 if (myTeam?.currentStationId) {
-                  const norm = normalizeStationId(myTeam.currentStationId);
+                  const norm = normalizeStationId(
+                    myTeam.currentStationId
+                  );
                   setAssignedStationId(myTeam.currentStationId);
-                  setAssignedColor(norm.color ? norm.color : null);
+                  setAssignedColor(norm.color || null);
 
                   const locLabel = (
                     ack.roomState?.locationCode || DEFAULT_LOCATION
@@ -204,7 +214,9 @@ function StudentApp() {
                   const colourLabel = norm.color
                     ? ` ${norm.color.toUpperCase()}`
                     : "";
-                  setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
+                  setStatusMessage(
+                    `Scan a ${locLabel}${colourLabel} station.`
+                  );
                   setScannerActive(true);
                   setScannedStationId(null);
                 } else {
@@ -230,7 +242,6 @@ function StudentApp() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
 
-    // Debug helpers
     socket.on("connect_error", (err) =>
       console.log("SOCKET: Connect error:", err.message)
     );
@@ -256,7 +267,7 @@ function StudentApp() {
       if (myTeam.currentStationId) {
         const norm = normalizeStationId(myTeam.currentStationId);
         setAssignedStationId(myTeam.currentStationId);
-        setAssignedColor(norm.color ? norm.color : null);
+        setAssignedColor(norm.color || null);
         setScannedStationId(null);
         setScannerActive(true);
 
@@ -306,12 +317,12 @@ function StudentApp() {
       setStatusMessage("Session complete! Please wait for your teacher.");
       try {
         localStorage.removeItem("teamSession");
-      } catch (e) {
+      } catch {
         // ignore
       }
     });
 
-    // Session hard-ended via REST / teacher
+    // Session ended via REST / teacher
     socket.on("session-ended", () => {
       console.log("SOCKET: session-ended");
       setCurrentTask(null);
@@ -320,12 +331,10 @@ function StudentApp() {
       setScannerActive(false);
       setAssignedStationId(null);
       setAssignedColor(null);
-      setStatusMessage(
-        "This session has ended. Thanks for playing!"
-      );
+      setStatusMessage("This session has ended. Thanks for playing!");
       try {
         localStorage.removeItem("teamSession");
-      } catch (e) {
+      } catch {
         // ignore
       }
       alert("This session has ended. Thanks for playing!");
@@ -419,14 +428,12 @@ function StudentApp() {
         console.log("AudioContext unlocked");
         setAudioContext(newContext);
       })
-      .catch((err) =>
-        console.warn("AudioContext unlock failed:", err)
-      );
+      .catch((err) => console.warn("AudioContext unlock failed:", err));
   };
 
   // ─────────────────────────────────────────────
-  // Join room
-  // ─────────────────────────────────────────────
+  // Join room (persistent student:join-room)
+// ─────────────────────────────────────────────
 
   const handleJoin = () => {
     const finalRoom = roomCode.trim().toUpperCase();
@@ -466,7 +473,7 @@ function StudentApp() {
     }, 8000);
 
     socket.emit(
-      "student:join-room",
+      "student:join-room", // IMPORTANT: matches backend handler name
       {
         roomCode: finalRoom,
         teamName: teamName.trim(),
@@ -514,16 +521,14 @@ function StudentApp() {
         if (myTeam?.currentStationId) {
           const norm = normalizeStationId(myTeam.currentStationId);
           setAssignedStationId(myTeam.currentStationId);
-          setAssignedColor(norm.color ? norm.color : null);
+          setAssignedColor(norm.color || null);
           setScannedStationId(null);
           setScannerActive(true);
 
           const colourLabel = norm.color
             ? ` ${norm.color.toUpperCase()}`
             : "";
-          setStatusMessage(
-            `Scan a ${locLabel}${colourLabel} station.`
-          );
+          setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
         } else {
           setStatusMessage(`Scan a ${locLabel} station.`);
           setScannerActive(true);
@@ -590,10 +595,7 @@ function StudentApp() {
         return false;
       }
 
-      if (
-        location !== assignedLocation ||
-        colour !== assignedColour
-      ) {
+      if (location !== assignedLocation || colour !== assignedColour) {
         const scannedLabel = `${location}/${colour}`;
         const correctLabel = `${assignedLocation}/${assignedColour}`;
         setScanError(
@@ -689,7 +691,7 @@ function StudentApp() {
       setTimeLimitSeconds(null);
       setRemainingMs(0);
 
-      // After a submission, hide the task and force a rescan
+      // After submission, hide task and force a rescan
       setCurrentTask(null);
       setCurrentTaskIndex(null);
       setScannedStationId(null);
@@ -708,7 +710,7 @@ function StudentApp() {
   };
 
   // ─────────────────────────────────────────────
-  // Derived values for display
+  // Derived display values
   // ─────────────────────────────────────────────
 
   const assignedNorm = normalizeStationId(assignedStationId);
@@ -749,6 +751,10 @@ function StudentApp() {
     }
   }
 
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
+
   return (
     <div
       style={{
@@ -766,15 +772,13 @@ function StudentApp() {
         transition: "opacity 120ms ease-out",
       }}
     >
-      {/* Hidden audio element for task / scan sounds */}
+      {/* Hidden audio elements for task / scan sounds */}
       <audio
         ref={sndAlert}
         src="/sounds/scan-alert.mp3"
         preload="auto"
         style={{ display: "none" }}
       />
-
-      {/* Hidden audio element for random-treat sound */}
       <audio
         ref={sndTreat}
         src="/sounds/treat-chime.mp3"
@@ -1079,10 +1083,6 @@ function StudentApp() {
               background: assignedColor
                 ? `var(--${assignedColor}-500, #eff6ff)`
                 : "#eff6ff",
-              animation:
-                scannerActive && assignedColor
-                  ? "stationPulse 1.6s infinite"
-                  : "none",
               boxShadow:
                 scannerActive && assignedColor
                   ? "0 0 0 0 rgba(255,255,255,0.9)"
@@ -1117,8 +1117,7 @@ function StudentApp() {
               borderRadius: 20,
               background:
                 "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)",
-              boxShadow:
-                "0 10px 25px rgba(15,23,42,0.18)",
+              boxShadow: "0 10px 25px rgba(15,23,42,0.18)",
               border: "1px solid rgba(129,140,248,0.35)",
             }}
           >
@@ -1208,8 +1207,7 @@ function StudentApp() {
           backgroundColor: assignedColor
             ? `var(--${assignedColor}-500, #e5e7eb)`
             : "#e5e7eb",
-          boxShadow:
-            "0 -4px 12px rgba(15,23,42,0.25)",
+          boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
         }}
       />
     </div>
