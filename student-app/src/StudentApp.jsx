@@ -5,29 +5,6 @@ import TaskRunner from "./components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
-// DEBUG: Log all socket events
-useEffect(() => {
-  const logEvent = (event) => {
-    console.log(`SOCKET EVENT → ${event}`);
-  };
-
-  socket.on("connect", () => console.log("SOCKET: Connected"));
-  socket.on("disconnect", () => console.log("SOCKET: Disconnected"));
-  socket.on("connect_error", (err) => console.log("SOCKET: Connect error:", err.message));
-  socket.on("station-assigned", (data) => console.log("SOCKET: station-assigned", data));
-  socket.on("task", (task) => console.log("SOCKET: task received", task));
-  socket.on("team-update", (data) => console.log("SOCKET: team-update", data));
-
-  return () => {
-    socket.off("connect");
-    socket.off("disconnect");
-    socket.off("connect_error");
-    socket.off("station-assigned");
-    socket.off("task");
-    socket.off("team-update");
-  };
-}, []);
-
 // Simple UUID v4 generator (no external lib needed)
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
@@ -129,6 +106,8 @@ function normalizeStationId(raw) {
 }
 
 function StudentApp() {
+  console.log("STUDENTAPP COMPONENT RENDERED — VERSION 2025");
+  
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
@@ -165,6 +144,29 @@ function StudentApp() {
   const persistedTeamId = localStorage.getItem("curriculate_teamId");
   const persistedRoomCode = localStorage.getItem("curriculate_roomCode");
   const [teamId, setTeamId] = useState(persistedTeamId || null);
+
+  // DEBUG: Log all socket events
+  useEffect(() => {
+    const logEvent = (event) => {
+      console.log(`SOCKET EVENT → ${event}`);
+    };
+
+    socket.on("connect", () => console.log("SOCKET: Connected"));
+    socket.on("disconnect", () => console.log("SOCKET: Disconnected"));
+    socket.on("connect_error", (err) => console.log("SOCKET: Connect error:", err.message));
+    socket.on("station-assigned", (data) => console.log("SOCKET: station-assigned", data));
+    socket.on("task", (task) => console.log("SOCKET: task received", task));
+    socket.on("team-update", (data) => console.log("SOCKET: team-update", data));
+
+    return () => {
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("connect_error");
+      socket.off("station-assigned");
+      socket.off("task");
+      socket.off("team-update");
+    };
+  }, []);
 
   useEffect(() => {
     // Generate persistent teamId the first time they join
