@@ -618,20 +618,52 @@ function updateNoiseDerivedState(code, room) {
 //  SOCKET.IO – EVENT HANDLERS
 // ====================================================================
 io.on("connection", (socket) => {
-  // Teacher creates room
-  socket.on("joinRoom", (payload = {}, ack) => {
-  const { roomCode, role, name, teamId: clientTeamId } = payload;
-  const code = (roomCode || "").toUpperCase();
-  const room = rooms[code];
+  // Re-join room if possible
+  socket.on("resume-session", (data) => {
+    const { roomCode, teamId } = data;
+    const code = roomCode.toUpperCase();
+    const room = rooms[code];
 
-  if (!room) {
-    if (typeof ack === "function") {
-      ack({ ok: false, error: "Room not found" });
-    } else {
-      socket.emit("join:error", { message: "Room not found" });
+    if (!room || !room.teams[teamId]) {
+      socket.emit("session-resume-failed");
+      return;
     }
-    return;
-  }
+
+    const team = room.teams[teamId];
+    team.members.push(socket.id);
+    socket.teamId = teamId;
+    socket.roomCode = code;
+    socket.join(code);
+
+    // Re-send assignment
+    socket.emit("station-assigned", {
+      stationId: team.station,
+      color: COLORS[parseInt(team.station.split("-")[1]) - 1],
+      location: team.location || "any",
+    });
+
+    // Re-send current task
+    if (room.currentTaskIndex >= 0 && room.tasks?.[room.currentTaskIndex]) {
+      socket.emit("task", room.tasks[room.currentTaskIndex]);
+    }
+
+    console.log(`Resumed team ${teamId} in ${code}`);
+  });
+
+  // Teacher creates room
+  socket.on("join-room", (payload = {}, ack) => {
+    const { roomCode, role, name, teamId: clientTeamId } = payload;
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+
+    if (!room) {
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Room not found" });
+      } else {
+        socket.emit("join:error", { message: "Room not found" });
+      }
+      return;
+    }
 
     socket.join(code);
     socket.data.roomCode = code;
@@ -719,7 +751,7 @@ io.on("connection", (socket) => {
   });
 
   // Generic joinRoom for HostView / viewers
-  socket.on("joinRoom", (payload = {}, ack) => {
+  socket.on("join-room", (payload = {}, ack) => {
   const { roomCode, role, name, teamId: clientTeamId } = payload;
   const code = roomCode?.toUpperCase();
 
@@ -1075,7 +1107,7 @@ io.on("connection", (socket) => {
   });
 
   // Student joins room (NEW PERSISTENT VERSION)
-  socket.on("student:joinRoom", async (payload, ack) => {
+  socket.on("student:join-room", async (payload, ack) => {
   try {
     const { roomCode, teamName, members } = payload || {};
     const code = (roomCode || "").toUpperCase();
@@ -1194,7 +1226,7 @@ io.on("connection", (socket) => {
       });
     }
   } catch (err) {
-    console.error("Error in student:joinRoom:", err);
+    console.error("Error in student:join-room:", err);
     if (typeof ack === "function") {
       ack({ ok: false, error: "Server error while joining room." });
     }
@@ -1341,48 +1373,55 @@ io.on("connection", (socket) => {
 
   // Student scans station
   socket.on("station:scan", (payload, ack) => {
+  console.log("station:scan received:", payload); // ← ADD LOGGING
   const { roomCode, teamId, stationId } = payload || {};
-  const code = roomCode?.toUpperCase();
+  const code = (roomCode || "").toUpperCase();
 
   if (!code || !teamId || !rooms[code]?.teams[teamId]) {
-    return ack({ success: false, message: "Invalid session" });
+    console.error("Invalid scan:", { code, teamId }); // ← ADD LOGGING
+    if (typeof ack === "function") {
+      ack({ ok: false, error: "Invalid session" });
+    }
+    return;
   }
 
   const room = rooms[code];
   const team = room.teams[teamId];
-  const currentTask = room.tasks[room.currentTaskIndex] || {};
+  const currentTask = room.tasks?.[room.currentTaskIndex] || {};
 
-  // Parse: "station-3-gym" or "station-5-any"
+  // Parse
   const parts = (stationId || "").split("-");
   const scannedStation = parts.slice(0, 2).join("-");
   const scannedLocation = parts.slice(2).join("-") || "any";
 
-  // 1. Check colour
+  // Check colour
   if (scannedStation !== team.station) {
-    return ack({ success: false, message: "Wrong colour!" });
+    if (typeof ack === "function") {
+      ack({ ok: false, error: "Wrong colour!" });
+    }
+    return;
   }
 
-  // 2. Check location (only if task enforces it)
+  // Check location
   const enforce = currentTask.enforceLocation || false;
   const required = currentTask.requiredLocation || "any";
 
   if (enforce && required !== "any" && scannedLocation !== required) {
-    return ack({
-      success: false,
-      message: `Wrong room! This task is in: ${required.toUpperCase()}`,
-    });
+    if (typeof ack === "function") {
+      ack({ ok: false, error: `Wrong room! Go to: ${required.toUpperCase()}` });
+    }
+    return;
   }
 
   // Success
-  ack({
-    success: true,
-    message: enforce ? `Correct! Found in ${scannedLocation.toUpperCase()}` : "Correct station!",
-  });
+  if (typeof ack === "function") {
+    ack({ ok: true, message: "Correct!" });
+  }
 
-  // Auto-complete scan-and-confirm tasks
+  // Auto-complete
   if (currentTask.taskType === "scan-and-confirm") {
     updateTeamScore(room, teamId, currentTask.points || 10);
-    // your existing advance logic here
+    // advance logic
   }
 });
 

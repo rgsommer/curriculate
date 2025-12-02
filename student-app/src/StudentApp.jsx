@@ -469,7 +469,7 @@ export default function StudentApp() {
   }, []);
 
   // Socket events
-    useEffect(() => {
+  useEffect(() => {
     // Generate persistent teamId the first time they join
     if (!teamId && joined && roomCode) {
       const newId = generateUUID();
@@ -480,6 +480,7 @@ export default function StudentApp() {
 
     socket.on("connect", () => {
       setConnected(true);
+      console.log("Socket connected"); // ← ADD LOGGING
       // Try to resume if we have a teamId and room
       if (teamId && roomCode) {
         socket.emit("resume-session", {
@@ -491,6 +492,7 @@ export default function StudentApp() {
 
     socket.on("disconnect", () => {
       setConnected(false);
+      console.log("Socket disconnected"); // ← ADD LOGGING
     });
 
     // Teacher ended the session → wipe local data
@@ -512,16 +514,15 @@ export default function StudentApp() {
       setTeamId(null);
     });
 
-    // NEW: Handle station (colour/location) assignment from backend
+    // NEW: Handle station assignment
     socket.on("station-assigned", (data) => {
+      console.log("Station assigned:", data); // ← ADD LOGGING
       const { stationId, color, location = "any" } = data;
       const { label } = normalizeStationId(stationId);
       setAssignedStation({ id: stationId, color, label });
       setAssignedColor(color ? `var(--${color}-500)` : null);
-      //setAssignedLocation(location);
-      const [assignedLocation, setAssignedLocation] = useState("any");
+      setAssignedLocation(location);
 
-      // Show alert if location is enforced
       if (location !== "any") {
         alert(`Go to: ${location.toUpperCase()}!`);
       }
@@ -532,7 +533,7 @@ export default function StudentApp() {
       socket.off("disconnect");
       socket.off("session-ended");
       socket.off("session-resume-failed");
-      socket.off("station-assigned"); // Cleanup new listener
+      socket.off("station-assigned");
     };
   }, [teamId, roomCode, joined]);
 
