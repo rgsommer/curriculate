@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/types/TrueFalseTicTacToeTask.jsx
 import React, { useState, useEffect } from "react";
-import VictoryScreen from "../VictoryScreen";
+//import VictoryScreen from "../VictoryScreen";
 
 export default function TrueFalseTicTacToeTask({
   task,
