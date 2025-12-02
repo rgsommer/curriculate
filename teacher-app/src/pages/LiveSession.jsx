@@ -47,7 +47,7 @@ export default function LiveSession({ roomCode }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
   const [teamOrder, setTeamOrder] = useState([]);
-  
+
   // Quick task fields
   const [prompt, setPrompt] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
@@ -74,7 +74,7 @@ export default function LiveSession({ roomCode }) {
   // "tasksetLoaded" before calling teacher:launchNextTask.
   const [launchAfterLoad, setLaunchAfterLoad] = useState(false);
 
-    const activeTasksetName =
+  const activeTasksetName =
     activeTasksetMeta?.name ||
     activeTasksetMeta?.title ||
     activeTasksetMeta?.tasksetName ||
@@ -140,12 +140,12 @@ export default function LiveSession({ roomCode }) {
   }, []);
 
   useEffect(() => {
-  async function loadTeacherRooms() {
-    const profile = await fetchMyProfile();
-    setTeacherRooms(profile.locationOptions || []);
-  }
-  loadTeacherRooms();
-}, []);
+    async function loadTeacherRooms() {
+      const profile = await fetchMyProfile();
+      setTeacherRooms(profile.locationOptions || []);
+    }
+    loadTeacherRooms();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,7 +175,7 @@ export default function LiveSession({ roomCode }) {
   }, []);
 
   // ----------------------------------------------------
-  // Create the room + join it as teacher whenever roomCode changes
+  // Create the room whenever roomCode changes
   // ----------------------------------------------------
   useEffect(() => {
     if (!roomCode) return;
@@ -185,12 +185,7 @@ export default function LiveSession({ roomCode }) {
 
     socket.emit("teacher:createRoom", { roomCode: code });
 
-    socket.emit("joinRoom", {
-      roomCode: code,
-      name: "Teacher",
-      role: "teacher",
-    });
-
+    // We do NOT need to join as a student/team here.
     setStatus("Connected.");
   }, [roomCode]);
 
@@ -217,10 +212,11 @@ export default function LiveSession({ roomCode }) {
     socket.emit("loadTaskset", {
       roomCode: code,
       tasksetId: activeTasksetMeta._id,
+      selectedRooms,
     });
 
     setAutoLaunchRequested(false);
-  }, [autoLaunchRequested, roomCode, activeTasksetMeta]);
+  }, [autoLaunchRequested, roomCode, activeTasksetMeta, selectedRooms]);
 
   // ----------------------------------------------------
   // Socket listeners: keep room state + leaderboard in sync
@@ -245,7 +241,7 @@ export default function LiveSession({ roomCode }) {
         pendingTreatTeams: state.pendingTreatTeams || [],
         noise: state.noise || prev.noise,
       }));
-      // If no explicit override chosen yet, default to the room's location
+
       if (!selectedLocation && state.locationCode) {
         setSelectedLocation((prev) => prev || state.locationCode);
       }
@@ -302,8 +298,6 @@ export default function LiveSession({ roomCode }) {
         setLoadedTasksetId(payload.tasksetId);
       }
 
-      // If we requested a launch and the loaded taskset matches the
-      // active one, immediately launch the first task.
       if (
         launchAfterLoad &&
         activeTasksetMeta &&
@@ -313,9 +307,9 @@ export default function LiveSession({ roomCode }) {
         const code = roomCode.toUpperCase();
         setStatus("Launching first task…");
 
-        socket.emit("teacher:launchNextTask", { 
+        socket.emit("teacher:launchNextTask", {
           roomCode: code,
-          selectedRooms,  
+          selectedRooms,
         });
         setLaunchAfterLoad(false);
         setStatus("Taskset launched.");
@@ -408,6 +402,17 @@ export default function LiveSession({ roomCode }) {
       }
     };
 
+    // Transcript result events from backend
+    const handleTranscriptSent = (payload) => {
+      handleEndSessionAck({ ok: true, ...payload });
+    };
+    const handleTranscriptError = (payload) => {
+      handleEndSessionAck({
+        ok: false,
+        error: payload?.message,
+      });
+    };
+
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("tasksetLoaded", handleTasksetLoaded);
@@ -415,13 +420,15 @@ export default function LiveSession({ roomCode }) {
     socket.on("teamJoined", handleTeamJoined);
     socket.on("scanEvent", handleScanEvent);
     socket.on("teacher:roomSetup", handleRoomSetup);
-    socket.on("teacher:endSessionAndEmail:result", handleEndSessionAck);
     socket.on("session:noiseLevel", handleNoiseLevel);
     socket.on("teacher:treatAssigned", handleTreatAssigned);
 
+    socket.on("transcript:sent", handleTranscriptSent);
+    socket.on("transcript:error", handleTranscriptError);
+
     socket.on("team-update", (data) => {
-      console.log("Team update received:", data); // LOG
-      setRoomState(prev => ({
+      console.log("Team update received:", data);
+      setRoomState((prev) => ({
         ...prev,
         teams: {
           ...prev.teams,
@@ -438,9 +445,12 @@ export default function LiveSession({ roomCode }) {
       socket.off("teamJoined", handleTeamJoined);
       socket.off("scanEvent", handleScanEvent);
       socket.off("teacher:roomSetup", handleRoomSetup);
-      socket.off("teacher:endSessionAndEmail:result", handleEndSessionAck);
       socket.off("session:noiseLevel", handleNoiseLevel);
       socket.off("teacher:treatAssigned", handleTreatAssigned);
+
+      socket.off("transcript:sent", handleTranscriptSent);
+      socket.off("transcript:error", handleTranscriptError);
+
       socket.off("team-update");
     };
   }, [
@@ -450,6 +460,7 @@ export default function LiveSession({ roomCode }) {
     launchAfterLoad,
     activeTasksetMeta,
     selectedLocation,
+    noiseThreshold,
   ]);
 
   // ----------------------------------------------------
@@ -485,9 +496,6 @@ export default function LiveSession({ roomCode }) {
     if (!roomCode) return;
     const code = roomCode.toUpperCase();
 
-    // This event can be implemented on the backend to actually update
-    // room.locationCode and broadcast to students. For now it is safe
-    // even if the server ignores it.
     socket.emit("teacher:setLocationOverride", {
       roomCode: code,
       locationCode: loc,
@@ -501,8 +509,6 @@ export default function LiveSession({ roomCode }) {
     setStatus("Loading taskset…");
     setLaunchAfterLoad(true);
 
-    // Fire-and-forget; once the server finishes loading it will emit
-    // "tasksetLoaded" and our listener will call teacher:launchNextTask.
     socket.emit("loadTaskset", {
       roomCode: code,
       tasksetId: activeTasksetMeta._id,
@@ -530,7 +536,7 @@ export default function LiveSession({ roomCode }) {
     const code = roomCode.toUpperCase();
     const nextEnabled = !noiseEnabled;
 
-    socket.emit("teacher:setNoiseControl", {
+    socket.emit("teacher:updateNoiseControl", {
       roomCode: code,
       enabled: nextEnabled,
       threshold: noiseThreshold,
@@ -545,7 +551,7 @@ export default function LiveSession({ roomCode }) {
     if (!roomCode) return;
     const code = roomCode.toUpperCase();
 
-    socket.emit("teacher:setNoiseControl", {
+    socket.emit("teacher:updateNoiseControl", {
       roomCode: code,
       enabled: noiseEnabled,
       threshold: value,
@@ -584,19 +590,16 @@ export default function LiveSession({ roomCode }) {
   let launchBtnDisabled = !activeTasksetMeta;
 
   if (!activeTasksetMeta) {
-    // No active set selected at all
     launchBtnDisabled = true;
     launchBtnBg = "#9ca3af";
     launchBtnLabel = "Launch from taskset";
     launchBtnOnClick = null;
   } else if (taskFlowActive) {
-    // A task is in progress – turn into red END SESSION button
     launchBtnLabel = "End Task Session & Generate Reports";
-    launchBtnBg = "#dc2626"; // red-600
+    launchBtnBg = "#dc2626";
     launchBtnOnClick = handleEndSessionAndEmail;
     launchBtnDisabled = isEndingSession;
   } else if (launchAfterLoad) {
-    // We're in the middle of loading & launching
     launchBtnLabel = "Launching taskset…";
     launchBtnBg = "#10b981";
     launchBtnOnClick = null;
@@ -688,7 +691,7 @@ export default function LiveSession({ roomCode }) {
               animation: color ? "stationPulse 1.8s ease-out infinite" : "none",
             }}
           />
-                    <div
+          <div
             style={{
               fontSize: "0.8rem",
               color: "#4b5563",
@@ -1024,38 +1027,67 @@ export default function LiveSession({ roomCode }) {
               </button>
             </div>
 
-          {/* MULTI-ROOM SCAVENGER HUNT ROOM SELECTOR */}
-          {roomState.taskType === "multi-room-scavenger-hunt" && (
-            <div style={{ marginTop: 16, padding: 16, borderRadius: 12, background: "#f0f9ff", border: "2px solid #0ea5e9" }}>
-              <h3 style={{ margin: "0 0 12px 0", fontSize: "1.1rem" }}>Select rooms for this hunt</h3>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                {teacherRooms.map((room) => (
-                  <button
-                    key={room}
-                    onClick={() =>
-                      setSelectedRooms((prev) =>
-                        prev.includes(room) ? prev.filter((r) => r !== room) : [...prev, room]
-                      )
-                    }
-                    style={{
-                      padding: "8px 16px",
-                      borderRadius: 999,
-                      fontWeight: 600,
-                      background: selectedRooms.includes(room) ? "#0ea5e9" : "#e5e7eb",
-                      color: selectedRooms.includes(room) ? "white" : "#111827",
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {room}
-                  </button>
-                ))}
+            {/* MULTI-ROOM SCAVENGER HUNT ROOM SELECTOR */}
+            {roomState.taskType === "multi-room-scavenger-hunt" && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 16,
+                  borderRadius: 12,
+                  background: "#f0f9ff",
+                  border: "2px solid #0ea5e9",
+                }}
+              >
+                <h3
+                  style={{
+                    margin: "0 0 12px 0",
+                    fontSize: "1.1rem",
+                  }}
+                >
+                  Select rooms for this hunt
+                </h3>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 10,
+                  }}
+                >
+                  {teacherRooms.map((room) => (
+                    <button
+                      key={room}
+                      onClick={() =>
+                        setSelectedRooms((prev) =>
+                          prev.includes(room)
+                            ? prev.filter((r) => r !== room)
+                            : [...prev, room]
+                        )
+                      }
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: 999,
+                        fontWeight: 600,
+                        background: selectedRooms.includes(room)
+                          ? "#0ea5e9"
+                          : "#e5e7eb",
+                        color: selectedRooms.includes(room)
+                          ? "white"
+                          : "#111827",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {room}
+                    </button>
+                  ))}
+                </div>
+                {selectedRooms.length === 0 && (
+                  <p style={{ color: "#b91c1c", marginTop: 8 }}>
+                    Please select at least one room
+                  </p>
+                )}
               </div>
-              {selectedRooms.length === 0 && (
-                <p style={{ color: "#b91c1c", marginTop: 8 }}>Please select at least one room</p>
-              )}
-            </div>
-          )}
+            )}
 
             <div style={{ display: "flex", gap: 8 }}>
               <button
