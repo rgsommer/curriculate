@@ -10,6 +10,7 @@ const jumpAnimation = "/animations/jump.json";
 const squatAnimation = "/animations/squat.json";
 const runAnimation = "/animations/run.json";
 const danceAnimation = "/animations/dance.json";
+const spinAnimation = "/animations/spin.json";
 
 const ACTIVITY_CONFIG = {
   "Jump 10 times": { type: "jump", target: 10, animation: jumpAnimation },
