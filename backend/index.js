@@ -652,30 +652,25 @@ io.on("connection", (socket) => {
 
   // Teacher creates room
   socket.on("join-room", (payload = {}, ack) => {
-    const { roomCode, role, name, teamId: clientTeamId } = payload;
-    const code = (roomCode || "").toUpperCase();
+    console.log("Received join-room:", payload); // LOG
+
+    const { roomCode, name, teamId: clientTeamId } = payload;
+    const code = roomCode.toUpperCase();
     const room = rooms[code];
 
     if (!room) {
+      console.error("No room:", code); // LOG
       if (typeof ack === "function") {
         ack({ ok: false, error: "Room not found" });
-      } else {
-        socket.emit("join:error", { message: "Room not found" });
       }
       return;
     }
 
-    socket.join(code);
-    socket.data.roomCode = code;
-    socket.data.role = role || "student";
-
     const teamId = clientTeamId || generateUUID();
 
-    // Create team if new
     if (!room.teams[teamId]) {
       room.teams[teamId] = {
         name: name || `Team ${Object.keys(room.teams).length + 1}`,
-        role: role || "student",
         members: [],
         score: 0,
         currentTaskIndex: 0,
@@ -686,14 +681,14 @@ io.on("connection", (socket) => {
     }
 
     const team = room.teams[teamId];
-
-    team.members = team.members.filter(id => id !== socket.id);
     team.members.push(socket.id);
     team.disconnectedAt = null;
 
-    socket.data.teamId = teamId;
+    socket.join(code);
+    socket.teamId = teamId;
+    socket.roomCode = code;
 
-    // Random colour assignment
+    // Random color
     const usedStations = Object.values(room.teams).map(t => t.station).filter(Boolean);
     const available = COLORS.filter((_, i) => !usedStations.includes(`station-${i + 1}`));
     const colorIndex = available.length > 0 ? COLORS.indexOf(available[Math.floor(Math.random() * available.length)]) : Math.floor(Math.random() * COLORS.length);
@@ -721,21 +716,11 @@ io.on("connection", (socket) => {
     }
 
     // Safe ack back to client
-    const response = {
-      ok: true,
-      teamId,
-      stationId: team.station,
-      color: COLORS[colorIndex],
-      location: team.location,
-    };
-
+    const response = { ok: true, teamId, stationId: team.station, color: COLORS[colorIndex], location: team.location };
     if (typeof ack === "function") {
       ack(response);
-    } else {
-      socket.emit("join:success", response);
     }
 
-    // Broadcast team update
     io.to(code).emit("team-update", {
       teamId,
       name: team.name,
@@ -743,11 +728,42 @@ io.on("connection", (socket) => {
       location: team.location,
       score: team.score,
     });
+    console.log("Team update emitted for:", teamId); // LOG
 
-    // Send current task if running
-    if (room.currentTaskIndex >= 0 && room.tasks?.[room.currentTaskIndex]) {
+    if (room.currentTaskIndex >= 0 && room.tasks[room.currentTaskIndex]) {
       socket.emit("task", room.tasks[room.currentTaskIndex]);
     }
+  });
+
+  socket.on("resume-session", (data) => {
+    console.log("Resume session:", data); // LOG
+
+    const { roomCode, teamId } = data;
+    const code = roomCode.toUpperCase();
+    const room = rooms[code];
+
+    if (!room || !room.teams[teamId]) {
+      socket.emit("session-resume-failed");
+      return;
+    }
+
+    const team = room.teams[teamId];
+    team.members.push(socket.id);
+    socket.teamId = teamId;
+    socket.roomCode = code;
+    socket.join(code);
+
+    socket.emit("station-assigned", {
+      stationId: team.station,
+      color: COLORS[parseInt(team.station.split("-")[1]) - 1],
+      location: team.location || "any",
+    });
+
+    if (room.currentTaskIndex >= 0 && room.tasks[room.currentTaskIndex]) {
+      socket.emit("task", room.tasks[room.currentTaskIndex]);
+    }
+
+    io.to(code).emit("team-update", { teamId, ...team }); // Re-send to LiveSession
   });
 
   // Generic joinRoom for HostView / viewers
