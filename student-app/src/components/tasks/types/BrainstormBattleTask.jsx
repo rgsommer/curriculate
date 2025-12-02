@@ -1,6 +1,6 @@
 //student-app/src/components/tasks/types/BrainstormBattleTask.jsx
 import React, { useState, useEffect } from "react";
-import VictoryScreen from "./VictoryScreen";
+import VictoryScreen from "./components/VictoryScreen";
 
 export default function BrainstormBattleTask({
   task,

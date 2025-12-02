@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/types/MusicalChairsTask.jsx
 import React, { useEffect, useState } from "react";
-import VictoryScreen from "..VictoryScreen";
+import VictoryScreen from "./components/VictoryScreen";
 
 export default function MusicalChairsTask({
   task,
