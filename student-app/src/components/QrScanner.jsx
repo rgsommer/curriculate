@@ -3,202 +3,212 @@ import React, { useEffect, useRef, useState } from "react";
 
 /**
  * Props:
- *   - active: boolean – when true, starts the camera and scanning
- *   - onCode: (decodedText: string) => boolean | void
- *       Called when a QR code is detected. If it returns `true`,
- *       the scanner will stop; otherwise it will keep scanning.
- *   - onError: (message: string) => void
- *       Called if there is a camera / permission / decode error.
+ *   - active: boolean  → whether scanner should run
+ *   - onCode: (value: string) => boolean | void
+ *        • Return true if scan was accepted (we'll stop scanning)
+ *        • Return false to keep scanning
+ *   - onError: (msg: string) => void
  */
-function QrScanner({ active, onCode, onError }) {
+export default function QrScanner({ active, onCode, onError }) {
   const videoRef = useRef(null);
-  const frameRef = useRef(null);
-  const [cameraError, setCameraError] = useState(null);
-  const [supportsBarcodeDetector, setSupportsBarcodeDetector] = useState(
-    typeof window !== "undefined" && "BarcodeDetector" in window
-  );
+  const canvasRef = useRef(null);
+  const [supportsCamera, setSupportsCamera] = useState(false);
+  const [manualValue, setManualValue] = useState("");
 
+  // Camera + BarcodeDetector loop
   useEffect(() => {
     let stream = null;
     let animationId = null;
     let detector = null;
 
-    async function startCamera() {
-      if (!active) return;
-
+    async function start() {
       try {
-        // Request rear camera if available
+        if (!active) return;
+
+        if (!("mediaDevices" in navigator) || !navigator.mediaDevices.getUserMedia) {
+          setSupportsCamera(false);
+          return;
+        }
+
+        // BarcodeDetector is not everywhere – feature detect
+        if ("BarcodeDetector" in window) {
+          // eslint-disable-next-line no-undef
+          detector = new BarcodeDetector({ formats: ["qr_code"] });
+        } else {
+          // No detector → fall back to manual mode
+          setSupportsCamera(false);
+          return;
+        }
+
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
           audio: false,
         });
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
+        setSupportsCamera(true);
 
-        if (!("BarcodeDetector" in window)) {
-          setSupportsBarcodeDetector(false);
-          return;
-        }
+        if (!videoRef.current) return;
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
 
-        detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-
-        const scanFrame = async () => {
-          if (!videoRef.current || videoRef.current.readyState < 2) {
-            animationId = requestAnimationFrame(scanFrame);
+        const loop = async () => {
+          if (!active || !videoRef.current || !canvasRef.current || !detector) {
             return;
           }
 
+          const video = videoRef.current;
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext("2d");
+
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 360;
+
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
           try {
-            const bitmaps = [videoRef.current];
-            const barcodes = await detector.detect(...bitmaps);
+            const barcodes = await detector.detect(canvas);
             if (barcodes && barcodes.length > 0) {
               const rawValue = barcodes[0].rawValue || "";
               if (rawValue) {
-                const shouldStop = onCode ? onCode(rawValue) === true : true;
-                if (shouldStop) {
-                  // Stop scanning (but keep video until unmounted or inactive)
-                  cancelAnimationFrame(animationId);
-                  animationId = null;
+                const accepted = onCode ? onCode(rawValue) : true;
+                if (accepted !== false) {
+                  // Stop scanning if the parent accepted the code
+                  stop();
                   return;
                 }
               }
             }
           } catch (err) {
             console.warn("QR detect error:", err);
-            if (onError) {
-              onError("There was a problem reading that code. Try again.");
-            }
+            onError && onError("There was a problem reading the code.");
           }
 
-          animationId = requestAnimationFrame(scanFrame);
+          animationId = requestAnimationFrame(loop);
         };
 
-        animationId = requestAnimationFrame(scanFrame);
+        animationId = requestAnimationFrame(loop);
       } catch (err) {
-        console.error("Camera error:", err);
-        const msg =
-          err?.name === "NotAllowedError"
-            ? "Camera access was denied. Please allow camera access and try again."
-            : "We could not start the camera. Please tell your teacher.";
-        setCameraError(msg);
-        if (onError) onError(msg);
+        console.error("QR scanner start error:", err);
+        setSupportsCamera(false);
+        onError && onError("Camera not available. Type the code instead.");
       }
     }
 
-    if (active && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      startCamera();
-    } else if (active) {
-      const msg =
-        "This device does not support camera access in the browser. Please tell your teacher.";
-      setCameraError(msg);
-      if (onError) onError(msg);
-    }
-
-    return () => {
-      if (animationId) cancelAnimationFrame(animationId);
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.srcObject = null;
+    function stop() {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
       }
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
+        stream = null;
       }
+    }
+
+    if (active) {
+      start();
+    }
+
+    return () => {
+      stop();
     };
   }, [active, onCode, onError]);
 
-  const handleManualScan = () => {
-    const value = window.prompt(
-      "Manual code entry (for testing). Paste or type the QR text:"
-    );
-    if (value && onCode) {
-      onCode(value);
-    }
-  };
+  // If not active, render nothing at all
+  if (!active) {
+    return null;
+  }
 
   return (
     <div
-      ref={frameRef}
       style={{
-        width: "100%",
-        maxWidth: 400,
-        margin: "0 auto",
-        borderRadius: 12,
-        overflow: "hidden",
-        border: "1px solid #e5e7eb",
-        background: "#000",
-        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
       }}
     >
-      <video
-        ref={videoRef}
-        style={{
-          width: "100%",
-          height: "auto",
-          display: cameraError ? "none" : "block",
-        }}
-        playsInline
-        muted
-      />
-
-      {!supportsBarcodeDetector && !cameraError && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 12,
-            background:
-              "linear-gradient(135deg, rgba(15,23,42,0.9), rgba(15,23,42,0.75))",
-            color: "#f9fafb",
-            fontSize: "0.9rem",
-            textAlign: "center",
-          }}
-        >
-          <div>
-            <p style={{ marginTop: 0 }}>
-              This browser doesn&apos;t support live QR scanning yet.
-            </p>
-            <p style={{ marginBottom: 8 }}>
-              You can still test by manually entering the code.
-            </p>
-            <button
-              type="button"
-              onClick={handleManualScan}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: "#0ea5e9",
-                color: "#ffffff",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-              }}
-            >
-              Enter code manually
-            </button>
-          </div>
-        </div>
-      )}
-
-      {cameraError && (
-        <div
-          style={{
-            padding: 12,
-            fontSize: "0.85rem",
-            color: "#b91c1c",
-            background: "#fef2f2",
-          }}
-        >
-          {cameraError}
-        </div>
+      {supportsCamera ? (
+        <>
+          <video
+            ref={videoRef}
+            style={{
+              width: "100%",
+              maxHeight: 260,
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              objectFit: "cover",
+              background: "#000",
+            }}
+            muted
+            playsInline
+          />
+          {/* Hidden canvas used for frame analysis */}
+          <canvas
+            ref={canvasRef}
+            style={{ display: "none" }}
+          />
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.8rem",
+              color: "#4b5563",
+            }}
+          >
+            Hold the QR code steady in front of the camera. It will snap
+            automatically when it can read it.
+          </p>
+        </>
+      ) : (
+        <>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.85rem",
+              color: "#b91c1c",
+            }}
+          >
+            Camera scanning not available on this device. Type the code from
+            the station QR label instead.
+          </p>
+          <input
+            type="text"
+            value={manualValue}
+            onChange={(e) => setManualValue(e.target.value)}
+            placeholder="e.g. https://play.curriculate.net/Classroom/red"
+            style={{
+              width: "100%",
+              padding: "6px 8px",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              fontSize: "0.95rem",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!manualValue.trim()) return;
+              const accepted = onCode ? onCode(manualValue.trim()) : true;
+              if (accepted !== false) {
+                setManualValue("");
+              }
+            }}
+            style={{
+              marginTop: 4,
+              alignSelf: "flex-start",
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: "none",
+              background: "#3b82f6",
+              color: "#ffffff",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Use this code
+          </button>
+        </>
       )}
     </div>
   );
 }
-
-export default QrScanner;
