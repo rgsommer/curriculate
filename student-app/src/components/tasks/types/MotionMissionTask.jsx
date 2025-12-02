@@ -2,18 +2,18 @@
 import React, { useEffect, useState, useRef } from "react";
 import Lottie from "lottie-react";
 
-//import jumpAnimation from "../../assets/animations/jump.json";
-//import squatAnimation from "../../assets/animations/squat.json";
-//import runAnimation from "../../assets/animations/run.json";
-//import danceAnimation from "../../assets/animations/dance.json";
+import jumpAnimation from "../../assets/animations/jump.json";
+import squatAnimation from "../../assets/animations/squat.json";
+import runAnimation from "../../assets/animations/run.json";
+import danceAnimation from "../../assets/animations/dance.json";
 
-//const ACTIVITY_CONFIG = {
-//  "Jump 10 times": { type: "jump", target: 10, animation: jumpAnimation },
-//  "Do 8 squats": { type: "squat", target: 8, animation: squatAnimation },
-//  "Run on the spot": { type: "run", target: 15, animation: runAnimation },
-//  "Dance wildly!": { type: "dance", target: 12, animation: danceAnimation },
-//  "Spin around 5 times": { type: "spin", target: 5, animation: spinAnimation },
-//};
+const ACTIVITY_CONFIG = {
+  "Jump 10 times": { type: "jump", target: 10, animation: jumpAnimation },
+  "Do 8 squats": { type: "squat", target: 8, animation: squatAnimation },
+  "Run on the spot": { type: "run", target: 15, animation: runAnimation },
+  "Dance wildly!": { type: "dance", target: 12, animation: danceAnimation },
+  "Spin around 5 times": { type: "spin", target: 5, animation: spinAnimation },
+};
 
 export default function MotionMissionTask({
   task,
