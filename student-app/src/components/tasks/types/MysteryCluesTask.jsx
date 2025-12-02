@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/types/MysteryCluesTask.jsx
 import React, { useState, useEffect } from "react";
-import VictoryScreen from "../VictoryScreen";
+//import VictoryScreen from "../VictoryScreen";
 
 const CARD_EMOJIS = ["Apple", "Banana", "Cat", "Dog", "Elephant", "Frog", "Ghost", "Heart", "Ice Cream", "Joker", "Key", "Lightning", "Moon", "Pizza", "Rocket", "Sun", "Tree", "Umbrella", "Volcano", "Watermelon"];
 
