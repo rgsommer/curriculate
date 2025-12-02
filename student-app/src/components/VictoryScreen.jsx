@@ -1,26 +1,35 @@
-//student-app/src/components/tasks/types/VictoryScreen.jsx
+// student-app/src/components/VictoryScreen.jsx
 import React from "react";
 import Lottie from "lottie-react";
-import fireworks from "../../assets/animations/fireworks.json";
+import celebrationAnimation from "../assets/celebration.json"; // adjust path if needed
 
-export default function VictoryScreen({ onClose }) {
+function VictoryScreen({ onClose }) {
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.8)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9999,
+        color: "white",
+        textAlign: "center",
+        padding: 20,
+      }}
       onClick={onClose}
     >
-      <div className="relative">
-        <Lottie
-          animationData={fireworks}
-          loop={false}
-          style={{ width: 800, height: 800 }}
-        />
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <h1 className="text-9xl font-bold text-white drop-shadow-2xl animate-pulse">
-            VICTORY!
-          </h1>
-        </div>
-      </div>
+      <Lottie
+        animationData={celebrationAnimation}
+        style={{ width: "80%", maxWidth: 400 }}
+        loop={false}
+      />
+      <h1 style={{ fontSize: "2.5rem", margin: "20px 0" }}>Victory!</h1>
+      <p style={{ fontSize: "1.2rem" }}>Great job! Tap to continue.</p>
     </div>
   );
 }
+
+export default VictoryScreen;

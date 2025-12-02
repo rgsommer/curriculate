@@ -2,10 +2,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import Lottie from "lottie-react";
 
-import jumpAnimation from "../../assets/animations/jump.json";
-import squatAnimation from "../../assets/animations/squat.json";
-import runAnimation from "../../assets/animations/run.json";
-import danceAnimation from "../../assets/animations/dance.json";
+//import jumpAnimation from "../../assets/animations/jump.json";
+//import squatAnimation from "../../assets/animations/squat.json";
+//import runAnimation from "../../assets/animations/run.json";
+//import danceAnimation from "../../assets/animations/dance.json";
 
 const ACTIVITY_CONFIG = {
   "Jump 10 times": { type: "jump", target: 10, animation: jumpAnimation },
