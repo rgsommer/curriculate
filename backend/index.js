@@ -1059,9 +1059,27 @@ io.on("connection", (socket) => {
       }
     }
 
-    team.lastScannedStationId = expectedStation || stationId || null;
+        team.lastScannedStationId = expectedStation || stationId || null;
 
-    // Optional: support scan-and-confirm tasks from taskset
+    // If this team has a "nextTaskIndex" queued (normal taskset flow),
+    // deliver that task now.
+    if (room.taskset && Array.isArray(room.taskset.tasks)) {
+      const queuedIndex =
+        typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0
+          ? team.nextTaskIndex
+          : -1;
+
+      if (queuedIndex >= 0) {
+        // sendTaskToTeam will also update team.taskIndex and handle
+        // "session complete" if we run past the end of the set.
+        sendTaskToTeam(room, teamId, queuedIndex);
+        // Clear the queue so we don't re-send on the next scan.
+        delete team.nextTaskIndex;
+      }
+    }
+
+    // Optional: special "scan-and-confirm" task type which awards
+    // points just for scanning the correct station.
     let currentTask = {};
     if (room.taskset && Array.isArray(room.taskset.tasks)) {
       const idx =
