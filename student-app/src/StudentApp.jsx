@@ -448,116 +448,119 @@ function StudentApp() {
 // ─────────────────────────────────────────────
 
   const handleJoin = () => {
-    const finalRoom = roomCode.trim().toUpperCase();
-    if (!finalRoom || !teamName.trim()) {
-      alert("Please enter both a room code and team name.");
-      return;
-    }
-    if (!connected) {
-      alert("Not connected to server yet. Please wait a moment.");
-      return;
-    }
+  const finalRoom = roomCode.trim().toUpperCase();
 
-    unlockAudioForBrowser();
+  if (!finalRoom || !teamName.trim()) {
+    alert("Please enter both a room code and team name.");
+    return;
+  }
 
-    const filteredMembers = members
-      .map((m) => m.trim())
-      .filter((m) => m.length > 0);
+  if (!connected) {
+    alert("Not connected to server yet. Please wait a moment.");
+    return;
+  }
 
-    console.log("STUDENT: Attempting to join room:", {
-      finalRoom,
+  unlockAudioForBrowser();
+
+  const filteredMembers = members
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0);
+
+  console.log("STUDENT: Attempting to join room:", {
+    finalRoom,
+    teamName: teamName.trim(),
+    members: filteredMembers,
+    socketId: socket.id,
+  });
+
+  setJoiningRoom(true);
+  setStatusMessage(`Joining Room ${finalRoom}…`);
+
+  // TIMEOUT SAFETY — if no ack in 8 seconds, fail
+  const timeoutId = setTimeout(() => {
+    console.error(
+      "STUDENT: JOIN TIMEOUT — no response from server after 8s"
+    );
+    setJoiningRoom(false);
+    setStatusMessage("Join failed — timeout");
+    alert("Join timed out. Is the teacher in the room?");
+  }, 8000);
+
+  socket.emit(
+    "student:join-room",
+    {
+      roomCode: finalRoom,
       teamName: teamName.trim(),
       members: filteredMembers,
-      socketId: socket.id,
-    });
+    },
+    (ack) => {
+      clearTimeout(timeoutId);
+      console.log("STUDENT: ACK FROM SERVER:", ack);
 
-    setJoiningRoom(true);
-    setStatusMessage(`Joining Room ${finalRoom}…`);
-
-    // TIMEOUT SAFETY — if no ack in 8 seconds, fail
-    const timeoutId = setTimeout(() => {
-      console.error(
-        "STUDENT: JOIN TIMEOUT — no response from server after 8s"
-      );
-      setJoiningRoom(false);
-      setStatusMessage("Join failed — timeout");
-      alert("Join timed out. Is the teacher in the room?");
-    }, 8000);
-
-    socket.emit(
-      "student:join-room", // IMPORTANT: matches backend handler name
-      {
-        roomCode: finalRoom,
-        teamName: teamName.trim(),
-        members: filteredMembers,
-      },
-      (ack) => {
-        clearTimeout(timeoutId);
-        console.log("STUDENT: ACK FROM SERVER:", ack);
-
-        if (!ack || !ack.ok) {
-          setJoiningRoom(false);
-          setStatusMessage("Join failed");
-          alert(ack?.error || "Unable to join room.");
-          return;
-        }
-
-        const teamSession = ack.teamSessionId || ack.teamId;
-        setJoined(true);
+      if (!ack || !ack.ok) {
         setJoiningRoom(false);
-        setRoomCode(finalRoom);
-        setTeamId(ack.teamId || teamSession);
-        setTeamSessionId(teamSession);
+        setStatusMessage("Join failed");
+        alert(ack?.error || "Unable to join room.");
+        return;
+      }
 
-        // Persist for resume-team-session
-        try {
-          localStorage.setItem(
-            "teamSession",
-            JSON.stringify({
-              roomCode: finalRoom,
-              teamSessionId: teamSession,
-            })
-          );
-          console.log("STUDENT: teamSession persisted");
-        } catch (err) {
-          console.warn("Unable to persist teamSession:", err);
-        }
+      const teamSession = ack.teamSessionId || ack.teamId;
 
-        const myTeam =
-          ack.roomState?.teams?.[ack.teamId] || null;
-        if (myTeam?.currentStationId) {
-          const norm = normalizeStationId(myTeam.currentStationId);
-          setAssignedStationId(myTeam.currentStationId);
-          setAssignedColor(norm.color || null);
+      setJoined(true);
+      setJoiningRoom(false);
+      setRoomCode(finalRoom);
+      setTeamId(ack.teamId || teamSession);
+      setTeamSessionId(teamSession);
 
-          // 🔑 Seed lastStationId so later room:state doesn't look "new"
-          lastStationIdRef.current = myTeam.currentStationId;
+      // Persist for resume-team-session
+      try {
+        localStorage.setItem(
+          "teamSession",
+          JSON.stringify({
+            roomCode: finalRoom,
+            teamSessionId: teamSession,
+          })
+        );
+        console.log("STUDENT: teamSession persisted");
+      } catch (err) {
+        console.warn("Unable to persist teamSession:", err);
+      }
 
-          const locLabel = (
-            ack.roomState?.locationCode || DEFAULT_LOCATION
-          ).toUpperCase();
-          const colourLabel = norm.color
-            ? ` ${norm.color.toUpperCase()}`
-            : "";
-          setStatusMessage(
-            `Scan a ${locLabel}${colourLabel} station.`
-          );
-          setScannerActive(true);
-          setScannedStationId(null);
-          } else {
-            lastStationIdRef.current = null;
-            const locLabel = (
-              ack.roomState?.locationCode || DEFAULT_LOCATION
-            ).toUpperCase();
-            setStatusMessage(`Scan a ${locLabel} station.`);
-            setScannerActive(true);
-            setScannedStationId(null);
-          }
-        }
-    );
+      const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
+      const locLabel = (
+        ack.roomState?.locationCode || DEFAULT_LOCATION
+      ).toUpperCase();
 
-    console.log("STUDENT: socket.emit('student:join-room') called");
-  };
+      if (myTeam?.currentStationId) {
+        const norm = normalizeStationId(myTeam.currentStationId);
+
+        setAssignedStationId(myTeam.currentStationId);
+        setAssignedColor(norm.color || null);
+        setScannedStationId(null);
+        setScannerActive(true);
+
+        // Seed lastStationId so later room:state updates
+        // don’t force a fake “new station” rescan
+        lastStationIdRef.current = myTeam.currentStationId;
+
+        const colourLabel = norm.color
+          ? ` ${norm.color.toUpperCase()}`
+          : "";
+
+        setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
+      } else {
+        // No station assigned yet – still allow scanning,
+        // but don’t pretend we already have a station id
+        lastStationIdRef.current = null;
+        setStatusMessage(`Scan a ${locLabel} station.`);
+        setScannerActive(true);
+        setScannedStationId(null);
+      }
+    }
+  );
+
+  console.log("STUDENT: socket.emit('student:join-room') called");
+};
 
   // ─────────────────────────────────────────────
   // QR Scan handler – checks colour + room
