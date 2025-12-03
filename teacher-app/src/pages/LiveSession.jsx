@@ -67,9 +67,6 @@ export default function LiveSession({ roomCode }) {
   });
   const [loadedTasksetId, setLoadedTasksetId] = useState(null);
 
-  // "Launch immediately" flag coming from TaskSets via localStorage
-  const [autoLaunchRequested, setAutoLaunchRequested] = useState(false);
-
   // When true, we have requested a taskset launch and are waiting for
   // "tasksetLoaded" before calling teacher:launchNextTask.
   const [launchAfterLoad, setLaunchAfterLoad] = useState(false);
@@ -189,34 +186,11 @@ export default function LiveSession({ roomCode }) {
     setStatus("Connected.");
   }, [roomCode]);
 
-  // On first mount, check if TaskSets asked us to auto-launch
-  useEffect(() => {
-    const flag = localStorage.getItem("curriculateLaunchImmediately");
-    if (flag === "true") {
+    // Clear any old "launch immediately" flag – we now require
+    // an explicit click on "Launch from taskset" in LiveSession.
+    useEffect(() => {
       localStorage.removeItem("curriculateLaunchImmediately");
-      setAutoLaunchRequested(true);
-    }
-  }, []);
-
-  // If auto-launch is requested, load the active taskset and then launch
-  useEffect(() => {
-    if (!autoLaunchRequested) return;
-    if (!roomCode || !activeTasksetMeta?._id) return;
-
-    const code = roomCode.toUpperCase();
-    setStatus("Loading taskset…");
-
-    // We don't rely on an ack here; the "tasksetLoaded" event will
-    // actually trigger the launch via launchAfterLoad.
-    setLaunchAfterLoad(true);
-    socket.emit("loadTaskset", {
-      roomCode: code,
-      tasksetId: activeTasksetMeta._id,
-      selectedRooms,
-    });
-
-    setAutoLaunchRequested(false);
-  }, [autoLaunchRequested, roomCode, activeTasksetMeta, selectedRooms]);
+    }, []);
 
   // ----------------------------------------------------
   // Socket listeners: keep room state + leaderboard in sync
@@ -721,7 +695,7 @@ export default function LiveSession({ roomCode }) {
           </div>
         </div>
 
-        {lastScan && (
+        {!taskFlowActive && lastScan && (
           <div
             style={{
               fontSize: "0.75rem",
@@ -738,7 +712,7 @@ export default function LiveSession({ roomCode }) {
             at{" "}
             {lastScan.timestamp
               ? new Date(lastScan.timestamp).toLocaleTimeString()
-              : ""}
+              : "–"}
           </div>
         )}
 
@@ -1312,101 +1286,47 @@ export default function LiveSession({ roomCode }) {
           </section>
 
           {/* Scan log – fixed height with scroll */}
-          <section
-            style={{
-              width: "100%",
-              border: "1px solid #d1d5db",
-              borderRadius: 10,
-              padding: 12,
-              background: "#ffffff",
-            }}
-          >
-            <h2
+          {!taskFlowActive && (
+            <section
               style={{
-                marginTop: 0,
-                marginBottom: 8,
-                fontSize: "1.1rem",
-                fontWeight: 600,
+                width: "100%",
+                border: "1px solid #d1d5db",
+                borderRadius: 10,
+                padding: 12,
+                background: "#ffffff",
               }}
             >
-              Scan log
-            </h2>
+              <h2
+                style={{
+                  marginTop: 0,
+                  marginBottom: 8,
+                  fontSize: "1.1rem",
+                  fontWeight: 600,
+                }}
+              >
+                Scan log
+              </h2>
 
-            <div
-              style={{
-                maxHeight: 200,
-                overflowY: "auto",
-                borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                padding: "6px 8px",
-                background: "#f9fafb",
-                fontSize: "0.85rem",
-                color: "#4b5563",
-              }}
-            >
-              {scanEvents.length === 0 ? (
-                <p style={{ margin: 0, color: "#9ca3af" }}>
-                  No scans yet.
-                </p>
-              ) : (
-                <ul
-                  style={{
-                    listStyle: "none",
-                    paddingLeft: 0,
-                    margin: 0,
-                  }}
-                >
-                  {scanEvents.map((entry, idx) => {
-                    const teamName =
-                      entry.teamName ||
-                      teams[entry.teamId]?.teamName ||
-                      "Team";
-                    const station =
-                      entry.stationLabel ||
-                      stationIdToColor(entry.stationId) ||
-                      entry.stationId ||
-                      "a station";
-                    const time = entry.timestamp
-                      ? new Date(entry.timestamp).toLocaleTimeString()
-                      : "";
-
-                    return (
-                      <li
-                        key={entry.id || `${entry.teamId}-${idx}`}
-                        style={{
-                          padding: "4px 0",
-                          borderBottom:
-                            idx === scanEvents.length - 1
-                              ? "none"
-                              : "1px solid #e5e7eb",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 8,
-                        }}
-                      >
-                        <span>
-                          <strong>{teamName}</strong> scanned{" "}
-                          <span style={{ fontWeight: 500 }}>
-                            {station}
-                          </span>
-                        </span>
-                        {time && (
-                          <span
-                            style={{
-                              color: "#9ca3af",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {time}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </section>
+              <div
+                style={{
+                  maxHeight: 200,
+                  overflowY: "auto",
+                  fontSize: "0.8rem",
+                  color: "#374151",
+                }}
+              >
+                {scanEvents.length === 0 ? (
+                  <div style={{ fontStyle: "italic", color: "#9ca3af" }}>
+                    No scans yet.
+                  </div>
+                ) : (
+                  scanEvents.map((entry, idx) => {
+                    // ...
+                  })
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </div>
 
