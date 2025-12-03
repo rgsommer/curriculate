@@ -404,6 +404,7 @@ export default function TaskRunner({
         <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = <BrainstormBattleTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.MIND_MAPPER:
