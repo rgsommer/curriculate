@@ -299,31 +299,36 @@ function StudentApp() {
 
     // Task launches from teacher / engine
     socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
-      console.log("SOCKET: task:launch", { index, task, timeLimitSeconds });
+    console.log("SOCKET: task:launch", { index, task, timeLimitSeconds });
 
-      setCurrentTask(task || null);
-      setCurrentTaskIndex(
-        typeof index === "number" && index >= 0 ? index : null
-      );
-      setCurrentAnswerDraft("");
-      setScanError(null);
-      setScannedStationId(null);
-      setScannerActive(true); // require scan for each new task
+    // Just set the task – do NOT touch scan state here.
+    setCurrentTask(task || null);
+    setCurrentTaskIndex(
+      typeof index === "number" && index >= 0 ? index : null
+    );
+    setCurrentAnswerDraft("");
+    setScanError(null);
 
-      if (sndAlert.current) {
-        sndAlert.current.play().catch(() => {});
-      }
+    // Important:
+    //  - We do NOT clear scannedStationId
+    //  - We do NOT set scannerActive(true)
+    // Scanning is controlled by room:state when the station actually changes.
 
-      if (
-        typeof timeLimitSeconds === "number" &&
-        timeLimitSeconds > 0
-      ) {
-        setTimeLimitSeconds(timeLimitSeconds);
-      } else {
-        setTimeLimitSeconds(null);
-        setRemainingMs(0);
-      }
-    });
+    if (sndAlert.current) {
+      sndAlert.current.play().catch(() => {});
+    }
+
+    if (
+      typeof timeLimitSeconds === "number" &&
+      timeLimitSeconds > 0
+    ) {
+      setTimeLimitSeconds(timeLimitSeconds);
+    } else {
+      setTimeLimitSeconds(null);
+      setRemainingMs(0);
+    }
+  });
+
 
     // Session complete from server
     socket.on("session:complete", () => {
