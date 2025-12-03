@@ -1266,49 +1266,88 @@ io.on("connection", (socket) => {
     handleStudentSubmit(payload);
   });
 
-  // ------------------------------
-  // Teacher load taskset + location selections
-  // ------------------------------
-  async function handleTeacherLoadTaskset(payload = {}) {
-    const { roomCode, tasksetId, selectedRooms } = payload;
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
+    // ------------------------------
+    // Teacher load taskset + location selections
+    // ------------------------------
+    async function handleTeacherLoadTaskset(payload = {}) {
+      try {
+        const { roomCode, tasksetId, selectedRooms } = payload || {};
+        const code = (roomCode || "").toUpperCase();
 
-    if (!room) return;
+        if (!code || !tasksetId) {
+          console.warn("handleTeacherLoadTaskset: missing roomCode or tasksetId");
+          return;
+        }
 
-    // Multi-room scavenger hunt support
-    if (Array.isArray(selectedRooms) && selectedRooms.length > 0) {
-      room.selectedRooms = selectedRooms;
-      console.log(`Room ${code} → Multi-room scavenger hunt:`, selectedRooms);
-    } else {
-      room.selectedRooms = null;
+        const room = rooms[code];
+        if (!room) {
+          console.warn("handleTeacherLoadTaskset: room not found for", code);
+          return;
+        }
+
+        // Multi-room scavenger hunt support
+        if (Array.isArray(selectedRooms) && selectedRooms.length > 0) {
+          room.selectedRooms = selectedRooms;
+          console.log(`Room ${code} → Multi-room scavenger hunt:`, selectedRooms);
+        } else {
+          room.selectedRooms = null;
+        }
+
+        const tasksetDoc = await TaskSet.findById(tasksetId).lean();
+        if (!tasksetDoc) {
+          console.warn("handleTeacherLoadTaskset: TaskSet not found", tasksetId);
+          socket.emit("taskset:error", { message: "Task Set not found" });
+          return;
+        }
+
+        const tasks = Array.isArray(tasksetDoc.tasks) ? tasksetDoc.tasks : [];
+
+        console.log(
+          `handleTeacherLoadTaskset: loaded taskset ${tasksetId} for room ${code} with ${tasks.length} tasks`
+        );
+
+        // Attach full taskset to room
+        room.taskset = {
+          ...tasksetDoc,
+          tasks,
+        };
+        room.taskIndex = -1;
+        room.isActive = false;
+        room.startedAt = null;
+
+        // Let LiveSession & others refresh their state if needed
+        const state = buildRoomState(room);
+        io.to(code).emit("room:state", state);
+        io.to(code).emit("roomState", state);
+
+        // Notify the teacher client that the taskset is ready
+        socket.emit("tasksetLoaded", {
+          roomCode: code,
+          tasksetId: String(tasksetDoc._id),
+          name:
+            tasksetDoc.name ||
+            tasksetDoc.title ||
+            tasksetDoc.tasksetName ||
+            "Untitled set",
+          numTasks: tasks.length,
+          subject: tasksetDoc.subject || "",
+          gradeLevel: tasksetDoc.gradeLevel || "",
+        });
+      } catch (err) {
+        console.error("Error in handleTeacherLoadTaskset:", err);
+        socket.emit("taskset:error", {
+          message: "Failed to load task set.",
+        });
+      }
     }
 
-    const taskset = await TaskSet.findById(tasksetId).lean();
-    if (!taskset) {
-      socket.emit("taskset:error", { message: "Task Set not found" });
-      return;
-    }
-
-    room.taskset = taskset;
-    room.taskIndex = -1;
-
-    io.to(code).emit("tasksetLoaded", {
-      tasksetId: String(taskset._id),
-      name: taskset.name,
-      numTasks: taskset.tasks.length,
-      subject: taskset.subject,
-      gradeLevel: taskset.gradeLevel,
+    socket.on("teacher:loadTaskset", (payload) => {
+      handleTeacherLoadTaskset(payload || {});
     });
-  }
 
-  socket.on("teacher:loadTaskset", (payload) => {
-    handleTeacherLoadTaskset(payload || {});
-  });
-
-  socket.on("loadTaskset", (payload) => {
-    handleTeacherLoadTaskset(payload || {});
-  });
+    socket.on("loadTaskset", (payload) => {
+      handleTeacherLoadTaskset(payload || {});
+    });
 
   socket.on("teacher:startSession", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
@@ -1354,10 +1393,26 @@ io.on("connection", (socket) => {
   });
 
   // 🚨 IMPORTANT: shared helper to start a taskset for all teams
-  function startTasksetForRoom(roomCode) {
+    function startTasksetForRoom(roomCode) {
     const code = (roomCode || "").trim().toUpperCase();
     const room = rooms[code];
-    if (!room || !room.taskset) return;
+
+    if (!room || !room.taskset) {
+      console.warn("startTasksetForRoom: no room or taskset for", code);
+      return;
+    }
+
+    const tasks = Array.isArray(room.taskset.tasks)
+      ? room.taskset.tasks
+      : [];
+
+    if (tasks.length === 0) {
+      console.warn(
+        "startTasksetForRoom: taskset has no tasks for",
+        code
+      );
+      return;
+    }
 
     room.isActive = true;
     room.startedAt = Date.now();
