@@ -214,8 +214,10 @@ export default function AiTasksetGenerator() {
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
         topicDescription: topicDescriptionForAi,
-        presenterProfile: profile || undefined,
-
+        presenterProfile: {
+          curriculumLenses: profile.curriculumLenses || profile.perspectives || [],
+        }
+        
         // Time-based control
         totalDurationMinutes,
         numberOfTasks: estimatedTaskCount,

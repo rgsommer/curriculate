@@ -2,14 +2,24 @@
 
 import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
-import { TASK_TYPES } from "../../shared/taskTypes.js";
-
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
 // Build a list of implemented AI-eligible task types dynamically:
 const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([type, meta]) => meta.implemented !== false && meta.aiEligible !== false)
+  .filter(
+    ([, meta]) => meta.implemented !== false && meta.aiEligible !== false
+  )
   .map(([type]) => type);
+
+// Fallback to simple core types if metadata is missing / empty
+const coreTypes =
+  AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
+    ? AI_ELIGIBLE_TYPES
+    : [
+        TASK_TYPES.MULTIPLE_CHOICE,
+        TASK_TYPES.TRUE_FALSE,
+        TASK_TYPES.SHORT_ANSWER,
+      ];
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -28,7 +38,9 @@ function validateGeneratePayload(payload = {}) {
   const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
   const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
-  const difficulty = (payload.difficulty || "MEDIUM").toString().toUpperCase();
+  const difficulty = (payload.difficulty || "MEDIUM")
+    .toString()
+    .toUpperCase();
   const learningGoal = (payload.learningGoal || "REVIEW")
     .toString()
     .toUpperCase();
@@ -67,15 +79,15 @@ export const generateAiTaskset = async (req, res) => {
       totalDurationMinutes,
       durationMinutes,
       numberOfTasks,
+
+      // NEW: presenter profile with lenses/perspective
+      presenterProfile,
     } = req.body || {};
 
-    const requestedCount =
-      Number(numberOfTasks) || Number(numTasks) || 8;
+    const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
 
     const duration =
-      Number(totalDurationMinutes) ||
-      Number(durationMinutes) ||
-      45;
+      Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({
@@ -95,9 +107,22 @@ export const generateAiTaskset = async (req, res) => {
     // Safety clamp
     const safeCount = Math.max(4, Math.min(20, requestedCount || 8));
 
-    // We only allow "safe" task types for now – these are guaranteed
-    // to match your schema everywhere. Changed to all Dec 3/2025
-    AI_ELIGIBLE_TYPES;
+    // Resolve curricular lenses / perspectives from presenterProfile
+    let lenses = [];
+    if (
+      presenterProfile &&
+      Array.isArray(presenterProfile.curriculumLenses) &&
+      presenterProfile.curriculumLenses.length
+    ) {
+      lenses = presenterProfile.curriculumLenses;
+    } else if (
+      presenterProfile &&
+      Array.isArray(presenterProfile.perspectives) &&
+      presenterProfile.perspectives.length
+    ) {
+      lenses = presenterProfile.perspectives;
+    }
+    const lensesText = lenses.length ? lenses.join(", ") : "none specified";
 
     // If the frontend passed required/selected types, intersect with coreTypes
     const rawSelected =
@@ -111,14 +136,8 @@ export const generateAiTaskset = async (req, res) => {
       topicTitle ||
       topicDescription?.slice(0, 60) ||
       `${subject || "Lesson"} – AI Task Set`;
-    
+
     // ------------- OpenAI prompt -----------------
-    
-    // At runtime, inside generateTaskset:
-    const effectiveTypes =
-      typePool && typePool.length
-        ? typePool.filter((t) => ALLOWED_TASK_TYPES.includes(t))
-        : ALLOWED_TASK_TYPES;
 
     const systemPrompt = `
 You are an expert classroom teacher using Curriculate, a station-based
@@ -126,9 +145,12 @@ task system. You will generate short, engaging tasks that can be used
 in a 45–60 minute lesson.
 
 Each task must be one of these taskType values ONLY:
-${AI_ELIGIBLE_TYPES.map((t) => `- "${t}"`).join("\n")}
+${coreTypes.map((t) => `- "${t}"`).join("\n")}
 
 You MUST NOT invent any other taskType values.
+
+When curricular lenses / perspectives are provided, you must shape tasks
+so that they naturally reflect those lenses.
 `.trim();
 
     const userPrompt = `
@@ -140,10 +162,13 @@ Create ${safeCount} tasks for:
 - Learning goal: ${normGoal}
 - Topic / description: ${topicDescription || "(general review)"}
 - Approx lesson duration (minutes): ${duration}
+- Curricular lenses / perspectives to emphasize: ${lensesText}
 
 Rules:
-- Mix of the allowed taskTypes only: ${effectiveTypes.join(", ")}.
+- Mix of the allowed taskTypes only: ${typePool.join(", ")}.
 - Each task has a short clear title and prompt.
+- Tasks should, whenever possible, reflect the listed curricular lenses
+  (for example, by connecting content or examples to that perspective).
 - For "${TASK_TYPES.MULTIPLE_CHOICE}":
   - Provide 3–5 options (short strings).
   - correctAnswer is the ZERO-BASED index of the correct option.
@@ -223,16 +248,12 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           taskType === TASK_TYPES.TRUE_FALSE) &&
         options.length > 0
       ) {
-        let idx = Number.isInteger(correctAnswer)
-          ? correctAnswer
-          : 0;
+        let idx = Number.isInteger(correctAnswer) ? correctAnswer : 0;
         if (idx < 0 || idx >= options.length) idx = 0;
         correctAnswer = idx;
       } else if (taskType === TASK_TYPES.SHORT_ANSWER) {
         correctAnswer =
-          typeof correctAnswer === "string"
-            ? correctAnswer
-            : null;
+          typeof correctAnswer === "string" ? correctAnswer : null;
       }
 
       const timeLimitSeconds =
@@ -292,6 +313,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           requestedCount: safeCount,
           typePool,
           customInstructions,
+          lenses,
         },
       },
     });
