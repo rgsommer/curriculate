@@ -200,8 +200,7 @@ function StudentApp() {
                 setTeamId(ack.teamId);
                 setTeamSessionId(parsed.teamSessionId);
 
-                const myTeam =
-                  ack.roomState?.teams?.[ack.teamId || teamSession] || null;
+                const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
 
                 const locLabel = (
                   ack.roomState?.locationCode || DEFAULT_LOCATION
@@ -545,14 +544,16 @@ function StudentApp() {
           );
           setScannerActive(true);
           setScannedStationId(null);
-        } else {
-          lastStationIdRef.current = null;
-          const locLabel = (
-            ack.roomState?.locationCode || DEFAULT_LOCATION
-          ).toUpperCase();
-          setStatusMessage(`Scan a ${locLabel} station.`);
-}
-
+          } else {
+            lastStationIdRef.current = null;
+            const locLabel = (
+              ack.roomState?.locationCode || DEFAULT_LOCATION
+            ).toUpperCase();
+            setStatusMessage(`Scan a ${locLabel} station.`);
+            setScannerActive(true);
+            setScannedStationId(null);
+          }
+        }
     );
 
     console.log("STUDENT: socket.emit('student:join-room') called");
@@ -737,6 +738,7 @@ function StudentApp() {
 
   const mustScan =
     joined &&
+    scannerActive &&                 // only nag when the camera is actually on
     !!assignedStationId &&
     scannedStationId !== assignedStationId;
 
