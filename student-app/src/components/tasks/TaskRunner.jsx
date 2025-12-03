@@ -447,26 +447,38 @@ export default function TaskRunner({
             letterSpacing: "1px",
           }}
         >
-          {displayTitle}
-        </div>
-      )}
-
-      {/* Anchored display banner (only if this task links to a display) */}
-      {currentDisplay && (
-        <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
-          <div className="font-semibold text-slate-800">
-            Look at this station object:
-          </div>
-          <div className="text-slate-900">
-            {currentDisplay.name || currentDisplay.key}
-          </div>
-          {currentDisplay.description && (
-            <div className="mt-1 text-xs text-slate-600">
-              {currentDisplay.description}
+          
+          {/* Anchored display banner */}
+          {displayTitle && (
+            <div className="task-title-fun text-center mb-1">
+              {displayTitle}
             </div>
           )}
         </div>
       )}
+
+      {/* Anchored display banner (only if this task links to a display) */}
+      return (
+      <div className="space-y-3">
+
+        {displayTitle && (
+          <div
+            className="task-title-fun text-center mb-1"
+            style={{
+              fontFamily: '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+              fontSize: "1.4rem",
+              letterSpacing: "1px",
+            }}
+          >
+            {displayTitle}
+          </div>
+        )}
+
+        {/* Actual task UI */}
+        {content}
+      </div>
+    );
+
 
       {/* Actual task UI */}
       {content}
