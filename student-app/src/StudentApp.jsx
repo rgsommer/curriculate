@@ -112,6 +112,25 @@ function formatRemainingMs(ms) {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+function getStationColorStyles(colorName) {
+  if (!colorName) {
+    return { background: "#fef9c3", color: "#111" };
+  }
+  const COLOR_MAP = {
+    red: "#ef4444",
+    blue: "#3b82f6",
+    green: "#22c55e",
+    yellow: "#eab308",
+    purple: "#a855f7",
+    orange: "#f97316",
+    teal: "#14b8a6",
+    pink: "#ec4899",
+  };
+  const bg = COLOR_MAP[colorName] || "#fef9c3";
+  const isLight = ["yellow", "orange", "pink", "teal"].includes(colorName);
+  return { background: bg, color: isLight ? "#111" : "#fff" };
+}
+
 // ---------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------
@@ -1044,7 +1063,7 @@ function StudentApp() {
               marginBottom: 8,
               padding: 12,
               borderRadius: 12,
-              background: "#fef9c3",
+              ...getStationColorStyles(assignedColor),
             }}
           >
             <h2
