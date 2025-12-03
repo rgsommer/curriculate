@@ -4,6 +4,13 @@ import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 
+import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+
+// Build a list of implemented AI-eligible task types dynamically:
+const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([type, meta]) => meta.implemented !== false && meta.aiEligible !== false)
+  .map(([type]) => type);
+
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -89,12 +96,8 @@ export const generateAiTaskset = async (req, res) => {
     const safeCount = Math.max(4, Math.min(20, requestedCount || 8));
 
     // We only allow "safe" task types for now – these are guaranteed
-    // to match your schema everywhere.
-    const coreTypes = [
-      TASK_TYPES.MULTIPLE_CHOICE,
-      TASK_TYPES.TRUE_FALSE,
-      TASK_TYPES.SHORT_ANSWER,
-    ];
+    // to match your schema everywhere. Changed to all Dec 3/2025
+    AI_ELIGIBLE_TYPES;
 
     // If the frontend passed required/selected types, intersect with coreTypes
     const rawSelected =
@@ -108,17 +111,22 @@ export const generateAiTaskset = async (req, res) => {
       topicTitle ||
       topicDescription?.slice(0, 60) ||
       `${subject || "Lesson"} – AI Task Set`;
-
+    
     // ------------- OpenAI prompt -----------------
+    
+    // At runtime, inside generateTaskset:
+    const effectiveTypes =
+      typePool && typePool.length
+        ? typePool.filter((t) => ALLOWED_TASK_TYPES.includes(t))
+        : ALLOWED_TASK_TYPES;
+
     const systemPrompt = `
 You are an expert classroom teacher using Curriculate, a station-based
 task system. You will generate short, engaging tasks that can be used
 in a 45–60 minute lesson.
 
 Each task must be one of these taskType values ONLY:
-- "${TASK_TYPES.MULTIPLE_CHOICE}"
-- "${TASK_TYPES.TRUE_FALSE}"
-- "${TASK_TYPES.SHORT_ANSWER}"
+${AI_ELIGIBLE_TYPES.map((t) => `- "${t}"`).join("\n")}
 
 You MUST NOT invent any other taskType values.
 `.trim();
@@ -134,7 +142,7 @@ Create ${safeCount} tasks for:
 - Approx lesson duration (minutes): ${duration}
 
 Rules:
-- Mix of the allowed taskTypes only: ${typePool.join(", ")}.
+- Mix of the allowed taskTypes only: ${effectiveTypes.join(", ")}.
 - Each task has a short clear title and prompt.
 - For "${TASK_TYPES.MULTIPLE_CHOICE}":
   - Provide 3–5 options (short strings).
