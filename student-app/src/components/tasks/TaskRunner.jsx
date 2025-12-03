@@ -438,14 +438,11 @@ export default function TaskRunner({
   }
 
     return (
-    <div className="space-y-3">
-      {/* Fun task title */}
       {displayTitle && (
         <div
           className="task-title-fun text-center mb-1"
           style={{
-            fontFamily: '"Interstellar Log", sans-serif,
-                        system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontFamily: '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
             fontSize: "1.4rem",
             letterSpacing: "1px",
           }}
