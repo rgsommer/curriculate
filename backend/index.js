@@ -427,18 +427,30 @@ function buildRoomState(room) {
     scores[sub.teamId] += sub.points ?? 0;
   }
 
-  // Derive an "overall" taskIndex for display...
-  let overallTaskIndex =
-    typeof room.taskIndex === "number" ? room.taskIndex : -1;
+  // Detect a one-off Quick Task "taskset" so it doesn’t turn on the
+  // full task-flow UI in LiveSession
+  const isQuickTaskset =
+    !!room.taskset &&
+    room.taskset.name === "Quick task" &&
+    Array.isArray(room.taskset.tasks) &&
+    room.taskset.tasks.length === 1;
 
-  const perTeamIndices = Object.values(room.teams || {}).map((t) =>
-    typeof t.taskIndex === "number" ? t.taskIndex : -1
-  );
+    // Derive an "overall" taskIndex for display...
+  let overallTaskIndex = -1;
 
-  if (perTeamIndices.length > 0) {
-    const maxTeamIndex = Math.max(...perTeamIndices);
-    if (maxTeamIndex > overallTaskIndex) {
-      overallTaskIndex = maxTeamIndex;
+  if (!isQuickTaskset) {
+    overallTaskIndex =
+      typeof room.taskIndex === "number" ? room.taskIndex : -1;
+
+    const perTeamIndices = Object.values(room.teams || {}).map((t) =>
+      typeof t.taskIndex === "number" ? t.taskIndex : -1
+    );
+
+    if (perTeamIndices.length > 0) {
+      const maxTeamIndex = Math.max(...perTeamIndices);
+      if (maxTeamIndex > overallTaskIndex) {
+        overallTaskIndex = maxTeamIndex;
+      }
     }
   }
 
@@ -1484,45 +1496,48 @@ io.on("connection", (socket) => {
     startTasksetForRoom(roomCode);
   });
 
-  // Quick ad-hoc task – completely separate from taskset flow
-  socket.on(
-    "teacherLaunchTask",
-    async ({ roomCode, prompt, correctAnswer }) => {
-      try {
-        const code = (roomCode || "").toUpperCase();
-        if (!code || !prompt) return;
+// Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
+// so that handleStudentSubmit + scoring logic work.
+socket.on(
+  "teacherLaunchTask",
+  async ({ roomCode, prompt, correctAnswer }) => {
+    const code = (roomCode || "").toUpperCase();
+    if (!code || !prompt) return;
 
-        let room = rooms[code];
-        if (!room) {
-          room = rooms[code] = await createRoom(code, socket.id);
-        }
-
-        const task = {
-          taskType: "short-answer",
-          prompt,
-          correctAnswer: correctAnswer || null,
-          points: 10,
-        };
-
-        const timeLimitSeconds =
-          typeof task.timeLimitSeconds === "number"
-            ? task.timeLimitSeconds
-            : 0;
-
-        // IMPORTANT:
-        // Do NOT touch room.taskset or room.taskIndex here.
-        // Quick tasks should NOT start or interfere with the multi-task taskset flow.
-
-        io.to(code).emit("task:launch", {
-          index: null, // one-off; not part of a sequenced taskset
-          task,
-          timeLimitSeconds,
-        });
-      } catch (err) {
-        console.error("Error in teacherLaunchTask:", err);
-      }
+    let room = rooms[code];
+    if (!room) {
+      room = rooms[code] = await createRoom(code, socket.id);
     }
-  );
+
+    const task = {
+      taskType: "short-answer",
+      prompt,
+      correctAnswer: correctAnswer || null,
+      points: 10,
+    };
+
+    // ✅ Attach a tiny, ephemeral taskset so submit has something to look up
+    room.taskset = {
+      name: "Quick task",
+      subject: "Ad-hoc",
+      gradeLevel: "",
+      tasks: [task],
+    };
+
+    // ❌ Do NOT mark a multi-task flow as running here
+    // (leave room.taskIndex alone or explicitly set to -1)
+    room.taskIndex = -1;
+
+    io.to(code).emit("task:launch", {
+      index: 0, // StudentApp will pass this back as taskIndex on submit
+      task,
+      timeLimitSeconds:
+        typeof task.timeLimitSeconds === "number"
+          ? task.timeLimitSeconds
+          : 0,
+    });
+  }
+);
 
   // --------------------------
   // Teacher: random treats config
