@@ -89,6 +89,38 @@ function normalizeStationId(raw) {
   return { id: s, color: null, label: s.toUpperCase() };
 }
 
+function getStationBubbleStyles(colorName) {
+  // Default pale yellow & dark text when no station colour yet
+  if (!colorName) {
+    return {
+      background: "#fef9c3",
+      color: "#111827",
+    };
+  }
+
+  const COLOR_MAP = {
+    red: "#ef4444",
+    blue: "#3b82f6",
+    green: "#22c55e",
+    yellow: "#eab308",
+    purple: "#a855f7",
+    orange: "#f97316",
+    teal: "#14b8a6",
+    pink: "#ec4899",
+  };
+
+  const bg = COLOR_MAP[colorName] || "#fef9c3";
+
+  // Light-ish colours → dark text; dark colours → white text
+  const lightColours = ["yellow", "orange", "teal", "pink"];
+  const isLight = lightColours.includes(colorName);
+
+  return {
+    background: bg,
+    color: isLight ? "#111827" : "#ffffff",
+  };
+}
+
 // ---------------------------------------------------------------------
 // Shared socket instance – same host as backend
 // ---------------------------------------------------------------------
@@ -1063,7 +1095,7 @@ function StudentApp() {
               marginBottom: 8,
               padding: 12,
               borderRadius: 12,
-              ...getStationColorStyles(assignedColor),
+              ...getStationBubbleStyles(assignedColor),
             }}
           >
             <h2
@@ -1079,7 +1111,7 @@ function StudentApp() {
               style={{
                 margin: 0,
                 fontSize: "0.85rem",
-                color: "#4b5563",
+                color: "inherit",
               }}
             >
               {statusMessage}
@@ -1098,16 +1130,32 @@ function StudentApp() {
                 {assignedNorm.label}
               </div>
               {mustScan ? (
-                <div style={{ color: "#b91c1c", marginTop: 2 }}>
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontWeight: 600,
+                    color: "inherit",
+                  }}
+                >
                   {scanPrompt}
                 </div>
               ) : scannedStationId ? (
-                <div style={{ color: "#059669", marginTop: 2 }}>
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "inherit",
+                  }}
+                >
                   Station confirmed ({scannedNorm.label}). Wait for the
                   task.
                 </div>
               ) : (
-                <div style={{ color: "#6b7280", marginTop: 2 }}>
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "inherit",
+                  }}
+                >
                   Waiting for a task…
                 </div>
               )}
