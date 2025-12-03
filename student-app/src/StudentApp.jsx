@@ -131,6 +131,7 @@ function StudentApp() {
   // Persistent identifiers
   const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
   const [teamSessionId, setTeamSessionId] = useState(null);
+  const lastStationIdRef = useRef(null);
 
   // Station + scanner state
   const [assignedStationId, setAssignedStationId] = useState(null);
@@ -264,16 +265,29 @@ function StudentApp() {
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
 
-      if (myTeam.currentStationId) {
-        const norm = normalizeStationId(myTeam.currentStationId);
-        setAssignedStationId(myTeam.currentStationId);
-        setAssignedColor(norm.color || null);
+      const newStationId = myTeam.currentStationId || null;
+      if (!newStationId) return;
+
+      const isNewStation = lastStationIdRef.current !== newStationId;
+      const norm = normalizeStationId(newStationId);
+
+      // Always keep these in sync for UI
+      setAssignedStationId(newStationId);
+      setAssignedColor(norm.color ? norm.color : null);
+
+      // Only force a re-scan when the station actually CHANGES
+      if (isNewStation) {
+        lastStationIdRef.current = newStationId;
+
         setScannedStationId(null);
         setScannerActive(true);
 
         const locLabel = (state.locationCode || DEFAULT_LOCATION).toUpperCase();
         const colourLabel = norm.color ? ` ${norm.color.toUpperCase()}` : "";
         setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
+      } else {
+        // Station is the same as last time → do NOT touch scannerActive or scannedStationId.
+        // This avoids wiping "station confirmed" when another team scans.
       }
     };
 

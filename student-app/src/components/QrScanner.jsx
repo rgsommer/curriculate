@@ -112,7 +112,7 @@ export default function QrScanner({ active, onCode, onError }) {
           return;
         }
 
-        const ctx = c.getContext("2d");
+        const ctx = c.getContext("2d", { willReadFrequently: true });
         const vw = v.videoWidth || 0;
         const vh = v.videoHeight || 0;
 
