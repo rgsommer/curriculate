@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/TaskRunner.jsx
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
 //import VictoryScreen from "./VictoryScreen.jsx";
 
@@ -27,6 +27,16 @@ import MotionMissionTask from "./types/MotionMissionTask";
 import BrainstormBattleTask from "./types/BrainstormBattleTask";
 import MindMapperTask from "./types/MindMapperTask";
 import SpeedDrawTask from "./types/SpeedDrawTask";
+
+// Convert "quick_response" → "Quick Response"
+function toTitleCase(str) {
+  if (!str) return "";
+  return str
+    .replace(/[_-]+/g, " ")         // replace snake_case or kebab-case
+    .replace(/\w\S*/g, (txt) =>
+      txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase()
+    );
+}
 
 /**
  * Normalize any legacy / shorthand strings coming from the backend
@@ -112,18 +122,40 @@ function normalizeTaskType(raw) {
  */
 export default function TaskRunner({
   task,
+  taskTypes,
   onSubmit,
-  disabled,
+  submitting,
   onAnswerChange,
   answerDraft,
 }) {
+  // If somehow no task, render nothing
   if (!task) {
-    return <div className="p-4 text-center">Waiting for next task…</div>;
+    return null;
   }
 
   const t = task;
   const type = normalizeTaskType(t.taskType || t.type);
   const meta = TASK_TYPE_META[type];
+
+  // Log once per task so we can see what the backend is sending
+  console.log("[TaskRunner] Task received:", {
+    rawTask: task,
+    normalizedType: type,
+    metaLabel: meta?.label,
+  });
+
+    // Title from shared TASK_TYPE_META label (e.g., "Quick Response")
+  let displayTitle = "";
+
+  if (meta?.label) {
+    displayTitle = toTitleCase(meta.label);
+  } else if (t.title) {
+    // fallback: backend-provided title
+    displayTitle = toTitleCase(t.title);
+  } else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) {
+    // extra fallback if type didn’t normalize exactly
+    displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
+  }
 
   // Find the physical display this task is anchored to (if any)
   const currentDisplay =
@@ -161,75 +193,98 @@ export default function TaskRunner({
 
   switch (type) {
     case TASK_TYPES.MULTIPLE_CHOICE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <MultipleChoiceTask {...commonProps} />;
-      </div>
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+          <MultipleChoiceTask {...commonProps} />
+        </div>
+      );
       break;
 
     case TASK_TYPES.TRUE_FALSE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <TrueFalseTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.SORT:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <SortTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.SEQUENCE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <SequenceTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.PHOTO:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <PhotoTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.MAKE_AND_SNAP:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <MakeAndSnapTask {...commonProps} />;
       </div>
+      );
       break;
 
     // DRAW and MIME both use the unified DrawMimeTask UI
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <DrawMimeTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.BODY_BREAK:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <BodyBreakTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.OPEN_TEXT:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <OpenTextTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.RECORD_AUDIO:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <RecordAudioTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.SHORT_ANSWER:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <ShortAnswerTask {...commonProps} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.COLLABORATION:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <CollaborationTask
           {...commonProps}
@@ -239,10 +294,12 @@ export default function TaskRunner({
         />
         );
         </div>
+      );
       break;
       
     case TASK_TYPES.MUSICAL_CHAIRS:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <MusicalChairsTask
           task={task}
@@ -252,16 +309,20 @@ export default function TaskRunner({
         />
       );
       </div>
+      );
       break;
 
     case TASK_TYPES.MYSTERY_CLUES:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <MysteryCluesTask task={task} onSubmit={onSubmit} disabled={disabled} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <TrueFalseTicTacToeTask
           task={task}
@@ -272,10 +333,12 @@ export default function TaskRunner({
         />
       );
       </div>
+      );
       break;
 
     case TASK_TYPES.MAD_DASH_SEQUENCE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div lassName="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <MadDashSequenceTask
           task={task}
@@ -285,10 +348,12 @@ export default function TaskRunner({
         />
         );
       </div>
+      );
       break;
 
     case TASK_TYPES.LIVE_DEBATE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <LiveDebateTask
           task={task}
@@ -299,48 +364,62 @@ export default function TaskRunner({
         />
         );
       </div>
+      );
       break;
 
     case TASK_TYPES.FLASHCARDS:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <FlashcardsTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.TIMELINE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <TimelineTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.PET_FEEDING:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <PetFeedingTask task={task} onSubmit={onSubmit} disabled={disabled} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.MOTION_MISSION:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <MotionMissionTask task={task} onSubmit={onSubmit} disabled={disabled} />;
       </div>
+      );
       break;
 
     case TASK_TYPES.BRAINSTORM_BATTLE:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = <BrainstormBattleTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
       </div>
       break;
 
     case TASK_TYPES.MIND_MAPPER:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <MindMapperTask task={task} onSubmit={onSubmit} disabled={disabled} />;
       </div>
+      );
       break;
  
     case TASK_TYPES.SPEED_DRAW:
-      <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
+      content = (
+        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
         content = <SpeedDrawTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
       </div>
+      );
       break;
 
     default:
@@ -357,8 +436,23 @@ export default function TaskRunner({
       );
   }
 
-  return (
+    return (
     <div className="space-y-3">
+      {/* Fun task title */}
+      {displayTitle && (
+        <div
+          className="task-title-fun text-center mb-1"
+          style={{
+            fontFamily: '"Interstellar Log", sans-serif,
+                        system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontSize: "1.4rem",
+            letterSpacing: "1px",
+          }}
+        >
+          {displayTitle}
+        </div>
+      )}
+
       {/* Anchored display banner (only if this task links to a display) */}
       {currentDisplay && (
         <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
