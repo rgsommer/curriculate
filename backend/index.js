@@ -261,20 +261,38 @@ function reassignStations(room) {
 }
 
 // Reassign only a single team's station
+// Reassign only a single team's station, ensuring uniqueness
+// Reassign only a single team's station, ensuring uniqueness
 function reassignStationForTeam(room, teamId) {
   const stationIds = Object.keys(room.stations || {});
   if (stationIds.length === 0) return;
-  const team = room.teams[teamId];
+
+  const team = room.teams?.[teamId];
   if (!team) return;
 
-  const current = team.currentStationId;
-  let nextIndex = 0;
-  if (current) {
-    const idx = stationIds.indexOf(current);
-    nextIndex = idx >= 0 ? (idx + 1) % stationIds.length : 0;
-  }
-  const nextStationId = stationIds[nextIndex];
+  const current = team.currentStationId || null;
 
+  // Stations occupied by OTHER teams
+  const occupiedByOthers = new Set(
+    Object.entries(room.stations || {})
+      .filter(([id, s]) => s.assignedTeamId && s.assignedTeamId !== teamId)
+      .map(([id]) => id)
+  );
+
+  // Prefer stations that are:
+  //  - not the current one
+  //  - not occupied by other teams
+  const candidates = stationIds.filter(
+    (id) => id !== current && !occupiedByOthers.has(id)
+  );
+
+  // Fallbacks if all stations are technically “occupied”
+  const nextStationId =
+    candidates[0] ||
+    stationIds.find((id) => id !== current) ||
+    stationIds[0];
+
+  // Clear old station assignment (for this team)
   if (
     current &&
     room.stations[current] &&
@@ -283,6 +301,7 @@ function reassignStationForTeam(room, teamId) {
     room.stations[current].assignedTeamId = null;
   }
 
+  // Set new station
   team.currentStationId = nextStationId;
   team.lastScannedStationId = null;
 
@@ -869,32 +888,28 @@ io.on("connection", (socket) => {
         lastSeenAt: new Date(),
       };
 
-      // Ensure stations exist
-      if (!room.stations || Object.keys(room.stations).length === 0) {
-        room.stations = {};
-        const NUM_STATIONS = 8;
-        for (let i = 1; i <= NUM_STATIONS; i++) {
-          const id = `station-${i}`;
-          room.stations[id] = { id, assignedTeamId: null };
-        }
-      }
-
-      // Auto-assign first available station
+      // Auto-assign first available station (UNIQUE per team)
       if (!room.teams[teamId].currentStationId) {
         const stationIds = Object.keys(room.stations);
+
+        // Stations already taken by *any* team
         const taken = new Set(
           Object.values(room.teams)
             .map((t) => t.currentStationId)
             .filter(Boolean)
         );
+
+        // Prefer stations that are not taken
         const available = stationIds.filter((id) => !taken.has(id));
+
         const assignedId = available[0] || stationIds[0] || null;
 
         room.teams[teamId].currentStationId = assignedId;
+
         if (assignedId && room.stations[assignedId]) {
           room.stations[assignedId].assignedTeamId = teamId;
         }
-      }
+}
 
       // Broadcast new room state
       const state = buildRoomState(room);
