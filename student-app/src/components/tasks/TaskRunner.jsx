@@ -1,7 +1,7 @@
 // student-app/src/components/tasks/TaskRunner.jsx
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
-//import VictoryScreen from "./VictoryScreen.jsx";
+// import VictoryScreen from "./VictoryScreen.jsx";
 
 import BodyBreakTask from "./types/BodyBreakTask";
 import MakeAndSnapTask from "./types/MakeAndSnapTask";
@@ -32,7 +32,7 @@ import SpeedDrawTask from "./types/SpeedDrawTask";
 function toTitleCase(str) {
   if (!str) return "";
   return str
-    .replace(/[_-]+/g, " ")         // replace snake_case or kebab-case
+    .replace(/[_-]+/g, " ") // replace snake_case or kebab-case
     .replace(/\w\S*/g, (txt) =>
       txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase()
     );
@@ -86,7 +86,7 @@ function normalizeTaskType(raw) {
     case "record_audio":
       return TASK_TYPES.RECORD_AUDIO;
 
-    // NEW: map raw strings to DRAW and MIME
+    // DRAW and MIME map to the unified DrawMimeTask UI
     case "Draw":
     case "draw":
     case "drawing":
@@ -109,24 +109,21 @@ function normalizeTaskType(raw) {
  * Props:
  *  - task:           the current task object from the server
  *  - onSubmit:       function(answer: any) => void
- *  - disabled:       boolean – if true, disable interaction & submit
+ *  - submitting:     boolean – while true, submit button / inputs should be disabled
+ *  - disabled:       boolean – additional flag to disable interaction
  *  - onAnswerChange: (optional) function(draft: any) => void
- *                    used by StudentApp to track live drafts for timeout
  *  - answerDraft:    (optional) current draft value from parent
- *
- * Anchored displays:
- *  The server sends each task with:
- *    - task.displayKey   → string key of the linked display
- *    - task.displays     → array of { key, name, description, stationColor, ... }
- *  (emitted as: { ...task, displays: taskSet.displays })
+ *  - socket:         (optional) socket.io client – passed to tasks that need it
  */
 export default function TaskRunner({
   task,
-  taskTypes,
+  taskTypes, // currently unused but kept for compatibility
   onSubmit,
-  submitting,
+  submitting = false,
   onAnswerChange,
   answerDraft,
+  disabled = false,
+  socket,
 }) {
   // If somehow no task, render nothing
   if (!task) {
@@ -137,6 +134,8 @@ export default function TaskRunner({
   const type = normalizeTaskType(t.taskType || t.type);
   const meta = TASK_TYPE_META[type];
 
+  const effectiveDisabled = disabled || submitting;
+
   // Log once per task so we can see what the backend is sending
   console.log("[TaskRunner] Task received:", {
     rawTask: task,
@@ -144,9 +143,8 @@ export default function TaskRunner({
     metaLabel: meta?.label,
   });
 
-    // Title from shared TASK_TYPE_META label (e.g., "Quick Response")
+  // Title from shared TASK_TYPE_META label (e.g., "Quick Response")
   let displayTitle = "";
-
   if (meta?.label) {
     displayTitle = toTitleCase(meta.label);
   } else if (t.title) {
@@ -178,13 +176,11 @@ export default function TaskRunner({
     );
   }
 
-  // Common props passed to all concrete task components.
-  // onAnswerChange + answerDraft are optional; components may ignore them
-  // if they do not support draft tracking.
+  // Common props passed to many task components
   const commonProps = {
     task: t,
     onSubmit,
-    disabled,
+    disabled: effectiveDisabled,
     onAnswerChange,
     answerDraft,
   };
@@ -193,233 +189,193 @@ export default function TaskRunner({
 
   switch (type) {
     case TASK_TYPES.MULTIPLE_CHOICE:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-          <MultipleChoiceTask {...commonProps} />
-        </div>
-      );
+      content = <MultipleChoiceTask {...commonProps} />;
       break;
 
     case TASK_TYPES.TRUE_FALSE:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <TrueFalseTask {...commonProps} />;
-      </div>
-      );
+      content = <TrueFalseTask {...commonProps} />;
       break;
 
     case TASK_TYPES.SORT:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <SortTask {...commonProps} />;
-      </div>
-      );
+      content = <SortTask {...commonProps} />;
       break;
 
     case TASK_TYPES.SEQUENCE:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <SequenceTask {...commonProps} />;
-      </div>
-      );
+      content = <SequenceTask {...commonProps} />;
       break;
 
     case TASK_TYPES.PHOTO:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <PhotoTask {...commonProps} />;
-      </div>
-      );
+      content = <PhotoTask {...commonProps} />;
       break;
 
     case TASK_TYPES.MAKE_AND_SNAP:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <MakeAndSnapTask {...commonProps} />;
-      </div>
-      );
+      content = <MakeAndSnapTask {...commonProps} />;
       break;
 
-    // DRAW and MIME both use the unified DrawMimeTask UI
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <DrawMimeTask {...commonProps} />;
-      </div>
-      );
+      content = <DrawMimeTask {...commonProps} />;
       break;
 
     case TASK_TYPES.BODY_BREAK:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <BodyBreakTask {...commonProps} />;
-      </div>
-      );
+      content = <BodyBreakTask {...commonProps} />;
       break;
 
     case TASK_TYPES.OPEN_TEXT:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <OpenTextTask {...commonProps} />;
-      </div>
-      );
+      content = <OpenTextTask {...commonProps} />;
       break;
 
     case TASK_TYPES.RECORD_AUDIO:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <RecordAudioTask {...commonProps} />;
-      </div>
-      );
+      content = <RecordAudioTask {...commonProps} />;
       break;
 
     case TASK_TYPES.SHORT_ANSWER:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <ShortAnswerTask {...commonProps} />;
-      </div>
-      );
+      content = <ShortAnswerTask {...commonProps} />;
       break;
 
     case TASK_TYPES.COLLABORATION:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <CollaborationTask
           {...commonProps}
           partnerAnswer={task.partnerAnswer}
           showPartnerReply={!!task.partnerAnswer}
-          onPartnerReply={(reply) => onSubmit({ reply })}
+          onPartnerReply={(reply) => onSubmit && onSubmit({ reply })}
         />
-        );
-        </div>
       );
       break;
-      
+
     case TASK_TYPES.MUSICAL_CHAIRS:
-      content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
       content = (
         <MusicalChairsTask
           task={task}
           onSubmit={onSubmit}
-          disabled={disabled}
+          disabled={effectiveDisabled}
           socket={socket}
         />
-      );
-      </div>
       );
       break;
 
     case TASK_TYPES.MYSTERY_CLUES:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <MysteryCluesTask task={task} onSubmit={onSubmit} disabled={disabled} />;
-      </div>
+        <MysteryCluesTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
 
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-      content = (
         <TrueFalseTicTacToeTask
           task={task}
           onSubmit={onSubmit}
-          disabled={disabled}
+          disabled={effectiveDisabled}
           socket={socket}
           teamRole={task.teamRole}
         />
-      );
-      </div>
       );
       break;
 
     case TASK_TYPES.MAD_DASH_SEQUENCE:
       content = (
-        <div lassName="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-      content = (
         <MadDashSequenceTask
           task={task}
           onSubmit={onSubmit}
-          disabled={disabled}
+          disabled={effectiveDisabled}
           socket={socket}
         />
-        );
-      </div>
       );
       break;
 
     case TASK_TYPES.LIVE_DEBATE:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-      content = (
         <LiveDebateTask
           task={task}
           onSubmit={onSubmit}
-          disabled={disabled}
+          disabled={effectiveDisabled}
           socket={socket}
-          teamMembers={task.teamMembers || ["Alice", "Bob", "Charlie", "Dana"]}
+          teamMembers={task.teamMembers || [
+            "Alice",
+            "Bob",
+            "Charlie",
+            "Dana",
+          ]}
         />
-        );
-      </div>
       );
       break;
 
     case TASK_TYPES.FLASHCARDS:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <FlashcardsTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
-      </div>
+        <FlashcardsTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
       );
       break;
 
     case TASK_TYPES.TIMELINE:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <TimelineTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
-      </div>
+        <TimelineTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
       );
       break;
 
     case TASK_TYPES.PET_FEEDING:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <PetFeedingTask task={task} onSubmit={onSubmit} disabled={disabled} />;
-      </div>
+        <PetFeedingTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
 
     case TASK_TYPES.MOTION_MISSION:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <MotionMissionTask task={task} onSubmit={onSubmit} disabled={disabled} />;
-      </div>
+        <MotionMissionTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
 
     case TASK_TYPES.BRAINSTORM_BATTLE:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-      content = <BrainstormBattleTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
-      </div>
+        <BrainstormBattleTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
       );
       break;
 
     case TASK_TYPES.MIND_MAPPER:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <MindMapperTask task={task} onSubmit={onSubmit} disabled={disabled} />;
-      </div>
+        <MindMapperTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
- 
+
     case TASK_TYPES.SPEED_DRAW:
       content = (
-        <div className="h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white overflow-hidden">
-        content = <SpeedDrawTask task={task} onSubmit={onSubmit} disabled={disabled} socket={socket} />;
-      </div>
+        <SpeedDrawTask
+          task={task}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
       );
       break;
 
@@ -437,48 +393,39 @@ export default function TaskRunner({
       );
   }
 
-    return (
+  return (
+    <div className="space-y-3">
+      {/* Fun task title */}
       {displayTitle && (
         <div
           className="task-title-fun text-center mb-1"
           style={{
-            fontFamily: '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontFamily:
+              '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
             fontSize: "1.4rem",
             letterSpacing: "1px",
           }}
         >
-          
-          {/* Anchored display banner */}
-          {displayTitle && (
-            <div className="task-title-fun text-center mb-1">
-              {displayTitle}
-            </div>
-          )}
+          {displayTitle}
         </div>
       )}
 
       {/* Anchored display banner (only if this task links to a display) */}
-      return (
-      <div className="space-y-3">
-
-        {displayTitle && (
-          <div
-            className="task-title-fun text-center mb-1"
-            style={{
-              fontFamily: '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-              fontSize: "1.4rem",
-              letterSpacing: "1px",
-            }}
-          >
-            {displayTitle}
+      {currentDisplay && (
+        <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+          <div className="font-semibold text-slate-800">
+            Look at this station object:
           </div>
-        )}
-
-        {/* Actual task UI */}
-        {content}
-      </div>
-    );
-
+          <div className="text-slate-900">
+            {currentDisplay.name || currentDisplay.key}
+          </div>
+          {currentDisplay.description && (
+            <div className="mt-1 text-xs text-slate-600">
+              {currentDisplay.description}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Actual task UI */}
       {content}
