@@ -1484,37 +1484,45 @@ io.on("connection", (socket) => {
     startTasksetForRoom(roomCode);
   });
 
-  // Quick ad-hoc task
-  socket.on("teacherLaunchTask", async ({ roomCode, prompt, correctAnswer }) => {
-    const code = (roomCode || "").toUpperCase();
-    if (!code || !prompt) return;
+  // Quick ad-hoc task – completely separate from taskset flow
+  socket.on(
+    "teacherLaunchTask",
+    async ({ roomCode, prompt, correctAnswer }) => {
+      try {
+        const code = (roomCode || "").toUpperCase();
+        if (!code || !prompt) return;
 
-    let room = rooms[code];
-    if (!room) {
-      room = rooms[code] = await createRoom(code, socket.id);
+        let room = rooms[code];
+        if (!room) {
+          room = rooms[code] = await createRoom(code, socket.id);
+        }
+
+        const task = {
+          taskType: "short-answer",
+          prompt,
+          correctAnswer: correctAnswer || null,
+          points: 10,
+        };
+
+        const timeLimitSeconds =
+          typeof task.timeLimitSeconds === "number"
+            ? task.timeLimitSeconds
+            : 0;
+
+        // IMPORTANT:
+        // Do NOT touch room.taskset or room.taskIndex here.
+        // Quick tasks should NOT start or interfere with the multi-task taskset flow.
+
+        io.to(code).emit("task:launch", {
+          index: null, // one-off; not part of a sequenced taskset
+          task,
+          timeLimitSeconds,
+        });
+      } catch (err) {
+        console.error("Error in teacherLaunchTask:", err);
+      }
     }
-
-    const task = {
-      taskType: "short-answer",
-      prompt,
-      correctAnswer: correctAnswer || null,
-      points: 10,
-    };
-
-    room.taskset = {
-      name: "Quick task",
-      subject: "Ad-hoc",
-      gradeLevel: "",
-      tasks: [task],
-    };
-    room.taskIndex = 0;
-
-    io.to(code).emit("task:launch", {
-      index: 0,
-      task,
-      timeLimitSeconds: task.timeLimitSeconds ?? 0,
-    });
-  });
+  );
 
   // --------------------------
   // Teacher: random treats config
