@@ -201,32 +201,31 @@ function StudentApp() {
                 setTeamSessionId(parsed.teamSessionId);
 
                 const myTeam =
-                  ack.roomState?.teams?.[ack.teamId] || null;
+                  ack.roomState?.teams?.[ack.teamId || teamSession] || null;
+
+                const locLabel = (
+                  ack.roomState?.locationCode || DEFAULT_LOCATION
+                ).toUpperCase();
+
                 if (myTeam?.currentStationId) {
-                  const norm = normalizeStationId(
-                    myTeam.currentStationId
-                  );
+                  const norm = normalizeStationId(myTeam.currentStationId);
                   setAssignedStationId(myTeam.currentStationId);
                   setAssignedColor(norm.color || null);
+                  setScannedStationId(null);
+                  setScannerActive(true);
 
-                  const locLabel = (
-                    ack.roomState?.locationCode || DEFAULT_LOCATION
-                  ).toUpperCase();
+                  // 🔑 Seed lastStationId so next room:state doesn't force a fake "new" station
+                  lastStationIdRef.current = myTeam.currentStationId;
+
                   const colourLabel = norm.color
                     ? ` ${norm.color.toUpperCase()}`
                     : "";
-                  setStatusMessage(
-                    `Scan a ${locLabel}${colourLabel} station.`
-                  );
-                  setScannerActive(true);
-                  setScannedStationId(null);
+                  setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
                 } else {
-                  const locLabel = (
-                    ack.roomState?.locationCode || DEFAULT_LOCATION
-                  ).toUpperCase();
+                  lastStationIdRef.current = null;
                   setStatusMessage(`Scan a ${locLabel} station.`);
+                  setScannerActive(true);
                 }
-              }
             );
           }
         }
@@ -526,28 +525,34 @@ function StudentApp() {
         }
 
         const myTeam =
-          ack.roomState?.teams?.[ack.teamId || teamSession] || null;
-
-        const locLabel = (
-          ack.roomState?.locationCode || DEFAULT_LOCATION
-        ).toUpperCase();
-
+          ack.roomState?.teams?.[ack.teamId] || null;
         if (myTeam?.currentStationId) {
           const norm = normalizeStationId(myTeam.currentStationId);
           setAssignedStationId(myTeam.currentStationId);
           setAssignedColor(norm.color || null);
-          setScannedStationId(null);
-          setScannerActive(true);
 
+          // 🔑 Seed lastStationId so later room:state doesn't look "new"
+          lastStationIdRef.current = myTeam.currentStationId;
+
+          const locLabel = (
+            ack.roomState?.locationCode || DEFAULT_LOCATION
+          ).toUpperCase();
           const colourLabel = norm.color
             ? ` ${norm.color.toUpperCase()}`
             : "";
-          setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
-        } else {
-          setStatusMessage(`Scan a ${locLabel} station.`);
+          setStatusMessage(
+            `Scan a ${locLabel}${colourLabel} station.`
+          );
           setScannerActive(true);
-        }
-      }
+          setScannedStationId(null);
+        } else {
+          lastStationIdRef.current = null;
+          const locLabel = (
+            ack.roomState?.locationCode || DEFAULT_LOCATION
+          ).toUpperCase();
+          setStatusMessage(`Scan a ${locLabel} station.`);
+}
+
     );
 
     console.log("STUDENT: socket.emit('student:join-room') called");
