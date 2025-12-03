@@ -169,7 +169,7 @@ function StudentApp() {
   // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
 
-  useEffect(() => {
+    useEffect(() => {
     const handleConnect = () => {
       console.log("SOCKET: Connected", socket.id);
       setConnected(true);
@@ -177,59 +177,64 @@ function StudentApp() {
       // Try to resume from localStorage
       try {
         const stored = localStorage.getItem("teamSession");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.roomCode && parsed.teamSessionId) {
-            console.log("Attempting resume-team-session with", parsed);
-            socket.emit(
-              "resume-team-session",
-              {
-                roomCode: parsed.roomCode.toUpperCase(),
-                teamSessionId: parsed.teamSessionId,
-              },
-              (ack) => {
-                console.log("resume-team-session ack:", ack);
-                if (!ack?.success) {
-                  console.warn("Resume failed:", ack?.error);
-                  localStorage.removeItem("teamSession");
-                  return;
-                }
+        if (!stored) return;
 
-                setJoined(true);
-                setRoomCode(parsed.roomCode.toUpperCase());
-                setTeamId(ack.teamId);
-                setTeamSessionId(parsed.teamSessionId);
+        const parsed = JSON.parse(stored);
+        if (!parsed.roomCode || !parsed.teamSessionId) return;
 
-                const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
+        console.log("Attempting resume-team-session with", parsed);
+        socket.emit(
+          "resume-team-session",
+          {
+            roomCode: parsed.roomCode.toUpperCase(),
+            teamSessionId: parsed.teamSessionId,
+          },
+          (ack) => {
+            console.log("resume-team-session ack:", ack);
+            if (!ack?.success) {
+              console.warn("Resume failed:", ack?.error);
+              localStorage.removeItem("teamSession");
+              return;
+            }
 
-                const locLabel = (
-                  ack.roomState?.locationCode || DEFAULT_LOCATION
-                ).toUpperCase();
+            setJoined(true);
+            setRoomCode(parsed.roomCode.toUpperCase());
+            setTeamId(ack.teamId);
+            setTeamSessionId(parsed.teamSessionId);
 
-                if (myTeam?.currentStationId) {
-                  const norm = normalizeStationId(myTeam.currentStationId);
-                  setAssignedStationId(myTeam.currentStationId);
-                  setAssignedColor(norm.color || null);
-                  setScannedStationId(null);
-                  setScannerActive(true);
+            const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
+            const locLabel = (
+              ack.roomState?.locationCode || DEFAULT_LOCATION
+            ).toUpperCase();
 
-                  // 🔑 Seed lastStationId so next room:state doesn't force a fake "new" station
-                  lastStationIdRef.current = myTeam.currentStationId;
+            if (myTeam?.currentStationId) {
+              const norm = normalizeStationId(myTeam.currentStationId);
+              setAssignedStationId(myTeam.currentStationId);
+              setAssignedColor(norm.color || null);
+              setScannedStationId(null);
+              setScannerActive(true);
 
-                  const colourLabel = norm.color
-                    ? ` ${norm.color.toUpperCase()}`
-                    : "";
-                  setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
-                } else {
-                  lastStationIdRef.current = null;
-                  setStatusMessage(`Scan a ${locLabel} station.`);
-                  setScannerActive(true);
-                }
-            );
+              // 🔑 Seed lastStationId so next room:state doesn't force a fake "new" station
+              lastStationIdRef.current = myTeam.currentStationId;
+
+              const colourLabel = norm.color
+                ? ` ${norm.color.toUpperCase()}`
+                : "";
+              setStatusMessage(
+                `Scan a ${locLabel}${colourLabel} station.`
+              );
+            } else {
+              lastStationIdRef.current = null;
+              setStatusMessage(`Scan a ${locLabel} station.`);
+              setScannerActive(true);
+            }
           }
-        }
+        );
       } catch (err) {
-        console.warn("Error reading teamSession from localStorage:", err);
+        console.warn(
+          "Error reading teamSession from localStorage:",
+          err
+        );
       }
     };
 
