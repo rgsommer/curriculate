@@ -1,6 +1,6 @@
 // teacher-app/src/pages/AiTasksetGenerator.jsx
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { fetchMyProfile } from "../api/profile";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
@@ -37,9 +37,17 @@ const TASK_TYPES = [
 ];
 
 export default function AiTasksetGenerator() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // If we arrived here from "Create new task set with unused words"
+  const prefillWordList = location.state?.prefillWordList || [];
+  const prefillWordText = prefillWordList.length
+    ? prefillWordList.join("\n")
+    : "";
+
   const [profile, setProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
-  const navigate = useNavigate();
 
   const [form, setForm] = useState({
     name: "",
@@ -61,6 +69,9 @@ export default function AiTasksetGenerator() {
   // Limit to specific task types
   const [limitTasks, setLimitTasks] = useState(false);
   const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
+
+  // Vocabulary / key terms
+  const [wordListText, setWordListText] = useState(prefillWordText);
 
   // Load presenter profile to prefill defaults
   useEffect(() => {
@@ -207,6 +218,18 @@ export default function AiTasksetGenerator() {
         )}. Repeat types if needed to fill the duration. Do not use any other types.`;
       }
 
+      // Presenter profile lenses
+      const curriculumLenses =
+        (profile &&
+          (profile.curriculumLenses || profile.perspectives)) ||
+        [];
+
+      // Turn the text area into an array of words/terms
+      const aiWordBank = wordListText
+        .split(/[\n,;]+/)
+        .map((w) => w.trim())
+        .filter(Boolean);
+
       const payload = {
         // Core planning context
         gradeLevel: form.gradeLevel,
@@ -214,10 +237,11 @@ export default function AiTasksetGenerator() {
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
         topicDescription: topicDescriptionForAi,
-        presenterProfile: {
-          curriculumLenses: profile.curriculumLenses || profile.perspectives || [],
-        }
-        
+        presenterProfile: { curriculumLenses },
+
+        // 🔹 Word bank for “used vs not used” tracking
+        aiWordBank,
+
         // Time-based control
         totalDurationMinutes,
         numberOfTasks: estimatedTaskCount,
@@ -492,6 +516,42 @@ export default function AiTasksetGenerator() {
                 resize: "vertical",
               }}
             />
+          </div>
+
+          {/* Vocabulary / key terms */}
+          <div style={{ marginBottom: 12 }}>
+            <label
+              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+            >
+              Vocabulary / key terms (optional)
+            </label>
+            <textarea
+              value={wordListText}
+              onChange={(e) => setWordListText(e.target.value)}
+              rows={4}
+              placeholder={
+                "One term per line or separated by commas, e.g.\nConfederation\nProvince\nTreaty of Paris"
+              }
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+                resize: "vertical",
+              }}
+            />
+            <p
+              style={{
+                marginTop: 4,
+                fontSize: "0.8rem",
+                color: "#6b7280",
+              }}
+            >
+              These words will be tracked as “used” vs “not yet used” when the
+              AI builds your task set, so you can quickly make a second set
+              with the leftovers.
+            </p>
           </div>
 
           <div
