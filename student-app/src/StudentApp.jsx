@@ -163,6 +163,14 @@ function getStationColorStyles(colorName) {
   return { background: bg, color: isLight ? "#111" : "#fff" };
 }
 
+// 🔹 New helper: normalise locations like "Room 12" → "room12", "Rm. 202" → "rm202"
+function normalizeLocationSlug(raw) {
+  if (!raw) return "";
+  return String(raw)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
 // ---------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------
@@ -211,6 +219,9 @@ function StudentApp() {
   });
   const [treatMessage, setTreatMessage] = useState(null);
 
+  // Whether to enforce location as well as colour (fixed-station / multi-room scavenger hunts)
+  const [enforceLocation, setEnforceLocation] = useState(false);
+
   // Audio
   const [audioContext, setAudioContext] = useState(null);
   const sndAlert = useRef(null);
@@ -250,6 +261,9 @@ function StudentApp() {
               localStorage.removeItem("teamSession");
               return;
             }
+
+            // Set from room state on resume as well
+            setEnforceLocation(!!ack.roomState?.enforceLocation);
 
             setJoined(true);
             setRoomCode(parsed.roomCode.toUpperCase());
@@ -321,6 +335,14 @@ function StudentApp() {
       if (!state || !teamId) return;
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
+      
+      if (state.locationCode) {
+        setRoomLocation(state.locationCode);
+        roomLocationFromStateRef.current = state.locationCode;
+      }
+
+      // Backend decides when location must be enforced (fixed-station / multi-room)
+      setEnforceLocation(!!state.enforceLocation);
 
       const newStationId = myTeam.currentStationId || null;
       if (!newStationId) return;
@@ -534,6 +556,11 @@ function StudentApp() {
     setJoiningRoom(true);
     setStatusMessage(`Joining Room ${finalRoom}…`);
 
+    if (ack.roomState?.locationCode) {
+      setRoomLocation(ack.roomState.locationCode);
+      roomLocationFromStateRef.current = ack.roomState.locationCode;
+    }
+
     // TIMEOUT SAFETY — if no ack in 8 seconds, fail
     const timeoutId = setTimeout(() => {
       console.error(
@@ -583,6 +610,9 @@ function StudentApp() {
         } catch (err) {
           console.warn("Unable to persist teamSession:", err);
         }
+
+        // Fixed-station / multi-room is signaled from the room state
+        setEnforceLocation(!!ack.roomState?.enforceLocation);
 
         const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
         const locLabel = (
@@ -661,13 +691,21 @@ function StudentApp() {
       }
 
       // Keep ProperCase for location (e.g. "Classroom"), lowercase for colour
-      const location =
+      const locationRaw =
         segments[segments.length - 2] || DEFAULT_LOCATION;
       const colour = segments[segments.length - 1].toLowerCase();
 
+      // Normalised slugs (spaces/punctuation stripped) – ready for multi-room use
+      const scannedLocationSlug = normalizeLocationSlug(locationRaw);
+      const defaultLocationSlug = normalizeLocationSlug(DEFAULT_LOCATION);
+
       const assignedNorm = normalizeStationId(assignedStationId);
       const assignedColour = assignedNorm.color; // "red", "blue", etc.
-      const assignedLocation = DEFAULT_LOCATION;
+      const assignedLocationSlug = normalizeLocationSlug(DEFAULT_LOCATION);
+      const [roomLocation, setRoomLocation] = useState(DEFAULT_LOCATION);
+
+      // For stable reference when building prompts
+      const roomLocationFromStateRef = useRef(DEFAULT_LOCATION);
 
       if (!assignedColour) {
         setScanError(
@@ -676,9 +714,19 @@ function StudentApp() {
         return false;
       }
 
-      if (location !== assignedLocation || colour !== assignedColour) {
-        const scannedLabel = `${location}/${colour}`;
-        const correctLabel = `${assignedLocation}/${assignedColour}`;
+      // If this room/taskset is marked as fixed-station / multi-room,
+      // require BOTH location slug AND colour to match.
+      if (enforceLocation && scannedLocationSlug !== normalizeLocationSlug(roomLocationFromStateRef.current)) {
+        setScanError(
+          `Wrong station.\n\nYou scanned: ${locationRaw.toUpperCase()}/${colour.toUpperCase()}.\nExpected: ${roomLocationFromStateRef.current.toUpperCase()}/${assignedColour.toUpperCase()}.`
+        );
+        return false;
+      }
+
+      // Always enforce colour.
+      if (colour !== assignedColour) {
+        const scannedLabel = `${locationRaw}/${colour}`;
+        const correctLabel = `${DEFAULT_LOCATION}/${assignedColour}`;
         setScanError(
           `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\n\nCorrect: ${correctLabel}.\n\nPlease go to the correct station and try again.`
         );
@@ -803,11 +851,35 @@ function StudentApp() {
     !!assignedStationId &&
     scannedStationId !== assignedStationId;
 
-  const locLabelForScan = DEFAULT_LOCATION.toUpperCase();
   const colourLabelForScan = assignedNorm.color
     ? ` ${assignedNorm.color.toUpperCase()}`
     : "";
-  const scanPrompt = `Scan a ${locLabelForScan}${colourLabelForScan} station.`;
+  
+    const assignedColour = assignedNorm.color;
+
+  // Normalized display location for prompt (use roomState.locationCode when available)
+  const displayLocation =
+    (roomLocationFromStateRef?.current || DEFAULT_LOCATION).toUpperCase();
+
+  // Build the scan prompt:
+  // - If multi-room / fixed-station (enforceLocation === true):
+  //     "Scan your HALLWAY RED station."
+  // - Otherwise:
+  //     "Scan your RED station."
+  let scanPrompt = "";
+
+  if (assignedColour) {
+    const colorLabel = assignedColour.toUpperCase();
+
+    if (enforceLocation) {
+      scanPrompt = `Scan your ${displayLocation} ${colorLabel} station.`;
+    } else {
+      scanPrompt = `Scan your ${colorLabel} station.`;
+    }
+  } else {
+    // Safety fallback (rare): colour not known yet
+    scanPrompt = "Scan your station.";
+  }
 
   // Font scaling for younger grades
   let responseFontSize = "1rem";
