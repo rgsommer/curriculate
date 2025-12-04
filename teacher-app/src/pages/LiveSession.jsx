@@ -140,6 +140,17 @@ export default function LiveSession({ roomCode }) {
     async function loadTeacherRooms() {
       const profile = await fetchMyProfile();
       setTeacherRooms(profile.locationOptions || []);
+
+      // Optional: use profile.treatsPerSession as the default treat quota
+      if (profile && typeof profile.treatsPerSession !== "undefined") {
+        const n = Number(profile.treatsPerSession);
+        if (Number.isFinite(n)) {
+          setTreatsConfig((prev) => ({
+            ...prev,
+            total: n,
+          }));
+        }
+      }
     }
     loadTeacherRooms();
   }, []);
@@ -540,13 +551,14 @@ export default function LiveSession({ roomCode }) {
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
 
-    // Treat gating based on progress through the active taskset
+  // --- Treat gating: require at least 30% of tasks completed ---
   const minTasksBeforeTreat =
     typeof totalTasksInActiveSet === "number" && totalTasksInActiveSet > 0
       ? Math.ceil(totalTasksInActiveSet * 0.3) // 30% of tasks, rounded up
       : 0;
 
-  // We approximate "tasks completed so far" using the current task index.
+  // We approximate "tasks completed" from the current (0-based) taskIndex:
+  // index 0 → 0 completed, 1 → 1 completed, etc.
   const tasksCompletedSoFar =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
       ? roomState.taskIndex
@@ -562,7 +574,6 @@ export default function LiveSession({ roomCode }) {
     typeof treatsConfig.given === "number"
       ? treatsConfig.given < treatsConfig.total
       : true);
-
 
   const pendingTreatTeams = roomState.pendingTreatTeams || [];
 
@@ -1229,8 +1240,8 @@ export default function LiveSession({ roomCode }) {
                 >
                   Treats unlock after{" "}
                   <strong>{minTasksBeforeTreat}</strong> of{" "}
-                  <strong>{totalTasksInActiveSet}</strong> tasks
-                  have been completed.
+                  <strong>{totalTasksInActiveSet}</strong> tasks have been
+                  completed.
                 </p>
               )}
 
