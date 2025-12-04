@@ -323,8 +323,30 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           typePool,
           customInstructions,
           lenses,
+          aiWordBank,
+          aiWordsUsed,
+          aiWordsUnused,
         },
       },
+      // Build a simple word-usage analysis if aiWordBank was provided
+      const aiWordBank = Array.isArray(body.aiWordBank) ? body.aiWordBank : [];
+
+      let aiWordsUsed = [];
+      let aiWordsUnused = [];
+
+      if (aiWordBank.length && Array.isArray(tasks)) {
+        const allText = tasks
+          .map((t) => `${t.title || ""} ${t.prompt || ""}`)
+          .join(" ")
+          .toLowerCase();
+
+        aiWordsUsed = aiWordBank.filter((w) =>
+          allText.includes(String(w).toLowerCase())
+        );
+        aiWordsUnused = aiWordBank.filter(
+          (w) => !allText.includes(String(w).toLowerCase())
+        );
+      }
     });
 
     return res.json({ ok: true, taskset: tasksetDoc });

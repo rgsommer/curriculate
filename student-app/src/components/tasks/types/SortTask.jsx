@@ -8,7 +8,11 @@ export default function SortTask({
   onAnswerChange,
   answerDraft,
 }) {
-  const { buckets, items } = task.config;
+  // 🔹 Safe config defaults
+  const config = task?.config || {};
+  const buckets = Array.isArray(config.buckets) ? config.buckets : [];
+  const items = Array.isArray(config.items) ? config.items : [];
+
   const [assignments, setAssignments] = useState(
     items.map((_, idx) => ({ itemIndex: idx, bucketIndex: null }))
   );
@@ -34,6 +38,15 @@ export default function SortTask({
     if (assignments.some((a) => a.bucketIndex === null)) return;
     onSubmit({ assignments });
   };
+
+  // Optional: guard for misconfigured tasks so we don't render nonsense
+  if (!buckets.length || !items.length) {
+    return (
+      <div className="p-4 text-sm text-gray-600">
+        This sort task is not fully configured (missing buckets or items).
+      </div>
+    );
+  }
 
   return (
     <div className="p-4">

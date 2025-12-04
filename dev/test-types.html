@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Type Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #task-container { margin-top: 20px; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+        .question { font-weight: bold; margin-bottom: 10px; }
+        .options { margin-bottom: 10px; }
+        .match-pair { display: flex; justify-content: space-between; }
+        .match-left, .match-right { list-style: none; padding: 0; }
+        .order-list { list-style: none; padding: 0; }
+        .order-item { margin: 5px; padding: 10px; background: #f0f0f0; cursor: move; }
+        .placeholder { color: #666; font-style: italic; }
+        .timer { font-size: 1.2em; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Task Type Tester</h1>
+    <p>Select a task type to simulate it as if on the student app. Tasks are AI-generated samples themed around "Science: Solar System" for Grade 4, Medium difficulty, Review goal.</p>
+    
+    <label for="task-select">Choose a task type:</label>
+    <select id="task-select">
+        <option value="">-- Select --</option>
+        <option value="multiple-choice">Multiple Choice</option>
+        <option value="true-false">True/False</option>
+        <option value="short-answer">Short Answer</option>
+        <option value="sort">Sort</option>
+        <option value="sequence">Sequence</option>
+        <option value="photo">Photo</option>
+        <option value="make-and-snap">Make and Snap</option>
+        <option value="body-break">Body Break</option>
+        <option value="jeopardy">Jeopardy</option>
+        <option value="collaboration">Collaboration</option>
+        <option value="musical-chairs">Musical Chairs</option>
+        <option value="mystery-clues">Mystery Clues</option>
+        <option value="true-false-tictactoe">True/False Tic-Tac-Toe</option>
+        <option value="mad-dash">Mad Dash</option>
+        <option value="live-debate">Live Debate</option>
+        <option value="flashcards">Flashcards</option>
+        <option value="timeline">Timeline</option>
+        <option value="brain-spark-notes">Brain Spark Notes</option>
+        <option value="pet-feeding">Pet Feeding</option>
+        <option value="motion-mission">Motion Mission</option>
+        <option value="brainstorm-battle">Brainstorm Battle</option>
+        <option value="mind-mapper">Mind Mapper</option>
+        <option value="hidenseek">HideNSeek</option>
+        <option value="speed-draw">Speed Draw</option>
+    </select>
+    
+    <div id="task-container"></div>
+
+    <script>
+        // AI-generated sample task set with one task per eligible type, based on taskTypes.js and aiTasksetController.js parameters.
+        // Themed around Science: Solar System, Grade 4, Medium difficulty, Review goal, ~45 min lesson.
+        // Excluded multi-room-scavenger-hunt as aiEligible: false.
+        // Structure follows the expected JSON output from the AI prompt in the controller.
+        const taskSet = {
+            "multiple-choice": {
+                title: "Planet Identification",
+                prompt: "Which planet is known as the Red Planet?",
+                taskType: "multiple-choice",
+                options: ["Earth", "Mars", "Jupiter", "Venus"],
+                correctAnswer: 1,
+                timeLimitSeconds: 60,
+                points: 10
+            },
+            "true-false": {
+                title: "Sun Fact Check",
+                prompt: "The Sun is a planet.",
+                taskType: "true-false",
+                options: ["True", "False"],
+                correctAnswer: 1,
+                timeLimitSeconds: 45,
+                points: 10
+            },
+            "short-answer": {
+                title: "Moon Description",
+                prompt: "What is the name of Earth's natural satellite?",
+                taskType: "short-answer",
+                options: [],
+                correctAnswer: "Moon",
+                timeLimitSeconds: 90,
+                points: 10
+            },
+            "sort": {
+                title: "Categorize Planets",
+                prompt: "Sort these planets into Inner or Outer categories.",
+                taskType: "sort",
+                options: ["Mercury (Inner)", "Jupiter (Outer)", "Venus (Inner)", "Saturn (Outer)"],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "sequence": {
+                title: "Order Planets",
+                prompt: "Sequence the planets from closest to farthest from the Sun.",
+                taskType: "sequence",
+                options: ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "photo": {
+                title: "Solar System Model Photo",
+                prompt: "Take a photo of a drawing of the Solar System.",
+                taskType: "photo",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 180,
+                points: 10
+            },
+            "make-and-snap": {
+                title: "Build Planet Model",
+                prompt: "Make a model of Earth and snap a photo.",
+                taskType: "make-and-snap",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 240,
+                points: 10
+            },
+            "body-break": {
+                title: "Orbit Dance",
+                prompt: "Do a quick dance mimicking planetary orbits.",
+                taskType: "body-break",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 60,
+                points: 10
+            },
+            "jeopardy": {
+                title: "Solar Jeopardy",
+                prompt: "Play a round of Jeopardy on Solar System facts.",
+                taskType: "jeopardy",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 60,
+                points: 10
+            },
+            "collaboration": {
+                title: "Pair Discuss Planets",
+                prompt: "Discuss with a partner the differences between inner and outer planets.",
+                taskType: "collaboration",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "musical-chairs": {
+                title: "Planet Musical Chairs",
+                prompt: "Play musical chairs where each chair represents a planet.",
+                taskType: "musical-chairs",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 180,
+                points: 10
+            },
+            "mystery-clues": {
+                title: "Planet Mystery Clues",
+                prompt: "Solve mystery clues about a hidden planet.",
+                taskType: "mystery-clues",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "true-false-tictactoe": {
+                title: "Solar True/False Tic-Tac-Toe",
+                prompt: "Play Tic-Tac-Toe with true/false questions on the Solar System.",
+                taskType: "true-false-tictactoe",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "mad-dash": {
+                title: "Dash for Planet Facts",
+                prompt: "Race to find and scan facts about planets.",
+                taskType: "mad-dash",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 180,
+                points: 10
+            },
+            "live-debate": {
+                title: "Debate Best Planet",
+                prompt: "Debate which planet is the most interesting.",
+                taskType: "live-debate",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 180,
+                points: 10
+            },
+            "flashcards": {
+                title: "Solar Flashcards",
+                prompt: "Review flashcards on Solar System terms.",
+                taskType: "flashcards",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "timeline": {
+                title: "Space Exploration Timeline",
+                prompt: "Arrange events in space exploration history.",
+                taskType: "timeline",
+                options: ["Moon Landing 1969", "Hubble Launch 1990", "Mars Rover 1997"],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "brain-spark-notes": {
+                title: "Notes on Planets",
+                prompt: "Take notes on key planet facts.",
+                taskType: "brain-spark-notes",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "pet-feeding": {
+                title: "Feed the Space Pet",
+                prompt: "Simulate feeding a pet based on planet conditions.",
+                taskType: "pet-feeding",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 60,
+                points: 10
+            },
+            "motion-mission": {
+                title: "Motion Mission to Mars",
+                prompt: "Perform motions simulating a mission to Mars.",
+                taskType: "motion-mission",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "brainstorm-battle": {
+                title: "Brainstorm Alien Life",
+                prompt: "Brainstorm ideas for life on other planets.",
+                taskType: "brainstorm-battle",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            },
+            "mind-mapper": {
+                title: "Mind Map Solar System",
+                prompt: "Create a mind map of the Solar System.",
+                taskType: "mind-mapper",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 180,
+                points: 10
+            },
+            "hidenseek": {
+                title: "Hide and Seek Planets",
+                prompt: "Find hidden planet facts around the room.",
+                taskType: "hidenseek",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 180,
+                points: 10
+            },
+            "speed-draw": {
+                title: "Speed Draw Comet",
+                prompt: "Quickly draw a comet and explain it.",
+                taskType: "speed-draw",
+                options: [],
+                correctAnswer: null,
+                timeLimitSeconds: 120,
+                points: 10
+            }
+        };
+
+        const select = document.getElementById('task-select');
+        const container = document.getElementById('task-container');
+
+        select.addEventListener('change', (e) => {
+            const type = e.target.value;
+            container.innerHTML = ''; // Clear previous task
+            if (!type) return;
+
+            const task = taskSet[type];
+            renderTask(task);
+        });
+
+        function renderTask(task) {
+            // Display title and prompt for all
+            const titleDiv = document.createElement('h2');
+            titleDiv.textContent = task.title;
+            container.appendChild(titleDiv);
+
+            const promptDiv = document.createElement('div');
+            promptDiv.className = 'question';
+            promptDiv.textContent = task.prompt;
+            container.appendChild(promptDiv);
+
+            // Type-specific simulation
+            switch (task.taskType) {
+                case 'multiple-choice':
+                    const mcOptions = document.createElement('div');
+                    mcOptions.className = 'options';
+                    task.options.forEach((opt, idx) => {
+                        const label = document.createElement('label');
+                        const input = document.createElement('input');
+                        input.type = 'radio';
+                        input.name = 'mcq';
+                        input.value = idx;
+                        label.appendChild(input);
+                        label.appendChild(document.createTextNode(opt));
+                        mcOptions.appendChild(label);
+                    });
+                    container.appendChild(mcOptions);
+                    break;
+                case 'true-false':
+                    const tfOptions = document.createElement('div');
+                    tfOptions.className = 'options';
+                    task.options.forEach((opt, idx) => {
+                        const label = document.createElement('label');
+                        const input = document.createElement('input');
+                        input.type = 'radio';
+                        input.name = 'tf';
+                        input.value = idx;
+                        label.appendChild(input);
+                        label.appendChild(document.createTextNode(opt));
+                        tfOptions.appendChild(label);
+                    });
+                    container.appendChild(tfOptions);
+                    break;
+                case 'short-answer':
+                    const saInput = document.createElement('textarea');
+                    saInput.rows = 3;
+                    saInput.placeholder = 'Enter your short answer';
+                    container.appendChild(saInput);
+                    break;
+                case 'sort':
+                case 'sequence':
+                case 'timeline':
+                    // Simulate drag-and-drop ordering/sorting
+                    const orderUl = document.createElement('ul');
+                    orderUl.className = 'order-list';
+                    let items = [...task.options];
+                    items.sort(() => Math.random() - 0.5); // Shuffle
+                    items.forEach(item => {
+                        const li = document.createElement('li');
+                        li.className = 'order-item';
+                        li.textContent = item;
+                        orderUl.appendChild(li);
+                    });
+                    container.appendChild(orderUl);
+                    const orderNote = document.createElement('p');
+                    orderNote.className = 'placeholder';
+                    orderNote.textContent = '(Simulate by imagining dragging to sort/order)';
+                    container.appendChild(orderNote);
+                    break;
+                case 'photo':
+                case 'make-and-snap':
+                    const photoInput = document.createElement('input');
+                    photoInput.type = 'file';
+                    photoInput.accept = 'image/*';
+                    photoInput.capture = 'camera'; // Simulate camera
+                    const photoLabel = document.createElement('label');
+                    photoLabel.textContent = 'Upload or take photo:';
+                    container.appendChild(photoLabel);
+                    container.appendChild(photoInput);
+                    break;
+                case 'body-break':
+                case 'pet-feeding':
+                case 'motion-mission':
+                    // Simulate movement with a timer
+                    const startBtn = document.createElement('button');
+                    startBtn.textContent = 'Start Movement Break';
+                    let timerInterval;
+                    const timerDisplay = document.createElement('div');
+                    timerDisplay.className = 'timer';
+                    startBtn.onclick = () => {
+                        let timeLeft = task.timeLimitSeconds;
+                        timerDisplay.textContent = `Time left: ${timeLeft}s`;
+                        timerInterval = setInterval(() => {
+                            timeLeft--;
+                            timerDisplay.textContent = `Time left: ${timeLeft}s`;
+                            if (timeLeft <= 0) {
+                                clearInterval(timerInterval);
+                                alert('Time up!');
+                            }
+                        }, 1000);
+                    };
+                    container.appendChild(startBtn);
+                    container.appendChild(timerDisplay);
+                    break;
+                case 'jeopardy':
+                case 'true-false-tictactoe':
+                case 'speed-draw':
+                    const gameNote = document.createElement('p');
+                    gameNote.className = 'placeholder';
+                    gameNote.textContent = `(Simulating competitive/game task: Imagine playing ${task.taskType} based on the prompt.)`;
+                    container.appendChild(gameNote);
+                    const gameInput = document.createElement('input');
+                    gameInput.type = 'text';
+                    gameInput.placeholder = 'Enter your answer/response';
+                    container.appendChild(gameInput);
+                    break;
+                case 'collaboration':
+                case 'brainstorm-battle':
+                case 'live-debate':
+                    const collabNote = document.createElement('p');
+                    collabNote.className = 'placeholder';
+                    collabNote.textContent = `(Simulating group task: Discuss or debate as per prompt.)`;
+                    container.appendChild(collabNote);
+                    const collabTextarea = document.createElement('textarea');
+                    collabTextarea.rows = 5;
+                    collabTextarea.placeholder = 'Note your ideas or response';
+                    container.appendChild(collabTextarea);
+                    break;
+                case 'musical-chairs':
+                case 'mad-dash':
+                case 'hidenseek':
+                    const physicalNote = document.createElement('p');
+                    physicalNote.className = 'placeholder';
+                    physicalNote.textContent = `(Simulating physical task: Perform the action as described.)`;
+                    container.appendChild(physicalNote);
+                    const physicalBtn = document.createElement('button');
+                    physicalBtn.textContent = 'Complete Action';
+                    physicalBtn.onclick = () => alert('Action completed!');
+                    container.appendChild(physicalBtn);
+                    break;
+                case 'mystery-clues':
+                case 'flashcards':
+                case 'brain-spark-notes':
+                case 'mind-mapper':
+                    const creativeTextarea = document.createElement('textarea');
+                    creativeTextarea.rows = 5;
+                    creativeTextarea.placeholder = 'Enter your notes/response';
+                    container.appendChild(creativeTextarea);
+                    const creativeNote = document.createElement('p');
+                    creativeNote.className = 'placeholder';
+                    creativeNote.textContent = `(Simulating creative/review task.)`;
+                    container.appendChild(creativeNote);
+                    break;
+                default:
+                    const defaultNote = document.createElement('p');
+                    defaultNote.className = 'placeholder';
+                    defaultNote.textContent = `(Placeholder simulation for ${task.taskType}: Respond based on prompt.)`;
+                    container.appendChild(defaultNote);
+                    const defaultInput = document.createElement('input');
+                    defaultInput.type = 'text';
+                    defaultInput.placeholder = 'Enter response';
+                    container.appendChild(defaultInput);
+                    break;
+            }
+
+            // Add a submit button for simulation
+            const submitBtn = document.createElement('button');
+            submitBtn.textContent = 'Submit (Simulation)';
+            submitBtn.onclick = () => alert('Task submitted! (This is a simulation)');
+            container.appendChild(submitBtn);
+        }
+    </script>
+</body>
+</html>
