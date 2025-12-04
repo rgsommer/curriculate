@@ -4,14 +4,16 @@ import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
-// Build a list of implemented AI-eligible task types dynamically:
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Build a list of implemented, AI-eligible task types
 const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(
-    ([, meta]) => meta.implemented !== false && meta.aiEligible !== false
-  )
+  .filter(([, meta]) => meta.implemented !== false && meta.aiEligible !== false)
   .map(([type]) => type);
 
-// Fallback to simple core types if metadata is missing / empty
+// Fallback core types if metadata is missing / empty
 const coreTypes =
   AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
     ? AI_ELIGIBLE_TYPES
@@ -21,13 +23,8 @@ const coreTypes =
         TASK_TYPES.SHORT_ANSWER,
       ];
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 /**
- * Basic payload validation. We keep this simple and normalize difficulty/goal
- * to uppercase so "medium" / "review" from the frontend are accepted.
+ * Basic payload validation + normalization for difficulty / learning goal.
  */
 function validateGeneratePayload(payload = {}) {
   const errors = [];
@@ -57,8 +54,8 @@ function validateGeneratePayload(payload = {}) {
 }
 
 /**
- * Main Express handler used by /api/ai/tasksets
- * This works with your current AiTasksetGenerator.jsx payload.
+ * Express handler for POST /api/ai/tasksets
+ * Works with AiTasksetGenerator.jsx (subject, gradeLevel, difficulty, learningGoal, etc.)
  */
 export const generateAiTaskset = async (req, res) => {
   try {
@@ -66,12 +63,12 @@ export const generateAiTaskset = async (req, res) => {
       subject,
       gradeLevel,
 
-      // Old shape
+      // Legacy shape
       numTasks,
       selectedTypes,
       customInstructions = "",
 
-      // New shape from AiTasksetGenerator.jsx
+      // New shape
       difficulty,
       learningGoal,
       topicDescription = "",
@@ -80,12 +77,11 @@ export const generateAiTaskset = async (req, res) => {
       durationMinutes,
       numberOfTasks,
 
-      // NEW: presenter profile with lenses/perspective
+      // Optional: presenter profile lenses
       presenterProfile,
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
-
     const duration =
       Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
@@ -104,10 +100,9 @@ export const generateAiTaskset = async (req, res) => {
         .json({ error: "Invalid payload: " + errors.join(", ") });
     }
 
-    // Safety clamp
     const safeCount = Math.max(4, Math.min(20, requestedCount || 8));
 
-    // Resolve curricular lenses / perspectives from presenterProfile
+    // Resolve curricular lenses / perspectives
     let lenses = [];
     if (
       presenterProfile &&
@@ -124,12 +119,12 @@ export const generateAiTaskset = async (req, res) => {
     }
     const lensesText = lenses.length ? lenses.join(", ") : "none specified";
 
-    // If the frontend passed required/selected types, intersect with coreTypes
+    // If the frontend passed a limited type set, intersect with AI-eligible types
     const rawSelected =
       (Array.isArray(selectedTypes) && selectedTypes) || [];
     const typePool =
       rawSelected.length > 0
-        ? rawSelected.filter((t) => coreTypes.includes(t))
+        ? rawSelected.filter((t) => AI_ELIGIBLE_TYPES.includes(t))
         : coreTypes;
 
     const tasksetName =
@@ -137,7 +132,17 @@ export const generateAiTaskset = async (req, res) => {
       topicDescription?.slice(0, 60) ||
       `${subject || "Lesson"} – AI Task Set`;
 
-    // ------------- OpenAI prompt -----------------
+    // Build per-type guidelines from TASK_TYPE_META.description
+    const typeGuidelines = typePool
+      .map((t) => {
+        const meta = TASK_TYPE_META[t] || {};
+        const label = meta.label || t;
+        const desc = meta.description || "";
+        return `- "${t}" (${label}): ${desc}`;
+      })
+      .join("\n");
+
+    // ---------- OpenAI prompt ----------
 
     const systemPrompt = `
 You are an expert classroom teacher using Curriculate, a station-based
@@ -145,12 +150,15 @@ task system. You will generate short, engaging tasks that can be used
 in a 45–60 minute lesson.
 
 Each task must be one of these taskType values ONLY:
-${coreTypes.map((t) => `- "${t}"`).join("\n")}
+${typePool.map((t) => `- "${t}"`).join("\n")}
 
 You MUST NOT invent any other taskType values.
 
 When curricular lenses / perspectives are provided, you must shape tasks
 so that they naturally reflect those lenses.
+
+For each allowed taskType, follow these guidelines:
+${typeGuidelines}
 `.trim();
 
     const userPrompt = `
@@ -219,16 +227,17 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       throw new Error("AI returned no tasks");
     }
 
-    // Normalize / sanitize tasks into TaskSet schema shape
+    // Normalize AI tasks into TaskSet schema
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
       const rawType = (t.taskType || "").toString().toLowerCase();
 
       let taskType = TASK_TYPES.SHORT_ANSWER;
-      if (coreTypes.includes(rawType)) {
+      if (typePool.includes(rawType)) {
         taskType = rawType;
       }
 
       let options = Array.isArray(t.options) ? t.options : [];
+
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
         if (options.length < 2) {
           options = ["Option A", "Option B"];

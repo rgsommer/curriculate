@@ -10,14 +10,14 @@ export const TASK_TYPES = {
   PHOTO: "photo",
   MAKE_AND_SNAP: "make-and-snap",
   BODY_BREAK: "body-break",
-  JEOPARDY: "brain-blitz", // renamed from "jeopardy"
+  JEOPARDY: "brain-blitz",                    // ← renamed!
   COLLABORATION: "collaboration",
-  MUSICAL_CHAIRS: "musical-chairs",
+  MUSICAL_CHAIRS: "musical-chairs","musical-chairs",
   MYSTERY_CLUES: "mystery-clues",
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
   MAD_DASH: "mad-dash",
   LIVE_DEBATE: "live-debate",
-  FLASHCARDS: "flashcards",
+  FLASHCARDS: "flashcards","flashcards",
   TIMELINE: "timeline",
   BRAIN_SPARK_NOTES: "brain-spark-notes",
   PET_FEEDING: "pet-feeding",
@@ -29,7 +29,6 @@ export const TASK_TYPES = {
   MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
 };
 
-// Category labels (for grouping & UI)
 const CATEGORY = {
   QUESTION: "question",
   ORDERING: "ordering",
@@ -40,7 +39,6 @@ const CATEGORY = {
   PHYSICAL: "physical",
 };
 
-// Rich metadata per task type
 export const TASK_TYPE_META = {
   [TASK_TYPES.MULTIPLE_CHOICE]: {
     label: "Multiple Choice",
@@ -48,10 +46,8 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 60,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Classic multiple-choice question with 3–5 options. Provide one clearly correct answer. Great for quick knowledge checks.",
+    description: "Classic multiple-choice question with 3–5 options. Provide one clearly correct answer. Great for quick knowledge checks.",
   },
   [TASK_TYPES.TRUE_FALSE]: {
     label: "True / False",
@@ -59,10 +55,8 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 45,
-    implemented: true,
     aiEligible: true,
-    description:
-      "True or False statement. Make it tricky but fair — kids love shouting the answer!",
+    description: "True or False statement. Make it tricky but fair — kids love shouting the answer!",
   },
   [TASK_TYPES.SHORT_ANSWER]: {
     label: "Short Answer",
@@ -70,10 +64,8 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 90,
-    implemented: true,
     aiEligible: true,
-    description:
-      "One-sentence or single-word answer expected. Provide a clear reference answer (e.g., 'Photosynthesis', 'Abraham Lincoln').",
+    description: "One-sentence or single-word answer expected. Provide a clear reference answer (e.g., 'Photosynthesis', 'Abraham Lincoln').",
   },
   [TASK_TYPES.SORT]: {
     label: "Sort / Categorize",
@@ -81,10 +73,8 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 120,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Give 6–10 items that belong to 2–4 clear categories (e.g., Living/Non-living, Vertebrate/Invertebrate).",
+    description: "Give 6–10 items that belong to 2–4 clear categories (e.g., Living/Non-living, Vertebrate/Invertebrate).",
   },
   [TASK_TYPES.SEQUENCE]: {
     label: "Sequence / Put in Order",
@@ -92,10 +82,8 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 120,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Give 6–10 steps or events that have one correct chronological order (water cycle, life cycle, historical events, etc.).",
+    description: "Give 6–10 steps or events that have one correct chronological order (water cycle, life cycle, historical events, etc.).",
   },
   [TASK_TYPES.PHOTO]: {
     label: "Photo Evidence",
@@ -103,10 +91,8 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 180,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Student takes a photo showing proof (e.g., 'Show something magnetic', 'Photo of a triangle in the room'). Prompt must be visual and doable in classroom.",
+    description: "Student takes a photo showing proof (e.g., 'Show something magnetic', 'Photo of a triangle in the room'). Prompt must be visual and doable in classroom.",
   },
   [TASK_TYPES.MAKE_AND_SNAP]: {
     label: "Make It & Snap It",
@@ -114,10 +100,8 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 240,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Student builds, draws, or demonstrates something with materials then photographs it (e.g., 'Build a bridge with 10 popsicle sticks', 'Draw a food chain').",
+    description: "Student builds, draws, or demonstrates something with materials then photographs it (e.g., 'Build a bridge with 10 popsicle sticks', 'Draw a food chain').",
   },
   [TASK_TYPES.BODY_BREAK]: {
     label: "Body Break",
@@ -125,10 +109,8 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 60,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, etc.). No scoring.",
+    description: "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, etc.). No scoring.",
   },
   [TASK_TYPES.JEOPARDY]: {
     label: "Brain Blitz!",
@@ -136,21 +118,17 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 90,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Reverse-format trivia game (like Jeopardy). Provide clues in the form of answers. Expected response must be in question form: 'What is…?', 'Who was…?'. High-energy review game.",
+    description: "Reverse-format trivia (like Jeopardy). Provide 6–10 clues in the form of answers. Expected response must be in question form: 'What is…?', 'Who was…?', etc. Voice-powered, high-energy review game.",
   },
   [TASK_TYPES.COLLABORATION]: {
-    label: "Collaboration (Pair & Respond)",
+    label: "Pair & Respond",
     category: CATEGORY.CREATIVE,
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 180,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Student writes an answer, then sees a partner’s answer and writes a thoughtful reply. Great for opinion, prediction, or reflection questions.",
+    description: "Student writes answer → sees partner’s → writes thoughtful reply for bonus points. Great for opinion, prediction, or reflection questions.",
   },
   [TASK_TYPES.FLASHCARDS]: {
     label: "Flashcards – Shout to Answer!",
@@ -158,10 +136,8 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 120,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Generate 8–12 flashcards with { question, answer }. Kids shout answers. Voice recognition can auto-score. Perfect for vocabulary, math facts, capitals, etc.",
+    description: "Generate 8–12 flashcard objects with { question, answer }. Kids shout answers. Voice recognition auto-scores. Perfect for vocabulary, math facts, capitals, etc.",
   },
   [TASK_TYPES.BRAINSTORM_BATTLE]: {
     label: "Brainstorm Battle – Shout Ideas!",
@@ -169,10 +145,8 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 120,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Fast-paced idea shouting game. Give seed words or a topic. Kids shout ideas in rounds. Great for divergent thinking.",
+    description: "Fast-paced idea shouting game. Give seed words or a topic. Kids shout ideas → lightning rounds reward previously shouted words. Pure creative chaos.",
   },
   [TASK_TYPES.TIMELINE]: {
     label: "Timeline – Drag to Order",
@@ -180,10 +154,8 @@ export const TASK_TYPE_META = {
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 120,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Same as Sequence but branded as a Timeline. Use for historical events, story plots, planet formation, etc.",
+    description: "Same as Sequence but branded as Timeline. Use for historical events, story plot, planet formation, etc.",
   },
   [TASK_TYPES.BRAIN_SPARK_NOTES]: {
     label: "Brain Spark Notes",
@@ -191,10 +163,8 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 180,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Student takes quick notes in their notebook on a key question or prompt, then optionally submits a photo of their notes.",
+    description: "Student takes quick notes in their notebook on a key question or prompt. Photo of notes is submitted.",
   },
   [TASK_TYPES.MIND_MAPPER]: {
     label: "Mind Mapper",
@@ -202,101 +172,106 @@ export const TASK_TYPE_META = {
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 240,
-    implemented: true,
     aiEligible: true,
-    description:
-      "Student draws a mind map or concept web on paper and photographs it. Prompt should be a central topic (e.g., 'Water Cycle', 'Fractions').",
+    description: "Student draws a mind map or concept web on paper and photographs it. Prompt should be a central topic (e.g., 'Water Cycle', 'Fractions').",
   },
 
-  // === Types not yet reliable for AI generation (as of Dec 2025) ===
+  // === Not yet reliable for AI generation (as of Dec 2025) ===
+  [TASK_TYPES.MUSICAL_CHAIRS]: { label: "Musical Chairs (Race!)", implemented: true, aiEligible: false },
+  [TASK_TYPES.MYSTERY_CLUES]: { label: "Mystery Clue Cards", implemented: true, aiEligible: false },
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: { label: "True/False Tic-Tac-Toe", implemented: true, aiEligible: false },
+  [TASK_TYPES.MAD_DASH]: { label: "Mad Dash – Race to Scan!", implemented: true, aiEligible: false },
+  [TASK_TYPES.LIVE_DEBATE]: { label: "Live AI-Judged Debate", implemented: true, aiEligible: false },
+  [TASK_TYPES.PET_FEEDING]: { label: "Feed the Pet!", implemented: true, aiEligible: false },
+  [TASK_TYPES.MOTION_MISSION]: { label: "Motion Mission", implemented: true, aiEligible: false },
+  [TASK_TYPES.HIDENSEEK]: { label: "HideNSeek", implemented: true, aiEligible: false },
+  [TASK_TYPES.SPEED_DRAW]: { label: "Speed Draw", implemented: true, aiEligible: false },
+  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: { label: "Multi-Room Scavenger Hunt", aiEligible: false },
+};
+
+  [TASK_TYPES.COLLABORATION]: {
+    label: "Collaboration (Pair & Respond)",
+    implemented: true,
+    category: "creative",
+  },
   [TASK_TYPES.MUSICAL_CHAIRS]: {
     label: "Musical Chairs (Race!)",
-    category: CATEGORY.PHYSICAL,
-    hasOptions: false,
-    expectsText: false,
-    maxTimeSeconds: 180,
     implemented: true,
-    aiEligible: false,
+    category: "physical",
   },
   [TASK_TYPES.MYSTERY_CLUES]: {
-    label: "Mystery Clue Cards",
-    category: CATEGORY.CREATIVE,
-    hasOptions: false,
-    expectsText: false,
-    maxTimeSeconds: 180,
+    label: "Mystery Clue Cards (Memory Bonus)",
     implemented: true,
-    aiEligible: false,
+    category: "creative",
   },
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]: {
-    label: "True/False Tic-Tac-Toe",
-    category: CATEGORY.COMPETITIVE,
-    hasOptions: true,
-    expectsText: false,
-    maxTimeSeconds: 180,
+    label: "True/False Tic-Tac-Toe Battle",
     implemented: true,
-    aiEligible: false,
+    category: "competitive",
   },
-  [TASK_TYPES.MAD_DASH]: {
+    [TASK_TYPES.MAD_DASH]: {
     label: "Mad Dash – Race to Scan!",
-    category: CATEGORY.PHYSICAL,
-    hasOptions: false,
-    expectsText: false,
-    maxTimeSeconds: 180,
     implemented: true,
-    aiEligible: false,
+    category: "physical",
   },
-  [TASK_TYPES.LIVE_DEBATE]: {
+    [TASK_TYPES.LIVE_DEBATE]: {
     label: "Live AI-Judged Debate",
-    category: CATEGORY.CREATIVE,
-    hasOptions: false,
-    expectsText: true,
-    maxTimeSeconds: 600,
     implemented: true,
-    aiEligible: false,
+    category: "argumentation",
   },
-  [TASK_TYPES.PET_FEEDING]: {
-    label: "Feed the Pet!",
-    category: CATEGORY.MOVEMENT,
-    hasOptions: false,
-    expectsText: false,
-    maxTimeSeconds: 180,
+    [TASK_TYPES.FLASHCARDS]: {
+    label: "Flashcards – Shout to Answer!",
     implemented: true,
-    aiEligible: false,
+    category: "review",
   },
-  [TASK_TYPES.MOTION_MISSION]: {
-    label: "Motion Mission",
-    category: CATEGORY.PHYSICAL,
-    hasOptions: false,
-    expectsText: false,
-    maxTimeSeconds: 240,
+    [TASK_TYPES.TIMELINE]: {
+    label: "Timeline – Drag to Order",
     implemented: true,
-    aiEligible: false,
+    category: "ordering",
   },
-  [TASK_TYPES.HIDENSEEK]: {
-    label: "HideNSeek",
-    category: CATEGORY.PHYSICAL,
-    hasOptions: false,
-    expectsText: false,
-    maxTimeSeconds: 240,
+    [TASK_TYPES.BRAIN_SPARK_NOTES]: {
+    label: "Brain Spark Notes (Write in Notebook!)",
     implemented: true,
-    aiEligible: false,
+    category: "introduction",
   },
-  [TASK_TYPES.SPEED_DRAW]: {
+    [TASK_TYPES.PET_FEEDING]: {
+    label: "Feed the Pet! (Fun Break)",
+    implemented: true,
+    category: "movement",
+  },
+    [TASK_TYPES.MOTION_MISSION]: {
+    label: "Motion Mission – Move to Win!",
+    implemented: true,
+    category: "physical",
+  },
+    [TASK_TYPES.BRAINSTORM_BATTLE]: {
+    label: "Brainstorm Battle – Shout Ideas!",
+    implemented: true,
+    category: "introduction",
+  },
+    [TASK_TYPES.MIND_MAPPER]: {
+    label: "Mind Mapper – Organize Ideas!",
+    implemented: true,
+    category: "organization",
+  },
+    [TASK_TYPES.HIDENSEEK]: {
+    label: "HideNSeek – Find & Explain!",
+    implemented: true,
+    category: "physical",
+  },
+    [TASK_TYPES.SPEED_DRAW]: {
     label: "Speed Draw – First to Answer Wins!",
-    category: CATEGORY.COMPETITIVE,
-    hasOptions: false,
-    expectsText: false,
-    maxTimeSeconds: 180,
     implemented: true,
-    aiEligible: false,
+    category: "competitive",
   },
-  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: {
+    [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: {
     label: "Multi-Room Scavenger Hunt",
     category: CATEGORY.MOVEMENT,
     hasOptions: false,
     expectsText: false,
+    maxTime: 300, // 5 minutes default
     maxTimeSeconds: 300,
-    implemented: true,
+    // No AI generation flag (checked in generators)
     aiEligible: false,
   },
 };
@@ -309,10 +284,8 @@ export const TASK_TYPE_LABELS = Object.fromEntries(
   ])
 );
 
-// Flat list for selector UIs (only implemented types)
-export const IMPLEMENTED_TASK_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.implemented !== false)
-  .map(([type]) => type);
+// Flat list for selector UIs
+export const IMPLEMENTED_TASK_TYPES = Object.values(TASK_TYPES);
 
 // Category helper
 export function categoryLabelFor(typeValue) {
@@ -327,12 +300,6 @@ export function categoryLabelFor(typeValue) {
       return "creative";
     case CATEGORY.MOVEMENT:
       return "movement";
-    case CATEGORY.COMPETITIVE:
-      return "competitive";
-    case CATEGORY.REVIEW:
-      return "review";
-    case CATEGORY.PHYSICAL:
-      return "physical";
     default:
       return "other";
   }
@@ -355,7 +322,7 @@ export function normalizeTaskType(value) {
   if (v === "sort") {
     return TASK_TYPES.SORT;
   }
-  if (v === "sequence" || v === "ordering" || v === "timeline") {
+  if (v === "sequence" || v === "ordering") {
     return TASK_TYPES.SEQUENCE;
   }
   if (v === "photo" || v === "photo-evidence" || v === "image") {
@@ -369,7 +336,6 @@ export function normalizeTaskType(value) {
   }
   if (
     v === "jeopardy" ||
-    v === "brain-blitz" ||
     v === "jeopardy_ai_ref" ||
     v === "jeopardy-ai-ref" ||
     v === "jp"
