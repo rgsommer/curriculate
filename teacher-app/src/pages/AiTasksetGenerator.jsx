@@ -6,6 +6,7 @@ import {
   TASK_TYPES,
   TASK_TYPE_META,
 } from "../../../shared/taskTypes.js";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
@@ -252,7 +253,7 @@ export default function AiTasksetGenerator() {
       };
 
       const token = localStorage.getItem("token");
-      const resp = await fetch("/api/ai/tasksets", {
+      const resp = await fetch(`${API_BASE}/api/ai/tasksets`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
