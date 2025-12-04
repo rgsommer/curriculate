@@ -10,7 +10,7 @@ import {
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
-// Compute the same AI-eligible types as the backend does
+// AI-eligible types (same filter as backend)
 const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
   .filter(([, meta]) => meta.implemented !== false && meta.aiEligible !== false)
   .map(([type]) => type);
@@ -38,9 +38,10 @@ export default function AiTasksetGenerator() {
     subject: "",
     difficulty: "MEDIUM",
     learningGoal: "REVIEW",
-    topicDescription: "", // used as "Special considerations"
+    topicDescription: "", // "Special considerations"
     durationMinutes: 45,
     isFixedStation: false,
+    isMultiRoomScavenger: false, // NEW
   });
 
   const [displays, setDisplays] = useState([]);
@@ -48,14 +49,15 @@ export default function AiTasksetGenerator() {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  // Limit to specific task types
   const [limitTasks, setLimitTasks] = useState(false);
   const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
 
   // Vocabulary / key terms (REQUIRED)
   const [wordListText, setWordListText] = useState(prefillWordText);
 
-  // Load presenter profile to prefill
+  // NEW: multi-room list as text (one per line or comma-separated)
+  const [multiRoomText, setMultiRoomText] = useState("");
+
   useEffect(() => {
     let cancelled = false;
 
@@ -138,7 +140,7 @@ export default function AiTasksetGenerator() {
       return;
     }
 
-    // Turn the vocab text area into an array of terms
+    // Word bank
     const aiWordBank = wordListText
       .split(/[\n,;]+/)
       .map((w) => w.trim())
@@ -150,6 +152,23 @@ export default function AiTasksetGenerator() {
       );
       setGenerating(false);
       return;
+    }
+
+    // Multi-room rooms
+    let multiRoomRooms = [];
+    if (form.isMultiRoomScavenger) {
+      multiRoomRooms = multiRoomText
+        .split(/[\n,;]+/)
+        .map((r) => r.trim())
+        .filter(Boolean);
+
+      if (!multiRoomRooms.length) {
+        setError(
+          "For a multi-room scavenger hunt, please list at least one room/location."
+        );
+        setGenerating(false);
+        return;
+      }
     }
 
     try {
@@ -177,7 +196,6 @@ export default function AiTasksetGenerator() {
       let requiredTaskTypes = [];
       const specialConsiderations = (form.topicDescription || "").trim();
 
-      // Limit to specific task types
       if (limitTasks) {
         if (selectedTaskTypes.length === 0) {
           setError(
@@ -186,16 +204,13 @@ export default function AiTasksetGenerator() {
           setGenerating(false);
           return;
         }
-
         estimatedTaskCount = Math.max(
           selectedTaskTypes.length,
           Math.min(20, Math.round(totalDurationMinutes / 5))
         );
-
         requiredTaskTypes = selectedTaskTypes;
       }
 
-      // Presenter profile lenses
       const curriculumLenses =
         (profile &&
           (profile.curriculumLenses || profile.perspectives)) ||
@@ -208,33 +223,34 @@ export default function AiTasksetGenerator() {
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
 
-        // NEW: treat title as main topic, and textarea as special considerations
+        // Title = main topic; textarea = special considerations
         topicTitle: form.name.trim(),
         topicDescription: specialConsiderations,
         presenterProfile: { curriculumLenses },
 
-        // Word bank – REQUIRED and enforced by backend too
+        // Vocab (required)
         aiWordBank,
 
-        // Time-based control
+        // Time + approximate task count
         totalDurationMinutes,
         numberOfTasks: estimatedTaskCount,
         requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
 
-        // Session / Room context
+        // Base location
         tasksetName: form.name || undefined,
         roomLocation: form.roomLocation || "Classroom",
         locationCode: form.roomLocation || "Classroom",
 
-        // Station context
+        // Fixed-station
         isFixedStationTaskset:
           form.isFixedStation || cleanedDisplays.length > 0,
         displays: cleanedDisplays.length ? cleanedDisplays : undefined,
+
+        // NEW: multi-room scavenger hunt behaviour
+        multiRoomScavenger: form.isMultiRoomScavenger,
+        multiRoomRooms,
       };
 
-      // -----------------------------
-      // Direct API call with auth
-      // -----------------------------
       const token = localStorage.getItem("token");
       const resp = await fetch("/api/ai/tasksets", {
         method: "POST",
@@ -252,7 +268,7 @@ export default function AiTasksetGenerator() {
           if (body?.error) msg = body.error;
           if (body?.message) msg = body.message;
         } catch {
-          // ignore JSON parse error
+          // ignore
         }
         throw new Error(msg);
       }
@@ -263,8 +279,7 @@ export default function AiTasksetGenerator() {
     } catch (err) {
       console.error("AI Taskset generation error:", err);
       setError(
-        err?.message ||
-          "Something went wrong while generating the task set."
+        err?.message || "Something went wrong while generating the task set."
       );
     } finally {
       setGenerating(false);
@@ -334,7 +349,7 @@ export default function AiTasksetGenerator() {
       )}
 
       <form onSubmit={handleSubmit}>
-        {/* TOP ROW: core context */}
+        {/* TOP ROW: title + base room */}
         <div
           style={{
             display: "grid",
@@ -370,9 +385,13 @@ export default function AiTasksetGenerator() {
 
           <div>
             <label
-              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
             >
-              Room / location (for station QR)
+              Default room / location
             </label>
             <input
               type="text"
@@ -387,6 +406,37 @@ export default function AiTasksetGenerator() {
                 fontSize: "0.9rem",
               }}
             />
+            {/* Multi-room switch */}
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 6,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={form.isMultiRoomScavenger}
+                onChange={(e) =>
+                  handleChange("isMultiRoomScavenger", e.target.checked)
+                }
+              />
+              <span>Multi-room scavenger hunt</span>
+            </label>
+            <p
+              style={{
+                marginTop: 2,
+                fontSize: "0.75rem",
+                color: "#6b7280",
+              }}
+            >
+              Leave unchecked if the whole activity stays in one room. When
+              checked, you can specify multiple locations (e.g., Classroom,
+              Hallway, Library) for a multi-room scavenger hunt.
+            </p>
           </div>
         </div>
 
@@ -508,11 +558,11 @@ export default function AiTasksetGenerator() {
           </div>
         </div>
 
-        {/* TIME + SPECIAL CONSIDERATIONS + VOCAB */}
+        {/* TIME + CONSIDERATIONS + VOCAB + MULTI-ROOM ROOM LIST */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.2fr)",
+            gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1.3fr)",
             gap: 16,
             marginBottom: 16,
           }}
@@ -561,7 +611,7 @@ export default function AiTasksetGenerator() {
                 handleChange("topicDescription", e.target.value)
               }
               rows={5}
-              placeholder="e.g., ‘Reviewing for a test’, ‘We have limited space’, ‘Keep it low-noise’, ‘They just did a quiz, keep it lighter’..."
+              placeholder="e.g., 'Reviewing for a test', 'Keep it low-noise', 'They just did a quiz—keep it lighter'..."
               style={{
                 width: "100%",
                 borderRadius: 8,
@@ -571,6 +621,48 @@ export default function AiTasksetGenerator() {
                 resize: "vertical",
               }}
             />
+
+            {/* Multi-room list text area - only when enabled */}
+            {form.isMultiRoomScavenger && (
+              <div style={{ marginTop: 10 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Rooms / locations for this scavenger hunt
+                </label>
+                <textarea
+                  value={multiRoomText}
+                  onChange={(e) => setMultiRoomText(e.target.value)}
+                  rows={4}
+                  placeholder={
+                    "One per line or separated by commas, e.g.\nClassroom\nHallway\nLibrary\nGym"
+                  }
+                  style={{
+                    width: "100%",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    padding: 8,
+                    fontSize: "0.9rem",
+                    resize: "vertical",
+                  }}
+                />
+                <p
+                  style={{
+                    marginTop: 4,
+                    fontSize: "0.8rem",
+                    color: "#6b7280",
+                  }}
+                >
+                  These rooms are *options* for where stations might be
+                  located. LiveSession can later decide which of these are
+                  active for a particular run.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Vocabulary / key terms */}
@@ -587,7 +679,7 @@ export default function AiTasksetGenerator() {
             <textarea
               value={wordListText}
               onChange={(e) => setWordListText(e.target.value)}
-              rows={6}
+              rows={8}
               placeholder={
                 "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
               }
@@ -608,8 +700,8 @@ export default function AiTasksetGenerator() {
               }}
             >
               These words define the topic. The AI is required to stay within
-              them, and we’ll track which ones are “used” vs “not yet used” so
-              you can quickly generate a second set with the leftovers.
+              them, and we’ll track which ones are “used” vs “not yet used”
+              so you can quickly generate a second set with the leftovers.
             </p>
           </div>
         </div>
@@ -655,7 +747,7 @@ export default function AiTasksetGenerator() {
           )}
         </div>
 
-        {/* FIXED-STATION / DISPLAYS (unchanged logic) */}
+        {/* FIXED-STATION / DISPLAYS */}
         <div
           style={{
             marginBottom: 16,
@@ -817,7 +909,11 @@ export default function AiTasksetGenerator() {
                         type="text"
                         value={d.notesForTeacher || ""}
                         onChange={(e) =>
-                          updateDisplay(index, "notesForTeacher", e.target.value)
+                          updateDisplay(
+                            index,
+                            "notesForTeacher",
+                            e.target.value
+                          )
                         }
                         style={{
                           width: "100%",
@@ -876,7 +972,6 @@ export default function AiTasksetGenerator() {
         </div>
       </form>
 
-      {/* Optional: show quick success summary */}
       {result && result.taskset && (
         <div
           style={{

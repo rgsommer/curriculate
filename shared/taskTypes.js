@@ -28,7 +28,6 @@ export const TASK_TYPES = {
   MIND_MAPPER: "mind-mapper",
   HIDENSEEK: "hidenseek",
   SPEED_DRAW: "speed-draw",
-  MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
 };
 
 // Category labels (for grouping & UI)
@@ -492,23 +491,6 @@ export const TASK_TYPE_META = {
       "One draws a concept rapidly; team guesses. First correct shout wins points. Fast-paced art + knowledge.",
   },
 
-  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: {
-    label: "Multi-Room Scavenger Hunt",
-    category: CATEGORY.MOVEMENT,
-    hasOptions: false,
-    expectsText: false,
-    maxTime: 300,
-    maxTimeSeconds: 300,
-    implemented: true,
-    aiEligible: false,
-
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
-    correctAnswerShape: null,
-
-    description:
-      "Hunt for items or solve riddles across rooms. Each find ties to a learning fact. High-movement adventure.",
-  },
 };
 
 // Flat map of taskType → human-readable label
