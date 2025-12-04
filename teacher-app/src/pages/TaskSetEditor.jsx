@@ -336,23 +336,101 @@ export default function TaskSetEditor() {
     });
   };
 
+  // ---------- Shared styles ----------
+  const wrapperStyle = {
+    padding: 24,
+    maxWidth: 960,
+    margin: "0 auto",
+    fontFamily:
+      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    color: "#111827",
+  };
+
+  const cardStyle = {
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    background: "#ffffff",
+    padding: 12,
+    boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
+  };
+
+  const btnBase = {
+    padding: "6px 12px",
+    borderRadius: 999,
+    fontSize: "0.8rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    border: "1px solid transparent",
+  };
+
+  const blueButton = {
+    ...btnBase,
+    background: "#2563eb",
+    color: "#ffffff",
+    borderColor: "#2563eb",
+  };
+
+  const grayButton = {
+    ...btnBase,
+    background: "#ffffff",
+    color: "#111827",
+    borderColor: "#d1d5db",
+  };
+
+  const greenButton = {
+    ...btnBase,
+    background: "#059669",
+    color: "#ffffff",
+    borderColor: "#047857",
+  };
+
+  const redTextButton = {
+    border: "none",
+    background: "transparent",
+    color: "#b91c1c",
+    fontSize: "0.75rem",
+    cursor: "pointer",
+  };
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-4 sm:px-6 sm:py-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg sm:text-xl font-semibold text-gray-900">
+    <div style={wrapperStyle}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 16,
+        }}
+      >
+        <h1
+          style={{
+            margin: 0,
+            fontSize: "1.3rem",
+            fontWeight: 600,
+          }}
+        >
           {id ? "Edit Task Set" : "New Task Set"}
         </h1>
-        <div className="flex gap-2">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button
+            type="button"
             onClick={() => navigate("/tasksets")}
-            className="px-3 py-1.5 text-sm rounded-full border border-gray-300 bg-white hover:bg-gray-50"
+            style={grayButton}
           >
             Back to list
           </button>
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-1.5 text-sm rounded-full bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400"
+            style={{
+              ...blueButton,
+              opacity: saving ? 0.7 : 1,
+              cursor: saving ? "wait" : "pointer",
+            }}
           >
             {saving ? "Saving…" : "Save task set"}
           </button>
@@ -360,43 +438,94 @@ export default function TaskSetEditor() {
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-sm text-red-700 rounded-lg">
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 8,
+            borderRadius: 8,
+            background: "#fef2f2",
+            color: "#b91c1c",
+            fontSize: "0.85rem",
+          }}
+        >
           {error}
         </div>
       )}
 
       {loading ? (
-        <div className="text-center py-10 text-gray-500 text-sm">
+        <div
+          style={{
+            textAlign: "center",
+            padding: "40px 0",
+            fontSize: "0.9rem",
+            color: "#6b7280",
+          }}
+        >
           Loading task set…
         </div>
       ) : (
         <>
-          {/* BASIC INFO PANEL */}
-          <div className="mb-6 border rounded-lg p-4 bg-white shadow-sm">
-            <h2 className="text-base font-semibold mb-3">Basic info</h2>
-            <div className="space-y-3">
+          {/* BASIC INFO */}
+          <div style={{ ...cardStyle, marginBottom: 16 }}>
+            <h2
+              style={{
+                margin: 0,
+                marginBottom: 8,
+                fontSize: "1rem",
+                fontWeight: 600,
+              }}
+            >
+              Basic info
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
                   Name
                 </label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full border rounded px-3 py-2 text-sm"
                   placeholder="e.g. Confederation Stations – Brain Blitz & Review"
+                  style={{
+                    width: "100%",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    padding: 8,
+                    fontSize: "0.9rem",
+                  }}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
                   Description (optional)
                 </label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full border rounded px-3 py-2 text-sm h-20"
                   placeholder="Short note to your future self about how and when to use this set."
+                  rows={3}
+                  style={{
+                    width: "100%",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    padding: 8,
+                    fontSize: "0.9rem",
+                    resize: "vertical",
+                  }}
                 />
               </div>
             </div>
@@ -406,13 +535,41 @@ export default function TaskSetEditor() {
           {(aiWordBank.length > 0 ||
             aiWordsUsed.length > 0 ||
             aiWordsUnused.length > 0) && (
-            <div className="mb-6 border rounded-lg p-4 bg-blue-50">
-              <div className="flex items-center justify-between mb-2">
+            <div
+              style={{
+                ...cardStyle,
+                marginBottom: 16,
+                background: "#eff6ff",
+                borderColor: "#bfdbfe",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  marginBottom: 6,
+                }}
+              >
                 <div>
-                  <h2 className="text-sm font-semibold">
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: "0.9rem",
+                      fontWeight: 600,
+                    }}
+                  >
                     AI word bank usage (from generator)
                   </h2>
-                  <p className="text-xs text-gray-700">
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: "0.8rem",
+                      color: "#374151",
+                    }}
+                  >
                     These words came from your AI generator step. See which
                     ones were used in this task set and which are still
                     “unused” so you can quickly build a follow-up set.
@@ -422,22 +579,46 @@ export default function TaskSetEditor() {
                   type="button"
                   onClick={handleCreateFromUnused}
                   disabled={!aiWordsUnused.length}
-                  className="mt-2 sm:mt-0 px-3 py-1.5 text-xs rounded-full bg-emerald-600 text-white disabled:bg-gray-400 hover:bg-emerald-700"
+                  style={{
+                    ...greenButton,
+                    opacity: aiWordsUnused.length ? 1 : 0.5,
+                    cursor: aiWordsUnused.length ? "pointer" : "not-allowed",
+                    fontSize: "0.75rem",
+                  }}
                 >
                   Create new task set with unused words
                 </button>
               </div>
 
               {aiWordsUsed.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-xs font-semibold text-green-800 mb-1">
+                <div style={{ marginBottom: 4 }}>
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      color: "#166534",
+                      marginBottom: 2,
+                    }}
+                  >
                     ✅ Used in this task set
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 4,
+                    }}
+                  >
                     {aiWordsUsed.map((w, i) => (
                       <span
                         key={`used-${i}-${w}`}
-                        className="inline-flex items-center px-2 py-0.5 text-[11px] rounded-full bg-green-100 text-green-800"
+                        style={{
+                          padding: "2px 6px",
+                          borderRadius: 999,
+                          background: "#bbf7d0",
+                          color: "#14532d",
+                          fontSize: "0.7rem",
+                        }}
                       >
                         {w}
                       </span>
@@ -447,15 +628,34 @@ export default function TaskSetEditor() {
               )}
 
               {aiWordsUnused.length > 0 && (
-                <div className="mb-1">
-                  <div className="text-xs font-semibold text-yellow-800 mb-1">
+                <div style={{ marginBottom: 2 }}>
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      color: "#92400e",
+                      marginBottom: 2,
+                    }}
+                  >
                     ❌ Not yet used — great for another set
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 4,
+                    }}
+                  >
                     {aiWordsUnused.map((w, i) => (
                       <span
                         key={`unused-${i}-${w}`}
-                        className="inline-flex items-center px-2 py-0.5 text-[11px] rounded-full bg-yellow-100 text-yellow-800"
+                        style={{
+                          padding: "2px 6px",
+                          borderRadius: 999,
+                          background: "#fed7aa",
+                          color: "#7c2d12",
+                          fontSize: "0.7rem",
+                        }}
                       >
                         {w}
                       </span>
@@ -465,7 +665,13 @@ export default function TaskSetEditor() {
               )}
 
               {aiWordBank.length > 0 && (
-                <div className="mt-2 text-[11px] text-gray-600">
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: "0.7rem",
+                    color: "#4b5563",
+                  }}
+                >
                   Total in original list: {aiWordBank.length}
                 </div>
               )}
@@ -473,48 +679,108 @@ export default function TaskSetEditor() {
           )}
 
           {/* DISPLAYS PANEL */}
-          <div className="mb-8 border rounded-lg p-4 bg-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-semibold">Displays / stations</h2>
-              <button
-                onClick={addDisplay}
-                className="px-3 py-1 text-sm rounded border bg-white hover:bg-gray-50"
+          <div style={{ ...cardStyle, marginBottom: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                }}
               >
+                Displays / stations
+              </h2>
+              <button type="button" onClick={addDisplay} style={grayButton}>
                 + Add display
               </button>
             </div>
-            <p className="text-xs text-gray-600 mb-2">
+            <p
+              style={{
+                margin: "2px 0 8px",
+                fontSize: "0.8rem",
+                color: "#6b7280",
+              }}
+            >
               Displays are physical screens, boards, or table-top instructions
               that stay fixed while teams rotate. You can attach tasks to a
               specific display if needed.
             </p>
 
             {displays.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.85rem",
+                  color: "#6b7280",
+                }}
+              >
                 No displays yet. You can still run this set without them.
               </p>
             ) : (
-              <div className="space-y-3">
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
                 {displays.map((d, index) => (
                   <div
                     key={d.key || index}
-                    className="border rounded p-3 bg-gray-50"
+                    style={{
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb",
+                      background: "#f9fafb",
+                      padding: 8,
+                    }}
                   >
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="font-semibold text-sm">
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "0.9rem",
+                          fontWeight: 600,
+                        }}
+                      >
                         Display {index + 1}
                       </div>
                       <button
+                        type="button"
                         onClick={() => removeDisplay(index)}
-                        className="text-xs text-red-600 hover:underline"
+                        style={redTextButton}
                       >
                         Remove
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+                        gap: 8,
+                      }}
+                    >
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
                           Name / label
                         </label>
                         <input
@@ -523,40 +789,76 @@ export default function TaskSetEditor() {
                           onChange={(e) =>
                             updateDisplay(index, "name", e.target.value)
                           }
-                          className="w-full border rounded px-2 py-1 text-sm"
                           placeholder="e.g. Confederation Station A"
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 6,
+                            fontSize: "0.8rem",
+                          }}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
                           Station color (optional)
                         </label>
                         <input
                           type="text"
                           value={d.stationColor || ""}
                           onChange={(e) =>
-                            updateDisplay(index, "stationColor", e.target.value)
-                          }
-                          className="w-full border rounded px-2 py-1 text-sm"
-                          placeholder="e.g. Red, Green, Blue…"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium mb-1">
-                          Teacher notes (optional)
-                        </label>
-                        <textarea
-                          value={d.notesForTeacher || ""}
-                          onChange={(e) =>
                             updateDisplay(
                               index,
-                              "notesForTeacher",
+                              "stationColor",
                               e.target.value
                             )
                           }
-                          className="w-full border rounded px-2 py-1 text-sm h-16"
+                          placeholder="e.g. Red, Green, Blue…"
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 6,
+                            fontSize: "0.8rem",
+                          }}
                         />
                       </div>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.8rem",
+                          marginBottom: 2,
+                        }}
+                      >
+                        Teacher notes (optional)
+                      </label>
+                      <textarea
+                        value={d.notesForTeacher || ""}
+                        onChange={(e) =>
+                          updateDisplay(
+                            index,
+                            "notesForTeacher",
+                            e.target.value
+                          )
+                        }
+                        rows={2}
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                          resize: "vertical",
+                        }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -565,61 +867,136 @@ export default function TaskSetEditor() {
           </div>
 
           {/* TASKS PANEL */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-semibold">Tasks</h2>
-              <button
-                onClick={addTask}
-                className="px-3 py-1 text-sm rounded border bg-white hover:bg-gray-50"
+          <div style={{ ...cardStyle, marginBottom: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                }}
               >
+                Tasks
+              </h2>
+              <button type="button" onClick={addTask} style={grayButton}>
                 + Add task
               </button>
             </div>
             {tasks.length === 0 ? (
-              <p className="text-sm text-gray-500">
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.85rem",
+                  color: "#6b7280",
+                }}
+              >
                 No tasks yet. Add at least one to save this set.
               </p>
             ) : (
-              <div className="space-y-3">
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
                 {tasks.map((task, index) => (
                   <div
                     key={task._tempId}
-                    className="border rounded p-3 bg-gray-50"
+                    style={{
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb",
+                      background: "#f9fafb",
+                      padding: 8,
+                    }}
                   >
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="font-semibold text-sm">
-                        Task {index + 1} –{" "}
-                        <span className="text-xs text-gray-600">
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "0.9rem",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Task {index + 1}{" "}
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "#6b7280",
+                          }}
+                        >
                           {prettyCategory(task.taskType)} •{" "}
                           {TASK_TYPE_META[task.taskType]?.label ||
                             task.taskType}
                         </span>
                       </div>
-                      <div className="flex gap-2">
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 4,
+                        }}
+                      >
                         <button
+                          type="button"
                           onClick={() => moveTask(task._tempId, "up")}
-                          className="text-xs border rounded px-2 py-0.5 bg-white hover:bg-gray-100"
+                          style={{
+                            ...grayButton,
+                            padding: "2px 8px",
+                            fontSize: "0.7rem",
+                          }}
                         >
                           ↑
                         </button>
                         <button
+                          type="button"
                           onClick={() => moveTask(task._tempId, "down")}
-                          className="text-xs border rounded px-2 py-0.5 bg-white hover:bg-gray-100"
+                          style={{
+                            ...grayButton,
+                            padding: "2px 8px",
+                            fontSize: "0.7rem",
+                          }}
                         >
                           ↓
                         </button>
                         <button
+                          type="button"
                           onClick={() => removeTask(task._tempId)}
-                          className="text-xs text-red-600 hover:underline"
+                          style={redTextButton}
                         >
                           Remove
                         </button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0,1fr))",
+                        gap: 8,
+                        marginBottom: 6,
+                      }}
+                    >
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
                           Type
                         </label>
                         <select
@@ -631,7 +1008,14 @@ export default function TaskSetEditor() {
                               e.target.value
                             )
                           }
-                          className="w-full border rounded px-2 py-1 text-sm"
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 6,
+                            fontSize: "0.8rem",
+                            background: "#ffffff",
+                          }}
                         >
                           {IMPLEMENTED_TASK_TYPES.map((type) => (
                             <option key={type} value={type}>
@@ -639,13 +1023,25 @@ export default function TaskSetEditor() {
                             </option>
                           ))}
                         </select>
-                        <p className="text-[11px] text-gray-500 mt-1">
+                        <p
+                          style={{
+                            margin: "2px 0 0",
+                            fontSize: "0.7rem",
+                            color: "#6b7280",
+                          }}
+                        >
                           {TASK_TYPE_META[task.taskType]?.description}
                         </p>
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
                           Time limit (seconds)
                         </label>
                         <input
@@ -660,12 +1056,24 @@ export default function TaskSetEditor() {
                               Number(e.target.value) || 60
                             )
                           }
-                          className="w-full border rounded px-2 py-1 text-sm"
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 6,
+                            fontSize: "0.8rem",
+                          }}
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
                           Points
                         </label>
                         <input
@@ -680,13 +1088,25 @@ export default function TaskSetEditor() {
                               Number(e.target.value) || 10
                             )
                           }
-                          className="w-full border rounded px-2 py-1 text-sm"
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 6,
+                            fontSize: "0.8rem",
+                          }}
                         />
                       </div>
                     </div>
 
-                    <div className="mb-3">
-                      <label className="block text-sm font-medium mb-1">
+                    <div style={{ marginBottom: 6 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.8rem",
+                          marginBottom: 2,
+                        }}
+                      >
                         Title
                       </label>
                       <input
@@ -695,13 +1115,25 @@ export default function TaskSetEditor() {
                         onChange={(e) =>
                           updateTask(task._tempId, "title", e.target.value)
                         }
-                        className="w-full border rounded px-2 py-1 text-sm"
                         placeholder="e.g. Name the First Four Provinces"
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                        }}
                       />
                     </div>
 
-                    <div className="mb-3">
-                      <label className="block text-sm font-medium mb-1">
+                    <div style={{ marginBottom: 6 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.8rem",
+                          marginBottom: 2,
+                        }}
+                      >
                         Prompt / question
                       </label>
                       <textarea
@@ -709,7 +1141,15 @@ export default function TaskSetEditor() {
                         onChange={(e) =>
                           updateTask(task._tempId, "prompt", e.target.value)
                         }
-                        className="w-full border rounded px-2 py-1 text-sm h-20"
+                        rows={3}
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                          resize: "vertical",
+                        }}
                       />
                     </div>
 
@@ -719,26 +1159,60 @@ export default function TaskSetEditor() {
                       TASK_TYPES.SORT,
                       TASK_TYPES.SEQUENCE,
                     ].includes(task.taskType) && (
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium mb-1">
+                      <div style={{ marginBottom: 6 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
                           Options
                         </label>
-                        <div className="space-y-2">
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                          }}
+                        >
                           {(task.options || []).map((opt, i) => (
                             <div
                               key={i}
-                              className="flex items-center gap-2 text-sm"
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
                             >
                               <input
                                 type="text"
                                 value={opt}
                                 onChange={(e) =>
-                                  updateOption(task._tempId, i, e.target.value)
+                                  updateOption(
+                                    task._tempId,
+                                    i,
+                                    e.target.value
+                                  )
                                 }
-                                className="flex-1 border rounded px-2 py-1"
+                                style={{
+                                  flex: 1,
+                                  borderRadius: 6,
+                                  border: "1px solid #d1d5db",
+                                  padding: 6,
+                                  fontSize: "0.8rem",
+                                }}
                               />
-                              {task.taskType === TASK_TYPES.MULTIPLE_CHOICE && (
-                                <label className="flex items-center gap-1 text-xs">
+                              {task.taskType ===
+                                TASK_TYPES.MULTIPLE_CHOICE && (
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 4,
+                                    fontSize: "0.7rem",
+                                  }}
+                                >
                                   <input
                                     type="radio"
                                     name={`correct-${task._tempId}`}
@@ -755,18 +1229,27 @@ export default function TaskSetEditor() {
                                 </label>
                               )}
                               <button
+                                type="button"
                                 onClick={() =>
                                   removeOption(task._tempId, i)
                                 }
-                                className="text-xs text-red-600"
+                                style={redTextButton}
                               >
                                 ✕
                               </button>
                             </div>
                           ))}
                           <button
+                            type="button"
                             onClick={() => addOption(task._tempId)}
-                            className="text-xs text-blue-600 hover:underline"
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              color: "#2563eb",
+                              fontSize: "0.75rem",
+                              cursor: "pointer",
+                              alignSelf: "flex-start",
+                            }}
                           >
                             + Add option
                           </button>
@@ -775,8 +1258,14 @@ export default function TaskSetEditor() {
                     )}
 
                     {/* Display assignment */}
-                    <div className="mb-2">
-                      <label className="block text-sm font-medium mb-1">
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.8rem",
+                          marginBottom: 2,
+                        }}
+                      >
                         Attach to display (optional)
                       </label>
                       <select
@@ -788,7 +1277,14 @@ export default function TaskSetEditor() {
                             e.target.value
                           )
                         }
-                        className="w-full border rounded px-2 py-1 text-sm"
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                          background: "#ffffff",
+                        }}
                       >
                         <option value="">(none)</option>
                         {displays.map((d) => (
