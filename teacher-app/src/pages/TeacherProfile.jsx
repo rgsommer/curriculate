@@ -17,18 +17,17 @@ const PERSPECTIVE_OPTIONS = [
 const EMPTY_CATEGORY = { key: "", label: "", weight: 0 };
 
 export default function TeacherProfile() {
-    const [profile, setProfile] = useState({
+  const [profile, setProfile] = useState({
     presenterName: "",
     presenterTitle: "",
     email: "",
     schoolName: "",
     defaultStations: 8,
+    treatsPerSession: 4,
     perspectives: [],
     assessmentCategories: [EMPTY_CATEGORY],
     includeIndividualReports: false,
     locationOptions: [],
-    // Treats / rewards
-    treatsPerSession: 4,
 
     // Jeopardy defaults
     jeopardyDefaultContestantCount: 3,
@@ -52,12 +51,16 @@ export default function TeacherProfile() {
 
         if (cancelled || !data) return;
 
-                const merged = {
+        const merged = {
           presenterName: data.presenterName || data.name || "",
           presenterTitle: data.presenterTitle || data.title || "",
           email: data.email || "",
           schoolName: data.schoolName || "",
-                    defaultStations: data.defaultStations || 8,
+          defaultStations: data.defaultStations || 8,
+          treatsPerSession:
+            typeof data.treatsPerSession === "number"
+              ? data.treatsPerSession
+              : 4,
           perspectives: Array.isArray(data.perspectives)
             ? data.perspectives
             : [],
@@ -73,13 +76,6 @@ export default function TeacherProfile() {
             typeof data.includeIndividualReports === "boolean"
               ? data.includeIndividualReports
               : !!data.includeStudentReports,
-
-          // Treats / rewards
-          treatsPerSession:
-            Number(
-              data.treatsPerSession ??
-                4
-            ) || 4,
 
           // Jeopardy defaults (with safe fallbacks)
           jeopardyDefaultContestantCount:
@@ -99,9 +95,11 @@ export default function TeacherProfile() {
         setProfile(merged);
       } catch (err) {
         console.error("Failed to load profile:", err);
-        setError("Could not load presenter profile.");
+        setError("Could not load profile. Please try again.");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -142,6 +140,16 @@ export default function TeacherProfile() {
     }));
   };
 
+  const removeCategoryRow = (index) => {
+    setProfile((prev) => {
+      const list = prev.assessmentCategories.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        assessmentCategories: list.length ? list : [EMPTY_CATEGORY],
+      };
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -161,14 +169,8 @@ export default function TeacherProfile() {
               .filter((s) => s)
           : [],
         defaultStations: Number(profile.defaultStations) || 8,
-
-        // Treats / rewards – clamp 0–10
-        treatsPerSession: (() => {
-          const n = Number(profile.treatsPerSession);
-          if (!Number.isFinite(n)) return 4;
-          return Math.max(0, Math.min(10, n));
-        })(),
-
+        treatsPerSession:
+          Number(profile.treatsPerSession ?? 4),
         jeopardyDefaultContestantCount:
           Number(profile.jeopardyDefaultContestantCount) || 3,
         assessmentCategories: profile.assessmentCategories
@@ -194,39 +196,11 @@ export default function TeacherProfile() {
           typeof updated.includeIndividualReports === "boolean"
             ? updated.includeIndividualReports
             : !!updated.includeStudentReports,
-
-        // Treats / rewards
-        treatsPerSession:
-          Number(
-            updated.treatsPerSession ??
-              prev.treatsPerSession ??
-              4
-          ) || 4,
-
-        jeopardyDefaultContestantCount:
-          Number(
-            updated.jeopardyDefaultContestantCount ??
-              prev.jeopardyDefaultContestantCount ??
-              3
-          ),
-        jeopardyDefaultAnswerMode:
-          updated.jeopardyDefaultAnswerMode ||
-          prev.jeopardyDefaultAnswerMode ||
-          "buzz-first",
-        jeopardyAllowNegativeScores:
-          typeof updated.jeopardyAllowNegativeScores === "boolean"
-            ? updated.jeopardyAllowNegativeScores
-            : prev.jeopardyAllowNegativeScores ?? true,
-        jeopardyAllowRebound:
-          typeof updated.jeopardyAllowRebound === "boolean"
-            ? updated.jeopardyAllowRebound
-            : prev.jeopardyAllowRebound ?? true,
       }));
-
       setMessage("Profile saved.");
     } catch (err) {
       console.error("Failed to save profile:", err);
-      setError("Could not save presenter profile.");
+      setError("Could not save profile. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -234,8 +208,9 @@ export default function TeacherProfile() {
 
   if (loading) {
     return (
-      <div style={{ padding: 24 }}>
-        <p>Loading presenter profile…</p>
+      <div style={{ padding: 16 }}>
+        <h1>Presenter Profile</h1>
+        <p>Loading your profile…</p>
       </div>
     );
   }
@@ -243,24 +218,28 @@ export default function TeacherProfile() {
   return (
     <div
       style={{
-        padding: 24,
         maxWidth: 900,
         margin: "0 auto",
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        padding: 16,
+        fontFamily:
+          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
-      <h1 style={{ marginBottom: 4 }}>Presenter Profile</h1>
-      <p style={{ marginTop: 0, color: "#6b7280" }}>
-        These details personalize your sessions, reports, and AI suggestions.
+      <h1 style={{ marginBottom: 8 }}>Presenter Profile</h1>
+      <p style={{ marginTop: 0, color: "#4b5563", fontSize: "0.9rem" }}>
+        These settings personalize how Curriculate generates tasks, runs
+        live sessions, and prepares reports.
       </p>
 
       <form onSubmit={handleSubmit}>
         <section style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>Basics</h2>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            Basic info
+          </h2>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
             }}
           >
@@ -278,7 +257,9 @@ export default function TeacherProfile() {
               <input
                 type="text"
                 value={profile.presenterName}
-                onChange={(e) => handleChange("presenterName", e.target.value)}
+                onChange={(e) =>
+                  handleChange("presenterName", e.target.value)
+                }
                 style={{
                   width: "100%",
                   padding: "6px 8px",
@@ -302,8 +283,9 @@ export default function TeacherProfile() {
               <input
                 type="text"
                 value={profile.presenterTitle}
-                onChange={(e) => handleChange("presenterTitle", e.target.value)}
-                placeholder="Teacher, Pastor, Facilitator…"
+                onChange={(e) =>
+                  handleChange("presenterTitle", e.target.value)
+                }
                 style={{
                   width: "100%",
                   padding: "6px 8px",
@@ -322,7 +304,7 @@ export default function TeacherProfile() {
                   color: "#4b5563",
                 }}
               >
-                Email
+                Contact email
               </label>
               <input
                 type="email"
@@ -391,6 +373,58 @@ export default function TeacherProfile() {
           </div>
         </section>
 
+        {/* Random treats config */}
+        <section style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            Random Treats
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+            Set how many random treats you would like to sprinkle into a
+            typical session. Treats will only be issued once at least 30% of
+            the tasks in a task set have been completed.
+          </p>
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.8rem",
+                marginBottom: 4,
+                color: "#4b5563",
+              }}
+            >
+              Number of treats per session
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={10}
+              value={Number(profile.treatsPerSession ?? 4)}
+              onChange={(e) =>
+                handleChange(
+                  "treatsPerSession",
+                  Number(e.target.value)
+                )
+              }
+              style={{ width: "100%" }}
+            />
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: "0.85rem",
+                color: "#4b5563",
+              }}
+            >
+              {Number(profile.treatsPerSession ?? 4) === 0
+                ? "No random treats will be issued for this session."
+                : `${Number(
+                    profile.treatsPerSession ?? 4
+                  )} random treat${
+                    Number(profile.treatsPerSession ?? 4) === 1 ? "" : "s"
+                  } per session (after at least 30% of tasks are completed).`}
+            </div>
+          </div>
+        </section>
+
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Perspectives
@@ -412,7 +446,7 @@ export default function TeacherProfile() {
                     borderRadius: 999,
                     border: active ? "none" : "1px solid #d1d5db",
                     background: active ? "#0ea5e9" : "#f9fafb",
-                    color: active ? "#fff" : "#374151",
+                    color: active ? "#ffffff" : "#111827",
                     fontSize: "0.8rem",
                     cursor: "pointer",
                   }}
@@ -429,10 +463,16 @@ export default function TeacherProfile() {
             Assessment categories
           </h2>
           <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-            Optional: define categories (e.g., Knowledge, Collaboration,
-            Communication) and weights used in AI summaries and reports.
+            These are used as headings in your reports and can help structure
+            how students are evaluated.
           </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
             {profile.assessmentCategories.map((cat, index) => (
               <div
                 key={index}
@@ -454,7 +494,6 @@ export default function TeacherProfile() {
                     padding: "6px 8px",
                     borderRadius: 8,
                     border: "1px solid #d1d5db",
-                    fontSize: "0.8rem",
                   }}
                 />
                 <input
@@ -468,24 +507,38 @@ export default function TeacherProfile() {
                     padding: "6px 8px",
                     borderRadius: 8,
                     border: "1px solid #d1d5db",
-                    fontSize: "0.8rem",
                   }}
                 />
-                <input
-                  type="number"
-                  placeholder="%"
-                  value={cat.weight}
-                  onChange={(e) =>
-                    handleCategoryChange(index, "weight", e.target.value)
-                  }
-                  style={{
-                    padding: "6px 8px",
-                    borderRadius: 8,
-                    border: "1px solid #d1d5db",
-                    fontSize: "0.8rem",
-                    width: "100%",
-                  }}
-                />
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="number"
+                    placeholder="%"
+                    value={cat.weight}
+                    onChange={(e) =>
+                      handleCategoryChange(index, "weight", e.target.value)
+                    }
+                    style={{
+                      width: 60,
+                      padding: "6px 8px",
+                      borderRadius: 8,
+                      border: "1px solid #d1d5db",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeCategoryRow(index)}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "#b91c1c",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                    }}
+                    title="Remove category"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -494,12 +547,11 @@ export default function TeacherProfile() {
             onClick={addCategoryRow}
             style={{
               marginTop: 8,
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: "1px dashed #d1d5db",
-              background: "#f9fafb",
-              fontSize: "0.8rem",
+              border: "none",
+              background: "transparent",
+              color: "#0ea5e9",
               cursor: "pointer",
+              fontSize: "0.85rem",
             }}
           >
             + Add category
@@ -508,134 +560,35 @@ export default function TeacherProfile() {
 
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
-            Room / location options
-          </h2>
-          <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-            Define the locations you might use for sessions (e.g., Classroom,
-            Gym, Hallway, Gym &amp; Hallway). These will appear as quick
-            selection bubbles in Live Session so you can override the location
-            for a particular run.
-          </p>
-          <input
-            type="text"
-            value={profile.locationOptions.join(", ")}
-            onChange={(e) => {
-              const raw = e.target.value || "";
-              const parts = raw
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              handleChange("locationOptions", parts);
-            }}
-            placeholder="Classroom, Gym, Hallway, Gym & Hallway"
-            style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              fontSize: "0.85rem",
-            }}
-          />
-        </section>
-
-        <section style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
-            Reporting options
-          </h2>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: "0.9rem",
-              color: "#374151",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={profile.includeIndividualReports}
-              onChange={(e) =>
-                handleChange("includeIndividualReports", e.target.checked)
-              }
-            />
-            Include individual student reports with class transcript
-          </label>
-        </section>
-
-        <section style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
-          Treats / rewards
-        </h2>
-        <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 8 }}>
-          Choose how many treats you’d like to issue over a typical session.
-          This becomes the default treat quota in Live Session.
-        </p>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            maxWidth: 420,
-          }}
-        >
-          <input
-            type="range"
-            min={0}
-            max={10}
-            step={1}
-            value={Number(profile.treatsPerSession ?? 4)}
-            onChange={(e) =>
-              handleChange("treatsPerSession", Number(e.target.value))
-            }
-            style={{ flex: 1 }}
-          />
-          <div
-            style={{
-              minWidth: 40,
-              textAlign: "center",
-              fontSize: "0.9rem",
-              fontWeight: 600,
-            }}
-          >
-            {profile.treatsPerSession ?? 4}
-          </div>
-        </div>
-
-        <p style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: 4 }}>
-          Range: 0–10 treats per session. Default is 4.
-        </p>
-      </section>
-
-                <section style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Jeopardy defaults
           </h2>
-          <p
-            style={{
-              fontSize: "0.85rem",
-              color: "#6b7280",
-              marginBottom: 8,
-            }}
-          >
-            These settings are used whenever you run a Jeopardy-style game.
-            You can still override them per task or during a session.
+          <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+            These settings are used when you generate Jeopardy-style boards.
           </p>
+
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: 12,
-              alignItems: "flex-start",
             }}
           >
-            <label style={{ fontSize: "0.85rem" }}>
-              Default teams in a Jeopardy game
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.8rem",
+                  marginBottom: 2,
+                  color: "#4b5563",
+                }}
+              >
+                Default contestant teams
+              </label>
               <input
                 type="number"
                 min={2}
                 max={8}
-                value={profile.jeopardyDefaultContestantCount ?? 3}
+                value={profile.jeopardyDefaultContestantCount}
                 onChange={(e) =>
                   handleChange(
                     "jeopardyDefaultContestantCount",
@@ -643,48 +596,46 @@ export default function TeacherProfile() {
                   )
                 }
                 style={{
-                  display: "block",
-                  marginTop: 4,
-                  padding: "4px 6px",
-                  borderRadius: 6,
+                  width: "100%",
+                  padding: "6px 8px",
+                  borderRadius: 8,
                   border: "1px solid #d1d5db",
-                  width: 80,
                 }}
               />
-            </label>
+            </div>
 
-            <label style={{ fontSize: "0.85rem" }}>
-              Answer mode
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "0.8rem",
+                  marginBottom: 2,
+                  color: "#4b5563",
+                }}
+              >
+                Answer mode
+              </label>
               <select
-                value={profile.jeopardyDefaultAnswerMode || "buzz-first"}
+                value={profile.jeopardyDefaultAnswerMode}
                 onChange={(e) =>
                   handleChange("jeopardyDefaultAnswerMode", e.target.value)
                 }
                 style={{
-                  display: "block",
-                  marginTop: 4,
-                  padding: "4px 6px",
-                  borderRadius: 6,
+                  width: "100%",
+                  padding: "6px 8px",
+                  borderRadius: 8,
                   border: "1px solid #d1d5db",
+                  background: "#ffffff",
                 }}
               >
-                <option value="buzz-first">
-                  First team to buzz gets to answer
-                </option>
-                <option value="all-try">
-                  All teams answer; fastest correct gets full credit
-                </option>
+                <option value="buzz-first">Buzz in first</option>
+                <option value="all-try">All teams answer</option>
               </select>
-            </label>
+            </div>
+          </div>
 
-            <label
-              style={{
-                fontSize: "0.85rem",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
+          <div style={{ marginTop: 8, fontSize: "0.85rem" }}>
+            <label style={{ display: "block", marginBottom: 4 }}>
               <input
                 type="checkbox"
                 checked={!!profile.jeopardyAllowNegativeScores}
@@ -694,25 +645,17 @@ export default function TeacherProfile() {
                     e.target.checked
                   )
                 }
-              />
-              Allow negative scores for wrong buzz-ins
+              />{" "}
+              Allow negative scores for wrong answers
             </label>
-
-            <label
-              style={{
-                fontSize: "0.85rem",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
+            <label style={{ display: "block" }}>
               <input
                 type="checkbox"
                 checked={!!profile.jeopardyAllowRebound}
                 onChange={(e) =>
                   handleChange("jeopardyAllowRebound", e.target.checked)
                 }
-              />
+              />{" "}
               Allow rebound if a team misses a clue
             </label>
           </div>
@@ -722,44 +665,94 @@ export default function TeacherProfile() {
           <h3 style={{ fontSize: "1.1rem", marginBottom: 12 }}>
             Available Rooms for Scavenger Hunts
           </h3>
-          <p style={{ fontSize: "0.85rem", color: "#4b5563", marginBottom: 12 }}>
-            Add/edit rooms (e.g., Hallway, Gym).
+          <p
+            style={{
+              fontSize: "0.85rem",
+              color: "#4b5563",
+              marginBottom: 12,
+            }}
+          >
+            These labels appear when you run multi-room scavenger hunts.
+            Examples: <code>Classroom</code>, <code>Hallway</code>,{" "}
+            <code>Gym</code>, <code>Library</code>.
           </p>
-          {(profile.locationOptions || []).map((room, idx) => (
-            <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <input
-                type="text"
-                value={room}
-                onChange={(e) => {
-                  const newRooms = [...profile.locationOptions];
-                  newRooms[idx] = e.target.value;
-                  handleChange("locationOptions", newRooms);
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {(profile.locationOptions || []).map((room, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 4,
                 }}
-                placeholder="e.g. Hallway"
-                style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const newRooms = profile.locationOptions.filter((_, i) => i !== idx);
-                  handleChange("locationOptions", newRooms);
-                }}
-                style={{ color: "#b91c1c", fontSize: "0.85rem" }}
               >
-                Remove
-              </button>
-            </div>
-          ))}
+                <input
+                  type="text"
+                  value={room}
+                  onChange={(e) => {
+                    const newRooms = [...profile.locationOptions];
+                    newRooms[idx] = e.target.value;
+                    handleChange("locationOptions", newRooms);
+                  }}
+                  placeholder="e.g. Hallway"
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newRooms = profile.locationOptions.filter(
+                      (_, i) => i !== idx
+                    );
+                    handleChange("locationOptions", newRooms);
+                  }}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "#b91c1c",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
           <button
             type="button"
-            onClick={() => handleChange("locationOptions", [...(profile.locationOptions || []), ""])}
-            style={{ fontSize: "0.85rem", color: "#0ea5e9", marginTop: 8 }}
+            onClick={() =>
+              handleChange("locationOptions", [
+                ...(profile.locationOptions || []),
+                "",
+              ])
+            }
+            style={{
+              fontSize: "0.85rem",
+              color: "#0ea5e9",
+              marginTop: 8,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+            }}
           >
             + Add Room
           </button>
         </section>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            marginTop: 24,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <button
             type="submit"
             disabled={saving}
@@ -768,9 +761,10 @@ export default function TeacherProfile() {
               borderRadius: 999,
               border: "none",
               background: "#0ea5e9",
-              color: "#fff",
+              color: "#ffffff",
+              fontSize: "0.95rem",
               cursor: "pointer",
-              fontSize: "0.9rem",
+              fontWeight: 600,
             }}
           >
             {saving ? "Saving…" : "Save profile"}
