@@ -17,11 +17,7 @@ const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
 const coreTypes =
   AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
     ? AI_ELIGIBLE_TYPES
-    : [
-        TASK_TYPES.MULTIPLE_CHOICE,
-        TASK_TYPES.TRUE_FALSE,
-        TASK_TYPES.SHORT_ANSWER,
-      ];
+    : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
 
 /**
  * Basic payload validation + normalization for difficulty / learning goal.
@@ -35,12 +31,8 @@ function validateGeneratePayload(payload = {}) {
   const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
   const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
-  const difficulty = (payload.difficulty || "MEDIUM")
-    .toString()
-    .toUpperCase();
-  const learningGoal = (payload.learningGoal || "REVIEW")
-    .toString()
-    .toUpperCase();
+  const difficulty = (payload.difficulty || "MEDIUM").toString().toUpperCase();
+  const learningGoal = (payload.learningGoal || "REVIEW").toString().toUpperCase();
 
   if (!difficultiesAllowed.includes(difficulty)) {
     errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
@@ -83,13 +75,10 @@ export const generateAiTaskset = async (req, res) => {
       // Optional: vocabulary / key terms for "used vs not used"
       aiWordBank,
 
-      // Newer fields from AiTasksetGenerator
-      requiredTaskTypes,
-      tasksetName,
+      // Optional: name / room
+      tasksetName: explicitName,
       roomLocation,
       locationCode,
-      isFixedStationTaskset,
-      displays,
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
@@ -113,38 +102,15 @@ export const generateAiTaskset = async (req, res) => {
 
     const safeCount = Math.max(4, Math.min(20, requestedCount || 8));
 
-    // Resolve curricular lenses / perspectives
-    let lenses = [];
-    if (
-      presenterProfile &&
-      Array.isArray(presenterProfile.curriculumLenses) &&
-      presenterProfile.curriculumLenses.length
-    ) {
-      lenses = presenterProfile.curriculumLenses;
-    } else if (
-      presenterProfile &&
-      Array.isArray(presenterProfile.perspectives) &&
-      presenterProfile.perspectives.length
-    ) {
-      lenses = presenterProfile.perspectives;
-    }
-    const lensesText = lenses.length ? lenses.join(", ") : "none specified";
-
     // If the frontend passed a limited type set, intersect with AI-eligible types
-    const requestedTypes =
-      (Array.isArray(requiredTaskTypes) && requiredTaskTypes.length
-        ? requiredTaskTypes
-        : Array.isArray(selectedTypes) && selectedTypes.length
-        ? selectedTypes
-        : []) || [];
-
+    const rawSelected = (Array.isArray(selectedTypes) && selectedTypes) || [];
     const typePool =
-      requestedTypes.length > 0
-        ? requestedTypes.filter((t) => AI_ELIGIBLE_TYPES.includes(t))
+      rawSelected.length > 0
+        ? rawSelected.filter((t) => AI_ELIGIBLE_TYPES.includes(t))
         : coreTypes;
 
-    const resolvedName =
-      tasksetName ||
+    const finalTasksetName =
+      explicitName ||
       topicTitle ||
       topicDescription?.slice(0, 60) ||
       `${subject || "Lesson"} – AI Task Set`;
@@ -177,6 +143,13 @@ so that they naturally reflect those lenses.
 For each allowed taskType, follow these guidelines:
 ${typeGuidelines}
 `.trim();
+
+    const lensesText =
+      presenterProfile &&
+      Array.isArray(presenterProfile.curriculumLenses) &&
+      presenterProfile.curriculumLenses.length
+        ? presenterProfile.curriculumLenses.join(", ")
+        : "none specified";
 
     const userPrompt = `
 Create ${safeCount} tasks for:
@@ -236,8 +209,10 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     try {
       aiTasks = JSON.parse(raw);
     } catch (err) {
-      console.error("Failed to parse AI JSON:", raw.slice(0, 500));
-      throw new Error("AI did not return valid JSON");
+      console.error("AI taskset JSON parse error:", err, raw.slice(0, 500));
+      return res
+        .status(500)
+        .json({ error: "AI returned invalid JSON for taskset" });
     }
 
     if (!Array.isArray(aiTasks) || aiTasks.length === 0) {
@@ -267,7 +242,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         options = [];
       }
 
-      // ---------- correctAnswer normalization ----------
       let correctAnswer = t.correctAnswer ?? null;
 
       if (
@@ -280,10 +254,14 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         correctAnswer = idx;
       } else if (taskType === TASK_TYPES.SHORT_ANSWER) {
         correctAnswer =
-          typeof correctAnswer === "string" ? correctAnswer : null;
+          typeof correctAnswer === "string" && correctAnswer.trim().length
+            ? correctAnswer.trim()
+            : null;
+      } else {
+        // Non-objective types: ignore any random correctAnswer the model sends
+        correctAnswer = null;
       }
 
-      // Time & points
       const timeLimitSeconds =
         Number(t.timeLimitSeconds) && Number(t.timeLimitSeconds) > 0
           ? Number(t.timeLimitSeconds)
@@ -292,20 +270,11 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       const points =
         Number(t.points) && Number(t.points) > 0 ? Number(t.points) : 10;
 
-      // ---------- AI scoring flag based on metadata ----------
-      const meta = TASK_TYPE_META[taskType] || {};
-      let aiScoringRequired;
+      // If we have a correctAnswer, we can auto-score (no AI needed)
+      const canAutoScore =
+        correctAnswer !== null && correctAnswer !== undefined;
 
-      if (typeof t.aiScoringRequired === "boolean") {
-        aiScoringRequired = t.aiScoringRequired;
-      } else if (meta.objectiveScoring && correctAnswer != null) {
-        // If it's objective and we have an answer, prefer instant scoring
-        aiScoringRequired = false;
-      } else if (typeof meta.defaultAiScoringRequired === "boolean") {
-        aiScoringRequired = meta.defaultAiScoringRequired;
-      } else {
-        aiScoringRequired = false;
-      }
+      const aiScoringRequired = !canAutoScore;
 
       return {
         taskId: `ai-${index + 1}`,
@@ -360,52 +329,38 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
     const now = new Date();
 
-    const tasksetDoc = await TaskSet.create({
-      name: resolvedName,
+    const tasksetDoc = new TaskSet({
+      name: finalTasksetName,
+      description: topicDescription || "",
       subject,
       gradeLevel,
-      learningGoal: normGoal,
       difficulty: normDifficulty,
-      durationMinutes: duration,
+      learningGoal: normGoal,
       tasks,
-      // Station / room context
-      roomLocation: roomLocation || locationCode || undefined,
-      isFixedStationTaskset: !!isFixedStationTaskset,
-      displays: Array.isArray(displays) ? displays : [],
-      // Metadata
-      requiredTaskTypes:
-        requestedTypes && requestedTypes.length ? requestedTypes : undefined,
-      isPublic: false,
+      displays: [],
       meta: {
-        generatedBy: "AI",
-        generatedAt: now.toISOString(),
+        source: "ai",
         sourceConfig: {
-          subject,
-          gradeLevel,
-          difficulty: normDifficulty,
-          learningGoal: normGoal,
-          topicDescription,
-          topicTitle,
-          durationMinutes: duration,
-          requestedCount: safeCount,
-          typePool,
-          customInstructions,
-          lenses,
           aiWordBank: rawWordBank,
           aiWordsUsed,
           aiWordsUnused,
         },
       },
+      requiredTaskTypes: typePool,
+      totalDurationMinutes: duration,
+      createdAt: now,
+      updatedAt: now,
+      roomLocation: roomLocation || locationCode || "Classroom",
     });
 
-    return res.json({ ok: true, taskset: tasksetDoc, tasksetId: tasksetDoc._id });
+    await tasksetDoc.save();
+
+    return res.status(201).json(tasksetDoc.toObject());
   } catch (err) {
-    console.error("AI Taskset generation failed:", err);
+    console.error("generateAiTaskset error:", err);
     return res.status(500).json({
-      error: "Failed to generate taskset",
-      details: err.message || String(err),
+      error:
+        err?.message || "Failed to generate AI task set. Please try again.",
     });
   }
 };
-
-export default { generateAiTaskset };

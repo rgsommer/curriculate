@@ -1,7 +1,5 @@
 // backend/ai/aiScoring.js
-
 import OpenAI from "openai";
-import { TASK_TYPE_META, TASK_TYPES } from "../../shared/taskTypes.js";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -9,154 +7,150 @@ const openai = new OpenAI({
 
 const DEFAULT_MODEL = process.env.AI_SCORING_MODEL || "gpt-5.1";
 
-function normalizeText(s) {
-  return String(s || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+/**
+ * Try to infer the student's "answer" value from a submission object.
+ * Supports several shapes for backwards compatibility.
+ */
+function extractStudentAnswer(submission = {}) {
+  if (submission == null || typeof submission !== "object") return null;
+
+  // Most likely fields first
+  if (typeof submission.answerIndex === "number") return submission.answerIndex;
+  if (typeof submission.selectedIndex === "number") return submission.selectedIndex;
+  if (typeof submission.selectedOptionIndex === "number") {
+    return submission.selectedOptionIndex;
+  }
+  if (typeof submission.choiceIndex === "number") return submission.choiceIndex;
+  if (typeof submission.answer === "number" || typeof submission.answer === "string") {
+    return submission.answer;
+  }
+
+  // Open-text style
+  if (typeof submission.answerText === "string") return submission.answerText;
+
+  return null;
+}
+
+/**
+ * Objective / rule-based scoring for tasks that have a correctAnswer baked in
+ * and do NOT require AI scoring.
+ *
+ * Returns the same shape as AI scoring:
+ * {
+ *   totalScore,
+ *   maxPoints,
+ *   criteria: [{ id, score, maxPoints, comment }],
+ *   overallComment
+ * }
+ */
+export function scoreSubmissionRuleBased({ task, submission }) {
+  const safeTask = task || {};
+  const safeSubmission = submission || {};
+
+  const maxPoints =
+    typeof safeTask.points === "number" && safeTask.points > 0
+      ? safeTask.points
+      : 1;
+
+  const correctAnswer = safeTask.correctAnswer;
+  const studentAnswer = extractStudentAnswer(safeSubmission);
+
+  let isCorrect = false;
+  let explanation = "";
+
+  // If correctAnswer is a number → index-based (MC / True-False)
+  if (typeof correctAnswer === "number") {
+    const studentIndex =
+      typeof studentAnswer === "number"
+        ? studentAnswer
+        : Number.isInteger(Number(studentAnswer))
+        ? Number(studentAnswer)
+        : null;
+
+    if (
+      studentIndex != null &&
+      Array.isArray(safeTask.options) &&
+      studentIndex >= 0 &&
+      studentIndex < safeTask.options.length
+    ) {
+      isCorrect = studentIndex === correctAnswer;
+      explanation = isCorrect
+        ? "Selected option matches the correct answer."
+        : "Selected option does not match the correct answer.";
+    } else {
+      isCorrect = false;
+      explanation = "Student did not provide a valid option index.";
+    }
+  }
+  // If correctAnswer is a string → short-answer style
+  else if (typeof correctAnswer === "string") {
+    const correct = correctAnswer.trim().toLowerCase();
+    const studentText =
+      typeof studentAnswer === "string"
+        ? studentAnswer.trim().toLowerCase()
+        : typeof studentAnswer === "number"
+        ? String(studentAnswer)
+        : "";
+
+    if (!correct || !studentText) {
+      isCorrect = false;
+      explanation = "Missing or empty answer.";
+    } else {
+      // Basic normalization: trim + lower-case; allow simple equality
+      // (You can later expand with synonyms or fuzzy matching.)
+      isCorrect = studentText === correct;
+      explanation = isCorrect
+        ? "Student response matches the reference answer."
+        : `Expected "${correctAnswer}", but got "${studentAnswer ?? ""}".`;
+    }
+  } else {
+    // We don't know how to auto-score this task
+    isCorrect = false;
+    explanation =
+      "This task is not configured for automatic scoring (no correctAnswer).";
+  }
+
+  const totalScore = isCorrect ? maxPoints : 0;
+
+  return {
+    totalScore,
+    maxPoints,
+    criteria: [
+      {
+        id: "correctness",
+        score: totalScore,
+        maxPoints,
+        comment: explanation,
+      },
+    ],
+    overallComment: isCorrect
+      ? "Correct."
+      : `Incorrect. ${explanation || "Review this concept with the student."}`,
+  };
 }
 
 /**
  * Build a human-readable description of what the student submitted.
- * For AI scoring only – not used for instant scoring.
+ * For now, we handle text-based answers (open-text); later we can
+ * add branches for audio transcripts, images, captions, etc.
  */
 function buildStudentWorkDescription(task, submission) {
-  const taskType = task.taskType || task.type;
+  const taskType = task?.taskType || task?.type;
 
-  // Multiple-choice / True-False
-  if (
-    taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-    taskType === TASK_TYPES.TRUE_FALSE
-  ) {
-    const options = Array.isArray(task.options) ? task.options : [];
-    const idx =
-      submission.answerIndex ??
-      submission.selectedIndex ??
-      submission.selectedOptionIndex ??
-      null;
-
-    const chosen =
-      idx != null && options[idx] != null
-        ? options[idx]
-        : submission.answerText || submission.raw || "(no answer)";
-
-    return `The student selected option index ${idx} with text:\n"${chosen}"`;
-  }
-
-  // Short answer
-  if (taskType === TASK_TYPES.SHORT_ANSWER) {
+  if (taskType === "open-text" || taskType === "short-answer") {
     const text =
-      submission.answerText ||
-      submission.text ||
-      submission.raw ||
-      "(no answer)";
+      submission?.answerText ??
+      (typeof submission?.answer === "string" ? submission.answer : "") ??
+      "";
     return `The student wrote the following response:\n\n"${text}"`;
   }
 
-  // Photo / Make-and-snap: usually we only have a caption or filename
-  if (
-    taskType === TASK_TYPES.PHOTO ||
-    taskType === TASK_TYPES.MAKE_AND_SNAP
-  ) {
-    const caption =
-      submission.caption ||
-      submission.answerText ||
-      submission.text ||
-      "";
-    return `The student submitted a photo. Caption/notes:\n"${caption}"`;
-  }
+  // Future:
+  // if (taskType === "record-audio") {... use transcript ...}
+  // if (taskType === "make-and-snap" || taskType === "draw") {... use image description + OCR ...}
 
   // Fallback
-  const text = submission.answerText || submission.text || "";
-  return `Raw submission:\n${JSON.stringify(
-    { answerText: text, ...submission },
-    null,
-    2
-  )}`;
-}
-
-/**
- * Try to score deterministically (no AI) using correctAnswer + metadata.
- * Returns a rubric-shaped result or null if we can't handle it.
- */
-function scoreObjectivelyIfPossible({ task, submission, rubric }) {
-  const taskType = task.taskType || task.type;
-  const meta = TASK_TYPE_META[taskType] || {};
-
-  // Respect aiScoringRequired
-  const aiRequired =
-    typeof task.aiScoringRequired === "boolean"
-      ? task.aiScoringRequired
-      : meta.defaultAiScoringRequired ?? false;
-
-  if (aiRequired) return null;
-
-  const correct = task.correctAnswer;
-  if (correct == null) return null;
-
-  // Determine max points (prefer rubric, else task.points)
-  const maxPointsFromRubric =
-    rubric && typeof rubric.maxPoints === "number"
-      ? rubric.maxPoints
-      : null;
-  const maxPoints =
-    maxPointsFromRubric ??
-    (typeof task.points === "number" ? task.points : 1);
-
-  let isCorrect = null;
-
-  if (
-    taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-    taskType === TASK_TYPES.TRUE_FALSE
-  ) {
-    // Index-based comparison
-    const idx =
-      submission.answerIndex ??
-      submission.selectedIndex ??
-      submission.selectedOptionIndex ??
-      null;
-
-    if (typeof idx === "number") {
-      isCorrect = idx === correct;
-    }
-  } else if (taskType === TASK_TYPES.SHORT_ANSWER) {
-    const student = normalizeText(
-      submission.answerText || submission.text || ""
-    );
-
-    if (Array.isArray(correct)) {
-      const targets = correct.map(normalizeText);
-      isCorrect = targets.includes(student);
-    } else if (typeof correct === "string") {
-      isCorrect = normalizeText(correct) === student;
-    }
-  }
-
-  if (isCorrect == null) {
-    // We couldn't confidently score this – fall back to AI
-    return null;
-  }
-
-  const score = isCorrect ? maxPoints : 0;
-
-  return {
-    totalScore: score,
-    maxPoints,
-    criteria: [
-      {
-        id: "auto",
-        score,
-        maxPoints,
-        comment: isCorrect
-          ? "Automatically marked correct based on the stored answer."
-          : "Automatically marked incorrect based on the stored answer.",
-      },
-    ],
-    overallComment: isCorrect
-      ? "Correct – scored instantly using the stored answer."
-      : "Incorrect – scored instantly using the stored answer.",
-    aiUsed: false,
-  };
+  return `Raw submission:\n${JSON.stringify(submission, null, 2)}`;
 }
 
 /**
@@ -175,7 +169,7 @@ export async function scoreSubmissionWithAI({ task, rubric, submission }) {
     throw new Error("Missing rubric for AI scoring");
   }
 
-  const studentWorkDescription = buildStudentWorkDescription(task, submission);
+  const studentWorkDescription = buildStudentWorkDescription(task || {}, submission || {});
 
   const systemPrompt = `
 You are an assistant helping a Grade 7–8 teacher score student work.
@@ -185,7 +179,7 @@ Always:
 - Give partial credit when a criterion is partially met.
 - Be generous but honest, and avoid being overly strict about spelling, grammar, or accents.
 - Return ONLY valid JSON in the exact structure requested, with no extra commentary.
-`;
+`.trim();
 
   const userPrompt = `
 Here is the grading rubric (JSON):
@@ -194,7 +188,7 @@ ${JSON.stringify(rubric, null, 2)}
 
 Here is the task the student was given:
 
-${task.prompt || ""}
+${(task && task.prompt) || ""}
 
 Here is the student's work:
 
@@ -217,7 +211,7 @@ Return ONLY JSON in this format:
   ],
   "overallComment": string
 }
-`;
+`.trim();
 
   const response = await openai.chat.completions.create({
     model: DEFAULT_MODEL,
@@ -226,7 +220,7 @@ Return ONLY JSON in this format:
       { role: "user", content: userPrompt },
     ],
     response_format: { type: "json_object" },
-    temperature: 0, // deterministic scoring
+    temperature: 0, // scoring should be deterministic
     max_tokens: 1024,
   });
 
@@ -240,26 +234,33 @@ Return ONLY JSON in this format:
     throw new Error("Failed to parse AI scoring response");
   }
 
-  return { ...parsed, aiUsed: true };
+  return parsed;
 }
 
 /**
- * Main entry point: try instant scoring first, then fall back to AI.
+ * Backwards-compatible entry point.
  *
- * Args: { task, rubric, submission }
+ * Anywhere that calls generateAIScore({ task, rubric, submission })
+ * will now:
+ *  - Use rule-based scoring if task.aiScoringRequired === false AND a correctAnswer exists.
+ *  - Otherwise fall back to AI scoring with rubric.
  */
-export async function scoreSubmission(args) {
-  const instant = scoreObjectivelyIfPossible(args);
-  if (instant) return instant;
-  // Fall back to rubric-based AI scoring
-  return scoreSubmissionWithAI(args);
-}
+export async function generateAIScore({ task, rubric, submission }) {
+  const safeTask = task || {};
 
-/**
- * Backwards-compatibility wrapper.
- * Some parts of the code import { generateAIScore }.
- * This simply calls scoreSubmissionWithAI with the same args.
- */
-export async function generateAIScore(args) {
-  return scoreSubmissionWithAI(args);
+  const hasCorrect =
+    safeTask.correctAnswer !== undefined && safeTask.correctAnswer !== null;
+
+  const requiresAI =
+    typeof safeTask.aiScoringRequired === "boolean"
+      ? safeTask.aiScoringRequired
+      : !hasCorrect; // default: if we don't have a correctAnswer, we need AI
+
+  if (!requiresAI && hasCorrect) {
+    // Instant objective scoring
+    return scoreSubmissionRuleBased({ task: safeTask, submission });
+  }
+
+  // Fallback to AI + rubric
+  return scoreSubmissionWithAI({ task: safeTask, rubric, submission });
 }
