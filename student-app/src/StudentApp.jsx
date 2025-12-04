@@ -27,7 +27,6 @@ const COLOR_NAMES = [
 
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
-const [uiTheme, setUiTheme] = React.useState("modern"); // "modern" | "bold" | "minimal"
 
 function normalizeStationId(raw) {
   if (!raw) {
@@ -171,6 +170,9 @@ function getStationColorStyles(colorName) {
 function StudentApp() {
   console.log("STUDENTAPP COMPONENT RENDERED — CLEAN VERSION");
 
+  // Theme selector (must be inside component)
+  const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
+
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
@@ -221,7 +223,7 @@ function StudentApp() {
   // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
 
-    useEffect(() => {
+  useEffect(() => {
     const handleConnect = () => {
       console.log("SOCKET: Connected", socket.id);
       setConnected(true);
@@ -351,36 +353,30 @@ function StudentApp() {
 
     // Task launches from teacher / engine
     socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
-    console.log("SOCKET: task:launch", { index, task, timeLimitSeconds });
+      console.log("SOCKET: task:launch", { index, task, timeLimitSeconds });
 
-    // Just set the task – do NOT touch scan state here.
-    setCurrentTask(task || null);
-    setCurrentTaskIndex(
-      typeof index === "number" && index >= 0 ? index : null
-    );
-    setCurrentAnswerDraft("");
-    setScanError(null);
+      // Just set the task – do NOT touch scan state here.
+      setCurrentTask(task || null);
+      setCurrentTaskIndex(
+        typeof index === "number" && index >= 0 ? index : null
+      );
+      setCurrentAnswerDraft("");
+      setScanError(null);
 
-    // Important:
-    //  - We do NOT clear scannedStationId
-    //  - We do NOT set scannerActive(true)
-    // Scanning is controlled by room:state when the station actually changes.
+      if (sndAlert.current) {
+        sndAlert.current.play().catch(() => {});
+      }
 
-    if (sndAlert.current) {
-      sndAlert.current.play().catch(() => {});
-    }
-
-    if (
-      typeof timeLimitSeconds === "number" &&
-      timeLimitSeconds > 0
-    ) {
-      setTimeLimitSeconds(timeLimitSeconds);
-    } else {
-      setTimeLimitSeconds(null);
-      setRemainingMs(0);
-    }
-  });
-
+      if (
+        typeof timeLimitSeconds === "number" &&
+        timeLimitSeconds > 0
+      ) {
+        setTimeLimitSeconds(timeLimitSeconds);
+      } else {
+        setTimeLimitSeconds(null);
+        setRemainingMs(0);
+      }
+    });
 
     // Session complete from server
     socket.on("session:complete", () => {
@@ -507,122 +503,122 @@ function StudentApp() {
 
   // ─────────────────────────────────────────────
   // Join room (persistent student:join-room)
-// ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
 
   const handleJoin = () => {
-  const finalRoom = roomCode.trim().toUpperCase();
+    const finalRoom = roomCode.trim().toUpperCase();
 
-  if (!finalRoom || !teamName.trim()) {
-    alert("Please enter both a room code and team name.");
-    return;
-  }
+    if (!finalRoom || !teamName.trim()) {
+      alert("Please enter both a room code and team name.");
+      return;
+    }
 
-  if (!connected) {
-    alert("Not connected to server yet. Please wait a moment.");
-    return;
-  }
+    if (!connected) {
+      alert("Not connected to server yet. Please wait a moment.");
+      return;
+    }
 
-  unlockAudioForBrowser();
+    unlockAudioForBrowser();
 
-  const filteredMembers = members
-    .map((m) => m.trim())
-    .filter((m) => m.length > 0);
+    const filteredMembers = members
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0);
 
-  console.log("STUDENT: Attempting to join room:", {
-    finalRoom,
-    teamName: teamName.trim(),
-    members: filteredMembers,
-    socketId: socket.id,
-  });
-
-  setJoiningRoom(true);
-  setStatusMessage(`Joining Room ${finalRoom}…`);
-
-  // TIMEOUT SAFETY — if no ack in 8 seconds, fail
-  const timeoutId = setTimeout(() => {
-    console.error(
-      "STUDENT: JOIN TIMEOUT — no response from server after 8s"
-    );
-    setJoiningRoom(false);
-    setStatusMessage("Join failed — timeout");
-    alert("Join timed out. Is the teacher in the room?");
-  }, 8000);
-
-  socket.emit(
-    "student:join-room",
-    {
-      roomCode: finalRoom,
+    console.log("STUDENT: Attempting to join room:", {
+      finalRoom,
       teamName: teamName.trim(),
       members: filteredMembers,
-    },
-    (ack) => {
-      clearTimeout(timeoutId);
-      console.log("STUDENT: ACK FROM SERVER:", ack);
+      socketId: socket.id,
+    });
 
-      if (!ack || !ack.ok) {
-        setJoiningRoom(false);
-        setStatusMessage("Join failed");
-        alert(ack?.error || "Unable to join room.");
-        return;
-      }
+    setJoiningRoom(true);
+    setStatusMessage(`Joining Room ${finalRoom}…`);
 
-      const teamSession = ack.teamSessionId || ack.teamId;
-
-      setJoined(true);
+    // TIMEOUT SAFETY — if no ack in 8 seconds, fail
+    const timeoutId = setTimeout(() => {
+      console.error(
+        "STUDENT: JOIN TIMEOUT — no response from server after 8s"
+      );
       setJoiningRoom(false);
-      setRoomCode(finalRoom);
-      setTeamId(ack.teamId || teamSession);
-      setTeamSessionId(teamSession);
+      setStatusMessage("Join failed — timeout");
+      alert("Join timed out. Is the teacher in the room?");
+    }, 8000);
 
-      // Persist for resume-team-session
-      try {
-        localStorage.setItem(
-          "teamSession",
-          JSON.stringify({
-            roomCode: finalRoom,
-            teamSessionId: teamSession,
-          })
-        );
-        console.log("STUDENT: teamSession persisted");
-      } catch (err) {
-        console.warn("Unable to persist teamSession:", err);
+    socket.emit(
+      "student:join-room",
+      {
+        roomCode: finalRoom,
+        teamName: teamName.trim(),
+        members: filteredMembers,
+      },
+      (ack) => {
+        clearTimeout(timeoutId);
+        console.log("STUDENT: ACK FROM SERVER:", ack);
+
+        if (!ack || !ack.ok) {
+          setJoiningRoom(false);
+          setStatusMessage("Join failed");
+          alert(ack?.error || "Unable to join room.");
+          return;
+        }
+
+        const teamSession = ack.teamSessionId || ack.teamId;
+
+        setJoined(true);
+        setJoiningRoom(false);
+        setRoomCode(finalRoom);
+        setTeamId(ack.teamId || teamSession);
+        setTeamSessionId(teamSession);
+
+        // Persist for resume-team-session
+        try {
+          localStorage.setItem(
+            "teamSession",
+            JSON.stringify({
+              roomCode: finalRoom,
+              teamSessionId: teamSession,
+            })
+          );
+          console.log("STUDENT: teamSession persisted");
+        } catch (err) {
+          console.warn("Unable to persist teamSession:", err);
+        }
+
+        const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
+        const locLabel = (
+          ack.roomState?.locationCode || DEFAULT_LOCATION
+        ).toUpperCase();
+
+        if (myTeam?.currentStationId) {
+          const norm = normalizeStationId(myTeam.currentStationId);
+
+          setAssignedStationId(myTeam.currentStationId);
+          setAssignedColor(norm.color || null);
+          setScannedStationId(null);
+          setScannerActive(true);
+
+          // Seed lastStationId so later room:state updates
+          // don’t force a fake “new station” rescan
+          lastStationIdRef.current = myTeam.currentStationId;
+
+          const colourLabel = norm.color
+            ? ` ${norm.color.toUpperCase()}`
+            : "";
+
+          setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
+        } else {
+          // No station assigned yet – still allow scanning,
+          // but don’t pretend we already have a station id
+          lastStationIdRef.current = null;
+          setStatusMessage(`Scan a ${locLabel} station.`);
+          setScannerActive(true);
+          setScannedStationId(null);
+        }
       }
+    );
 
-      const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
-      const locLabel = (
-        ack.roomState?.locationCode || DEFAULT_LOCATION
-      ).toUpperCase();
-
-      if (myTeam?.currentStationId) {
-        const norm = normalizeStationId(myTeam.currentStationId);
-
-        setAssignedStationId(myTeam.currentStationId);
-        setAssignedColor(norm.color || null);
-        setScannedStationId(null);
-        setScannerActive(true);
-
-        // Seed lastStationId so later room:state updates
-        // don’t force a fake “new station” rescan
-        lastStationIdRef.current = myTeam.currentStationId;
-
-        const colourLabel = norm.color
-          ? ` ${norm.color.toUpperCase()}`
-          : "";
-
-        setStatusMessage(`Scan a ${locLabel}${colourLabel} station.`);
-      } else {
-        // No station assigned yet – still allow scanning,
-        // but don’t pretend we already have a station id
-        lastStationIdRef.current = null;
-        setStatusMessage(`Scan a ${locLabel} station.`);
-        setScannerActive(true);
-        setScannedStationId(null);
-      }
-    }
-  );
-
-  console.log("STUDENT: socket.emit('student:join-room') called");
-};
+    console.log("STUDENT: socket.emit('student:join-room') called");
+  };
 
   // ─────────────────────────────────────────────
   // QR Scan handler – checks colour + room
@@ -803,7 +799,7 @@ function StudentApp() {
 
   const mustScan =
     joined &&
-    scannerActive &&                 // only nag when the camera is actually on
+    scannerActive && // only nag when the camera is actually on
     !!assignedStationId &&
     scannedStationId !== assignedStationId;
 
@@ -836,6 +832,12 @@ function StudentApp() {
       responseHeadingFontSize = "1.05rem";
     }
   }
+
+  // Theme-enriched task object
+  const themedTask =
+    currentTask && uiTheme
+      ? { ...currentTask, uiTheme }
+      : currentTask;
 
   // ─────────────────────────────────────────────
   // Render
@@ -1282,11 +1284,18 @@ function StudentApp() {
                     padding: "4px 8px",
                     borderRadius: 999,
                     border: "1px solid rgba(148,163,184,0.8)",
-                    background: uiTheme === t ? "#0ea5e9" : "rgba(255,255,255,0.85)",
+                    background:
+                      uiTheme === t
+                        ? "#0ea5e9"
+                        : "rgba(255,255,255,0.85)",
                     color: uiTheme === t ? "#fff" : "#111827",
                   }}
                 >
-                  {t === "modern" ? "Theme 1" : t === "bold" ? "Bold" : "Minimal"}
+                  {t === "modern"
+                    ? "Theme 1"
+                    : t === "bold"
+                    ? "Bold"
+                    : "Minimal"}
                 </button>
               ))}
             </div>
@@ -1302,11 +1311,6 @@ function StudentApp() {
                 lineHeight: 1.5,
               }}
             >
-            const themedTask =
-              currentTask && uiTheme
-                ? { ...currentTask, uiTheme } // will be read by MC/TF/SA components
-                : currentTask;
-
               <TaskRunner
                 task={themedTask}
                 taskTypes={TASK_TYPES}
