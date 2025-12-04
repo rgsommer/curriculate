@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 
-const API_BASE = API_BASE_URL;
+const API_BASE = API_BASE_URL || "";
 
 export default function TaskSets() {
   const [sets, setSets] = useState([]);
@@ -72,12 +72,12 @@ export default function TaskSets() {
         bVal = bVal ? new Date(bVal) : 0;
       }
 
-      // Special handling for numbers
+      // Numbers
       if (typeof aVal === "number" && typeof bVal === "number") {
         return sortDir === "asc" ? aVal - bVal : bVal - aVal;
       }
 
-      // String fallback
+      // Strings
       if (aVal == null) aVal = "";
       if (bVal == null) bVal = "";
       const comparison = String(aVal).localeCompare(String(bVal));
@@ -119,7 +119,7 @@ export default function TaskSets() {
         throw new Error(text || "Failed to delete");
       }
 
-      await loadSets(); // Refresh list
+      await loadSets();
     } catch (err) {
       setError(err.message || "Failed to delete task set");
     }
@@ -196,7 +196,7 @@ export default function TaskSets() {
         setCsvName("");
         const input = document.getElementById("csv-input");
         if (input) input.value = "";
-        await loadSets(); // Refresh full list
+        await loadSets();
       } catch (err) {
         console.error("CSV upload error:", err);
         alert(err.message || "Failed to upload CSV");
@@ -241,15 +241,6 @@ export default function TaskSets() {
       font-size: 0.85rem;
       color: #6b7280;
       margin-bottom: 16px;
-    }
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: #e5f3ff;
-      color: #1d4ed8;
-      font-size: 0.7rem;
-      margin-right: 4px;
     }
     .task {
       page-break-inside: avoid;
@@ -352,32 +343,99 @@ export default function TaskSets() {
     }
   };
 
-  return (
-    <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-5xl mx-auto">
-      {/* Accessible page title only (visible title lives in top bar) */}
-      <h1 className="sr-only">My Task Sets</h1>
+  // Simple “button” style helpers
+  const btnBase = {
+    padding: "6px 12px",
+    borderRadius: 999,
+    fontSize: "0.8rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    border: "1px solid transparent",
+  };
 
-      {/* Intro bar – similar tone to TeacherProfile header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-5">
+  const blueButton = {
+    ...btnBase,
+    background: "#2563eb",
+    color: "#ffffff",
+    borderColor: "#2563eb",
+  };
+
+  const grayButton = {
+    ...btnBase,
+    background: "#ffffff",
+    color: "#111827",
+    borderColor: "#d1d5db",
+  };
+
+  const redButton = {
+    ...btnBase,
+    background: "#dc2626",
+    color: "#ffffff",
+    borderColor: "#b91c1c",
+  };
+
+  const greenButton = {
+    ...btnBase,
+    background: "#059669",
+    color: "#ffffff",
+    borderColor: "#047857",
+  };
+
+  return (
+    <div
+      style={{
+        padding: 24,
+        maxWidth: 960,
+        margin: "0 auto",
+        fontFamily:
+          'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
         <div>
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.5rem",
+              fontWeight: 600,
+            }}
+          >
             My Task Sets
-          </h2>
-          <p className="text-sm text-gray-600">
+          </h1>
+          <p
+            style={{
+              margin: "4px 0 0",
+              fontSize: "0.9rem",
+              color: "#4b5563",
+            }}
+          >
             AI-generated and CSV-imported sets ready to launch, edit, or print.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleNew}
-            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition font-medium text-sm"
-          >
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <button style={blueButton} onClick={handleNew}>
             + New AI Task Set
           </button>
           <button
-            onClick={loadSets}
+            style={grayButton}
             disabled={loading}
-            className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-full hover:bg-gray-50 transition text-sm"
+            onClick={loadSets}
           >
             {loading ? "Loading…" : "Refresh"}
           </button>
@@ -385,67 +443,141 @@ export default function TaskSets() {
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 8,
+            borderRadius: 8,
+            background: "#fef2f2",
+            color: "#b91c1c",
+            fontSize: "0.85rem",
+          }}
+        >
           {error}
         </div>
       )}
 
       {/* CSV Upload Section */}
-      <div className="mb-6 sm:mb-8 p-4 sm:p-5 bg-gray-50 border border-gray-200 rounded-2xl">
-        <h2 className="text-base sm:text-lg font-semibold mb-1">
+      <div
+        style={{
+          marginBottom: 20,
+          padding: 12,
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          background: "#f9fafb",
+        }}
+      >
+        <h2
+          style={{
+            margin: 0,
+            fontSize: "1rem",
+            fontWeight: 600,
+          }}
+        >
           Upload Task Set from CSV
         </h2>
-        <p className="text-xs sm:text-sm text-gray-600 mb-3">
+        <p
+          style={{
+            margin: "4px 0 10px",
+            fontSize: "0.85rem",
+            color: "#4b5563",
+          }}
+        >
           Turn an existing quiz or word list into a playable Curriculate task
           set.
         </p>
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
           <input
             id="csv-input"
             type="file"
             accept=".csv,text/csv"
             onChange={handleCsvFileChange}
-            className="flex-1 text-sm file:mr-3 file:py-2 file:px-3 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+            style={{ fontSize: "0.8rem" }}
           />
           <input
             type="text"
             placeholder="Task set name"
             value={csvName}
             onChange={(e) => setCsvName(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            style={{
+              flex: 1,
+              minWidth: 160,
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              padding: 6,
+              fontSize: "0.8rem",
+            }}
           />
           <button
-            onClick={handleCsvUpload}
+            style={greenButton}
             disabled={uploading || !csvFile}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 transition font-medium text-sm"
+            onClick={handleCsvUpload}
           >
             {uploading ? "Uploading…" : "Upload CSV"}
           </button>
         </div>
       </div>
 
-      {/* Task Sets – card layout */}
+      {/* Task Sets list */}
       {loading ? (
-        <div className="text-center py-10 sm:py-12 text-gray-500 text-sm">
+        <div
+          style={{
+            textAlign: "center",
+            padding: "40px 0",
+            fontSize: "0.9rem",
+            color: "#6b7280",
+          }}
+        >
           Loading task sets…
         </div>
       ) : sets.length === 0 ? (
-        <div className="text-center py-10 sm:py-12">
-          <p className="text-gray-500 text-base sm:text-lg">
+        <div
+          style={{
+            textAlign: "center",
+            padding: "40px 0",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.95rem",
+              color: "#6b7280",
+            }}
+          >
             No task sets yet.
           </p>
           <button
+            style={{
+              marginTop: 8,
+              ...blueButton,
+            }}
             onClick={handleNew}
-            className="mt-3 text-sm sm:text-base text-blue-600 font-medium hover:underline"
           >
             Create your first AI task set →
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {/* Sort controls – small, pill-style */}
-          <div className="flex flex-wrap gap-2 text-xs text-gray-600 mb-1">
-            <span className="mr-1">Sort by:</span>
+        <>
+          {/* Sort controls */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              fontSize: "0.8rem",
+              color: "#4b5563",
+              marginBottom: 4,
+              alignItems: "center",
+            }}
+          >
+            <span>Sort by:</span>
             <SortPill
               label="Name"
               active={sortBy === "name"}
@@ -472,128 +604,203 @@ export default function TaskSets() {
             />
           </div>
 
-          {sortedSets.map((s) => {
-            const id = s._id || s.id;
-            const isActive = activeTasksetId === id;
-            const numTasks = s.numTasks ?? s.tasks?.length ?? 0;
-            const updated = s.updatedAt
-              ? new Date(s.updatedAt).toLocaleDateString()
-              : "—";
+          {/* Cards */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            {sortedSets.map((s) => {
+              const id = s._id || s.id;
+              const isActive = activeTasksetId === id;
+              const numTasks = s.numTasks ?? s.tasks?.length ?? 0;
+              const updated = s.updatedAt
+                ? new Date(s.updatedAt).toLocaleDateString()
+                : "—";
 
-            return (
-              <div
-                key={id}
-                className="bg-white border border-gray-200 rounded-2xl shadow-sm px-4 py-3 sm:px-5 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-              >
-                {/* Left: name + meta + tags */}
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="font-medium text-gray-900 text-sm sm:text-base">
-                      {s.name || s.title || "Untitled Task Set"}
+              return (
+                <div
+                  key={id}
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
+                    background: "#ffffff",
+                    padding: 10,
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 8,
+                    boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
+                  }}
+                >
+                  {/* Left: info */}
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "0.95rem",
+                          fontWeight: 600,
+                          color: "#111827",
+                        }}
+                      >
+                        {s.name || s.title || "Untitled Task Set"}
+                      </div>
+                      {isActive && (
+                        <span
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            background: "#d1fae5",
+                            color: "#065f46",
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Active in Room
+                        </span>
+                      )}
                     </div>
-                    {isActive && (
-                      <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-emerald-700 bg-emerald-100 rounded-full">
-                        Active in Room
-                      </span>
+                    <div
+                      style={{
+                        marginTop: 2,
+                        fontSize: "0.8rem",
+                        color: "#4b5563",
+                      }}
+                    >
+                      {numTasks} task{numTasks === 1 ? "" : "s"} · Updated{" "}
+                      {updated} · Played {s.timesPlayed || 0}x
+                    </div>
+
+                    {Array.isArray(s.requiredTaskTypes) &&
+                      s.requiredTaskTypes.length > 0 && (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 4,
+                          }}
+                        >
+                          {s.requiredTaskTypes.map((type) => (
+                            <span
+                              key={type}
+                              style={{
+                                padding: "2px 6px",
+                                borderRadius: 999,
+                                background: "#e0e7ff",
+                                color: "#3730a3",
+                                fontSize: "0.7rem",
+                                fontWeight: 500,
+                              }}
+                            >
+                              {type
+                                .replace(/_/g, " ")
+                                .replace(/\b\w/g, (c) => c.toUpperCase())}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                    {s.description && (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: "0.8rem",
+                          color: "#6b7280",
+                          maxWidth: 500,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={s.description}
+                      >
+                        {s.description}
+                      </div>
                     )}
                   </div>
 
-                  <div className="mt-1 text-xs text-gray-600 flex flex-wrap gap-2">
-                    <span>
-                      {numTasks} task{numTasks === 1 ? "" : "s"}
-                    </span>
-                    <span>· Updated {updated}</span>
-                    <span>· Played {s.timesPlayed || 0}x</span>
+                  {/* Right: actions */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <button
+                      style={
+                        isActive
+                          ? blueButton
+                          : { ...grayButton, borderColor: "#2563eb", color: "#1d4ed8" }
+                      }
+                      onClick={() => handleSetActive(s)}
+                      onDoubleClick={() => handleLaunchNow(s)}
+                      title="Click to select • Double-click to launch"
+                    >
+                      {isActive ? "Active 🚀" : "Use in Session"}
+                    </button>
+                    <button
+                      style={greenButton}
+                      onClick={() => handleLaunchNow(s)}
+                    >
+                      Launch
+                    </button>
+                    <button
+                      style={grayButton}
+                      onClick={() => handleEdit(id)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      style={grayButton}
+                      onClick={() => handlePrint(s)}
+                    >
+                      Print
+                    </button>
+                    <button
+                      style={redButton}
+                      onClick={() => handleDelete(id)}
+                    >
+                      Delete
+                    </button>
                   </div>
-
-                  {s.requiredTaskTypes && s.requiredTaskTypes.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {s.requiredTaskTypes.map((type) => (
-                        <span
-                          key={type}
-                          className="inline-block px-2 py-0.5 text-[11px] font-medium text-indigo-700 bg-indigo-100 rounded-full"
-                        >
-                          {type
-                            .replace(/_/g, " ")
-                            .replace(/\b\w/g, (c) => c.toUpperCase())}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {s.description && (
-                    <div className="text-xs text-gray-500 mt-1 line-clamp-2">
-                      {s.description}
-                    </div>
-                  )}
                 </div>
-
-                {/* Right: action buttons */}
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <button
-                    onClick={() => handleSetActive(s)}
-                    onDoubleClick={() => handleLaunchNow(s)}
-                    className={`px-3 py-1.5 text-xs sm:text-sm rounded-full font-medium transition ${
-                      isActive
-                        ? "bg-blue-600 text-white hover:bg-blue-700"
-                        : "bg-white text-blue-700 border border-blue-600 hover:bg-blue-50"
-                    }`}
-                    title="Click to select • Double-click to launch"
-                  >
-                    {isActive ? "Active 🚀" : "Use in Session"}
-                  </button>
-
-                  <button
-                    onClick={() => handleLaunchNow(s)}
-                    className="px-3 py-1.5 text-xs sm:text-sm bg-emerald-600 text-white rounded-full hover:bg-emerald-700 transition font-medium"
-                  >
-                    Launch
-                  </button>
-
-                  <button
-                    onClick={() => handleEdit(id)}
-                    className="px-3 py-1.5 text-xs sm:text-sm bg-gray-600 text-white rounded-full hover:bg-gray-700 transition"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    onClick={() => handlePrint(s)}
-                    className="px-3 py-1.5 text-xs sm:text-sm bg-white text-gray-800 border border-gray-300 rounded-full hover:bg-gray-50 transition"
-                  >
-                    Print
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(id)}
-                    className="px-3 py-1 text-xs sm:text-sm bg-red-600 text-white rounded-full hover:bg-red-700 transition"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-// Small helper for sort pills
 function SortPill({ label, active, dir, onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`px-2 py-1 rounded-full border text-[11px] ${
-        active
-          ? "bg-blue-50 border-blue-400 text-blue-700"
-          : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
-      }`}
+      style={{
+        padding: "3px 8px",
+        borderRadius: 999,
+        border: `1px solid ${active ? "#60a5fa" : "#d1d5db"}`,
+        background: active ? "#eff6ff" : "#ffffff",
+        fontSize: "0.75rem",
+        cursor: "pointer",
+      }}
     >
       {label}
-      {active ? dir === "asc" ? " ↑" : " ↓" : ""}
+      {active ? (dir === "asc" ? " ↑" : " ↓") : ""}
     </button>
   );
 }
