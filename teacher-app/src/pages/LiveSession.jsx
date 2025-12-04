@@ -1029,68 +1029,6 @@ export default function LiveSession({ roomCode }) {
               </button>
             </div>
 
-            {/* MULTI-ROOM SCAVENGER HUNT ROOM SELECTOR */}
-            {roomState.taskType === "multi-room-scavenger-hunt" && (
-              <div
-                style={{
-                  marginTop: 16,
-                  padding: 16,
-                  borderRadius: 12,
-                  background: "#f0f9ff",
-                  border: "2px solid #0ea5e9",
-                }}
-              >
-                <h3
-                  style={{
-                    margin: "0 0 12px 0",
-                    fontSize: "1.1rem",
-                  }}
-                >
-                  Select rooms for this hunt
-                </h3>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 10,
-                  }}
-                >
-                  {teacherRooms.map((room) => (
-                    <button
-                      key={room}
-                      onClick={() =>
-                        setSelectedRooms((prev) =>
-                          prev.includes(room)
-                            ? prev.filter((r) => r !== room)
-                            : [...prev, room]
-                        )
-                      }
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: 999,
-                        fontWeight: 600,
-                        background: selectedRooms.includes(room)
-                          ? "#0ea5e9"
-                          : "#e5e7eb",
-                        color: selectedRooms.includes(room)
-                          ? "white"
-                          : "#111827",
-                        border: "none",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {room}
-                    </button>
-                  ))}
-                </div>
-                {selectedRooms.length === 0 && (
-                  <p style={{ color: "#b91c1c", marginTop: 8 }}>
-                    Please select at least one room
-                  </p>
-                )}
-              </div>
-            )}
-
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
