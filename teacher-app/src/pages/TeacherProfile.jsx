@@ -27,6 +27,8 @@ export default function TeacherProfile() {
     assessmentCategories: [EMPTY_CATEGORY],
     includeIndividualReports: false,
     locationOptions: [],
+    // Treats / rewards
+    treatsPerSession: 4,
 
     // Jeopardy defaults
     jeopardyDefaultContestantCount: 3,
@@ -71,6 +73,13 @@ export default function TeacherProfile() {
             typeof data.includeIndividualReports === "boolean"
               ? data.includeIndividualReports
               : !!data.includeStudentReports,
+
+          // Treats / rewards
+          treatsPerSession:
+            Number(
+              data.treatsPerSession ??
+                4
+            ) || 4,
 
           // Jeopardy defaults (with safe fallbacks)
           jeopardyDefaultContestantCount:
@@ -153,6 +162,13 @@ export default function TeacherProfile() {
           : [],
         defaultStations: Number(profile.defaultStations) || 8,
 
+        // Treats / rewards – clamp 0–10
+        treatsPerSession: (() => {
+          const n = Number(profile.treatsPerSession);
+          if (!Number.isFinite(n)) return 4;
+          return Math.max(0, Math.min(10, n));
+        })(),
+
         jeopardyDefaultContestantCount:
           Number(profile.jeopardyDefaultContestantCount) || 3,
         assessmentCategories: profile.assessmentCategories
@@ -178,6 +194,14 @@ export default function TeacherProfile() {
           typeof updated.includeIndividualReports === "boolean"
             ? updated.includeIndividualReports
             : !!updated.includeStudentReports,
+
+        // Treats / rewards
+        treatsPerSession:
+          Number(
+            updated.treatsPerSession ??
+              prev.treatsPerSession ??
+              4
+          ) || 4,
 
         jeopardyDefaultContestantCount:
           Number(
@@ -537,6 +561,51 @@ export default function TeacherProfile() {
             Include individual student reports with class transcript
           </label>
         </section>
+
+        <section style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+          Treats / rewards
+        </h2>
+        <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 8 }}>
+          Choose how many treats you’d like to issue over a typical session.
+          This becomes the default treat quota in Live Session.
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            maxWidth: 420,
+          }}
+        >
+          <input
+            type="range"
+            min={0}
+            max={10}
+            step={1}
+            value={Number(profile.treatsPerSession ?? 4)}
+            onChange={(e) =>
+              handleChange("treatsPerSession", Number(e.target.value))
+            }
+            style={{ flex: 1 }}
+          />
+          <div
+            style={{
+              minWidth: 40,
+              textAlign: "center",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+            }}
+          >
+            {profile.treatsPerSession ?? 4}
+          </div>
+        </div>
+
+        <p style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: 4 }}>
+          Range: 0–10 treats per session. Default is 4.
+        </p>
+      </section>
 
                 <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>

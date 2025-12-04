@@ -540,12 +540,29 @@ export default function LiveSession({ roomCode }) {
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
 
+    // Treat gating based on progress through the active taskset
+  const minTasksBeforeTreat =
+    typeof totalTasksInActiveSet === "number" && totalTasksInActiveSet > 0
+      ? Math.ceil(totalTasksInActiveSet * 0.3) // 30% of tasks, rounded up
+      : 0;
+
+  // We approximate "tasks completed so far" using the current task index.
+  const tasksCompletedSoFar =
+    typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
+      ? roomState.taskIndex
+      : 0;
+
+  const treatsUnlocked =
+    minTasksBeforeTreat === 0 || tasksCompletedSoFar >= minTasksBeforeTreat;
+
   const canGiveTreat =
+    treatsUnlocked &&
     treatsConfig.enabled &&
     (typeof treatsConfig.total === "number" &&
     typeof treatsConfig.given === "number"
       ? treatsConfig.given < treatsConfig.total
       : true);
+
 
   const pendingTreatTeams = roomState.pendingTreatTeams || [];
 
@@ -1181,7 +1198,7 @@ export default function LiveSession({ roomCode }) {
                 <>Treats disabled.</>
               )}
             </div>
-            <button
+                        <button
               type="button"
               onClick={handleGiveTreat}
               style={{
@@ -1198,6 +1215,25 @@ export default function LiveSession({ roomCode }) {
             >
               Give random treat
             </button>
+
+            {treatsConfig.enabled &&
+              !treatsUnlocked &&
+              typeof totalTasksInActiveSet === "number" &&
+              totalTasksInActiveSet > 0 && (
+                <p
+                  style={{
+                    marginTop: 4,
+                    fontSize: "0.75rem",
+                    color: "#6b7280",
+                  }}
+                >
+                  Treats unlock after{" "}
+                  <strong>{minTasksBeforeTreat}</strong> of{" "}
+                  <strong>{totalTasksInActiveSet}</strong> tasks
+                  have been completed.
+                </p>
+              )}
+
           </div>
         </div>
       </div>
