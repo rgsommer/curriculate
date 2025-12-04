@@ -14,14 +14,11 @@ const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
   .map(([type]) => type);
 
 // Fallback core types if metadata is missing / empty
-const coreTypes =
+const CORE_TYPES =
   AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
     ? AI_ELIGIBLE_TYPES
     : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
 
-/**
- * Basic payload validation + normalization for difficulty / learning goal.
- */
 function validateGeneratePayload(payload = {}) {
   const errors = [];
 
@@ -46,8 +43,49 @@ function validateGeneratePayload(payload = {}) {
 }
 
 /**
- * Express handler for POST /api/ai/tasksets
- * Works with AiTasksetGenerator.jsx (subject, gradeLevel, difficulty, learningGoal, etc.)
+ * Normalize a user-facing type token to a canonical TASK_TYPES value.
+ * This lets the UI send legacy values like "multiple_choice".
+ */
+function normalizeSelectedType(raw) {
+  if (!raw) return null;
+  const v = String(raw).trim().toLowerCase().replace(/_/g, "-");
+
+  if (v === "multiple-choice" || v === "multiplechoice" || v === "mcq") {
+    return TASK_TYPES.MULTIPLE_CHOICE;
+  }
+  if (v === "true-false" || v === "truefalse" || v === "tf") {
+    return TASK_TYPES.TRUE_FALSE;
+  }
+  if (v === "short-answer" || v === "shortanswer" || v === "sa" || v === "open-text") {
+    return TASK_TYPES.SHORT_ANSWER;
+  }
+  if (v === "sort" || v === "categorize" || v === "sort-task") {
+    return TASK_TYPES.SORT;
+  }
+  if (v === "sequence" || v === "timeline" || v === "order") {
+    return TASK_TYPES.SEQUENCE;
+  }
+  if (v === "photo" || v === "photo-evidence" || v === "photo_description") {
+    return TASK_TYPES.PHOTO;
+  }
+  if (v === "make-and-snap" || v === "make_and_snap") {
+    return TASK_TYPES.MAKE_AND_SNAP;
+  }
+  if (v === "body-break" || v === "body_break") {
+    return TASK_TYPES.BODY_BREAK;
+  }
+  if (v === "brain-blitz" || v === "jeopardy" || v === "jeopardy_game") {
+    return TASK_TYPES.JEOPARDY;
+  }
+
+  // Fallback: if already a canonical value, keep it
+  if (Object.values(TASK_TYPES).includes(v)) return v;
+
+  return null;
+}
+
+/**
+ * POST /api/ai/tasksets
  */
 export const generateAiTaskset = async (req, res) => {
   try {
@@ -55,30 +93,28 @@ export const generateAiTaskset = async (req, res) => {
       subject,
       gradeLevel,
 
-      // Legacy shape
+      // Old shape
       numTasks,
       selectedTypes,
       customInstructions = "",
 
-      // New shape
+      // New / current shape from AiTasksetGenerator
       difficulty,
       learningGoal,
-      topicDescription = "",
-      topicTitle = "",
+      topicDescription = "", // "Special considerations" from UI
+      topicTitle = "",       // Task set title: main topic
       totalDurationMinutes,
       durationMinutes,
       numberOfTasks,
-
-      // Optional: presenter profile lenses
       presenterProfile,
-
-      // Optional: vocabulary / key terms for "used vs not used"
       aiWordBank,
 
-      // Optional: name / room
+      // Session / room context
       tasksetName: explicitName,
       roomLocation,
       locationCode,
+      isFixedStationTaskset,
+      displays,
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
@@ -91,7 +127,6 @@ export const generateAiTaskset = async (req, res) => {
         gradeLevel,
         difficulty,
         learningGoal,
-        durationMinutes: duration,
       });
 
     if (errors.length) {
@@ -102,20 +137,86 @@ export const generateAiTaskset = async (req, res) => {
 
     const safeCount = Math.max(4, Math.min(20, requestedCount || 8));
 
-    // If the frontend passed a limited type set, intersect with AI-eligible types
-    const rawSelected = (Array.isArray(selectedTypes) && selectedTypes) || [];
-    const typePool =
-      rawSelected.length > 0
-        ? rawSelected.filter((t) => AI_ELIGIBLE_TYPES.includes(t))
-        : coreTypes;
+    // ------------- Resolve allowed task types -------------
+    const rawSelected =
+      (Array.isArray(selectedTypes) && selectedTypes) ||
+      (Array.isArray(req.body.requiredTaskTypes) && req.body.requiredTaskTypes) ||
+      [];
 
-    const finalTasksetName =
-      explicitName ||
-      topicTitle ||
-      topicDescription?.slice(0, 60) ||
-      `${subject || "Lesson"} – AI Task Set`;
+    let typePool;
 
-    // Build per-type guidelines from TASK_TYPE_META.description
+    if (rawSelected.length > 0) {
+      const normalized = rawSelected
+        .map(normalizeSelectedType)
+        .filter(Boolean)
+        .filter((t) => AI_ELIGIBLE_TYPES.includes(t));
+      typePool = normalized.length ? normalized : CORE_TYPES;
+    } else {
+      typePool = CORE_TYPES;
+    }
+
+    // ------------- Presenter lenses / perspectives -------------
+    let lenses = [];
+    if (
+      presenterProfile &&
+      Array.isArray(presenterProfile.curriculumLenses) &&
+      presenterProfile.curriculumLenses.length
+    ) {
+      lenses = presenterProfile.curriculumLenses;
+    } else if (
+      presenterProfile &&
+      Array.isArray(presenterProfile.perspectives) &&
+      presenterProfile.perspectives.length
+    ) {
+      lenses = presenterProfile.perspectives;
+    }
+    const lensesText = lenses.length ? lenses.join(", ") : "none specified";
+
+    // ------------- Vocabulary / word bank -------------
+    let rawWordBank = [];
+    if (Array.isArray(aiWordBank)) {
+      rawWordBank = aiWordBank;
+    } else if (typeof aiWordBank === "string") {
+      rawWordBank = aiWordBank
+        .split(/[\n,;]+/)
+        .map((w) => w.trim())
+        .filter(Boolean);
+    }
+
+    // If the UI somehow sent nothing, still guard here
+    if (!rawWordBank.length) {
+      return res.status(400).json({
+        error:
+          "Vocabulary / key terms are required. The AI needs at least one term to stay on topic.",
+      });
+    }
+
+    const vocabularyText = rawWordBank.map((w) => `- ${w}`).join("\n");
+
+    // ------------- Topic & subject discipline -------------
+    const titleTrimmed = (topicTitle || explicitName || "").trim();
+    const topicLabel =
+      titleTrimmed ||
+      `${subject || "Lesson"} – Grade ${gradeLevel || "?"} review`;
+
+    const specialConsiderations = (topicDescription || "").trim();
+    const customNotes = (customInstructions || "").trim();
+
+    const normalizedSubject = (subject || "").toString().toLowerCase();
+
+    // Allow religious content ONLY if the subject actually is Bible / Religion, etc.
+    const subjectIsReligious = /bible|religion|religious|christian|faith/.test(
+      normalizedSubject
+    );
+
+    const religiousGuardrail = subjectIsReligious
+      ? ""
+      : `
+You MUST NOT introduce religious, Bible, theological, or spiritual content,
+and you MUST NOT write about unrelated subjects. Stay strictly within the
+given subject and topic.`.trim();
+
+    // ------------- Build per-type guidelines from TASK_TYPE_META -------------
     const typeGuidelines = typePool
       .map((t) => {
         const meta = TASK_TYPE_META[t] || {};
@@ -125,54 +226,77 @@ export const generateAiTaskset = async (req, res) => {
       })
       .join("\n");
 
-    // ---------- OpenAI prompt ----------
-
+    // ------------- System & user prompts -------------
     const systemPrompt = `
-You are an expert classroom teacher using Curriculate, a station-based
-task system. You will generate short, engaging tasks that can be used
-in a 45–60 minute lesson.
+You are an expert classroom teacher using Curriculate, a station-based task system.
 
-Each task must be one of these taskType values ONLY:
-${typePool.map((t) => `- "${t}"`).join("\n")}
+Your job:
+- Generate short, engaging, curriculum-aligned tasks for the given grade, subject, and topic.
+- Use ONLY the allowed task types provided.
+- Obey all constraints and special considerations from the teacher.
+- Use the vocabulary list as the core of the topic—do not drift.
 
-You MUST NOT invent any other taskType values.
-
-When curricular lenses / perspectives are provided, you must shape tasks
-so that they naturally reflect those lenses.
+${religiousGuardrail}
 
 For each allowed taskType, follow these guidelines:
 ${typeGuidelines}
 `.trim();
 
-    const lensesText =
-      presenterProfile &&
-      Array.isArray(presenterProfile.curriculumLenses) &&
-      presenterProfile.curriculumLenses.length
-        ? presenterProfile.curriculumLenses.join(", ")
-        : "none specified";
+    const vocabSection = `
+Vocabulary / key terms for this task set.
+These define the boundaries of the topic. Do NOT generate tasks unrelated
+to these terms.
+
+${vocabularyText}
+`.trim();
+
+    const considerationsSection = specialConsiderations
+      ? `
+Special considerations from the teacher (these constrain style or emphasis,
+but do NOT change the core topic):
+
+${specialConsiderations}
+`.trim()
+      : "";
+
+    const lensesSection =
+      lensesText && lensesText !== "none specified"
+        ? `
+Curricular lenses / perspectives to emphasize (when natural):
+
+${lensesText}
+`.trim()
+        : "";
+
+    const taskTypeList = typePool.join(", ");
 
     const userPrompt = `
-Create ${safeCount} tasks for:
+Create ${safeCount} tasks for the following class:
 
 - Subject: ${subject}
 - Grade level: ${gradeLevel}
 - Difficulty: ${normDifficulty}
 - Learning goal: ${normGoal}
-- Topic / description: ${topicDescription || "(general review)"}
+- Topic / unit: ${topicLabel}
 - Approx lesson duration (minutes): ${duration}
-- Curricular lenses / perspectives to emphasize: ${lensesText}
+
+${vocabSection}
+
+${considerationsSection}
+
+${lensesSection}
 
 Rules:
-- Mix of the allowed taskTypes only: ${typePool.join(", ")}.
-- Each task has a short clear title and prompt.
-- Tasks should, whenever possible, reflect the listed curricular lenses
-  (for example, by connecting content or examples to that perspective).
+- All tasks MUST be directly about the topic and vocabulary above.
+- Use the vocabulary terms throughout the set; every term should appear in at least one task.
+- Do NOT introduce off-topic content.
+- Use ONLY these taskType values (no others): ${taskTypeList}
 - For "${TASK_TYPES.MULTIPLE_CHOICE}":
-  - Provide 3–5 options (short strings).
+  - Provide 3–5 options (short, student-friendly).
   - correctAnswer is the ZERO-BASED index of the correct option.
 - For "${TASK_TYPES.TRUE_FALSE}":
-  - options can be ["True", "False"].
-  - correctAnswer is the ZERO-BASED index (0 or 1).
+  - options should be ["True", "False"].
+  - correctAnswer is the ZERO-BASED index (0 for True, 1 for False).
 - For "${TASK_TYPES.SHORT_ANSWER}":
   - options is an empty array.
   - correctAnswer is a short reference answer string (or null).
@@ -194,7 +318,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 `.trim();
 
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
       temperature: 0.6,
       max_tokens: 2000,
       messages: [
@@ -210,16 +334,18 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       aiTasks = JSON.parse(raw);
     } catch (err) {
       console.error("AI taskset JSON parse error:", err, raw.slice(0, 500));
-      return res
-        .status(500)
-        .json({ error: "AI returned invalid JSON for taskset" });
+      return res.status(500).json({
+        error: "AI returned invalid JSON for taskset",
+      });
     }
 
     if (!Array.isArray(aiTasks) || aiTasks.length === 0) {
-      throw new Error("AI returned no tasks");
+      return res
+        .status(500)
+        .json({ error: "AI returned no tasks for this request" });
     }
 
-    // Normalize AI tasks into TaskSet schema
+    // ---------- Normalize AI tasks into TaskSet schema ----------
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
       const rawType = (t.taskType || "").toString().toLowerCase();
 
@@ -238,8 +364,16 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         if (options.length !== 2) {
           options = ["True", "False"];
         }
+      } else if (
+        taskType === TASK_TYPES.SORT ||
+        taskType === TASK_TYPES.SEQUENCE
+      ) {
+        // Keep options as-is for ordering tasks
       } else {
-        options = [];
+        // For short-answer, photo, creative, etc., we usually don't need options
+        if (taskType !== TASK_TYPES.SORT && taskType !== TASK_TYPES.SEQUENCE) {
+          options = [];
+        }
       }
 
       let correctAnswer = t.correctAnswer ?? null;
@@ -258,7 +392,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             ? correctAnswer.trim()
             : null;
       } else {
-        // Non-objective types: ignore any random correctAnswer the model sends
+        // Non-objective types: ignore any stray correctAnswer
         correctAnswer = null;
       }
 
@@ -270,7 +404,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       const points =
         Number(t.points) && Number(t.points) > 0 ? Number(t.points) : 10;
 
-      // If we have a correctAnswer, we can auto-score (no AI needed)
       const canAutoScore =
         correctAnswer !== null && correctAnswer !== undefined;
 
@@ -278,10 +411,10 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
       return {
         taskId: `ai-${index + 1}`,
-        title: t.title || `${subject || "Task"} #${index + 1}`,
+        title: t.title || `${topicLabel} – Task ${index + 1}`,
         prompt:
           t.prompt ||
-          `Answer this question about ${subject || "the topic"}.`,
+          `Answer this question about ${topicLabel}.`,
         taskType,
         options,
         correctAnswer,
@@ -299,17 +432,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     });
 
     // ---------- Word-bank usage analysis ----------
-    let rawWordBank = [];
-
-    if (Array.isArray(aiWordBank)) {
-      rawWordBank = aiWordBank;
-    } else if (typeof aiWordBank === "string") {
-      rawWordBank = aiWordBank
-        .split(/[\n,;]+/)
-        .map((w) => w.trim())
-        .filter(Boolean);
-    }
-
     let aiWordsUsed = [];
     let aiWordsUnused = [];
 
@@ -329,21 +451,24 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
     const now = new Date();
 
+    const finalName = explicitName || topicLabel;
+
     const tasksetDoc = new TaskSet({
-      name: finalTasksetName,
-      description: topicDescription || "",
+      name: finalName,
+      description: specialConsiderations || "",
       subject,
       gradeLevel,
       difficulty: normDifficulty,
       learningGoal: normGoal,
       tasks,
-      displays: [],
+      displays: Array.isArray(displays) ? displays : [],
       meta: {
         source: "ai",
         sourceConfig: {
           aiWordBank: rawWordBank,
           aiWordsUsed,
           aiWordsUnused,
+          topicTitle,
         },
       },
       requiredTaskTypes: typePool,
@@ -351,16 +476,25 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       createdAt: now,
       updatedAt: now,
       roomLocation: roomLocation || locationCode || "Classroom",
+      isFixedStationTaskset:
+        !!isFixedStationTaskset ||
+        (Array.isArray(displays) && displays.length > 0),
     });
 
     await tasksetDoc.save();
 
-    return res.status(201).json(tasksetDoc.toObject());
+    return res.json({
+      ok: true,
+      taskset: tasksetDoc.toObject(),
+      tasksetId: tasksetDoc._id,
+    });
   } catch (err) {
-    console.error("generateAiTaskset error:", err);
+    console.error("AI Taskset generation failed:", err);
     return res.status(500).json({
-      error:
-        err?.message || "Failed to generate AI task set. Please try again.",
+      error: "Failed to generate taskset",
+      details: err.message || String(err),
     });
   }
 };
+
+export default { generateAiTaskset };

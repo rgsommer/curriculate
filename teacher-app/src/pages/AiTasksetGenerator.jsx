@@ -3,24 +3,29 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { fetchMyProfile } from "../api/profile";
 import {
-  AI_ELIGIBLE_TASK_TYPES,
+  TASK_TYPES,
   TASK_TYPE_META,
 } from "../../../shared/taskTypes.js";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
-// Task types the teacher can force-include (AI-eligible only, canonical ids)
-const LIMITABLE_TASK_TYPES = AI_ELIGIBLE_TASK_TYPES || [];
+// Compute the same AI-eligible types as the backend does
+const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta.implemented !== false && meta.aiEligible !== false)
+  .map(([type]) => type);
 
 export default function AiTasksetGenerator() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // If we arrived here from "Create new task set with unused words"
-  const prefillWordList = location.state?.prefillWordList || [];
-  const prefillWordText = prefillWordList.length
-    ? prefillWordList.join("\n")
+  const prefillWordListFromState =
+    location.state && Array.isArray(location.state.prefillWordList)
+      ? location.state.prefillWordList
+      : null;
+
+  const prefillWordText = prefillWordListFromState
+    ? prefillWordListFromState.join("\n")
     : "";
 
   const [profile, setProfile] = useState(null);
@@ -33,7 +38,7 @@ export default function AiTasksetGenerator() {
     subject: "",
     difficulty: "MEDIUM",
     learningGoal: "REVIEW",
-    topicDescription: "",
+    topicDescription: "", // used as "Special considerations"
     durationMinutes: 45,
     isFixedStation: false,
   });
@@ -47,10 +52,10 @@ export default function AiTasksetGenerator() {
   const [limitTasks, setLimitTasks] = useState(false);
   const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
 
-  // Vocabulary / key terms
+  // Vocabulary / key terms (REQUIRED)
   const [wordListText, setWordListText] = useState(prefillWordText);
 
-  // Load presenter profile to prefill defaults
+  // Load presenter profile to prefill
   useEffect(() => {
     let cancelled = false;
 
@@ -58,41 +63,19 @@ export default function AiTasksetGenerator() {
       try {
         const data = await fetchMyProfile();
         if (cancelled) return;
-
         setProfile(data || null);
 
-        setForm((prev) => {
-          const next = { ...prev };
+        const defaultGrade =
+          (data && (data.defaultGradeLevel || data.gradeLevel)) || "";
+        const defaultSubject =
+          (data && (data.defaultSubject || data.subject)) || "";
 
-          if (
-            (data?.defaultGradeLevel || data?.defaultGrade) &&
-            !next.gradeLevel
-          ) {
-            next.gradeLevel = data.defaultGradeLevel || data.defaultGrade;
-          }
-          if (data?.defaultSubject && !next.subject) {
-            next.subject = data.defaultSubject;
-          } else if (
-            Array.isArray(data?.subjectsTaught) &&
-            data.subjectsTaught.length &&
-            !next.subject
-          ) {
-            next.subject = data.subjectsTaught[0];
-          }
-
-          if (
-            typeof data?.defaultDurationMinutes === "number" &&
-            !prev.durationMinutes
-          ) {
-            next.durationMinutes = data.defaultDurationMinutes;
-          }
-
-          if (data?.defaultRoomLabel && !prev.roomLocation) {
-            next.roomLocation = data.defaultRoomLabel;
-          }
-
-          return next;
-        });
+        setForm((prev) => ({
+          ...prev,
+          gradeLevel: prev.gradeLevel || defaultGrade,
+          subject: prev.subject || defaultSubject,
+          roomLocation: prev.roomLocation || data?.defaultRoomLocation || "Classroom",
+        }));
       } catch (err) {
         console.error("Failed to load profile for AI generator:", err);
       } finally {
@@ -109,10 +92,23 @@ export default function AiTasksetGenerator() {
   const handleChange = (field, value) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
+  const toggleTaskType = (type) => {
+    setSelectedTaskTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  };
+
   const addDisplay = () => {
     setDisplays((prev) => [
       ...prev,
-      { name: "", stationColor: "", description: "" },
+      {
+        key: `display-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: "",
+        description: "",
+        stationColor: "",
+        notesForTeacher: "",
+        imageUrl: "",
+      },
     ]);
   };
 
@@ -128,12 +124,6 @@ export default function AiTasksetGenerator() {
     setDisplays((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const toggleTaskType = (type) => {
-    setSelectedTaskTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    );
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (generating) return;
@@ -143,27 +133,40 @@ export default function AiTasksetGenerator() {
     setGenerating(true);
 
     if (!form.name.trim()) {
-      setError("Task set name is required.");
+      setError("Task set title is required.");
+      setGenerating(false);
+      return;
+    }
+
+    // Turn the vocab text area into an array of terms
+    const aiWordBank = wordListText
+      .split(/[\n,;]+/)
+      .map((w) => w.trim())
+      .filter(Boolean);
+
+    if (!aiWordBank.length) {
+      setError(
+        "Please provide at least one vocabulary term or key word. The AI uses these to stay on topic."
+      );
       setGenerating(false);
       return;
     }
 
     try {
-      // Clean up displays if fixed-station
-      const cleanedDisplays =
-        form.isFixedStation || displays.length
-          ? displays
-              .map((d) => ({
-                name: (d.name || "").trim(),
-                stationColor: (d.stationColor || "").trim(),
-                description: (d.description || "").trim(),
-              }))
-              .filter((d) => d.name || d.stationColor || d.description)
-          : [];
+      // Clean displays if using fixed-station mode
+      let cleanedDisplays = displays;
+      if (!form.isFixedStation) {
+        cleanedDisplays = [];
+      } else {
+        cleanedDisplays = (displays || []).filter(
+          (d) => d && (d.name || d.description || d.stationColor)
+        );
+      }
 
-      const duration = Number(form.durationMinutes);
       const totalDurationMinutes =
-        Number.isFinite(duration) && duration > 0 ? duration : 45;
+        Number.isFinite(form.durationMinutes) && form.durationMinutes > 0
+          ? form.durationMinutes
+          : 45;
 
       // Base task count estimate
       let estimatedTaskCount = Math.max(
@@ -172,7 +175,7 @@ export default function AiTasksetGenerator() {
       );
 
       let requiredTaskTypes = [];
-      let topicDescriptionForAi = (form.topicDescription || "").trim();
+      const specialConsiderations = (form.topicDescription || "").trim();
 
       // Limit to specific task types
       if (limitTasks) {
@@ -188,11 +191,8 @@ export default function AiTasksetGenerator() {
           selectedTaskTypes.length,
           Math.min(20, Math.round(totalDurationMinutes / 5))
         );
-        requiredTaskTypes = selectedTaskTypes;
 
-        topicDescriptionForAi = `${topicDescriptionForAi}\n\nIMPORTANT: Use ONLY these task types: ${selectedTaskTypes.join(
-          ", "
-        )}. Repeat types if needed to fill the duration. Do not use any other types.`;
+        requiredTaskTypes = selectedTaskTypes;
       }
 
       // Presenter profile lenses
@@ -201,22 +201,19 @@ export default function AiTasksetGenerator() {
           (profile.curriculumLenses || profile.perspectives)) ||
         [];
 
-      // Turn the text area into an array of words/terms
-      const aiWordBank = wordListText
-        .split(/[\n,;]+/)
-        .map((w) => w.trim())
-        .filter(Boolean);
-
       const payload = {
         // Core planning context
         gradeLevel: form.gradeLevel,
         subject: form.subject,
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
-        topicDescription: topicDescriptionForAi,
+
+        // NEW: treat title as main topic, and textarea as special considerations
+        topicTitle: form.name.trim(),
+        topicDescription: specialConsiderations,
         presenterProfile: { curriculumLenses },
 
-        // Word bank for “used vs not used” tracking
+        // Word bank – REQUIRED and enforced by backend too
         aiWordBank,
 
         // Time-based control
@@ -238,37 +235,21 @@ export default function AiTasksetGenerator() {
       // -----------------------------
       // Direct API call with auth
       // -----------------------------
-      const apiBase =
-        import.meta.env.VITE_API_BASE_URL ||
-        import.meta.env.VITE_API_URL ||
-        "";
-
-      const url = apiBase
-        ? `${apiBase.replace(/\/$/, "")}/api/ai/tasksets`
-        : "/api/ai/tasksets";
-
-      const token =
-        localStorage.getItem("authToken") ||
-        localStorage.getItem("token") ||
-        "";
-
-      const headers = {
-        "Content-Type": "application/json",
-      };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-
-      const resp = await fetch(url, {
+      const token = localStorage.getItem("token");
+      const resp = await fetch("/api/ai/tasksets", {
         method: "POST",
-        headers,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(payload),
       });
 
       if (!resp.ok) {
-        let msg = `Request failed (${resp.status})`;
+        let msg = `AI generation failed (status ${resp.status})`;
         try {
           const body = await resp.json();
+          if (body?.error) msg = body.error;
           if (body?.message) msg = body.message;
         } catch {
           // ignore JSON parse error
@@ -290,20 +271,52 @@ export default function AiTasksetGenerator() {
     }
   };
 
+  const renderTaskTypeBadge = (type) => {
+    const meta = TASK_TYPE_META[type] || {};
+    const label = meta.label || type;
+    const category = meta.category || "other";
+
+    return (
+      <button
+        key={type}
+        type="button"
+        onClick={() => toggleTaskType(type)}
+        style={{
+          borderRadius: 999,
+          padding: "4px 10px",
+          fontSize: "0.8rem",
+          border: selectedTaskTypes.includes(type)
+            ? "1px solid #2563eb"
+            : "1px solid #d1d5db",
+          background: selectedTaskTypes.includes(type)
+            ? "rgba(37,99,235,0.08)"
+            : "#ffffff",
+          color: "#111827",
+          cursor: "pointer",
+        }}
+      >
+        {label}{" "}
+        <span
+          style={{
+            fontSize: "0.7rem",
+            color: "#6b7280",
+            textTransform: "capitalize",
+          }}
+        >
+          · {category}
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
       <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
       <p style={{ marginTop: 0, color: "#4b5563", fontSize: "0.95rem" }}>
-        Describe your class and topic, and let the AI build a station-based
-        task set for you. You can optionally constrain which task types it
-        uses.
+        Give the AI your topic, vocabulary list, and any special
+        considerations. It will build a station-based task set that stays on
+        that exact content.
       </p>
-
-      {loadingProfile && (
-        <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-          Loading your presenter profile…
-        </p>
-      )}
 
       {error && (
         <div
@@ -320,19 +333,87 @@ export default function AiTasksetGenerator() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", gap: 24 }}>
-        {/* Left column: core details */}
-        <div style={{ flex: 2, minWidth: 0 }}>
-          <div style={{ marginBottom: 12 }}>
+      <form onSubmit={handleSubmit}>
+        {/* TOP ROW: core context */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1.5fr)",
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          <div>
             <label
-              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
             >
-              Task set name
+              Task set title (topic)
             </label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => handleChange("name", e.target.value)}
+              placeholder="Hist7 Ch3: The Seven Years' War and the Conquest of New France"
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.95rem",
+              }}
+            />
+          </div>
+
+          <div>
+            <label
+              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+            >
+              Room / location (for station QR)
+            </label>
+            <input
+              type="text"
+              value={form.roomLocation}
+              onChange={(e) => handleChange("roomLocation", e.target.value)}
+              placeholder="Classroom, Gym, Hallway..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* SECOND ROW: grade, subject, difficulty, goal */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
+            >
+              Grade level
+            </label>
+            <input
+              type="text"
+              value={form.gradeLevel}
+              onChange={(e) => handleChange("gradeLevel", e.target.value)}
+              placeholder="7, 8, 7/8 split..."
               style={{
                 width: "100%",
                 borderRadius: 8,
@@ -343,139 +424,136 @@ export default function AiTasksetGenerator() {
             />
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Grade level
-              </label>
-              <input
-                type="text"
-                value={form.gradeLevel}
-                onChange={(e) => handleChange("gradeLevel", e.target.value)}
-                placeholder="e.g., 7, 8, 7/8"
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  padding: 8,
-                  fontSize: "0.9rem",
-                }}
-              />
-            </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Subject
-              </label>
-              <input
-                type="text"
-                value={form.subject}
-                onChange={(e) => handleChange("subject", e.target.value)}
-                placeholder="e.g., Geography, Bible, Math"
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  padding: 8,
-                  fontSize: "0.9rem",
-                }}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Difficulty
-              </label>
-              <select
-                value={form.difficulty}
-                onChange={(e) => handleChange("difficulty", e.target.value)}
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  padding: 8,
-                  fontSize: "0.9rem",
-                  background: "#ffffff",
-                }}
-              >
-                {DIFFICULTIES.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Learning goal
-              </label>
-              <select
-                value={form.learningGoal}
-                onChange={(e) =>
-                  handleChange("learningGoal", e.target.value)
-                }
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  padding: 8,
-                  fontSize: "0.9rem",
-                  background: "#ffffff",
-                }}
-              >
-                {LEARNING_GOALS.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 12 }}>
+          <div>
             <label
-              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
             >
-              Topic / unit description
+              Subject
+            </label>
+            <input
+              type="text"
+              value={form.subject}
+              onChange={(e) => handleChange("subject", e.target.value)}
+              placeholder="History, Geography, Bible..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+          </div>
+
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
+            >
+              Difficulty
+            </label>
+            <select
+              value={form.difficulty}
+              onChange={(e) => handleChange("difficulty", e.target.value)}
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            >
+              {DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>
+                  {d.charAt(0) + d.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
+            >
+              Learning goal
+            </label>
+            <select
+              value={form.learningGoal}
+              onChange={(e) => handleChange("learningGoal", e.target.value)}
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            >
+              {LEARNING_GOALS.map((g) => (
+                <option key={g} value={g}>
+                  {g.charAt(0) + g.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* TIME + SPECIAL CONSIDERATIONS + VOCAB */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.2fr)",
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
+            >
+              Approx lesson duration (minutes)
+            </label>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              value={form.durationMinutes}
+              onChange={(e) =>
+                handleChange("durationMinutes", Number(e.target.value))
+              }
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+
+            <div style={{ height: 8 }} />
+
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
+            >
+              Special considerations (optional)
             </label>
             <textarea
               value={form.topicDescription}
@@ -483,7 +561,7 @@ export default function AiTasksetGenerator() {
                 handleChange("topicDescription", e.target.value)
               }
               rows={5}
-              placeholder="Summarize what your students are learning and any important constraints (e.g., 'Stations must be mostly quiet', 'We have limited space', 'They just did a test and need lighter tasks')."
+              placeholder="e.g., ‘Reviewing for a test’, ‘We have limited space’, ‘Keep it low-noise’, ‘They just did a quiz, keep it lighter’..."
               style={{
                 width: "100%",
                 borderRadius: 8,
@@ -496,18 +574,22 @@ export default function AiTasksetGenerator() {
           </div>
 
           {/* Vocabulary / key terms */}
-          <div style={{ marginBottom: 12 }}>
+          <div>
             <label
-              style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}
+              style={{
+                display: "block",
+                fontSize: "0.85rem",
+                marginBottom: 4,
+              }}
             >
-              Vocabulary / key terms (optional)
+              Vocabulary / key terms <span style={{ color: "#b91c1c" }}>*</span>
             </label>
             <textarea
               value={wordListText}
               onChange={(e) => setWordListText(e.target.value)}
-              rows={4}
+              rows={6}
               placeholder={
-                "One term per line or separated by commas, e.g.\nConfederation\nProvince\nTreaty of Paris"
+                "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
               }
               style={{
                 width: "100%",
@@ -525,224 +607,132 @@ export default function AiTasksetGenerator() {
                 color: "#6b7280",
               }}
             >
-              These words will be tracked as “used” vs “not yet used” when the
-              AI builds your task set, so you can quickly make a second set
-              with the leftovers.
+              These words define the topic. The AI is required to stay within
+              them, and we’ll track which ones are “used” vs “not yet used” so
+              you can quickly generate a second set with the leftovers.
             </p>
           </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Total duration (minutes)
-              </label>
-              <input
-                type="number"
-                min={10}
-                max={180}
-                value={form.durationMinutes}
-                onChange={(e) =>
-                  handleChange("durationMinutes", Number(e.target.value))
-                }
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  padding: 8,
-                  fontSize: "0.9rem",
-                }}
-              />
-            </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Room / location label
-              </label>
-              <input
-                type="text"
-                value={form.roomLocation}
-                onChange={(e) =>
-                  handleChange("roomLocation", e.target.value)
-                }
-                placeholder="e.g., Classroom, Library, Gym"
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  padding: 8,
-                  fontSize: "0.9rem",
-                }}
-              />
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: "0.85rem",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={form.isFixedStation}
-                onChange={(e) =>
-                  handleChange("isFixedStation", e.target.checked)
-                }
-              />
-              Fixed station layout (each station has a dedicated display /
-              equipment)
-            </label>
-          </div>
-
-          <button
-            type="submit"
-            disabled={generating}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 999,
-              border: "none",
-              background: "#0ea5e9",
-              color: "#ffffff",
-              fontSize: "0.9rem",
-              cursor: generating ? "wait" : "pointer",
-              opacity: generating ? 0.7 : 1,
-            }}
-          >
-            {generating ? "Generating task set…" : "Generate task set"}
-          </button>
         </div>
 
-        {/* Right column: displays + task-type limiting */}
-        <div style={{ flex: 1.4, minWidth: 0 }}>
-          {/* Displays / station layout */}
-          <div
+        {/* LIMIT TASK TYPES */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <label
             style={{
-              marginBottom: 16,
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              padding: 10,
-              background: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              marginBottom: 8,
             }}
           >
+            <input
+              type="checkbox"
+              checked={limitTasks}
+              onChange={(e) => setLimitTasks(e.target.checked)}
+            />
+            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              Limit which task types the AI can use
+            </span>
+          </label>
+          {limitTasks && (
             <div
               style={{
-                fontSize: "0.9rem",
-                fontWeight: 600,
-                marginBottom: 6,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
-              Displays / stations (optional)
+              {AI_ELIGIBLE_TYPES.map(renderTaskTypeBadge)}
             </div>
-            <p
-              style={{
-                marginTop: 0,
-                marginBottom: 8,
-                fontSize: "0.8rem",
-                color: "#6b7280",
-              }}
-            >
-              If you have named stations or specific screen locations, list
-              them here so the AI can map tasks to physical spots.
-            </p>
-            {displays.length === 0 && (
-              <p
+          )}
+        </div>
+
+        {/* FIXED-STATION / DISPLAYS (unchanged logic) */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={form.isFixedStation}
+              onChange={(e) =>
+                handleChange("isFixedStation", e.target.checked)
+              }
+            />
+            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              Attach this task set to specific displays / stations
+            </span>
+          </label>
+
+          {form.isFixedStation && (
+            <div style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={addDisplay}
                 style={{
+                  borderRadius: 999,
+                  padding: "4px 10px",
                   fontSize: "0.8rem",
-                  color: "#9ca3af",
-                  margin: 0,
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  cursor: "pointer",
+                  marginBottom: 8,
                 }}
               >
-                No displays added yet.
-              </p>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {displays.map((d, i) => (
+                + Add display
+              </button>
+
+              {displays.map((d, index) => (
                 <div
-                  key={i}
+                  key={d.key}
                   style={{
                     borderRadius: 8,
                     border: "1px solid #e5e7eb",
+                    background: "#ffffff",
                     padding: 8,
-                    background: "#f9fafb",
+                    marginBottom: 8,
                   }}
                 >
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: 6,
-                      marginBottom: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
                     }}
                   >
-                    <input
-                      type="text"
-                      value={d.name}
-                      onChange={(e) =>
-                        updateDisplay(i, "name", e.target.value)
-                      }
-                      placeholder="Station name (e.g., Red, Bible, Quiet corner)"
+                    <div
                       style={{
-                        borderRadius: 6,
-                        border: "1px solid #d1d5db",
-                        padding: 6,
-                        fontSize: "0.8rem",
+                        fontSize: "0.85rem",
+                        fontWeight: 500,
                       }}
-                    />
-                    <input
-                      type="text"
-                      value={d.stationColor}
-                      onChange={(e) =>
-                        updateDisplay(i, "stationColor", e.target.value)
-                      }
-                      placeholder="Colour or marker (e.g., red, blue)"
-                      style={{
-                        borderRadius: 6,
-                        border: "1px solid #d1d5db",
-                        padding: 6,
-                        fontSize: "0.8rem",
-                      }}
-                    />
-                  </div>
-                  <textarea
-                    value={d.description}
-                    onChange={(e) =>
-                      updateDisplay(i, "description", e.target.value)
-                    }
-                    placeholder="Equipment or constraints (e.g., 'Chromebook station', 'quiet reading zone', 'hands-on area')."
-                    rows={2}
-                    style={{
-                      width: "100%",
-                      borderRadius: 6,
-                      border: "1px solid #d1d5db",
-                      padding: 6,
-                      fontSize: "0.8rem",
-                    }}
-                  />
-                  <div style={{ marginTop: 4, textAlign: "right" }}>
+                    >
+                      Display {index + 1}
+                    </div>
                     <button
                       type="button"
-                      onClick={() => removeDisplay(i)}
+                      onClick={() => removeDisplay(index)}
                       style={{
                         border: "none",
                         background: "transparent",
@@ -754,158 +744,170 @@ export default function AiTasksetGenerator() {
                       Remove
                     </button>
                   </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                      gap: 6,
+                    }}
+                  >
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.75rem",
+                          marginBottom: 2,
+                        }}
+                      >
+                        Name
+                      </label>
+                      <input
+                        type="text"
+                        value={d.name || ""}
+                        onChange={(e) =>
+                          updateDisplay(index, "name", e.target.value)
+                        }
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.75rem",
+                          marginBottom: 2,
+                        }}
+                      >
+                        Station color
+                      </label>
+                      <input
+                        type="text"
+                        value={d.stationColor || ""}
+                        onChange={(e) =>
+                          updateDisplay(index, "stationColor", e.target.value)
+                        }
+                        placeholder="red, blue..."
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "0.75rem",
+                          marginBottom: 2,
+                        }}
+                      >
+                        Notes for you
+                      </label>
+                      <input
+                        type="text"
+                        value={d.notesForTeacher || ""}
+                        onChange={(e) =>
+                          updateDisplay(index, "notesForTeacher", e.target.value)
+                        }
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={addDisplay}
-              style={{
-                marginTop: 8,
-                padding: "4px 8px",
-                borderRadius: 999,
-                border: "1px dashed #9ca3af",
-                background: "transparent",
-                fontSize: "0.8rem",
-                cursor: "pointer",
-              }}
-            >
-              + Add display / station
-            </button>
-          </div>
+          )}
+        </div>
 
-          {/* Task-type limiting */}
-          <div
+        {/* ACTION BUTTONS */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+            marginTop: 12,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => navigate("/tasksets")}
             style={{
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              padding: 10,
+              borderRadius: 999,
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              border: "1px solid #d1d5db",
               background: "#ffffff",
+              cursor: "pointer",
             }}
           >
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: "0.85rem",
-                marginBottom: 6,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={limitTasks}
-                onChange={(e) => setLimitTasks(e.target.checked)}
-              />
-              Limit to specific task types
-            </label>
-            <p
-              style={{
-                marginTop: 0,
-                marginBottom: 6,
-                fontSize: "0.8rem",
-                color: "#6b7280",
-              }}
-            >
-              If enabled, the AI will only use the types you pick and will
-              repeat them as needed to fill the time.
-            </p>
-            <div
-              style={{
-                maxHeight: 220,
-                overflowY: "auto",
-                borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                padding: 6,
-                background: "#f9fafb",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                  fontSize: "0.8rem",
-                }}
-              >
-                {LIMITABLE_TASK_TYPES.map((type) => {
-                  const active = selectedTaskTypes.includes(type);
-                  const label =
-                    TASK_TYPE_META[type]?.label ||
-                    type.replace(/-/g, " ");
-
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => toggleTaskType(type)}
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        border: active
-                          ? "1px solid #0ea5e9"
-                          : "1px solid #d1d5db",
-                        background: active ? "#e0f2fe" : "#ffffff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={generating}
+            style={{
+              borderRadius: 999,
+              padding: "6px 16px",
+              fontSize: "0.9rem",
+              border: "1px solid #2563eb",
+              background: generating ? "#93c5fd" : "#2563eb",
+              color: "#ffffff",
+              cursor: generating ? "wait" : "pointer",
+            }}
+          >
+            {generating ? "Generating…" : "Generate task set"}
+          </button>
         </div>
       </form>
 
-      {/* Result preview */}
-      {result && (
+      {/* Optional: show quick success summary */}
+      {result && result.taskset && (
         <div
           style={{
-            marginTop: 24,
+            marginTop: 20,
+            padding: 12,
             borderRadius: 10,
             border: "1px solid #e5e7eb",
-            padding: 12,
-            background: "#ffffff",
+            background: "#ecfdf5",
+            fontSize: "0.9rem",
           }}
         >
-          <h2
+          <div style={{ marginBottom: 6 }}>
+            ✅ Task set <strong>{result.taskset.name}</strong> created.
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              navigate(`/tasksets/${result.tasksetId || result.taskset._id}`)
+            }
             style={{
-              marginTop: 0,
-              fontSize: "1rem",
-              marginBottom: 8,
-            }}
-          >
-            Generated task set
-          </h2>
-          <p
-            style={{
-              marginTop: 0,
+              borderRadius: 999,
+              padding: "4px 10px",
               fontSize: "0.85rem",
-              color: "#6b7280",
+              border: "1px solid #16a34a",
+              background: "#16a34a",
+              color: "#ffffff",
+              cursor: "pointer",
             }}
           >
-            The task set has been generated. You can review and edit it on the
-            Task Sets page.
-          </p>
-          {result.tasksetId && (
-            <button
-              type="button"
-              onClick={() => navigate(`/tasksets/${result.tasksetId}`)}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: "#10b981",
-                color: "#ffffff",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-              }}
-            >
-              Open generated task set
-            </button>
-          )}
+            Open task set
+          </button>
         </div>
       )}
     </div>
