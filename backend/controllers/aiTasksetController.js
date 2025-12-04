@@ -82,6 +82,14 @@ export const generateAiTaskset = async (req, res) => {
 
       // Optional: vocabulary / key terms for "used vs not used"
       aiWordBank,
+
+      // Newer fields from AiTasksetGenerator
+      requiredTaskTypes,
+      tasksetName,
+      roomLocation,
+      locationCode,
+      isFixedStationTaskset,
+      displays,
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
@@ -123,14 +131,20 @@ export const generateAiTaskset = async (req, res) => {
     const lensesText = lenses.length ? lenses.join(", ") : "none specified";
 
     // If the frontend passed a limited type set, intersect with AI-eligible types
-    const rawSelected =
-      (Array.isArray(selectedTypes) && selectedTypes) || [];
+    const requestedTypes =
+      (Array.isArray(requiredTaskTypes) && requiredTaskTypes.length
+        ? requiredTaskTypes
+        : Array.isArray(selectedTypes) && selectedTypes.length
+        ? selectedTypes
+        : []) || [];
+
     const typePool =
-      rawSelected.length > 0
-        ? rawSelected.filter((t) => AI_ELIGIBLE_TYPES.includes(t))
+      requestedTypes.length > 0
+        ? requestedTypes.filter((t) => AI_ELIGIBLE_TYPES.includes(t))
         : coreTypes;
 
-    const tasksetName =
+    const resolvedName =
+      tasksetName ||
       topicTitle ||
       topicDescription?.slice(0, 60) ||
       `${subject || "Lesson"} – AI Task Set`;
@@ -253,6 +267,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         options = [];
       }
 
+      // ---------- correctAnswer normalization ----------
       let correctAnswer = t.correctAnswer ?? null;
 
       if (
@@ -268,6 +283,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           typeof correctAnswer === "string" ? correctAnswer : null;
       }
 
+      // Time & points
       const timeLimitSeconds =
         Number(t.timeLimitSeconds) && Number(t.timeLimitSeconds) > 0
           ? Number(t.timeLimitSeconds)
@@ -275,6 +291,21 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
       const points =
         Number(t.points) && Number(t.points) > 0 ? Number(t.points) : 10;
+
+      // ---------- AI scoring flag based on metadata ----------
+      const meta = TASK_TYPE_META[taskType] || {};
+      let aiScoringRequired;
+
+      if (typeof t.aiScoringRequired === "boolean") {
+        aiScoringRequired = t.aiScoringRequired;
+      } else if (meta.objectiveScoring && correctAnswer != null) {
+        // If it's objective and we have an answer, prefer instant scoring
+        aiScoringRequired = false;
+      } else if (typeof meta.defaultAiScoringRequired === "boolean") {
+        aiScoringRequired = meta.defaultAiScoringRequired;
+      } else {
+        aiScoringRequired = false;
+      }
 
       return {
         taskId: `ai-${index + 1}`,
@@ -285,6 +316,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         taskType,
         options,
         correctAnswer,
+        aiScoringRequired,
         timeLimitSeconds,
         points,
         displayKey: "",
@@ -329,14 +361,20 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     const now = new Date();
 
     const tasksetDoc = await TaskSet.create({
-      name: tasksetName,
+      name: resolvedName,
       subject,
       gradeLevel,
       learningGoal: normGoal,
       difficulty: normDifficulty,
       durationMinutes: duration,
       tasks,
-      displays: [],
+      // Station / room context
+      roomLocation: roomLocation || locationCode || undefined,
+      isFixedStationTaskset: !!isFixedStationTaskset,
+      displays: Array.isArray(displays) ? displays : [],
+      // Metadata
+      requiredTaskTypes:
+        requestedTypes && requestedTypes.length ? requestedTypes : undefined,
       isPublic: false,
       meta: {
         generatedBy: "AI",

@@ -27,6 +27,7 @@ const COLOR_NAMES = [
 
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
+const [uiTheme, setUiTheme] = React.useState("modern"); // "modern" | "bold" | "minimal"
 
 function normalizeStationId(raw) {
   if (!raw) {
@@ -1263,6 +1264,32 @@ function StudentApp() {
                 Time left: {formatRemainingMs(remainingMs)}
               </p>
             )}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 6,
+                marginBottom: 4,
+                fontSize: "0.75rem",
+              }}
+            >
+              {["modern", "bold", "minimal"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setUiTheme(t)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(148,163,184,0.8)",
+                    background: uiTheme === t ? "#0ea5e9" : "rgba(255,255,255,0.85)",
+                    color: uiTheme === t ? "#fff" : "#111827",
+                  }}
+                >
+                  {t === "modern" ? "Theme 1" : t === "bold" ? "Bold" : "Minimal"}
+                </button>
+              ))}
+            </div>
 
             <div
               style={{
@@ -1275,8 +1302,13 @@ function StudentApp() {
                 lineHeight: 1.5,
               }}
             >
+            const themedTask =
+              currentTask && uiTheme
+                ? { ...currentTask, uiTheme } // will be read by MC/TF/SA components
+                : currentTask;
+
               <TaskRunner
-                task={currentTask}
+                task={themedTask}
                 taskTypes={TASK_TYPES}
                 onSubmit={handleSubmitAnswer}
                 submitting={submitting}

@@ -2,39 +2,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { fetchMyProfile } from "../api/profile";
+import {
+  AI_ELIGIBLE_TASK_TYPES,
+  TASK_TYPE_META,
+} from "../../../shared/taskTypes.js";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
 // Available task types the teacher can force-include
-const TASK_TYPES = [
-  "multiple_choice",
-  "open_text",
-  "photo_description",
-  "scavenger_hunt",
-  "jeopardy_game",
-  "body_break",
-  "sequence",
-  "draw",
-  "record_audio",
-  "sorting",
-  "matching",
-  "timeline",
-  "collaboration",
-  "musical-chairs",
-  "mystery-clues",
-  "true-false-tictactoe",
-  "mad-dash-sequence",
-  "live-debate",
-  "flashcards",
-  "brain-spark-notes",
-  "pet-feeding",
-  "motion-mission",
-  "brainstorm-battle",
-  "mind-mapper",
-  "hidenseek",
-  "speed-draw",
-];
+// (only implemented + AI-eligible from shared metadata)
+const LIMITABLE_TASK_TYPES = AI_ELIGIBLE_TASK_TYPES;
 
 export default function AiTasksetGenerator() {
   const navigate = useNavigate();
@@ -230,6 +208,9 @@ export default function AiTasksetGenerator() {
         .map((w) => w.trim())
         .filter(Boolean);
 
+      const limitedTypes =
+        limitTasks && requiredTaskTypes.length ? requiredTaskTypes : undefined;
+
       const payload = {
         // Core planning context
         gradeLevel: form.gradeLevel,
@@ -239,13 +220,16 @@ export default function AiTasksetGenerator() {
         topicDescription: topicDescriptionForAi,
         presenterProfile: { curriculumLenses },
 
-        // 🔹 Word bank for “used vs not used” tracking
+        // Word bank for “used vs not used” tracking
         aiWordBank,
 
         // Time-based control
         totalDurationMinutes,
         numberOfTasks: estimatedTaskCount,
-        requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
+
+        // Task type limiting (backend + storage)
+        requiredTaskTypes: limitedTypes,
+        selectedTypes: limitedTypes,
 
         // Session / Room context
         tasksetName: form.name || undefined,
@@ -258,9 +242,6 @@ export default function AiTasksetGenerator() {
         displays: cleanedDisplays.length ? cleanedDisplays : undefined,
       };
 
-      // -----------------------------
-      // Direct API call with auth
-      // -----------------------------
       const apiBase =
         import.meta.env.VITE_API_BASE_URL ||
         import.meta.env.VITE_API_URL ||
@@ -305,8 +286,7 @@ export default function AiTasksetGenerator() {
     } catch (err) {
       console.error("AI Taskset generation error:", err);
       setError(
-        err?.message ||
-          "Something went wrong while generating the task set."
+        err?.message || "Something went wrong while generating the task set."
       );
     } finally {
       setGenerating(false);
@@ -851,8 +831,9 @@ export default function AiTasksetGenerator() {
                   fontSize: "0.8rem",
                 }}
               >
-                {TASK_TYPES.map((type) => {
+                {LIMITABLE_TASK_TYPES.map((type) => {
                   const active = selectedTaskTypes.includes(type);
+                  const label = TASK_TYPE_META[type]?.label || type;
                   return (
                     <button
                       key={type}
@@ -868,7 +849,7 @@ export default function AiTasksetGenerator() {
                         cursor: "pointer",
                       }}
                     >
-                      {type}
+                      {label}
                     </button>
                   );
                 })}
