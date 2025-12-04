@@ -115,144 +115,281 @@ export default function HostView({ roomCode }) {
   const teamsArray = Object.values(teams);
   const scoresEntries = Object.entries(scores).sort((a, b) => b[1] - a[1]);
 
-  return (
-    <div className="h-full flex flex-col p-4 md:p-6 gap-4 md:gap-6 font-sans">
-      {/* Accessible page title (hidden visually – top bar already shows it) */}
-      <h1 className="sr-only">Host view</h1>
+  // Basic shared styles (matching Task Sets vibe)
+  const wrapperStyle = {
+    padding: 24,
+    maxWidth: 1100,
+    margin: "0 auto",
+    fontFamily:
+      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    color: "#111827",
+  };
 
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+  const cardStyle = {
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    background: "#ffffff",
+    padding: 10,
+    boxShadow: "0 1px 2px rgba(15,23,42,0.05)",
+  };
+
+  const sectionTitleStyle = {
+    fontSize: "0.9rem",
+    fontWeight: 600,
+    marginBottom: 6,
+  };
+
+  const smallText = {
+    fontSize: "0.8rem",
+    color: "#4b5563",
+  };
+
+  const mutedText = {
+    fontSize: "0.8rem",
+    color: "#6b7280",
+  };
+
+  const visuallyHidden = {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    padding: 0,
+    margin: -1,
+    overflow: "hidden",
+    clip: "rect(0, 0, 0, 0)",
+    whiteSpace: "nowrap",
+    border: 0,
+  };
+
+  return (
+    <div style={wrapperStyle}>
+      {/* Accessible page title (hidden visually – top bar already shows it) */}
+      <h1 style={visuallyHidden}>Host view</h1>
+
+      {/* Header row */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
         <div>
           {roomCode ? (
             <>
-              <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+              <p
+                style={{
+                  fontSize: "0.75rem",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "#6b7280",
+                  margin: 0,
+                  marginBottom: 2,
+                }}
+              >
                 Room {roomCode.toUpperCase()}
               </p>
-              <p className="text-sm text-gray-700">
+              <p style={{ ...smallText, margin: 0 }}>
                 Location:{" "}
-                <span className="font-medium">
+                <span style={{ fontWeight: 600 }}>
                   {locationCode || "Classroom"}
                 </span>
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p style={{ ...mutedText, margin: "4px 0 0" }}>
                 Task index:{" "}
                 {taskIndex >= 0 ? (
-                  <span className="font-mono">{taskIndex + 1}</span>
+                  <span
+                    style={{
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    }}
+                  >
+                    {taskIndex + 1}
+                  </span>
                 ) : (
                   "—"
                 )}
               </p>
             </>
           ) : (
-            <p className="text-sm text-red-700">
+            <p style={{ ...smallText, color: "#b91c1c", margin: 0 }}>
               No room selected. Choose a room from the main bar.
             </p>
           )}
         </div>
 
-        {/* Simple legend / status */}
-        <div className="min-w-[220px] rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs md:text-sm">
-          <div className="font-semibold mb-1">Session summary</div>
-          <div>
+        {/* Session summary card */}
+        <div style={{ ...cardStyle, minWidth: 220 }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 4 }}>
+            Session summary
+          </div>
+          <div style={{ ...smallText, marginBottom: 2 }}>
             Teams joined:{" "}
-            <span className="font-semibold">{teamsArray.length}</span>
+            <span style={{ fontWeight: 600 }}>{teamsArray.length}</span>
           </div>
-          <div>
-            Stations: <span className="font-semibold">{stations.length}</span>
+          <div style={{ ...smallText, marginBottom: 2 }}>
+            Stations:{" "}
+            <span style={{ fontWeight: 600 }}>{stations.length}</span>
           </div>
-          <div>
+          <div style={smallText}>
             Latest submissions:{" "}
-            <span className="font-semibold">{submissions.length}</span>
+            <span style={{ fontWeight: 600 }}>{submissions.length}</span>
           </div>
         </div>
       </div>
 
-      {/* Main body: stations/teams + submissions + scores */}
-      <div className="grid gap-4 flex-1 min-h-0 grid-cols-1 lg:grid-cols-3">
+      {/* Main grid: Stations | Teams | Submissions+Scores */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 0.9fr)",
+          gap: 12,
+        }}
+      >
         {/* Stations column */}
-        <div className="lg:border-r border-gray-200 lg:pr-4 min-w-0">
-          <h2 className="text-sm font-semibold text-gray-800 mb-2">
-            Stations
-          </h2>
-          {stations.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              No stations are defined yet.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {stations.map((s) => {
-                const team = teams[s.assignedTeamId] || null;
-                return (
-                  <div
-                    key={s.id}
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 flex items-center justify-between text-xs md:text-sm"
-                  >
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wide text-gray-500">
-                        {s.id}
+        <div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Stations</div>
+            {stations.length === 0 ? (
+              <p style={{ ...smallText, color: "#6b7280", margin: 0 }}>
+                No stations are defined yet.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {stations.map((s) => {
+                  const team = teams[s.assignedTeamId] || null;
+                  return (
+                    <div
+                      key={s.id}
+                      style={{
+                        borderRadius: 8,
+                        border: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                        padding: 8,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: "0.8rem",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "0.7rem",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                            color: "#6b7280",
+                          }}
+                        >
+                          {s.id}
+                        </div>
+                        <div style={{ fontSize: "0.85rem", color: "#111827" }}>
+                          {team
+                            ? team.teamName || team.teamId
+                            : "No team assigned"}
+                        </div>
                       </div>
-                      <div className="text-gray-800">
-                        {team
-                          ? team.teamName || team.teamId
-                          : "No team assigned"}
-                      </div>
+                      {team && (
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                          Score: {scores[team.teamId] ?? 0}
+                        </div>
+                      )}
                     </div>
-                    {team && (
-                      <div className="text-[11px] text-gray-500">
-                        Score: {scores[team.teamId] ?? 0}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Teams column */}
-        <div className="lg:border-r border-gray-200 lg:pr-4 min-w-0">
-          <h2 className="text-sm font-semibold text-gray-800 mb-2">Teams</h2>
-          {teamsArray.length === 0 ? (
-            <p className="text-sm text-gray-500">No teams joined yet.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {teamsArray.map((team) => (
-                <div
-                  key={team.teamId}
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs md:text-sm"
-                >
-                  <div className="font-semibold text-gray-900">
-                    {team.teamName || team.teamId}
-                  </div>
-                  {Array.isArray(team.members) && team.members.length > 0 && (
-                    <div className="mt-1 text-[11px] text-gray-500">
-                      {team.members.join(", ")}
+        <div>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Teams</div>
+            {teamsArray.length === 0 ? (
+              <p style={{ ...smallText, color: "#6b7280", margin: 0 }}>
+                No teams joined yet.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {teamsArray.map((team) => (
+                  <div
+                    key={team.teamId}
+                    style={{
+                      borderRadius: 8,
+                      border: "1px solid #e5e7eb",
+                      background: "#f9fafb",
+                      padding: 8,
+                      fontSize: "0.8rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        color: "#111827",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      {team.teamName || team.teamId}
                     </div>
-                  )}
-                  <div className="mt-1 text-[11px] text-gray-500">
-                    Current station:{" "}
-                    <span className="font-mono">
-                      {team.currentStationId || "—"}
-                    </span>
+                    {Array.isArray(team.members) &&
+                      team.members.length > 0 && (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            fontSize: "0.75rem",
+                            color: "#6b7280",
+                          }}
+                        >
+                          {team.members.join(", ")}
+                        </div>
+                      )}
+                    <div
+                      style={{
+                        marginTop: 2,
+                        fontSize: "0.75rem",
+                        color: "#6b7280",
+                      }}
+                    >
+                      Current station:{" "}
+                      <span
+                        style={{
+                          fontFamily:
+                            "ui-monospace, SFMono-Regular, Menlo, monospace",
+                        }}
+                      >
+                        {team.currentStationId || "—"}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right column: latest submissions + scores */}
-        <div className="flex flex-col gap-4 min-w-0">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-800 mb-2">
-              Latest submissions
-            </h2>
+        {/* Right column: submissions + scores */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Latest submissions</div>
             {submissions.length === 0 ? (
-              <p className="text-xs md:text-sm text-gray-400">
+              <p style={{ ...smallText, color: "#9ca3af", margin: 0 }}>
                 No submissions yet.
               </p>
             ) : (
-              <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
+              <div
+                style={{
+                  maxHeight: 220,
+                  overflowY: "auto",
+                  borderRadius: 8,
+                  border: "1px solid #e5e7eb",
+                  background: "#f9fafb",
+                  padding: 6,
+                  fontSize: "0.75rem",
+                }}
+              >
                 {submissions.map((sub, idx) => {
                   const t = sub.submittedAt ? new Date(sub.submittedAt) : null;
                   const timeStr = t
@@ -273,24 +410,44 @@ export default function HostView({ roomCode }) {
                   return (
                     <div
                       key={`${sub.teamId}-${sub.taskIndex}-${idx}`}
-                      className={`px-1 py-1 border-b border-dashed border-gray-200 last:border-none`}
+                      style={{
+                        padding: "4px 2px",
+                        borderBottom: "1px dashed #e5e7eb",
+                        lastChild: { borderBottom: "none" },
+                      }}
                     >
                       <div>
-                        <strong>{sub.teamName || sub.teamId}</strong>{" "}
+                        <strong>
+                          {sub.teamName || sub.teamId || "Unknown team"}
+                        </strong>{" "}
                         {timeStr && (
-                          <span className="text-[10px] text-gray-500">
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              color: "#6b7280",
+                            }}
+                          >
                             • {timeStr}
                           </span>
                         )}
                       </div>
                       <div
-                        className="truncate"
+                        style={{
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
                         title={sub.answerText}
                       >
                         {isCorrect} T{(sub.taskIndex ?? 0) + 1}:{" "}
                         {sub.answerText || "—"}
                       </div>
-                      <div className="text-[10px] text-gray-500">
+                      <div
+                        style={{
+                          fontSize: "0.7rem",
+                          color: "#6b7280",
+                        }}
+                      >
                         {sub.points ?? 0} pts{" "}
                         {sub.timeMs != null &&
                           `• ${(sub.timeMs / 1000).toFixed(1)}s`}
@@ -302,20 +459,25 @@ export default function HostView({ roomCode }) {
             )}
           </div>
 
-          <div>
-            <h2 className="text-sm font-semibold text-gray-800 mb-2">
-              Scores
-            </h2>
+          <div style={cardStyle}>
+            <div style={sectionTitleStyle}>Scores</div>
             {scoresEntries.length === 0 ? (
-              <p className="text-xs md:text-sm text-gray-500">
+              <p style={{ ...smallText, color: "#6b7280", margin: 0 }}>
                 No scores yet.
               </p>
             ) : (
-              <ol className="pl-5 text-xs md:text-sm">
+              <ol
+                style={{
+                  paddingLeft: 18,
+                  margin: 0,
+                  fontSize: "0.8rem",
+                  color: "#111827",
+                }}
+              >
                 {scoresEntries.map(([teamId, pts]) => {
                   const teamName = teams[teamId]?.teamName || teamId;
                   return (
-                    <li key={teamId} className="mb-1">
+                    <li key={teamId} style={{ marginBottom: 2 }}>
                       <strong>{teamName}</strong> — {pts} pts
                     </li>
                   );
