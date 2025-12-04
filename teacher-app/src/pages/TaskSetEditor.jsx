@@ -109,14 +109,27 @@ export default function TaskSetEditor() {
         setDescription(data.description || "");
         setDisplays(data.displays || []);
         setTasks(
-          (data.tasks || []).map((t, idx) => ({
-            ...t,
-            taskType: normalizeTaskType(t.taskType || t.task_type),
-            timeLimitSeconds: t.timeLimitSeconds ?? t.time_limit ?? null,
-            displayKey: t.displayKey || "",
-            _tempId: Math.random().toString(36).slice(2),
-            orderIndex: t.orderIndex ?? idx,
-          }))
+          (data.tasks || []).map((t, idx) => {
+            const normalizedType = normalizeTaskType(t.taskType || t.task_type);
+            const meta = TASK_TYPE_META[normalizedType] || {};
+            const aiScoringRequired =
+              typeof t.aiScoringRequired === "boolean"
+                ? t.aiScoringRequired
+                : typeof meta.defaultAiScoringRequired === "boolean"
+                ? meta.defaultAiScoringRequired
+                : false;
+
+            return {
+              ...t,
+              taskType: normalizedType,
+              timeLimitSeconds: t.timeLimitSeconds ?? t.time_limit ?? null,
+              correctAnswer: t.correctAnswer ?? null,
+              aiScoringRequired,
+              displayKey: t.displayKey || "",
+              _tempId: Math.random().toString(36).slice(2),
+              orderIndex: t.orderIndex ?? idx,
+            };
+          })
         );
 
         const meta = data.meta || {};
@@ -170,15 +183,23 @@ export default function TaskSetEditor() {
   };
 
   const addTask = () => {
+    const defaultType = TASK_TYPES.MULTIPLE_CHOICE;
+    const meta = TASK_TYPE_META[defaultType] || {};
+    const aiScoringRequired =
+      typeof meta.defaultAiScoringRequired === "boolean"
+        ? meta.defaultAiScoringRequired
+        : false;
+
     setTasks((prev) => [
       ...prev,
       {
         _tempId: Math.random().toString(36).slice(2),
         title: "",
         prompt: "",
-        taskType: TASK_TYPES.MULTIPLE_CHOICE,
+        taskType: defaultType,
         options: [],
         correctAnswer: null,
+        aiScoringRequired,
         timeLimitSeconds: 60,
         points: 10,
         displayKey: "",
@@ -907,88 +928,496 @@ export default function TaskSetEditor() {
                   gap: 8,
                 }}
               >
-                {tasks.map((task, index) => (
-                  <div
-                    key={task._tempId}
-                    style={{
-                      borderRadius: 8,
-                      border: "1px solid #e5e7eb",
-                      background: "#f9fafb",
-                      padding: 8,
-                    }}
-                  >
+                {tasks.map((task, index) => {
+                  const meta = TASK_TYPE_META[task.taskType] || {};
+                  const objective = !!meta.objectiveScoring;
+
+                  return (
                     <div
+                      key={task._tempId}
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 4,
+                        borderRadius: 8,
+                        border: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                        padding: 8,
                       }}
                     >
-                      <div
-                        style={{
-                          fontSize: "0.9rem",
-                          fontWeight: 600,
-                        }}
-                      >
-                        Task {index + 1}{" "}
-                        <span
-                          style={{
-                            fontSize: "0.75rem",
-                            color: "#6b7280",
-                          }}
-                        >
-                          {prettyCategory(task.taskType)} •{" "}
-                          {TASK_TYPE_META[task.taskType]?.label ||
-                            task.taskType}
-                        </span>
-                      </div>
                       <div
                         style={{
                           display: "flex",
-                          gap: 4,
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 4,
                         }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => moveTask(task._tempId, "up")}
+                        <div
                           style={{
-                            ...grayButton,
-                            padding: "2px 8px",
-                            fontSize: "0.7rem",
+                            fontSize: "0.9rem",
+                            fontWeight: 600,
                           }}
                         >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveTask(task._tempId, "down")}
+                          Task {index + 1}{" "}
+                          <span
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "#6b7280",
+                            }}
+                          >
+                            {prettyCategory(task.taskType)} •{" "}
+                            {meta.label || task.taskType}
+                          </span>
+                        </div>
+                        <div
                           style={{
-                            ...grayButton,
-                            padding: "2px 8px",
-                            fontSize: "0.7rem",
+                            display: "flex",
+                            gap: 4,
                           }}
                         >
-                          ↓
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeTask(task._tempId)}
-                          style={redTextButton}
-                        >
-                          Remove
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => moveTask(task._tempId, "up")}
+                            style={{
+                              ...grayButton,
+                              padding: "2px 8px",
+                              fontSize: "0.7rem",
+                            }}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveTask(task._tempId, "down")}
+                            style={{
+                              ...grayButton,
+                              padding: "2px 8px",
+                              fontSize: "0.7rem",
+                            }}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeTask(task._tempId)}
+                            style={redTextButton}
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(3, minmax(0,1fr))",
-                        gap: 8,
-                        marginBottom: 6,
-                      }}
-                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(3, minmax(0,1fr))",
+                          gap: 8,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8rem",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Type
+                          </label>
+                          <select
+                            value={task.taskType}
+                            onChange={(e) =>
+                              updateTask(
+                                task._tempId,
+                                "taskType",
+                                e.target.value
+                              )
+                            }
+                            style={{
+                              width: "100%",
+                              borderRadius: 6,
+                              border: "1px solid #d1d5db",
+                              padding: 6,
+                              fontSize: "0.8rem",
+                              background: "#ffffff",
+                            }}
+                          >
+                            {IMPLEMENTED_TASK_TYPES.map((type) => (
+                              <option key={type} value={type}>
+                                {TASK_TYPE_META[type]?.label || type}
+                              </option>
+                            ))}
+                          </select>
+                          <p
+                            style={{
+                              margin: "2px 0 0",
+                              fontSize: "0.7rem",
+                              color: "#6b7280",
+                            }}
+                          >
+                            {meta.description}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8rem",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Time limit (seconds)
+                          </label>
+                          <input
+                            type="number"
+                            min={10}
+                            max={900}
+                            value={task.timeLimitSeconds ?? ""}
+                            onChange={(e) =>
+                              updateTask(
+                                task._tempId,
+                                "timeLimitSeconds",
+                                Number(e.target.value) || 60
+                              )
+                            }
+                            style={{
+                              width: "100%",
+                              borderRadius: 6,
+                              border: "1px solid #d1d5db",
+                              padding: 6,
+                              fontSize: "0.8rem",
+                            }}
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8rem",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Points
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={task.points ?? ""}
+                            onChange={(e) =>
+                              updateTask(
+                                task._tempId,
+                                "points",
+                                Number(e.target.value) || 10
+                              )
+                            }
+                            style={{
+                              width: "100%",
+                              borderRadius: 6,
+                              border: "1px solid #d1d5db",
+                              padding: 6,
+                              fontSize: "0.8rem",
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: 6 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
+                          Title
+                        </label>
+                        <input
+                          type="text"
+                          value={task.title || ""}
+                          onChange={(e) =>
+                            updateTask(task._tempId, "title", e.target.value)
+                          }
+                          placeholder="e.g. Name the First Four Provinces"
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 6,
+                            fontSize: "0.8rem",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ marginBottom: 6 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
+                          Prompt / question
+                        </label>
+                        <textarea
+                          value={task.prompt || ""}
+                          onChange={(e) =>
+                            updateTask(task._tempId, "prompt", e.target.value)
+                          }
+                          rows={3}
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 6,
+                            fontSize: "0.8rem",
+                            resize: "vertical",
+                          }}
+                        />
+                      </div>
+
+                      {/* Options area for MC / sort / sequence */}
+                      {[
+                        TASK_TYPES.MULTIPLE_CHOICE,
+                        TASK_TYPES.SORT,
+                        TASK_TYPES.SEQUENCE,
+                      ].includes(task.taskType) && (
+                        <div style={{ marginBottom: 6 }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8rem",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Options
+                          </label>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 4,
+                            }}
+                          >
+                            {(task.options || []).map((opt, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  value={opt}
+                                  onChange={(e) =>
+                                    updateOption(
+                                      task._tempId,
+                                      i,
+                                      e.target.value
+                                    )
+                                  }
+                                  style={{
+                                    flex: 1,
+                                    borderRadius: 6,
+                                    border: "1px solid #d1d5db",
+                                    padding: 6,
+                                    fontSize: "0.8rem",
+                                  }}
+                                />
+                                {task.taskType ===
+                                  TASK_TYPES.MULTIPLE_CHOICE && (
+                                  <label
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 4,
+                                      fontSize: "0.7rem",
+                                    }}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`correct-${task._tempId}`}
+                                      checked={task.correctAnswer === i}
+                                      onChange={() =>
+                                        updateTask(
+                                          task._tempId,
+                                          "correctAnswer",
+                                          i
+                                        )
+                                      }
+                                    />
+                                    Correct
+                                  </label>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeOption(task._tempId, i)
+                                  }
+                                  style={redTextButton}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => addOption(task._tempId)}
+                              style={{
+                                border: "none",
+                                background: "transparent",
+                                color: "#2563eb",
+                                fontSize: "0.75rem",
+                                cursor: "pointer",
+                                alignSelf: "flex-start",
+                              }}
+                            >
+                              + Add option
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Correct answer for True/False */}
+                      {task.taskType === TASK_TYPES.TRUE_FALSE && (
+                        <div style={{ marginBottom: 6 }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8rem",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Correct answer
+                          </label>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 12,
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            {[0, 1].map((idx) => (
+                              <label
+                                key={idx}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`tf-correct-${task._tempId}`}
+                                  checked={task.correctAnswer === idx}
+                                  onChange={() =>
+                                    updateTask(
+                                      task._tempId,
+                                      "correctAnswer",
+                                      idx
+                                    )
+                                  }
+                                />
+                                {idx === 0 ? "True" : "False"}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Correct answer for Short Answer */}
+                      {task.taskType === TASK_TYPES.SHORT_ANSWER && (
+                        <div style={{ marginBottom: 6 }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "0.8rem",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Correct answer (for auto-scoring)
+                          </label>
+                          <input
+                            type="text"
+                            value={task.correctAnswer || ""}
+                            onChange={(e) =>
+                              updateTask(
+                                task._tempId,
+                                "correctAnswer",
+                                e.target.value
+                              )
+                            }
+                            placeholder="Reference answer (case-insensitive match)"
+                            style={{
+                              width: "100%",
+                              borderRadius: 6,
+                              border: "1px solid #d1d5db",
+                              padding: 6,
+                              fontSize: "0.8rem",
+                            }}
+                          />
+                          <p
+                            style={{
+                              margin: "2px 0 0",
+                              fontSize: "0.7rem",
+                              color: "#6b7280",
+                            }}
+                          >
+                            For more nuanced marking (e.g., long explanations),
+                            leave this blank and enable AI scoring below.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Scoring toggle */}
+                      <div style={{ marginBottom: 6 }}>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "0.8rem",
+                            marginBottom: 2,
+                          }}
+                        >
+                          Scoring
+                        </label>
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: "0.8rem",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!task.aiScoringRequired}
+                            onChange={(e) =>
+                              updateTask(
+                                task._tempId,
+                                "aiScoringRequired",
+                                e.target.checked
+                              )
+                            }
+                          />
+                          Use AI scoring for this task
+                        </label>
+                        <p
+                          style={{
+                            margin: "2px 0 0",
+                            fontSize: "0.7rem",
+                            color: "#6b7280",
+                          }}
+                        >
+                          {objective
+                            ? "If AI scoring is off and a correct answer is set, the system can score this task instantly without an AI call."
+                            : "For open or creative tasks, AI scoring can provide feedback and partial credit when a rubric is available."}
+                        </p>
+                      </div>
+
+                      {/* Display assignment */}
                       <div>
                         <label
                           style={{
@@ -997,14 +1426,14 @@ export default function TaskSetEditor() {
                             marginBottom: 2,
                           }}
                         >
-                          Type
+                          Attach to display (optional)
                         </label>
                         <select
-                          value={task.taskType}
+                          value={task.displayKey || ""}
                           onChange={(e) =>
                             updateTask(
                               task._tempId,
-                              "taskType",
+                              "displayKey",
                               e.target.value
                             )
                           }
@@ -1017,285 +1446,17 @@ export default function TaskSetEditor() {
                             background: "#ffffff",
                           }}
                         >
-                          {IMPLEMENTED_TASK_TYPES.map((type) => (
-                            <option key={type} value={type}>
-                              {TASK_TYPE_META[type]?.label || type}
+                          <option value="">(none)</option>
+                          {displays.map((d) => (
+                            <option key={d.key} value={d.key}>
+                              {d.name || d.stationColor || d.key}
                             </option>
                           ))}
                         </select>
-                        <p
-                          style={{
-                            margin: "2px 0 0",
-                            fontSize: "0.7rem",
-                            color: "#6b7280",
-                          }}
-                        >
-                          {TASK_TYPE_META[task.taskType]?.description}
-                        </p>
-                      </div>
-
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.8rem",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Time limit (seconds)
-                        </label>
-                        <input
-                          type="number"
-                          min={10}
-                          max={900}
-                          value={task.timeLimitSeconds ?? ""}
-                          onChange={(e) =>
-                            updateTask(
-                              task._tempId,
-                              "timeLimitSeconds",
-                              Number(e.target.value) || 60
-                            )
-                          }
-                          style={{
-                            width: "100%",
-                            borderRadius: 6,
-                            border: "1px solid #d1d5db",
-                            padding: 6,
-                            fontSize: "0.8rem",
-                          }}
-                        />
-                      </div>
-
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.8rem",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Points
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={task.points ?? ""}
-                          onChange={(e) =>
-                            updateTask(
-                              task._tempId,
-                              "points",
-                              Number(e.target.value) || 10
-                            )
-                          }
-                          style={{
-                            width: "100%",
-                            borderRadius: 6,
-                            border: "1px solid #d1d5db",
-                            padding: 6,
-                            fontSize: "0.8rem",
-                          }}
-                        />
                       </div>
                     </div>
-
-                    <div style={{ marginBottom: 6 }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.8rem",
-                          marginBottom: 2,
-                        }}
-                      >
-                        Title
-                      </label>
-                      <input
-                        type="text"
-                        value={task.title || ""}
-                        onChange={(e) =>
-                          updateTask(task._tempId, "title", e.target.value)
-                        }
-                        placeholder="e.g. Name the First Four Provinces"
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                        }}
-                      />
-                    </div>
-
-                    <div style={{ marginBottom: 6 }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.8rem",
-                          marginBottom: 2,
-                        }}
-                      >
-                        Prompt / question
-                      </label>
-                      <textarea
-                        value={task.prompt || ""}
-                        onChange={(e) =>
-                          updateTask(task._tempId, "prompt", e.target.value)
-                        }
-                        rows={3}
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                          resize: "vertical",
-                        }}
-                      />
-                    </div>
-
-                    {/* Options area for MC / sort / sequence */}
-                    {[
-                      TASK_TYPES.MULTIPLE_CHOICE,
-                      TASK_TYPES.SORT,
-                      TASK_TYPES.SEQUENCE,
-                    ].includes(task.taskType) && (
-                      <div style={{ marginBottom: 6 }}>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "0.8rem",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Options
-                        </label>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 4,
-                          }}
-                        >
-                          {(task.options || []).map((opt, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                              }}
-                            >
-                              <input
-                                type="text"
-                                value={opt}
-                                onChange={(e) =>
-                                  updateOption(
-                                    task._tempId,
-                                    i,
-                                    e.target.value
-                                  )
-                                }
-                                style={{
-                                  flex: 1,
-                                  borderRadius: 6,
-                                  border: "1px solid #d1d5db",
-                                  padding: 6,
-                                  fontSize: "0.8rem",
-                                }}
-                              />
-                              {task.taskType ===
-                                TASK_TYPES.MULTIPLE_CHOICE && (
-                                <label
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 4,
-                                    fontSize: "0.7rem",
-                                  }}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`correct-${task._tempId}`}
-                                    checked={task.correctAnswer === i}
-                                    onChange={() =>
-                                      updateTask(
-                                        task._tempId,
-                                        "correctAnswer",
-                                        i
-                                      )
-                                    }
-                                  />
-                                  Correct
-                                </label>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removeOption(task._tempId, i)
-                                }
-                                style={redTextButton}
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => addOption(task._tempId)}
-                            style={{
-                              border: "none",
-                              background: "transparent",
-                              color: "#2563eb",
-                              fontSize: "0.75rem",
-                              cursor: "pointer",
-                              alignSelf: "flex-start",
-                            }}
-                          >
-                            + Add option
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Display assignment */}
-                    <div>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.8rem",
-                          marginBottom: 2,
-                        }}
-                      >
-                        Attach to display (optional)
-                      </label>
-                      <select
-                        value={task.displayKey || ""}
-                        onChange={(e) =>
-                          updateTask(
-                            task._tempId,
-                            "displayKey",
-                            e.target.value
-                          )
-                        }
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                          background: "#ffffff",
-                        }}
-                      >
-                        <option value="">(none)</option>
-                        {displays.map((d) => (
-                          <option key={d.key} value={d.key}>
-                            {d.name || d.stationColor || d.key}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
