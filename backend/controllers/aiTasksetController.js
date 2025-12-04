@@ -79,6 +79,9 @@ export const generateAiTaskset = async (req, res) => {
 
       // Optional: presenter profile lenses
       presenterProfile,
+
+      // Optional: vocabulary / key terms for "used vs not used"
+      aiWordBank,
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
@@ -271,9 +274,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           : 60;
 
       const points =
-        Number(t.points) && Number(t.points) > 0
-          ? Number(t.points)
-          : 10;
+        Number(t.points) && Number(t.points) > 0 ? Number(t.points) : 10;
 
       return {
         taskId: `ai-${index + 1}`,
@@ -295,6 +296,35 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         notesForTeacher: "",
       };
     });
+
+    // ---------- Word-bank usage analysis ----------
+    let rawWordBank = [];
+
+    if (Array.isArray(aiWordBank)) {
+      rawWordBank = aiWordBank;
+    } else if (typeof aiWordBank === "string") {
+      rawWordBank = aiWordBank
+        .split(/[\n,;]+/)
+        .map((w) => w.trim())
+        .filter(Boolean);
+    }
+
+    let aiWordsUsed = [];
+    let aiWordsUnused = [];
+
+    if (rawWordBank.length && Array.isArray(tasks)) {
+      const allText = tasks
+        .map((t) => `${t.title || ""} ${t.prompt || ""}`)
+        .join(" ")
+        .toLowerCase();
+
+      aiWordsUsed = rawWordBank.filter((w) =>
+        allText.includes(String(w).toLowerCase())
+      );
+      aiWordsUnused = rawWordBank.filter(
+        (w) => !allText.includes(String(w).toLowerCase())
+      );
+    }
 
     const now = new Date();
 
@@ -323,33 +353,14 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           typePool,
           customInstructions,
           lenses,
-          aiWordBank,
+          aiWordBank: rawWordBank,
           aiWordsUsed,
           aiWordsUnused,
         },
       },
-      // Build a simple word-usage analysis if aiWordBank was provided
-      const aiWordBank = Array.isArray(body.aiWordBank) ? body.aiWordBank : [];
-
-      let aiWordsUsed = [];
-      let aiWordsUnused = [];
-
-      if (aiWordBank.length && Array.isArray(tasks)) {
-        const allText = tasks
-          .map((t) => `${t.title || ""} ${t.prompt || ""}`)
-          .join(" ")
-          .toLowerCase();
-
-        aiWordsUsed = aiWordBank.filter((w) =>
-          allText.includes(String(w).toLowerCase())
-        );
-        aiWordsUnused = aiWordBank.filter(
-          (w) => !allText.includes(String(w).toLowerCase())
-        );
-      }
     });
 
-    return res.json({ ok: true, taskset: tasksetDoc });
+    return res.json({ ok: true, taskset: tasksetDoc, tasksetId: tasksetDoc._id });
   } catch (err) {
     console.error("AI Taskset generation failed:", err);
     return res.status(500).json({
