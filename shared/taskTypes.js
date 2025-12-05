@@ -10,6 +10,7 @@ export const TASK_TYPES = {
   PHOTO: "photo",
   MAKE_AND_SNAP: "make-and-snap",    // build/draw something then snap a photo
   BODY_BREAK: "body-break",          // movement break
+  RECORD_AUDIO: "record-audio",      // New: record voice response
 
   // Extended task types (some may not be AI-generated yet)
   JEOPARDY: "brain-blitz",           // renamed from "jeopardy"
@@ -203,6 +204,26 @@ export const TASK_TYPE_META = {
       "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, etc.). No scoring.",
   },
 
+  [TASK_TYPES.RECORD_AUDIO]: {
+    label: "Record Audio",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 90,
+    maxTimeSeconds: 90,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: true,
+    correctAnswerShape: null,
+
+    description:
+      "Students record a short voice response to a prompt (e.g., 'Explain photosynthesis in your own words', 'Tell a story about a historical figure'). Voice-powered; limit to 30–90 seconds; AI can transcribe and score for content.",
+  },
+
+  // === EXTENDED TYPES ===
+
   [TASK_TYPES.JEOPARDY]: {
     label: "Brain Blitz!",
     category: CATEGORY.COMPETITIVE,
@@ -362,7 +383,7 @@ export const TASK_TYPE_META = {
     correctAnswerShape: "array",
 
     description:
-      "Like Sequence but as a timeline. 6–10 events in chronological order (history, science processes, stories).",
+      "Like Sequence but as a timeline. 6–10 items/events in sequential/chronological order (history, science processes, stories).",
   },
 
   [TASK_TYPES.BRAIN_SPARK_NOTES]: {
@@ -459,18 +480,18 @@ export const TASK_TYPE_META = {
     label: "HideNSeek – Find & Explain!",
     category: CATEGORY.PHYSICAL,
     hasOptions: false,
-    expectsText: false,
+    expectsText: true,
     maxTime: 240,
     maxTimeSeconds: 240,
     implemented: true,
     aiEligible: false,
 
     objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    defaultAiScoringRequired: true,
     correctAnswerShape: null,
 
     description:
-      "Hide concept cards around room; find and explain to team. Physical search with knowledge application.",
+      "Students hunt for a specific textbook page/reference. Snap a photo and explain its significance. AI scores explanation for sensibility (using photo OCR for context). Great for deep dives into key concepts.",
   },
 
   [TASK_TYPES.SPEED_DRAW]: {
@@ -490,7 +511,6 @@ export const TASK_TYPE_META = {
     description:
       "One draws a concept rapidly; team guesses. First correct shout wins points. Fast-paced art + knowledge.",
   },
-
 };
 
 // Flat map of taskType → human-readable label
@@ -504,11 +524,6 @@ export const TASK_TYPE_LABELS = Object.fromEntries(
 // Flat list for selector UIs (only implemented types)
 export const IMPLEMENTED_TASK_TYPES = Object.entries(TASK_TYPE_META)
   .filter(([, meta]) => meta.implemented !== false)
-  .map(([type]) => type);
-
-// List of AI-eligible types – safe for the generator to use
-export const AI_ELIGIBLE_TASK_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.aiEligible)
   .map(([type]) => type);
 
 // Helper to safely look up metadata
@@ -569,6 +584,9 @@ export function normalizeTaskType(value) {
   }
   if (v === "body_break" || v === "body-break") {
     return TASK_TYPES.BODY_BREAK;
+  }
+  if (v === "record-audio" || v === "voice" || v === "audio") {
+    return TASK_TYPES.RECORD_AUDIO;
   }
 
   // Jeopardy / Brain Blitz legacy names

@@ -287,19 +287,27 @@ ${considerationsSection}
 ${lensesSection}
 
 Rules:
-- All tasks MUST be directly about the topic and vocabulary above.
-- Use the vocabulary terms throughout the set; every term should appear in at least one task.
-- Do NOT introduce off-topic content.
-- Use ONLY these taskType values (no others): ${taskTypeList}
+- Mix of the allowed taskTypes only: ${typePool.join(", ")}.
+- Each task has a short clear title and prompt.
+- Tasks should, whenever possible, reflect the listed curricular lenses
+  (for example, by connecting content or examples to that perspective).
 - For "${TASK_TYPES.MULTIPLE_CHOICE}":
-  - Provide 3–5 options (short, student-friendly).
+  - Provide 3–5 options (short strings).
   - correctAnswer is the ZERO-BASED index of the correct option.
 - For "${TASK_TYPES.TRUE_FALSE}":
-  - options should be ["True", "False"].
-  - correctAnswer is the ZERO-BASED index (0 for True, 1 for False).
+  - options can be ["True", "False"].
+  - correctAnswer is the ZERO-BASED index (0 or 1).
 - For "${TASK_TYPES.SHORT_ANSWER}":
   - options is an empty array.
   - correctAnswer is a short reference answer string (or null).
+- For "${TASK_TYPES.SORT}":
+  - Use a "config" object with:
+    - "buckets": an array of 2–4 category labels (short strings).
+    - "items": an array of 6–10 objects of the form
+      { "text": "Item text", "bucketIndex": 0 }
+      where bucketIndex is the ZERO-BASED index into "buckets" for the correct category.
+  - "options" must be an empty array.
+  - "correctAnswer" should be null (sorting is scored from config.items.bucketIndex).
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
@@ -354,8 +362,11 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         taskType = rawType;
       }
 
+      // Base options and config
       let options = Array.isArray(t.options) ? t.options : [];
+      let config = null;
 
+      // ---------- Options / config by type ----------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
         if (options.length < 2) {
           options = ["Option A", "Option B"];
@@ -364,18 +375,73 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         if (options.length !== 2) {
           options = ["True", "False"];
         }
-      } else if (
-        taskType === TASK_TYPES.SORT ||
-        taskType === TASK_TYPES.SEQUENCE
-      ) {
-        // Keep options as-is for ordering tasks
+      } else if (taskType === TASK_TYPES.SORT) {
+        // Normalise sort/categorize into config.buckets + config.items
+        const aiConfig = (t.config && typeof t.config === "object") ? t.config : {};
+
+        const rawBuckets = Array.isArray(aiConfig.buckets)
+          ? aiConfig.buckets
+          : Array.isArray(t.buckets)
+          ? t.buckets
+          : [];
+
+        const buckets = rawBuckets.map((b) => {
+          if (typeof b === "string") return b;
+          if (b && typeof b === "object") {
+            return (
+              b.label ||
+              b.name ||
+              b.title ||
+              b.category ||
+              String(b)
+            );
+          }
+          return String(b);
+        });
+
+        const rawItems = Array.isArray(aiConfig.items)
+          ? aiConfig.items
+          : Array.isArray(t.items)
+          ? t.items
+          : [];
+
+        const items = rawItems.map((it, idx) => {
+          if (typeof it === "string") {
+            return { text: it, bucketIndex: null };
+          }
+          if (it && typeof it === "object") {
+            const text =
+              it.text ||
+              it.label ||
+              it.name ||
+              it.prompt ||
+              `Item ${idx + 1}`;
+            let bucketIndex = null;
+            if (typeof it.bucketIndex === "number") {
+              bucketIndex = it.bucketIndex;
+            } else if (typeof it.bucket === "number") {
+              bucketIndex = it.bucket;
+            } else if (typeof it.categoryIndex === "number") {
+              bucketIndex = it.categoryIndex;
+            }
+            return { text, bucketIndex };
+          }
+          return { text: String(it), bucketIndex: null };
+        });
+
+        config = {
+          ...aiConfig,
+          buckets,
+          items,
+        };
+
+        // No flat options / correctAnswer for SORT; scoring uses config
+        options = [];
       } else {
-        // For short-answer, photo, creative, etc., we usually don't need options
-        if (taskType !== TASK_TYPES.SORT && taskType !== TASK_TYPES.SEQUENCE) {
-          options = [];
-        }
+        options = [];
       }
 
+      // ---------- correctAnswer + aiScoringRequired ----------
       let correctAnswer = t.correctAnswer ?? null;
 
       if (
@@ -383,51 +449,66 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           taskType === TASK_TYPES.TRUE_FALSE) &&
         options.length > 0
       ) {
-        let idx = Number.isInteger(correctAnswer) ? correctAnswer : 0;
-        if (idx < 0 || idx >= options.length) idx = 0;
-        correctAnswer = idx;
+        // normalise to a valid index
+        if (typeof correctAnswer === "string") {
+          const idx = options.findIndex(
+            (opt) => String(opt).trim() === correctAnswer.trim()
+          );
+          correctAnswer = idx >= 0 ? idx : 0;
+        } else if (Number.isInteger(correctAnswer)) {
+          let idx = correctAnswer;
+          if (idx < 0 || idx >= options.length) idx = 0;
+          correctAnswer = idx;
+        } else {
+          correctAnswer = 0;
+        }
       } else if (taskType === TASK_TYPES.SHORT_ANSWER) {
-        correctAnswer =
-          typeof correctAnswer === "string" && correctAnswer.trim().length
-            ? correctAnswer.trim()
-            : null;
+        if (typeof correctAnswer !== "string") {
+          correctAnswer = null;
+        } else {
+          correctAnswer = correctAnswer.trim();
+        }
       } else {
-        // Non-objective types: ignore any stray correctAnswer
         correctAnswer = null;
       }
 
-      const timeLimitSeconds =
-        Number(t.timeLimitSeconds) && Number(t.timeLimitSeconds) > 0
-          ? Number(t.timeLimitSeconds)
-          : 60;
+      // Objective types we can score directly: MC / TF
+      const aiScoringRequired =
+        taskType === TASK_TYPES.MULTIPLE_CHOICE ||
+        taskType === TASK_TYPES.TRUE_FALSE
+          ? false
+          : true;
 
-      const points =
-        Number(t.points) && Number(t.points) > 0 ? Number(t.points) : 10;
+      // ---------- Common fields ----------
+      const title =
+        t.title && String(t.title).trim()
+          ? String(t.title).trim().slice(0, 120)
+          : `Task ${index + 1}`;
 
-      const canAutoScore =
-        correctAnswer !== null && correctAnswer !== undefined;
+      const prompt =
+        t.prompt && String(t.prompt).trim()
+          ? String(t.prompt).trim()
+          : "Follow the instructions given by your teacher.";
 
-      const aiScoringRequired = !canAutoScore;
+      const timeLimitSeconds = Number.isFinite(t.timeLimitSeconds)
+        ? Math.max(10, Math.min(600, Math.round(t.timeLimitSeconds)))
+        : null;
+
+      const points = Number.isFinite(t.points)
+        ? Math.max(1, Math.min(50, Math.round(t.points)))
+        : 10;
 
       return {
-        taskId: `ai-${index + 1}`,
-        title: t.title || `${topicLabel} – Task ${index + 1}`,
-        prompt:
-          t.prompt ||
-          `Answer this question about ${topicLabel}.`,
+        index,
+        title,
+        prompt,
         taskType,
         options,
         correctAnswer,
         aiScoringRequired,
         timeLimitSeconds,
         points,
-        displayKey: "",
-        ignoreNoise: false,
-        order: index,
-        timeMinutes: Math.round(timeLimitSeconds / 60) || 1,
-        movement: false,
-        requiresDrawing: false,
-        notesForTeacher: "",
+        config, // <-- this is what SortTask will consume
       };
     });
 

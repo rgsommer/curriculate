@@ -43,6 +43,12 @@ export default function LiveSession({ roomCode }) {
     },
   });
 
+  //HideNSeek constants
+  const [pendingHideNSeekTasks, setPendingHideNSeekTasks] = useState([]);
+  const [hideNSeekClues, setHideNSeekClues] = useState({});
+  const [showHideNSeekModal, setShowHideNSeekModal] = useState(false);
+  const [launchContext, setLaunchContext] = useState(null); 
+
   const [submissions, setSubmissions] = useState({});
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
