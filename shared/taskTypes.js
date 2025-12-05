@@ -42,6 +42,11 @@ export const TASK_TYPES = {
 
   // Kept for backwards compatibility; behaviour now largely driven by location
   MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
+
+  // New task types
+  DIFF_DETECTIVE: "diff-detective",
+  PRONUNCIATION: "pronunciation",
+  SPEECH_RECOGNITION: "speech-recognition",
 };
 
 // Category labels (for grouping & UI)
@@ -606,6 +611,65 @@ export const TASK_TYPE_META = {
     description:
       "Hunt for items or solve riddles across rooms. Each find ties to a learning fact. High-movement adventure.",
   },
+
+  [TASK_TYPES.DIFF_DETECTIVE]: {
+    label: "Diff Detective",
+    category: CATEGORY.QUESTION,
+    hasOptions: false,
+    expectsText: true,
+    maxTime: 120,
+    maxTimeSeconds: 120,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: true,
+    defaultAiScoringRequired: true,
+    correctAnswerShape: "list-of-strings",
+
+    multiItemCapable: false,
+
+    modes: ["text", "image", "code", "audio", "team-race"],
+
+    description:
+      "Spot the differences between two passages or lists. Builds discernment and attention to detail.",
+  },
+
+  [TASK_TYPES.PRONUNCIATION]: {
+    label: "Pronunciation Practice",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 90,
+    maxTimeSeconds: 90,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: true,
+    defaultAiScoringRequired: true,
+    correctAnswerShape: null,
+
+    supportsAccents: true,
+    accentOptions: ["american", "british", "australian", "canadian", "neutral"],
+
+    description: "AI-powered pronunciation assessment with accent comparison (British vs American, etc.)",
+  },
+
+  [TASK_TYPES.SPEECH_RECOGNITION]: {
+    label: "Speech Recognition",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 120,
+    maxTimeSeconds: 120,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: true,
+    defaultAiScoringRequired: true,
+    correctAnswerShape: null,
+
+    description: "Student speaks an answer; AI transcribes and scores for accuracy, grammar, and fluency.",
+  },
 };
 
 // Flat map of taskType → human-readable label
@@ -709,6 +773,21 @@ export function normalizeTaskType(value) {
     v === "jp"
   ) {
     return TASK_TYPES.JEOPARDY;
+  }
+
+  // New diff detective
+  if (v === "diff-detective" || v === "spot-the-difference" || v === "diff" || v === "find-differences") {
+    return TASK_TYPES.DIFF_DETECTIVE;
+  }
+
+  // Pronunciation
+  if (v === "pronunciation" || v === "pronounce" || v === "speech-practice") {
+    return TASK_TYPES.PRONUNCIATION;
+  }
+
+  // Speech recognition
+  if (v === "speech-recognition" || v === "speech" || v === "voice-answer") {
+    return TASK_TYPES.SPEECH_RECOGNITION;
   }
 
   // Fallback: if it matches a known value exactly
