@@ -1,7 +1,6 @@
 // student-app/src/components/tasks/TaskRunner.jsx
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
-// import VictoryScreen from "./VictoryScreen.jsx";
 
 import BodyBreakTask from "./types/BodyBreakTask";
 import MakeAndSnapTask from "./types/MakeAndSnapTask";
@@ -28,20 +27,25 @@ import BrainstormBattleTask from "./types/BrainstormBattleTask";
 import MindMapperTask from "./types/MindMapperTask";
 import SpeedDrawTask from "./types/SpeedDrawTask";
 
+function shuffleArray(array) {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 // Convert "quick_response" → "Quick Response"
 function toTitleCase(str) {
   if (!str) return "";
   return str
-    .replace(/[_-]+/g, " ") // replace snake_case or kebab-case
+    .replace(/[_-]+/g, " ")
     .replace(/\w\S*/g, (txt) =>
       txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase()
     );
 }
 
-/**
- * Normalize any legacy / shorthand strings coming from the backend
- * into the canonical TASK_TYPES values.
- */
 function normalizeTaskType(raw) {
   if (!raw) return TASK_TYPES.SHORT_ANSWER;
 
@@ -49,75 +53,269 @@ function normalizeTaskType(raw) {
     case "mc":
     case "multiple-choice":
       return TASK_TYPES.MULTIPLE_CHOICE;
-
     case "tf":
     case "true_false":
     case "true-false":
       return TASK_TYPES.TRUE_FALSE;
-
     case "open":
     case "short":
     case "short-answer":
       return TASK_TYPES.SHORT_ANSWER;
-
     case "open-text":
     case "open_text":
       return TASK_TYPES.OPEN_TEXT;
-
     case "sort":
       return TASK_TYPES.SORT;
-
     case "seq":
     case "sequence":
       return TASK_TYPES.SEQUENCE;
-
     case "photo":
       return TASK_TYPES.PHOTO;
-
     case "make-and-snap":
-    case "make_snap":
+    case "make_and_snap":
       return TASK_TYPES.MAKE_AND_SNAP;
-
     case "body-break":
     case "body_break":
       return TASK_TYPES.BODY_BREAK;
-
     case "record-audio":
     case "record_audio":
       return TASK_TYPES.RECORD_AUDIO;
-
-    // DRAW and MIME map to the unified DrawMimeTask UI
     case "Draw":
     case "draw":
     case "drawing":
       return TASK_TYPES.DRAW;
-
     case "mime":
     case "act":
     case "act-out":
       return TASK_TYPES.MIME;
-
     default:
-      // Already canonical, or truly unknown
       return raw;
   }
 }
 
-/**
- * Unified runner for all task types.
- *
- * Props:
- *  - task:           the current task object from the server
- *  - onSubmit:       function(answer: any) => void
- *  - submitting:     boolean – while true, submit button / inputs should be disabled
- *  - disabled:       boolean – additional flag to disable interaction
- *  - onAnswerChange: (optional) function(draft: any) => void
- *  - answerDraft:    (optional) current draft value from parent
- *  - socket:         (optional) socket.io client – passed to tasks that need it
- */
+/* ─────────────────────────────────────────────
+   Multi-part renderer for MC / TF / Short Answer
+   ───────────────────────────────────────────── */
+
+function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
+  const isChoice = mode === "choice";
+  const isShort = mode === "short";
+
+  const rawItems =
+    task.items ||
+    task.questions ||
+    task.subItems ||
+    [];
+
+  const items =
+    Array.isArray(rawItems) && rawItems.length > 0
+      ? rawItems
+      : [{ ...task, id: task.id || "only", prompt: task.prompt }];
+
+  // Per-item options (shuffled once per task-item)
+  const itemOptions = useMemo(() => {
+    if (!isChoice) return null;
+    return items.map((item) => {
+      const base =
+        (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+        (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+        (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
+          ? ["True", "False"]
+          : []);
+      if (!base || base.length === 0) return [];
+      return shuffleArray(base);
+    });
+  }, [items, isChoice, task.taskType, task.type]);
+
+  const [answers, setAnswers] = useState(() =>
+    items.map(() => ({
+      value: isChoice ? null : "",
+    }))
+  );
+
+  const handleChoiceClick = (itemIndex, option) => {
+    setAnswers((prev) =>
+      prev.map((ans, idx) =>
+        idx === itemIndex ? { ...ans, value: option } : ans
+      )
+    );
+  };
+
+  const handleTextChange = (itemIndex, value) => {
+    setAnswers((prev) =>
+      prev.map((ans, idx) =>
+        idx === itemIndex ? { ...ans, value } : ans
+      )
+    );
+  };
+
+  const allAnswered = answers.every(
+    (ans) => ans.value !== null && String(ans.value).trim() !== ""
+  );
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (submitting || disabled || !allAnswered) return;
+
+    const payload = items.map((item, idx) => {
+      const answerVal = answers[idx]?.value ?? null;
+      const opts = isChoice ? itemOptions[idx] || [] : [];
+      const indexInBase =
+        isChoice && opts.length ? opts.indexOf(answerVal) : null;
+      return {
+        itemId: item.id ?? idx,
+        prompt: item.prompt ?? item.text ?? "",
+        value: answerVal,
+        index: indexInBase,
+      };
+    });
+
+    onSubmit &&
+      onSubmit({
+        type: isChoice ? "multi-choice" : "multi-short",
+        answers: payload,
+      });
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {task.prompt && items.length === 1 && (
+        <p
+          style={{
+            marginTop: 0,
+            marginBottom: 12,
+            fontSize: "1rem",
+            fontWeight: 500,
+          }}
+        >
+          {task.prompt}
+        </p>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {items.map((item, idx) => {
+          const label = item.label || item.stem || item.prompt || item.text;
+          const opts = isChoice ? itemOptions[idx] || [] : [];
+          const answerVal = answers[idx]?.value ?? "";
+
+          return (
+            <div
+              key={item.id ?? idx}
+              style={{
+                padding: 10,
+                borderRadius: 12,
+                border: "1px solid #e5e7eb",
+                background: "#f9fafb",
+              }}
+            >
+              {label && (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    fontSize: "0.95rem",
+                    fontWeight: 500,
+                  }}
+                >
+                  <span style={{ marginRight: 4 }}>{idx + 1}.</span>
+                  {label}
+                </div>
+              )}
+
+              {isChoice ? (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr",
+                    gap: 6,
+                  }}
+                >
+                  {opts.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => handleChoiceClick(idx, opt)}
+                      disabled={submitting || disabled}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 999,
+                        border:
+                          answerVal === opt
+                            ? "2px solid #0ea5e9"
+                            : "1px solid #d1d5db",
+                        background:
+                          answerVal === opt
+                            ? "rgba(14,165,233,0.12)"
+                            : "#ffffff",
+                        textAlign: "left",
+                        cursor:
+                          submitting || disabled ? "not-allowed" : "pointer",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <textarea
+                  rows={2}
+                  value={answerVal}
+                  onChange={(e) => handleTextChange(idx, e.target.value)}
+                  disabled={submitting || disabled}
+                  style={{
+                    width: "100%",
+                    padding: "6px 8px",
+                    borderRadius: 10,
+                    border: "1px solid #d1d5db",
+                    fontSize: "0.9rem",
+                    resize: "vertical",
+                  }}
+                  placeholder="Type your answer…"
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          type="submit"
+          disabled={!allAnswered || submitting || disabled}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 999,
+            border: "none",
+            background: allAnswered ? "#16a34a" : "#9ca3af",
+            color: "#ffffff",
+            fontSize: "0.9rem",
+            fontWeight: 600,
+            cursor:
+              !allAnswered || submitting || disabled
+                ? "not-allowed"
+                : "pointer",
+          }}
+        >
+          {submitting ? "Sending…" : "Submit all"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Main TaskRunner
+   ───────────────────────────────────────────── */
+
 export default function TaskRunner({
   task,
-  taskTypes, // currently unused but kept for compatibility
+  taskTypes,
   onSubmit,
   submitting = false,
   onAnswerChange,
@@ -125,44 +323,43 @@ export default function TaskRunner({
   disabled = false,
   socket,
 }) {
-  // If somehow no task, render nothing
-  if (!task) {
-    return null;
-  }
+  if (!task) return null;
 
   const t = task;
   const type = normalizeTaskType(t.taskType || t.type);
-  const meta = TASK_TYPE_META[type];
 
+  const isChoiceType =
+    type === TASK_TYPES.MULTIPLE_CHOICE || type === TASK_TYPES.TRUE_FALSE;
+  const isShortType = type === TASK_TYPES.SHORT_ANSWER;
+
+  const hasMultiItems =
+    Array.isArray(t.items) ||
+    Array.isArray(t.questions) ||
+    Array.isArray(t.subItems);
+
+  const meta = TASK_TYPE_META[type];
   const effectiveDisabled = disabled || submitting;
 
-  // Log once per task so we can see what the backend is sending
-  console.log("[TaskRunner] Task received:", {
-    rawTask: task,
-    normalizedType: type,
-    metaLabel: meta?.label,
-  });
-
-  // Title from shared TASK_TYPE_META label (e.g., "Quick Response")
-  let displayTitle = "";
-  if (meta?.label) {
-    displayTitle = toTitleCase(meta.label);
-  } else if (t.title) {
-    // fallback: backend-provided title
-    displayTitle = toTitleCase(t.title);
-  } else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) {
-    // extra fallback if type didn’t normalize exactly
-    displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
-  }
-
-  // Find the physical display this task is anchored to (if any)
   const currentDisplay =
     Array.isArray(t.displays) && t.displayKey
       ? t.displays.find((d) => d.key === t.displayKey) || null
       : null;
 
-  // If we know about this type but have not implemented it yet,
-  // show a clear message instead of silently mis-rendering.
+  let displayTitle = "";
+  if (meta?.label) {
+    displayTitle = toTitleCase(meta.label);
+  } else if (t.title) {
+    displayTitle = toTitleCase(t.title);
+  } else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) {
+    displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
+  }
+
+  console.log("[TaskRunner] Task received:", {
+    rawTask: t,
+    normalizedType: type,
+    multiItems: hasMultiItems,
+  });
+
   if (meta && meta.implemented === false) {
     return (
       <div className="p-4 text-center text-red-600 space-y-2">
@@ -176,211 +373,239 @@ export default function TaskRunner({
     );
   }
 
-  // Common props passed to many task components
-  const commonProps = {
-    task: t,
-    onSubmit,
-    disabled: effectiveDisabled,
-    onAnswerChange,
-    answerDraft,
-  };
+  // MULTI-PART: MC / TF / SHORT-ANSWER with items → render all parts together
+  if (hasMultiItems && (isChoiceType || isShortType)) {
+    const mode = isChoiceType ? "choice" : "short";
+    return (
+      <div className="space-y-3">
+        {displayTitle && (
+          <div
+            className="task-title-fun text-center mb-1"
+            style={{
+              fontFamily:
+                '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+              fontSize: "1.4rem",
+              letterSpacing: "1px",
+            }}
+          >
+            {displayTitle}
+          </div>
+        )}
 
+        {currentDisplay && (
+          <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+            <div className="font-semibold text-slate-800">
+              Look at this station object:
+            </div>
+            <div className="text-slate-900">
+              {currentDisplay.name || currentDisplay.key}
+            </div>
+            {currentDisplay.description && (
+              <div className="mt-1 text-xs text-slate-600">
+                {currentDisplay.description}
+              </div>
+            )}
+          </div>
+        )}
+
+        <MultiPartTask
+          mode={mode}
+          task={t}
+          onSubmit={onSubmit}
+          submitting={submitting}
+          disabled={effectiveDisabled}
+        />
+      </div>
+    );
+  }
+
+  // Single-part / other task types → your existing components
   let content = null;
 
   switch (type) {
     case TASK_TYPES.MULTIPLE_CHOICE:
-      content = <MultipleChoiceTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.TRUE_FALSE:
-      content = <TrueFalseTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.SORT:
-      content = <SortTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.SEQUENCE:
-      content = <SequenceTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.PHOTO:
-      content = <PhotoTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.MAKE_AND_SNAP:
-      content = <MakeAndSnapTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.DRAW:
-    case TASK_TYPES.MIME:
-      content = <DrawMimeTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.BODY_BREAK:
-      content = <BodyBreakTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.OPEN_TEXT:
-      content = <OpenTextTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.RECORD_AUDIO:
-      content = <RecordAudioTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.SHORT_ANSWER:
-      content = <ShortAnswerTask {...commonProps} />;
-      break;
-
-    case TASK_TYPES.COLLABORATION:
       content = (
-        <CollaborationTask
-          {...commonProps}
-          partnerAnswer={task.partnerAnswer}
-          showPartnerReply={!!task.partnerAnswer}
-          onPartnerReply={(reply) => onSubmit && onSubmit({ reply })}
+        <MultipleChoiceTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
         />
       );
       break;
-
+    case TASK_TYPES.TRUE_FALSE:
+      content = (
+        <TrueFalseTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.SORT:
+      content = <SortTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
+      break;
+    case TASK_TYPES.SEQUENCE:
+      content = (
+        <SequenceTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.PHOTO:
+      content = <PhotoTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
+      break;
+    case TASK_TYPES.MAKE_AND_SNAP:
+      content = (
+        <MakeAndSnapTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
+    case TASK_TYPES.DRAW:
+    case TASK_TYPES.MIME:
+      content = (
+        <DrawMimeTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
+    case TASK_TYPES.BODY_BREAK:
+      content = <BodyBreakTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
+      break;
+    case TASK_TYPES.OPEN_TEXT:
+      content = (
+        <OpenTextTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.RECORD_AUDIO:
+      content = (
+        <RecordAudioTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
+    case TASK_TYPES.SHORT_ANSWER:
+      content = (
+        <ShortAnswerTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.COLLABORATION:
+      content = (
+        <CollaborationTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
     case TASK_TYPES.MUSICAL_CHAIRS:
       content = (
         <MusicalChairsTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
         />
       );
       break;
-
     case TASK_TYPES.MYSTERY_CLUES:
       content = (
-        <MysteryCluesTask
-          task={task}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <MysteryCluesTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
-
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
       content = (
         <TrueFalseTicTacToeTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
-          teamRole={task.teamRole}
+          teamRole={t.teamRole}
         />
       );
       break;
-
     case TASK_TYPES.MAD_DASH_SEQUENCE:
       content = (
         <MadDashSequenceTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
         />
       );
       break;
-
     case TASK_TYPES.LIVE_DEBATE:
       content = (
         <LiveDebateTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
-          teamMembers={task.teamMembers || [
-            "Alice",
-            "Bob",
-            "Charlie",
-            "Dana",
-          ]}
+          teamMembers={t.teamMembers || ["Alice", "Bob", "Charlie", "Dana"]}
         />
       );
       break;
-
     case TASK_TYPES.FLASHCARDS:
       content = (
         <FlashcardsTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
         />
       );
       break;
-
     case TASK_TYPES.TIMELINE:
       content = (
         <TimelineTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
         />
       );
       break;
-
     case TASK_TYPES.PET_FEEDING:
       content = (
-        <PetFeedingTask
-          task={task}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <PetFeedingTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
-
     case TASK_TYPES.MOTION_MISSION:
       content = (
-        <MotionMissionTask
-          task={task}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <MotionMissionTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
-
     case TASK_TYPES.BRAINSTORM_BATTLE:
       content = (
         <BrainstormBattleTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
         />
       );
       break;
-
     case TASK_TYPES.MIND_MAPPER:
       content = (
-        <MindMapperTask
-          task={task}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <MindMapperTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
-
     case TASK_TYPES.SPEED_DRAW:
       content = (
         <SpeedDrawTask
-          task={task}
+          task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
         />
       );
       break;
-
     default:
-      // Unknown / typo / not in registry at all
       return (
         <div className="p-4 text-center text-red-600 space-y-2">
           <div className="font-semibold">
@@ -395,7 +620,6 @@ export default function TaskRunner({
 
   return (
     <div className="space-y-3">
-      {/* Fun task title */}
       {displayTitle && (
         <div
           className="task-title-fun text-center mb-1"
@@ -410,7 +634,6 @@ export default function TaskRunner({
         </div>
       )}
 
-      {/* Anchored display banner (only if this task links to a display) */}
       {currentDisplay && (
         <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
           <div className="font-semibold text-slate-800">
@@ -427,7 +650,6 @@ export default function TaskRunner({
         </div>
       )}
 
-      {/* Actual task UI */}
       {content}
     </div>
   );

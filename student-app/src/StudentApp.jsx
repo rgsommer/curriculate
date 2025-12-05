@@ -144,6 +144,32 @@ const socket = io(API_BASE_URL, {
 // Utility helpers
 // ---------------------------------------------------------------------
 
+function getThemeShell(uiTheme) {
+  switch (uiTheme) {
+    case "bold":
+      return {
+        pageBg: "radial-gradient(circle at top, #0f172a, #020617)",
+        cardBg: "rgba(15,23,42,0.95)",
+        cardBorder: "1px solid rgba(148,163,184,0.5)",
+        text: "#e5e7eb",
+      };
+    case "minimal":
+      return {
+        pageBg: "#f3f4f6",
+        cardBg: "#ffffff",
+        cardBorder: "1px solid #e5e7eb",
+        text: "#111827",
+      };
+    default: // "modern" / Theme 1
+      return {
+        pageBg: "linear-gradient(135deg, #0ea5e9, #6366f1)",
+        cardBg: "#ffffff",
+        cardBorder: "1px solid rgba(148,163,184,0.6)",
+        text: "#0f172a",
+      };
+  }
+}
+
 function formatRemainingMs(ms) {
   if (!ms || ms <= 0) return "00:00";
   const totalSeconds = Math.ceil(ms / 1000);
@@ -180,6 +206,7 @@ function StudentApp() {
 
   // Theme selector (must be inside component)
   const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
+  const themeShell = getThemeShell(uiTheme);
 
   const [connected, setConnected] = useState(false);
   const [joined, setJoined] = useState(false);
@@ -887,8 +914,8 @@ function StudentApp() {
         justifyContent: "flex-start",
         fontFamily:
           "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        backgroundColor: "#ffffff",
-        color: "#111827",
+        background: themeShell.pageBg,
+        color: themeShell.text,
         opacity: noiseState.enabled ? noiseState.brightness : 1,
         transition: "opacity 120ms ease-out",
       }}
@@ -988,10 +1015,13 @@ function StudentApp() {
         {!joined && (
           <section
             style={{
-              marginBottom: 8,
-              padding: 12,
-              borderRadius: 12,
-              background: "#eff6ff",
+              maxWidth: 480,
+              width: "100%",
+              background: themeShell.cardBg,
+              borderRadius: 16,
+              padding: 16,
+              border: themeShell.cardBorder,
+              color: themeShell.text,
             }}
           >
             <h2
@@ -1388,7 +1418,7 @@ function StudentApp() {
         }}
       />
     </div>
-  );
+);
 }
 
 export default StudentApp;
