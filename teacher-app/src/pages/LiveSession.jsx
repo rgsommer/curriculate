@@ -85,6 +85,11 @@ export default function LiveSession({ roomCode }) {
     (Array.isArray(activeTasksetMeta?.taskList) && activeTasksetMeta.taskList.length) ||
     null;
 
+  const isFixedStationTaskset =
+    !!activeTasksetMeta?.isFixedStationTaskset ||
+    activeTasksetMeta?.deliveryMode === "fixed-stations" ||
+    activeTasksetMeta?.mode === "fixed-stations";
+
   // Room setup / fixed-station helper
   const [roomSetup, setRoomSetup] = useState(null);
   const [showRoomSetup, setShowRoomSetup] = useState(false);
@@ -635,10 +640,6 @@ const handleShowRoomLayoutClick = () => {
     const isPendingTreat = pendingTreatTeams.includes(teamId);
     const lastScan =
       scanEvents.find((ev) => ev.teamId === teamId) || null;
-    const isFixedStationTaskset =
-      !!activeTasksetMeta?.isFixedStationTaskset ||
-      activeTasksetMeta?.deliveryMode === "fixed-stations" ||
-      activeTasksetMeta?.mode === "fixed-stations";
 
     return (
       <div
@@ -980,7 +981,7 @@ const handleShowRoomLayoutClick = () => {
               {/* Existing Quick Task launch button */}
               <button
                 type="button"
-                onClick={handleLaunchQuick}
+                onClick={handleLaunchQuickTask}
                 disabled={!roomCode}
                 style={{
                   padding: "6px 12px",

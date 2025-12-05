@@ -31,11 +31,9 @@ const DEFAULT_LOCATION = "Classroom";
 // Normalize a human-readable location into a slug like "room-12"
 function normalizeLocationSlug(raw) {
   if (!raw) return "";
-  return raw
-    .toString()
+  return String(raw)
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/[^a-z0-9]/g, "");
 }
 
 function normalizeStationId(raw) {
