@@ -2,18 +2,29 @@
 
 // Canonical task type IDs used across backend, editor, and AI generator
 export const TASK_TYPES = {
+  // Core Q&A
   MULTIPLE_CHOICE: "multiple-choice",
   TRUE_FALSE: "true-false",
   SHORT_ANSWER: "short-answer",
+
+  // Open / media responses used in StudentApp TaskRunner
+  OPEN_TEXT: "open-text",
+  RECORD_AUDIO: "record-audio",
+  DRAW: "draw",
+  MIME: "mime",
+
+  // Ordering / drag-and-drop
   SORT: "sort",
   SEQUENCE: "sequence",
+  TIMELINE: "timeline",
+
+  // Visual / creative proof
   PHOTO: "photo",
-  MAKE_AND_SNAP: "make-and-snap",    // build/draw something then snap a photo
-  BODY_BREAK: "body-break",          // movement break
-  RECORD_AUDIO: "record-audio",      // New: record voice response
+  MAKE_AND_SNAP: "make-and-snap", // build/draw something then snap a photo
+  BODY_BREAK: "body-break",       // movement break
 
   // Extended task types (some may not be AI-generated yet)
-  JEOPARDY: "brain-blitz",           // renamed from "jeopardy"
+  JEOPARDY: "brain-blitz",        // renamed from "jeopardy"
   COLLABORATION: "collaboration",
   MUSICAL_CHAIRS: "musical-chairs",
   MYSTERY_CLUES: "mystery-clues",
@@ -21,7 +32,6 @@ export const TASK_TYPES = {
   MAD_DASH: "mad-dash",
   LIVE_DEBATE: "live-debate",
   FLASHCARDS: "flashcards",
-  TIMELINE: "timeline",
   BRAIN_SPARK_NOTES: "brain-spark-notes",
   PET_FEEDING: "pet-feeding",
   MOTION_MISSION: "motion-mission",
@@ -29,6 +39,9 @@ export const TASK_TYPES = {
   MIND_MAPPER: "mind-mapper",
   HIDENSEEK: "hidenseek",
   SPEED_DRAW: "speed-draw",
+
+  // Kept for backwards compatibility; behaviour now largely driven by location
+  MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
 };
 
 // Category labels (for grouping & UI)
@@ -66,6 +79,7 @@ export const TASK_TYPE_META = {
     // Multi-question capable (3–5 items presented together)
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 5 },
+
     description:
       "Classic multiple-choice question with 3–5 options. Provide one clearly correct answer. Great for quick knowledge checks.",
   },
@@ -88,6 +102,7 @@ export const TASK_TYPE_META = {
     // Multi-question capable (3–5 items presented together)
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 5 },
+
     description:
       "True or False statement. Make it tricky but fair — students should have to think, not just guess.",
   },
@@ -110,6 +125,7 @@ export const TASK_TYPE_META = {
     // Multi-question capable (3–5 items presented together)
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 5 },
+
     description:
       "One-sentence or single-word answer. Provide a clear reference answer (e.g., “Photosynthesis”, “Abraham Lincoln”).",
   },
@@ -126,7 +142,8 @@ export const TASK_TYPE_META = {
 
     objectiveScoring: true,
     defaultAiScoringRequired: false,
-    correctAnswerShape: "mapping", // e.g., { item1: categoryA, item2: categoryB }
+    // e.g., { item1: categoryA, item2: categoryB }
+    correctAnswerShape: "mapping",
 
     description:
       "Give 6–10 items that belong to 2–4 clear categories (e.g., Living/Non-living, Vertebrate/Invertebrate).",
@@ -144,14 +161,15 @@ export const TASK_TYPE_META = {
 
     objectiveScoring: true,
     defaultAiScoringRequired: false,
-    correctAnswerShape: "array", // e.g., [item1, item2, item3] in order
+    // e.g., array of item ids in correct order
+    correctAnswerShape: "array",
 
     description:
-      "Give 6–10 steps or events that have one correct chronological order (water cycle, life cycle, historical events, etc.).",
+      "Give 4–8 items that must be dragged into the correct order (e.g., life cycle stages, steps in a process).",
   },
 
   [TASK_TYPES.PHOTO]: {
-    label: "Photo evidence",
+    label: "Photo Evidence",
     category: CATEGORY.CREATIVE,
     hasOptions: false,
     expectsText: false,
@@ -161,15 +179,15 @@ export const TASK_TYPE_META = {
     aiEligible: true,
 
     objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
     description:
-      "Student takes a photo showing proof (e.g., “Show something magnetic”, “Photo of a triangle in the room”). Prompt must be visual and doable in classroom.",
+      "Student takes a photo showing proof (e.g., 'Show something magnetic', 'Photo of a triangle in the room'). Prompt must be visual and doable in classroom.",
   },
 
   [TASK_TYPES.MAKE_AND_SNAP]: {
-    label: "Make it & snap it",
+    label: "Make It & Snap It",
     category: CATEGORY.CREATIVE,
     hasOptions: false,
     expectsText: false,
@@ -179,15 +197,15 @@ export const TASK_TYPE_META = {
     aiEligible: true,
 
     objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
     description:
-      "Student builds, draws, or demonstrates something with materials then photographs it (e.g., “Build a bridge with 10 popsicle sticks”, “Draw a food chain”).",
+      "Student builds, draws, or demonstrates something with materials then photographs it (e.g., 'Build a bridge with 10 popsicle sticks', 'Draw a food chain').",
   },
 
   [TASK_TYPES.BODY_BREAK]: {
-    label: "Body break",
+    label: "Body Break",
     category: CATEGORY.MOVEMENT,
     hasOptions: false,
     expectsText: false,
@@ -204,14 +222,17 @@ export const TASK_TYPE_META = {
       "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, etc.). No scoring.",
   },
 
-  [TASK_TYPES.RECORD_AUDIO]: {
-    label: "Record Audio",
-    category: CATEGORY.CREATIVE,
+  // === Open / media types used with AI scoring / rubrics ===
+
+  [TASK_TYPES.OPEN_TEXT]: {
+    label: "Open-text response",
+    category: CATEGORY.QUESTION,
     hasOptions: false,
-    expectsText: false,
-    maxTime: 90,
-    maxTimeSeconds: 90,
+    expectsText: true,
+    maxTime: 300,
+    maxTimeSeconds: 300,
     implemented: true,
+    // typically rubric-driven, so AI scoring is helpful
     aiEligible: true,
 
     objectiveScoring: false,
@@ -219,10 +240,64 @@ export const TASK_TYPE_META = {
     correctAnswerShape: null,
 
     description:
-      "Students record a short voice response to a prompt (e.g., 'Explain photosynthesis in your own words', 'Tell a story about a historical figure'). Voice-powered; limit to 30–90 seconds; AI can transcribe and score for content.",
+      "Longer written response (a paragraph or more). Best evaluated with a rubric and AI scoring rather than a single correct answer.",
   },
 
-  // === EXTENDED TYPES ===
+  [TASK_TYPES.RECORD_AUDIO]: {
+    label: "Record audio answer",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 240,
+    maxTimeSeconds: 240,
+    implemented: true,
+    aiEligible: false, // pipeline not wired yet
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
+
+    description:
+      "Student records an audio explanation or reading. Future versions may transcribe and AI-score; for now, teacher reviews manually.",
+  },
+
+  [TASK_TYPES.DRAW]: {
+    label: "Draw it",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 240,
+    maxTimeSeconds: 240,
+    implemented: true,
+    aiEligible: false,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
+
+    description:
+      "Student draws a picture or diagram to show understanding (e.g., 'Draw the water cycle'). Pairs with the Draw/Mime task runner.",
+  },
+
+  [TASK_TYPES.MIME]: {
+    label: "Act it out (Mime)",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 180,
+    maxTimeSeconds: 180,
+    implemented: true,
+    aiEligible: false,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
+
+    description:
+      "Student acts out a concept without words (charades-style) while team guesses. Handled by the same Draw/Mime UI.",
+  },
+
+  // === Other extended types ===
 
   [TASK_TYPES.JEOPARDY]: {
     label: "Brain Blitz!",
@@ -234,16 +309,16 @@ export const TASK_TYPE_META = {
     implemented: true,
     aiEligible: true,
 
-    objectiveScoring: true,
-    defaultAiScoringRequired: true,
-    correctAnswerShape: "string-or-list", // For voice recognition matching
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
 
     description:
-      "Reverse-format trivia (like Jeopardy). Provide 6–10 clues in the form of answers. Expected response must be in question form: 'What is…?', 'Who was…?', etc. Voice-powered, high-energy review game.",
+      "Reverse-format trivia game (like Jeopardy). Provide clues in the form of answers. Expected response must be in question form: 'What is…?', 'Who was…?'. High-energy review game.",
   },
 
   [TASK_TYPES.COLLABORATION]: {
-    label: "Pair & Respond",
+    label: "Collaboration (Pair & Respond)",
     category: CATEGORY.CREATIVE,
     hasOptions: false,
     expectsText: true,
@@ -257,8 +332,136 @@ export const TASK_TYPE_META = {
     correctAnswerShape: null,
 
     description:
-      "Student writes answer → sees partner’s → writes thoughtful reply for bonus points. Great for opinion, prediction, or reflection questions.",
+      "Student writes an answer, then sees a partner’s answer and writes a thoughtful reply. Great for opinion, prediction, or reflection questions.",
   },
+
+  [TASK_TYPES.FLASHCARDS]: {
+    label: "Flashcards – Shout to Answer!",
+    category: CATEGORY.REVIEW,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 120,
+    maxTimeSeconds: 120,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: true,
+    defaultAiScoringRequired: true,
+    correctAnswerShape: "string-or-list",
+
+    description:
+      "8–12 flashcards with {question, answer}. Students shout answers; voice recognition auto-scores. For vocab, facts, etc.",
+  },
+
+  [TASK_TYPES.TIMELINE]: {
+    label: "Timeline – Drag to Order",
+    category: CATEGORY.ORDERING,
+    hasOptions: true,
+    expectsText: false,
+    maxTime: 120,
+    maxTimeSeconds: 120,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: true,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: "array",
+
+    description:
+      "Same as Sequence but branded as a Timeline. Use for historical events, story plots, planet formation, etc.",
+  },
+
+  [TASK_TYPES.BRAIN_SPARK_NOTES]: {
+    label: "Brain Spark Notes",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: true,
+    maxTime: 180,
+    maxTimeSeconds: 180,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: true,
+    correctAnswerShape: null,
+
+    description:
+      "Student takes quick notes in their notebook on a key question or prompt, then optionally submits a photo of their notes.",
+  },
+
+  [TASK_TYPES.BRAINSTORM_BATTLE]: {
+    label: "Brainstorm Battle – Shout Ideas!",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 120,
+    maxTimeSeconds: 120,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
+
+    description:
+      "Fast-paced idea shouting game. Give seed words or a topic. Kids shout ideas in rounds. Great for divergent thinking.",
+  },
+
+  [TASK_TYPES.MIND_MAPPER]: {
+    label: "Mind Mapper",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 240,
+    maxTimeSeconds: 240,
+    implemented: true,
+    aiEligible: true,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
+
+    description:
+      "Student draws a mind map or concept web on paper and photographs it. Prompt should be a central topic (e.g., 'Water Cycle', 'Fractions').",
+  },
+
+  [TASK_TYPES.HIDENSEEK]: {
+    label: "Hide & Seek",
+    category: CATEGORY.MOVEMENT,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 300,
+    maxTimeSeconds: 300,
+    implemented: true,
+    aiEligible: false,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
+
+    description:
+      "Hide concept cards around room; find and explain to team. Physical search with knowledge application.",
+  },
+
+  [TASK_TYPES.SPEED_DRAW]: {
+    label: "Speed Draw – First to Answer Wins!",
+    category: CATEGORY.COMPETITIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 180,
+    maxTimeSeconds: 180,
+    implemented: true,
+    aiEligible: false,
+
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: null,
+
+    description:
+      "One draws a concept rapidly; team guesses. First correct shout wins points. Fast-paced art + knowledge.",
+  },
+
+  // === Types not yet reliable for AI generation (as of Dec 2025) ===
 
   [TASK_TYPES.MUSICAL_CHAIRS]: {
     label: "Musical Chairs (Race!)",
@@ -350,65 +553,11 @@ export const TASK_TYPE_META = {
       "Teams debate a prompt (e.g., “Is Pluto a planet?”). Voice-powered with AI judging for persuasiveness and facts.",
   },
 
-  [TASK_TYPES.FLASHCARDS]: {
-    label: "Flashcards – Shout to Answer!",
+  [TASK_TYPES.PET_FEEDING]: {
+    label: "Feed the Pet!",
     category: CATEGORY.REVIEW,
     hasOptions: false,
     expectsText: false,
-    maxTime: 120,
-    maxTimeSeconds: 120,
-    implemented: true,
-    aiEligible: true,
-
-    objectiveScoring: true,
-    defaultAiScoringRequired: true,
-    correctAnswerShape: "string-or-list",
-
-    description:
-      "8–12 flashcards with {question, answer}. Students shout answers; voice recognition auto-scores. For vocab, facts, etc.",
-  },
-
-  [TASK_TYPES.TIMELINE]: {
-    label: "Timeline – Drag to Order",
-    category: CATEGORY.ORDERING,
-    hasOptions: true,
-    expectsText: false,
-    maxTime: 120,
-    maxTimeSeconds: 120,
-    implemented: true,
-    aiEligible: true,
-
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
-    correctAnswerShape: "array",
-
-    description:
-      "Like Sequence but as a timeline. 6–10 items/events in sequential/chronological order (history, science processes, stories).",
-  },
-
-  [TASK_TYPES.BRAIN_SPARK_NOTES]: {
-    label: "Brain Spark Notes",
-    category: CATEGORY.CREATIVE,
-    hasOptions: false,
-    expectsText: true,
-    maxTime: 180,
-    maxTimeSeconds: 180,
-    implemented: true,
-    aiEligible: true,
-
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
-    correctAnswerShape: null,
-
-    description:
-      "Students take quick notes in notebook on a prompt (e.g., “Key facts about dinosaurs”). Submit photo or summary.",
-  },
-
-  [TASK_TYPES.PET_FEEDING]: {
-    label: "Pet Feeding",
-    category: CATEGORY.MOVEMENT,
-    hasOptions: false,
-    expectsText: false,
     maxTime: 180,
     maxTimeSeconds: 180,
     implemented: true,
@@ -419,11 +568,11 @@ export const TASK_TYPE_META = {
     correctAnswerShape: null,
 
     description:
-      "Correct answers 'feed' a virtual or class pet. Movement involved in acting out feeding or celebrating.",
+      "Gamified review where correct answers ‘feed’ a virtual pet or progress a status bar. Fun positive reinforcement.",
   },
 
   [TASK_TYPES.MOTION_MISSION]: {
-    label: "Motion Mission – Move to Win!",
+    label: "Motion Mission",
     category: CATEGORY.PHYSICAL,
     hasOptions: false,
     expectsText: false,
@@ -437,70 +586,16 @@ export const TASK_TYPE_META = {
     correctAnswerShape: null,
 
     description:
-      "Physical challenges tied to concepts (e.g., “Orbit like planets”). Teams move to demonstrate understanding.",
+      "Students complete a quick physical mission linked to content (e.g., 'Take 5 steps for each planet you can name').",
   },
 
-  [TASK_TYPES.BRAINSTORM_BATTLE]: {
-    label: "Brainstorm Battle – Shout Ideas!",
-    category: CATEGORY.CREATIVE,
+  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: {
+    label: "Multi-Room Scavenger Hunt",
+    category: CATEGORY.MOVEMENT,
     hasOptions: false,
     expectsText: false,
-    maxTime: 120,
-    maxTimeSeconds: 120,
-    implemented: true,
-    aiEligible: true,
-
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
-    correctAnswerShape: null,
-
-    description:
-      "Shout ideas related to a topic or seeds. Lightning rounds for bonus. Voice-powered creative explosion.",
-  },
-
-  [TASK_TYPES.MIND_MAPPER]: {
-    label: "Mind Mapper – Organize Ideas!",
-    category: CATEGORY.CREATIVE,
-    hasOptions: false,
-    expectsText: false,
-    maxTime: 240,
-    maxTimeSeconds: 240,
-    implemented: true,
-    aiEligible: true,
-
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
-    correctAnswerShape: null,
-
-    description:
-      "Draw and photograph a mind map (central topic + connections). For organizing concepts like ecosystems or math operations.",
-  },
-
-  [TASK_TYPES.HIDENSEEK]: {
-    label: "HideNSeek – Find & Explain!",
-    category: CATEGORY.PHYSICAL,
-    hasOptions: false,
-    expectsText: true,
-    maxTime: 240,
-    maxTimeSeconds: 240,
-    implemented: true,
-    aiEligible: false,
-
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
-    correctAnswerShape: null,
-
-    description:
-      "Students hunt for a specific textbook page/reference. Snap a photo and explain its significance. AI scores explanation for sensibility (using photo OCR for context). Great for deep dives into key concepts.",
-  },
-
-  [TASK_TYPES.SPEED_DRAW]: {
-    label: "Speed Draw – First to Answer Wins!",
-    category: CATEGORY.COMPETITIVE,
-    hasOptions: false,
-    expectsText: false,
-    maxTime: 180,
-    maxTimeSeconds: 180,
+    maxTime: 300,
+    maxTimeSeconds: 300,
     implemented: true,
     aiEligible: false,
 
@@ -509,7 +604,7 @@ export const TASK_TYPE_META = {
     correctAnswerShape: null,
 
     description:
-      "One draws a concept rapidly; team guesses. First correct shout wins points. Fast-paced art + knowledge.",
+      "Hunt for items or solve riddles across rooms. Each find ties to a learning fact. High-movement adventure.",
   },
 };
 
@@ -524,6 +619,11 @@ export const TASK_TYPE_LABELS = Object.fromEntries(
 // Flat list for selector UIs (only implemented types)
 export const IMPLEMENTED_TASK_TYPES = Object.entries(TASK_TYPE_META)
   .filter(([, meta]) => meta.implemented !== false)
+  .map(([type]) => type);
+
+// List of AI-eligible types – safe for the generator to use
+export const AI_ELIGIBLE_TASK_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta.aiEligible)
   .map(([type]) => type);
 
 // Helper to safely look up metadata
@@ -585,8 +685,19 @@ export function normalizeTaskType(value) {
   if (v === "body_break" || v === "body-break") {
     return TASK_TYPES.BODY_BREAK;
   }
-  if (v === "record-audio" || v === "voice" || v === "audio") {
+
+  // Open / media
+  if (v === "open-text" || v === "open_text" || v === "open") {
+    return TASK_TYPES.OPEN_TEXT;
+  }
+  if (v === "record-audio" || v === "record_audio") {
     return TASK_TYPES.RECORD_AUDIO;
+  }
+  if (v === "draw" || v === "drawing") {
+    return TASK_TYPES.DRAW;
+  }
+  if (v === "mime" || v === "act" || v === "act-out") {
+    return TASK_TYPES.MIME;
   }
 
   // Jeopardy / Brain Blitz legacy names

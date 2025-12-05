@@ -2,6 +2,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 import { fetchMyProfile } from "../api/profile";
+import { TASK_TYPES } from "../../../shared/taskTypes.js";
+import { API_BASE_URL } from "../config";
+
+const API_BASE = API_BASE_URL || "";
 
 // Station colours in order: station-1 → red, station-2 → blue, etc.
 const COLORS = [
@@ -42,12 +46,6 @@ export default function LiveSession({ roomCode }) {
       brightness: 1,
     },
   });
-
-  //HideNSeek constants
-  const [pendingHideNSeekTasks, setPendingHideNSeekTasks] = useState([]);
-  const [hideNSeekClues, setHideNSeekClues] = useState({});
-  const [showHideNSeekModal, setShowHideNSeekModal] = useState(false);
-  const [launchContext, setLaunchContext] = useState(null); 
 
   const [submissions, setSubmissions] = useState({});
   const [leaderboard, setLeaderboard] = useState([]);
@@ -124,6 +122,13 @@ export default function LiveSession({ roomCode }) {
   // Location override (multi-room presets from Presenter Profile)
   const [locationOptions, setLocationOptions] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
+
+  // Hide & Seek launch-time clues
+  const [hideNSeekTasks, setHideNSeekTasks] = useState([]);
+  const [hideNSeekClues, setHideNSeekClues] = useState({});
+  const [showHideNSeekModal, setShowHideNSeekModal] = useState(false);
+  const [pendingHideTaskset, setPendingHideTaskset] = useState(null);
+  const [launchingTaskset, setLaunchingTaskset] = useState(false);
 
   const [isNarrow, setIsNarrow] = useState(
     typeof window !== "undefined" ? window.innerWidth < 900 : false
@@ -208,11 +213,11 @@ export default function LiveSession({ roomCode }) {
     setStatus("Connected.");
   }, [roomCode]);
 
-    // Clear any old "launch immediately" flag – we now require
-    // an explicit click on "Launch from taskset" in LiveSession.
-    useEffect(() => {
-      localStorage.removeItem("curriculateLaunchImmediately");
-    }, []);
+  // Clear any old "launch immediately" flag – we now require
+  // an explicit click on "Launch from taskset" in LiveSession.
+  useEffect(() => {
+    localStorage.removeItem("curriculateLaunchImmediately");
+  }, []);
 
   // ----------------------------------------------------
   // Socket listeners: keep room state + leaderboard in sync
@@ -469,21 +474,30 @@ export default function LiveSession({ roomCode }) {
   };
 
   const handleOpenQrSheets = () => {
-  // Very simple: open a QR-stations page for this room.
-  // Adjust the path if your router uses a different route.
-  const base = window.location.origin.replace(/\/$/, "");
-  const code = (roomCode || "").toUpperCase();
-  const url = code
-    ? `${base}/StationPosters/${encodeURIComponent(code)}`
-    : `${base}/StationPosters`;
+    const base = window.location.origin.replace(/\/$/, "");
+    const code = (roomCode || "").toUpperCase();
+    const locationLabel =
+      selectedLocation || roomState.locationCode || "Classroom";
 
-  window.open(url, "_blank", "noopener,noreferrer");
-};
+    const stationCount =
+      (roomSetup &&
+        Array.isArray(roomSetup.stations) &&
+        roomSetup.stations.length) ||
+      COLORS.length;
 
-const handleShowRoomLayoutClick = () => {
-  if (!isFixedStationTaskset) return;
-  setShowRoomSetup(true);
-};
+    const params = new URLSearchParams();
+    if (code) params.set("room", code);
+    if (locationLabel) params.set("location", locationLabel);
+    if (stationCount) params.set("stations", String(stationCount));
+
+    const url = `${base}/station-posters?${params.toString()}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleShowRoomLayoutClick = () => {
+    if (!isFixedStationTaskset) return;
+    setShowRoomSetup(true);
+  };
 
   const handleLaunchQuickTask = () => {
     if (!roomCode || !prompt.trim()) return;
@@ -504,32 +518,6 @@ const handleShowRoomLayoutClick = () => {
     }, 200);
   };
 
-  const handleOpenQrSheets = () => {
-    const base = window.location.origin.replace(/\/$/, "");
-    const code = (roomCode || "").toUpperCase();
-    const locationLabel =
-      selectedLocation || roomState.locationCode || "Classroom";
-
-    const stationCount =
-      (roomSetup &&
-        Array.isArray(roomSetup.stations) &&
-        roomSetup.stations.length) ||
-      COLORS.length;
-
-    const params = new URLSearchParams();
-      if (code) params.set("room", code);
-      if (locationLabel) params.set("location", locationLabel);
-      if (stationCount) params.set("stations", String(stationCount));
-
-      const url = `${base}/station-posters?${params.toString()}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    };
-
-    const handleShowRoomLayoutClick = () => {
-      if (!isFixedStationTaskset) return;
-      setShowRoomSetup(true);
-  };
-
   const handleLocationOverrideClick = (loc) => {
     setSelectedLocation(loc);
     if (!roomCode) return;
@@ -541,18 +529,79 @@ const handleShowRoomLayoutClick = () => {
     });
   };
 
-  const handleLaunchTaskset = () => {
+  const handleLaunchTaskset = async () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
 
-    setStatus("Loading taskset…");
-    setLaunchAfterLoad(true);
+    // If we can, pre-load the full taskset to check for HideNSeek tasks
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-    socket.emit("loadTaskset", {
-      roomCode: code,
-      tasksetId: activeTasksetMeta._id,
-      selectedRooms,
-    });
+    setLaunchingTaskset(true);
+    setStatus("Preparing taskset…");
+
+    try {
+      const res = await fetch(`${API_BASE}/api/tasksets/${activeTasksetMeta._id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      const text = await res.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error("Server returned invalid JSON while loading set for launch");
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load taskset before launch");
+      }
+
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+
+      // Build a list of HideNSeek tasks that still need a clue/page reference
+      const hideTasks = tasks
+        .map((t, idx) => ({ task: t, index: idx }))
+        .filter(
+          ({ task }) =>
+            task &&
+            (task.taskType === TASK_TYPES.HIDENSEEK ||
+              task.taskType === "hidenseek") &&
+            (!task.clue || !String(task.clue).trim())
+        );
+
+      if (hideTasks.length > 0) {
+        // Prepare a modal asking the teacher to enter the page reference / clue
+        const initialClues = {};
+        hideTasks.forEach(({ task, index }) => {
+          initialClues[String(index)] = task.clue || "";
+        });
+
+        setHideNSeekTasks(hideTasks);
+        setHideNSeekClues(initialClues);
+        setPendingHideTaskset({ data, roomCode: code });
+        setShowHideNSeekModal(true);
+        setStatus("Enter Hide & Seek page references before launching.");
+        setLaunchingTaskset(false);
+        return;
+      }
+
+      // No HideNSeek tasks missing clues – launch normally
+      setStatus("Loading taskset…");
+      setLaunchAfterLoad(true);
+
+      socket.emit("loadTaskset", {
+        roomCode: code,
+        tasksetId: data._id || activeTasksetMeta._id,
+        selectedRooms,
+      });
+    } catch (err) {
+      console.error("[LiveSession] Launch taskset error:", err);
+      setStatus(err.message || "Failed to launch taskset.");
+    } finally {
+      // If we showed the modal, we already set launchingTaskset to false above
+      setLaunchingTaskset(false);
+    }
   };
 
   const handleEndSessionAndEmail = () => {
@@ -657,6 +706,11 @@ const handleShowRoomLayoutClick = () => {
     launchBtnDisabled = isEndingSession;
   } else if (launchAfterLoad) {
     launchBtnLabel = "Launching taskset…";
+    launchBtnBg = "#10b981";
+    launchBtnOnClick = null;
+    launchBtnDisabled = true;
+  } else if (launchingTaskset) {
+    launchBtnLabel = "Preparing Hide & Seek…";
     launchBtnBg = "#10b981";
     launchBtnOnClick = null;
     launchBtnDisabled = true;
@@ -1240,7 +1294,7 @@ const handleShowRoomLayoutClick = () => {
                 <>Treats disabled.</>
               )}
             </div>
-                        <button
+            <button
               type="button"
               onClick={handleGiveTreat}
               style={{
@@ -1275,7 +1329,6 @@ const handleShowRoomLayoutClick = () => {
                   completed.
                 </p>
               )}
-
           </div>
         </div>
       </div>
@@ -1400,6 +1453,19 @@ const handleShowRoomLayoutClick = () => {
                 ) : (
                   scanEvents.map((entry, idx) => {
                     // ...
+                    return (
+                      <div key={idx} style={{ marginBottom: 4 }}>
+                        {/* Implement your scan-entry rendering here */}
+                        <span>
+                          {entry.teamName || entry.teamId || "Team"} scanned{" "}
+                          {entry.stationLabel || entry.stationId || "station"}{" "}
+                          at{" "}
+                          {entry.timestamp
+                            ? new Date(entry.timestamp).toLocaleTimeString()
+                            : "–"}
+                        </span>
+                      </div>
+                    );
                   })
                 )}
               </div>
@@ -1407,6 +1473,288 @@ const handleShowRoomLayoutClick = () => {
           )}
         </div>
       </div>
+
+      {showHideNSeekModal && pendingHideTaskset && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 60,
+          }}
+          onClick={() => {
+            setShowHideNSeekModal(false);
+            setHideNSeekTasks([]);
+            setHideNSeekClues({});
+            setPendingHideTaskset(null);
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: 16,
+              padding: 16,
+              maxWidth: 520,
+              width: "90%",
+              maxHeight: "80vh",
+              boxShadow: "0 20px 40px rgba(15,23,42,0.35)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "1.1rem",
+                fontWeight: 600,
+              }}
+            >
+              Hide &amp; Seek set-up: page references
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.85rem",
+                color: "#4b5563",
+              }}
+            >
+              For each Hide &amp; Seek task in this set, enter the page
+              reference or description of what students must find. This becomes
+              the clue shown on their screens.
+            </p>
+
+            <div
+              style={{
+                marginTop: 8,
+                paddingRight: 4,
+                overflowY: "auto",
+                maxHeight: 260,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {hideNSeekTasks.map(({ task, index }, idx) => (
+                <div
+                  key={task._id || task.id || index}
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
+                    padding: 8,
+                    background: "#f9fafb",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 600,
+                      color: "#6b7280",
+                      marginBottom: 2,
+                    }}
+                  >
+                    Task {idx + 1}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: 500,
+                      marginBottom: 4,
+                      color: "#111827",
+                    }}
+                  >
+                    {task.title || "Hide & Seek task"}
+                  </div>
+                  <textarea
+                    value={hideNSeekClues[String(index)] ?? ""}
+                    onChange={(e) =>
+                      setHideNSeekClues((prev) => ({
+                        ...prev,
+                        [String(index)]: e.target.value,
+                      }))
+                    }
+                    rows={2}
+                    placeholder="e.g., 'Find the painting on p. 183 that shows Wolfe on the Plains of Abraham and explain why the dog is included.'"
+                    style={{
+                      width: "100%",
+                      resize: "vertical",
+                      borderRadius: 8,
+                      border: "1px solid #cbd5f5",
+                      padding: 6,
+                      fontSize: "0.8rem",
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHideNSeekModal(false);
+                  setHideNSeekTasks([]);
+                  setHideNSeekClues({});
+                  setPendingHideTaskset(null);
+                }}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #d1d5db",
+                  background: "#f9fafb",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={hideNSeekTasks.some(
+                  ({ index }) =>
+                    !hideNSeekClues[String(index)] ||
+                    !hideNSeekClues[String(index)].trim()
+                )}
+                onClick={async () => {
+                  if (!pendingHideTaskset || !pendingHideTaskset.data) return;
+
+                  const token =
+                    typeof window !== "undefined"
+                      ? localStorage.getItem("token")
+                      : null;
+
+                  const tasksetDoc = pendingHideTaskset.data;
+                  const originalTasks = Array.isArray(tasksetDoc.tasks)
+                    ? tasksetDoc.tasks
+                    : [];
+
+                  const updatedTasks = originalTasks.map((t, idx) => {
+                    const clue = hideNSeekClues[String(idx)];
+                    if (
+                      (t.taskType === TASK_TYPES.HIDENSEEK ||
+                        t.taskType === "hidenseek") &&
+                      clue &&
+                      clue.trim()
+                    ) {
+                      return {
+                        ...t,
+                        clue: clue.trim(),
+                      };
+                    }
+                    return t;
+                  });
+
+                  try {
+                    setLaunchingTaskset(true);
+                    setStatus("Saving Hide & Seek clues…");
+
+                    const res = await fetch(
+                      `${API_BASE}/api/tasksets/${
+                        tasksetDoc._id || activeTasksetMeta?._id
+                      }`,
+                      {
+                        method: "PUT",
+                        headers: {
+                          "Content-Type": "application/json",
+                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify({
+                          name:
+                            tasksetDoc.name ||
+                            activeTasksetMeta?.name ||
+                            "Untitled set",
+                          description: tasksetDoc.description || "",
+                          tasks: updatedTasks,
+                          displays: tasksetDoc.displays || [],
+                          ownerId:
+                            tasksetDoc.ownerId || tasksetDoc.userId || null,
+                        }),
+                      }
+                    );
+
+                    const text = await res.text();
+                    let data = null;
+                    try {
+                      data = text ? JSON.parse(text) : null;
+                    } catch {
+                      throw new Error(
+                        "Server returned invalid JSON while saving Hide & Seek clues"
+                      );
+                    }
+
+                    if (!res.ok) {
+                      throw new Error(
+                        data?.error ||
+                          "Failed to save Hide & Seek clues before launch"
+                      );
+                    }
+
+                    setShowHideNSeekModal(false);
+                    setHideNSeekTasks([]);
+                    setHideNSeekClues({});
+                    setPendingHideTaskset(null);
+
+                    // Now we can launch the taskset as normal
+                    const codeToUse =
+                      pendingHideTaskset.roomCode ||
+                      (roomCode ? roomCode.toUpperCase() : null);
+
+                    if (codeToUse) {
+                      setStatus("Loading taskset…");
+                      setLaunchAfterLoad(true);
+                      socket.emit("loadTaskset", {
+                        roomCode: codeToUse,
+                        tasksetId:
+                          data._id ||
+                          tasksetDoc._id ||
+                          activeTasksetMeta?._id,
+                        selectedRooms,
+                      });
+                    }
+                  } catch (err) {
+                    console.error("[LiveSession] Hide & Seek save error:", err);
+                    setStatus(
+                      err.message ||
+                        "Failed to save Hide & Seek clues before launch."
+                    );
+                  } finally {
+                    setLaunchingTaskset(false);
+                  }
+                }}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "#0ea5e9",
+                  color: "#ffffff",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                  opacity: hideNSeekTasks.some(
+                    ({ index }) =>
+                      !hideNSeekClues[String(index)] ||
+                      !hideNSeekClues[String(index)].trim()
+                  )
+                    ? 0.5
+                    : 1,
+                }}
+              >
+                Start set
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Optional: Room setup overlay for fixed-station sets */}
       {showRoomSetup && roomSetup && (

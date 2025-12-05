@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/types/BrainstormBattleTask.jsx
-import React, { useState, useEffect, useRef } from "react";
-import Confetti from "react-confetti";
+
+import React, { useState, useEffect } from "react";
 
 export default function BrainstormBattleTask({
   task,
@@ -8,204 +8,258 @@ export default function BrainstormBattleTask({
   disabled,
   socket,
 }) {
+  const [ideaInput, setIdeaInput] = useState("");
   const [myIdeas, setMyIdeas] = useState([]);
-  const [allTeams, setAllTeams] = useState({});
-  const [myTeamColor] = useState(task.myTeamColor || "Blue");
-  const [score, setScore] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [isListening, setIsListening] = useState(false);
+  const [teamsSummary, setTeamsSummary] = useState({});
+  const [timeLeft, setTimeLeft] = useState(
+    typeof task?.timeLimitSeconds === "number" && task.timeLimitSeconds > 0
+      ? task.timeLimitSeconds
+      : 90
+  );
+  const [submitted, setSubmitted] = useState(false);
 
-  // DRAMATIC STEAL STATE
-  const [stealDrama, setStealDrama] = useState(null); // { from: "Red", idea: "laser", success: true }
-
-  const recognitionRef = useRef(null);
-
-  // Timer
+  // Basic timer (client-side only)
   useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+    if (disabled || submitted) return;
+    if (timeLeft <= 0) {
+      handleSubmit();
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft((t) => (t > 0 ? t - 1 : 0));
+    }, 1000);
+
     return () => clearInterval(timer);
-  }, [timeLeft]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft, disabled, submitted]);
 
-  // Speech Recognition (unchanged)
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const startListening = () => {
-    if (!SpeechRecognition || disabled) return;
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
-      const spoken = event.results[0][0].transcript.trim().toLowerCase();
-      if (spoken && !myIdeas.includes(spoken)) {
-        setMyIdeas(prev => [...prev, spoken]);
-        socket.emit("brainstorm-idea", { roomCode: task.roomCode, idea: spoken });
-      }
-    };
-
-    recognition.start();
-    setIsListening(true);
-    recognitionRef.current = recognition;
-    recognition.onend = () => setIsListening(false);
-  };
-
-  const stopListening = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-  };
-
-  // Socket listeners
+  // Listen for brainstorm scoreboard updates from the server
   useEffect(() => {
-    socket.on("brainstorm-update", ({ teams, scores }) => {
-      setAllTeams(teams);
-      if (scores?.[myTeamColor]) setScore(scores[myTeamColor]);
-    });
+    if (!socket) return;
 
-    // THIS IS WHERE THE DRAMA HAPPENS
-    socket.on("steal-response", ({ fromTeam, idea, success }) => {
-      setStealDrama({ from: fromTeam, idea, success });
+    const handleUpdate = (payload) => {
+      // payload: { taskKey, teams: { [teamId]: { teamId, teamName, ideaCount } } }
+      if (!payload || !payload.teams) return;
+      setTeamsSummary(payload.teams);
+    };
 
-      // Play epic sound
-      new Audio(success ? "/sounds/epic-win.mp3" : "/sounds/epic-fail.mp3").play();
-
-      // Auto-clear after 5 seconds
-      setTimeout(() => setStealDrama(null), 5000);
-    });
-
+    socket.on("brainstorm:update", handleUpdate);
     return () => {
-      socket.off("brainstorm-update");
-      socket.off("steal-response");
+      socket.off("brainstorm:update", handleUpdate);
     };
-  }, [socket, myTeamColor]);
+  }, [socket]);
 
-  const requestSteal = (fromTeam) => {
-    if (disabled || timeLeft <= 0) return;
-    socket.emit("brainstorm-steal-request", { roomCode: task.roomCode, fromTeam });
+  const cleanIdea = (text) =>
+    String(text || "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  const addIdea = () => {
+    if (disabled || submitted) return;
+    const idea = cleanIdea(ideaInput);
+    if (!idea) return;
+
+    // Local de-duplication
+    if (myIdeas.some((i) => i.toLowerCase() === idea.toLowerCase())) {
+      setIdeaInput("");
+      return;
+    }
+
+    const nextIdeas = [...myIdeas, idea];
+    setMyIdeas(nextIdeas);
+    setIdeaInput("");
+
+    // Notify backend so all teams see updated counts
+    if (socket) {
+      socket.emit("brainstorm:idea", {
+        ideaText: idea,
+        // We intentionally do NOT require roomCode/teamId here;
+        // the backend will infer from socket.data when possible.
+        taskIndex: typeof task?.index === "number" ? task.index : undefined,
+      });
+    }
   };
 
-  // Team color → Tailwind class
-  const teamColorClass = (color) => {
-    const map = {
-      Blue: "from-blue-600 to-cyan-500",
-      Red: "from-red-600 to-pink-500",
-      Green: "from-green-600 to-emerald-500",
-      Yellow: "from-yellow-500 to-amber-500",
-      Purple: "from-purple-600 to-pink-600",
-      Orange: "from-orange-600 to-red-500",
-    };
-    return map[color] || "from-gray-600 to-gray-400";
+  const handleSubmit = () => {
+    if (submitted) return;
+    setSubmitted(true);
+
+    // Let the normal submit pipeline handle scoring & progression
+    if (typeof onSubmit === "function") {
+      onSubmit({
+        ideas: myIdeas,
+      });
+    }
   };
+
+  const totalTeams = Object.keys(teamsSummary || {}).length;
 
   return (
-    <div className="relative flex flex-col items-center justify-center h-full p-8 bg-gradient-to-br from-indigo-800 via-purple-700 to-pink-700 text-white overflow-hidden">
+    <div className="flex flex-col h-full w-full items-center justify-start p-4 sm:p-6 md:p-8 bg-gradient-to-br from-sky-900 via-indigo-900 to-slate-900 text-white">
       {/* Header */}
-      <h1 className="text-7xl md:text-9xl font-black mb-8 drop-shadow-2xl animate-pulse">
-        BRAINSTORM BATTLE!
-      </h1>
-
-      {/* Timer & Score */}
-      <div className="flex gap-16 text-6xl font-bold mb-8 z-10">
-        <div>Time: <span className={`font-black ${timeLeft < 20 ? "text-red-500 animate-pulse" : "text-white"}`}>{timeLeft}s</span></div>
-        <div>Score: <span className="text-yellow-400 font-black text-8xl">{score}</span></div>
-      </div>
-
-      {/* My Ideas */}
-      <div className="bg-white/20 backdrop-blur-lg rounded-3xl p-8 w-full max-w-4xl mb-8 z-10">
-        <p className="text-4xl font-bold mb-4">My Ideas ({myIdeas.length})</p>
-        <div className="flex flex-wrap gap-4">
-          {myIdeas.map((idea, i) => (
-            <span key={i} className="px-6 py-3 bg-yellow-400 text-black rounded-full text-2xl font-bold shadow-lg">
-              {idea}
-            </span>
-          ))}
+      <div className="w-full max-w-4xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight">
+            Brainstorm Battle
+          </h1>
+          {task?.prompt && (
+            <p className="mt-2 text-base sm:text-lg text-slate-100/80">
+              {task.prompt}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wide text-slate-200/70">
+              Time left
+            </p>
+            <p
+              className={
+                "text-3xl sm:text-4xl font-black " +
+                (timeLeft <= 15 ? "text-red-400 animate-pulse" : "text-emerald-300")
+              }
+            >
+              {timeLeft}s
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wide text-slate-200/70">
+              Your ideas
+            </p>
+            <p className="text-3xl sm:text-4xl font-black text-amber-300">
+              {myIdeas.length}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* OTHER TEAMS – STEAL BUBBLES */}
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-10">
-        {Object.entries(allTeams)
-          .filter(([color]) => color !== myTeamColor)
-          .map(([color, ideas]) => (
+      {/* Main layout: left = my ideas, right = scoreboard */}
+      <div className="w-full max-w-6xl flex-1 flex flex-col lg:flex-row gap-6">
+        {/* Left: idea entry + my ideas */}
+        <div className="flex-1 flex flex-col bg-white/10 backdrop-blur-md rounded-2xl p-4 sm:p-6 shadow-xl border border-white/10">
+          <p className="text-sm sm:text-base text-slate-100/90 mb-3">
+            Think of as many good ideas as you can that fit the prompt.  
+            Type one idea at a time and tap <span className="font-semibold">Add idea</span>.
+          </p>
+
+          {/* Input row */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <input
+              type="text"
+              value={ideaInput}
+              onChange={(e) => setIdeaInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addIdea();
+                }
+              }}
+              disabled={disabled || submitted}
+              placeholder="Type an idea and press Enter or Add…"
+              className="flex-1 rounded-xl bg-slate-900/60 border border-slate-500/70 px-3 py-2 text-base sm:text-lg outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 disabled:opacity-60"
+            />
             <button
-              key={color}
-              onClick={() => requestSteal(color)}
-              disabled={disabled || timeLeft <= 0}
-              className="group relative"
+              type="button"
+              onClick={addIdea}
+              disabled={disabled || submitted}
+              className="inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-base sm:text-lg font-semibold bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/30 transition"
             >
-              <div className={`w-36 h-36 rounded-full shadow-2xl transition-all hover:scale-150 hover:rotate-12
-                bg-gradient-to-br ${teamColorClass(color)}`}>
-                <div className="flex flex-col items-center justify-center h-full">
-                  <span className="text-6xl font-black">{ideas.length}</span>
-                  <span className="text-3xl font-bold">{color}</span>
-                </div>
-              </div>
-              <div className="absolute inset-0 rounded-full bg-white/30 animate-ping group-hover:animate-none" />
-              <div className="absolute -inset-2 rounded-full bg-white/20 animate-pulse group-hover:animate-none" />
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-4xl font-bold opacity-0 group-hover:opacity-100 transition">
-                STEAL!
-              </div>
+              Add idea
             </button>
-          ))}
+          </div>
+
+          {/* My ideas list */}
+          <div className="flex-1 overflow-y-auto rounded-xl bg-slate-950/40 border border-slate-600/60 p-3 sm:p-4">
+            {myIdeas.length === 0 ? (
+              <p className="text-sm sm:text-base text-slate-300/80 italic">
+                No ideas yet. First ideas are often the best ones—go for it!
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {myIdeas.map((idea, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-300 text-slate-900 text-xs sm:text-sm font-semibold shadow"
+                  >
+                    {idea}
+                    {!submitted && !disabled && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMyIdeas((prev) =>
+                            prev.filter((_, i) => i !== idx)
+                          )
+                        }
+                        className="text-slate-800 hover:text-red-600 text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: live team scoreboard */}
+        <div className="w-full lg:w-72 xl:w-80 flex-shrink-0 bg-slate-950/50 backdrop-blur-md rounded-2xl p-4 sm:p-5 shadow-xl border border-sky-400/40">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg sm:text-xl font-bold flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-lime-400 animate-pulse" />
+              Battle board
+            </h2>
+            <span className="text-xs uppercase tracking-wide text-slate-300/80">
+              {totalTeams} team{totalTeams === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {totalTeams === 0 ? (
+            <p className="text-sm text-slate-300/80">
+              When teams start adding ideas, their counts will appear here.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+              {Object.values(teamsSummary)
+                .sort((a, b) => b.ideaCount - a.ideaCount)
+                .map((t) => (
+                  <div
+                    key={t.teamId}
+                    className="flex items-center justify-between rounded-xl bg-slate-800/70 px-3 py-2 text-sm"
+                  >
+                    <span className="font-semibold truncate max-w-[9rem]">
+                      {t.teamName}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-emerald-300 font-bold">
+                      <span className="text-xs uppercase tracking-wide text-slate-300">
+                        Ideas
+                      </span>
+                      <span className="text-xl">{t.ideaCount}</span>
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <div className="mt-4 text-xs text-slate-300/80">
+            This board updates live for everyone whenever any team adds a new
+            idea.
+          </div>
+        </div>
       </div>
 
-      {/* EPIC STEAL FEEDBACK – FULL SCREEN DRAMA */}
-      {stealDrama && (
-        <>
-          <Confetti
-            width={window.innerWidth}
-            height={window.innerHeight}
-            recycle={false}
-            numberOfPieces={600}
-            gravity={0.3}
-            colors={stealDrama.success 
-              ? ["#10b981", "#34d399", "#6ee7b7", "#86efac"] 
-              : ["#ef4444", "#f87171", "#fca5a5"]}
-          />
-          <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
-            <div className={`text-center animate__animated animate__zoomIn animate__faster ${stealDrama.success ? "text-green-400" : "text-red-500"}`}>
-              <p className="text-9xl md:text-12xl font-black drop-shadow-2xl mb-8">
-                {stealDrama.success ? "YOU STOLE IT!" : "THEY STOLE IT!"}
-              </p>
-              <p className="text-7xl md:text-10xl font-black mb-8 drop-shadow-2xl">
-                "{stealDrama.idea.toUpperCase()}"
-              </p>
-              <p className="text-8xl md:text-11xl font-black animate-bounce">
-                {stealDrama.success ? "+10 POINTS!" : `${stealDrama.from} +10!`}
-              </p>
-            </div>
-          </div>
-          {/* Screen shake effect */}
-          <style jsx>{`
-            @keyframes shake {
-              0%, 100% { transform: translateX(0); }
-              10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
-              20%, 40%, 60%, 80% { transform: translateX(10px); }
-            }
-            .shake { animation: shake 0.5s ease-in-out; }
-          `}</style>
-          <div className="fixed inset-0 shake" />
-        </>
-      )}
-
-      {/* Mic Button */}
-      <button
-        onClick={isListening ? stopListening : startListening}
-        disabled={disabled || timeLeft <= 0}
-        className={`fixed bottom-12 left-1/2 -translate-x-1/2 w-44 h-44 rounded-full shadow-2xl transition-all z-30
-          ${isListening 
-            ? "bg-red-600 animate-pulse ring-16 ring-red-400 scale-110" 
-            : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:scale-125"
-          }`}
-      >
-        <span className="text-10xl">{isListening ? "Stop" : "Mic"}</span>
-      </button>
-
-      {isListening && (
-        <p className="fixed inset-0 flex items-center justify-center text-9xl font-bold text-white animate-pulse pointer-events-none z-20">
-          LISTENING...
-        </p>
-      )}
+      {/* Submit button */}
+      <div className="w-full max-w-4xl mt-6 flex justify-center">
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={disabled || submitted}
+          className="inline-flex items-center justify-center rounded-2xl px-6 py-3 text-lg font-semibold bg-indigo-500 hover:bg-indigo-400 disabled:opacity-60 disabled:cursor-not-allowed shadow-xl shadow-indigo-500/40 transition"
+        >
+          {submitted ? "Submitted!" : "Submit ideas"}
+        </button>
+      </div>
     </div>
   );
 }
