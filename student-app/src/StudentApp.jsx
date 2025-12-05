@@ -28,6 +28,16 @@ const COLOR_NAMES = [
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
+// Normalize a human-readable location into a slug like "room-12"
+function normalizeLocationSlug(raw) {
+  if (!raw) return "";
+  return raw
+    .toString()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function normalizeStationId(raw) {
   if (!raw) {
     return { id: null, color: null, label: "Not assigned yet" };
@@ -344,21 +354,13 @@ function StudentApp() {
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
 
-      if (state.locationCode) {
-        setRoomLocation(state.locationCode);
-        roomLocationFromStateRef.current = state.locationCode;
-      }
-
-      // Backend decides when location must be enforced (fixed-station / multi-room)
-      setEnforceLocation(!!state.enforceLocation);
-
       const newStationId = myTeam.currentStationId || null;
       if (!newStationId) return;
 
       const isNewStation = lastStationIdRef.current !== newStationId;
       const norm = normalizeStationId(newStationId);
 
-      // Always keep these in sync for UI
+      // Keep these in sync for UI
       setAssignedStationId(newStationId);
       setAssignedColor(norm.color ? norm.color : null);
 
@@ -370,14 +372,12 @@ function StudentApp() {
         setScannerActive(true);
 
         const colourLabel = norm.color
-          ? ` ${norm.color.toUpperCase()}`
-          : "";
-        setStatusMessage(
-          `Scan your${colourLabel} station to continue.`
-        );
+          ? norm.color.charAt(0).toUpperCase() + norm.color.slice(1)
+          : "your";
+        // Location is basically only for multi-room hunts; ignore it here.
+        setStatusMessage(`Scan your ${colourLabel} station.`);
       } else {
-        // Station is the same as last time → do NOT touch scannerActive or scannedStationId.
-        // This avoids wiping "station confirmed" when another team scans.
+        // Same station → leave scannerActive / scannedStationId alone
       }
     };
 
@@ -665,120 +665,84 @@ function StudentApp() {
   // QR Scan handler – checks colour + room
   // ─────────────────────────────────────────────
 
-  const handleScannedCode = (value) => {
-    try {
-      if (!assignedStationId) {
-        setScanError(
-          "No station has been assigned yet. Please wait for your teacher."
-        );
-        return false;
-      }
-
-      // Normalise slashes first so we can handle backslash QR text
-      let raw = (value || "").trim().replace(/\\/g, "/");
-
-      let segments = [];
-
-      // Try parse as full URL first
-      try {
-        const url = new URL(raw);
-        segments = url.pathname
-          .split("/")
-          .map((s) => s.trim())
-          .filter(Boolean);
-      } catch {
-        // Not a valid URL; treat as path-like string
-        segments = raw
-          .split("/")
-          .map((s) => s.trim())
-          .filter(Boolean);
-      }
-
-      if (segments.length < 2) {
-        setScanError(
-          `Unrecognized station code: "${raw}". Ask your teacher which QR to use.`
-        );
-        return false;
-      }
-
-      // Keep ProperCase for location (e.g. "Room 12"), lowercase for colour
-      const locationRaw =
-        segments[segments.length - 2] || DEFAULT_LOCATION;
-      const colour = segments[segments.length - 1].toLowerCase();
-
-      // Normalised slugs (spaces/punctuation stripped)
-      const scannedLocationSlug = normalizeLocationSlug(locationRaw);
-      const expectedLocationSlug = normalizeLocationSlug(
-        roomLocationFromStateRef.current || DEFAULT_LOCATION
-      );
-
-      const assignedNorm = normalizeStationId(assignedStationId);
-      const assignedColour = assignedNorm.color; // "red", "blue", etc.
-
-      if (!assignedColour) {
-        setScanError(
-          "The assigned station colour could not be determined. Please tell your teacher."
-        );
-        return false;
-      }
-
-      // If this room/taskset is marked as fixed-station / multi-room,
-      // require BOTH location slug AND colour to match.
-      if (
-        enforceLocation &&
-        scannedLocationSlug !== expectedLocationSlug
-      ) {
-        setScanError(
-          `Wrong station.\n\nYou scanned: ${locationRaw.toUpperCase()}/${colour.toUpperCase()}.\nExpected: ${roomLocationFromStateRef.current.toUpperCase()}/${assignedColour.toUpperCase()}.`
-        );
-        return false;
-      }
-
-      // Always enforce colour.
-      if (colour !== assignedColour) {
-        const scannedLabel = `${locationRaw}/${colour}`;
-        const correctLabel = `${roomLocationFromStateRef.current}/${assignedColour}`;
-        setScanError(
-          `This is the wrong station.\n\nYou scanned: ${scannedLabel}.\n\nCorrect: ${correctLabel}.\n\nPlease go to the correct station and try again.`
-        );
-        return false; // wrong station → keep scanning
-      }
-
-      // ✅ Correct station
-      setScannedStationId(assignedStationId);
-      setScanError(null);
-      setScannerActive(false);
-
-      const nonEmptyMembers = members
-        .map((m) => m.trim())
-        .filter(Boolean);
-      if (nonEmptyMembers.length > 0) {
-        setStatusMessage(
-          `Station confirmed. Team members: ${nonEmptyMembers.join(
-            ", "
-          )}`
-        );
-      } else {
-        setStatusMessage("Station confirmed. Wait for your task.");
-      }
-
-      if (roomCode && teamId) {
-        const norm = normalizeStationId(assignedStationId);
-        socket.emit("station:scan", {
-          roomCode: roomCode.trim().toUpperCase(),
-          teamId,
-          stationId: norm.id || assignedStationId,
-        });
-      }
-
-      return true; // correct station → stop camera
-    } catch (err) {
-      console.error("Error handling scanned QR", err);
-      setScanError(
-        "Something went wrong reading that code. Please tell your teacher."
-      );
-      return false;
+  const handleScannedCode = (code) => {
+    if (!joined || !teamId) {
+      setScanError("Join a room first, then scan a station.");
+      return;
     }
+
+    if (!assignedStationId) {
+      setScanError("Wait until your teacher assigns a station, then scan.");
+      return;
+    }
+
+    const normAssigned = normalizeStationId(assignedStationId);
+    const expectedColour = normAssigned.color;
+
+    // Parse QR payload – expected pattern: ".../<location>/<colour>"
+    let scannedColour = null;
+    let scannedLocationRaw = null;
+
+    try {
+      const url = new URL(code);
+      const segments = url.pathname.split("/").filter(Boolean);
+
+      if (segments.length >= 2) {
+        scannedLocationRaw = segments[segments.length - 2];
+        scannedColour = (segments[segments.length - 1] || "").toLowerCase();
+      } else if (segments.length === 1) {
+        scannedColour = (segments[0] || "").toLowerCase();
+      }
+    } catch {
+      // Non-URL payload → treat entire string as the colour
+      scannedColour = (code || "").toLowerCase().trim();
+    }
+
+    const scannedLocationSlug = normalizeLocationSlug(scannedLocationRaw);
+
+    const scannedLabel = [
+      scannedLocationRaw || "",
+      scannedColour ? scannedColour.toUpperCase() : "",
+    ]
+      .filter(Boolean)
+      .join(" / ");
+
+    if (!scannedColour) {
+      setScanError(
+        "That code didn’t look like a station. Try another or ask your teacher."
+      );
+      return;
+    }
+
+    if (!expectedColour || scannedColour !== expectedColour) {
+      const expectedLabel = expectedColour
+        ? expectedColour.toUpperCase()
+        : "the correct";
+      setScanError(
+        `That’s the wrong station colour. You scanned ${
+          scannedLabel || "this code"
+        }, but your team needs the ${expectedLabel} station.`
+      );
+      return;
+    }
+
+    // ✅ Colour matches – we *ignore* location for now.
+    setScanError(null);
+    setScannerActive(false);
+    setScannedStationId(assignedStationId);
+
+    socket.emit("station:scan", {
+      roomCode: roomCode.trim().toUpperCase(),
+      teamId,
+      stationId: normAssigned.id,
+      // For future multi-room scavenger hunts we still send a normalized slug
+      locationSlug: scannedLocationSlug || null,
+      rawCode: code,
+    });
+
+    setStatusMessage(
+      `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`
+    );
   };
 
   // ─────────────────────────────────────────────

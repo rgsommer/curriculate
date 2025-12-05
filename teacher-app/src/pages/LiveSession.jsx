@@ -457,6 +457,23 @@ export default function LiveSession({ roomCode }) {
     socket.emit("teacher:skipNextTask", { roomCode: code });
   };
 
+  const handleOpenQrSheets = () => {
+  // Very simple: open a QR-stations page for this room.
+  // Adjust the path if your router uses a different route.
+  const base = window.location.origin.replace(/\/$/, "");
+  const code = (roomCode || "").toUpperCase();
+  const url = code
+    ? `${base}/qr-stations/${encodeURIComponent(code)}`
+    : `${base}/qr-stations`;
+
+  window.open(url, "_blank", "noopener,noreferrer");
+};
+
+const handleShowRoomLayoutClick = () => {
+  if (!isFixedStationTaskset) return;
+  setShowRoomSetup(true);
+};
+
   const handleLaunchQuickTask = () => {
     if (!roomCode || !prompt.trim()) return;
     setIsLaunchingQuick(true);
@@ -618,6 +635,10 @@ export default function LiveSession({ roomCode }) {
     const isPendingTreat = pendingTreatTeams.includes(teamId);
     const lastScan =
       scanEvents.find((ev) => ev.teamId === teamId) || null;
+    const isFixedStationTaskset =
+      !!activeTasksetMeta?.isFixedStationTaskset ||
+      activeTasksetMeta?.deliveryMode === "fixed-stations" ||
+      activeTasksetMeta?.mode === "fixed-stations";
 
     return (
       <div
@@ -948,28 +969,71 @@ export default function LiveSession({ roomCode }) {
                 fontSize: "0.85rem",
               }}
             />
-            <button
-              type="button"
-              onClick={handleLaunchQuickTask}
+            <div
               style={{
-                marginTop: 4,
-                alignSelf: "flex-start",
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: "#0ea5e9",
-                color: "#ffffff",
-                fontSize: "0.8rem",
-                cursor:
-                  isLaunchingQuick || taskFlowActive
-                    ? "not-allowed"
-                    : "pointer",
-                opacity: isLaunchingQuick || taskFlowActive ? 0.5 : 1,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                alignItems: "center",
               }}
-              disabled={isLaunchingQuick || taskFlowActive}
             >
-              {isLaunchingQuick ? "Launching…" : "Launch quick task"}
-            </button>
+              {/* Existing Quick Task launch button */}
+              <button
+                type="button"
+                onClick={handleLaunchQuick}
+                disabled={!roomCode}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "#2563eb",
+                  color: "white",
+                  fontSize: "0.85rem",
+                  cursor: roomCode ? "pointer" : "not-allowed",
+                  fontWeight: 500,
+                }}
+              >
+                Launch Quick Task
+              </button>
+
+              {/* NEW: Print QR Station Sheets */}
+              <button
+                type="button"
+                onClick={handleOpenQrSheets}
+                disabled={!roomCode}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  border: "1px solid #d1d5db",
+                  background: "#f9fafb",
+                  fontSize: "0.85rem",
+                  cursor: roomCode ? "pointer" : "not-allowed",
+                  fontWeight: 500,
+                }}
+              >
+                Print QR Station Sheets
+              </button>
+
+              {/* NEW: Room Layout (fixed-station only) */}
+              <button
+                type="button"
+                title="Room Layout for Fixed-Station task sets"
+                onClick={handleShowRoomLayoutClick}
+                disabled={!isFixedStationTaskset}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  border: "1px solid #d1d5db",
+                  background: isFixedStationTaskset ? "#f9fafb" : "#f3f4f6",
+                  color: isFixedStationTaskset ? "#111827" : "#9ca3af",
+                  fontSize: "0.85rem",
+                  cursor: isFixedStationTaskset ? "pointer" : "not-allowed",
+                  fontWeight: 500,
+                }}
+              >
+                Room Layout
+              </button>
+            </div>
           </div>
 
           {/* Taskset launch + skip */}
