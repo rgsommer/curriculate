@@ -1,5 +1,5 @@
 // teacher-app/src/pages/StationPosters.jsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const COLORS = [
@@ -26,19 +26,37 @@ export default function StationPosters() {
   const query = useQuery();
   const navigate = useNavigate();
 
-  // "Room" here is your class code or label shown on the poster
-  const room = (query.get("room") || "8A").toUpperCase();
-
-  // This is the label you choose for where the station lives
-  // e.g., Classroom, Hallway, Library, etc.
-  const locationLabel = query.get("location") || "Classroom";
-
-  const stationCount = Math.min(
-    12,
-    Math.max(4, Number(query.get("stations") || 8))
+  // Initial values from query params
+  const [room, setRoom] = useState(
+    (query.get("room") || "8A").toUpperCase()
   );
+  const [locationLabel, setLocationLabel] = useState(
+    query.get("location") || "Classroom"
+  );
+  const [stationCount, setStationCount] = useState(() => {
+    const raw = Number(query.get("stations") || 8);
+    const n = Number.isFinite(raw) ? raw : 8;
+    return Math.min(12, Math.max(4, n));
+  });
 
   const stations = COLORS.slice(0, stationCount);
+
+  const handleApply = (e) => {
+    e.preventDefault();
+
+    const params = new URLSearchParams();
+    if (room.trim()) params.set("room", room.trim());
+    if (locationLabel.trim()) params.set("location", locationLabel.trim());
+    if (stationCount) params.set("stations", String(stationCount));
+
+    navigate(
+      {
+        pathname: "/station-posters",
+        search: `?${params.toString()}`,
+      },
+      { replace: true }
+    );
+  };
 
   return (
     <div
@@ -91,7 +109,7 @@ export default function StationPosters() {
         `}
       </style>
 
-      {/* Screen-only header/controls (hidden in print by the CSS above) */}
+      {/* Screen-only header/controls (hidden in print) */}
       <h1 style={{ marginTop: 0 }}>Station posters</h1>
       <p style={{ fontSize: "0.85rem", color: "#4b5563", maxWidth: 520 }}>
         One page per station. These are meant for printing on letter-size paper
@@ -99,6 +117,95 @@ export default function StationPosters() {
         <code>play.curriculate.net/{locationLabel}/[colour]</code>, but the
         printed address stays simple: <code>play.curriculate.net</code>.
       </p>
+
+      {/* Room / location / station controls */}
+      <form
+        onSubmit={handleApply}
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 12,
+          alignItems: "flex-end",
+          marginBottom: 12,
+        }}
+      >
+        <label style={{ fontSize: "0.85rem" }}>
+          Room code / label
+          <input
+            type="text"
+            value={room}
+            onChange={(e) => setRoom(e.target.value.toUpperCase())}
+            style={{
+              display: "block",
+              marginTop: 2,
+              padding: "4px 6px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              fontSize: "0.9rem",
+              minWidth: 80,
+            }}
+          />
+        </label>
+
+        <label style={{ fontSize: "0.85rem" }}>
+          Location label
+          <input
+            type="text"
+            value={locationLabel}
+            onChange={(e) => setLocationLabel(e.target.value)}
+            placeholder="Classroom, Hallway, Library…"
+            style={{
+              display: "block",
+              marginTop: 2,
+              padding: "4px 6px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              fontSize: "0.9rem",
+              minWidth: 140,
+            }}
+          />
+        </label>
+
+        <label style={{ fontSize: "0.85rem" }}>
+          # of stations
+          <input
+            type="number"
+            min={4}
+            max={12}
+            value={stationCount}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (!Number.isFinite(n)) return;
+              setStationCount(Math.min(12, Math.max(4, n)));
+            }}
+            style={{
+              display: "block",
+              marginTop: 2,
+              padding: "4px 6px",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              fontSize: "0.9rem",
+              width: 80,
+            }}
+          />
+        </label>
+
+        <button
+          type="submit"
+          style={{
+            padding: "6px 12px",
+            borderRadius: 999,
+            border: "none",
+            background: "#2563eb",
+            color: "#ffffff",
+            cursor: "pointer",
+            fontSize: "0.85rem",
+            fontWeight: 500,
+          }}
+        >
+          Apply & refresh posters
+        </button>
+      </form>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button
@@ -168,8 +275,8 @@ export default function StationPosters() {
                 height: "11in",
                 margin: "0 auto",
                 boxSizing: "border-box",
-                padding: "0.5in 0.75in", // modest padding for on-screen; overridden to 0 in print
-                background: "#ffffff", // pure white background
+                padding: "0.5in 0.75in", // on-screen padding; overridden to 0 in print
+                background: "#ffffff",
                 position: "relative",
               }}
             >

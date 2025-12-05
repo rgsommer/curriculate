@@ -1182,8 +1182,7 @@ function StudentApp() {
                     color: "inherit",
                   }}
                 >
-                  Station confirmed ({scannedNorm.label}). Wait for the
-                  task.
+                  Station confirmed ({scannedNorm.label}).
                 </div>
               ) : (
                 <div
