@@ -26,6 +26,7 @@ import MotionMissionTask from "./types/MotionMissionTask";
 import BrainstormBattleTask from "./types/BrainstormBattleTask";
 import MindMapperTask from "./types/MindMapperTask";
 import SpeedDrawTask from "./types/SpeedDrawTask";
+import DiffDetectiveTask from "./types/DiffDetectiveTask";
 
 function shuffleArray(array) {
   const copy = [...array];
@@ -88,6 +89,9 @@ function normalizeTaskType(raw) {
     case "act":
     case "act-out":
       return TASK_TYPES.MIME;
+    case "diff-detective":
+      return TASK_TYPES.DIFF_DETECTIVE;
+    
     default:
       return raw;
   }
@@ -338,6 +342,64 @@ export default function TaskRunner({
     Array.isArray(t.subItems);
 
   const meta = TASK_TYPE_META[type];
+  const [diffRaceStatus, setDiffRaceStatus] = React.useState(null);
+
+  // Listen for race events from the server when this is a diff-detective task
+  React.useEffect(() => {
+    if (!socket) return;
+
+    const isDiffDetective =
+      (t.taskType || t.type) === "diff-detective";
+
+    // If we switch away from this task, clear race status
+    if (!isDiffDetective) {
+      setDiffRaceStatus(null);
+      return;
+    }
+
+    const handleRaceStart = (payload) => {
+      // Optionally filter by taskIndex if you're passing it in task/index
+      setDiffRaceStatus((prev) => ({
+        ...prev,
+        startedAt: payload.startedAt || Date.now(),
+        leader: null,
+        timeLeft: null,
+      }));
+    };
+
+    const handleRaceWinner = (payload) => {
+      setDiffRaceStatus((prev) => ({
+        ...prev,
+        leader: payload.teamName,
+        winnerTeamId: payload.teamId,
+      }));
+    };
+
+    const handleRaceFinish = (payload) => {
+      // You could track place/order here if you want:
+      // players, ranks, etc. For now we don't need it.
+      setDiffRaceStatus((prev) => ({
+        ...prev,
+        lastFinish: {
+          teamId: payload.teamId,
+          teamName: payload.teamName,
+          rank: payload.rank,
+          correct: payload.correct,
+        },
+      }));
+    };
+
+    socket.on("diff-detective-race-start", handleRaceStart);
+    socket.on("diff-detective-race-winner", handleRaceWinner);
+    socket.on("diff-detective-race-finish", handleRaceFinish);
+
+    return () => {
+      socket.off("diff-detective-race-start", handleRaceStart);
+      socket.off("diff-detective-race-winner", handleRaceWinner);
+      socket.off("diff-detective-race-finish", handleRaceFinish);
+    };
+  }, [socket, t.taskType, t.type]);
+
   const effectiveDisabled = disabled || submitting;
 
   const currentDisplay =
@@ -605,6 +667,21 @@ export default function TaskRunner({
         />
       );
       break;
+        // ... other specific cases above ...
+
+    // Diff Detective – "find the differences" race
+    case "diff-detective":
+      content = (
+        <DiffDetectiveTask
+          {...commonProps}
+          // treat as race when >1 team in the room; if you don't
+          // have team info here yet, forcing true is still fine.
+          isMultiplayer={true}
+          raceStatus={diffRaceStatus}
+        />
+      );
+      break;
+
     default:
       return (
         <div className="p-4 text-center text-red-600 space-y-2">
