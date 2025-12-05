@@ -1103,6 +1103,47 @@ function StudentApp() {
                   + Add member field
                 </button>
               </div>
+              <div style={{ marginTop: 8 }}>
+              <div
+                style={{
+                  fontSize: "0.85rem",
+                  marginBottom: 4,
+                }}
+              >
+                Choose a theme
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                {["modern", "bold", "minimal"].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setUiTheme(t)}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      border: "1px solid #d1d5db",
+                      background:
+                        uiTheme === t ? "#0ea5e9" : "#f9fafb",
+                      color: uiTheme === t ? "#ffffff" : "#111827",
+                      fontSize: "0.8rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t === "modern"
+                      ? "Theme 1"
+                      : t === "bold"
+                      ? "Bold"
+                      : "Minimal"}
+                  </button>
+                ))}
+              </div>
+            </div>
 
               <button
                 type="button"
@@ -1298,39 +1339,6 @@ function StudentApp() {
                 Time left: {formatRemainingMs(remainingMs)}
               </p>
             )}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 6,
-                marginBottom: 4,
-                fontSize: "0.75rem",
-              }}
-            >
-              {["modern", "bold", "minimal"].map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setUiTheme(t)}
-                  style={{
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border: "1px solid rgba(148,163,184,0.8)",
-                    background:
-                      uiTheme === t
-                        ? "#0ea5e9"
-                        : "rgba(255,255,255,0.85)",
-                    color: uiTheme === t ? "#fff" : "#111827",
-                  }}
-                >
-                  {t === "modern"
-                    ? "Theme 1"
-                    : t === "bold"
-                    ? "Bold"
-                    : "Minimal"}
-                </button>
-              ))}
-            </div>
 
             <div
               style={{
