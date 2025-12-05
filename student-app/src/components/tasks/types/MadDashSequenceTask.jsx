@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/types/MadDashSequenceTask.jsx
 import React, { useEffect, useState, useRef } from "react";
-import QrScanner from "../../../QrScanner.jsx";
+import QrScanner from "../../QrScanner.jsx";
 
 const COLORS = ["Red,Blue,Green,Yellow,Purple,Orange,Pink,Teal"];
 
