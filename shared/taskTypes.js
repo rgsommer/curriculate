@@ -47,6 +47,7 @@ export const TASK_TYPES = {
   DIFF_DETECTIVE: "diff-detective",
   PRONUNCIATION: "pronunciation",
   SPEECH_RECOGNITION: "speech-recognition",
+  AI_DEBATE_JUDGE: "ai-debate-judge",
 };
 
 // Category labels (for grouping & UI)
@@ -446,6 +447,20 @@ export const TASK_TYPE_META = {
 
     description:
       "Hide concept cards around room; find and explain to team. Physical search with knowledge application.",
+  },
+
+  // shared/taskTypes.js → add to TASK_TYPE_META
+  [TASK_TYPES.AI_DEBATE_JUDGE]: {
+    label: "AI Debate Judge",
+    category: "competitive",
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 180,
+    maxTimeSeconds: 180,
+    implemented: true,
+    aiEligible: true,
+    special: true, // ← marks it as a special task, not in normal rotation
+    description: "AI listens to the entire debate and delivers a full written verdict with scores, feedback, and winner announcement.",
   },
 
   [TASK_TYPES.SPEED_DRAW]: {
