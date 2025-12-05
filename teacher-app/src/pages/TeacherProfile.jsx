@@ -41,6 +41,9 @@ export default function TeacherProfile() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  // ─────────────────────────────────────────────
+  // Load profile
+  // ─────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -48,7 +51,6 @@ export default function TeacherProfile() {
       setLoading(true);
       try {
         const data = await fetchMyProfile();
-
         if (cancelled || !data) return;
 
         const merged = {
@@ -56,7 +58,7 @@ export default function TeacherProfile() {
           presenterTitle: data.presenterTitle || data.title || "",
           email: data.email || "",
           schoolName: data.schoolName || "",
-          defaultStations: data.defaultStations || 8,
+          defaultStations: Number(data.defaultStations) || 8,
           treatsPerSession:
             typeof data.treatsPerSession === "number"
               ? data.treatsPerSession
@@ -77,7 +79,7 @@ export default function TeacherProfile() {
               ? data.includeIndividualReports
               : !!data.includeStudentReports,
 
-          // Jeopardy defaults (with safe fallbacks)
+          // Jeopardy defaults (safe fallbacks)
           jeopardyDefaultContestantCount:
             Number(data.jeopardyDefaultContestantCount) || 3,
           jeopardyDefaultAnswerMode:
@@ -97,9 +99,7 @@ export default function TeacherProfile() {
         console.error("Failed to load profile:", err);
         setError("Could not load profile. Please try again.");
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -109,6 +109,9 @@ export default function TeacherProfile() {
     };
   }, []);
 
+  // ─────────────────────────────────────────────
+  // Local handlers
+  // ─────────────────────────────────────────────
   const handleChange = (field, value) => {
     setProfile((prev) => ({ ...prev, [field]: value }));
   };
@@ -150,6 +153,9 @@ export default function TeacherProfile() {
     });
   };
 
+  // ─────────────────────────────────────────────
+  // Save profile
+  // ─────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -163,16 +169,16 @@ export default function TeacherProfile() {
 
       const payload = {
         ...profile,
-        locationOptions: Array.isArray(profile.locationOptions)
-          ? profile.locationOptions
-              .map((s) => s && s.toString().trim())
-              .filter((s) => s)
-          : [],
         defaultStations: Number(profile.defaultStations) || 8,
         treatsPerSession:
-          Number(profile.treatsPerSession ?? 4),
-        jeopardyDefaultContestantCount:
-          Number(profile.jeopardyDefaultContestantCount) || 3,
+          typeof profile.treatsPerSession === "number"
+            ? profile.treatsPerSession
+            : Number(profile.treatsPerSession || 4) || 4,
+        locationOptions: Array.isArray(profile.locationOptions)
+          ? profile.locationOptions
+              .map((s) => (s || "").toString().trim())
+              .filter(Boolean)
+          : [],
         assessmentCategories: profile.assessmentCategories
           .filter((c) => c.key.trim() || c.label.trim())
           .map((c) => ({
@@ -180,13 +186,17 @@ export default function TeacherProfile() {
             label: c.label.trim(),
             weight: Number(c.weight) || 0,
           })),
-        // keep both field names in sync for older views
+        jeopardyDefaultContestantCount:
+          Number(profile.jeopardyDefaultContestantCount) || 3,
+
+        // keep both field names for backward compatibility
         includeIndividualReports: includeReports,
         includeStudentReports: includeReports,
         title: profile.presenterTitle,
       };
 
       const updated = await updateMyProfile(payload);
+
       setProfile((prev) => ({
         ...prev,
         ...updated,
@@ -196,7 +206,12 @@ export default function TeacherProfile() {
           typeof updated.includeIndividualReports === "boolean"
             ? updated.includeIndividualReports
             : !!updated.includeStudentReports,
+        treatsPerSession:
+          typeof updated.treatsPerSession === "number"
+            ? updated.treatsPerSession
+            : prev.treatsPerSession,
       }));
+
       setMessage("Profile saved.");
     } catch (err) {
       console.error("Failed to save profile:", err);
@@ -206,6 +221,9 @@ export default function TeacherProfile() {
     }
   };
 
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{ padding: 16 }}>
@@ -214,6 +232,8 @@ export default function TeacherProfile() {
       </div>
     );
   }
+
+  const treatsValue = Number(profile.treatsPerSession ?? 4);
 
   return (
     <div
@@ -232,6 +252,7 @@ export default function TeacherProfile() {
       </p>
 
       <form onSubmit={handleSubmit}>
+        {/* Basic info */}
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Basic info
@@ -333,7 +354,9 @@ export default function TeacherProfile() {
               <input
                 type="text"
                 value={profile.schoolName}
-                onChange={(e) => handleChange("schoolName", e.target.value)}
+                onChange={(e) =>
+                  handleChange("schoolName", e.target.value)
+                }
                 style={{
                   width: "100%",
                   padding: "6px 8px",
@@ -373,7 +396,7 @@ export default function TeacherProfile() {
           </div>
         </section>
 
-        {/* Random treats config */}
+        {/* Random Treats */}
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Random Treats
@@ -398,12 +421,9 @@ export default function TeacherProfile() {
               type="range"
               min={0}
               max={10}
-              value={Number(profile.treatsPerSession ?? 4)}
+              value={treatsValue}
               onChange={(e) =>
-                handleChange(
-                  "treatsPerSession",
-                  Number(e.target.value)
-                )
+                handleChange("treatsPerSession", Number(e.target.value))
               }
               style={{ width: "100%" }}
             />
@@ -414,17 +434,16 @@ export default function TeacherProfile() {
                 color: "#4b5563",
               }}
             >
-              {Number(profile.treatsPerSession ?? 4) === 0
+              {treatsValue === 0
                 ? "No random treats will be issued for this session."
-                : `${Number(
-                    profile.treatsPerSession ?? 4
-                  )} random treat${
-                    Number(profile.treatsPerSession ?? 4) === 1 ? "" : "s"
+                : `${treatsValue} random treat${
+                    treatsValue === 1 ? "" : "s"
                   } per session (after at least 30% of tasks are completed).`}
             </div>
           </div>
         </section>
 
+        {/* Perspectives */}
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Perspectives
@@ -458,6 +477,7 @@ export default function TeacherProfile() {
           </div>
         </section>
 
+        {/* Assessment Categories */}
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Assessment categories
@@ -558,6 +578,7 @@ export default function TeacherProfile() {
           </button>
         </section>
 
+        {/* Jeopardy defaults */}
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
             Jeopardy defaults
@@ -661,7 +682,8 @@ export default function TeacherProfile() {
           </div>
         </section>
 
-        <section style={{ marginTop: 32 }}>
+        {/* Multi-room locations */}
+        <section style={{ marginTop: 32, marginBottom: 24 }}>
           <h3 style={{ fontSize: "1.1rem", marginBottom: 12 }}>
             Available Rooms for Scavenger Hunts
           </h3>
@@ -745,6 +767,7 @@ export default function TeacherProfile() {
           </button>
         </section>
 
+        {/* Save */}
         <div
           style={{
             marginTop: 24,
