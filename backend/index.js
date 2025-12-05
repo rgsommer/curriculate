@@ -237,6 +237,7 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     // ==== MAD DASH SEQUENCE STATE ====
     // Filled only when a mad-dash game is running
     madDashSequence: null,
+    diffDetectiveRace: null,
   };
 
   // Load existing teams from DB
@@ -582,7 +583,32 @@ function sendTaskToTeam(room, teamId, index) {
     return;
   }
 
-  const task = tasks[index];
+    const task = tasks[index];
+
+  // If this is a Diff Detective task, initialise / reset race state
+  // the first time any team is sent this particular index.
+  if (task.taskType === "diff-detective") {
+    if (
+      !room.diffDetectiveRace ||
+      room.diffDetectiveRace.taskIndex !== index
+    ) {
+      room.diffDetectiveRace = {
+        active: true,
+        taskIndex: index,
+        startedAt: Date.now(),
+        completedTeams: new Set(),
+        winnerTeamId: null,
+      };
+
+      // Let all clients know a Diff Detective race has started.
+      io.to(room.code).emit("diff-detective-race-start", {
+        roomCode: room.code,
+        taskIndex: index,
+        startedAt: room.diffDetectiveRace.startedAt,
+      });
+    }
+  }
+
   room.teams[teamId].taskIndex = index;
 
   const timeLimitSeconds =
@@ -1079,6 +1105,60 @@ io.on("connection", (socket) => {
       pointsEarned = 0;
     }
 
+    // ==== Diff Detective race mechanics (first correct team wins bonus) ====
+    if (
+      task.taskType === "diff-detective" &&
+      room.diffDetectiveRace &&
+      room.diffDetectiveRace.taskIndex === idx &&
+      room.diffDetectiveRace.active
+    ) {
+      const race = room.diffDetectiveRace;
+
+      if (!race.completedTeams) {
+        race.completedTeams = new Set();
+      }
+
+      if (!race.completedTeams.has(effectiveTeamId)) {
+        race.completedTeams.add(effectiveTeamId);
+
+        const timeFromStart =
+          typeof race.startedAt === "number"
+            ? submittedAt - race.startedAt
+            : null;
+
+        // First *correct* finisher becomes the winner
+        if (correct === true && !race.winnerTeamId) {
+          race.winnerTeamId = effectiveTeamId;
+
+          const bonusPoints = 5; // tweak as you like
+
+          // Add race bonus on top of normal points for this submission
+          pointsEarned += bonusPoints;
+
+          // Broadcast a winner event to teacher + all teams
+          io.to(code).emit("diff-detective-race-winner", {
+            roomCode: code,
+            taskIndex: idx,
+            teamId: effectiveTeamId,
+            teamName,
+            timeMs: timeFromStart,
+            bonusPoints,
+          });
+        }
+
+        // Optional: broadcast that this team has finished, even if not winner
+        io.to(code).emit("diff-detective-race-finish", {
+          roomCode: code,
+          taskIndex: idx,
+          teamId: effectiveTeamId,
+          teamName,
+          timeMs: timeFromStart,
+          rank: race.completedTeams.size,
+          correct,
+        });
+      }
+    }
+    
     room.submissions.push({
       roomCode: code,
       teamId: effectiveTeamId,
