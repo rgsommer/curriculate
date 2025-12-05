@@ -45,6 +45,8 @@ export default function LiveSession({ roomCode }) {
       level: 0,
       brightness: 1,
     },
+    // NEW: brainstorm battle summary from backend
+    brainstorm: null,
   });
 
   const [submissions, setSubmissions] = useState({});
@@ -241,6 +243,8 @@ export default function LiveSession({ roomCode }) {
         treatsConfig: state.treatsConfig || prev.treatsConfig,
         pendingTreatTeams: state.pendingTreatTeams || [],
         noise: state.noise || prev.noise,
+        // NEW: brainstorm summary from backend
+        brainstorm: state.brainstorm || null,
       }));
 
       if (!selectedLocation && state.locationCode) {
@@ -646,6 +650,37 @@ export default function LiveSession({ roomCode }) {
     });
   };
 
+  // --- NEW: Brainstorm Battle controls ---
+  const handleStartBrainstorm = () => {
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    const idx =
+      typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
+        ? roomState.taskIndex
+        : 0;
+
+    socket.emit("brainstorm:start", {
+      roomCode: code,
+      taskIndex: idx,
+    });
+    setStatus("Brainstorm Battle started.");
+  };
+
+  const handleResetBrainstorm = () => {
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+    const idx =
+      typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
+        ? roomState.taskIndex
+        : 0;
+
+    socket.emit("brainstorm:reset", {
+      roomCode: code,
+      taskIndex: idx,
+    });
+    setStatus("Brainstorm Battle reset.");
+  };
+
   // ----------------------------------------------------
   // Derived helpers + button state
   // ----------------------------------------------------
@@ -688,8 +723,14 @@ export default function LiveSession({ roomCode }) {
     ? "Moderate"
     : "Strict";
 
-  // Launch button state machine
-  let launchBtnLabel = "Launch from taskset";
+  // Brainstorm battle derived view
+  const brainstorm = roomState.brainstorm;
+  const brainstormTeams = brainstorm?.teams
+    ? Object.values(brainstorm.teams).sort((a, b) => b.ideaCount - a.ideaCount)
+    : [];
+
+  const launchBtnLabelDefault = "Launch from taskset";
+  let launchBtnLabel = launchBtnLabelDefault;
   let launchBtnBg = "#10b981"; // green
   let launchBtnOnClick = handleLaunchTaskset;
   let launchBtnDisabled = !activeTasksetMeta;
@@ -697,7 +738,7 @@ export default function LiveSession({ roomCode }) {
   if (!activeTasksetMeta) {
     launchBtnDisabled = true;
     launchBtnBg = "#9ca3af";
-    launchBtnLabel = "Launch from taskset";
+    launchBtnLabel = launchBtnLabelDefault;
     launchBtnOnClick = null;
   } else if (taskFlowActive) {
     launchBtnLabel = "End Task Session & Generate Reports";
@@ -1197,6 +1238,137 @@ export default function LiveSession({ roomCode }) {
               </button>
             </div>
           </div>
+
+          {/* Brainstorm Battle controls */}
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 8,
+              borderTop: "1px dashed #e5e7eb",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "0.8rem",
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>Brainstorm Battle</span>
+              <span style={{ color: "#6b7280" }}>
+                Use when the current task is a Brainstorm Battle.
+              </span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleStartBrainstorm}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "#4f46e5",
+                  color: "#ffffff",
+                  fontSize: "0.8rem",
+                  cursor: "pointer",
+                }}
+              >
+                Start Brainstorm Battle
+              </button>
+              <button
+                type="button"
+                onClick={handleResetBrainstorm}
+                disabled={!brainstorm}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #d1d5db",
+                  background: brainstorm ? "#f9fafb" : "#f3f4f6",
+                  color: brainstorm ? "#374151" : "#9ca3af",
+                  fontSize: "0.8rem",
+                  cursor: brainstorm ? "pointer" : "not-allowed",
+                }}
+              >
+                Reset brainstorm
+              </button>
+            </div>
+
+            {brainstorm && (
+              <div
+                style={{
+                  marginTop: 6,
+                  borderRadius: 10,
+                  border: "1px solid #e5e7eb",
+                  padding: 8,
+                  background: "#f9fafb",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 4,
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>Idea scoreboard</span>
+                  <span style={{ color: "#6b7280" }}>
+                    {brainstormTeams.length} team
+                    {brainstormTeams.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {brainstormTeams.length === 0 ? (
+                  <div style={{ color: "#9ca3af", fontStyle: "italic" }}>
+                    No ideas submitted yet for this battle.
+                  </div>
+                ) : (
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: 0,
+                      maxHeight: 140,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {brainstormTeams.map((t) => (
+                      <li
+                        key={t.teamId}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "2px 0",
+                        }}
+                      >
+                        <span>{t.teamName}</span>
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            color: "#16a34a",
+                          }}
+                        >
+                          {t.ideaCount} idea
+                          {t.ideaCount === 1 ? "" : "s"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Noise + treats summary / controls */}
@@ -1451,22 +1623,18 @@ export default function LiveSession({ roomCode }) {
                     No scans yet.
                   </div>
                 ) : (
-                  scanEvents.map((entry, idx) => {
-                    // ...
-                    return (
-                      <div key={idx} style={{ marginBottom: 4 }}>
-                        {/* Implement your scan-entry rendering here */}
-                        <span>
-                          {entry.teamName || entry.teamId || "Team"} scanned{" "}
-                          {entry.stationLabel || entry.stationId || "station"}{" "}
-                          at{" "}
-                          {entry.timestamp
-                            ? new Date(entry.timestamp).toLocaleTimeString()
-                            : "–"}
-                        </span>
-                      </div>
-                    );
-                  })
+                  scanEvents.map((entry, idx) => (
+                    <div key={idx} style={{ marginBottom: 4 }}>
+                      <span>
+                        {entry.teamName || entry.teamId || "Team"} scanned{" "}
+                        {entry.stationLabel || entry.stationId || "station"}{" "}
+                        at{" "}
+                        {entry.timestamp
+                          ? new Date(entry.timestamp).toLocaleTimeString()
+                          : "–"}
+                      </span>
+                    </div>
+                  ))
                 )}
               </div>
             </section>
