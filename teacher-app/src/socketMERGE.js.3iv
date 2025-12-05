@@ -1,0 +1,114 @@
+// teacher-app/src/socket.js
+import { io } from "socket.io-client";
+import { API_BASE_URL } from "./config";
+
+export const socket = io(API_BASE_URL, {
+  withCredentials: true,
+});
+
+export default socket;
+
+// Merge all client-side socket handlers here
+socket.on("connect", () => console.log("Connected to server"));
+
+// Join room
+export function joinRoom(roomCode, teamId, playerName) {
+  socket.emit("join-room", { roomCode, teamId, playerName });
+}
+
+// Start session
+export function startSession(roomCode, taskSetId, mode = "race") {
+  socket.emit("start-session", { roomCode, taskSetId, mode });
+}
+
+// Create team
+export function createTeam(roomCode, teamName) {
+  socket.emit("create-team", { roomCode, teamName });
+}
+
+// Submit answer
+export function submitAnswer(roomCode, teamId, stationId, answer) {
+  socket.emit("submit-answer", { roomCode, teamId, stationId, answer });
+}
+
+// Lightning start
+export function lightningStart(roomCode) {
+  socket.emit("lightning-start", { roomCode });
+}
+
+// Mystery clue
+export function mysteryClue(roomCode, teamId, clue) {
+  socket.emit("mystery-clue", { roomCode, teamId, clue });
+}
+
+// Flashcards start
+export function flashcardsStart(roomCode) {
+  socket.emit("flashcards:start", { roomCode });
+}
+
+// Flashcard answer (client-side recognition)
+export function flashcardAnswer(roomCode, cardIndex, team, spoken, correct) {
+  socket.emit("flashcard:answer", { roomCode, cardIndex, team, spoken, correct });
+}
+
+// Diff race start
+export function diffRaceStart(roomCode, taskIndex) {
+  socket.emit("diff:race-start", { roomCode, taskIndex });
+}
+
+// Diff submit
+export function diffSubmit(roomCode, answer, team) {
+  socket.emit("diff:submit", { roomCode, answer, team });
+}
+
+// Pronunciation submit
+export function pronunciationSubmit(roomCode, audioUrl, referenceText, targetAccent, language) {
+  socket.emit("pronunciation:submit", { roomCode, audioUrl, referenceText, targetAccent, language });
+}
+
+// Speech recognition submit
+export function speechRecognitionSubmit(roomCode, spokenText, referenceText, language) {
+  socket.emit("speech-recognition:submit", { roomCode, spokenText, referenceText, language });
+}
+
+// Debate start
+export function debateStart(roomCode, resolution) {
+  socket.emit("debate:start", { roomCode, resolution });
+}
+
+// Debate submit speech
+export function debateSubmitSpeech(roomCode, audioUrl, speaker, team, phase) {
+  socket.emit("debate:submit-speech", { roomCode, audioUrl, speaker, team, phase });
+}
+
+// Debate live audio chunk (for transcription)
+export function debateLiveAudio(roomCode, chunk) {
+  socket.emit("debate:live-audio", { roomCode, chunk });
+}
+
+// AI judge request
+export function aiJudgeRequest(roomCode) {
+  socket.emit("ai-judge:request", { roomCode });
+}
+
+// Listeners (example, add more as needed)
+socket.on("team-update", (teams) => console.log("Teams updated", teams));
+socket.on("session-started", (session) => console.log("Session started", session));
+socket.on("answer-submitted", (data) => console.log("Answer submitted", data));
+socket.on("lightning-strike", (data) => console.log("Lightning strike", data));
+socket.on("mystery-complete", (data) => console.log("Mystery complete", data));
+socket.on("flashcards:start", (data) => console.log("Flashcards started", data));
+socket.on("flashcard:winner", (data) => console.log("Flashcard winner", data));
+socket.on("flashcard:next", (data) => console.log("Next flashcard", data));
+socket.on("flashcards:complete", (data) => console.log("Flashcards complete", data));
+socket.on("diff:race-start", (data) => console.log("Diff race started", data));
+socket.on("diff:race-tick", (data) => console.log("Diff race tick", data));
+socket.on("diff:race-update", (data) => console.log("Diff race update", data));
+socket.on("diff:race-end", (data) => console.log("Diff race end", data));
+socket.on("pronunciation:score", (data) => console.log("Pronunciation score", data));
+socket.on("speech-recognition:score", (data) => console.log("Speech score", data));
+socket.on("debate:started", (data) => console.log("Debate started", data));
+socket.on("debate:live-transcript", (data) => console.log("Live transcript", data));
+socket.on("debate:final-transcript", (data) => console.log("Final transcript", data));
+socket.on("debate:scores", (data) => console.log("Debate scores", data));
+socket.on("ai-judge:verdict", (data) => console.log("AI judge verdict", data));

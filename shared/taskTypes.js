@@ -39,6 +39,7 @@ export const TASK_TYPES = {
   MIND_MAPPER: "mind-mapper",
   HIDENSEEK: "hidenseek",
   SPEED_DRAW: "speed-draw",
+  DIFF_DETECTIVE: "diff-detective",
 
   // Kept for backwards compatibility; behaviour now largely driven by location
   MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
@@ -685,6 +686,18 @@ export const TASK_TYPE_META = {
 
     description: "Student speaks an answer; AI transcribes and scores for accuracy, grammar, and fluency.",
   },
+    [TASK_TYPES.DIFF_DETECTIVE]: {
+    label: "Diff Detective",
+    category: CATEGORY.QUESTION,
+    hasOptions: false,
+    expectsText: true,
+    maxTimeSeconds: 90,
+    implemented: true,
+    aiEligible: true,
+    description:
+      "Students compare two short passages and explain the differences (e.g., 'jumps changed to jumped', '206 became 208'). Great for close reading and attention to detail.",
+  },
+
 };
 
 // Flat map of taskType → human-readable label

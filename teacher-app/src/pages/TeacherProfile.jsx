@@ -28,6 +28,12 @@ export default function TeacherProfile() {
     assessmentCategories: [EMPTY_CATEGORY],
     includeIndividualReports: false,
     locationOptions: [],
+    
+    voiceId: String,           // ElevenLabs voice ID
+    voiceSampleUrl: String,    // URL to 15–30 sec sample
+    voiceClonedAt: Date,
+    preferredVoice: { type: String, default: "alloy" }, // fallback TTS
+      }, { timestamps: true },
 
     // Jeopardy defaults
     jeopardyDefaultContestantCount: 3,

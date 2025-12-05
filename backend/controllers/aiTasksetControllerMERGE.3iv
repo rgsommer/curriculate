@@ -1,0 +1,192 @@
+// backend/controllers/aiTasksetController.js
+
+import TaskSet from "../models/TaskSet.js";
+import OpenAI from "openai";
+import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Build a list of implemented, AI-eligible task types
+const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta.implemented !== false && meta.aiEligible !== false)
+  .map(([type]) => type);
+
+// Fallback core types if metadata is missing / empty
+const CORE_TYPES =
+  AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
+    ? AI_ELIGIBLE_TYPES
+    : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
+
+function validateGeneratePayload(payload = {}) {
+  const errors = [];
+
+  if (!payload.gradeLevel) errors.push("gradeLevel is required");
+  if (!payload.subject) errors.push("subject is required");
+
+  const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
+  const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
+
+  const difficulty = (payload.difficulty || "MEDIUM").toString().toUpperCase();
+  const learningGoal = (payload.learningGoal || "REVIEW").toString().toUpperCase();
+
+  if (!difficultiesAllowed.includes(difficulty)) {
+    errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
+  }
+
+  if (!goalsAllowed.includes(learningGoal)) {
+    errors.push("learningGoal must be one of " + goalsAllowed.join(", "));
+  }
+
+  const duration = Number(payload.durationMinutes || 45);
+  if (isNaN(duration) || duration < 15 || duration > 180) {
+    errors.push("durationMinutes must be 15-180");
+  }
+
+  return errors;
+}
+
+/**
+ * GET /api/ai/tasksets/types
+ * 
+ * Returns list of AI-eligible task types.
+ */
+export async function listAiEligibleTypes(req, res) {
+  res.json({
+    types: AI_ELIGIBLE_TYPES,
+    meta: Object.fromEntries(
+      AI_ELIGIBLE_TYPES.map(t => [t, TASK_TYPE_META[t]])
+    ),
+  });
+}
+
+/**
+ * POST /api/ai/tasksets/generate
+ * 
+ * Generates AI taskset.
+ */
+export async function generateAiTaskset(req, res) {
+  try {
+    const errors = validateGeneratePayload(req.body);
+    if (errors.length) {
+      return res.status(400).json({ error: errors.join("\n") });
+    }
+
+    const {
+      gradeLevel,
+      subject,
+      difficulty,
+      learningGoal,
+      topicDescription,
+      durationMinutes,
+      isFixedStation,
+      isMultiRoomScavenger, // NEW
+      wordList,
+      ownerId, // Optional, for auth
+    } = req.body;
+
+    const normDifficulty = difficulty.toUpperCase();
+    const normGoal = learningGoal.toUpperCase();
+    const specialConsiderations = topicDescription || "";
+
+    // NEW: Handle modes for diff-detective
+    const diffModes = ["text", "image", "code", "audio"]; // Supported modes
+
+    // NEW: Handle pronunciation and speech recognition
+    const includePronunciation = AI_ELIGIBLE_TYPES.includes(TASK_TYPES.PRONUNCIATION);
+    const includeSpeechRecognition = AI_ELIGIBLE_TYPES.includes(TASK_TYPES.SPEECH_RECOGNITION);
+    const includeDebate = AI_ELIGIBLE_TYPES.includes(TASK_TYPES.LIVE_DEBATE) || AI_ELIGIBLE_TYPES.includes(TASK_TYPES.AI_DEBATE_JUDGE);
+
+    // Adjust type pool
+    let typePool = CORE_TYPES.concat(
+      includePronunciation ? [TASK_TYPES.PRONUNCIATION] : [],
+      includeSpeechRecognition ? [TASK_TYPES.SPEECH_RECOGNITION] : [],
+      includeDebate ? [TASK_TYPES.LIVE_DEBATE, TASK_TYPES.AI_DEBATE_JUDGE] : []
+    );
+
+    // NEW: Generate diff-detective with modes
+    const diffConfig = {
+      modes: diffModes,
+      numDifferences: normDifficulty === "EASY" ? 3 : normDifficulty === "MEDIUM" ? 5 : 7,
+    };
+
+    // Prompt for task generation
+    const systemPrompt = `
+Generate a task set for a ${gradeLevel} ${subject} class.
+Difficulty: ${normDifficulty}
+Goal: ${normGoal}
+Duration: ${durationMinutes} minutes
+Special considerations: ${specialConsiderations}
+${isFixedStation ? "Fixed station mode" : ""}
+${isMultiRoomScavenger ? "Multi-room scavenger hunt mode" : ""}
+
+Include a mix of task types from: ${typePool.join(", ")}
+For diff-detective, use modes: ${diffModes.join(", ")}, with ~${diffConfig.numDifferences} differences each.
+
+Output JSON with:
+- name: Short title
+- tasks: Array of tasks, each with task_type, prompt, etc.
+- displays: Array for fixed stations if needed
+`;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "system", content: systemPrompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+    });
+
+    const data = JSON.parse(response.choices[0].message.content);
+
+    let tasks = data.tasks || [];
+    let displays = data.displays || [];
+
+    // Post-process tasks
+    tasks = tasks.map(task => {
+      if (task.task_type === TASK_TYPES.DIFF_DETECTIVE) {
+        task.mode = diffModes[Math.floor(Math.random() * diffModes.length)];
+        // Generate content based on mode (use additional API calls if needed, e.g., DALL-E for images)
+      } else if (task.task_type === TASK_TYPES.PRONUNCIATION) {
+        task.accentOptions = TASK_TYPE_META[TASK_TYPES.PRONUNCIATION].accentOptions;
+      }
+      // Similar for speech-recognition, debate
+      return task;
+    });
+
+    const now = new Date();
+
+    const tasksetDoc = new TaskSet({
+      name: data.name || "AI Task Set",
+      description: specialConsiderations || "",
+      subject,
+      gradeLevel,
+      difficulty: normDifficulty,
+      learningGoal: normGoal,
+      tasks,
+      displays,
+      meta: { source: "ai" },
+      requiredTaskTypes: typePool,
+      totalDurationMinutes: durationMinutes,
+      createdAt: now,
+      updatedAt: now,
+      ownerId,
+      roomLocation: "Classroom",
+      isFixedStationTaskset: isFixedStation,
+      isMultiRoomScavenger: isMultiRoomScavenger,
+    });
+
+    await tasksetDoc.save();
+
+    return res.json({
+      ok: true,
+      taskset: tasksetDoc.toObject(),
+      tasksetId: tasksetDoc._id,
+    });
+  } catch (err) {
+    console.error("AI Taskset generation failed:", err);
+    return res.status(500).json({ error: "Failed to generate taskset" });
+  }
+};
+
+export default { generateAiTaskset, listAiEligibleTypes };

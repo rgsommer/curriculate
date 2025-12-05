@@ -208,6 +208,17 @@ Modified (buggy) code:
 """${task.modified}"""
 
 ` + prompt;
+  } else if (mode === "audio") {
+    prompt = `
+This is an "Audio Diff Detective" task for language learning.
+
+Correct sentence:
+"""${task.correctText}"""
+
+Incorrect sentence spoken:
+"""${task.incorrectText || "unknown"}"""
+
+` + prompt;
   }
 
   try {
@@ -405,6 +416,77 @@ Return JSON:
 }
 
 /**
+ * Specialized AI scoring for AI Debate Judge tasks.
+ */
+async function scoreDebate({ task, submission }) {
+  const debateData = submission.debateData || {}; // { resolution, speeches: [{team, speaker, audioUrl, phase}] }
+  const resolution = debateData.resolution || task.resolution;
+
+  const speechesWithTranscripts = await Promise.all(
+    debateData.speeches.map(async s => {
+      const audioBlob = await fetch(s.audioUrl).then(r => r.blob());
+      const transcription = await openai.audio.transcriptions.create({
+        model: "whisper-1",
+        file: audioBlob,
+      });
+      return { ...s, transcript: transcription.text };
+    })
+  );
+
+  const speechesText = speechesWithTranscripts
+    .map(s => `${s.team.toUpperCase()} (${s.speaker}, ${s.phase}): ${s.transcript}`)
+    .join("\n\n");
+
+  const prompt = `
+You are the world's most respected high school debate judge.
+
+Resolution: "${resolution}"
+
+Full debate transcript:
+${speechesText}
+
+Write a complete, professional judging decision including:
+1. Winner declaration
+2. Final scores (out of 100 per team)
+3. Strengths and weaknesses of each side
+4. Best individual speaker
+5. Key moments that decided the debate
+6. Constructive feedback for improvement
+
+Be fair, specific, encouraging, and decisive.
+
+Return ONLY JSON:
+{
+  "winner": "affirmative" or "negative",
+  "scores": { "affirmative": 94, "negative": 89 },
+  "bestSpeaker": "Maria (Affirmative)",
+  "feedback": "The Affirmative team won this debate due to their superior use of evidence..."
+}
+`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [{ role: "user", content: prompt }],
+    response_format: { type: "json_object" },
+    temperature: 0.3,
+  });
+
+  const result = JSON.parse(response.choices[0].message.content);
+
+  return {
+    totalScore: result.scores[result.winner] || 50, // For winner only
+    maxPoints: 100,
+    criteria: [
+      { id: "overall", score: result.scores.affirmative || 50, maxPoints: 100, comment: "Affirmative Score" },
+      { id: "overall", score: result.scores.negative || 50, maxPoints: 100, comment: "Negative Score" },
+    ],
+    overallComment: result.feedback,
+    bestSpeaker: result.bestSpeaker,
+    winner: result.winner
+  };
+}
+
+/**
  * Build a description of the student's work, depending on task type.
  */
 function buildStudentWorkDescription(task, submission) {
@@ -516,26 +598,10 @@ Return ONLY JSON in this format:
  * Anywhere that calls generateAIScore({ task, rubric, submission })
  * will now:
  *  - Use rule-based scoring if task.aiScoringRequired === false AND a correctAnswer exists.
- *  - Use diff_detective scorer if task_type === "diff-detective"
- *  - Use pronunciation scorer if task_type === "pronunciation"
- *  - Use speech recognition scorer if task_type === "speech-recognition"
  *  - Otherwise fall back to AI scoring with rubric.
  */
 export async function generateAIScore({ task, rubric, submission }) {
   const safeTask = task || {};
-  const taskType = safeTask.task_type || safeTask.taskType || "";
-
-  if (taskType === "diff-detective") {
-    return scoreDiffDetective({ task: safeTask, submission });
-  }
-
-  if (taskType === "pronunciation") {
-    return scorePronunciation({ task: safeTask, submission });
-  }
-
-  if (taskType === "speech-recognition") {
-    return scoreSpeechRecognition({ task: safeTask, submission });
-  }
 
   const hasCorrect =
     safeTask.correctAnswer !== undefined && safeTask.correctAnswer !== null;
