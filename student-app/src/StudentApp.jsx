@@ -173,14 +173,6 @@ function getStationColorStyles(colorName) {
   return { background: bg, color: isLight ? "#111" : "#fff" };
 }
 
-// 🔹 Normalise locations like "Room 12" → "room12", "Rm. 202" → "rm202"
-function normalizeLocationSlug(raw) {
-  if (!raw) return "";
-  return String(raw)
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-}
-
 // ---------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------
