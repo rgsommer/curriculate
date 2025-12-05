@@ -468,8 +468,8 @@ export default function LiveSession({ roomCode }) {
   const base = window.location.origin.replace(/\/$/, "");
   const code = (roomCode || "").toUpperCase();
   const url = code
-    ? `${base}/qr-stations/${encodeURIComponent(code)}`
-    : `${base}/qr-stations`;
+    ? `${base}/StationPosters/${encodeURIComponent(code)}`
+    : `${base}/StationPosters`;
 
   window.open(url, "_blank", "noopener,noreferrer");
 };
