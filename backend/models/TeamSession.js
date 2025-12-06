@@ -1,3 +1,6 @@
+// backend/models/TeamSession.js
+import mongoose from "mongoose";
+
 const teamSessionSchema = new mongoose.Schema(
   {
     roomCode: { type: String, required: true, index: true },
