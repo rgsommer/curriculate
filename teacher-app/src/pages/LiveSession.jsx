@@ -608,9 +608,10 @@ export default function LiveSession({ roomCode }) {
 
         difficulty: aiDifficulty || "medium",
         subject: aiSubject || undefined,
-
+        
         // 🔹 Key terms under *multiple* common names so the backend
         // will definitely see them
+        aiWordBank: rawWords,
         words: rawWords,
         wordList: rawWords,
         keyTerms: rawWords,
