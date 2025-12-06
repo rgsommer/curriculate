@@ -795,7 +795,208 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
   });
 
-  // ... [other join / team / station handlers not shown here were already present] ...
+  // ----------------------------------------------------
+  // Student joins a room (persistent student:join-room)
+  // ----------------------------------------------------
+  socket.on("student:join-room", async (payload = {}, ack) => {
+    try {
+      const { roomCode, teamName, members } = payload || {};
+      const code = (roomCode || "").toUpperCase().trim();
+      const cleanName = (teamName || "").trim();
+      const memberList = Array.isArray(members)
+        ? members
+            .filter((m) => typeof m === "string")
+            .map((m) => m.trim())
+            .filter((m) => m.length > 0)
+        : [];
+
+      if (!code || !cleanName) {
+        if (typeof ack === "function") {
+          ack({ ok: false, error: "Room code and team name are required." });
+        }
+        return;
+      }
+
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") {
+          ack({
+            ok: false,
+            error: "Room not found. Is your teacher in the room?",
+          });
+        }
+        return;
+      }
+
+      if (!room.teams) {
+        room.teams = {};
+      }
+
+      // Try to re-use an existing TeamSession for this room + team name,
+      // so refreshes don't create duplicates.
+      let teamDoc = await TeamSession.findOne({
+        roomCode: code,
+        teamName: cleanName,
+      });
+
+      if (!teamDoc) {
+        teamDoc = new TeamSession({
+          roomCode: code,
+          teamName: cleanName,
+          members: memberList,
+          status: "online",
+          lastSeenAt: new Date(),
+        });
+        await teamDoc.save();
+      } else {
+        teamDoc.members = memberList;
+        teamDoc.status = "online";
+        teamDoc.lastSeenAt = new Date();
+        await teamDoc.save();
+      }
+
+      const teamId = String(teamDoc._id);
+
+      // Ensure in-memory team object is present & updated
+      if (!room.teams[teamId]) {
+        room.teams[teamId] = {
+          teamId,
+          teamName: cleanName,
+          members: memberList,
+          score: 0,
+          status: "online",
+          currentStationId: null,
+          lastScannedStationId: null,
+          taskIndex: -1,
+        };
+      } else {
+        room.teams[teamId].teamName = cleanName;
+        room.teams[teamId].members = memberList;
+        room.teams[teamId].status = "online";
+      }
+
+      // Cancel any offline cleanup timeout if it exists
+      if (room.teams[teamId].offlineTimeout) {
+        clearTimeout(room.teams[teamId].offlineTimeout);
+        delete room.teams[teamId].offlineTimeout;
+      }
+
+      // Join socket rooms + tag socket
+      socket.join(code);
+      socket.join(teamId);
+      socket.data.roomCode = code;
+      socket.data.teamId = teamId;
+      socket.data.teamName = cleanName;
+
+      const state = buildRoomState(room);
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
+
+      // Notify teacher that a team has joined (for LiveSession join sound)
+      io.to(code).emit("team:joined", {
+        teamId,
+        teamName: cleanName,
+        members: memberList,
+      });
+
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          teamId,
+          teamSessionId: teamId,
+          roomState: state,
+        });
+      }
+    } catch (err) {
+      console.error("student:join-room error:", err);
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Join failed on server." });
+      }
+    }
+  });
+
+  // ----------------------------------------------------
+  // Student auto-resume (resume-team-session)
+  // ----------------------------------------------------
+  socket.on("resume-team-session", async (payload = {}, ack) => {
+    try {
+      const { roomCode, teamSessionId } = payload || {};
+      const code = (roomCode || "").toUpperCase().trim();
+      const teamId = String(teamSessionId || "").trim();
+
+      if (!code || !teamId) {
+        if (typeof ack === "function") {
+          ack({
+            success: false,
+            error: "Room and team session are required.",
+          });
+        }
+        return;
+      }
+
+      const room = rooms[code];
+      if (!room || !room.teams || !room.teams[teamId]) {
+        if (typeof ack === "function") {
+          ack({
+            success: false,
+            error:
+              "Session not found. Ask your teacher to let you re-join the room.",
+          });
+        }
+        return;
+      }
+
+      const team = room.teams[teamId];
+
+      // Mark as online + cancel any pending offline timeout
+      team.status = "online";
+      team.lastSeenAt = new Date();
+      if (team.offlineTimeout) {
+        clearTimeout(team.offlineTimeout);
+        delete team.offlineTimeout;
+      }
+
+      // Keep DB in sync if we can
+      try {
+        const dbTeam = await TeamSession.findById(teamId);
+        if (dbTeam) {
+          dbTeam.status = "online";
+          dbTeam.lastSeenAt = new Date();
+          await dbTeam.save();
+        }
+      } catch (err) {
+        console.warn("resume-team-session: DB update failed:", err);
+      }
+
+      // Re-join socket rooms + tag socket
+      socket.join(code);
+      socket.join(teamId);
+      socket.data.roomCode = code;
+      socket.data.teamId = teamId;
+      socket.data.teamName = team.teamName;
+
+      const state = buildRoomState(room);
+
+      if (typeof ack === "function") {
+        ack({
+          success: true,
+          teamId,
+          roomState: state,
+        });
+      }
+
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
+    } catch (err) {
+      console.error("resume-team-session error:", err);
+      if (typeof ack === "function") {
+        ack({
+          success: false,
+          error: "Server error while resuming session.",
+        });
+      }
+    }
+  });
 
   // Student scans station – unified handler for legacy + new flow
   socket.on("station:scan", (payload = {}, ack) => {
