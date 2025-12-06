@@ -144,7 +144,7 @@ export default function Dashboard() {
         </main>
 
         {/* Global Footer */}
-        <Footer />
+        {/* <Footer /> */}
       </div>
     </>
   );
