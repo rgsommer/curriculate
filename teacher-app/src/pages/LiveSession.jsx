@@ -2281,7 +2281,6 @@ export default function LiveSession({ roomCode }) {
               >
                 {isGenerating ? "Generating…" : "Generate Task"}
               </button>
-
             </div>
           </div>
         </div>
