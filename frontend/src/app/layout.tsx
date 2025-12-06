@@ -4,7 +4,7 @@ import { GeistSans, GeistMono } from "next/font/google"; // ← fixed import nam
 import "./globals.css";
 import Script from "next/script";
 
-import Footer from "@/curriculate/components/Footer";
+import Footer from "@/components/Footer";
 
 const geistSans = GeistSans({
   variable: "--font-geist-sans",
