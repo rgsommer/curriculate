@@ -2264,52 +2264,8 @@ export default function LiveSession({ roomCode }) {
                 Cancel
               </button>
               <button
-                onClick={async () => {
-                  try {
-                    onClick={handleGenerateQuickTask}
-                      disabled={isGenerating}
-                    >
-                    setStatus("Generating with AI…");
-                    const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      credentials: "include",
-                      body: JSON.stringify({
-                        numTasks: 1,
-                        taskType,
-                        grade: aiGrade || undefined,
-                        difficulty: aiDifficulty,
-                        purpose: aiPurpose || undefined,
-                        subject: aiSubject || undefined,
-                        words: aiWordList
-                          .split(",")
-                          .map((w) => w.trim())
-                          .filter(Boolean),
-                      }),
-                    });
-
-                    if (!res.ok) throw new Error("Failed");
-
-                    const data = await res.json();
-                    const generated = data.tasks?.[0];
-
-                    if (generated) {
-                      setTaskType(generated.task_type || taskType);
-                      setTaskConfig({
-                        prompt: generated.prompt || "",
-                        correctAnswer: generated.correctAnswer || "",
-                        options: generated.options || [],
-                        clue: generated.clue || "",
-                      });
-                      setStatus("Task ready! Edit if needed, then Launch.");
-                    }
-                  } catch (err) {
-                    console.error(err);
-                    setStatus("Task generation failed.");
-                  } finally {
-                    setShowAiGen(false);
-                  }
-                }}
+                onClick={handleGenerateQuickTask}
+                disabled={isGenerating}
                 style={{
                   padding: "10px 20px",
                   borderRadius: 999,
@@ -2317,10 +2273,13 @@ export default function LiveSession({ roomCode }) {
                   color: "white",
                   border: "none",
                   fontWeight: 600,
+                  opacity: isGenerating ? 0.7 : 1,
+                  cursor: isGenerating ? "wait" : "pointer",
                 }}
               >
-                Generate Task
+                {isGenerating ? "Generating…" : "Generate Task"}
               </button>
+
             </div>
           </div>
         </div>
