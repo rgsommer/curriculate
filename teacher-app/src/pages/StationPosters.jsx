@@ -130,24 +130,6 @@ export default function StationPosters() {
         }}
       >
         <label style={{ fontSize: "0.85rem" }}>
-          Room code / label
-          <input
-            type="text"
-            value={room}
-            onChange={(e) => setRoom(e.target.value.toUpperCase())}
-            style={{
-              display: "block",
-              marginTop: 2,
-              padding: "4px 6px",
-              borderRadius: 6,
-              border: "1px solid #d1d5db",
-              fontSize: "0.9rem",
-              minWidth: 80,
-            }}
-          />
-        </label>
-
-        <label style={{ fontSize: "0.85rem" }}>
           Location label
           <input
             type="text"

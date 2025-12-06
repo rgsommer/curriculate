@@ -19,6 +19,14 @@ const COLORS = [
   "pink",
 ];
 
+const PURPOSE_OPTIONS = [
+  "Introduction",
+  "Review",
+  "Reflection",
+  "Enrichment",
+  "Assessment",
+];
+
 function stationIdToColor(id) {
   const m = /^station-(\d+)$/.exec(id || "");
   const idx = m ? parseInt(m[1], 10) - 1 : -1;
@@ -2164,16 +2172,51 @@ export default function LiveSession({ roomCode }) {
                 <option value="hard">Hard</option>
               </select>
 
-              <input
-                placeholder="Learning objective / purpose"
-                value={aiPurpose}
-                onChange={(e) => setAiPurpose(e.target.value)}
+              <div>
+              <div
                 style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
+                  fontSize: "0.8rem",
+                  marginBottom: 4,
+                  color: "#4b5563",
+                  fontWeight: 500,
                 }}
-              />
+              >
+                Learning objective / purpose
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                }}
+              >
+                {PURPOSE_OPTIONS.map((option) => {
+                  const selected = aiPurpose === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() =>
+                        setAiPurpose(selected ? "" : option)
+                      }
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid",
+                        borderColor: selected ? "#6366f1" : "#cbd5e1",
+                        background: selected ? "#eef2ff" : "#ffffff",
+                        fontSize: "0.8rem",
+                        color: selected ? "#111827" : "#4b5563",
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
               <input
                 placeholder="Subject (e.g. Science, History)"
