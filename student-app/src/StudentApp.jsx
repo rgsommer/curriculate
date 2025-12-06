@@ -754,30 +754,31 @@ function StudentApp() {
     setScannerActive(false);
     setScannedStationId(assignedStationId);
 
-    socket.emit("station:scan",
-+      {
-+        roomCode: roomCode.trim().toUpperCase(),
-+        teamId,
-+        stationId: normAssigned.id,
-+      },
-      (ack) => {
-        if (!ack || !ack.ok) {
-          setScanError(
-            ack?.error || "We couldn't read that station. Try again."
-          );
-          // 🔹 Make sure scanner comes back on after a server-side error too
-          setScannedStationId(null);
-          setScannerActive(false);
-          setTimeout(() => setScannerActive(true), 100);
-          return;
-        }
+      socket.emit(
+        "station:scan",
+        {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+          stationId: normAssigned.id,
+        },
+        (ack) => {
+          // This function runs when the server responds
+          if (!ack || !ack.ok) {
+            setScanError(ack?.error || "We couldn't read that station. Try again.");
 
-        // ✅ success
-        setScanError(null);
-        setScannerActive(false);
-        setScannedStationId(assignedStationId);
-      }
-    );
+            // Reset scanner so the student can try again
+            setScannedStationId(null);
+            setScannerActive(false);
+            setTimeout(() => setScannerActive(true), 100);
+            return;
+          }
+
+          // Success
+          setScanError(null);
+          setScannerActive(false);
+          setScannedStationId(normAssigned.id); // or whatever you store
+        }
+      );
 
     setStatusMessage(
       `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`
