@@ -574,26 +574,39 @@ export default function LiveSession({ roomCode }) {
       const token =
         typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
+      const rawWords = (aiWordList || "")
+        .split(",")
+        .map((w) => w.trim())
+        .filter(Boolean);
+
+      if (rawWords.length === 0) {
+        alert(
+          "Please enter at least one vocabulary word or key term (e.g. 'photosynthesis', 'Confederation')."
+        );
+        return;
+      }
+
       const payload = {
-        // Safe defaults to satisfy the backend
         title: "Quick Room Task",
         description: aiPurpose || "",
 
         numTasks: 1,
-        taskType,                     // e.g. "MCQ", "TEXT", etc.
+        taskType,
 
-        grade: aiGrade || undefined,  // optional
         gradeLevel: aiGrade
           ? String(aiGrade).trim().startsWith("Grade")
             ? String(aiGrade).trim()
             : `Grade ${String(aiGrade).trim()}`
           : undefined,
+
         difficulty: aiDifficulty || "medium",
         subject: aiSubject || undefined,
 
-        wordList: aiWordList || undefined,
+        // 🔹 This is what the backend actually looks at:
+        words: rawWords,
+
         roomCode: roomCode.toUpperCase(),
-        mode: "quick-live-session",   // extra context, backend can ignore
+        mode: "quick-live-session",
       };
 
       const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
