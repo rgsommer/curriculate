@@ -1042,202 +1042,302 @@ export default function LiveSession({ roomCode }) {
         </div>
       )}
 
-      {/* Top controls: quick task, taskset launch, noise/treats summary */}
+          {/* Main layout: left = controls, middle = teams, right = leaderboard/scan */}
       <div
         style={{
           display: "flex",
           gap: 16,
-          alignItems: "flex-start",
+          flex: 1,
+          minHeight: 0,
+          flexDirection: isNarrow ? "column" : "row",
+          alignItems: "stretch",
         }}
       >
-        {/* Quick task + taskset launch panel */}
+        {/* LEFT 1/3: Task controls + Noise/Treats */}
         <div
           style={{
-            flex: 1.5,
-            borderRadius: 12,
-            border: "1px solid #e5e7eb",
-            padding: 12,
-            background: "#ffffff",
+            flex: 1,
+            minWidth: isNarrow ? "100%" : 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
           }}
         >
+          {/* Task controls (Quick task + Taskset launch + QR + Room layout) */}
           <div
             style={{
-              fontWeight: 600,
-              marginBottom: 8,
-              fontSize: "0.9rem",
+              borderRadius: 12,
+              border: "1px solid #e5e7eb",
+              padding: 12,
+              background: "#ffffff",
             }}
           >
-            Task controls
-          </div>
-
-          {/* Quick task – fully dynamic */}
-          <div style={{ marginBottom: 12, padding: 10, background: "#f8fafc", borderRadius: 12 }}>
-            <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 8 }}>
-              Quick Launch Task
-            </div>
-
-            {/* Task Type Selector */}
-            <select
-              value={taskType}
-              onChange={(e) => {
-                setTaskType(e.target.value);
-                setTaskConfig({}); // reset config on type change
-              }}
+            <div
               style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
+                fontWeight: 600,
                 marginBottom: 8,
                 fontSize: "0.9rem",
               }}
             >
-              {Object.entries(TASK_TYPES).map(([key, meta]) => (
-                <option key={key} value={key}>
-                  {meta.label || key}
-                </option>
-              ))}
-            </select>
+              Task controls
+            </div>
 
-            {/* Dynamic Prompt */}
-            <textarea
-              placeholder="Enter your prompt / question / clue..."
-              value={taskConfig.prompt || ""}
-              onChange={(e) => setTaskConfig({ ...taskConfig, prompt: e.target.value })}
-              rows={3}
+            {/* Quick task – fully dynamic */}
+            <div
               style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                fontSize: "0.9rem",
-                marginBottom: 8,
+                marginBottom: 12,
+                padding: 10,
+                background: "#f8fafc",
+                borderRadius: 12,
               }}
-            />
-
-            {/* Render type-specific fields */}
-            {taskType === "MCQ" && (
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: "0.8rem", display: "block", marginBottom: 4 }}>
-                  Options (one per line)
-                </label>
-                <textarea
-                  rows={4}
-                  value={(taskConfig.options || []).join("\n")}
-                  onChange={(e) =>
-                    setTaskConfig({
-                      ...taskConfig,
-                      options: e.target.value.split("\n").map((o) => o.trim()).filter(Boolean),
-                    })
-                  }
-                  style={{ width: "100%", padding: 6, borderRadius: 8, border: "1px solid #cbd5e1" }}
-                />
-                <label style={{ fontSize: "0.8rem", display: "block", margin: "4px 0" }}>
-                  Correct answer
-                </label>
-                <select
-                  value={taskConfig.correctAnswer || ""}
-                  onChange={(e) => setTaskConfig({ ...taskConfig, correctAnswer: e.target.value })}
-                  style={{ width: "100%", padding: 6, borderRadius: 8 }}
-                >
-                  <option value="">— Select —</option>
-                  {(taskConfig.options || []).map((opt, i) => (
-                    <option key={i} value={opt}>
-                      {String.fromCharCode(65 + i)}. {opt}
-                    </option>
-                  ))}
-                </select>
+            >
+              <div
+                style={{
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  marginBottom: 8,
+                }}
+              >
+                Quick Launch Task
               </div>
-            )}
 
-            {["TEXT", "SEQUENCE", "DRAW", "BRAIN_STORM"].includes(taskType) && (
-              <input
-                type="text"
-                placeholder="Optional: exact correct answer (for auto-scoring)"
-                value={taskConfig.correctAnswer || ""}
-                onChange={(e) => setTaskConfig({ ...taskConfig, correctAnswer: e.target.value })}
+              {/* Task Type Selector */}
+              <select
+                value={taskType}
+                onChange={(e) => {
+                  setTaskType(e.target.value);
+                  setTaskConfig({}); // reset config on type change
+                }}
                 style={{
                   width: "100%",
                   padding: 8,
                   borderRadius: 8,
                   border: "1px solid #cbd5e1",
                   marginBottom: 8,
+                  fontSize: "0.9rem",
+                }}
+              >
+                {Object.entries(TASK_TYPES).map(([key, meta]) => (
+                  <option key={key} value={key}>
+                    {meta.label || key}
+                  </option>
+                ))}
+              </select>
+
+              {/* Dynamic Prompt */}
+              <textarea
+                placeholder="Enter your prompt / question / clue..."
+                value={taskConfig.prompt || ""}
+                onChange={(e) =>
+                  setTaskConfig({ ...taskConfig, prompt: e.target.value })
+                }
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: 8,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  fontSize: "0.9rem",
+                  marginBottom: 8,
                 }}
               />
-            )}
 
-            {taskType === "HIDENSEEK" && (
-              <div style={{ marginBottom: 8 }}>
-                <label style={{ fontSize: "0.8rem", display: "block", marginBottom: 4 }}>
-                  Clue / Location hint
-                </label>
-                <textarea
-                  rows={2}
-                  value={taskConfig.clue || ""}
-                  onChange={(e) => setTaskConfig({ ...taskConfig, clue: e.target.value })}
-                  placeholder="e.g., Under the blue chair in Room 204"
-                  style={{ width: "100%", padding: 6, borderRadius: 8, border: "1px solid #cbd5e1" }}
-                />
-              </div>
-            )}
+              {/* Type-specific fields */}
+              {taskType === "MCQ" && (
+                <div style={{ marginBottom: 8 }}>
+                  <label
+                    style={{
+                      fontSize: "0.8rem",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Options (one per line)
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={(taskConfig.options || []).join("\n")}
+                    onChange={(e) =>
+                      setTaskConfig({
+                        ...taskConfig,
+                        options: e.target.value
+                          .split("\n")
+                          .map((o) => o.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                    style={{
+                      width: "100%",
+                      padding: 6,
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                    }}
+                  />
+                  <label
+                    style={{
+                      fontSize: "0.8rem",
+                      display: "block",
+                      margin: "4px 0",
+                    }}
+                  >
+                    Correct answer
+                  </label>
+                  <select
+                    value={taskConfig.correctAnswer || ""}
+                    onChange={(e) =>
+                      setTaskConfig({
+                        ...taskConfig,
+                        correctAnswer: e.target.value,
+                      })
+                    }
+                    style={{
+                      width: "100%",
+                      padding: 6,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <option value="">— Select —</option>
+                    {(taskConfig.options || []).map((opt, i) => (
+                      <option key={i} value={opt}>
+                        {String.fromCharCode(65 + i)}. {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-            {/* Multi-room selector (only show for types that support it) */}
-            {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") && teacherRooms.length > 1 && (
-              <div style={{ marginTop: 8 }}>
-                <label style={{ fontSize: "0.8rem" }}>Send to rooms:</label>
-                <select
-                  multiple
-                  size={3}
-                  value={selectedRooms}
+              {["TEXT", "SEQUENCE", "DRAW", "BRAIN_STORM"].includes(
+                taskType
+              ) && (
+                <input
+                  type="text"
+                  placeholder="Optional: exact correct answer (for auto-scoring)"
+                  value={taskConfig.correctAnswer || ""}
                   onChange={(e) =>
-                    setSelectedRooms(Array.from(e.target.selectedOptions, (o) => o.value))
+                    setTaskConfig({
+                      ...taskConfig,
+                      correctAnswer: e.target.value,
+                    })
                   }
-                  style={{ width: "100%", padding: 6, borderRadius: 8, marginTop: 4 }}
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    marginBottom: 8,
+                  }}
+                />
+              )}
+
+              {taskType === "HIDENSEEK" && (
+                <div style={{ marginBottom: 8 }}>
+                  <label
+                    style={{
+                      fontSize: "0.8rem",
+                      display: "block",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Clue / Location hint
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={taskConfig.clue || ""}
+                    onChange={(e) =>
+                      setTaskConfig({ ...taskConfig, clue: e.target.value })
+                    }
+                    placeholder="e.g., Under the blue chair in Room 204"
+                    style={{
+                      width: "100%",
+                      padding: 6,
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Multi-room selector (for certain types) */}
+              {(taskType === "HIDENSEEK" ||
+                taskType === "BRAIN_STORM") &&
+                teacherRooms.length > 1 && (
+                  <div style={{ marginTop: 8 }}>
+                    <label style={{ fontSize: "0.8rem" }}>
+                      Send to rooms:
+                    </label>
+                    <select
+                      multiple
+                      size={3}
+                      value={selectedRooms}
+                      onChange={(e) =>
+                        setSelectedRooms(
+                          Array.from(e.target.selectedOptions, (o) => o.value)
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        padding: 6,
+                        borderRadius: 8,
+                        marginTop: 4,
+                      }}
+                    >
+                      {teacherRooms.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+              {/* Action Buttons */}
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button
+                  onClick={handleLaunchQuickTask}
+                  disabled={!taskConfig.prompt?.trim()}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: 999,
+                    background: taskConfig.prompt?.trim()
+                      ? "#0ea5e9"
+                      : "#94a3b8",
+                    color: "white",
+                    border: "none",
+                    fontWeight: 600,
+                    cursor: taskConfig.prompt?.trim()
+                      ? "pointer"
+                      : "not-allowed",
+                  }}
                 >
-                  {teacherRooms.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+                  {isLaunchingQuick ? "Launching…" : "Launch Task"}
+                </button>
+
+                <button
+                  onClick={() => setShowAiGen(true)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    background: "#6366f1",
+                    color: "white",
+                    border: "none",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  Generate Task
+                </button>
               </div>
-            )}
-
-            {/* Action Buttons */}
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button
-                onClick={handleLaunchQuickTask}
-                disabled={!taskConfig.prompt?.trim()}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  borderRadius: 999,
-                  background: taskConfig.prompt?.trim() ? "#0ea5e9" : "#94a3b8",
-                  color: "white",
-                  border: "none",
-                  fontWeight: 600,
-                  cursor: taskConfig.prompt?.trim() ? "pointer" : "not-allowed",
-                }}
-              >
-                {isLaunchingQuick ? "Launching…" : "Launch Task"}
-              </button>
-
-              <button
-                onClick={() => setShowAiGen(true)}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 999,
-                  background: "#6366f1",
-                  color: "white",
-                  border: "none",
-                  fontSize: "0.85rem",
-                }}
-              >
-                Generate Task
-              </button>
             </div>
-          </div>
 
+            {/* QR sheets + Room layout */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginTop: 4,
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 type="button"
                 onClick={handleOpenQrSheets}
@@ -1272,208 +1372,244 @@ export default function LiveSession({ roomCode }) {
                 Room Layout
               </button>
             </div>
+
+            {/* Taskset launch + skip */}
+            <div
+              style={{
+                marginTop: 8,
+                borderTop: "1px solid #f3f4f6",
+                paddingTop: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>Taskset</span>
+                {activeTasksetMeta ? (
+                  <span style={{ color: "#6b7280" }}>
+                    Active: <strong>{activeTasksetName}</strong>
+                  </span>
+                ) : (
+                  <span style={{ color: "#9ca3af" }}>
+                    No active taskset selected.
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={launchBtnOnClick || undefined}
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: launchBtnBg,
+                    color: "#ffffff",
+                    fontSize: "0.85rem",
+                    cursor: launchBtnDisabled ? "not-allowed" : "pointer",
+                    opacity: launchBtnDisabled ? 0.5 : 1,
+                  }}
+                  disabled={launchBtnDisabled}
+                >
+                  {launchBtnLabel}
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleSkipTask}
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "#6b7280",
+                    color: "#ffffff",
+                    fontSize: "0.8rem",
+                    cursor: taskFlowActive ? "pointer" : "not-allowed",
+                    opacity: taskFlowActive ? 1 : 0.4,
+                  }}
+                  disabled={!taskFlowActive}
+                >
+                  Skip current task
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Taskset launch + skip */}
+          {/* Noise & Treats Controls */}
           <div
             style={{
-              marginTop: 8,
-              borderTop: "1px solid #f3f4f6",
-              paddingTop: 8,
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: 16,
               display: "flex",
               flexDirection: "column",
-              gap: 6,
+              gap: 20,
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                fontSize: "0.8rem",
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>Taskset</span>
-              {activeTasksetMeta ? (
-                <span style={{ color: "#6b7280" }}>
-                  Active: <strong>{activeTasksetName}</strong>
-                </span>
-              ) : (
-                <span style={{ color: "#9ca3af" }}>
-                  No active taskset selected.
-                </span>
-              )}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-              }}
-            >
-              <button
-                type="button"
-                onClick={launchBtnOnClick || undefined}
-                style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: launchBtnBg,
-                  color: "#ffffff",
-                  fontSize: "0.85rem",
-                  cursor: launchBtnDisabled ? "not-allowed" : "pointer",
-                  opacity: launchBtnDisabled ? 0.5 : 1,
-                }}
-                disabled={launchBtnDisabled}
+            {/* Noise Control */}
+            <section aria-labelledby="noise-control-title">
+              <h3
+                id="noise-control-title"
+                style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}
               >
-                {launchBtnLabel}
-              </button>
-            </div>
+                Noise Control
+              </h3>
 
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                onClick={handleSkipTask}
+              <div
                 style={{
-                  flex: 1,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: "none",
-                  background: "#6b7280",
-                  color: "#ffffff",
-                  fontSize: "0.8rem",
-                  cursor: taskFlowActive ? "pointer" : "not-allowed",
-                  opacity: taskFlowActive ? 1 : 0.4,
+                  marginTop: 8,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                 }}
-                disabled={!taskFlowActive}
               >
-                Skip current task
-              </button>
-            </div>
-          </div>
+                <span style={{ fontSize: "0.875rem", color: "#374151" }}>
+                  Mode: <strong>{noiseLabel}</strong>
+                </span>
+                <button
+                  onClick={handleToggleNoise}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: noiseEnabled ? "#22c55e" : "#e5e7eb",
+                    color: noiseEnabled ? "white" : "#374151",
+                    fontSize: "0.8rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {noiseEnabled ? "On" : "Off"}
+                </button>
+              </div>
 
-        {/* Noise & Treats Controls */}
-        <div
-          style={{
-            flex: 1,
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            padding: 16,
-            display: "flex",
-            flexDirection: "column",
-            gap: 20,
-          }}
-        >
-          {/* Noise Control */}
-          <section aria-labelledby="noise-control-title">
-            <h3 id="noise-control-title" style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>
-              Noise Control
-            </h3>
+              <div style={{ marginTop: 12 }}>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={noiseThreshold}
+                  onChange={handleNoiseThresholdChange}
+                  style={{
+                    width: "100%",
+                    height: 8,
+                    borderRadius: 4,
+                    background: "#e5e7eb",
+                    outline: "none",
+                    appearance: "none",
+                  }}
+                  aria-label="Noise sensitivity threshold"
+                />
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: "0.8rem",
+                    color: "#6b7280",
+                    display: "flex",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>Live level: {noiseLevel}</span>
+                  <span>
+                    Brightness:{" "}
+                    {noiseEnabled ? noiseBrightness.toFixed(2) : "1.00"}
+                  </span>
+                </div>
+              </div>
+            </section>
 
-            <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.875rem", color: "#374151" }}>
-                Mode: <strong>{noiseLabel}</strong>
-              </span>
-              <button
-                onClick={handleToggleNoise}
+            {/* Treats */}
+            <section aria-labelledby="treats-title">
+              <h3
+                id="treats-title"
+                style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}
+              >
+                Treats
+              </h3>
+
+              <p
                 style={{
-                  padding: "6px 12px",
+                  margin: "8px 0",
+                  fontSize: "0.875rem",
+                  color: "#374151",
+                }}
+              >
+                {treatsConfig.enabled ? (
+                  <>
+                    {treatsConfig.given} of {treatsConfig.total} treats given
+                  </>
+                ) : (
+                  <>Treats are currently disabled</>
+                )}
+              </p>
+
+              <button
+                onClick={handleGiveTreat}
+                disabled={!canGiveTreat}
+                style={{
+                  width: "100%",
+                  padding: "10px",
                   borderRadius: 999,
                   border: "none",
-                  background: noiseEnabled ? "#22c55e" : "#e5e7eb",
-                  color: noiseEnabled ? "white" : "#374151",
-                  fontSize: "0.8rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
+                  background: canGiveTreat ? "#f97316" : "#fca5a5",
+                  color: "white",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  cursor: canGiveTreat ? "pointer" : "not-allowed",
+                  opacity: canGiveTreat ? 1 : 0.6,
                   transition: "all 0.2s",
                 }}
               >
-                {noiseEnabled ? "On" : "Off"}
+                {canGiveTreat ? "Give Random Treat" : "Treats Locked"}
               </button>
-            </div>
 
-            <div style={{ marginTop: 12 }}>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={noiseThreshold}
-                onChange={handleNoiseThresholdChange}
-                style={{
-                  width: "100%",
-                  height: 8,
-                  borderRadius: 4,
-                  background: "#e5e7eb",
-                  outline: "none",
-                  appearance: "none",
-                }}
-                aria-label="Noise sensitivity threshold"
-              />
-              <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#6b7280", display: "flex", justifyContent: "space-between" }}>
-                <span>Live level: {noiseLevel}</span>
-                <span>Brightness: {noiseEnabled ? noiseBrightness.toFixed(2) : "1.00"}</span>
-              </div>
-            </div>
-          </section>
-
-          {/* Treats */}
-          <section aria-labelledby="treats-title">
-            <h3 id="treats-title" style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>
-              Treats
-            </h3>
-
-            <p style={{ margin: "8px 0", fontSize: "0.875rem", color: "#374151" }}>
-              {treatsConfig.enabled ? (
-                <>{treatsConfig.given} of {treatsConfig.total} treats given</>
-              ) : (
-                <>Treats are currently disabled</>
-              )}
-            </p>
-
-            <button
-              onClick={handleGiveTreat}
-              disabled={!canGiveTreat}
-              style={{
-                width: "100%",
-                padding: "10px",
-                borderRadius: 999,
-                border: "none",
-                background: canGiveTreat ? "#f97316" : "#fca5a5",
-                color: "white",
-                fontSize: "0.9rem",
-                fontWeight: 600,
-                cursor: canGiveTreat ? "pointer" : "not-allowed",
-                opacity: canGiveTreat ? 1 : 0.6,
-                transition: "all 0.2s",
-              }}
-            >
-              {canGiveTreat ? "Give Random Treat" : "Treats Locked"}
-            </button>
-
-            {treatsConfig.enabled && !treatsUnlocked && totalTasksInActiveSet > 0 && (
-              <p style={{ margin: "10px 0 0", fontSize: "0.8rem", color: "#6b7280", lineHeight: 1.4 }}>
-                Treats unlock after completing{" "}
-                <strong>{minTasksBeforeTreat}</strong> of{" "}
-                <strong>{totalTasksInActiveSet}</strong> tasks.
-              </p>
-            )}
-          </section>
+              {treatsConfig.enabled &&
+                !treatsUnlocked &&
+                totalTasksInActiveSet > 0 && (
+                  <p
+                    style={{
+                      margin: "10px 0 0",
+                      fontSize: "0.8rem",
+                      color: "#6b7280",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Treats unlock after completing{" "}
+                    <strong>{minTasksBeforeTreat}</strong> of{" "}
+                    <strong>{totalTasksInActiveSet}</strong> tasks.
+                  </p>
+                )}
+            </section>
+          </div>
         </div>
-        
-      {/* Main body: teams + leaderboard + scan log */}
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          flex: 1,
-          minHeight: 0,
-          flexDirection: isNarrow ? "column" : "row",
-        }}
-      >
-        {/* Teams grid */}
-        <div style={{ flex: 3, minWidth: 0 }}>
+
+        {/* MIDDLE 1/3: Teams grid */}
+        <div
+          style={{
+            flex: 1,
+            minWidth: isNarrow ? "100%" : 0,
+          }}
+        >
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Teams</h2>
           {teamIdsForGrid.length === 0 ? (
             <p style={{ color: "#6b7280" }}>No teams yet.</p>
@@ -1493,15 +1629,11 @@ export default function LiveSession({ roomCode }) {
           )}
         </div>
 
-        {/* Right column: leaderboard + scan log */}
+        {/* RIGHT 1/3: Leaderboard + Scan log */}
         <div
           style={{
-            flex: isNarrow ? "none" : 1.2,
-            minWidth: isNarrow ? "100%" : 260,
-            borderLeft: isNarrow ? "none" : "1px solid #e5e7eb",
-            borderTop: isNarrow ? "1px solid #e5e7eb" : "none",
-            paddingLeft: isNarrow ? 0 : 12,
-            paddingTop: isNarrow ? 12 : 0,
+            flex: 1,
+            minWidth: isNarrow ? "100%" : 0,
             display: "flex",
             flexDirection: "column",
             gap: 12,
@@ -1545,7 +1677,7 @@ export default function LiveSession({ roomCode }) {
             </div>
           </section>
 
-          {/* Scan log – fixed height with scroll */}
+          {/* Scan log – only when no task is active */}
           {!taskFlowActive && (
             <section
               style={{
@@ -1576,7 +1708,9 @@ export default function LiveSession({ roomCode }) {
                 }}
               >
                 {scanEvents.length === 0 ? (
-                  <div style={{ fontStyle: "italic", color: "#9ca3af" }}>
+                  <div
+                    style={{ fontStyle: "italic", color: "#9ca3af" }}
+                  >
                     No scans yet.
                   </div>
                 ) : (
@@ -1584,10 +1718,14 @@ export default function LiveSession({ roomCode }) {
                     <div key={idx} style={{ marginBottom: 4 }}>
                       <span>
                         {entry.teamName || entry.teamId || "Team"} scanned{" "}
-                        {entry.stationLabel || entry.stationId || "station"}{" "}
+                        {entry.stationLabel ||
+                          entry.stationId ||
+                          "station"}{" "}
                         at{" "}
                         {entry.timestamp
-                          ? new Date(entry.timestamp).toLocaleTimeString()
+                          ? new Date(
+                              entry.timestamp
+                            ).toLocaleTimeString()
                           : "–"}
                       </span>
                     </div>
