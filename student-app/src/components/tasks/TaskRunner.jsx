@@ -291,7 +291,7 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
           justifyContent: "flex-end",
         }}
       >
-        <<button
+        <button
           type="submit"
           disabled={!allAnswered || submitting || disabled}
           style={{
