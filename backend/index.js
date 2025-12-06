@@ -28,6 +28,9 @@ import authRoutes from "./routes/auth.js";
 import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
 
+const app = express();
+const server = http.createServer(app);
+
 // Station colours
 const COLORS = [
   "red",
@@ -50,9 +53,6 @@ function generateUUID() {
     return v.toString(16);
   });
 }
-
-const app = express();
-const server = http.createServer(app);
 
 //const raceWinner = {};
 const teamClues = new Map(); // ← global store for mystery clues
