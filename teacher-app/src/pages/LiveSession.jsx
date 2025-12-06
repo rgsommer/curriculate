@@ -2144,4 +2144,6 @@ export default function LiveSession({ roomCode }) {
           </div>
         </div>
       )}
+    </div>  {/* ← closes the main page container */}
+  );
 }
