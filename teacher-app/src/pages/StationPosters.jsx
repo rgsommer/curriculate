@@ -3,18 +3,8 @@ import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const COLORS = [
-  "red",
-  "blue",
-  "green",
-  "yellow",
-  "purple",
-  "orange",
-  "teal",
-  "pink",
-  "lime",
-  "navy",
-  "brown",
-  "gray",
+  "red", "blue", "green", "yellow", "purple", "orange", "teal", "pink",
+  "lime", "navy", "brown", "gray",
 ];
 
 function useQuery() {
@@ -38,8 +28,6 @@ export default function StationPosters() {
     .filter(loc => loc.length > 0);
 
   const colors = COLORS.slice(0, stationCount);
-
-  // Generate all combinations: location first, then color
   const posters = locations.flatMap(location =>
     colors.map(color => ({ location, color, upper: color.toUpperCase() }))
   );
@@ -51,13 +39,11 @@ export default function StationPosters() {
     navigate({ search: params.toString() }, { replace: true });
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => window.print();
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif" }}>
-      {/* Fixed Print CSS – no overlap */}
+      {/* Perfect Print CSS */}
       <style>
         {`
           @page { size: letter portrait; margin: 0; }
@@ -96,8 +82,14 @@ export default function StationPosters() {
             <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
               Location(s)
               <span
-                style={{ marginLeft: 8, fontSize: "0.9rem", color: "#0ea5e9", cursor: "help" }}
-                title="Enter multiple locations separated by commas (e.g. Boshart Gym, Library, Cafeteria). One set of posters will be created for each location."
+                style={{
+                  marginLeft: 10,
+                  fontSize: "1.1rem",
+                  color: "#0ea5e9",
+                  cursor: "help",
+                  fontWeight: 500,
+                }}
+                title="Feel free to make your own station sheets. Make sure the QR Code encodes play.curriculate.net/Location/color."
               >
                 [?]
               </span>
@@ -142,23 +134,22 @@ export default function StationPosters() {
           </div>
         </div>
 
-        {/* Print Button */}
-        <div style={{ textAlign: "center", margin: "32px 0" }}>
+        <div style={{ textAlign: "center", margin: "40px 0" }}>
           <button
             onClick={handlePrint}
             style={{
-              padding: "16px 40px",
-              fontSize: "1.5rem",
-              fontWeight: 700,
+              padding: "18px 48px",
+              fontSize: "1.6rem",
+              fontWeight: 800,
               background: "#0ea5e9",
               color: "white",
               border: "none",
-              borderRadius: 12,
+              borderRadius: 16,
               cursor: "pointer",
-              boxShadow: "0 6px 12px rgba(14,165,233,0.3)",
+              boxShadow: "0 10px 24px rgba(14,165,233,0.4)",
             }}
           >
-            Print All Posters ({posters.length})
+            Print All {posters.length} Posters
           </button>
         </div>
       </div>
@@ -173,46 +164,64 @@ export default function StationPosters() {
           <div
             key={`${location}-${color}`}
             className="print-page"
-            style={{
-              top: `calc(${index} * 11in)`,
-            }}
+            style={{ top: `calc(${index} * 11in)` }}
           >
-            <div style={{ fontSize: "1.9rem", fontWeight: 600, color: "#1e40af" }}>
-              Curriculate
+            {/* Curriculate + Tagline */}
+            <div style={{ textAlign: "center", marginBottom: "1.2in" }}>
+              <div style={{ 
+                fontSize: "2.7rem", 
+                fontWeight: 900, 
+                color: "#1e40af",
+                letterSpacing: "1px"
+              }}>
+                Curriculate
+              </div>
+              <div style={{ 
+                fontSize: "1.5rem", 
+                fontWeight: 600, 
+                color: "#475569",
+                marginTop: "0.4in"
+              }}>
+                Adventure-Powered Learning
+              </div>
             </div>
+
+            <div style={{ height: "0.8in" }} />
 
             <div
               style={{
                 width: "84%",
-                maxWidth: "7in",
-                height: "3in",
+                maxWidth: "7.2in",
+                height: "3.4in",
                 background: color,
-                borderRadius: 24,
+                borderRadius: 32,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 color: textColor,
-                fontSize: "2.3rem",
-                fontWeight: 800,
+                fontSize: "2.6rem",
+                fontWeight: 900,
                 textTransform: "uppercase",
                 textAlign: "center",
                 lineHeight: 1.1,
               }}
             >
               {upper} Station
-              <div style={{ fontSize: "1.7rem", marginTop: 12, fontWeight: 600 }}>
+              <div style={{ fontSize: "1.9rem", marginTop: 16, fontWeight: 700 }}>
                 {location}
               </div>
             </div>
 
-            <div style={{ fontSize: "1.8rem", fontWeight: 600 }}>
+            <div style={{ height: "0.8in" }} />
+
+            <div style={{ fontSize: "1.9rem", fontWeight: 700 }}>
               Scan to Arrive
             </div>
 
-            <img src={qrUrl} alt={`${upper} - ${location}`} style={{ width: "3.4in", height: "3.4in" }} />
+            <img src={qrUrl} alt={`${upper} - ${location}`} style={{ width: "3.6in", height: "3.6in" }} />
 
-            <div style={{ fontSize: "0.9rem", color: "#666" }}>
+            <div style={{ fontSize: "1.35rem", color: "#666", fontWeight: 500 }}>
               play.curriculate.net
             </div>
           </div>

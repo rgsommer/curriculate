@@ -567,6 +567,19 @@ export default function LiveSession({ roomCode }) {
       return;
     }
 
+    // 🔹 Build & validate vocabulary / key terms before toggling isGenerating
+    const rawWords = (aiWordList || "")
+      .split(",")
+      .map((w) => w.trim())
+      .filter(Boolean);
+
+    if (rawWords.length === 0) {
+      alert(
+        "Please enter at least one vocabulary word or key term (e.g. 'photosynthesis', 'Confederation')."
+      );
+      return;
+    }
+
     setIsGenerating(true);
     setAiError(null);
 
@@ -574,40 +587,39 @@ export default function LiveSession({ roomCode }) {
       const token =
         typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-      const rawWords = (aiWordList || "")
-        .split(",")
-        .map((w) => w.trim())
-        .filter(Boolean);
-
-      if (rawWords.length === 0) {
-        alert(
-          "Please enter at least one vocabulary word or key term (e.g. 'photosynthesis', 'Confederation')."
-        );
-        return;
-      }
+      const gradeStr = aiGrade ? String(aiGrade).trim() : "";
 
       const payload = {
         title: "Quick Room Task",
+        // backend might use either description or purpose
         description: aiPurpose || "",
+        purpose: aiPurpose || undefined,
 
         numTasks: 1,
         taskType,
 
-        gradeLevel: aiGrade
-          ? String(aiGrade).trim().startsWith("Grade")
-            ? String(aiGrade).trim()
-            : `Grade ${String(aiGrade).trim()}`
+        // Support both old + new backend expectations
+        gradeLevel: gradeStr
+          ? gradeStr.toLowerCase().startsWith("grade")
+            ? gradeStr
+            : `Grade ${gradeStr}`
           : undefined,
+        grade: gradeStr || undefined,
 
         difficulty: aiDifficulty || "medium",
         subject: aiSubject || undefined,
 
-        // 🔹 This is what the backend actually looks at:
+        // 🔹 Over-satisfy the "vocabulary" requirement:
         words: rawWords,
+        wordList: rawWords,
+        keyTerms: rawWords,
+        vocabulary: rawWords,
 
         roomCode: roomCode.toUpperCase(),
         mode: "quick-live-session",
       };
+
+      console.log("[LiveSession] AI quick-task payload:", payload);
 
       const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
         method: "POST",
@@ -619,6 +631,8 @@ export default function LiveSession({ roomCode }) {
       });
 
       const text = await res.text();
+      console.log("[LiveSession] AI quick-task response:", res.status, text);
+
       let data = text ? JSON.parse(text) : null;
 
       if (!res.ok) {
@@ -630,7 +644,8 @@ export default function LiveSession({ roomCode }) {
       // Expect a single-task taskset back
       const taskset = data?.taskset || data;
       const firstTask =
-        taskset?.tasks?.[0] || (Array.isArray(data?.tasks) ? data.tasks[0] : null);
+        taskset?.tasks?.[0] ||
+        (Array.isArray(data?.tasks) ? data.tasks[0] : null);
 
       if (!firstTask) {
         throw new Error("AI did not return a task.");
