@@ -1,6 +1,7 @@
 // teacher-app/src/pages/StationPosters.jsx
 import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { COPY } from "@shared/config/copy";
 
 const COLORS = [
   "red", "blue", "green", "yellow", "purple", "orange", "teal", "pink",
@@ -82,14 +83,8 @@ export default function StationPosters() {
             <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
               Location(s)
               <span
-                style={{
-                  marginLeft: 10,
-                  fontSize: "1.1rem",
-                  color: "#0ea5e9",
-                  cursor: "help",
-                  fontWeight: 500,
-                }}
-                title="Feel free to make your own station sheets. Make sure the QR Code encodes play.curriculate.net/Location/color."
+                style={{ marginLeft: 8, fontSize: "0.9rem", color: "#0ea5e9", cursor: "help" }}
+                title={`Feel free to make your own station sheets. Make sure the QR Code encodes ${COPY.DOMAIN}/Location/color.`}
               >
                 [?]
               </span>
@@ -140,7 +135,7 @@ export default function StationPosters() {
             style={{
               padding: "18px 48px",
               fontSize: "1.6rem",
-              fontWeight: 800,
+              fontWeight: 700,
               background: "#0ea5e9",
               color: "white",
               border: "none",
@@ -156,7 +151,7 @@ export default function StationPosters() {
 
       {/* All Posters */}
       {posters.map(({ location, color, upper }, index) => {
-        const qrTarget = `https://play.curriculate.net/${encodeURIComponent(location)}/${color.toLowerCase()}`;
+        const qrTarget = `https://${COPY.DOMAIN}/${encodeURIComponent(location)}/${color.toLowerCase()}`;
         const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(qrTarget)}&size=580&margin=4`;
         const textColor = ["yellow","lime","pink","orange"].includes(color) ? "#000" : "#fff";
 
@@ -166,23 +161,12 @@ export default function StationPosters() {
             className="print-page"
             style={{ top: `calc(${index} * 11in)` }}
           >
-            {/* Curriculate + Tagline */}
             <div style={{ textAlign: "center", marginBottom: "1.2in" }}>
-              <div style={{ 
-                fontSize: "2.7rem", 
-                fontWeight: 900, 
-                color: "#1e40af",
-                letterSpacing: "1px"
-              }}>
-                Curriculate
+              <div style={{ fontSize: "2.7rem", fontWeight: 900, color: "#1e40af" }}>
+                {COPY.APP_NAME}
               </div>
-              <div style={{ 
-                fontSize: "1.5rem", 
-                fontWeight: 600, 
-                color: "#475569",
-                marginTop: "0.4in"
-              }}>
-                Adventure-Powered Learning
+              <div style={{ fontSize: "1.5rem", fontWeight: 600, color: "#475569", marginTop: "0.4in" }}>
+                {COPY.TAGLINE}
               </div>
             </div>
 
@@ -222,7 +206,7 @@ export default function StationPosters() {
             <img src={qrUrl} alt={`${upper} - ${location}`} style={{ width: "3.6in", height: "3.6in" }} />
 
             <div style={{ fontSize: "1.35rem", color: "#666", fontWeight: 500 }}>
-              play.curriculate.net
+              {COPY.DOMAIN}
             </div>
           </div>
         );
