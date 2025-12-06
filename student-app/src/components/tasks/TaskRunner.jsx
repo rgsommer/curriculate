@@ -119,19 +119,19 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
       : [{ ...task, id: task.id || "only", prompt: task.prompt }];
 
   // Per-item options (shuffled once per task-item)
-  const itemOptions = useMemo(() => {
-    if (!isChoice) return null;
-    return items.map((item) => {
-      const base =
-        (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
-        (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-        (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
-          ? ["True", "False"]
-          : []);
-      if (!base || base.length === 0) return [];
-      return shuffleArray(base);
-    });
-  }, [items, isChoice, task.taskType, task.type]);
+    const itemOptions = useMemo(() => {
+      if (!isChoice) return null;
+      return items.map((item) => {
+        const base =
+          (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+          (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+          (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
+            ? ["True", "False"]
+            : []);
+        if (!base || base.length === 0) return [];
+        return shuffleArray(base);
+      });
+    }, [items.length, isChoice, task.taskType, task.type]);
 
   const [answers, setAnswers] = useState(() =>
     items.map(() => ({
@@ -291,7 +291,7 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
           justifyContent: "flex-end",
         }}
       >
-        <button
+        <<button
           type="submit"
           disabled={!allAnswered || submitting || disabled}
           style={{
@@ -308,7 +308,11 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
                 : "pointer",
           }}
         >
-          {submitting ? "Sending…" : "Submit all"}
+          {submitting
+            ? "Sending…"
+            : items.length > 1
+            ? "Submit all"
+            : "Submit"}
         </button>
       </div>
     </form>
