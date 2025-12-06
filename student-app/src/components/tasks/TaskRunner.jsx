@@ -402,7 +402,7 @@ export default function TaskRunner({
       socket.off("diff:race-update", handleRaceUpdate);
       socket.off("diff:race-end", handleRaceFinish);
     };
-    };
+    
   }, [socket, t.taskType, t.type]);
 
   const effectiveDisabled = disabled || submitting;
