@@ -559,6 +559,7 @@ export default function LiveSession({ roomCode }) {
   };
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [aiError, setAiError] = useState(null);
 
   const handleGenerateQuickTask = async () => {
     if (!roomCode) {
