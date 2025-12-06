@@ -583,6 +583,11 @@ export default function LiveSession({ roomCode }) {
         taskType,                     // e.g. "MCQ", "TEXT", etc.
 
         grade: aiGrade || undefined,  // optional
+        gradeLevel: aiGrade
+          ? String(aiGrade).trim().startsWith("Grade")
+            ? String(aiGrade).trim()
+            : `Grade ${String(aiGrade).trim()}`
+          : undefined,
         difficulty: aiDifficulty || "medium",
         subject: aiSubject || undefined,
 
