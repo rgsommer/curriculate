@@ -1101,167 +1101,62 @@ export default function LiveSession({ roomCode }) {
                 Quick Launch Task
               </div>
 
-              {/* Task Type Selector */}
-              <select
-                value={taskType}
-                onChange={(e) => {
-                  setTaskType(e.target.value);
-                  setTaskConfig({}); // reset config on type change
-                }}
+              <p
                 style={{
-                  width: "100%",
-                  padding: 8,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
+                  margin: 0,
                   marginBottom: 8,
-                  fontSize: "0.9rem",
+                  fontSize: "0.8rem",
+                  color: "#4b5563",
                 }}
               >
-                {Object.entries(TASK_TYPES).map(([key, meta]) => (
-                  <option key={key} value={key}>
-                    {meta.label || key}
-                  </option>
-                ))}
-              </select>
+                Use <strong>Generate Task</strong> to prepare a question, then
+                tap <strong>Launch Task</strong>.
+              </p>
 
-              {/* Dynamic Prompt */}
-              <textarea
-                placeholder="Enter your prompt / question / clue..."
-                value={taskConfig.prompt || ""}
-                onChange={(e) =>
-                  setTaskConfig({ ...taskConfig, prompt: e.target.value })
-                }
-                rows={3}
-                style={{
-                  width: "100%",
-                  padding: 8,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  fontSize: "0.9rem",
-                  marginBottom: 8,
-                }}
-              />
-
-              {/* Type-specific fields */}
-              {taskType === "MCQ" && (
-                <div style={{ marginBottom: 8 }}>
-                  <label
-                    style={{
-                      fontSize: "0.8rem",
-                      display: "block",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Options (one per line)
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={(taskConfig.options || []).join("\n")}
-                    onChange={(e) =>
-                      setTaskConfig({
-                        ...taskConfig,
-                        options: e.target.value
-                          .split("\n")
-                          .map((o) => o.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    style={{
-                      width: "100%",
-                      padding: 6,
-                      borderRadius: 8,
-                      border: "1px solid #cbd5e1",
-                    }}
-                  />
-                  <label
-                    style={{
-                      fontSize: "0.8rem",
-                      display: "block",
-                      margin: "4px 0",
-                    }}
-                  >
-                    Correct answer
-                  </label>
-                  <select
-                    value={taskConfig.correctAnswer || ""}
-                    onChange={(e) =>
-                      setTaskConfig({
-                        ...taskConfig,
-                        correctAnswer: e.target.value,
-                      })
-                    }
-                    style={{
-                      width: "100%",
-                      padding: 6,
-                      borderRadius: 8,
-                    }}
-                  >
-                    <option value="">— Select —</option>
-                    {(taskConfig.options || []).map((opt, i) => (
-                      <option key={i} value={opt}>
-                        {String.fromCharCode(65 + i)}. {opt}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {["TEXT", "SEQUENCE", "DRAW", "BRAIN_STORM"].includes(
-                taskType
-              ) && (
-                <input
-                  type="text"
-                  placeholder="Optional: exact correct answer (for auto-scoring)"
-                  value={taskConfig.correctAnswer || ""}
-                  onChange={(e) =>
-                    setTaskConfig({
-                      ...taskConfig,
-                      correctAnswer: e.target.value,
-                    })
-                  }
+              {taskConfig.prompt ? (
+                <div
                   style={{
-                    width: "100%",
+                    marginBottom: 8,
                     padding: 8,
                     borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    marginBottom: 8,
+                    background: "#e0f2fe",
+                    border: "1px solid #bae6fd",
+                    fontSize: "0.8rem",
+                    color: "#0f172a",
                   }}
-                />
-              )}
-
-              {taskType === "HIDENSEEK" && (
-                <div style={{ marginBottom: 8 }}>
-                  <label
+                >
+                  <div
                     style={{
-                      fontSize: "0.8rem",
-                      display: "block",
+                      fontWeight: 600,
                       marginBottom: 4,
+                      fontSize: "0.8rem",
                     }}
                   >
-                    Clue / Location hint
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={taskConfig.clue || ""}
-                    onChange={(e) =>
-                      setTaskConfig({ ...taskConfig, clue: e.target.value })
-                    }
-                    placeholder="e.g., Under the blue chair in Room 204"
-                    style={{
-                      width: "100%",
-                      padding: 6,
-                      borderRadius: 8,
-                      border: "1px solid #cbd5e1",
-                    }}
-                  />
+                    Ready to launch:
+                  </div>
+                  <div>{taskConfig.prompt}</div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    padding: 8,
+                    borderRadius: 8,
+                    background: "#f1f5f9",
+                    border: "1px dashed #cbd5e1",
+                    fontSize: "0.8rem",
+                    color: "#64748b",
+                  }}
+                >
+                  No quick task prepared yet. Click{" "}
+                  <strong>Generate Task</strong> to create one.
                 </div>
               )}
 
-              {/* Multi-room selector (for certain types) */}
-              {(taskType === "HIDENSEEK" ||
-                taskType === "BRAIN_STORM") &&
+              {/* Multi-room selector (still available for supported types) */}
+              {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") &&
                 teacherRooms.length > 1 && (
-                  <div style={{ marginTop: 8 }}>
+                  <div style={{ marginTop: 4, marginBottom: 8 }}>
                     <label style={{ fontSize: "0.8rem" }}>
                       Send to rooms:
                     </label>
@@ -2141,40 +2036,88 @@ export default function LiveSession({ roomCode }) {
               Fill in as much as you want — we will create a perfect task for you.
             </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              {/* Task type selection moved into the modal */}
+              <select
+                value={taskType}
+                onChange={(e) => setTaskType(e.target.value)}
+                style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
+              >
+                {Object.entries(TASK_TYPES).map(([key, meta]) => (
+                  <option key={key} value={key}>
+                    {meta.label || key}
+                  </option>
+                ))}
+              </select>
+
               <input
                 placeholder="Grade / Year level (e.g. Grade 6)"
                 value={aiGrade}
                 onChange={(e) => setAiGrade(e.target.value)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
               />
+
               <select
                 value={aiDifficulty}
                 onChange={(e) => setAiDifficulty(e.target.value)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
               >
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
                 <option value="hard">Hard</option>
               </select>
+
               <input
                 placeholder="Learning objective / purpose"
                 value={aiPurpose}
                 onChange={(e) => setAiPurpose(e.target.value)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
               />
+
               <input
                 placeholder="Subject (e.g. Science, History)"
                 value={aiSubject}
                 onChange={(e) => setAiSubject(e.target.value)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
               />
+
               <textarea
                 rows={3}
                 placeholder="Word list or key terms (comma-separated, optional)"
                 value={aiWordList}
                 onChange={(e) => setAiWordList(e.target.value)}
-                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1", resize: "vertical" }}
+                style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  resize: "vertical",
+                }}
               />
             </div>
 
