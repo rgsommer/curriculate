@@ -40,6 +40,8 @@ const COLORS = [
   "pink",
 ];
 
+app.use(express.static("public")); // ← serves backend/public/index.html at /
+
 // Simple UUID generator
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {

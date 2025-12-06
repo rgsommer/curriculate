@@ -44,17 +44,21 @@ export default function StationPosters() {
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif" }}>
-      {/* Perfect Print CSS */}
+      {/* Perfect 1" margin print layout */}
       <style>
         {`
-          @page { size: letter portrait; margin: 0; }
+          @page { 
+            size: letter portrait; 
+            margin: 1in; 
+          }
           @media print {
-            html, body { margin: 0; padding: 0; height: auto; }
+            body { margin: 0; padding: 0; }
             body * { visibility: hidden; }
             .print-page, .print-page * { visibility: visible; }
             .print-page {
               position: absolute;
               left: 0;
+              top: 0;
               width: 8.5in;
               height: 11in;
               page-break-after: always;
@@ -64,48 +68,42 @@ export default function StationPosters() {
               justify-content: center;
               background: white;
             }
-            .no-print { display: none; }
+            .no-print { display: none !important; }
           }
         `}
       </style>
 
-      {/* Controls + Print Button */}
-      <div className="no-print" style={{ padding: 32, maxWidth: 1000, margin: "0 auto" }}>
-        <h1 style={{ margin: "0 0 24px", fontSize: "2.2rem", fontWeight: 700 }}>
+      {/* Controls */}
+      <div className="no-print" style={{ padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
+        <h1 style={{ margin: "0 0 1.5rem", fontSize: "2.5rem", fontWeight: 800 }}>
           Station Posters
         </h1>
-        <p style={{ color: "#555", marginBottom: 32, fontSize: "1.1rem", lineHeight: 1.6 }}>
-          One perfectly centered poster per page. Ready for printing on letter paper.
+        <p style={{ color: "#555", marginBottom: "2rem" }}>
+          Clean 1" margins • Perfect for letter paper • Ready to print
         </p>
 
-        <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 300 }}>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "3rem" }}>
+          <div style={{ flex: 1, minWidth: "300px" }}>
+            <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: 600 }}>
               Location(s)
-              <span
-                style={{ marginLeft: 8, fontSize: "0.9rem", color: "#0ea5e9", cursor: "help" }}
-                title={`Feel free to make your own station sheets. Make sure the QR Code encodes ${COPY.DOMAIN}/Location/color.`}
-              >
-                [?]
-              </span>
             </label>
             <input
               value={locationInput}
               onChange={(e) => setLocationInput(e.target.value)}
               onBlur={updateUrl}
-              placeholder="e.g. Boshart Gym, Library, Cafeteria"
+              placeholder="e.g. Gym, Library, Room 201"
               style={{
                 width: "100%",
-                padding: "14px 16px",
-                borderRadius: 12,
-                border: "2px solid #ddd",
+                padding: "0.9rem 1rem",
                 fontSize: "1.1rem",
+                borderRadius: "12px",
+                border: "2px solid #e2e8f0",
               }}
             />
           </div>
 
           <div>
-            <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
+            <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: 600 }}>
               Number of colors
             </label>
             <select
@@ -115,11 +113,11 @@ export default function StationPosters() {
                 updateUrl();
               }}
               style={{
-                padding: "14px 16px",
-                borderRadius: 12,
-                border: "2px solid #ddd",
+                padding: "0.9rem 1rem",
                 fontSize: "1.1rem",
-                minWidth: 180,
+                borderRadius: "12px",
+                border: "2px solid #e2e8f0",
+                minWidth: "180px",
               }}
             >
               {[4,5,6,7,8,9,10,11,12].map(n => (
@@ -129,19 +127,19 @@ export default function StationPosters() {
           </div>
         </div>
 
-        <div style={{ textAlign: "center", margin: "40px 0" }}>
+        <div style={{ textAlign: "center" }}>
           <button
             onClick={handlePrint}
             style={{
-              padding: "18px 48px",
-              fontSize: "1.6rem",
-              fontWeight: 700,
+              padding: "1.2rem 3rem",
+              fontSize: "1.8rem",
+              fontWeight: 800,
               background: "#0ea5e9",
               color: "white",
               border: "none",
-              borderRadius: 16,
+              borderRadius: "16px",
               cursor: "pointer",
-              boxShadow: "0 10px 24px rgba(14,165,233,0.4)",
+              boxShadow: "0 10px 30px rgba(14,165,233,0.3)",
             }}
           >
             Print All {posters.length} Posters
@@ -149,64 +147,63 @@ export default function StationPosters() {
         </div>
       </div>
 
-      {/* All Posters */}
+      {/* Printable Posters */}
       {posters.map(({ location, color, upper }, index) => {
         const qrTarget = `https://${COPY.DOMAIN}/${encodeURIComponent(location)}/${color.toLowerCase()}`;
-        const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(qrTarget)}&size=580&margin=4`;
-        const textColor = ["yellow","lime","pink","orange"].includes(color) ? "#000" : "#fff";
+        const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(qrTarget)}&size=620&margin=3`;
+        const textColor = ["yellow", "lime", "pink", "orange"].includes(color) ? "#000" : "#fff";
 
         return (
-          <div
-            key={`${location}-${color}`}
-            className="print-page"
-            style={{ top: `calc(${index} * 11in)` }}
-          >
-            <div style={{ textAlign: "center", marginBottom: "1.2in" }}>
-              <div style={{ fontSize: "2.7rem", fontWeight: 900, color: "#1e40af" }}>
+          <div key={`${location}-${color}`} className="print-page">
+            {/* Header */}
+            <div style={{ textAlign: "center", marginBottom: "0.4in" }}>
+              <div style={{ fontSize: "2.8rem", fontWeight: 900, color: "#1e40af" }}>
                 {COPY.APP_NAME}
               </div>
-              <div style={{ fontSize: "1.5rem", fontWeight: 600, color: "#475569", marginTop: "0.4in" }}>
+              <div style={{ fontSize: "1.6rem", fontWeight: 600, color: "#475569", marginTop: "0.25in" }}>
                 {COPY.TAGLINE}
               </div>
             </div>
 
-            <div style={{ height: "0.8in" }} />
-
+            {/* Color Box */}
             <div
               style={{
-                width: "84%",
-                maxWidth: "7.2in",
-                height: "3.4in",
+                width: "86%",
+                maxWidth: "7.4in",
+                height: "3.6in",
                 background: color,
-                borderRadius: 32,
+                borderRadius: "36px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 color: textColor,
-                fontSize: "2.6rem",
+                fontSize: "2.8rem",
                 fontWeight: 900,
                 textTransform: "uppercase",
-                textAlign: "center",
                 lineHeight: 1.1,
+                margin: "0.4in 0", // ← reduced from 0.8in → 0.4in
               }}
             >
               {upper} Station
-              <div style={{ fontSize: "1.9rem", marginTop: 16, fontWeight: 700 }}>
+              <div style={{ fontSize: "2.1rem", marginTop: "0.5rem", fontWeight: 700 }}>
                 {location}
               </div>
             </div>
 
-            <div style={{ height: "0.8in" }} />
-
-            <div style={{ fontSize: "1.9rem", fontWeight: 700 }}>
-              Scan to Arrive
-            </div>
-
-            <img src={qrUrl} alt={`${upper} - ${location}`} style={{ width: "3.6in", height: "3.6in" }} />
-
-            <div style={{ fontSize: "1.35rem", color: "#666", fontWeight: 500 }}>
-              {COPY.DOMAIN}
+            {/* QR Code Section */}
+            <div style={{ textAlign: "center", marginTop: "0.4in" }}>
+              <div style={{ fontSize: "2rem", fontWeight: 700, marginBottom: "0.4in" }}>
+                Scan to Arrive
+              </div>
+              <img
+                src={qrUrl}
+                alt={`QR to ${upper} - ${location}`}
+                style={{ width: "4.2in", height: "4.2in" }} // slightly larger = easier scanning
+              />
+              <div style={{ fontSize: "1.4rem", color: "#666", marginTop: "0.4in", fontWeight: 500 }}>
+                {COPY.DOMAIN}
+              </div>
             </div>
           </div>
         );
