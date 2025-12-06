@@ -567,7 +567,7 @@ export default function LiveSession({ roomCode }) {
       return;
     }
 
-    // 🔹 Build & validate vocabulary / key terms before toggling isGenerating
+    // 🔹 Clean and validate vocabulary / key terms
     const rawWords = (aiWordList || "")
       .split(",")
       .map((w) => w.trim())
@@ -590,15 +590,15 @@ export default function LiveSession({ roomCode }) {
       const gradeStr = aiGrade ? String(aiGrade).trim() : "";
 
       const payload = {
+        // Basic metadata
         title: "Quick Room Task",
-        // backend might use either description or purpose
         description: aiPurpose || "",
         purpose: aiPurpose || undefined,
 
         numTasks: 1,
         taskType,
 
-        // Support both old + new backend expectations
+        // Grade / level – support both fields just in case
         gradeLevel: gradeStr
           ? gradeStr.toLowerCase().startsWith("grade")
             ? gradeStr
@@ -609,7 +609,8 @@ export default function LiveSession({ roomCode }) {
         difficulty: aiDifficulty || "medium",
         subject: aiSubject || undefined,
 
-        // 🔹 Over-satisfy the "vocabulary" requirement:
+        // 🔹 Key terms under *multiple* common names so the backend
+        // will definitely see them
         words: rawWords,
         wordList: rawWords,
         keyTerms: rawWords,
@@ -651,7 +652,6 @@ export default function LiveSession({ roomCode }) {
         throw new Error("AI did not return a task.");
       }
 
-      // Normalise into your quick-task config
       const generatedType =
         firstTask.taskType || firstTask.task_type || taskType;
 
