@@ -743,7 +743,8 @@ function StudentApp() {
 
       // 🔹 Re-arm the scanner so they can try again
       setScannedStationId(null);
-      setScannerActive(true);
+      setScannerActive(false);
+      setTimeout(() => setScannerActive(true), 100);
 
       return;
     }
@@ -753,14 +754,30 @@ function StudentApp() {
     setScannerActive(false);
     setScannedStationId(assignedStationId);
 
-    socket.emit("station:scan", {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      stationId: normAssigned.id,
-      // For future multi-room scavenger hunts we still send a normalized slug
-      locationSlug: scannedLocationSlug || null,
-      rawCode: code,
-    });
+    socket.emit("station:scan",
++      {
++        roomCode: roomCode.trim().toUpperCase(),
++        teamId,
++        stationId: normAssigned.id,
++      },
+      (ack) => {
+        if (!ack || !ack.ok) {
+          setScanError(
+            ack?.error || "We couldn't read that station. Try again."
+          );
+          // 🔹 Make sure scanner comes back on after a server-side error too
+          setScannedStationId(null);
+          setScannerActive(false);
+          setTimeout(() => setScannerActive(true), 100);
+          return;
+        }
+
+        // ✅ success
+        setScanError(null);
+        setScannerActive(false);
+        setScannedStationId(assignedStationId);
+      }
+    );
 
     setStatusMessage(
       `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`

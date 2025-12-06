@@ -1233,7 +1233,7 @@ export default function LiveSession({ roomCode }) {
                   fontSize: "0.85rem",
                 }}
               >
-                AI Generate
+                Generate Task
               </button>
             </div>
           </div>
@@ -1353,140 +1353,115 @@ export default function LiveSession({ roomCode }) {
             </div>
           </div>
 
-        {/* Noise + treats summary / controls */}
+        {/* Noise & Treats Controls */}
         <div
           style={{
             flex: 1,
-            borderRadius: 12,
-            border: "1px solid #e5e7eb",
-            padding: 12,
             background: "#ffffff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 12,
+            padding: 16,
             display: "flex",
             flexDirection: "column",
-            gap: 12,
+            gap: 20,
           }}
         >
-          {/* Noise */}
-          <div>
-            <div
-              style={{
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                marginBottom: 4,
-              }}
-            >
-              Noise control
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                fontSize: "0.8rem",
-                marginBottom: 4,
-              }}
-            >
-              <span>Mode: {noiseLabel}</span>
+          {/* Noise Control */}
+          <section aria-labelledby="noise-control-title">
+            <h3 id="noise-control-title" style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>
+              Noise Control
+            </h3>
+
+            <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "0.875rem", color: "#374151" }}>
+                Mode: <strong>{noiseLabel}</strong>
+              </span>
               <button
-                type="button"
                 onClick={handleToggleNoise}
                 style={{
-                  padding: "4px 8px",
+                  padding: "6px 12px",
                   borderRadius: 999,
                   border: "none",
                   background: noiseEnabled ? "#22c55e" : "#e5e7eb",
-                  color: noiseEnabled ? "#ffffff" : "#374151",
-                  fontSize: "0.75rem",
+                  color: noiseEnabled ? "white" : "#374151",
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
                   cursor: "pointer",
+                  transition: "all 0.2s",
                 }}
               >
-                {noiseEnabled ? "Disable" : "Enable"}
+                {noiseEnabled ? "On" : "Off"}
               </button>
             </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={noiseThreshold}
-              onChange={handleNoiseThresholdChange}
-              style={{ width: "100%" }}
-            />
-            <div
-              style={{
-                fontSize: "0.75rem",
-                color: "#6b7280",
-                marginTop: 2,
-              }}
-            >
-              Live level: {noiseLevel} · Brightness factor:{" "}
-              {noiseEnabled ? noiseBrightness.toFixed(2) : "1.00"}
+
+            <div style={{ marginTop: 12 }}>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={noiseThreshold}
+                onChange={handleNoiseThresholdChange}
+                style={{
+                  width: "100%",
+                  height: 8,
+                  borderRadius: 4,
+                  background: "#e5e7eb",
+                  outline: "none",
+                  appearance: "none",
+                }}
+                aria-label="Noise sensitivity threshold"
+              />
+              <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#6b7280", display: "flex", justifyContent: "space-between" }}>
+                <span>Live level: {noiseLevel}</span>
+                <span>Brightness: {noiseEnabled ? noiseBrightness.toFixed(2) : "1.00"}</span>
+              </div>
             </div>
-          </div>
+          </section>
 
           {/* Treats */}
-          <div>
-            <div
-              style={{
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                marginBottom: 4,
-              }}
-            >
+          <section aria-labelledby="treats-title">
+            <h3 id="treats-title" style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>
               Treats
-            </div>
-            <div
-              style={{
-                fontSize: "0.8rem",
-                marginBottom: 4,
-              }}
-            >
+            </h3>
+
+            <p style={{ margin: "8px 0", fontSize: "0.875rem", color: "#374151" }}>
               {treatsConfig.enabled ? (
-                <>
-                  {treatsConfig.given} / {treatsConfig.total} treats given.
-                </>
+                <>{treatsConfig.given} of {treatsConfig.total} treats given</>
               ) : (
-                <>Treats disabled.</>
+                <>Treats are currently disabled</>
               )}
-            </div>
+            </p>
+
             <button
-              type="button"
               onClick={handleGiveTreat}
+              disabled={!canGiveTreat}
               style={{
-                padding: "6px 10px",
+                width: "100%",
+                padding: "10px",
                 borderRadius: 999,
                 border: "none",
-                background: "#f97316",
-                color: "#ffffff",
-                fontSize: "0.8rem",
+                background: canGiveTreat ? "#f97316" : "#fca5a5",
+                color: "white",
+                fontSize: "0.9rem",
+                fontWeight: 600,
                 cursor: canGiveTreat ? "pointer" : "not-allowed",
-                opacity: canGiveTreat ? 1 : 0.5,
+                opacity: canGiveTreat ? 1 : 0.6,
+                transition: "all 0.2s",
               }}
-              disabled={!canGiveTreat}
             >
-              Give random treat
+              {canGiveTreat ? "Give Random Treat" : "Treats Locked"}
             </button>
 
-            {treatsConfig.enabled &&
-              !treatsUnlocked &&
-              typeof totalTasksInActiveSet === "number" &&
-              totalTasksInActiveSet > 0 && (
-                <p
-                  style={{
-                    marginTop: 4,
-                    fontSize: "0.75rem",
-                    color: "#6b7280",
-                  }}
-                >
-                  Treats unlock after{" "}
-                  <strong>{minTasksBeforeTreat}</strong> of{" "}
-                  <strong>{totalTasksInActiveSet}</strong> tasks have been
-                  completed.
-                </p>
-              )}
-          </div>
+            {treatsConfig.enabled && !treatsUnlocked && totalTasksInActiveSet > 0 && (
+              <p style={{ margin: "10px 0 0", fontSize: "0.8rem", color: "#6b7280", lineHeight: 1.4 }}>
+                Treats unlock after completing{" "}
+                <strong>{minTasksBeforeTreat}</strong> of{" "}
+                <strong>{totalTasksInActiveSet}</strong> tasks.
+              </p>
+            )}
+          </section>
         </div>
-      </div>
-
+        
       {/* Main body: teams + leaderboard + scan log */}
       <div
         style={{
@@ -2025,7 +2000,7 @@ export default function LiveSession({ roomCode }) {
               Generate Task with AI
             </h3>
             <p style={{ margin: "0 0 16px 0", color: "#64748b", fontSize: "0.9rem" }}>
-              Fill in as much as you want — the AI will create a perfect task for you.
+              Fill in as much as you want — we will create a perfect task for you.
             </p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -2120,11 +2095,11 @@ export default function LiveSession({ roomCode }) {
                         options: generated.options || [],
                         clue: generated.clue || "",
                       });
-                      setStatus("AI task ready! Edit if needed, then Launch.");
+                      setStatus("Task ready! Edit if needed, then Launch.");
                     }
                   } catch (err) {
                     console.error(err);
-                    setStatus("AI generation failed.");
+                    setStatus("Task generation failed.");
                   } finally {
                     setShowAiGen(false);
                   }
@@ -2144,6 +2119,6 @@ export default function LiveSession({ roomCode }) {
           </div>
         </div>
       )}
-    </div>  {/* ← closes the main page container */}
+    </div>
   );
 }
