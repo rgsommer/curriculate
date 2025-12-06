@@ -2001,7 +2001,14 @@ export default function LiveSession({ roomCode }) {
             justifyContent: "center",
             zIndex: 1000,   // ← highest z-index in the file
           }}
-          onClick={() => setShowAiGen(false)}
+          onClick={() => {
+            setShowAiGen(false);
+            setAiGrade("");
+            setAiDifficulty("medium");
+            setAiPurpose("");
+            setAiSubject("");
+            setAiWordList("");
+          }}
         >
           <div
             style={{
