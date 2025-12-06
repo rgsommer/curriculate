@@ -550,6 +550,85 @@ export default function LiveSession({ roomCode }) {
     });
   };
 
+  const handleGenerateQuickTask = async () => {
+    if (!roomCode) {
+      alert("You must have a room code to generate a task.");
+      return;
+    }
+
+    setIsGenerating(true);
+    setAiError(null);
+
+    try {
+      const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+      const payload = {
+        // Safe defaults to satisfy the backend
+        title: "Quick Room Task",
+        description: aiPurpose || "",
+
+        numTasks: 1,
+        taskType,                     // e.g. "MCQ", "TEXT", etc.
+
+        grade: aiGrade || undefined,  // optional
+        difficulty: aiDifficulty || "medium",
+        subject: aiSubject || undefined,
+
+        wordList: aiWordList || undefined,
+        roomCode: roomCode.toUpperCase(),
+        mode: "quick-live-session",   // extra context, backend can ignore
+      };
+
+      const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      let data = text ? JSON.parse(text) : null;
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error || `AI generator error (${res.status})`
+        );
+      }
+
+      // Expect a single-task taskset back
+      const taskset = data?.taskset || data;
+      const firstTask =
+        taskset?.tasks?.[0] || (Array.isArray(data?.tasks) ? data.tasks[0] : null);
+
+      if (!firstTask) {
+        throw new Error("AI did not return a task.");
+      }
+
+      // Normalise into your quick-task config
+      const generatedType =
+        firstTask.taskType || firstTask.task_type || taskType;
+
+      setTaskType(generatedType);
+      setTaskConfig({
+        prompt: firstTask.prompt || "",
+        correctAnswer: firstTask.correctAnswer || "",
+        options: firstTask.options || [],
+        clue: firstTask.clue || "",
+      });
+
+      setShowAiGen(false);
+    } catch (err) {
+      console.error("AI Quick Task error:", err);
+      setAiError(err.message || "AI generation failed.");
+      alert(err.message || "AI generation failed.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleLaunchTaskset = async () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
@@ -2144,6 +2223,9 @@ export default function LiveSession({ roomCode }) {
               <button
                 onClick={async () => {
                   try {
+                    onClick={handleGenerateQuickTask}
+                      disabled={isGenerating}
+                    >
                     setStatus("Generating with AI…");
                     const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
                       method: "POST",
