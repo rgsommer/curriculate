@@ -881,6 +881,11 @@ io.on("connection", (socket) => {
         delete room.teams[teamId].offlineTimeout;
       }
 
+      // 🔹 NEW: give this team a starting station so scanning is the first step
+      if (room.stations && Object.keys(room.stations).length > 0) {
+        reassignStationForTeam(room, teamId);
+      }
+
       // Join socket rooms + tag socket
       socket.join(code);
       socket.join(teamId);
