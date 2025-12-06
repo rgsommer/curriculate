@@ -1,6 +1,6 @@
 // frontend/src/app/dashboard/page.tsx
 import Link from "next/link";
-import Footer from "@/curriculate/components/Footer";
+import Footer from "@/components/Footer";
 
 //import { Plus, Upload, Printer, LogOut } from "lucide-react";
 
