@@ -22,15 +22,12 @@ export default function StationPosters() {
     return Math.min(12, Math.max(4, Number.isFinite(raw) ? raw : 8));
   });
 
-  // Split comma-separated locations and trim whitespace
   const locations = locationInput
     .split(",")
     .map(loc => loc.trim())
     .filter(loc => loc.length > 0);
 
   const colors = COLORS.slice(0, stationCount);
-
-  // Generate all combinations: location first, then color
   const posters = locations.flatMap(location =>
     colors.map(color => ({ location, color, upper: color.toUpperCase() }))
   );
@@ -40,6 +37,10 @@ export default function StationPosters() {
     params.set("location", locationInput);
     params.set("stations", String(stationCount));
     navigate({ search: params.toString() }, { replace: true });
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   return (
@@ -64,21 +65,53 @@ export default function StationPosters() {
               justify-content: center;
               background: white;
             }
+            .no-print { display: none !important; }
           }
         `}
       </style>
 
-      {/* On-screen controls */}
-      <div style={{ padding: 32, maxWidth: 1000, margin: "0 auto" }}>
-        <h1 style={{ margin: "0 0 24px", fontSize: "2.2rem", fontWeight: 700 }}>
-          Station Posters
-        </h1>
-        <p style={{ color: "#555", marginBottom: 32, fontSize: "1.1rem", lineHeight: 1.6 }}>
-          One perfectly centered poster per page. Ready for printing on letter paper.
-        </p>
+      {/* Header with BIG PRINT BUTTON */}
+      <div className="no-print" style={{ padding: 32, background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+        <div style={{ maxWidth: 1000, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <h1 style={{ margin: "0 0 12px", fontSize: "2.4rem", fontWeight: 800, color: "#1e293b" }}>
+              Station Posters
+            </h1>
+            <p style={{ margin: 0, fontSize: "1.1rem", color: "#475569" }}>
+              One poster per color per location. Use commas to add multiple locations.
+            </p>
+            <p style={{ margin: "8px 0 0", fontSize: "1rem", color: "#64748b" }}>
+              {locations.length} location(s) × {colors.length} colors = <strong>{posters.length} posters</strong>
+            </p>
+          </div>
 
-        <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 300 }}>
+          {/* BIG PRINT BUTTON */}
+          <button
+            onClick={handlePrint}
+            style={{
+              padding: "16px 32px",
+              background: "#0ea5e9",
+              color: "white",
+              border: "none",
+              borderRadius: 16,
+              fontSize: "1.3rem",
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: "0 8px 16px rgba(14,165,233,0.3)",
+              transition: "all 0.2s",
+            }}
+            onMouseOver={(e) => e.target.style.background = "#0284c7"}
+            onMouseOut={(e) => e.target.style.background = "#0ea5e9"}
+          >
+            Print All Posters
+          </button>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="no-print" style={{ padding: "32px 32px 16px", maxWidth: 1000, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 24, alignItems: "end" }}>
+          <div>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
               Location(s)
               <span
@@ -95,17 +128,13 @@ export default function StationPosters() {
               placeholder="e.g. Boshart Gym, Library, Cafeteria"
               style={{
                 width: "100%",
-                padding: "14px 16px",
+                padding: "14px 18px",
                 borderRadius: 12,
-                border: "2px solid #ddd",
+                border: "2px solid #cbd5e1",
                 fontSize: "1.1rem",
+                background: "white",
               }}
             />
-            <p style={{ margin: "8px 0 0", fontSize: "0.9rem", color: "#666" }}>
-              {locations.length === 1
-                ? `1 location → ${colors.length} posters`
-                : `${locations.length} locations → ${posters.length} posters total`}
-            </p>
           </div>
 
           <div>
@@ -119,11 +148,12 @@ export default function StationPosters() {
                 updateUrl();
               }}
               style={{
-                padding: "14px 16px",
+                padding: "14px 18px",
                 borderRadius: 12,
-                border: "2px solid #ddd",
+                border: "2px solid #cbd5e1",
                 fontSize: "1.1rem",
                 minWidth: 180,
+                background: "white",
               }}
             >
               {[4,5,6,7,8,9,10,11,12].map(n => (
@@ -147,14 +177,15 @@ export default function StationPosters() {
             style={{
               width: "8.5in",
               height: "11in",
-              margin: "30px auto",
+              margin: "40px auto",
               background: "white",
-              border: "1px solid #eee",
+              border: "1px solid #e2e8f0",
+              borderRadius: 8,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              gap: "1in",
+              gap: "1.1in",
             }}
           >
             <div style={{ fontSize: "1.9rem", fontWeight: 600, color: "#1e40af" }}>
@@ -163,9 +194,9 @@ export default function StationPosters() {
 
             <div
               style={{
-                width: "82%",
-                maxWidth: "6.8in",
-                height: "2.9in",
+                width: "84%",
+                maxWidth: "7in",
+                height: "3in",
                 background: color,
                 borderRadius: 24,
                 display: "flex",
@@ -173,7 +204,7 @@ export default function StationPosters() {
                 alignItems: "center",
                 justifyContent: "center",
                 color: textColor,
-                fontSize: "2.1rem",
+                fontSize: "2.3rem",
                 fontWeight: 800,
                 textTransform: "uppercase",
                 textAlign: "center",
@@ -181,18 +212,18 @@ export default function StationPosters() {
               }}
             >
               {upper} Station
-              <div style={{ fontSize: "1.6rem", marginTop: 12, fontWeight: 600 }}>
+              <div style={{ fontSize: "1.7rem", marginTop: 12, fontWeight: 600 }}>
                 {location}
               </div>
             </div>
 
-            <div style={{ fontSize: "1.7rem", fontWeight: 600 }}>
+            <div style={{ fontSize: "1.8rem", fontWeight: 600 }}>
               Scan to Arrive
             </div>
 
-            <img src={qrUrl} alt={`${upper} - ${location}`} style={{ width: "3.3in", height: "3.3in" }} />
+            <img src={qrUrl} alt={`${upper} - ${location}`} style={{ width: "3.4in", height: "3.4in" }} />
 
-            <div style={{ fontSize: "0.95rem", color: "#666" }}>
+            <div style={{ fontSize: "0.9rem", color: "#666" }}>
               play.curriculate.net
             </div>
           </div>
