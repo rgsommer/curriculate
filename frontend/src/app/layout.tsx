@@ -4,7 +4,7 @@ import { GeistSans, GeistMono } from "next/font/google"; // ← fixed import nam
 import "./globals.css";
 import Script from "next/script";
 
-import Footer from "@/components/Footer";
+//import Footer from "@/components/Footer";
 
 const geistSans = GeistSans({
   variable: "--font-geist-sans",
@@ -55,7 +55,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}
       >
         {children}
-        <Footer />
+        {/* <Footer /> */}
       </body>
     </html>
   );
