@@ -113,9 +113,7 @@ export default function StationPosters() {
       <h1 style={{ marginTop: 0 }}>Station posters</h1>
       <p style={{ fontSize: "0.85rem", color: "#4b5563", maxWidth: 520 }}>
         One page per station. These are meant for printing on letter-size paper
-        and posting at each colour station. QR codes still point to{" "}
-        <code>play.curriculate.net/{locationLabel}/[colour]</code>, but the
-        printed address stays simple: <code>play.curriculate.net</code>.
+        and posting at each colour station.
       </p>
 
       {/* Room / location / station controls */}
