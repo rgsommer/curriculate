@@ -558,6 +558,8 @@ export default function LiveSession({ roomCode }) {
     });
   };
 
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const handleGenerateQuickTask = async () => {
     if (!roomCode) {
       alert("You must have a room code to generate a task.");
