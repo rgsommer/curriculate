@@ -2317,7 +2317,7 @@ export default function LiveSession({ roomCode }) {
               </button>
             </div>
           </div>
-        </div>
+        </div> 
       )}
     </div>
   );
