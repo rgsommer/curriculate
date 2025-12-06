@@ -1,9 +1,9 @@
 // frontend/src/app/dashboard/page.tsx
 import Link from "next/link";
-import { Plus, Upload, Printer, Search, LogOut } from "lucide-react";
+import { Plus, Upload, Printer, LogOut } from "lucide-react";
+import Footer from "@/curriculate/components/Footer";
 
 export default function Dashboard() {
-  // In real app you'd fetch this from your backend
   const myTasksets = [
     { id: 1, name: "Photosynthesis Review", tasks: 12, played: 47, lastUsed: "2 days ago" },
     { id: 2, name: "World War II Timeline", tasks: 8, played: 23, lastUsed: "1 week ago" },
@@ -16,108 +16,131 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-blue-600">Curriculate</h1>
-              <span className="ml-3 text-sm text-gray-500">Teacher Dashboard</span>
+    <>
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+        {/* Header */}
+        <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-gray-200 sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center gap-8">
+                <h1 className="text-3xl font-bold text-blue-600">Curriculate</h1>
+                <p className="hidden sm:block text-gray-600 font-medium">
+                  Instant interactive quizzes from any text or CSV
+                </p>
+              </div>
+              <button className="flex items-center gap-2 text-gray-600 hover:text-red-600 transition">
+                <LogOut className="w-5 h-5" />
+                <span className="hidden sm:inline font-medium">Sign Out</span>
+              </button>
             </div>
-            <button className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-              <LogOut className="w-5 h-5" />
-              <span className="hidden sm:inline ml-1">Sign Out</span>
-            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Hero Actions */}
-        <div className="mb-12 text-center">
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">
-            Welcome back, Teacher!
-          </h2>
-          <p className="text-xl text-gray-600 mb-8">
-            Create a new quiz or jump into an existing one
-          </p>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-24">
+          {/* Welcome + Big Actions */}
+          <div className="text-center py-16">
+            <h2 className="text-5xl font-extrabold text-gray-900 mb-4">
+              Welcome back, Teacher!
+            </h2>
+            <p className="text-xl text-gray-600 mb-12 max-w-2xl mx-auto">
+              Build something amazing today — your students are waiting.
+            </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/create"
-              className="inline-flex items-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transform hover:scale-105 transition"
-            >
-              <Plus className="w-6 h-6" />
-              Create New Taskset
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-6 justify-center items-center">
+              <Link
+                href="/create"
+                className="group flex items-center gap-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold text-xl py-5 px-10 rounded-2xl shadow-xl transform hover:scale-105 transition-all duration-200"
+              >
+                <Plus className="w-8 h-8 group-hover:rotate-90 transition-transform" />
+                Create New Taskset
+              </Link>
 
-            <Link
-              href="/upload-csv"
-              className="inline-flex items-center gap-3 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transform hover:scale-105 transition"
-            >
-              <Upload className="w-6 h-6" />
-              Upload from CSV
-            </Link>
+              <div className="flex gap-4">
+                <Link
+                  href="/upload-csv"
+                  className="flex items-center gap-3 bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transform hover:scale-105 transition"
+                >
+                  <Upload className="w-6 h-6" />
+                  CSV Upload
+                </Link>
 
-            <Link
-              href="/station-posters"
-              className="inline-flex items-center gap-3 bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transform hover:scale-105 transition"
-            >
-              <Printer className="w-6 h-6" />
-              Station Posters
-            </Link>
+                <Link
+                  href="/station-posters"
+                  className="flex items-center gap-3 bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transform hover:scale-105 transition"
+                >
+                  <Printer className="w-6 h-6" />
+                  Station Posters
+                </Link>
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* My Tasksets */}
-        <section className="mb-12">
-          <h3 className="text-2xl font-bold text-gray-900 mb-6">My Tasksets</h3>
-          {myTasksets.length === 0 ? (
-            <p className="text-gray-500 text-center py-12">No tasksets yet — create your first one above!</p>
-          ) : (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {myTasksets.map((set) => (
-                <div key={set.id} className="bg-white rounded-xl shadow-md p-6 hover:shadow-xl transition">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-2">{set.name}</h4>
-                  <div className="text-sm text-gray-600 space-y-1">
-                    <p>{set.tasks} tasks</p>
-                    <p>Played {set.played} times</p>
-                    <p className="text-blue-600">Last used: {set.lastUsed}</p>
+          {/* My Tasksets */}
+          <section className="mb-16">
+            <h3 className="text-3xl font-bold text-gray-900 mb-8">My Tasksets</h3>
+
+            {myTasksets.length === 0 ? (
+              <div className="text-center py-20 bg-white rounded-2xl shadow">
+                <div className="text-6xl mb-4">Empty State</div>
+                <p className="text-xl text-gray-500">
+                  No tasksets yet. Click the big blue button above to create your first one!
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+                {myTasksets.map((set) => (
+                  <div
+                    key={set.id}
+                    className="bg-white rounded-2xl shadow-lg p-8 hover:shadow-2xl transition-shadow border border-gray-100"
+                  >
+                    <h4 className="text-xl font-bold text-gray-900 mb-4">{set.name}</h4>
+                    <div className="space-y-2 text-gray-600">
+                      <p>{set.tasks} tasks</p>
+                      <p>Played {set.played} times</p>
+                      <p className="text-blue-600 font-medium">Last used: {set.lastUsed}</p>
+                    </div>
+                    <div className="mt-6 flex gap-3">
+                      <button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition">
+                        Edit
+                      </button>
+                      <button className="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-semibold transition">
+                        Play Now
+                      </button>
+                    </div>
                   </div>
-                  <div className="mt-4 flex gap-2">
-                    <button className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">
-                      Edit
-                    </button>
-                    <button className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">
-                      Play Now
-                    </button>
-                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Community Tasksets */}
+          <section>
+            <h3 className="text-3xl font-bold text-gray-900 mb-8">
+              Community Tasksets
+            </h3>
+            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+              {publicTasksets.map((set) => (
+                <div
+                  key={set.id}
+                  className="bg-gradient-to-br from-indigo-50 to-white rounded-2xl p-8 border border-indigo-100 shadow-md hover:shadow-lg transition"
+                >
+                  <h4 className="text-xl font-bold text-gray-900 mb-2">{set.name}</h4>
+                  <p className="text-sm text-indigo-600 mb-4">by {set.author}</p>
+                  <p className="text-gray-600 mb-6">
+                    {set.tasks} tasks • {set.played.toLocaleString()} plays
+                  </p>
+                  <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-semibold transition">
+                    Copy & Use
+                  </button>
                 </div>
               ))}
             </div>
-          )}
-        </section>
+          </section>
+        </main>
 
-        {/* Public / Community Tasksets */}
-        <section>
-          <h3 className="text-2xl font-bold text-gray-900 mb-6">Explore Community Tasksets</h3>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {publicTasksets.map((set) => (
-              <div key={set.id} className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
-                <h4 className="text-lg font-semibold text-gray-900 mb-1">{set.name}</h4>
-                <p className="text-sm text-gray-600 mb-3">by {set.author}</p>
-                <div className="text-sm text-gray-600">
-                  <p>{set.tasks} tasks • {set.played} plays</p>
-                </div>
-                <button className="mt-4 w-full bg-indigo-100 text-indigo-700 py-2 rounded-lg hover:bg-indigo-200 font-medium">
-                  Copy & Use
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      </main>
-    </div>
+        {/* Global Footer */}
+        <Footer />
+      </div>
+    </>
   );
 }
