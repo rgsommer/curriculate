@@ -28,12 +28,12 @@ export default function TeacherProfile() {
     assessmentCategories: [EMPTY_CATEGORY],
     includeIndividualReports: false,
     locationOptions: [],
-    
-    voiceId: String,           // ElevenLabs voice ID
-    voiceSampleUrl: String,    // URL to 15–30 sec sample
-    voiceClonedAt: Date,
-    preferredVoice: { type: String, default: "alloy" }, // fallback TTS
-      }, { timestamps: true },
+
+    // Voice settings
+    voiceId: "",           
+    voiceSampleUrl: "",    
+    voiceClonedAt: null,
+    preferredVoice: "alloy",
 
     // Jeopardy defaults
     jeopardyDefaultContestantCount: 3,
@@ -41,6 +41,7 @@ export default function TeacherProfile() {
     jeopardyAllowNegativeScores: true,
     jeopardyAllowRebound: true,
   });
+
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
