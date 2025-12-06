@@ -54,12 +54,20 @@ export default function LiveSession({ roomCode }) {
   const [scanEvents, setScanEvents] = useState([]);
   const [teamOrder, setTeamOrder] = useState([]);
 
-  // Quick task fields
-  const [prompt, setPrompt] = useState("");
-  const [correctAnswer, setCorrectAnswer] = useState("");
   const [isLaunchingQuick, setIsLaunchingQuick] = useState(false);
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [teacherRooms, setTeacherRooms] = useState([]);
+
+  // NEW dynamic system — only these
+  const [taskType, setTaskType] = useState("TEXT");
+  const [taskConfig, setTaskConfig] = useState({});
+  const [showAiGen, setShowAiGen] = useState(false);
+
+  const [aiGrade, setAiGrade] = useState("");
+  const [aiDifficulty, setAiDifficulty] = useState("medium");
+  const [aiPurpose, setAiPurpose] = useState("");
+  const [aiSubject, setAiSubject] = useState("");
+  const [aiWordList, setAiWordList] = useState("");
 
   // Active taskset meta
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
@@ -504,22 +512,31 @@ export default function LiveSession({ roomCode }) {
   };
 
   const handleLaunchQuickTask = () => {
-    if (!roomCode || !prompt.trim()) return;
+    if (!taskConfig.prompt?.trim()) return;
+
     setIsLaunchingQuick(true);
-    const code = roomCode.toUpperCase();
+
+    const taskToSend = {
+      taskType,
+      prompt: taskConfig.prompt.trim(),
+      ...(taskConfig.correctAnswer && { correctAnswer: taskConfig.correctAnswer.trim() }),
+      ...(taskConfig.options && { options: taskConfig.options }),
+      ...(taskConfig.clue && { clue: taskConfig.clue.trim() }),
+    };
 
     socket.emit("teacherLaunchTask", {
-      roomCode: code,
-      prompt: prompt.trim(),
-      correctAnswer: (correctAnswer || "").trim() || null,
+      roomCode: roomCode.toUpperCase(),
+      task: taskToSend,
+      selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
     });
 
+    // Reset form
     setTimeout(() => {
+      setTaskConfig({});
+      setTaskType("TEXT");
       setIsLaunchingQuick(false);
-      setPrompt("");
-      setCorrectAnswer("");
-      setStatus("Quick task launched.");
-    }, 200);
+      setStatus("Quick task launched!");
+    }, 300);
   };
 
   const handleLocationOverrideClick = (loc) => {
@@ -1053,76 +1070,173 @@ export default function LiveSession({ roomCode }) {
             Task controls
           </div>
 
-          {/* Quick task */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              marginBottom: 8,
-            }}
-          >
-            <label
-              style={{
-                fontSize: "0.8rem",
-                color: "#374151",
+          {/* Quick task – fully dynamic */}
+          <div style={{ marginBottom: 12, padding: 10, background: "#f8fafc", borderRadius: 12 }}>
+            <div style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: 8 }}>
+              Quick Launch Task
+            </div>
+
+            {/* Task Type Selector */}
+            <select
+              value={taskType}
+              onChange={(e) => {
+                setTaskType(e.target.value);
+                setTaskConfig({}); // reset config on type change
               }}
-            >
-              Quick prompt
-            </label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={2}
-              placeholder="Ask something simple all teams can respond to…"
               style={{
                 width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
                 padding: 8,
-                resize: "vertical",
-                fontSize: "0.85rem",
-              }}
-            />
-            <input
-              type="text"
-              value={correctAnswer}
-              onChange={(e) => setCorrectAnswer(e.target.value)}
-              placeholder="Optional: correct answer (for auto-scoring)"
-              style={{
-                width: "100%",
                 borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 6,
-                fontSize: "0.85rem",
-              }}
-            />
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                marginTop: 4,
+                border: "1px solid #cbd5e1",
+                marginBottom: 8,
+                fontSize: "0.9rem",
               }}
             >
-              <button
-                type="button"
-                onClick={handleLaunchQuickTask}
+              {Object.entries(TASK_TYPES).map(([key, meta]) => (
+                <option key={key} value={key}>
+                  {meta.label || key}
+                </option>
+              ))}
+            </select>
+
+            {/* Dynamic Prompt */}
+            <textarea
+              placeholder="Enter your prompt / question / clue..."
+              value={taskConfig.prompt || ""}
+              onChange={(e) => setTaskConfig({ ...taskConfig, prompt: e.target.value })}
+              rows={3}
+              style={{
+                width: "100%",
+                padding: 8,
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                fontSize: "0.9rem",
+                marginBottom: 8,
+              }}
+            />
+
+            {/* Render type-specific fields */}
+            {taskType === "MCQ" && (
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: "0.8rem", display: "block", marginBottom: 4 }}>
+                  Options (one per line)
+                </label>
+                <textarea
+                  rows={4}
+                  value={(taskConfig.options || []).join("\n")}
+                  onChange={(e) =>
+                    setTaskConfig({
+                      ...taskConfig,
+                      options: e.target.value.split("\n").map((o) => o.trim()).filter(Boolean),
+                    })
+                  }
+                  style={{ width: "100%", padding: 6, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                />
+                <label style={{ fontSize: "0.8rem", display: "block", margin: "4px 0" }}>
+                  Correct answer
+                </label>
+                <select
+                  value={taskConfig.correctAnswer || ""}
+                  onChange={(e) => setTaskConfig({ ...taskConfig, correctAnswer: e.target.value })}
+                  style={{ width: "100%", padding: 6, borderRadius: 8 }}
+                >
+                  <option value="">— Select —</option>
+                  {(taskConfig.options || []).map((opt, i) => (
+                    <option key={i} value={opt}>
+                      {String.fromCharCode(65 + i)}. {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {["TEXT", "SEQUENCE", "DRAW", "BRAIN_STORM"].includes(taskType) && (
+              <input
+                type="text"
+                placeholder="Optional: exact correct answer (for auto-scoring)"
+                value={taskConfig.correctAnswer || ""}
+                onChange={(e) => setTaskConfig({ ...taskConfig, correctAnswer: e.target.value })}
                 style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: "#0ea5e9",
-                  color: "#ffffff",
-                  fontSize: "0.8rem",
-                  cursor:
-                    isLaunchingQuick || taskFlowActive ? "not-allowed" : "pointer",
-                  opacity: isLaunchingQuick || taskFlowActive ? 0.5 : 1,
+                  width: "100%",
+                  padding: 8,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  marginBottom: 8,
                 }}
-                disabled={isLaunchingQuick || taskFlowActive}
+              />
+            )}
+
+            {taskType === "HIDENSEEK" && (
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: "0.8rem", display: "block", marginBottom: 4 }}>
+                  Clue / Location hint
+                </label>
+                <textarea
+                  rows={2}
+                  value={taskConfig.clue || ""}
+                  onChange={(e) => setTaskConfig({ ...taskConfig, clue: e.target.value })}
+                  placeholder="e.g., Under the blue chair in Room 204"
+                  style={{ width: "100%", padding: 6, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                />
+              </div>
+            )}
+
+            {/* Multi-room selector (only show for types that support it) */}
+            {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") && teacherRooms.length > 1 && (
+              <div style={{ marginTop: 8 }}>
+                <label style={{ fontSize: "0.8rem" }}>Send to rooms:</label>
+                <select
+                  multiple
+                  size={3}
+                  value={selectedRooms}
+                  onChange={(e) =>
+                    setSelectedRooms(Array.from(e.target.selectedOptions, (o) => o.value))
+                  }
+                  style={{ width: "100%", padding: 6, borderRadius: 8, marginTop: 4 }}
+                >
+                  {teacherRooms.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button
+                onClick={handleLaunchQuickTask}
+                disabled={!taskConfig.prompt?.trim()}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 999,
+                  background: taskConfig.prompt?.trim() ? "#0ea5e9" : "#94a3b8",
+                  color: "white",
+                  border: "none",
+                  fontWeight: 600,
+                  cursor: taskConfig.prompt?.trim() ? "pointer" : "not-allowed",
+                }}
               >
-                {isLaunchingQuick ? "Launching…" : "Launch quick task"}
+                {isLaunchingQuick ? "Launching…" : "Launch Task"}
               </button>
+
+              <button
+                onClick={() => setShowAiGen(true)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 999,
+                  background: "#6366f1",
+                  color: "white",
+                  border: "none",
+                  fontSize: "0.85rem",
+                }}
+              >
+                AI Generate
+              </button>
+            </div>
+          </div>
 
               <button
                 type="button"
@@ -1238,138 +1352,6 @@ export default function LiveSession({ roomCode }) {
               </button>
             </div>
           </div>
-
-          {/* Brainstorm Battle controls */}
-          <div
-            style={{
-              marginTop: 12,
-              paddingTop: 8,
-              borderTop: "1px dashed #e5e7eb",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                fontSize: "0.8rem",
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>Brainstorm Battle</span>
-              <span style={{ color: "#6b7280" }}>
-                Use when the current task is a Brainstorm Battle.
-              </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                type="button"
-                onClick={handleStartBrainstorm}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: "#4f46e5",
-                  color: "#ffffff",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                }}
-              >
-                Start Brainstorm Battle
-              </button>
-              <button
-                type="button"
-                onClick={handleResetBrainstorm}
-                disabled={!brainstorm}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #d1d5db",
-                  background: brainstorm ? "#f9fafb" : "#f3f4f6",
-                  color: brainstorm ? "#374151" : "#9ca3af",
-                  fontSize: "0.8rem",
-                  cursor: brainstorm ? "pointer" : "not-allowed",
-                }}
-              >
-                Reset brainstorm
-              </button>
-            </div>
-
-            {brainstorm && (
-              <div
-                style={{
-                  marginTop: 6,
-                  borderRadius: 10,
-                  border: "1px solid #e5e7eb",
-                  padding: 8,
-                  background: "#f9fafb",
-                  fontSize: "0.8rem",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 4,
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>Idea scoreboard</span>
-                  <span style={{ color: "#6b7280" }}>
-                    {brainstormTeams.length} team
-                    {brainstormTeams.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-                {brainstormTeams.length === 0 ? (
-                  <div style={{ color: "#9ca3af", fontStyle: "italic" }}>
-                    No ideas submitted yet for this battle.
-                  </div>
-                ) : (
-                  <ul
-                    style={{
-                      listStyle: "none",
-                      padding: 0,
-                      margin: 0,
-                      maxHeight: 140,
-                      overflowY: "auto",
-                    }}
-                  >
-                    {brainstormTeams.map((t) => (
-                      <li
-                        key={t.teamId}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "2px 0",
-                        }}
-                      >
-                        <span>{t.teamName}</span>
-                        <span
-                          style={{
-                            fontWeight: 600,
-                            color: "#16a34a",
-                          }}
-                        >
-                          {t.ideaCount} idea
-                          {t.ideaCount === 1 ? "" : "s"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Noise + treats summary / controls */}
         <div
@@ -2006,6 +1988,153 @@ export default function LiveSession({ roomCode }) {
           </div>
         </div>
       )}
-    </div>
-  );
+
+      {/* AI GENERATOR MODAL */}
+      {showAiGen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,   // ← highest z-index in the file
+          }}
+          onClick={() => setShowAiGen(false)}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: 16,
+              padding: 24,
+              width: "90%",
+              maxWidth: 520,
+              boxShadow: "0 25px 50px rgba(0,0,0,0.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 12px 0", fontSize: "1.25rem" }}>
+              Generate Task with AI
+            </h3>
+            <p style={{ margin: "0 0 16px 0", color: "#64748b", fontSize: "0.9rem" }}>
+              Fill in as much as you want — the AI will create a perfect task for you.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input
+                placeholder="Grade / Year level (e.g. Grade 6)"
+                value={aiGrade}
+                onChange={(e) => setAiGrade(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+              />
+              <select
+                value={aiDifficulty}
+                onChange={(e) => setAiDifficulty(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+              >
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+              <input
+                placeholder="Learning objective / purpose"
+                value={aiPurpose}
+                onChange={(e) => setAiPurpose(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+              />
+              <input
+                placeholder="Subject (e.g. Science, History)"
+                value={aiSubject}
+                onChange={(e) => setAiSubject(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1" }}
+              />
+              <textarea
+                rows={3}
+                placeholder="Word list or key terms (comma-separated, optional)"
+                value={aiWordList}
+                onChange={(e) => setAiWordList(e.target.value)}
+                style={{ padding: 10, borderRadius: 8, border: "1px solid #cbd5e1", resize: "vertical" }}
+              />
+            </div>
+
+            <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                onClick={() => {
+                  setShowAiGen(false);
+                  setAiGrade("");
+                  setAiDifficulty("medium");
+                  setAiPurpose("");
+                  setAiSubject("");
+                  setAiWordList("");
+                }}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 999,
+                  border: "1px solid #94a3b8",
+                  background: "transparent",
+                  color: "#475569",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setStatus("Generating with AI…");
+                    const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      credentials: "include",
+                      body: JSON.stringify({
+                        numTasks: 1,
+                        taskType,
+                        grade: aiGrade || undefined,
+                        difficulty: aiDifficulty,
+                        purpose: aiPurpose || undefined,
+                        subject: aiSubject || undefined,
+                        words: aiWordList
+                          .split(",")
+                          .map((w) => w.trim())
+                          .filter(Boolean),
+                      }),
+                    });
+
+                    if (!res.ok) throw new Error("Failed");
+
+                    const data = await res.json();
+                    const generated = data.tasks?.[0];
+
+                    if (generated) {
+                      setTaskType(generated.task_type || taskType);
+                      setTaskConfig({
+                        prompt: generated.prompt || "",
+                        correctAnswer: generated.correctAnswer || "",
+                        options: generated.options || [],
+                        clue: generated.clue || "",
+                      });
+                      setStatus("AI task ready! Edit if needed, then Launch.");
+                    }
+                  } catch (err) {
+                    console.error(err);
+                    setStatus("AI generation failed.");
+                  } finally {
+                    setShowAiGen(false);
+                  }
+                }}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 999,
+                  background: "#4f46e5",
+                  color: "white",
+                  border: "none",
+                  fontWeight: 600,
+                }}
+              >
+                Generate Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 }

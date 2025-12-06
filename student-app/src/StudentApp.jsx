@@ -740,6 +740,11 @@ function StudentApp() {
           scannedLabel || "this code"
         }, but your team needs the ${expectedLabel} station.`
       );
+
+      // 🔹 Re-arm the scanner so they can try again
+      setScannedStationId(null);
+      setScannerActive(true);
+
       return;
     }
 

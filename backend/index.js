@@ -340,7 +340,7 @@ function reassignStationForTeam(room, teamId) {
     room.stations[nextStationId] = { id: nextStationId, assignedTeamId: null };
   }
 
-  // ✅ Reserve the new station for this team
+  // 🔹 Reserve this station for this team
   room.stations[nextStationId].assignedTeamId = teamId;
 }
 
