@@ -3,8 +3,18 @@ import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const COLORS = [
-  "red", "blue", "green", "yellow", "purple", "orange", "teal", "pink",
-  "lime", "navy", "brown", "gray",
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "purple",
+  "orange",
+  "teal",
+  "pink",
+  "lime",
+  "navy",
+  "brown",
+  "gray",
 ];
 
 function useQuery() {
@@ -28,6 +38,8 @@ export default function StationPosters() {
     .filter(loc => loc.length > 0);
 
   const colors = COLORS.slice(0, stationCount);
+
+  // Generate all combinations: location first, then color
   const posters = locations.flatMap(location =>
     colors.map(color => ({ location, color, upper: color.toUpperCase() }))
   );
@@ -45,17 +57,17 @@ export default function StationPosters() {
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif" }}>
-      {/* Perfect Print CSS */}
+      {/* Fixed Print CSS – no overlap */}
       <style>
         {`
           @page { size: letter portrait; margin: 0; }
           @media print {
-            html, body, #root { margin: 0 !important; padding: 0 !important; }
+            html, body { margin: 0; padding: 0; height: auto; }
             body * { visibility: hidden; }
             .print-page, .print-page * { visibility: visible; }
             .print-page {
-              position: fixed;
-              left: 0; top: 0;
+              position: absolute;
+              left: 0;
               width: 8.5in;
               height: 11in;
               page-break-after: always;
@@ -65,53 +77,22 @@ export default function StationPosters() {
               justify-content: center;
               background: white;
             }
-            .no-print { display: none !important; }
+            .no-print { display: none; }
           }
         `}
       </style>
 
-      {/* Header with BIG PRINT BUTTON */}
-      <div className="no-print" style={{ padding: 32, background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-        <div style={{ maxWidth: 1000, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <h1 style={{ margin: "0 0 12px", fontSize: "2.4rem", fontWeight: 800, color: "#1e293b" }}>
-              Station Posters
-            </h1>
-            <p style={{ margin: 0, fontSize: "1.1rem", color: "#475569" }}>
-              One poster per color per location. Use commas to add multiple locations.
-            </p>
-            <p style={{ margin: "8px 0 0", fontSize: "1rem", color: "#64748b" }}>
-              {locations.length} location(s) × {colors.length} colors = <strong>{posters.length} posters</strong>
-            </p>
-          </div>
+      {/* Controls + Print Button */}
+      <div className="no-print" style={{ padding: 32, maxWidth: 1000, margin: "0 auto" }}>
+        <h1 style={{ margin: "0 0 24px", fontSize: "2.2rem", fontWeight: 700 }}>
+          Station Posters
+        </h1>
+        <p style={{ color: "#555", marginBottom: 32, fontSize: "1.1rem", lineHeight: 1.6 }}>
+          One perfectly centered poster per page. Ready for printing on letter paper.
+        </p>
 
-          {/* BIG PRINT BUTTON */}
-          <button
-            onClick={handlePrint}
-            style={{
-              padding: "16px 32px",
-              background: "#0ea5e9",
-              color: "white",
-              border: "none",
-              borderRadius: 16,
-              fontSize: "1.3rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              boxShadow: "0 8px 16px rgba(14,165,233,0.3)",
-              transition: "all 0.2s",
-            }}
-            onMouseOver={(e) => e.target.style.background = "#0284c7"}
-            onMouseOut={(e) => e.target.style.background = "#0ea5e9"}
-          >
-            Print All Posters
-          </button>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="no-print" style={{ padding: "32px 32px 16px", maxWidth: 1000, margin: "0 auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 24, alignItems: "end" }}>
-          <div>
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 300 }}>
             <label style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
               Location(s)
               <span
@@ -128,11 +109,10 @@ export default function StationPosters() {
               placeholder="e.g. Boshart Gym, Library, Cafeteria"
               style={{
                 width: "100%",
-                padding: "14px 18px",
+                padding: "14px 16px",
                 borderRadius: 12,
-                border: "2px solid #cbd5e1",
+                border: "2px solid #ddd",
                 fontSize: "1.1rem",
-                background: "white",
               }}
             />
           </div>
@@ -148,12 +128,11 @@ export default function StationPosters() {
                 updateUrl();
               }}
               style={{
-                padding: "14px 18px",
+                padding: "14px 16px",
                 borderRadius: 12,
-                border: "2px solid #cbd5e1",
+                border: "2px solid #ddd",
                 fontSize: "1.1rem",
                 minWidth: 180,
-                background: "white",
               }}
             >
               {[4,5,6,7,8,9,10,11,12].map(n => (
@@ -162,10 +141,30 @@ export default function StationPosters() {
             </select>
           </div>
         </div>
+
+        {/* Print Button */}
+        <div style={{ textAlign: "center", margin: "32px 0" }}>
+          <button
+            onClick={handlePrint}
+            style={{
+              padding: "16px 40px",
+              fontSize: "1.5rem",
+              fontWeight: 700,
+              background: "#0ea5e9",
+              color: "white",
+              border: "none",
+              borderRadius: 12,
+              cursor: "pointer",
+              boxShadow: "0 6px 12px rgba(14,165,233,0.3)",
+            }}
+          >
+            Print All Posters ({posters.length})
+          </button>
+        </div>
       </div>
 
       {/* All Posters */}
-      {posters.map(({ location, color, upper }) => {
+      {posters.map(({ location, color, upper }, index) => {
         const qrTarget = `https://play.curriculate.net/${encodeURIComponent(location)}/${color.toLowerCase()}`;
         const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(qrTarget)}&size=580&margin=4`;
         const textColor = ["yellow","lime","pink","orange"].includes(color) ? "#000" : "#fff";
@@ -175,17 +174,7 @@ export default function StationPosters() {
             key={`${location}-${color}`}
             className="print-page"
             style={{
-              width: "8.5in",
-              height: "11in",
-              margin: "40px auto",
-              background: "white",
-              border: "1px solid #e2e8f0",
-              borderRadius: 8,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "1.1in",
+              top: `calc(${index} * 11in)`,
             }}
           >
             <div style={{ fontSize: "1.9rem", fontWeight: 600, color: "#1e40af" }}>
