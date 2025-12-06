@@ -20,6 +20,7 @@ import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
 import MadDashSequenceTask from "./types/MadDashSequenceTask";
 import LiveDebateTask from "./types/LiveDebateTask";
 import FlashcardsTask from "./types/FlashcardsTask";
+import FlashcardsRaceTask from "./types/FlashcardsRaceTask";
 import TimelineTask from "./types/TimelineTask";
 import PetFeedingTask from "./types/PetFeedingTask";
 import MotionMissionTask from "./types/MotionMissionTask";
@@ -90,8 +91,9 @@ function normalizeTaskType(raw) {
     case "act-out":
       return TASK_TYPES.MIME;
     case "diff-detective":
+    case "diff_detective":
+    case "diff":
       return TASK_TYPES.DIFF_DETECTIVE;
-    
     default:
       return raw;
   }
@@ -389,14 +391,17 @@ export default function TaskRunner({
       }));
     };
 
-    socket.on("diff-detective-race-start", handleRaceStart);
-    socket.on("diff-detective-race-winner", handleRaceWinner);
-    socket.on("diff-detective-race-finish", handleRaceFinish);
+    socket.on("diff:race-start", handleRaceStart);
+    socket.on("diff:race-tick", handleRaceTick);       // optional if needed
+    socket.on("diff:race-update", handleRaceUpdate);   // scores changing
+    socket.on("diff:race-end", handleRaceFinish);
 
     return () => {
-      socket.off("diff-detective-race-start", handleRaceStart);
-      socket.off("diff-detective-race-winner", handleRaceWinner);
-      socket.off("diff-detective-race-finish", handleRaceFinish);
+      socket.off("diff:race-start", handleRaceStart);
+      socket.off("diff:race-tick", handleRaceTick);
+      socket.off("diff:race-update", handleRaceUpdate);
+      socket.off("diff:race-end", handleRaceFinish);
+    };
     };
   }, [socket, t.taskType, t.type]);
 
@@ -622,6 +627,8 @@ export default function TaskRunner({
         />
       );
       break;
+    case TASK_TYPES.FLASHCARDS_RACE:
+      return <FlashcardsRaceTask socket={socket} roomCode={roomCode} playerTeam={playerTeam} />;
     case TASK_TYPES.TIMELINE:
       content = (
         <TimelineTask
@@ -652,12 +659,14 @@ export default function TaskRunner({
         />
       );
       break;
-    case TASK_TYPES.MIND_MAPPER:
+    
+      case TASK_TYPES.MIND_MAPPER:
       content = (
         <MindMapperTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
-    case TASK_TYPES.SPEED_DRAW:
+    
+      case TASK_TYPES.SPEED_DRAW:
       content = (
         <SpeedDrawTask
           task={t}
@@ -667,20 +676,19 @@ export default function TaskRunner({
         />
       );
       break;
-        // ... other specific cases above ...
+      
+      case TASK_TYPES.DIFF_DETECTIVE:
+      case "diff-detective":
+        return (
+          <DiffDetectiveTask
+            task={t}
+            disabled={effectiveDisabled}
+            onSubmit={onSubmit}
+            onAnswerChange={onAnswerChange}
+            answerDraft={answerDraft}
+          />
+        );
 
-    // Diff Detective – "find the differences" race
-    case "diff-detective":
-      content = (
-        <DiffDetectiveTask
-          {...commonProps}
-          // treat as race when >1 team in the room; if you don't
-          // have team info here yet, forcing true is still fine.
-          isMultiplayer={true}
-          raceStatus={diffRaceStatus}
-        />
-      );
-      break;
 
     default:
       return (
