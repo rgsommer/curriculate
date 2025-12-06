@@ -334,11 +334,14 @@ function reassignStationForTeam(room, teamId) {
 
   // Set new station
   team.currentStationId = nextStationId;
-  team.lastScannedStationId = null;
+  team.lastScannedStationId = null; // force new scan
 
   if (!room.stations[nextStationId]) {
     room.stations[nextStationId] = { id: nextStationId, assignedTeamId: null };
   }
+
+  // ✅ Reserve the new station for this team
+  room.stations[nextStationId].assignedTeamId = teamId;
 }
 
 function buildTranscript(room) {
