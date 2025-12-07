@@ -544,7 +544,7 @@ export default function LiveSession({ roomCode }) {
       setStatus("Quick task launched!");
       // (If you later want a “Clear” button, we can add one.)
     }, 300);
-
+};
 
   const handleLocationOverrideClick = (loc) => {
     setSelectedLocation(loc);
@@ -1228,7 +1228,7 @@ export default function LiveSession({ roomCode }) {
                 Quick Launch Task
               </div>
 
-              <p
+                            <p
                 style={{
                   margin: 0,
                   marginBottom: 8,
@@ -1240,21 +1240,32 @@ export default function LiveSession({ roomCode }) {
                 tap <strong>Launch Task</strong>.
               </p>
 
-                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: "0.8rem" }}>
-                  Ready to launch:
-                </div>
-                <div>{taskConfig.prompt}</div>
-                {taskConfig.correctAnswer && (
+              {taskConfig.prompt?.trim() ? (
+                <>
                   <div
                     style={{
-                      marginTop: 4,
-                      fontSize: "0.75rem",
-                      color: "#075985",
+                      fontWeight: 600,
+                      marginBottom: 4,
+                      fontSize: "0.8rem",
                     }}
                   >
-                    <strong>Correct answer:</strong> {taskConfig.correctAnswer}
+                    Ready to launch:
                   </div>
-                )}
+                  <div>{taskConfig.prompt}</div>
+                  {taskConfig.correctAnswer && (
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: "0.75rem",
+                        color: "#075985",
+                      }}
+                    >
+                      <strong>Correct answer:</strong>{" "}
+                      {taskConfig.correctAnswer}
+                    </div>
+                  )}
+                </>
+              ) : (
                 <div
                   style={{
                     marginBottom: 8,
