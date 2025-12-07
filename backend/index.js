@@ -1655,6 +1655,12 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
   }
 
+  //Launch quick task to all teams in room
+  socket.on('launch-quick-task', (data) => {
+  const { roomCode, task } = data;
+  io.to(roomCode.toUpperCase()).emit('new-quick-task', task);
+  });
+
   // Legacy entry point used by older clients
   socket.on("launchTaskset", ({ roomCode }) => {
     startTasksetForRoom(roomCode);
