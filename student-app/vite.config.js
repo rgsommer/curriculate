@@ -14,4 +14,19 @@ export default defineConfig({
       "@shared": path.resolve(__dirname, "../shared"),
     },
   },
+  optimizeDeps: {
+    include: [
+      "@hello-pangea/dnd",
+      "react",
+      "react-dom",
+    ],
+  },
+  build: {
+    rollupOptions: {
+      external: [], // Ensure dnd is not externalized
+      output: {
+        globals: {}, // No globals needed for dnd
+      },
+    },
+  },
 });
