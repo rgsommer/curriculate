@@ -44,8 +44,7 @@ export const TASK_TYPES = {
   // Kept for backwards compatibility; behaviour now largely driven by location
   MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
 
-  // New task types
-  DIFF_DETECTIVE: "diff-detective",
+  // New / AI-augmented task types
   PRONUNCIATION: "pronunciation",
   SPEECH_RECOGNITION: "speech-recognition",
   AI_DEBATE_JUDGE: "ai-debate-judge",
@@ -64,6 +63,7 @@ const CATEGORY = {
 
 // Core metadata for each implemented task type
 // NOTE: maxTime is in seconds and duplicated as maxTimeSeconds for clarity.
+// NEW: quickTaskEligible → can be sensibly used as a one-off Quick Task.
 export const TASK_TYPE_META = {
   // === CORE AI-ELIGIBLE TYPES ===
 
@@ -77,11 +77,13 @@ export const TASK_TYPE_META = {
     implemented: true,
     aiEligible: true,
 
-    // scoring hints
     objectiveScoring: true,
     defaultAiScoringRequired: false,
     // e.g., correctAnswer: index or option id
     correctAnswerShape: "single-option",
+
+    // QuickTasks: great fit
+    quickTaskEligible: true,
 
     // Multi-question capable (3–5 items presented together)
     multiItemCapable: true,
@@ -106,6 +108,8 @@ export const TASK_TYPE_META = {
     // e.g., correctAnswer: index or boolean or 'T'/'F'
     correctAnswerShape: "single-option",
 
+    quickTaskEligible: true,
+
     // Multi-question capable (3–5 items presented together)
     multiItemCapable: true,
     preferredItemsPerTask: { min: 3, max: 5 },
@@ -128,6 +132,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     // e.g., correctAnswer: string or array of acceptable strings
     correctAnswerShape: "string-or-list",
+
+    quickTaskEligible: true,
 
     // Multi-question capable (3–5 items presented together)
     multiItemCapable: true,
@@ -152,6 +158,8 @@ export const TASK_TYPE_META = {
     // e.g., { item1: categoryA, item2: categoryB }
     correctAnswerShape: "mapping",
 
+    quickTaskEligible: true,
+
     description:
       "Give 6–10 items that belong to 2–4 clear categories (e.g., Living/Non-living, Vertebrate/Invertebrate).",
   },
@@ -171,6 +179,8 @@ export const TASK_TYPE_META = {
     // e.g., array of item ids in correct order
     correctAnswerShape: "array",
 
+    quickTaskEligible: true,
+
     description:
       "Give 4–8 items that must be dragged into the correct order (e.g., life cycle stages, steps in a process).",
   },
@@ -188,6 +198,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: true,
 
     description:
       "Student takes a photo showing proof (e.g., 'Show something magnetic', 'Photo of a triangle in the room'). Prompt must be visual and doable in classroom.",
@@ -207,6 +219,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: true,
+
     description:
       "Student builds, draws, or demonstrates something with materials then photographs it (e.g., 'Build a bridge with 10 popsicle sticks', 'Draw a food chain').",
   },
@@ -224,6 +238,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: true,
 
     description:
       "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, etc.). No scoring.",
@@ -246,6 +262,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     correctAnswerShape: null,
 
+    quickTaskEligible: true, // nice for a quick written reflection
+
     description:
       "Longer written response (a paragraph or more). Best evaluated with a rubric and AI scoring rather than a single correct answer.",
   },
@@ -263,6 +281,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: true,
 
     description:
       "Student records an audio explanation or reading. Future versions may transcribe and AI-score; for now, teacher reviews manually.",
@@ -282,6 +302,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: true,
+
     description:
       "Student draws a picture or diagram to show understanding (e.g., 'Draw the water cycle'). Pairs with the Draw/Mime task runner.",
   },
@@ -299,6 +321,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: true,
 
     description:
       "Student acts out a concept without words (charades-style) while team guesses. Handled by the same Draw/Mime UI.",
@@ -320,6 +344,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: true, // one-off Jeopardy-style clue
+
     description:
       "Reverse-format trivia game (like Jeopardy). Provide clues in the form of answers. Expected response must be in question form: 'What is…?', 'Who was…?'. High-energy review game.",
   },
@@ -337,6 +363,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: true,
     correctAnswerShape: null,
+
+    quickTaskEligible: true, // quick pair-and-respond round
 
     description:
       "Student writes an answer, then sees a partner’s answer and writes a thoughtful reply. Great for opinion, prediction, or reflection questions.",
@@ -356,6 +384,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     correctAnswerShape: "string-or-list",
 
+    quickTaskEligible: true,
+
     description:
       "8–12 flashcards with {question, answer}. Students shout answers; voice recognition auto-scores. For vocab, facts, etc.",
   },
@@ -373,6 +403,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: true,
     defaultAiScoringRequired: false,
     correctAnswerShape: "array",
+
+    quickTaskEligible: true,
 
     description:
       "Same as Sequence but branded as a Timeline. Use for historical events, story plots, planet formation, etc.",
@@ -392,6 +424,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     correctAnswerShape: null,
 
+    quickTaskEligible: true,
+
     description:
       "Student takes quick notes in their notebook on a key question or prompt, then optionally submits a photo of their notes.",
   },
@@ -409,6 +443,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: true, // can run as a quick “idea burst”
 
     description:
       "Fast-paced idea shouting game. Give seed words or a topic. Kids shout ideas in rounds. Great for divergent thinking.",
@@ -428,6 +464,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: true, // one-off mind-map prompt
+
     description:
       "Student draws a mind map or concept web on paper and photographs it. Prompt should be a central topic (e.g., 'Water Cycle', 'Fractions').",
   },
@@ -446,22 +484,32 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: false, // multi-step, location-heavy
+
     description:
       "Hide concept cards around room; find and explain to team. Physical search with knowledge application.",
   },
 
-  // shared/taskTypes.js → add to TASK_TYPE_META
   [TASK_TYPES.AI_DEBATE_JUDGE]: {
     label: "AI Debate Judge",
-    category: "competitive",
+    category: CATEGORY.COMPETITIVE,
     hasOptions: false,
     expectsText: false,
     maxTime: 180,
     maxTimeSeconds: 180,
     implemented: true,
     aiEligible: true,
-    special: true, // ← marks it as a special task, not in normal rotation
-    description: "AI listens to the entire debate and delivers a full written verdict with scores, feedback, and winner announcement.",
+
+    objectiveScoring: false, // rubric / AI-verdict based
+    defaultAiScoringRequired: true,
+    correctAnswerShape: null,
+
+    quickTaskEligible: false, // orchestrated, not single prompt
+
+    special: true, // marks it as a special task, not in normal rotation
+
+    description:
+      "AI listens to the entire debate and delivers a full written verdict with scores, feedback, and winner announcement.",
   },
 
   [TASK_TYPES.SPEED_DRAW]: {
@@ -477,6 +525,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: true, // one quick drawing round
 
     description:
       "One draws a concept rapidly; team guesses. First correct shout wins points. Fast-paced art + knowledge.",
@@ -498,6 +548,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: false,
+
     description:
       "Play musical chairs where each 'chair' has a question or fact. When music stops, students answer to stay in. High-energy movement game.",
   },
@@ -515,6 +567,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: false,
 
     description:
       "Provide mystery clues leading to a concept or object. Students solve by discussing or drawing conclusions.",
@@ -534,6 +588,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: "single-option",
 
+    quickTaskEligible: false,
+
     description:
       "Tic-Tac-Toe grid where each square is a True/False question. Correct answer claims the square. Team-based fun.",
   },
@@ -551,6 +607,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: false, // needs special sequence / stations
 
     description:
       "Students race to find and scan QR codes hidden around the room, each with a mini-task or fact.",
@@ -570,6 +628,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     correctAnswerShape: null,
 
+    quickTaskEligible: false,
+
     description:
       "Teams debate a prompt (e.g., “Is Pluto a planet?”). Voice-powered with AI judging for persuasiveness and facts.",
   },
@@ -587,6 +647,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
+
+    quickTaskEligible: false, // meta-game around other tasks
 
     description:
       "Gamified review where correct answers ‘feed’ a virtual pet or progress a status bar. Fun positive reinforcement.",
@@ -606,6 +668,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: false,
+
     description:
       "Students complete a quick physical mission linked to content (e.g., 'Take 5 steps for each planet you can name').",
   },
@@ -624,6 +688,8 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
+    quickTaskEligible: false, // extended multi-room flow
+
     description:
       "Hunt for items or solve riddles across rooms. Each find ties to a learning fact. High-movement adventure.",
   },
@@ -641,6 +707,8 @@ export const TASK_TYPE_META = {
     objectiveScoring: true,
     defaultAiScoringRequired: true,
     correctAnswerShape: "list-of-strings",
+
+    quickTaskEligible: true,
 
     multiItemCapable: false,
 
@@ -664,10 +732,19 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     correctAnswerShape: null,
 
-    supportsAccents: true,
-    accentOptions: ["american", "british", "australian", "canadian", "neutral"],
+    quickTaskEligible: true,
 
-    description: "AI-powered pronunciation assessment with accent comparison (British vs American, etc.)",
+    supportsAccents: true,
+    accentOptions: [
+      "american",
+      "british",
+      "australian",
+      "canadian",
+      "neutral",
+    ],
+
+    description:
+      "AI-powered pronunciation assessment with accent comparison (British vs American, etc.).",
   },
 
   [TASK_TYPES.SPEECH_RECOGNITION]: {
@@ -684,20 +761,11 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     correctAnswerShape: null,
 
-    description: "Student speaks an answer; AI transcribes and scores for accuracy, grammar, and fluency.",
-  },
-    [TASK_TYPES.DIFF_DETECTIVE]: {
-    label: "Diff Detective",
-    category: CATEGORY.QUESTION,
-    hasOptions: false,
-    expectsText: true,
-    maxTimeSeconds: 90,
-    implemented: true,
-    aiEligible: true,
-    description:
-      "Students compare two short passages and explain the differences (e.g., 'jumps changed to jumped', '206 became 208'). Great for close reading and attention to detail.",
-  },
+    quickTaskEligible: true,
 
+    description:
+      "Student speaks an answer; AI transcribes and scores for accuracy, grammar, and fluency.",
+  },
 };
 
 // Flat map of taskType → human-readable label
@@ -718,9 +786,20 @@ export const AI_ELIGIBLE_TASK_TYPES = Object.entries(TASK_TYPE_META)
   .filter(([, meta]) => meta.aiEligible)
   .map(([type]) => type);
 
+// List of types that are safe / sensible as one-off Quick Tasks in LiveSession
+export const QUICK_TASK_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta.quickTaskEligible)
+  .map(([type]) => type);
+
 // Helper to safely look up metadata
 export function getTaskTypeMeta(taskType) {
   return TASK_TYPE_META[taskType] || null;
+}
+
+// Is this task objectively scorable (no AI judgement needed)?
+export function isObjectiveScoringTaskType(taskType) {
+  const meta = TASK_TYPE_META[taskType];
+  return !!meta?.objectiveScoring;
 }
 
 // Category helper
@@ -804,17 +883,30 @@ export function normalizeTaskType(value) {
   }
 
   // New diff detective
-  if (v === "diff-detective" || v === "spot-the-difference" || v === "diff" || v === "find-differences") {
+  if (
+    v === "diff-detective" ||
+    v === "spot-the-difference" ||
+    v === "diff" ||
+    v === "find-differences"
+  ) {
     return TASK_TYPES.DIFF_DETECTIVE;
   }
 
   // Pronunciation
-  if (v === "pronunciation" || v === "pronounce" || v === "speech-practice") {
+  if (
+    v === "pronunciation" ||
+    v === "pronounce" ||
+    v === "speech-practice"
+  ) {
     return TASK_TYPES.PRONUNCIATION;
   }
 
   // Speech recognition
-  if (v === "speech-recognition" || v === "speech" || v === "voice-answer") {
+  if (
+    v === "speech-recognition" ||
+    v === "speech" ||
+    v === "voice-answer"
+  ) {
     return TASK_TYPES.SPEECH_RECOGNITION;
   }
 

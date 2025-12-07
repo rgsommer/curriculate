@@ -2,7 +2,10 @@
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
 import { fetchMyProfile } from "../api/profile";
-import { TASK_TYPES } from "../../../shared/taskTypes.js";
+import {
+  TASK_TYPES,
+  QUICK_TASK_ELIGIBLE_TYPES,
+} from "../../../shared/taskTypes.js";
 import { API_BASE_URL } from "../config";
 
 const API_BASE = API_BASE_URL || "";
@@ -19,6 +22,17 @@ const COLORS = [
   "pink",
 ];
 
+// Quick AI task types we actually support in LiveSession
+const QUICK_TASK_TYPES =
+  QUICK_TASK_ELIGIBLE_TYPES && QUICK_TASK_ELIGIBLE_TYPES.length
+    ? QUICK_TASK_ELIGIBLE_TYPES
+    : [
+        TASK_TYPES.MULTIPLE_CHOICE,
+        TASK_TYPES.TRUE_FALSE,
+        TASK_TYPES.SHORT_ANSWER,
+        TASK_TYPES.OPEN_TEXT,
+      ];
+
 const PURPOSE_OPTIONS = [
   "Introduction",
   "Review",
@@ -31,6 +45,11 @@ function stationIdToColor(id) {
   const m = /^station-(\d+)$/.exec(id || "");
   const idx = m ? parseInt(m[1], 10) - 1 : -1;
   return idx >= 0 ? COLORS[idx] || null : null;
+}
+
+export function isObjectiveScoringTaskType(taskType) {
+  const meta = TASK_TYPE_META[taskType];
+  return !!meta?.objectiveScoring;
 }
 
 export default function LiveSession({ roomCode }) {
@@ -67,7 +86,9 @@ export default function LiveSession({ roomCode }) {
   const [teacherRooms, setTeacherRooms] = useState([]);
 
   // NEW dynamic system — only these
-  const [taskType, setTaskType] = useState("TEXT");
+  const [taskType, setTaskType] = useState(
+    QUICK_TASK_TYPES[0] || TASK_TYPES.SHORT_ANSWER
+  );
   const [taskConfig, setTaskConfig] = useState({});
   const [showAiGen, setShowAiGen] = useState(false);
 
@@ -76,6 +97,13 @@ export default function LiveSession({ roomCode }) {
   const [aiPurpose, setAiPurpose] = useState("");
   const [aiSubject, setAiSubject] = useState("");
   const [aiWordList, setAiWordList] = useState("");
+
+  // Quick AI task / error state
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiError, setAiError] = useState(null);
+
+  // Keep track of the most recently launched quick task
+  const [lastQuickTask, setLastQuickTask] = useState(null);
 
   // Active taskset meta
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
@@ -538,6 +566,11 @@ export default function LiveSession({ roomCode }) {
       selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
     });
 
+     setLastQuickTask({
+      ...taskToSend,
+      launchedAt: Date.now(),
+    });
+
     // Keep the question + answer visible for the teacher
     setTimeout(() => {
       setIsLaunchingQuick(false);
@@ -556,9 +589,6 @@ export default function LiveSession({ roomCode }) {
       locationCode: loc,
     });
   };
-
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [aiError, setAiError] = useState(null);
 
   const handleGenerateQuickTask = async () => {
     if (!roomCode) {
@@ -596,6 +626,7 @@ export default function LiveSession({ roomCode }) {
 
         numTasks: 1,
         taskType,
+        requiredTaskTypes: [taskType],   // 🔹 strongly hint the type
 
         // Grade / level – support both fields just in case
         gradeLevel: gradeStr
@@ -676,7 +707,7 @@ export default function LiveSession({ roomCode }) {
       setIsGenerating(false);
     }
   };
-
+  
   const handleLaunchTaskset = async () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
@@ -1279,6 +1310,34 @@ export default function LiveSession({ roomCode }) {
                 >
                   No quick task prepared yet. Click{" "}
                   <strong>Generate Task</strong> to create one.
+                </div>
+              )}
+
+              {lastQuickTask && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: "1px dashed #cbd5e1",
+                    fontSize: "0.78rem",
+                    color: "#475569",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      marginBottom: 2,
+                    }}
+                  >
+                    Last launched quick task
+                  </div>
+                  <div>{lastQuickTask.prompt}</div>
+                  {lastQuickTask.correctAnswer && (
+                    <div style={{ marginTop: 2 }}>
+                      <strong>Answer:</strong>{" "}
+                      {lastQuickTask.correctAnswer}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2183,9 +2242,9 @@ export default function LiveSession({ roomCode }) {
                   border: "1px solid #cbd5e1",
                 }}
               >
-                {Object.entries(TASK_TYPES).map(([key, meta]) => (
-                  <option key={key} value={key}>
-                    {meta.label || key}
+                {QUICK_TASK_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type.replace(/_/g, " ")}
                   </option>
                 ))}
               </select>

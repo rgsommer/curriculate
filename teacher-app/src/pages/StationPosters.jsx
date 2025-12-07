@@ -4,8 +4,18 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { COPY } from "@shared/config/copy";
 
 const COLORS = [
-  "red", "blue", "green", "yellow", "purple", "orange", "teal", "pink",
-  "lime", "navy", "brown", "gray",
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "purple",
+  "orange",
+  "teal",
+  "pink",
+  "lime",
+  "navy",
+  "brown",
+  "gray",
 ];
 
 function useQuery() {
@@ -17,7 +27,9 @@ export default function StationPosters() {
   const query = useQuery();
   const navigate = useNavigate();
 
-  const [locationInput, setLocationInput] = useState(query.get("location") || "Classroom");
+  const [locationInput, setLocationInput] = useState(
+    query.get("location") || "Classroom",
+  );
   const [stationCount, setStationCount] = useState(() => {
     const raw = Number(query.get("stations") || 8);
     return Math.min(12, Math.max(4, Number.isFinite(raw) ? raw : 8));
@@ -25,12 +37,16 @@ export default function StationPosters() {
 
   const locations = locationInput
     .split(",")
-    .map(loc => loc.trim())
-    .filter(loc => loc.length > 0);
+    .map((loc) => loc.trim())
+    .filter((loc) => loc.length > 0);
 
   const colors = COLORS.slice(0, stationCount);
-  const posters = locations.flatMap(location =>
-    colors.map(color => ({ location, color, upper: color.toUpperCase() }))
+  const posters = locations.flatMap((location) =>
+    colors.map((color) => ({
+      location,
+      color,
+      upper: color.toUpperCase(),
+    })),
   );
 
   const updateUrl = () => {
@@ -44,47 +60,80 @@ export default function StationPosters() {
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif" }}>
-      {/* Perfect 1" margin print layout */}
+      {/* Print layout */}
       <style>
         {`
-          @page { 
-            size: letter portrait; 
-            margin: 1in; 
+          @page {
+            size: letter portrait;
+            margin: 1in;
           }
+
           @media print {
-            body { margin: 0; padding: 0; }
-            body * { visibility: hidden; }
-            .print-page, .print-page * { visibility: visible; }
+            body {
+              margin: 0;
+              padding: 0;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            .no-print {
+              display: none !important;
+            }
+
+            /* Each poster should be its own page, in normal flow */
             .print-page {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 8.5in;
-              height: 11in;
               page-break-after: always;
+              break-after: page;
+              width: 100%;
+              min-height: 0;
               display: flex;
               flex-direction: column;
               align-items: center;
               justify-content: center;
-              background: white;
+              background: #ffffff;
             }
-            .no-print { display: none !important; }
           }
         `}
       </style>
 
       {/* Controls */}
-      <div className="no-print" style={{ padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
-        <h1 style={{ margin: "0 0 1.5rem", fontSize: "2.5rem", fontWeight: 800 }}>
+      <div
+        className="no-print"
+        style={{
+          padding: "2rem",
+          maxWidth: "1000px",
+          margin: "0 auto",
+        }}
+      >
+        <h1
+          style={{
+            margin: "0 0 1.5rem",
+            fontSize: "2.5rem",
+            fontWeight: 800,
+          }}
+        >
           Station Posters
         </h1>
         <p style={{ color: "#555", marginBottom: "2rem" }}>
           Clean 1" margins • Perfect for letter paper • Ready to print
         </p>
 
-        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "3rem" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "1rem",
+            flexWrap: "wrap",
+            marginBottom: "3rem",
+          }}
+        >
           <div style={{ flex: 1, minWidth: "300px" }}>
-            <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: 600 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "0.5rem",
+                fontWeight: 600,
+              }}
+            >
               Location(s)
             </label>
             <input
@@ -103,7 +152,13 @@ export default function StationPosters() {
           </div>
 
           <div>
-            <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: 600 }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "0.5rem",
+                fontWeight: 600,
+              }}
+            >
               Number of colors
             </label>
             <select
@@ -120,8 +175,10 @@ export default function StationPosters() {
                 minWidth: "180px",
               }}
             >
-              {[4,5,6,7,8,9,10,11,12].map(n => (
-                <option key={n} value={n}>{n} colors</option>
+              {[4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                <option key={n} value={n}>
+                  {n} colors
+                </option>
               ))}
             </select>
           </div>
@@ -148,19 +205,48 @@ export default function StationPosters() {
       </div>
 
       {/* Printable Posters */}
-      {posters.map(({ location, color, upper }, index) => {
-        const qrTarget = `https://${COPY.DOMAIN}/${encodeURIComponent(location)}/${color.toLowerCase()}`;
-        const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(qrTarget)}&size=620&margin=3`;
-        const textColor = ["yellow", "lime", "pink", "orange"].includes(color) ? "#000" : "#fff";
+      {posters.map(({ location, color, upper }) => {
+        const qrTarget = `https://${COPY.DOMAIN}/${encodeURIComponent(
+          location,
+        )}/${color.toLowerCase()}`;
+        const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(
+          qrTarget,
+        )}&size=620&margin=3`;
+        const textColor = ["yellow", "lime", "pink", "orange"].includes(
+          color,
+        )
+          ? "#000"
+          : "#fff";
 
         return (
-          <div key={`${location}-${color}`} className="print-page">
+          <div
+            key={`${location}-${color}`}
+            className="print-page"
+          >
             {/* Header */}
-            <div style={{ textAlign: "center", marginBottom: "0.4in" }}>
-              <div style={{ fontSize: "2.8rem", fontWeight: 900, color: "#1e40af" }}>
+            <div
+              style={{
+                textAlign: "center",
+                marginBottom: "0.4in",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "2.8rem",
+                  fontWeight: 900,
+                  color: "#1e40af",
+                }}
+              >
                 {COPY.APP_NAME}
               </div>
-              <div style={{ fontSize: "1.6rem", fontWeight: 600, color: "#475569", marginTop: "0.25in" }}>
+              <div
+                style={{
+                  fontSize: "1.6rem",
+                  fontWeight: 600,
+                  color: "#475569",
+                  marginTop: "0.25in",
+                }}
+              >
                 {COPY.TAGLINE}
               </div>
             </div>
@@ -182,26 +268,53 @@ export default function StationPosters() {
                 fontWeight: 900,
                 textTransform: "uppercase",
                 lineHeight: 1.1,
-                margin: "0.4in 0", // ← reduced from 0.8in → 0.4in
+                margin: "0.4in 0",
               }}
             >
               {upper} Station
-              <div style={{ fontSize: "2.1rem", marginTop: "0.5rem", fontWeight: 700 }}>
+              <div
+                style={{
+                  fontSize: "2.1rem",
+                  marginTop: "0.5rem",
+                  fontWeight: 700,
+                }}
+              >
                 {location}
               </div>
             </div>
 
             {/* QR Code Section */}
-            <div style={{ textAlign: "center", marginTop: "0.4in" }}>
-              <div style={{ fontSize: "2rem", fontWeight: 700, marginBottom: "0.4in" }}>
+            <div
+              style={{
+                textAlign: "center",
+                marginTop: "0.4in",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "2rem",
+                  fontWeight: 700,
+                  marginBottom: "0.4in",
+                }}
+              >
                 Scan to Arrive
               </div>
               <img
                 src={qrUrl}
                 alt={`QR to ${upper} - ${location}`}
-                style={{ width: "4.2in", height: "4.2in" }} // slightly larger = easier scanning
+                style={{
+                  width: "4.2in",
+                  height: "4.2in",
+                }}
               />
-              <div style={{ fontSize: "1.4rem", color: "#666", marginTop: "0.4in", fontWeight: 500 }}>
+              <div
+                style={{
+                  fontSize: "1.4rem",
+                  color: "#666",
+                  marginTop: "0.4in",
+                  fontWeight: 500,
+                }}
+              >
                 {COPY.DOMAIN}
               </div>
             </div>
