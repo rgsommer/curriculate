@@ -1262,23 +1262,49 @@ io.on("connection", (socket) => {
     const teamName =
       team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
 
+    // Build a submission object that aiScoring understands
+    const submissionForScoring = {
+      answer,
+      answerText:
+        typeof answer === "string"
+          ? answer
+          : answer != null
+          ? String(answer)
+          : "",
+    };
+
     let aiScore = null;
-    if (task.aiRubricId) {
-      try {
+
+    try {
+      if (task.correctAnswer != null) {
+        // ✅ Objective tasks (including QuickTask) – use rule-based scoring.
+        // This will NOT call OpenAI because hasCorrect === true.
         aiScore = await generateAIScore({
-          rubricId: task.aiRubricId,
-          prompt: task.prompt,
-          answer,
+          task,
+          rubric: null,
+          submission: submissionForScoring,
         });
-      } catch (e) {
-        console.error("AI scoring failed:", e);
       }
+      // Future: if you later attach a full rubric object, you can do:
+      // else if (task.aiRubric) {
+      //   aiScore = await generateAIScore({
+      //     task,
+      //     rubric: task.aiRubric,
+      //     submission: submissionForScoring,
+      //   });
+      // }
+    } catch (e) {
+      console.error("AI / rule-based scoring failed:", e);
     }
 
     const correct = (() => {
+      // If aiScore came back (either AI or rule-based), use it as truth.
       if (aiScore && typeof aiScore.totalScore === "number") {
+        // Any positive score counts as "correct" for now.
         return aiScore.totalScore > 0;
       }
+
+      // Fallback: legacy exact-match logic
       if (task.correctAnswer == null) return null;
       return String(answer).trim() === String(task.correctAnswer).trim();
     })();
