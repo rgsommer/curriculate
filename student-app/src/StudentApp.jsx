@@ -922,7 +922,7 @@ function StudentApp() {
       ? { ...currentTask, uiTheme }
       : currentTask;
 
-  // ─────────────────────────────────────────────
+    // ─────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────
 
@@ -943,6 +943,60 @@ function StudentApp() {
         transition: "opacity 120ms ease-out",
       }}
     >
+      {/* Scoped styles for task presentation & submission */}
+      <style>{`
+        .task-card input[type="text"],
+        .task-card input[type="number"],
+        .task-card input[type="email"],
+        .task-card textarea {
+          width: 100%;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid #d1d5db;
+          font-size: 1rem;
+          outline: none;
+          background: #ffffff;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease,
+            background-color 0.15s ease;
+        }
+
+        .task-card input:focus,
+        .task-card textarea:focus {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 2px rgba(129,140,248,0.3);
+          background-color: #f9fafb;
+        }
+
+        /* General button polish inside the task card */
+        .task-card button {
+          border-radius: 999px;
+          padding: 8px 12px;
+          font-size: 0.95rem;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: transform 0.1s ease, box-shadow 0.1s ease,
+            opacity 0.1s ease;
+          box-shadow: 0 4px 12px rgba(15,23,42,0.15);
+        }
+
+        .task-card button:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(15,23,42,0.25);
+        }
+
+        .task-card button:active:not(:disabled) {
+          transform: translateY(0);
+          box-shadow: 0 3px 8px rgba(15,23,42,0.3);
+        }
+
+        .task-card button:disabled {
+          opacity: 0.6;
+          cursor: default;
+          box-shadow: none;
+        }
+      `}</style>
+
       {/* Hidden audio elements for task / scan sounds */}
       <audio
         ref={sndAlert}
@@ -1035,6 +1089,7 @@ function StudentApp() {
           </div>
         )}
 
+        {/* JOIN PANEL */}
         {!joined && (
           <section
             style={{
@@ -1156,47 +1211,49 @@ function StudentApp() {
                   + Add member field
                 </button>
               </div>
+
               <div style={{ marginTop: 8 }}>
-              <div
-                style={{
-                  fontSize: "0.85rem",
-                  marginBottom: 4,
-                }}
-              >
-                Choose a theme
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Choose a theme
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {["modern", "bold", "minimal"].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setUiTheme(t)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #d1d5db",
+                        background:
+                          uiTheme === t ? "#0ea5e9" : "#f9fafb",
+                        color:
+                          uiTheme === t ? "#ffffff" : "#111827",
+                        fontSize: "0.8rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t === "modern"
+                        ? "Theme 1"
+                        : t === "bold"
+                        ? "Bold"
+                        : "Minimal"}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                {["modern", "bold", "minimal"].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setUiTheme(t)}
-                    style={{
-                      padding: "4px 10px",
-                      borderRadius: 999,
-                      border: "1px solid #d1d5db",
-                      background:
-                        uiTheme === t ? "#0ea5e9" : "#f9fafb",
-                      color: uiTheme === t ? "#ffffff" : "#111827",
-                      fontSize: "0.8rem",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t === "modern"
-                      ? "Theme 1"
-                      : t === "bold"
-                      ? "Bold"
-                      : "Minimal"}
-                  </button>
-                ))}
-              </div>
-            </div>
 
               <button
                 type="button"
@@ -1219,6 +1276,7 @@ function StudentApp() {
           </section>
         )}
 
+        {/* STATUS + STATION CARD */}
         {joined && (
           <section
             style={{
@@ -1304,6 +1362,7 @@ function StudentApp() {
           </section>
         )}
 
+        {/* SCANNER CARD */}
         {joined && scannerActive && (
           <section
             style={{
@@ -1339,8 +1398,10 @@ function StudentApp() {
           </section>
         )}
 
+        {/* TASK CARD */}
         {joined && currentTask && !mustScan && (
           <section
+            className="task-card"
             style={{
               marginBottom: 12,
               padding: 14,
@@ -1441,7 +1502,7 @@ function StudentApp() {
         }}
       />
     </div>
-);
+  );
 }
 
 export default StudentApp;
