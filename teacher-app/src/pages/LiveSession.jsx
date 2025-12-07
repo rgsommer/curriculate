@@ -623,7 +623,7 @@ export default function LiveSession({ roomCode }) {
 
         roomCode: roomCode.toUpperCase(),
         mode: "quick-live-session",
-      }; 
+      };
 
       console.log("[LiveSession] AI quick-task payload:", payload);
 
