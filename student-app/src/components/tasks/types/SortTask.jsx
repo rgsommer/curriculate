@@ -21,26 +21,19 @@ import { GripVertical, CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 function SortableItem({ id, children, disabled, score }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
 
+  const getStyle = () => {
+    if (!disabled) return {};
+    if (score === 1) return { borderColor: "#22c55e", background: "rgba(34,197,94,0.12)" };
+    if (score === 0) return { borderColor: "#ef4444", background: "rgba(239,68,68,0.12)" };
+    return { borderColor: "#f59e0b", background: "rgba(251,191,36,0.12)" }; // partial
+  };
+
   const style = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     transition,
     opacity: isDragging ? 0.8 : 1,
-    background: disabled
-      ? score === 1
-        ? "rgba(34,197,94,0.12)"
-        : score === 0
-        ? "rgba(239,68,68,0.12)"
-        : "rgba(251,191,36,0.12)"
-      : "rgba(255,255,255,0.95)",
-    border: `2px solid ${
-      disabled
-        ? score === 1
-          ? "#22c55e"
-          : score === 0
-          ? "#ef4444"
-          : "#f59e0b"
-        : "rgba(203,213,225,0.4)"
-    }`,
+    background: getStyle().background || "rgba(255,255,255,0.95)",
+    border: `2px solid ${getStyle().borderColor || "rgba(203,213,225,0.4)"}`,
     borderRadius: 12,
     padding: "12px 16px",
     margin: "6px 8px",
@@ -100,13 +93,18 @@ function DroppableBucket({ id, title, children, isOver, scoreInfo }) {
   );
 }
 
-export default function SortTask({ task, onSubmit, disabled, onAnswerChange, answerDraft }) {
-  // ... [rest of the component — unchanged from previous working version] ...
-  // (Keep all the logic you already have — scoring, drag handling, etc.)
-  // Just make sure the imports at the top are exactly as shown above
+export default function SortTask({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
+  // -------------------------------
+  // Normalise config
+  // -------------------------------
   const config = task?.config || {};
 
-  // === Buckets ===
   const rawBuckets = Array.isArray(config.buckets)
     ? config.buckets
     : Array.isArray(task?.buckets)
@@ -118,44 +116,25 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
     title: typeof b === "string" ? b : b.label || b.name || `Bucket ${i + 1}`,
   }));
 
-  // === Items with correctBucket (0-based index or null) ===
   const rawItems = Array.isArray(config.items)
     ? config.items
     : Array.isArray(task?.items)
     ? task.items
     : [];
 
-    const items = rawItems.map((it, idx) => {
-    const text =
-      typeof it === "string"
-        ? it
-        : it.text ?? it.label ?? it.name ?? `Item ${idx + 1}`;
-
-    let correctIndex = null;
-    if (it && typeof it === "object") {
-      if (typeof it.correctBucket === "number") {
-        // older shape
-        correctIndex = it.correctBucket;
-      } else if (typeof it.bucketIndex === "number") {
-        // AI-generated shape from aiTasksetController
-        correctIndex = it.bucketIndex;
-      } else if (typeof it.bucket === "number") {
-        // extra compatibility
-        correctIndex = it.bucket;
-      }
-    }
-
+  const items = rawItems.map((it, idx) => {
+    const text = typeof it === "string" ? it : it.text ?? it.label ?? it.name ?? it.prompt ?? `Item ${idx + 1}`;
+    const correctBucketIndex = typeof it === "object" ? it.correctBucket : null;
     return {
       id: `item-${idx}`,
       text,
-      correctBucket:
-        correctIndex !== null && correctIndex !== undefined
-          ? `bucket-${correctIndex}`
-          : null,
+      correctBucket: correctBucketIndex !== null ? `bucket-${correctBucketIndex}` : null,
     };
   });
 
-  // === State ===
+  // -------------------------------
+  // State: bucket assignments
+  // -------------------------------
   const initialAssignments = () => {
     if (answerDraft?.assignments && typeof answerDraft.assignments === "object") {
       return { ...answerDraft.assignments };
@@ -171,11 +150,13 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
     onAnswerChange({ assignments });
   }, [assignments, onAnswerChange]);
 
-  // === Partial Credit Scoring ===
+  // -------------------------------
+  // Partial Credit Scoring
+  // -------------------------------
   const scoring = items.reduce((acc, item) => {
     const placedIn = Object.entries(assignments).find(([_, ids]) => ids.includes(item.id))?.[0];
     const isCorrect = placedIn === item.correctBucket;
-    const score = isCorrect ? 1 : item.correctBucket !== null ? 0 : 0.5; // null = no wrong bucket penalty
+    const score = isCorrect ? 1 : item.correctBucket !== null ? 0 : 0.5; // 0.5 for items without correct bucket
     acc.total += 1;
     acc.points += score;
     return acc;
@@ -183,7 +164,6 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
 
   const finalScore = Math.round((scoring.points / scoring.total) * 100);
 
-  // Per-bucket scoring for display
   const bucketScores = buckets.map((bucket) => {
     const itemsInBucket = (assignments[bucket.id] || [])
       .map(id => items.find(i => i.id === id))
@@ -191,14 +171,17 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
     const correct = itemsInBucket.filter(i => i.correctBucket === bucket.id).length;
     const total = itemsInBucket.length;
     const maxPossible = items.filter(i => i.correctBucket === bucket.id).length;
-    const points = correct + (total - correct) * 0; // full credit only for correct
-    return { correct, total, max: maxPossible, points, perfect: correct === maxPossible && total >= maxPossible };
+    const partial = itemsInBucket.filter(i => i.correctBucket === null).length * 0.5;
+    const points = correct + partial;
+    return { correct, total, max: maxPossible, points, perfect: points === maxPossible && total >= maxPossible, partial: partial > 0 };
   });
 
-  // === Drag & Drop ===
+  // -------------------------------
+  // Drag & Drop setup
+  // -------------------------------
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor)
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   const handleDragEnd = (event) => {
@@ -218,15 +201,16 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
 
     const newAssignments = { ...assignments };
     if (fromBucket) {
-      newAssignments[fromBucket] = newAssignments[fromBucket].filter(id => id !== itemId);
+      newAssignments[fromBucket] = newAssignments[fromBucket].filter((id) => id !== itemId);
     }
+
     if (!newAssignments[bucketId]) newAssignments[bucketId] = [];
     newAssignments[bucketId].push(itemId);
 
     setAssignments(newAssignments);
   };
 
-  const allPlaced = Object.values(assignments).flat().length === items.length;
+  const allItemsPlaced = Object.values(assignments).flat().length === items.length;
 
   return (
     <div style={{ marginTop: 16 }}>
@@ -236,11 +220,12 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
             key={bucket.id}
             id={bucket.id}
             title={bucket.title}
+            isOver={false}
             scoreInfo={disabled ? bucketScores[idx] : null}
           >
             <SortableContext items={assignments[bucket.id] || []} strategy={rectSortingStrategy}>
               {(assignments[bucket.id] || [])
-                .map(id => items.find(i => i.id === id))
+                .map((id) => items.find((i) => i.id === id))
                 .filter(Boolean)
                 .map((item) => {
                   const placedIn = Object.entries(assignments).find(([_, ids]) => ids.includes(item.id))?.[0];
@@ -260,7 +245,7 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
           </DroppableBucket>
         ))}
 
-        {items.filter(i => !Object.values(assignments).flat().includes(i.id)).length > 0 && (
+        {items.filter((i) => !Object.values(assignments).flat().includes(i.id)).length > 0 && (
           <div style={{
             padding: 20,
             background: "rgba(254,242,242,0.6)",
@@ -292,21 +277,21 @@ export default function SortTask({ task, onSubmit, disabled, onAnswerChange, ans
 
       <button
         onClick={() => onSubmit({ assignments, score: finalScore })}
-        disabled={disabled || !allPlaced}
+        disabled={disabled || !allItemsPlaced}
         style={{
           marginTop: 24,
           width: "100%",
           padding: "16px",
           borderRadius: 999,
           border: "none",
-          background: disabled || !allPlaced ? "#94a3b8" : "#22c55e",
+          background: disabled || !allItemsPlaced ? "#94a3b8" : "#22c55e",
           color: "white",
           fontWeight: 700,
           fontSize: "1.1rem",
-          cursor: disabled || !allPlaced ? "not-allowed" : "pointer",
+          cursor: disabled || !allItemsPlaced ? "not-allowed" : "pointer",
         }}
       >
-        {disabled ? "Submitted" : allPlaced ? "Submit Sorting" : "Place all items first"}
+        {disabled ? "Submitted" : allItemsPlaced ? "Submit Sorting" : "Place all items first"}
       </button>
     </div>
   );
