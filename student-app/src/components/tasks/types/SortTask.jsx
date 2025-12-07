@@ -128,13 +128,33 @@ export default function SortTask({
     ? task.items
     : [];
 
-  const items = rawItems.map((it, idx) => {
-    const text = typeof it === "string" ? it : it.text ?? it.label ?? it.name ?? `Item ${idx + 1}`;
-    const correctIndex = typeof it === "object" ? it.correctBucket : null;
+    const items = rawItems.map((it, idx) => {
+    const text =
+      typeof it === "string"
+        ? it
+        : it.text ?? it.label ?? it.name ?? `Item ${idx + 1}`;
+
+    let correctIndex = null;
+    if (it && typeof it === "object") {
+      if (typeof it.correctBucket === "number") {
+        // older shape
+        correctIndex = it.correctBucket;
+      } else if (typeof it.bucketIndex === "number") {
+        // AI-generated shape from aiTasksetController
+        correctIndex = it.bucketIndex;
+      } else if (typeof it.bucket === "number") {
+        // extra compatibility
+        correctIndex = it.bucket;
+      }
+    }
+
     return {
       id: `item-${idx}`,
       text,
-      correctBucket: correctIndex !== null && correctIndex !== undefined ? `bucket-${correctIndex}` : null,
+      correctBucket:
+        correctIndex !== null && correctIndex !== undefined
+          ? `bucket-${correctIndex}`
+          : null,
     };
   });
 

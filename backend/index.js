@@ -1321,13 +1321,21 @@ io.on("connection", (socket) => {
         : true);
 
     let pointsEarned = 0;
-    if (correct === true) {
+
+    // 🔹 Special: SORT tasks send a percentage score from the front-end
+    if (
+      task.taskType === "sort" &&
+      answer &&
+      typeof answer === "object" &&
+      typeof answer.score === "number"
+    ) {
+      const pct = Math.max(0, Math.min(100, answer.score));
+      pointsEarned = Math.round((pct / 100) * basePoints);
+    } else if (correct === true) {
       // Normal case: AI or exact match says it's correct → full points
       pointsEarned = basePoints;
     } else if (correct === null && isEvidenceTask && hasEvidence) {
-      // No objective correctness (no AI / no correctAnswer),
-      // but this is an evidence task and they submitted something:
-      // assume good faith and award full points.
+      // Evidence tasks with "something" submitted get full credit.
       pointsEarned = basePoints;
     } else {
       pointsEarned = 0;
