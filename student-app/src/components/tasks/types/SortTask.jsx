@@ -12,7 +12,10 @@ import {
   SortableContext,
   rectSortingStrategy,
 } from "@hello-pangea/dnd";
-import { useSortable, useDroppable } from "@hello-pangea/dnd";
+import {
+  useSortable,
+  useDroppable,
+} from "@hello-pangea/dnd";
 import { GripVertical, CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 
 function SortableItem({ id, children, disabled, score }) {
