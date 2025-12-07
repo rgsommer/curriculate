@@ -272,7 +272,7 @@ function StudentApp() {
 
       // Try to resume from localStorage
       try {
-        const stored = localStorage.getItem("teamSession");
+        const stored = sessionStorage.getItem("teamSession");
         if (!stored) return;
 
         const parsed = JSON.parse(stored);
@@ -289,7 +289,7 @@ function StudentApp() {
             console.log("resume-team-session ack:", ack);
             if (!ack?.success) {
               console.warn("Resume failed:", ack?.error);
-              localStorage.removeItem("teamSession");
+              sessionStorage.removeItem("teamSession");
               return;
             }
 
@@ -436,7 +436,7 @@ function StudentApp() {
       setScannerActive(false);
       setStatusMessage("Session complete! Please wait for your teacher.");
       try {
-        localStorage.removeItem("teamSession");
+        sessionStorage.removeItem("teamSession");
       } catch {
         // ignore
       }
@@ -453,7 +453,7 @@ function StudentApp() {
       setAssignedColor(null);
       setStatusMessage("This session has ended. Thanks for playing!");
       try {
-        localStorage.removeItem("teamSession");
+        sessionStorage.removeItem("teamSession");
       } catch {
         // ignore
       }
@@ -622,7 +622,7 @@ function StudentApp() {
 
         // Persist for resume-team-session
         try {
-          localStorage.setItem(
+          sessionStorage.setItem(
             "teamSession",
             JSON.stringify({
               roomCode: finalRoom,

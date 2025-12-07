@@ -1410,22 +1410,48 @@ io.on("connection", (socket) => {
       submittedAt,
     });
 
-    // After every graded submission, advance THIS team to the next station so they must rescan.
-    reassignStationForTeam(room, effectiveTeamId);
-
-    // Maybe award a random treat for this submission
-    maybeAwardTreat(code, room, effectiveTeamId);
-
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
-
     // Determine if this is a "quick taskset"
     const isQuickTaskset =
       !!room.taskset &&
       room.taskset.name === "Quick task" &&
       Array.isArray(room.taskset.tasks) &&
       room.taskset.tasks.length === 1;
+
+    // After every graded submission, advance THIS team to the next station so they must rescan.
+    reassignStationForTeam(room, effectiveTeamId);
+
+    // Maybe award a random treat for this submission – but NOT for quick tasks
+    if (!isQuickTaskset) {
+      maybeAwardTreat(code, room, effectiveTeamId);
+    }
+
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+
+    // Per-team progression
+    if (room.taskset && Array.isArray(room.taskset.tasks)) {
+      const currentIndex =
+        typeof taskIndex === "number" && taskIndex >= 0
+          ? taskIndex
+          : typeof team.taskIndex === "number" && team.taskIndex >= 0
+          ? team.taskIndex
+          : idx;
+
+      const nextIndex = currentIndex + 1;
+
+      if (isQuickTaskset) {
+        // One-off quick task: let sendTaskToTeam handle "session complete".
+        sendTaskToTeam(room, effectiveTeamId, nextIndex);
+      } else {
+        // For normal tasksets, remember the next index and let the
+        // next colour scan trigger delivery of the new task.
+        if (!room.teams[effectiveTeamId]) {
+          room.teams[effectiveTeamId] = {};
+        }
+        room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
+      }
+    }
 
     // Per-team progression
     if (room.taskset && Array.isArray(room.taskset.tasks)) {
