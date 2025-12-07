@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/TaskRunner.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
 
 import BodyBreakTask from "./types/BodyBreakTask";
@@ -107,31 +107,41 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
   const isChoice = mode === "choice";
   const isShort = mode === "short";
 
+  // Prefer AI "items" array; fall back to older shapes;
+  // if none exist, treat as a single-question pack.
   const rawItems =
-    task.items ||
-    task.questions ||
-    task.subItems ||
+    (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
+    (Array.isArray(task.questions) && task.questions.length > 0 && task.questions) ||
+    (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
     [];
 
   const items =
-    Array.isArray(rawItems) && rawItems.length > 0
+    rawItems.length > 0
       ? rawItems
-      : [{ ...task, id: task.id || "only", prompt: task.prompt }];
+      : [
+          {
+            id: task.id || "only",
+            prompt: task.prompt,
+            options: task.options || [],
+            correctAnswer: task.correctAnswer ?? null,
+          },
+        ];
 
-  // Per-item options (shuffled once per task-item)
-    const itemOptions = useMemo(() => {
-      if (!isChoice) return null;
-      return items.map((item) => {
-        const base =
-          (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
-          (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-          (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
-            ? ["True", "False"]
-            : []);
-        if (!base || base.length === 0) return [];
-        return shuffleArray(base);
-      });
-    }, [items.length, isChoice, task.taskType, task.type]);
+  // Per-item shuffled options; base options always reconstructed in submit.
+  const itemOptions = useMemo(() => {
+    if (!isChoice) return null;
+    return items.map((item) => {
+      const base =
+        (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+        (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+        (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
+          ? ["True", "False"]
+          : []);
+      if (!base || base.length === 0) return [];
+      return shuffleArray(base);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, isChoice, task.taskType, task.type]);
 
   const [answers, setAnswers] = useState(() =>
     items.map(() => ({
@@ -165,14 +175,31 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
 
     const payload = items.map((item, idx) => {
       const answerVal = answers[idx]?.value ?? null;
-      const opts = isChoice ? itemOptions[idx] || [] : [];
-      const indexInBase =
-        isChoice && opts.length ? opts.indexOf(answerVal) : null;
+
+      // For choice-based items, compute index in ORIGINAL base options,
+      // not in the shuffled order.
+      let baseIndex = null;
+      if (isChoice && answerVal != null) {
+        const base =
+          (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+          (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+          (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
+            ? ["True", "False"]
+            : []);
+
+        if (base && base.length > 0) {
+          const idxBase = base.findIndex(
+            (opt) => String(opt).trim() === String(answerVal).trim()
+          );
+          baseIndex = idxBase >= 0 ? idxBase : null;
+        }
+      }
+
       return {
         itemId: item.id ?? idx,
         prompt: item.prompt ?? item.text ?? "",
         value: answerVal,
-        index: indexInBase,
+        baseIndex,
       };
     });
 
@@ -185,7 +212,7 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
 
   return (
     <form onSubmit={handleSubmit}>
-      {task.prompt && items.length === 1 && (
+      {task.prompt && (
         <p
           style={{
             marginTop: 0,
@@ -332,6 +359,9 @@ export default function TaskRunner({
   answerDraft,
   disabled = false,
   socket,
+  // for FlashcardsRace
+  roomCode,
+  playerTeam,
 }) {
   if (!task) return null;
 
@@ -343,30 +373,28 @@ export default function TaskRunner({
   const isShortType = type === TASK_TYPES.SHORT_ANSWER;
 
   const hasMultiItems =
-    Array.isArray(t.items) ||
-    Array.isArray(t.questions) ||
-    Array.isArray(t.subItems);
+    ((Array.isArray(t.items) && t.items.length > 1) ||
+      (Array.isArray(t.questions) && t.questions.length > 1) ||
+      (Array.isArray(t.subItems) && t.subItems.length > 1));
 
   const meta = TASK_TYPE_META[type];
-  const [diffRaceStatus, setDiffRaceStatus] = React.useState(null);
+  const [diffRaceStatus, setDiffRaceStatus] = useState(null);
 
   // Listen for race events from the server when this is a diff-detective task
-  React.useEffect(() => {
+  useEffect(() => {
     if (!socket) return;
 
     const isDiffDetective =
+      (t.taskType || t.type) === TASK_TYPES.DIFF_DETECTIVE ||
       (t.taskType || t.type) === "diff-detective";
 
-    // If we switch away from this task, clear race status
     if (!isDiffDetective) {
       setDiffRaceStatus(null);
       return;
     }
 
     const handleRaceStart = (payload) => {
-      // Optionally filter by taskIndex if you're passing it in task/index
-      setDiffRaceStatus((prev) => ({
-        ...prev,
+      setDiffRaceStatus(() => ({
         startedAt: payload.startedAt || Date.now(),
         leader: null,
         timeLeft: null,
@@ -381,11 +409,23 @@ export default function TaskRunner({
       }));
     };
 
-    const handleRaceFinish = (payload) => {
-      // You could track place/order here if you want:
-      // players, ranks, etc. For now we don't need it.
+    const handleRaceTick = (payload) => {
       setDiffRaceStatus((prev) => ({
-        ...prev,
+        ...(prev || {}),
+        timeLeft: payload.timeLeft ?? null,
+      }));
+    };
+
+    const handleRaceUpdate = (payload) => {
+      setDiffRaceStatus((prev) => ({
+        ...(prev || {}),
+        leader: payload.teamName ?? prev?.leader ?? null,
+      }));
+    };
+
+    const handleRaceFinish = (payload) => {
+      setDiffRaceStatus((prev) => ({
+        ...(prev || {}),
         lastFinish: {
           teamId: payload.teamId,
           teamName: payload.teamName,
@@ -396,8 +436,8 @@ export default function TaskRunner({
     };
 
     socket.on("diff:race-start", handleRaceStart);
-    socket.on("diff:race-tick", handleRaceTick);       // optional if needed
-    socket.on("diff:race-update", handleRaceUpdate);   // scores changing
+    socket.on("diff:race-tick", handleRaceTick);
+    socket.on("diff:race-update", handleRaceUpdate);
     socket.on("diff:race-end", handleRaceFinish);
 
     return () => {
@@ -406,7 +446,6 @@ export default function TaskRunner({
       socket.off("diff:race-update", handleRaceUpdate);
       socket.off("diff:race-end", handleRaceFinish);
     };
-    
   }, [socket, t.taskType, t.type]);
 
   const effectiveDisabled = disabled || submitting;
@@ -513,7 +552,13 @@ export default function TaskRunner({
       );
       break;
     case TASK_TYPES.SORT:
-      content = <SortTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <SortTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
       break;
     case TASK_TYPES.SEQUENCE:
       content = (
@@ -526,21 +571,41 @@ export default function TaskRunner({
       );
       break;
     case TASK_TYPES.PHOTO:
-      content = <PhotoTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <PhotoTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
       break;
     case TASK_TYPES.MAKE_AND_SNAP:
       content = (
-        <MakeAndSnapTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <MakeAndSnapTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
       content = (
-        <DrawMimeTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <DrawMimeTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.BODY_BREAK:
-      content = <BodyBreakTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <BodyBreakTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
       break;
     case TASK_TYPES.OPEN_TEXT:
       content = (
@@ -555,7 +620,11 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.RECORD_AUDIO:
       content = (
-        <RecordAudioTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <RecordAudioTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.SHORT_ANSWER:
@@ -571,7 +640,11 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.COLLABORATION:
       content = (
-        <CollaborationTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <CollaborationTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.MUSICAL_CHAIRS:
@@ -586,7 +659,11 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.MYSTERY_CLUES:
       content = (
-        <MysteryCluesTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <MysteryCluesTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
@@ -600,6 +677,7 @@ export default function TaskRunner({
         />
       );
       break;
+    case TASK_TYPES.MAD_DASH:
     case TASK_TYPES.MAD_DASH_SEQUENCE:
       content = (
         <MadDashSequenceTask
@@ -632,7 +710,13 @@ export default function TaskRunner({
       );
       break;
     case TASK_TYPES.FLASHCARDS_RACE:
-      return <FlashcardsRaceTask socket={socket} roomCode={roomCode} playerTeam={playerTeam} />;
+      return (
+        <FlashcardsRaceTask
+          socket={socket}
+          roomCode={roomCode}
+          playerTeam={playerTeam}
+        />
+      );
     case TASK_TYPES.TIMELINE:
       content = (
         <TimelineTask
@@ -645,12 +729,20 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.PET_FEEDING:
       content = (
-        <PetFeedingTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <PetFeedingTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.MOTION_MISSION:
       content = (
-        <MotionMissionTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <MotionMissionTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.BRAINSTORM_BATTLE:
@@ -663,14 +755,16 @@ export default function TaskRunner({
         />
       );
       break;
-    
-      case TASK_TYPES.MIND_MAPPER:
+    case TASK_TYPES.MIND_MAPPER:
       content = (
-        <MindMapperTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <MindMapperTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
-    
-      case TASK_TYPES.SPEED_DRAW:
+    case TASK_TYPES.SPEED_DRAW:
       content = (
         <SpeedDrawTask
           task={t}
@@ -680,19 +774,18 @@ export default function TaskRunner({
         />
       );
       break;
-      
-      case TASK_TYPES.DIFF_DETECTIVE:
-      case "diff-detective":
-        return (
-          <DiffDetectiveTask
-            task={t}
-            disabled={effectiveDisabled}
-            onSubmit={onSubmit}
-            onAnswerChange={onAnswerChange}
-            answerDraft={answerDraft}
-          />
-        );
-
+    case TASK_TYPES.DIFF_DETECTIVE:
+    case "diff-detective":
+      return (
+        <DiffDetectiveTask
+          task={t}
+          disabled={effectiveDisabled}
+          onSubmit={onSubmit}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          raceStatus={diffRaceStatus}
+        />
+      );
 
     default:
       return (

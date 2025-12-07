@@ -4,6 +4,7 @@ import { socket } from "../socket";
 import { fetchMyProfile } from "../api/profile";
 import {
   TASK_TYPES,
+  TASK_TYPE_META,
   QUICK_TASK_ELIGIBLE_TYPES,
 } from "../../../shared/taskTypes.js";
 import { API_BASE_URL } from "../config";
@@ -128,11 +129,14 @@ export default function LiveSession({ roomCode }) {
     "Untitled set";
 
   const totalTasksInActiveSet =
-    (Array.isArray(activeTasksetMeta?.tasks) && activeTasksetMeta.tasks.length) ||
-    (typeof activeTasksetMeta?.taskCount === "number" && activeTasksetMeta.taskCount > 0
+    (Array.isArray(activeTasksetMeta?.tasks) &&
+      activeTasksetMeta.tasks.length) ||
+    (typeof activeTasksetMeta?.taskCount === "number" &&
+    activeTasksetMeta.taskCount > 0
       ? activeTasksetMeta.taskCount
       : null) ||
-    (Array.isArray(activeTasksetMeta?.taskList) && activeTasksetMeta.taskList.length) ||
+    (Array.isArray(activeTasksetMeta?.taskList) &&
+      activeTasksetMeta.taskList.length) ||
     null;
 
   const isFixedStationTaskset =
@@ -227,7 +231,9 @@ export default function LiveSession({ roomCode }) {
 
         if (Array.isArray(data.locationOptions) && data.locationOptions.length) {
           setLocationOptions(
-            data.locationOptions.map((s) => (s || "").toString().trim()).filter(Boolean)
+            data.locationOptions
+              .map((s) => (s || "").toString().trim())
+              .filter(Boolean)
           );
         }
       } catch (err) {
@@ -555,7 +561,9 @@ export default function LiveSession({ roomCode }) {
     const taskToSend = {
       taskType,
       prompt: taskConfig.prompt.trim(),
-      ...(taskConfig.correctAnswer && { correctAnswer: taskConfig.correctAnswer.trim() }),
+      ...(taskConfig.correctAnswer && {
+        correctAnswer: taskConfig.correctAnswer.trim(),
+      }),
       ...(taskConfig.options && { options: taskConfig.options }),
       ...(taskConfig.clue && { clue: taskConfig.clue.trim() }),
     };
@@ -566,18 +574,16 @@ export default function LiveSession({ roomCode }) {
       selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
     });
 
-     setLastQuickTask({
+    setLastQuickTask({
       ...taskToSend,
       launchedAt: Date.now(),
     });
 
-    // Keep the question + answer visible for the teacher
     setTimeout(() => {
       setIsLaunchingQuick(false);
       setStatus("Quick task launched!");
-      // (If you later want a “Clear” button, we can add one.)
     }, 300);
-};
+  };
 
   const handleLocationOverrideClick = (loc) => {
     setSelectedLocation(loc);
@@ -596,7 +602,6 @@ export default function LiveSession({ roomCode }) {
       return;
     }
 
-    // 🔹 Clean and validate vocabulary / key terms
     const rawWords = (aiWordList || "")
       .split(",")
       .map((w) => w.trim())
@@ -617,18 +622,16 @@ export default function LiveSession({ roomCode }) {
         typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
       const gradeStr = aiGrade ? String(aiGrade).trim() : "";
-  
+
       const payload = {
-        // Basic metadata
         title: "Quick Task",
         description: aiPurpose || "",
         purpose: aiPurpose || undefined,
 
         numTasks: 1,
         taskType,
-        requiredTaskTypes: [taskType],   // 🔹 strongly hint the type
+        requiredTaskTypes: [taskType],
 
-        // Grade / level – support both fields just in case
         gradeLevel: gradeStr
           ? gradeStr.toLowerCase().startsWith("grade")
             ? gradeStr
@@ -638,14 +641,11 @@ export default function LiveSession({ roomCode }) {
 
         difficulty: aiDifficulty || "medium",
         subject: aiSubject || undefined,
-        
-        // 🔹 Key terms under *multiple* common names so the backend
-        // will definitely see them
+
         aiWordBank: aiWordList
           .split(/[\n,]+/)
-          .map(w => w.trim())
+          .map((w) => w.trim())
           .filter(Boolean),
-        //aiWordBank: rawWords,
         words: rawWords,
         wordList: rawWords,
         keyTerms: rawWords,
@@ -672,12 +672,9 @@ export default function LiveSession({ roomCode }) {
       let data = text ? JSON.parse(text) : null;
 
       if (!res.ok) {
-        throw new Error(
-          data?.error || `AI generator error (${res.status})`
-        );
+        throw new Error(data?.error || `AI generator error (${res.status})`);
       }
 
-      // Expect a single-task taskset back
       const taskset = data?.taskset || data;
       const firstTask =
         taskset?.tasks?.[0] ||
@@ -707,12 +704,11 @@ export default function LiveSession({ roomCode }) {
       setIsGenerating(false);
     }
   };
-  
+
   const handleLaunchTaskset = async () => {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
 
-    // If we can, pre-load the full taskset to check for HideNSeek tasks
     const token =
       typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
@@ -720,16 +716,21 @@ export default function LiveSession({ roomCode }) {
     setStatus("Preparing taskset…");
 
     try {
-      const res = await fetch(`${API_BASE}/api/tasksets/${activeTasksetMeta._id}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(
+        `${API_BASE}/api/tasksets/${activeTasksetMeta._id}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }
+      );
 
       const text = await res.text();
       let data = null;
       try {
         data = text ? JSON.parse(text) : null;
       } catch {
-        throw new Error("Server returned invalid JSON while loading set for launch");
+        throw new Error(
+          "Server returned invalid JSON while loading set for launch"
+        );
       }
 
       if (!res.ok) {
@@ -738,7 +739,6 @@ export default function LiveSession({ roomCode }) {
 
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
 
-      // Build a list of HideNSeek tasks that still need a clue/page reference
       const hideTasks = tasks
         .map((t, idx) => ({ task: t, index: idx }))
         .filter(
@@ -750,7 +750,6 @@ export default function LiveSession({ roomCode }) {
         );
 
       if (hideTasks.length > 0) {
-        // Prepare a modal asking the teacher to enter the page reference / clue
         const initialClues = {};
         hideTasks.forEach(({ task, index }) => {
           initialClues[String(index)] = task.clue || "";
@@ -765,7 +764,6 @@ export default function LiveSession({ roomCode }) {
         return;
       }
 
-      // No HideNSeek tasks missing clues – launch normally
       setStatus("Loading taskset…");
       setLaunchAfterLoad(true);
 
@@ -778,7 +776,6 @@ export default function LiveSession({ roomCode }) {
       console.error("[LiveSession] Launch taskset error:", err);
       setStatus(err.message || "Failed to launch taskset.");
     } finally {
-      // If we showed the modal, we already set launchingTaskset to false above
       setLaunchingTaskset(false);
     }
   };
@@ -867,11 +864,9 @@ export default function LiveSession({ roomCode }) {
   // --- Treat gating: require at least 30% of tasks completed ---
   const minTasksBeforeTreat =
     typeof totalTasksInActiveSet === "number" && totalTasksInActiveSet > 0
-      ? Math.ceil(totalTasksInActiveSet * 0.3) // 30% of tasks, rounded up
+      ? Math.ceil(totalTasksInActiveSet * 0.3)
       : 0;
 
-  // We approximate "tasks completed" from the current (0-based) taskIndex:
-  // index 0 → 0 completed, 1 → 1 completed, etc.
   const tasksCompletedSoFar =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
       ? roomState.taskIndex
@@ -904,9 +899,17 @@ export default function LiveSession({ roomCode }) {
     ? Object.values(brainstorm.teams).sort((a, b) => b.ideaCount - a.ideaCount)
     : [];
 
+  // NEW: latest submissions list (for right-hand panel)
+  const latestSubmissions = Object.values(submissions)
+    .sort(
+      (a, b) =>
+        (b.submittedAt || 0) - (a.submittedAt || 0)
+    )
+    .slice(0, 8);
+
   const launchBtnLabelDefault = "Launch from taskset";
   let launchBtnLabel = launchBtnLabelDefault;
-  let launchBtnBg = "#10b981"; // green
+  let launchBtnBg = "#10b981";
   let launchBtnOnClick = handleLaunchTaskset;
   let launchBtnDisabled = !activeTasksetMeta;
 
@@ -1200,7 +1203,7 @@ export default function LiveSession({ roomCode }) {
         </div>
       )}
 
-          {/* Main layout: left = controls, middle = teams, right = leaderboard/scan */}
+      {/* Main layout */}
       <div
         style={{
           display: "flex",
@@ -1221,7 +1224,7 @@ export default function LiveSession({ roomCode }) {
             gap: 16,
           }}
         >
-          {/* Task controls (Quick task + Taskset launch + QR + Room layout) */}
+          {/* Task controls */}
           <div
             style={{
               borderRadius: 12,
@@ -1240,7 +1243,7 @@ export default function LiveSession({ roomCode }) {
               Task controls
             </div>
 
-            {/* Quick task – fully dynamic */}
+            {/* Quick task */}
             <div
               style={{
                 marginBottom: 12,
@@ -1259,7 +1262,7 @@ export default function LiveSession({ roomCode }) {
                 Quick Launch Task
               </div>
 
-                            <p
+              <p
                 style={{
                   margin: 0,
                   marginBottom: 8,
@@ -1341,7 +1344,7 @@ export default function LiveSession({ roomCode }) {
                 </div>
               )}
 
-              {/* Multi-room selector (still available for supported types) */}
+              {/* Multi-room selector (for special types) */}
               {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") &&
                 teacherRooms.length > 1 && (
                   <div style={{ marginTop: 4, marginBottom: 8 }}>
@@ -1373,7 +1376,7 @@ export default function LiveSession({ roomCode }) {
                   </div>
                 )}
 
-              {/* Action Buttons */}
+              {/* Quick task buttons */}
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 <button
                   onClick={handleLaunchQuickTask}
@@ -1712,7 +1715,7 @@ export default function LiveSession({ roomCode }) {
           )}
         </div>
 
-        {/* RIGHT 1/3: Leaderboard + Scan log */}
+        {/* RIGHT 1/3: Leaderboard + Submissions + Scan log */}
         <div
           style={{
             flex: 1,
@@ -1758,6 +1761,131 @@ export default function LiveSession({ roomCode }) {
                 <p>No scores yet.</p>
               )}
             </div>
+          </section>
+
+          {/* Latest submissions (per-team last, including multi-pack info) */}
+          <section
+            style={{
+              width: "100%",
+              border: "1px solid #d1d5db",
+              borderRadius: 10,
+              padding: 12,
+              background: "#ffffff",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1.05rem",
+                fontWeight: 600,
+              }}
+            >
+              Latest submissions
+            </h2>
+
+            {latestSubmissions.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.8rem",
+                  color: "#9ca3af",
+                  fontStyle: "italic",
+                }}
+              >
+                No submissions yet.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  fontSize: "0.8rem",
+                  color: "#374151",
+                  maxHeight: 200,
+                  overflowY: "auto",
+                }}
+              >
+                {latestSubmissions.map((s) => {
+                  const teamName =
+                    teams[s.teamId]?.teamName || s.teamName || "Team";
+                  const pts =
+                    typeof s.points === "number" ? s.points : 0;
+                  const correctIcon =
+                    s.correct === true
+                      ? "✅"
+                      : s.correct === false
+                      ? "❌"
+                      : "☑️";
+
+                  let packSummary = null;
+                  if (
+                    s.aiScore &&
+                    typeof s.aiScore.correctCount === "number" &&
+                    typeof s.aiScore.totalItems === "number" &&
+                    s.aiScore.totalItems > 0
+                  ) {
+                    packSummary = `${s.aiScore.correctCount}/${s.aiScore.totalItems} correct`;
+                  }
+
+                  const trimmedAnswer =
+                    s.answerText && s.answerText.length > 120
+                      ? s.answerText.slice(0, 117) + "…"
+                      : s.answerText || "";
+
+                  return (
+                    <div
+                      key={`${s.teamId}-${s.taskIndex}`}
+                      style={{
+                        padding: 6,
+                        borderRadius: 8,
+                        background: "#f9fafb",
+                        border: "1px solid #e5e7eb",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 2,
+                        }}
+                      >
+                        <span>
+                          <strong>{teamName}</strong>{" "}
+                          <span style={{ marginLeft: 4 }}>{correctIcon}</span>
+                        </span>
+                        <span>
+                          {pts > 0 ? `+${pts} pts` : `${pts} pts`}
+                        </span>
+                      </div>
+                      {packSummary && (
+                        <div
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "#0369a1",
+                            marginBottom: 2,
+                          }}
+                        >
+                          {packSummary}
+                        </div>
+                      )}
+                      {trimmedAnswer && (
+                        <div
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "#4b5563",
+                          }}
+                        >
+                          {trimmedAnswer}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           {/* Scan log – only when no task is active */}
@@ -1820,6 +1948,7 @@ export default function LiveSession({ roomCode }) {
         </div>
       </div>
 
+      {/* Hide & Seek modal */}
       {showHideNSeekModal && pendingHideTaskset && (
         <div
           style={{
@@ -2013,7 +2142,9 @@ export default function LiveSession({ roomCode }) {
                         method: "PUT",
                         headers: {
                           "Content-Type": "application/json",
-                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                          ...(token
+                            ? { Authorization: `Bearer ${token}` }
+                            : {}),
                         },
                         body: JSON.stringify({
                           name:
@@ -2051,7 +2182,6 @@ export default function LiveSession({ roomCode }) {
                     setHideNSeekClues({});
                     setPendingHideTaskset(null);
 
-                    // Now we can launch the taskset as normal
                     const codeToUse =
                       pendingHideTaskset.roomCode ||
                       (roomCode ? roomCode.toUpperCase() : null);
@@ -2068,9 +2198,11 @@ export default function LiveSession({ roomCode }) {
                         selectedRooms,
                       });
                     }
-
                   } catch (err) {
-                    console.error("[LiveSession] Hide & Seek save error:", err);
+                    console.error(
+                      "[LiveSession] Hide & Seek save error:",
+                      err
+                    );
                     setStatus(
                       err.message ||
                         "Failed to save Hide & Seek clues before launch."
@@ -2103,89 +2235,6 @@ export default function LiveSession({ roomCode }) {
         </div>
       )}
 
-      {/* Optional: Room setup overlay for fixed-station sets */}
-      {showRoomSetup && roomSetup && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-          onClick={() => setShowRoomSetup(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#ffffff",
-              borderRadius: 12,
-              padding: 16,
-              minWidth: 400,
-              maxWidth: "80vw",
-            }}
-          >
-            <h2 style={{ marginTop: 0 }}>Room setup</h2>
-            <p style={{ fontSize: "0.9rem", color: "#4b5563" }}>
-              Classroom layout with station bubbles and their required
-              equipment.
-            </p>
-            <div
-              style={{
-                marginTop: 12,
-                borderRadius: 8,
-                border: "2px dashed #93c5fd",
-                height: 240,
-                position: "relative",
-                background: "#eff6ff",
-              }}
-            >
-              {(roomSetup.stations || []).map((s, idx) => {
-                const angle =
-                  (2 * Math.PI * idx) /
-                  Math.max(1, roomSetup.stations.length);
-                const cx = 50 + 40 * Math.cos(angle);
-                const cy = 50 + 40 * Math.sin(angle);
-                return (
-                  <div
-                    key={s.id || idx}
-                    style={{
-                      position: "absolute",
-                      left: `${cx}%`,
-                      top: `${cy}%`,
-                      transform: "translate(-50%, -50%)",
-                      padding: "4px 6px",
-                      borderRadius: 999,
-                      background: "#ffffff",
-                      border: "1px solid #3b82f6",
-                      fontSize: "0.75rem",
-                    }}
-                  >
-                    {s.label || s.id}
-                  </div>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowRoomSetup(false)}
-              style={{
-                marginTop: 12,
-                padding: "6px 10px",
-                borderRadius: 6,
-                border: "1px solid #d1d5db",
-                background: "#f9fafb",
-                cursor: "pointer",
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* AI GENERATOR MODAL */}
       {showAiGen && (
         <div
@@ -2196,7 +2245,7 @@ export default function LiveSession({ roomCode }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 1000,   // ← highest z-index in the file
+            zIndex: 1000,
           }}
           onClick={() => {
             setShowAiGen(false);
@@ -2221,18 +2270,25 @@ export default function LiveSession({ roomCode }) {
             <h3 style={{ margin: "0 0 12px 0", fontSize: "1.25rem" }}>
               Generate Task with AI
             </h3>
-            <p style={{ margin: "0 0 16px 0", color: "#64748b", fontSize: "0.9rem" }}>
-              Fill in as much as you want — we will create a perfect task for you.
+            <p
+              style={{
+                margin: "0 0 16px 0",
+                color: "#64748b",
+                fontSize: "0.9rem",
+              }}
+            >
+              Fill in as much as you want — we will create a perfect task for
+              you.
             </p>
 
-                        <div
+            <div
               style={{
                 display: "flex",
                 flexDirection: "column",
                 gap: 12,
               }}
             >
-              {/* Task type selection moved into the modal */}
+              {/* Task type selection */}
               <select
                 value={taskType}
                 onChange={(e) => setTaskType(e.target.value)}
@@ -2275,50 +2331,50 @@ export default function LiveSession({ roomCode }) {
               </select>
 
               <div>
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  marginBottom: 4,
-                  color: "#4b5563",
-                  fontWeight: 500,
-                }}
-              >
-                Learning objective / purpose
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    marginBottom: 4,
+                    color: "#4b5563",
+                    fontWeight: 500,
+                  }}
+                >
+                  Learning objective / purpose
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  {PURPOSE_OPTIONS.map((option) => {
+                    const selected = aiPurpose === option;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() =>
+                          setAiPurpose(selected ? "" : option)
+                        }
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: "1px solid",
+                          borderColor: selected ? "#6366f1" : "#cbd5e1",
+                          background: selected ? "#eef2ff" : "#ffffff",
+                          fontSize: "0.8rem",
+                          color: selected ? "#111827" : "#4b5563",
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                }}
-              >
-                {PURPOSE_OPTIONS.map((option) => {
-                  const selected = aiPurpose === option;
-                  return (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() =>
-                        setAiPurpose(selected ? "" : option)
-                      }
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 999,
-                        border: "1px solid",
-                        borderColor: selected ? "#6366f1" : "#cbd5e1",
-                        background: selected ? "#eef2ff" : "#ffffff",
-                        fontSize: "0.8rem",
-                        color: selected ? "#111827" : "#4b5563",
-                        cursor: "pointer",
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      {option}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
 
               <input
                 placeholder="Subject (e.g. Science, History)"
@@ -2345,7 +2401,14 @@ export default function LiveSession({ roomCode }) {
               />
             </div>
 
-            <div style={{ marginTop: 20, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <div
+              style={{
+                marginTop: 20,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+              }}
+            >
               <button
                 onClick={() => {
                   setShowAiGen(false);
@@ -2383,7 +2446,7 @@ export default function LiveSession({ roomCode }) {
               </button>
             </div>
           </div>
-        </div> 
+        </div>
       )}
     </div>
   );

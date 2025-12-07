@@ -19,6 +19,11 @@ const CORE_TYPES =
     ? AI_ELIGIBLE_TYPES
     : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
 
+// Types that can sensibly hold multiple sub-questions ("items") in one task
+const MULTI_ITEM_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta.multiItemCapable)
+  .map(([type]) => type);
+
 function validateGeneratePayload(payload = {}) {
   const errors = [];
 
@@ -270,6 +275,10 @@ ${lensesText}
 
     const taskTypeList = typePool.join(", ");
 
+    const multiItemTypesList = MULTI_ITEM_TYPES.filter((t) =>
+      typePool.includes(t)
+    );
+
     const userPrompt = `
 Create ${safeCount} tasks for the following class:
 
@@ -287,20 +296,53 @@ ${considerationsSection}
 ${lensesSection}
 
 Rules:
-- Mix of the allowed taskTypes only: ${typePool.join(", ")}.
-- Each task has a short clear title and prompt.
+- Mix of the allowed taskTypes only: ${taskTypeList}.
+- Each task has a short clear title and a prompt that students will see.
 - Tasks should, whenever possible, reflect the listed curricular lenses
   (for example, by connecting content or examples to that perspective).
-- For "${TASK_TYPES.MULTIPLE_CHOICE}":
-  - Provide 3–5 options (short strings).
-  - correctAnswer is the ZERO-BASED index of the correct option.
-- For "${TASK_TYPES.TRUE_FALSE}":
-  - options can be ["True", "False"].
-  - correctAnswer is the ZERO-BASED index (0 or 1).
-- For "${TASK_TYPES.SHORT_ANSWER}":
-  - options is an empty array.
-  - correctAnswer is a short reference answer string (or null).
-- For "${TASK_TYPES.SORT}":
+
+For "${TASK_TYPES.MULTIPLE_CHOICE}":
+  - Each task may be a SINGLE question or a SHORT SET (mini-quiz) of 3–5 multiple-choice questions.
+  - If it is a short set, use an "items" array where each item is:
+    {
+      "id": "q1",
+      "prompt": "Question text",
+      "options": ["A", "B", "C"],
+      "correctAnswer": 0
+    }
+  - The top-level "prompt" should still be a brief instruction like
+    "Answer each of the following multiple-choice questions."
+  - For each question, provide 3–5 options (short strings).
+  - For each question, correctAnswer is the ZERO-BASED index of the correct option.
+
+For "${TASK_TYPES.TRUE_FALSE}":
+  - Each task may be a SINGLE statement or a SHORT SET of 3–5 True/False statements.
+  - If it is a short set, use an "items" array where each item is:
+    {
+      "id": "s1",
+      "prompt": "Statement text",
+      "options": ["True", "False"],
+      "correctAnswer": 0
+    }
+  - The top-level "prompt" should be a brief instruction like
+    "Decide if each statement is True or False."
+  - For each question, options must be ["True", "False"].
+  - For each question, correctAnswer is the ZERO-BASED index (0 or 1).
+
+For "${TASK_TYPES.SHORT_ANSWER}":
+  - Each task may be a SINGLE prompt or a SHORT SET of 3–5 short-answer prompts.
+  - If it is a short set, use an "items" array where each item is:
+    {
+      "id": "sa1",
+      "prompt": "Prompt text",
+      "correctAnswer": "reference answer"
+    }
+  - The top-level "prompt" should be a brief instruction like
+    "Answer each question with a word or short phrase."
+  - For short-answer tasks, top-level "options" should be an empty array.
+  - For each question, correctAnswer is a short reference answer string (or null).
+
+For "${TASK_TYPES.SORT}":
   - Use a "config" object with:
     - "buckets": an array of 2–4 category labels (short strings).
     - "items": an array of 6–10 objects of the form
@@ -314,12 +356,30 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
   {
     "title": "Short title",
-    "prompt": "Student-facing instructions / question.",
+    "prompt": "Student-facing instructions / question or mini-quiz heading.",
     "taskType": "multiple-choice",
     "options": ["Option A", "Option B"],
     "correctAnswer": 0,
     "timeLimitSeconds": 60,
-    "points": 10
+    "points": 10,
+
+    // OPTIONAL for multi-question tasks (MC / TF / Short Answer):
+    "items": [
+      {
+        "id": "q1",
+        "prompt": "First question",
+        "options": ["A", "B", "C"],
+        "correctAnswer": 0
+      }
+    ],
+
+    // OPTIONAL for sort tasks:
+    "config": {
+      "buckets": ["Category 1", "Category 2"],
+      "items": [
+        { "text": "Item 1", "bucketIndex": 0 }
+      ]
+    }
   },
   ...
 ]
@@ -362,16 +422,88 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         taskType = rawType;
       }
 
-      // Base options and config
+      const meta = TASK_TYPE_META[taskType] || {};
+      const multiItemCapable = !!meta.multiItemCapable;
+
+      // Base options, config, items
       let options = Array.isArray(t.options) ? t.options : [];
       let config = null;
+      let items = [];
 
-      // ---------- Options / config by type ----------
+      // ---------- Options / config / items by type ----------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
+        // Normalise multi-item MC, if present
+        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
+          items = t.items.map((it, idx) => {
+            const id = it.id || `q${idx + 1}`;
+            const iprompt =
+              it.prompt && String(it.prompt).trim()
+                ? String(it.prompt).trim()
+                : `Question ${idx + 1}`;
+            let ioptions = Array.isArray(it.options) ? it.options : [];
+            if (ioptions.length < 2) {
+              ioptions = ["Option A", "Option B"];
+            }
+
+            let icorrect = it.correctAnswer ?? null;
+            if (typeof icorrect === "string") {
+              const idxMatch = ioptions.findIndex(
+                (opt) => String(opt).trim() === icorrect.trim()
+              );
+              icorrect = idxMatch >= 0 ? idxMatch : 0;
+            } else if (Number.isInteger(icorrect)) {
+              let idxNum = icorrect;
+              if (idxNum < 0 || idxNum >= ioptions.length) idxNum = 0;
+              icorrect = idxNum;
+            } else {
+              icorrect = 0;
+            }
+
+            return {
+              id,
+              prompt: iprompt,
+              options: ioptions,
+              correctAnswer: icorrect,
+            };
+          });
+        }
+
+        // Legacy / single-question MC at top-level
         if (options.length < 2) {
           options = ["Option A", "Option B"];
         }
       } else if (taskType === TASK_TYPES.TRUE_FALSE) {
+        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
+          items = t.items.map((it, idx) => {
+            const id = it.id || `s${idx + 1}`;
+            const iprompt =
+              it.prompt && String(it.prompt).trim()
+                ? String(it.prompt).trim()
+                : `Statement ${idx + 1}`;
+
+            // Force TF options
+            const ioptions = ["True", "False"];
+
+            let icorrect = it.correctAnswer ?? null;
+            if (typeof icorrect === "string") {
+              const v = icorrect.toLowerCase().trim();
+              icorrect = v === "false" ? 1 : 0;
+            } else if (Number.isInteger(icorrect)) {
+              icorrect = icorrect === 1 ? 1 : 0;
+            } else {
+              icorrect = 0;
+            }
+
+            return {
+              id,
+              prompt: iprompt,
+              options: ioptions,
+              correctAnswer: icorrect,
+            };
+          });
+        }
+
+        // Top-level TF options
         if (options.length !== 2) {
           options = ["True", "False"];
         }
@@ -405,7 +537,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           ? t.items
           : [];
 
-        const items = rawItems.map((it, idx) => {
+        const sortItems = rawItems.map((it, idx) => {
           if (typeof it === "string") {
             return { text: it, bucketIndex: null };
           }
@@ -432,13 +564,38 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         config = {
           ...aiConfig,
           buckets,
-          items,
+          items: sortItems,
         };
 
         // No flat options / correctAnswer for SORT; scoring uses config
         options = [];
       } else {
-        options = [];
+        // Other types – assume no options by default
+        options = Array.isArray(t.options) ? t.options : [];
+      }
+
+      // For SHORT_ANSWER, we may also receive an "items" array
+      if (taskType === TASK_TYPES.SHORT_ANSWER && multiItemCapable) {
+        if (Array.isArray(t.items) && t.items.length) {
+          items = t.items.map((it, idx) => {
+            const id = it.id || `sa${idx + 1}`;
+            const iprompt =
+              it.prompt && String(it.prompt).trim()
+                ? String(it.prompt).trim()
+                : `Prompt ${idx + 1}`;
+            let icorrect = it.correctAnswer ?? null;
+            if (typeof icorrect === "string") {
+              icorrect = icorrect.trim();
+            } else {
+              icorrect = null;
+            }
+            return {
+              id,
+              prompt: iprompt,
+              correctAnswer: icorrect,
+            };
+          });
+        }
       }
 
       // ---------- correctAnswer + aiScoringRequired ----------
@@ -468,16 +625,23 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         } else {
           correctAnswer = correctAnswer.trim();
         }
-      } else {
+      } else if (taskType === TASK_TYPES.SORT) {
+        // Sort scoring uses config; no flat correctAnswer
         correctAnswer = null;
+      } else {
+        // For other types, we do not enforce a flat correct answer here
+        if (typeof correctAnswer !== "string") {
+          correctAnswer = null;
+        }
       }
 
-      // Objective types we can score directly: MC / TF
-      const aiScoringRequired =
-        taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-        taskType === TASK_TYPES.TRUE_FALSE
-          ? false
-          : true;
+      // For objective types, we can score directly; others need AI/rubric.
+      const objective =
+        typeof meta.objectiveScoring === "boolean"
+          ? meta.objectiveScoring
+          : false;
+
+      const aiScoringRequired = objective ? false : true;
 
       // ---------- Common fields ----------
       const title =
@@ -485,9 +649,12 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           ? String(t.title).trim().slice(0, 120)
           : `Task ${index + 1}`;
 
-      const prompt =
+      // If this is a multi-item task and the prompt is missing, fall back to a generic heading.
+      let prompt =
         t.prompt && String(t.prompt).trim()
           ? String(t.prompt).trim()
+          : multiItemCapable && items.length
+          ? "Answer each of the questions below."
           : "Follow the instructions given by your teacher.";
 
       const timeLimitSeconds = Number.isFinite(t.timeLimitSeconds)
@@ -508,7 +675,8 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         aiScoringRequired,
         timeLimitSeconds,
         points,
-        config, // <-- this is what SortTask will consume
+        config, // e.g., SortTask uses this
+        items,  // prepared for multi-question packs (MC / TF / SA), not yet consumed by StudentApp
       };
     });
 
@@ -550,6 +718,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           aiWordsUsed,
           aiWordsUnused,
           topicTitle,
+          notes: customNotes || "",
         },
       },
       requiredTaskTypes: typePool,

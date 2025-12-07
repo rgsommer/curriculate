@@ -246,6 +246,19 @@ function StudentApp() {
   });
   const [treatMessage, setTreatMessage] = useState(null);
 
+  // Noise + treats
+  const [noiseState, setNoiseState] = useState({
+    enabled: false,
+    threshold: 0,
+    level: 0,
+    brightness: 1,
+  });
+  const [treatMessage, setTreatMessage] = useState(null);
+
+  // 🔢 Scoring: running total + last-task result
+  const [scoreTotal, setScoreTotal] = useState(0);
+  const [lastTaskResult, setLastTaskResult] = useState(null);
+
   // Whether to enforce location as well as colour (fixed-station / multi-room scavenger hunts)
   const [enforceLocation, setEnforceLocation] = useState(false);
 
@@ -371,6 +384,11 @@ function StudentApp() {
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
 
+      // 🔢 Update running total score from room-wide scores map
+      if (state.scores && typeof state.scores[teamId] === "number") {
+        setScoreTotal(state.scores[teamId]);
+      }
+
       const newStationId = myTeam.currentStationId || null;
       if (!newStationId) return;
 
@@ -400,6 +418,7 @@ function StudentApp() {
 
     socket.on("room:state", handleRoomState);
     socket.on("roomState", handleRoomState);
+    socket.on("taskSubmission", handleTaskSubmission);  // 🔢 NEW
 
     // Task launches from teacher / engine
     socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
@@ -441,6 +460,30 @@ function StudentApp() {
         // ignore
       }
     });
+
+    // Last-task result for this team
+    const handleTaskSubmission = (submission) => {
+      if (!submission || !teamId) return;
+
+      // Ignore other rooms
+      if (
+        submission.roomCode &&
+        roomCode &&
+        submission.roomCode.toUpperCase() !== roomCode.trim().toUpperCase()
+      ) {
+        return;
+      }
+
+      // Only care about this team
+      if (submission.teamId !== teamId) return;
+
+      setLastTaskResult({
+        points: typeof submission.points === "number" ? submission.points : 0,
+        correct: submission.correct,
+        answerText: submission.answerText || "",
+        submittedAt: submission.submittedAt || Date.now(),
+      });
+    };
 
     // Session ended via REST / teacher
     socket.on("session-ended", () => {
@@ -485,13 +528,14 @@ function StudentApp() {
     return () => {
       socket.off("room:state", handleRoomState);
       socket.off("roomState", handleRoomState);
+      socket.off("taskSubmission", handleTaskSubmission); // 🔢 NEW
       socket.off("task:launch");
       socket.off("session:complete");
       socket.off("session-ended");
       socket.off("session:noiseLevel");
       socket.off("student:treatAssigned");
     };
-  }, [teamId]);
+  }, [teamId, roomCode]);
 
   // ─────────────────────────────────────────────
   // Timer effect for task time limits
@@ -1317,6 +1361,34 @@ function StudentApp() {
                 <strong>Current station: </strong>
                 {assignedNorm.label}
               </div>
+              {/* 🔢 Score info */}
+              <div style={{ marginTop: 2 }}>
+                <strong>Score:</strong> {scoreTotal} pts
+              </div>
+              {lastTaskResult && (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: "0.8rem",
+                    color:
+                      lastTaskResult.correct === true
+                        ? "#166534"
+                        : lastTaskResult.correct === false
+                        ? "#b91c1c"
+                        : "#111827",
+                  }}
+                >
+                  Last task:{" "}
+                  {lastTaskResult.correct === true
+                    ? "✅ Correct"
+                    : lastTaskResult.correct === false
+                    ? "❌ Incorrect"
+                    : "☑️ Submitted"}
+                  {typeof lastTaskResult.points === "number" && (
+                    <> ({lastTaskResult.points} pts)</>
+                  )}
+                </div>
+              )}
               {mustScan ? (
                 <div
                   style={{

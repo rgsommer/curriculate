@@ -1262,84 +1262,227 @@ io.on("connection", (socket) => {
     const teamName =
       team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
 
-    // Build a submission object that aiScoring understands
+    const meta = TASK_TYPE_META?.[task.taskType] || {};
+    const basePoints = task.points ?? 10;
+
+    // Detect multi-question pack answers from TaskRunner
+    const isMultiPack =
+      answer &&
+      typeof answer === "object" &&
+      Array.isArray(answer.answers) &&
+      answer.answers.length > 0 &&
+      (answer.type === "multi-choice" || answer.type === "multi-short");
+
+    // Build answerText for transcripts/logging
+    const answerText = (() => {
+      if (isMultiPack) {
+        try {
+          return answer.answers
+            .map((a, i) => {
+              const label = a?.prompt || `Q${i + 1}`;
+              const val =
+                a?.value != null ? String(a.value).trim() : "(no answer)";
+              return `${i + 1}) ${label}: ${val}`;
+            })
+            .join(" | ");
+        } catch {
+          return JSON.stringify(answer);
+        }
+      }
+
+      if (typeof answer === "string") return answer;
+      if (answer != null) return String(answer);
+      return "";
+    })();
+
+    // Submission object passed into aiScoring (for non-multi cases)
     const submissionForScoring = {
       answer,
-      answerText:
-        typeof answer === "string"
-          ? answer
-          : answer != null
-          ? String(answer)
-          : "",
+      answerText,
     };
 
     let aiScore = null;
-
-    try {
-      // If we have either an objective correctAnswer OR a full rubric,
-      // let aiScoring handle it. For QuickTask we only have correctAnswer,
-      // so this will go through the rule-based path (no OpenAI call).
-      if (task.correctAnswer != null || task.aiRubric) {
-        aiScore = await generateAIScore({
-          task,
-          rubric: task.aiRubric || null,
-          submission: submissionForScoring,
-        });
-      }
-    } catch (e) {
-      console.error("AI / rule-based scoring failed:", e);
-    }
-
-    const correct = (() => {
-      // Prefer aiScore when available (AI or rule-based)
-      if (aiScore && typeof aiScore.totalScore === "number") {
-        return aiScore.totalScore > 0;
-      }
-      // Fallback: legacy behaviour
-      if (task.correctAnswer == null) return null;
-      return String(answer).trim() === String(task.correctAnswer).trim();
-    })();
-
-    const submittedAt = Date.now();
-    const basePoints = task.points ?? 10;
-
-    // Look up the task meta so we can treat evidence tasks differently
-    const meta = TASK_TYPE_META?.[task.taskType];
-
-    // “Evidence tasks” are ones that don’t expect text and don’t have options,
-    // e.g. photo, make-and-snap, body-break, etc.
-    const isEvidenceTask =
-      !!meta && meta.expectsText === false && meta.hasOptions === false;
-
-    // Did the team actually submit *something*?
-    const hasEvidence =
-      answer != null &&
-      (typeof answer === "string"
-        ? answer.trim().length > 0
-        : typeof answer === "object"
-        ? Object.keys(answer).length > 0
-        : true);
-
+    let correct = null;
     let pointsEarned = 0;
 
-    // 🔹 Special: SORT tasks send a percentage score from the front-end
-    if (
-      task.taskType === "sort" &&
-      answer &&
-      typeof answer === "object" &&
-      typeof answer.score === "number"
-    ) {
-      const pct = Math.max(0, Math.min(100, answer.score));
-      pointsEarned = Math.round((pct / 100) * basePoints);
-    } else if (correct === true) {
-      // Normal case: AI or exact match says it's correct → full points
-      pointsEarned = basePoints;
-    } else if (correct === null && isEvidenceTask && hasEvidence) {
-      // Evidence tasks with "something" submitted get full credit.
-      pointsEarned = basePoints;
-    } else {
-      pointsEarned = 0;
+    // ----------------------------
+    // 1) Multi-question packs
+    // ----------------------------
+    if (isMultiPack && Array.isArray(task.items) && task.items.length > 0) {
+      const items = task.items;
+      const byId = new Map();
+      items.forEach((it, i) => {
+        const key = it.id != null ? String(it.id) : String(i);
+        byId.set(key, { item: it, index: i });
+      });
+
+      let correctCount = 0;
+      let evaluatedCount = 0;
+
+      for (const entry of answer.answers) {
+        if (!entry) continue;
+        const rawId = entry.itemId != null ? String(entry.itemId) : null;
+        const mapKey = rawId ?? String(evaluatedCount);
+        const target = byId.get(mapKey);
+        if (!target) {
+          evaluatedCount += 1;
+          continue;
+        }
+
+        const { item } = target;
+        const givenValue = entry.value;
+        const givenBaseIndex =
+          typeof entry.baseIndex === "number" ? entry.baseIndex : null;
+
+        let isCorrectItem = null;
+
+        // Multi-choice items: compare index (preferred) or text
+        if (answer.type === "multi-choice") {
+          const itemCorrect = item.correctAnswer;
+          const baseOptions = Array.isArray(item.options)
+            ? item.options
+            : Array.isArray(item.choices)
+            ? item.choices
+            : task.taskType === "true-false"
+            ? ["True", "False"]
+            : [];
+
+          if (typeof itemCorrect === "number" && baseOptions.length > 0) {
+            // compare indices
+            if (
+              givenBaseIndex != null &&
+              givenBaseIndex >= 0 &&
+              givenBaseIndex < baseOptions.length
+            ) {
+              isCorrectItem = givenBaseIndex === itemCorrect;
+            } else if (givenValue != null) {
+              const idxBase = baseOptions.findIndex(
+                (opt) => String(opt).trim() === String(givenValue).trim()
+              );
+              isCorrectItem = idxBase === itemCorrect;
+            }
+          } else if (typeof itemCorrect === "string" && givenValue != null) {
+            isCorrectItem =
+              String(givenValue).trim().toLowerCase() ===
+              itemCorrect.trim().toLowerCase();
+          }
+        }
+        // Short-answer items: compare string to reference
+        else if (answer.type === "multi-short") {
+          const itemCorrect =
+            typeof item.correctAnswer === "string"
+              ? item.correctAnswer.trim()
+              : null;
+          if (itemCorrect && givenValue != null) {
+            isCorrectItem =
+              String(givenValue).trim().toLowerCase() ===
+              itemCorrect.toLowerCase();
+          }
+        }
+
+        if (isCorrectItem === true) {
+          correctCount += 1;
+        }
+        evaluatedCount += 1;
+      }
+
+      const totalItems = items.length;
+      const usedItems = evaluatedCount || totalItems;
+      const fraction =
+        usedItems > 0 ? Math.max(0, Math.min(1, correctCount / usedItems)) : 0;
+
+      pointsEarned = Math.round(basePoints * fraction);
+
+      // correct flag: only "true" if perfect, "false" if all wrong, null for partial
+      if (fraction === 1) {
+        correct = true;
+      } else if (fraction === 0) {
+        correct = false;
+      } else {
+        correct = null;
+      }
+
+      aiScore = {
+        totalScore: pointsEarned,
+        maxPoints: basePoints,
+        correctCount,
+        totalItems,
+        evaluatedItems: usedItems,
+        fractionCorrect: fraction,
+        strategy: "rule-based-multi-item",
+      };
     }
+
+    // ----------------------------
+    // 2) Non-multi tasks → existing AI / rule-based scoring
+    // ----------------------------
+    if (!isMultiPack) {
+      try {
+        // If we have either an objective correctAnswer OR a full rubric,
+        // let aiScoring handle it. For QuickTask we only have correctAnswer,
+        // so this will go through the rule-based path (no OpenAI call).
+        if (task.correctAnswer != null || task.aiRubric) {
+          aiScore = await generateAIScore({
+            task,
+            rubric: task.aiRubric || null,
+            submission: submissionForScoring,
+          });
+        }
+      } catch (e) {
+        console.error("AI / rule-based scoring failed:", e);
+      }
+
+      correct = (() => {
+        // Prefer aiScore when available (AI or rule-based)
+        if (aiScore && typeof aiScore.totalScore === "number") {
+          return aiScore.totalScore > 0;
+        }
+        // Fallback: legacy behaviour
+        if (task.correctAnswer == null) return null;
+        return String(answer).trim() === String(task.correctAnswer).trim();
+      })();
+
+      const submittedAt = Date.now();
+
+      // “Evidence tasks” are ones that don’t expect text and don’t have options,
+      // e.g. photo, make-and-snap, body-break, etc.
+      const isEvidenceTask =
+        !!meta && meta.expectsText === false && meta.hasOptions === false;
+
+      // Did the team actually submit *something*?
+      const hasEvidence =
+        answer != null &&
+        (typeof answer === "string"
+          ? answer.trim().length > 0
+          : typeof answer === "object"
+          ? Object.keys(answer).length > 0
+          : true);
+
+      // 🔹 Special: SORT tasks send a percentage score from the front-end
+      if (
+        task.taskType === "sort" &&
+        answer &&
+        typeof answer === "object" &&
+        typeof answer.score === "number"
+      ) {
+        const pct = Math.max(0, Math.min(100, answer.score));
+        pointsEarned = Math.round((pct / 100) * basePoints);
+      } else if (correct === true) {
+        // Normal case: AI or exact match says it's correct → full points
+        pointsEarned = basePoints;
+      } else if (correct === null && isEvidenceTask && hasEvidence) {
+        // Evidence tasks with "something" submitted get full credit.
+        pointsEarned = basePoints;
+      } else {
+        pointsEarned = 0;
+      }
+
+      // We'll use submittedAt again below, so keep it in scope:
+      var submittedAtNonMulti = submittedAt;
+    }
+
+    // If we’re in the multi-pack path, we still need a timestamp
+    const submittedAt = isMultiPack ? Date.now() : submittedAtNonMulti;
 
     // ==== Diff Detective race mechanics (first correct team wins bonus) ====
     if (
@@ -1457,13 +1600,15 @@ io.on("connection", (socket) => {
       teamId: effectiveTeamId,
       teamName,
       taskIndex: idx,
-      answerText: String(answer || ""),
+      answerText,
       correct,
       points: pointsEarned,
       timeMs: timeMs ?? null,
       submittedAt,
+      aiScore, // <-- NEW: carries multi-pack info like correctCount/totalItems
     };
     io.to(code).emit("taskSubmission", submissionSummary);
+
 
     socket.emit("task:received");
     if (typeof ack === "function") {
