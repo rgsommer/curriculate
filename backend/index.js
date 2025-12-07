@@ -1229,7 +1229,7 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
   });
 
-  const handleStudentSubmit = async (payload, ack) => {
+    const handleStudentSubmit = async (payload, ack) => {
     const { roomCode, teamId, taskIndex, answer, timeMs } = payload || {};
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -1276,35 +1276,26 @@ io.on("connection", (socket) => {
     let aiScore = null;
 
     try {
-      if (task.correctAnswer != null) {
-        // ✅ Objective tasks (including QuickTask) – use rule-based scoring.
-        // This will NOT call OpenAI because hasCorrect === true.
+      // If we have either an objective correctAnswer OR a full rubric,
+      // let aiScoring handle it. For QuickTask we only have correctAnswer,
+      // so this will go through the rule-based path (no OpenAI call).
+      if (task.correctAnswer != null || task.aiRubric) {
         aiScore = await generateAIScore({
           task,
-          rubric: null,
+          rubric: task.aiRubric || null,
           submission: submissionForScoring,
         });
       }
-      // Future: if you later attach a full rubric object, you can do:
-      // else if (task.aiRubric) {
-      //   aiScore = await generateAIScore({
-      //     task,
-      //     rubric: task.aiRubric,
-      //     submission: submissionForScoring,
-      //   });
-      // }
     } catch (e) {
       console.error("AI / rule-based scoring failed:", e);
     }
 
     const correct = (() => {
-      // If aiScore came back (either AI or rule-based), use it as truth.
+      // Prefer aiScore when available (AI or rule-based)
       if (aiScore && typeof aiScore.totalScore === "number") {
-        // Any positive score counts as "correct" for now.
         return aiScore.totalScore > 0;
       }
-
-      // Fallback: legacy exact-match logic
+      // Fallback: legacy behaviour
       if (task.correctAnswer == null) return null;
       return String(answer).trim() === String(task.correctAnswer).trim();
     })();
@@ -1395,7 +1386,7 @@ io.on("connection", (socket) => {
         });
       }
     }
-    
+
     room.submissions.push({
       roomCode: code,
       teamId: effectiveTeamId,
@@ -1428,30 +1419,6 @@ io.on("connection", (socket) => {
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
-
-    // Per-team progression
-    if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const currentIndex =
-        typeof taskIndex === "number" && taskIndex >= 0
-          ? taskIndex
-          : typeof team.taskIndex === "number" && team.taskIndex >= 0
-          ? team.taskIndex
-          : idx;
-
-      const nextIndex = currentIndex + 1;
-
-      if (isQuickTaskset) {
-        // One-off quick task: let sendTaskToTeam handle "session complete".
-        sendTaskToTeam(room, effectiveTeamId, nextIndex);
-      } else {
-        // For normal tasksets, remember the next index and let the
-        // next colour scan trigger delivery of the new task.
-        if (!room.teams[effectiveTeamId]) {
-          room.teams[effectiveTeamId] = {};
-        }
-        room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
-      }
-    }
 
     // Per-team progression
     if (room.taskset && Array.isArray(room.taskset.tasks)) {

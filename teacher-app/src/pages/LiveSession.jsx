@@ -538,14 +538,13 @@ export default function LiveSession({ roomCode }) {
       selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
     });
 
-    // Reset form
+    // Keep the question + answer visible for the teacher
     setTimeout(() => {
-      setTaskConfig({});
-      setTaskType("TEXT");
       setIsLaunchingQuick(false);
       setStatus("Quick task launched!");
+      // (If you later want a “Clear” button, we can add one.)
     }, 300);
-  };
+
 
   const handleLocationOverrideClick = (loc) => {
     setSelectedLocation(loc);
@@ -739,7 +738,7 @@ export default function LiveSession({ roomCode }) {
       setStatus("Loading taskset…");
       setLaunchAfterLoad(true);
 
-      socket.emit("loadTaskset", {
+      socket.emit("teacher:loadTaskset", {
         roomCode: code,
         tasksetId: data._id || activeTasksetMeta._id,
         selectedRooms,
@@ -1241,30 +1240,21 @@ export default function LiveSession({ roomCode }) {
                 tap <strong>Launch Task</strong>.
               </p>
 
-              {taskConfig.prompt ? (
-                <div
-                  style={{
-                    marginBottom: 8,
-                    padding: 8,
-                    borderRadius: 8,
-                    background: "#e0f2fe",
-                    border: "1px solid #bae6fd",
-                    fontSize: "0.8rem",
-                    color: "#0f172a",
-                  }}
-                >
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: "0.8rem" }}>
+                  Ready to launch:
+                </div>
+                <div>{taskConfig.prompt}</div>
+                {taskConfig.correctAnswer && (
                   <div
                     style={{
-                      fontWeight: 600,
-                      marginBottom: 4,
-                      fontSize: "0.8rem",
+                      marginTop: 4,
+                      fontSize: "0.75rem",
+                      color: "#075985",
                     }}
                   >
-                    Ready to launch:
+                    <strong>Correct answer:</strong> {taskConfig.correctAnswer}
                   </div>
-                  <div>{taskConfig.prompt}</div>
-                </div>
-              ) : (
+                )}
                 <div
                   style={{
                     marginBottom: 8,
