@@ -1743,7 +1743,7 @@ io.on("connection", (socket) => {
       quickTask.timeLimitSeconds = task.timeLimitSeconds;
     }
 
-    // Attach a tiny, ephemeral taskset so submit has something to look up
+    // Attach tiny, ephemeral taskset
     room.taskset = {
       name: "Quick task",
       subject: (task && task.subject) || "Ad-hoc",
@@ -1754,8 +1754,15 @@ io.on("connection", (socket) => {
     // Not a full multi-task flow
     room.taskIndex = -1;
 
+    // Respect multi-room selection if present
+    if (Array.isArray(selectedRooms) && selectedRooms.length > 0) {
+      room.selectedRooms = selectedRooms;
+    } else {
+      room.selectedRooms = null;
+    }
+
     io.to(code).emit("task:launch", {
-      index: 0,
+      index: 0, // StudentApp will pass this back on submit
       task: quickTask,
       timeLimitSeconds:
         typeof quickTask.timeLimitSeconds === "number"
