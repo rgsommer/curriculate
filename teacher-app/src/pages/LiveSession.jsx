@@ -588,15 +588,10 @@ export default function LiveSession({ roomCode }) {
         typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
       const gradeStr = aiGrade ? String(aiGrade).trim() : "";
-
-      const rawWords = aiWordList
-        .split(/[\n,]+/)  // Split by comma OR newline (since your terms have \n)
-        .map(w => w.trim())
-        .filter(Boolean);
-        
+  
       const payload = {
         // Basic metadata
-        title: "Quick Room Task",
+        title: "Quick Task",
         description: aiPurpose || "",
         purpose: aiPurpose || undefined,
 
@@ -616,7 +611,11 @@ export default function LiveSession({ roomCode }) {
         
         // 🔹 Key terms under *multiple* common names so the backend
         // will definitely see them
-        aiWordBank: rawWords,
+        aiWordBank: aiWordList
+          .split(/[\n,]+/)
+          .map(w => w.trim())
+          .filter(Boolean),
+        //aiWordBank: rawWords,
         words: rawWords,
         wordList: rawWords,
         keyTerms: rawWords,
