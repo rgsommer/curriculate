@@ -4,6 +4,8 @@
   "type": "module",
   "description": "Curriculate cloud backend (Express + MongoDB + Socket.io)",
   "scripts": {
+    "build": "npm run build-all",
+    "build-all": "cd ../student-app && npm install && npm run build && cd ../teacher-app && npm install && npm run build",
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
@@ -12,8 +14,7 @@
     "pm2:stop": "npx pm2 stop curriculate-backend || true",
     "pm2:restart": "npx pm2 restart curriculate-backend || true",
     "pm2:logs": "npx pm2 logs curriculate-backend --lines 200",
-    "test:socket": "node scripts/socket_test.js",
-    "build": "echo 'No build step for backend'"
+    "test:socket": "node scripts/socket_test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
