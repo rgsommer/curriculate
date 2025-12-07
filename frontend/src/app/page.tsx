@@ -1,6 +1,6 @@
 // frontend/src/app/page.tsx
 import Link from "next/link";
-import { ArrowRight, Sparkles, Upload, Play, CheckCircle } from "lucide-react";
+import { ArrowRight, Sparkles, Upload, Play, CheckCircle, Printer } from "lucide-react";
 
 export default function Home() {
   return (
