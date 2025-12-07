@@ -2000,7 +2000,7 @@ export default function LiveSession({ roomCode }) {
                     if (codeToUse) {
                       setStatus("Loading taskset…");
                       setLaunchAfterLoad(true);
-                      socket.emit("loadTaskset", {
+                      socket.emit("teacher:loadTaskset", {
                         roomCode: codeToUse,
                         tasksetId:
                           data._id ||
@@ -2009,6 +2009,7 @@ export default function LiveSession({ roomCode }) {
                         selectedRooms,
                       });
                     }
+
                   } catch (err) {
                     console.error("[LiveSession] Hide & Seek save error:", err);
                     setStatus(
