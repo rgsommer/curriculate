@@ -589,6 +589,11 @@ export default function LiveSession({ roomCode }) {
 
       const gradeStr = aiGrade ? String(aiGrade).trim() : "";
 
+      const rawWords = aiWordList
+        .split(/[\n,]+/)  // Split by comma OR newline (since your terms have \n)
+        .map(w => w.trim())
+        .filter(Boolean);
+        
       const payload = {
         // Basic metadata
         title: "Quick Room Task",
