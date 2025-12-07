@@ -1655,12 +1655,6 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
   }
 
-  //Launch quick task to all teams in room
-  socket.on('launch-quick-task', (data) => {
-  const { roomCode, task } = data;
-  io.to(roomCode.toUpperCase()).emit('new-quick-task', task);
-  });
-
   // Legacy entry point used by older clients
   socket.on("launchTaskset", ({ roomCode }) => {
     startTasksetForRoom(roomCode);
@@ -1673,46 +1667,76 @@ io.on("connection", (socket) => {
 
   // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
   // so that handleStudentSubmit + scoring logic work.
-  socket.on(
-    "teacherLaunchTask",
-    async ({ roomCode, prompt, correctAnswer }) => {
-      const code = (roomCode || "").toUpperCase();
-      if (!code || !prompt) return;
+  socket.on("teacherLaunchTask", async (payload = {}) => {
+    const { roomCode, prompt, correctAnswer, task, selectedRooms } = payload;
+    const code = (roomCode || "").toUpperCase();
+    if (!code) return;
 
-      let room = rooms[code];
-      if (!room) {
-        room = (rooms[code] = await createRoom(code, socket.id));
-      }
-
-      const task = {
-        taskType: "short-answer",
-        prompt,
-        correctAnswer: correctAnswer || null,
-        points: 10,
-      };
-
-      // ✅ Attach a tiny, ephemeral taskset so submit has something to look up
-      room.taskset = {
-        name: "Quick task",
-        subject: "Ad-hoc",
-        gradeLevel: "",
-        tasks: [task],
-      };
-
-      // ❌ Do NOT mark a multi-task flow as running here
-      // (leave room.taskIndex alone or explicitly set to -1)
-      room.taskIndex = -1;
-
-      io.to(code).emit("task:launch", {
-        index: 0, // StudentApp will pass this back as taskIndex on submit
-        task,
-        timeLimitSeconds:
-          typeof task.timeLimitSeconds === "number"
-            ? task.timeLimitSeconds
-            : 0,
-      });
+    let room = rooms[code];
+    if (!room) {
+      room = (rooms[code] = await createRoom(code, socket.id));
     }
-  );
+
+    // Support both shapes:
+    //  1) new: { roomCode, task: { prompt, correctAnswer, ... } }
+    //  2) old: { roomCode, prompt, correctAnswer }
+    const basePrompt =
+      (task && typeof task.prompt === "string" && task.prompt.trim()) ||
+      (typeof prompt === "string" && prompt.trim()) ||
+      "";
+
+    if (!basePrompt) {
+      console.warn("teacherLaunchTask: missing prompt for room", code);
+      return;
+    }
+
+    const quickTask = {
+      // allow dynamic task types, default to short-answer
+      taskType: (task && task.taskType) || "short-answer",
+      prompt: basePrompt,
+
+      // prefer nested correctAnswer, fall back to top-level
+      correctAnswer:
+        task && "correctAnswer" in task
+          ? task.correctAnswer
+          : correctAnswer || null,
+
+      // points – prefer explicit, else 10
+      points:
+        task && typeof task.points === "number" ? task.points : 10,
+    };
+
+    // Optional extras for MCQ / other types
+    if (task && Array.isArray(task.options) && task.options.length > 0) {
+      quickTask.options = task.options;
+    }
+    if (task && typeof task.clue === "string" && task.clue.trim()) {
+      quickTask.clue = task.clue.trim();
+    }
+    if (task && typeof task.timeLimitSeconds === "number") {
+      quickTask.timeLimitSeconds = task.timeLimitSeconds;
+    }
+
+    // Attach a tiny, ephemeral taskset so submit has something to look up
+    room.taskset = {
+      name: "Quick task",
+      subject: (task && task.subject) || "Ad-hoc",
+      gradeLevel: (task && task.gradeLevel) || "",
+      tasks: [quickTask],
+    };
+
+    // Not a full multi-task flow
+    room.taskIndex = -1;
+
+    io.to(code).emit("task:launch", {
+      index: 0,
+      task: quickTask,
+      timeLimitSeconds:
+        typeof quickTask.timeLimitSeconds === "number"
+          ? quickTask.timeLimitSeconds
+          : 0,
+    });
+  });
 
   // --------------------------
   // Teacher: random treats config
