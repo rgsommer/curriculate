@@ -1,19 +1,16 @@
 // frontend/src/app/layout.tsx
 import type { Metadata } from "next";
-import { GeistSans, GeistMono } from "next/font/google"; // ← fixed import names
+import { Inter } from 'next/font/google';
 import "./globals.css";
 import Script from "next/script";
 
 //import Footer from "@/components/Footer";
 
-const geistSans = GeistSans({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = GeistMono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+// Replace the config
+const inter = Inter({
+  subsets: ['latin'],  // Add more subsets if needed (e.g., ['latin', 'cyrillic'])
+  weight: ['400', '500', '700'],  // Adjust weights as needed
+  variable: '--font-inter',  // Optional: CSS variable for use in globals.css
 });
 
 export const metadata: Metadata = {
@@ -50,10 +47,7 @@ export default function RootLayout({
         {/* Loads your public/config/copy.js so window.COPY is available everywhere */}
         <Script src="/config/copy.js" strategy="beforeInteractive" />
       </head>
-
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}
-      >
+        <body className={inter.className}>
         {children}
         {/* <Footer /> */}
       </body>
