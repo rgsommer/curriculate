@@ -1,9 +1,18 @@
 // student-app/src/components/tasks/types/SortTask.jsx
 import React, { useState, useEffect } from "react";
 
-// Correct imports — split exactly like this (this is the only way that works)
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@hello-pangea/dnd";
-import { SortableContext, rectSortingStrategy } from "@hello-pangea/dnd";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@hello-pangea/dnd";
+import {
+  SortableContext,
+  rectSortingStrategy,
+} from "@hello-pangea/dnd";
 import { useSortable } from "@hello-pangea/dnd";
 import { useDroppable } from "@hello-pangea/dnd";
 
