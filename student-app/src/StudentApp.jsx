@@ -1536,14 +1536,22 @@ function StudentApp() {
                 lineHeight: 1.5,
               }}
             >
-              <TaskRunner
-                task={themedTask}
-                taskTypes={TASK_TYPES}
-                onSubmit={handleSubmitAnswer}
-                submitting={submitting}
-                onAnswerChange={setCurrentAnswerDraft}
-                answerDraft={currentAnswerDraft}
-              />
+                <TaskRunner
+                  key={
+                    currentTask?.id ??
+                    currentTask?._id ??
+                    currentTaskIndex ??
+                    currentTask?.prompt ??
+                    "task"
+                  }
+                  task={themedTask}
+                  taskTypes={TASK_TYPES}
+                  onSubmit={handleSubmitAnswer}
+                  submitting={submitting}
+                  onAnswerChange={setCurrentAnswerDraft}
+                  answerDraft={currentAnswerDraft}
+                  readOnly={false}
+                />
             </div>
           </section>
         )}
