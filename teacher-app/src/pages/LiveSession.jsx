@@ -83,6 +83,7 @@ export default function LiveSession({ roomCode }) {
   const [teamOrder, setTeamOrder] = useState([]);
 
   const [isLaunchingQuick, setIsLaunchingQuick] = useState(false);
+  const [quickStatus, setQuickStatus] = useState("");
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [teacherRooms, setTeacherRooms] = useState([]);
 
