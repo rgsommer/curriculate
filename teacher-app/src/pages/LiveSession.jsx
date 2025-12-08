@@ -569,6 +569,10 @@ const handleLaunchQuickTask = () => {
       Array.isArray(taskConfig.options) && taskConfig.options.length > 0
         ? taskConfig.options
         : undefined,
+    items:
+      Array.isArray(taskConfig.items) && taskConfig.items.length > 0
+        ? taskConfig.items
+        : undefined,
     points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
     subject: taskConfig.subject || "Ad-hoc",
     gradeLevel: taskConfig.gradeLevel || "",
@@ -602,7 +606,7 @@ const handleLaunchQuickTask = () => {
     });
   };
 
-  const handleGenerateQuickTask = async () => {
+    const handleGenerateQuickTask = async () => {
     if (!roomCode) {
       alert("You must have a room code to generate a task.");
       return;
@@ -629,12 +633,19 @@ const handleLaunchQuickTask = () => {
 
       const gradeStr = aiGrade ? String(aiGrade).trim() : "";
 
+      // 🔵 Decide if this taskType should be multi-item
+      const typeMeta = TASK_TYPE_META[taskType] || {};
+      const isMultiCapable = !!typeMeta.multiItemCapable;
+
+      // For multi-item capable types, ask AI for up to 5 questions; else just 1.
+      const desiredNumTasks = isMultiCapable ? 5 : 1;
+
       const payload = {
         title: "Quick Task",
         description: aiPurpose || "",
         purpose: aiPurpose || undefined,
 
-        numTasks: 1,
+        numTasks: desiredNumTasks,
         taskType,
         requiredTaskTypes: [taskType],
 
@@ -681,24 +692,101 @@ const handleLaunchQuickTask = () => {
         throw new Error(data?.error || `AI generator error (${res.status})`);
       }
 
+      // Normalise taskset structure
       const taskset = data?.taskset || data;
-      const firstTask =
-        taskset?.tasks?.[0] ||
-        (Array.isArray(data?.tasks) ? data.tasks[0] : null);
+      const tasks = Array.isArray(taskset?.tasks)
+        ? taskset.tasks
+        : Array.isArray(data?.tasks)
+        ? data.tasks
+        : [];
 
-      if (!firstTask) {
+      if (!tasks.length) {
         throw new Error("AI did not return a task.");
       }
 
+      const baseTask = tasks[0];
+
       const generatedType =
-        firstTask.taskType || firstTask.task_type || taskType;
+        baseTask.taskType || baseTask.task_type || taskType;
 
       setTaskType(generatedType);
+
+      const generatedMeta = TASK_TYPE_META[generatedType] || {};
+      const generatedIsMulti = !!generatedMeta.multiItemCapable;
+
+      // 🟢 SIMPLE (single-question) CASE
+      if (!generatedIsMulti) {
+        setTaskConfig({
+          prompt: baseTask.prompt || "",
+          correctAnswer:
+            baseTask.correctAnswer != null
+              ? String(baseTask.correctAnswer)
+              : "",
+          options:
+            Array.isArray(baseTask.options) && baseTask.options.length > 0
+              ? baseTask.options
+              : [],
+          clue: baseTask.clue || "",
+          subject: aiSubject || "Ad-hoc",
+          gradeLevel: gradeStr || "",
+        });
+
+        setShowAiGen(false);
+        return;
+      }
+
+      // 🟣 MULTI-ITEM CASE – build a 3–5 question pack where possible
+      const MAX_ITEMS = 5;
+
+      let itemsSource = [];
+      if (
+        Array.isArray(baseTask.items) &&
+        baseTask.items.length > 0
+      ) {
+        // Some generators already put sub-questions into items[]
+        itemsSource = baseTask.items;
+      } else {
+        // Else: treat each returned task as an item in the pack
+        itemsSource = tasks;
+      }
+
+      const items = itemsSource
+        .slice(0, MAX_ITEMS)
+        .map((t, idx) => ({
+          id: t.id ?? t._id ?? String(idx),
+          prompt: t.prompt || t.question || "",
+          options:
+            Array.isArray(t.options) && t.options.length > 0
+              ? t.options
+              : Array.isArray(t.choices)
+              ? t.choices
+              : [],
+          correctAnswer:
+            t.correctAnswer ?? t.answer ?? t.correct ?? null,
+        }))
+        .filter((it) => it.prompt && it.prompt.trim().length > 0);
+
+      if (!items.length) {
+        throw new Error(
+          "AI returned tasks but none had a usable prompt."
+        );
+      }
+
       setTaskConfig({
-        prompt: firstTask.prompt || "",
-        correctAnswer: firstTask.correctAnswer || "",
-        options: firstTask.options || [],
-        clue: firstTask.clue || "",
+        // Top-level prompt describes the pack; actual questions live in items[]
+        prompt:
+          taskset.description ||
+          baseTask.prompt ||
+          `Answer all ${items.length} questions.`,
+        correctAnswer: null, // answers are per item
+        options:
+          Array.isArray(items[0].options) && items[0].options.length > 0
+            ? items[0].options
+            : [],
+        clue: baseTask.clue || "",
+        subject: aiSubject || "Ad-hoc",
+        gradeLevel: gradeStr || "",
+        items,
       });
 
       setShowAiGen(false);

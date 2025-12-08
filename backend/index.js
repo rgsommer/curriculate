@@ -1883,6 +1883,13 @@ socket.on(
           task.options.length > 0
             ? task.options
             : undefined,
+        // NEW: carry multi-question pack items into the quick task
+        items:
+          task &&
+          Array.isArray(task.items) &&
+          task.items.length > 0
+            ? task.items
+            : undefined,
         points:
           task && typeof task.points === "number" ? task.points : 10,
         subject: (task && task.subject) || "Ad-hoc",
