@@ -1905,6 +1905,10 @@ const handleLaunchQuickTask = () => {
               borderRadius: 10,
               padding: 12,
               background: "#ffffff",
+
+              // NEW: make Latest Submissions taller + scrollable
+              maxHeight: "360px",     // adjust height as needed (300–500px works well)
+              overflowY: "auto",
             }}
           >
             <h2
