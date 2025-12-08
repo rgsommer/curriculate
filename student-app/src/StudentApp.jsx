@@ -25,39 +25,54 @@ const COLOR_NAMES = [
   "pink",
 ];
 
-function normalizeStationId(raw) {
-  if (!raw) return { id: null, color: null, label: "" };
-  const lower = String(raw).toLowerCase().trim();
+// For now, LiveSession-launched tasks are assumed to use "Classroom"
+const DEFAULT_LOCATION = "Classroom";
 
-  // Case 1: "station-1", "station-2", ...
+// Normalize a human-readable location into a slug like "room-12"
+function normalizeLocationSlug(raw) {
+  if (!raw) return "";
+  return String(raw)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeStationId(raw) {
+  if (!raw) {
+    return { id: null, color: null, label: "Not assigned yet" };
+  }
+
+  const s = String(raw).trim();
+  let lower = s.toLowerCase();
+
+  // Case 1: full numeric id: "station-1", "station-2", ...
   let m = /^station-(\d+)$/.exec(lower);
   if (m) {
     const idx = parseInt(m[1], 10) - 1;
-    if (idx >= 0 && idx < COLOR_NAMES.length) {
-      const color = COLOR_NAMES[idx];
-      return {
-        id: `station-${idx + 1}`,
-        color,
-        label: `Station-${color[0].toUpperCase()}${color.slice(1)}`,
-      };
-    }
+    const color = COLOR_NAMES[idx] || null;
+    return {
+      id: `station-${m[1]}`,
+      color,
+      label: color
+        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
+        : `Station-${m[1]}`,
+    };
   }
 
-  // Case 2: "1", "2", ...
+  // Case 2: numeric only: "1", "2", ...
   m = /^(\d+)$/.exec(lower);
   if (m) {
     const idx = parseInt(m[1], 10) - 1;
-    if (idx >= 0 && idx < COLOR_NAMES.length) {
-      const color = COLOR_NAMES[idx];
-      return {
-        id: `station-${idx + 1}`,
-        color,
-        label: `Station-${color[0].toUpperCase()}${color.slice(1)}`,
-      };
-    }
+    const color = COLOR_NAMES[idx] || null;
+    return {
+      id: `station-${m[1]}`,
+      color,
+      label: color
+        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
+        : `Station-${m[1]}`,
+    };
   }
 
-  // Case 3: "red", "blue", ...
+  // Case 3: colour name: "red", "blue", ...
   const colourIdx = COLOR_NAMES.indexOf(lower);
   if (colourIdx >= 0) {
     return {
@@ -78,87 +93,167 @@ function normalizeStationId(raw) {
     };
   }
 
-  return { id: raw, color: null, label: raw };
+  // Default fallback
+  return { id: s, color: null, label: s.toUpperCase() };
+}
+
+function getStationBubbleStyles(colorName) {
+  // Default pale yellow & dark text when no station colour yet
+  if (!colorName) {
+    return {
+      background: "#fef9c3",
+      color: "#111827",
+    };
+  }
+
+  const COLOR_MAP = {
+    red: "#ef4444",
+    blue: "#3b82f6",
+    green: "#22c55e",
+    yellow: "#eab308",
+    purple: "#a855f7",
+    orange: "#f97316",
+    teal: "#14b8a6",
+    pink: "#ec4899",
+  };
+
+  const bg = COLOR_MAP[colorName] || "#fef9c3";
+
+  // Light-ish colours → dark text; dark colours → white text
+  const lightColours = ["yellow", "orange", "teal", "pink"];
+  const isLight = lightColours.includes(colorName);
+
+  return {
+    background: bg,
+    color: isLight ? "#111827" : "#ffffff",
+  };
 }
 
 // ---------------------------------------------------------------------
-// StudentApp Component
+// Shared socket instance – same host as backend
+// ---------------------------------------------------------------------
+const socket = io(API_BASE_URL, {
+  withCredentials: true,
+  transports: ["websocket"],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+});
+
+// ---------------------------------------------------------------------
+// Utility helpers
 // ---------------------------------------------------------------------
 
-export default function StudentApp() {
-  const [socket, setSocket] = useState(null);
+function getThemeShell(uiTheme) {
+  switch (uiTheme) {
+    case "bold":
+      return {
+        pageBg: "radial-gradient(circle at top, #0f172a, #020617)",
+        cardBg: "rgba(15,23,42,0.95)",
+        cardBorder: "1px solid rgba(148,163,184,0.5)",
+        text: "#e5e7eb",
+      };
+    case "minimal":
+      return {
+        pageBg: "#f3f4f6",
+        cardBg: "#ffffff",
+        cardBorder: "1px solid #e5e7eb",
+        text: "#111827",
+      };
+    default: // "modern" / Theme 1
+      return {
+        pageBg: "linear-gradient(135deg, #0ea5e9, #6366f1)",
+        cardBg: "#ffffff",
+        cardBorder: "1px solid rgba(148,163,184,0.6)",
+        text: "#0f172a",
+      };
+  }
+}
+
+function formatRemainingMs(ms) {
+  if (!ms || ms <= 0) return "00:00";
+  const totalSeconds = Math.ceil(ms / 1000);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+// ---------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------
+
+function StudentApp() {
+  console.log("STUDENTAPP COMPONENT RENDERED — CLEAN VERSION");
+
+  // Theme selector (must be inside component)
+  const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
+  const themeShell = getThemeShell(uiTheme);
+
   const [connected, setConnected] = useState(false);
+  const [joined, setJoined] = useState(false);
+  const [joiningRoom, setJoiningRoom] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
   const [roomCode, setRoomCode] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [teamMembersText, setTeamMembersText] = useState("");
-  const [teamId, setTeamId] = useState(null);
+  const [members, setMembers] = useState(["", "", ""]);
+
+  // Persistent identifiers
+  const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
   const [teamSessionId, setTeamSessionId] = useState(null);
+  const lastStationIdRef = useRef(null);
 
-  const [joined, setJoined] = useState(false);
-  const [joiningRoom, setJoiningRoom] = useState(false);
-
-  const [statusMessage, setStatusMessage] = useState(
-    "Scan the QR and join the game!"
-  );
-
-  const [currentTask, setCurrentTask] = useState(null);
-  const [taskIndex, setTaskIndex] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-
+  // Station + scanner state
   const [assignedStationId, setAssignedStationId] = useState(null);
   const [assignedColor, setAssignedColor] = useState(null);
   const [scannedStationId, setScannedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
+  const [scanError, setScanError] = useState(null);
 
-  const [roomLocation, setRoomLocation] = useState("Classroom");
+  // Task + timer state
+  const [currentTask, setCurrentTask] = useState(null);
+  const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
+  const [remainingMs, setRemainingMs] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
+
+  // Noise + treats
+  const [noiseState, setNoiseState] = useState({
+    enabled: false,
+    threshold: 0,
+    level: 0,
+    brightness: 1,
+  });
+  const [treatMessage, setTreatMessage] = useState(null);
+
+  // 🔢 Scoring: running total + last-task result + toast
+  const [scoreTotal, setScoreTotal] = useState(0);
+  const [lastTaskResult, setLastTaskResult] = useState(null);
+  const [pointToast, setPointToast] = useState(null);
+
+  // Whether to enforce location as well as colour (fixed-station / multi-room scavenger hunts)
   const [enforceLocation, setEnforceLocation] = useState(false);
 
-  const [answerDraft, setAnswerDraft] = useState(null);
+  // Teacher-defined location (e.g. "Classroom", "Hallway") + stable ref
+  const [roomLocation, setRoomLocation] = useState(DEFAULT_LOCATION);
+  const roomLocationFromStateRef = useRef(DEFAULT_LOCATION);
 
-  const [sessionComplete, setSessionComplete] = useState(false);
-  const [noiseLevel, setNoiseLevel] = useState(0);
-  const [noiseEnabled, setNoiseEnabled] = useState(false);
+  // Audio
+  const [audioContext, setAudioContext] = useState(null);
+  const sndAlert = useRef(null);
+  const sndTreat = useRef(null);
 
-  const [petTreatMessage, setPetTreatMessage] = useState("");
-  const petTreatTimeoutRef = useRef(null);
+  // Timer ref
+  const countdownTimerRef = useRef(null);
 
-  const [score, setScore] = useState(0);
+  // ─────────────────────────────────────────────
+  // Socket connect / disconnect + auto-resume
+  // ─────────────────────────────────────────────
 
-  const roomLocationFromStateRef = useRef(null);
-  const lastNoiseUpdateRef = useRef(0);
-
-  const audioUnlockedRef = useRef(false);
-  const joinSoundRef = useRef(null);
-  const treatSoundRef = useRef(null);
-
-  // Unlock audio after a user gesture so we can play sounds later
-  const unlockAudioForBrowser = () => {
-    if (audioUnlockedRef.current) return;
-    const tryUnlock = () => {
-      audioUnlockedRef.current = true;
-      window.removeEventListener("click", tryUnlock);
-      window.removeEventListener("touchstart", tryUnlock);
-    };
-    window.addEventListener("click", tryUnlock, { once: true });
-    window.addEventListener("touchstart", tryUnlock, { once: true });
-  };
-
-  // ---------------------------------------------------------------
-  // Initialize socket.io connection
-  // ---------------------------------------------------------------
   useEffect(() => {
-    const url = API_BASE_URL || "";
-    const s = io(url, {
-      path: "/socket.io",
-      transports: ["websocket", "polling"],
-      withCredentials: true,
-    });
-
-    setSocket(s);
-
     const handleConnect = () => {
-      console.log("SOCKET: Connected", s.id);
+      console.log("SOCKET: Connected", socket.id);
       setConnected(true);
 
       // Try to resume from sessionStorage
@@ -170,7 +265,7 @@ export default function StudentApp() {
         if (!parsed.roomCode || !parsed.teamSessionId) return;
 
         console.log("Attempting resume-team-session with", parsed);
-        s.emit(
+        socket.emit(
           "resume-team-session",
           {
             roomCode: parsed.roomCode.toUpperCase(),
@@ -206,28 +301,26 @@ export default function StudentApp() {
               setScannedStationId(null);
               setScannerActive(true);
 
-              // 🔑 ensure we show correct “Connected Room …” text
-              setStatusMessage(
-                `Connected Room ${parsed.roomCode.toUpperCase()}`
-              );
-            }
+              // 🔑 Seed lastStationId so next room:state doesn't force a fake "new" station
+              lastStationIdRef.current = myTeam.currentStationId;
 
-            if (typeof ack.roomState?.scores === "object") {
-              const numericScore =
-                typeof ack.roomState.scores[ack.teamId] === "number"
-                  ? ack.roomState.scores[ack.teamId]
-                  : 0;
-              setScore(numericScore);
+              const colourLabel = norm.color
+                ? ` ${norm.color.toUpperCase()}`
+                : "";
+              setStatusMessage(
+                `Scan your${colourLabel} station to get started.`
+              );
             } else {
-              setScore(0);
+              lastStationIdRef.current = null;
+              setStatusMessage(
+                "Waiting for your teacher to assign your station."
+              );
+              setScannerActive(false);
             }
           }
         );
       } catch (err) {
-        console.warn(
-          "Error reading teamSession from sessionStorage:",
-          err
-        );
+        console.warn("Error reading teamSession from sessionStorage:", err);
       }
     };
 
@@ -236,27 +329,126 @@ export default function StudentApp() {
       setConnected(false);
     };
 
-    s.on("connect", handleConnect);
-    s.on("disconnect", handleDisconnect);
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
 
-    // Noise-level events from server
-    s.on("session:noiseLevel", (payload = {}) => {
-      const now = Date.now();
-      if (now - lastNoiseUpdateRef.current < 200) return;
-      lastNoiseUpdateRef.current = now;
+    socket.on("connect_error", (err) =>
+      console.log("SOCKET: Connect error:", err.message)
+    );
 
-      const level =
-        typeof payload.level === "number" && !Number.isNaN(payload.level)
-          ? payload.level
-          : 0;
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error");
+    };
+  }, []);
 
-      setNoiseLevel(level);
-      setNoiseEnabled(!!payload.enabled);
+  // ─────────────────────────────────────────────
+  // Server event listeners – room, tasks, noise, treats, scoring
+  // ─────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!teamId) return;
+
+    // Room / station state updates
+    const handleRoomState = (state) => {
+      if (!state || !teamId) return;
+      const myTeam = state.teams?.[teamId];
+      if (!myTeam) return;
+
+      // 🔢 Update running total score from room-wide scores map
+      if (state.scores && typeof state.scores[teamId] === "number") {
+        setScoreTotal(state.scores[teamId]);
+      }
+
+      const newStationId = myTeam.currentStationId || null;
+      if (!newStationId) return;
+
+      const isNewStation = lastStationIdRef.current !== newStationId;
+      const norm = normalizeStationId(newStationId);
+
+      // Keep these in sync for UI
+      setAssignedStationId(newStationId);
+      setAssignedColor(norm.color ? norm.color : null);
+
+      // Only force a re-scan when the station actually CHANGES
+      if (isNewStation) {
+        lastStationIdRef.current = newStationId;
+
+        setScannedStationId(null);
+        setScannerActive(true);
+
+        const colourLabel = norm.color
+          ? norm.color.charAt(0).toUpperCase() + norm.color.slice(1)
+          : "your";
+        // Location is basically only for multi-room hunts; ignore it here.
+        setStatusMessage(`Scan your ${colourLabel} station.`);
+      } else {
+        // Same station → leave scannerActive / scannedStationId alone
+      }
+    };
+
+    // Last-task result for this team (score + correctness)
+    const handleTaskSubmission = (submission) => {
+      if (!submission || !teamId) return;
+
+      // Ignore other rooms
+      if (
+        submission.roomCode &&
+        roomCode &&
+        submission.roomCode.toUpperCase() !== roomCode.trim().toUpperCase()
+      ) {
+        return;
+      }
+
+      // Only care about this team
+      if (submission.teamId !== teamId) return;
+
+      setLastTaskResult({
+        points: typeof submission.points === "number" ? submission.points : 0,
+        correct: submission.correct,
+        answerText: submission.answerText || "",
+        submittedAt: submission.submittedAt || Date.now(),
+      });
+    };
+
+    socket.on("room:state", handleRoomState);
+    socket.on("roomState", handleRoomState);
+    socket.on("taskSubmission", handleTaskSubmission);
+
+    // Task launches from teacher / engine
+    socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
+      console.log("SOCKET: task:launch", { index, task, timeLimitSeconds });
+
+      // Just set the task – do NOT touch scan state here.
+      setCurrentTask(task || null);
+      setCurrentTaskIndex(
+        typeof index === "number" && index >= 0 ? index : null
+      );
+      setCurrentAnswerDraft("");
+      setScanError(null);
+
+      if (sndAlert.current) {
+        sndAlert.current.play().catch(() => {});
+      }
+
+      if (
+        typeof timeLimitSeconds === "number" &&
+        timeLimitSeconds > 0
+      ) {
+        setTimeLimitSeconds(timeLimitSeconds);
+      } else {
+        setTimeLimitSeconds(null);
+        setRemainingMs(0);
+      }
     });
 
-    // Session complete event (e.g., after last task)
-    s.on("session:complete", () => {
-      setSessionComplete(true);
+    // Session complete from server
+    socket.on("session:complete", () => {
+      console.log("SOCKET: session:complete");
+      setCurrentTask(null);
+      setCurrentTaskIndex(null);
+      setScannerActive(false);
       setStatusMessage("Session complete! Please wait for your teacher.");
       try {
         sessionStorage.removeItem("teamSession");
@@ -266,86 +458,144 @@ export default function StudentApp() {
     });
 
     // Session ended via REST / teacher
-    s.on("session:ended", () => {
-      setSessionComplete(true);
+    socket.on("session-ended", () => {
+      console.log("SOCKET: session-ended");
+      setCurrentTask(null);
+      setCurrentTaskIndex(null);
+      setJoined(false);
+      setScannerActive(false);
+      setAssignedStationId(null);
+      setAssignedColor(null);
       setStatusMessage("This session has ended. Thanks for playing!");
       try {
         sessionStorage.removeItem("teamSession");
       } catch {
         // ignore
       }
-      alert("This session has ended. Talk to your teacher about what’s next.");
+      alert("This session has ended. Thanks for playing!");
     });
 
-    // Treat events
-    s.on("teamTreatAssigned", ({ roomCode, teamId, teamName }) => {
-      if (!teamId || teamId !== teamSessionId) return;
+    // Noise state from backend
+    socket.on("session:noiseLevel", (payload) => {
+      if (!payload) return;
+      setNoiseState({
+        enabled: !!payload.enabled,
+        threshold: payload.threshold ?? 0,
+        level: payload.level ?? 0,
+        brightness: payload.brightness ?? 1,
+      });
+    });
 
-      console.log("Treat assigned to this team!", { roomCode, teamId });
-
-      if (audioUnlockedRef.current && treatSoundRef.current) {
-        treatSoundRef.current.play().catch(() => {});
-      }
-
-      setPetTreatMessage(
-        `Treat time! Your team ${teamName || ""} just earned a reward!`
+    // Random treat assigned to this team
+    socket.on("student:treatAssigned", (payload) => {
+      console.log("SOCKET: student:treatAssigned", payload);
+      setTreatMessage(
+        payload?.message || "See your teacher for a treat!"
       );
-      if (petTreatTimeoutRef.current) {
-        clearTimeout(petTreatTimeoutRef.current);
+      if (sndTreat.current) {
+        sndTreat.current.play().catch(() => {});
       }
-      petTreatTimeoutRef.current = setTimeout(() => {
-        setPetTreatMessage("");
-      }, 8000);
     });
 
     return () => {
-      s.off("connect", handleConnect);
-      s.off("disconnect", handleDisconnect);
-      s.off("session:noiseLevel");
-      s.off("session:complete");
-      s.off("session:ended");
-      s.off("teamTreatAssigned");
-      s.close();
+      socket.off("room:state", handleRoomState);
+      socket.off("roomState", handleRoomState);
+      socket.off("taskSubmission", handleTaskSubmission);
+      socket.off("task:launch");
+      socket.off("session:complete");
+      socket.off("session-ended");
+      socket.off("session:noiseLevel");
+      socket.off("student:treatAssigned");
     };
-  }, [teamSessionId]);
+  }, [teamId, roomCode]);
+
+  // ─────────────────────────────────────────────
+  // Timer effect for task time limits
+  // ─────────────────────────────────────────────
 
   useEffect(() => {
+    if (!timeLimitSeconds || timeLimitSeconds <= 0) {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+      setRemainingMs(0);
+      return;
+    }
+
+    const totalMs = timeLimitSeconds * 1000;
+    const start = Date.now();
+    setRemainingMs(totalMs);
+
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+    }
+
+    countdownTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const remaining = totalMs - elapsed;
+      setRemainingMs(remaining > 0 ? remaining : 0);
+      if (remaining <= 0) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    }, 250);
+
     return () => {
-      if (petTreatTimeoutRef.current) {
-        clearTimeout(petTreatTimeoutRef.current);
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
       }
     };
-  }, []);
+  }, [timeLimitSeconds]);
 
-  const handleTaskLaunch = (payload) => {
-    if (!payload || !payload.task) return;
-    console.log("STUDENT: Received task launch:", payload);
-
-    setCurrentTask(payload.task || null);
-    setTaskIndex(
-      typeof payload.index === "number" ? payload.index : null
-    );
-    setAnswerDraft(null);
-
-    if (payload.task?.taskType === TASK_TYPES.FLASHCARDS_RACE) {
-      setScannerActive(false);
-    }
-  };
+  // ─────────────────────────────────────────────
+  // Toast for positive-point submissions
+  // ─────────────────────────────────────────────
 
   useEffect(() => {
-    if (!socket) return;
+    if (
+      !lastTaskResult ||
+      typeof lastTaskResult.points !== "number" ||
+      lastTaskResult.points <= 0
+    ) {
+      return;
+    }
 
-    socket.on("task:launch", handleTaskLaunch);
+    const id = lastTaskResult.submittedAt || Date.now();
+    const toast = { id, points: lastTaskResult.points };
+    setPointToast(toast);
 
-    return () => {
-      socket.off("task:launch", handleTaskLaunch);
-    };
-  }, [socket]);
+    const timer = setTimeout(() => {
+      setPointToast((current) =>
+        current && current.id === id ? null : current
+      );
+    }, 1800);
 
-  const handleScanResult = (decodedText) => {
-    if (!decodedText) return;
-    console.log("QR scan result:", decodedText);
+    return () => clearTimeout(timer);
+  }, [lastTaskResult]);
+
+  // ─────────────────────────────────────────────
+  // Utility – unlock browser audio
+  // ─────────────────────────────────────────────
+
+  const unlockAudioForBrowser = () => {
+    if (audioContext) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const newContext = new Ctx();
+    newContext
+      .resume()
+      .then(() => {
+        console.log("AudioContext unlocked");
+        setAudioContext(newContext);
+      })
+      .catch((err) => console.warn("AudioContext unlock failed:", err));
   };
+
+  // ─────────────────────────────────────────────
+  // Join room (persistent student:join-room)
+  // ─────────────────────────────────────────────
 
   const handleJoin = () => {
     const finalRoom = roomCode.trim().toUpperCase();
@@ -362,21 +612,23 @@ export default function StudentApp() {
 
     unlockAudioForBrowser();
 
-    const members = teamMembersText
-      .split(",")
+    const filteredMembers = members
       .map((m) => m.trim())
       .filter((m) => m.length > 0);
 
-    const filteredMembers =
-      members.length > 0
-        ? members
-        : ["Player 1", "Player 2", "Player 3", "Player 4"];
+    console.log("STUDENT: Attempting to join room:", {
+      finalRoom,
+      teamName: teamName.trim(),
+      members: filteredMembers,
+      socketId: socket.id,
+    });
 
     setJoiningRoom(true);
-    setStatusMessage("Joining room…");
+    setStatusMessage(`Joining Room ${finalRoom}…`);
 
+    // TIMEOUT SAFETY — if no ack in 8 seconds, fail
     const timeoutId = setTimeout(() => {
-      console.warn(
+      console.error(
         "STUDENT: JOIN TIMEOUT — no response from server after 8s"
       );
       setJoiningRoom(false);
@@ -407,10 +659,10 @@ export default function StudentApp() {
         setJoined(true);
         setJoiningRoom(false);
         setRoomCode(finalRoom);
-        setTeamId(teamSession);
+        setTeamId(ack.teamId || teamSession);
         setTeamSessionId(teamSession);
-        setStatusMessage(`Connected Room ${finalRoom}`);
 
+        // Persist for resume-team-session
         try {
           sessionStorage.setItem(
             "teamSession",
@@ -419,319 +671,931 @@ export default function StudentApp() {
               teamSessionId: teamSession,
             })
           );
-          console.log("STUDENT: teamSession persisted");
+          console.log("STUDENT: teamSession persisted to sessionStorage");
         } catch (err) {
           console.warn("Unable to persist teamSession:", err);
         }
 
+        // Fixed-station / multi-room is signaled from the room state
         setEnforceLocation(!!ack.roomState?.enforceLocation);
         if (ack.roomState?.locationCode) {
           setRoomLocation(ack.roomState.locationCode);
-          roomLocationFromStateRef.current = ack.roomState.locationCode;
+          roomLocationFromStateRef.current =
+            ack.roomState.locationCode;
         }
 
-        if (ack.assignedStationId) {
-          const norm = normalizeStationId(ack.assignedStationId);
-          setAssignedStationId(ack.assignedStationId);
+        const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
+
+        if (myTeam?.currentStationId) {
+          const norm = normalizeStationId(myTeam.currentStationId);
+
+          setAssignedStationId(myTeam.currentStationId);
           setAssignedColor(norm.color || null);
           setScannedStationId(null);
           setScannerActive(true);
-        } else {
-          setAssignedStationId(null);
-          setAssignedColor(null);
-          setScannerActive(false);
-        }
 
-        if (typeof ack.totalScore === "number") {
-          setScore(ack.totalScore);
-        } else if (
-          ack.roomState &&
-          typeof ack.roomState.scores === "object" &&
-          typeof ack.roomState.scores[teamSession] === "number"
-        ) {
-          setScore(ack.roomState.scores[teamSession]);
+          // Seed lastStationId so later room:state updates
+          // don’t force a fake “new station” rescan
+          lastStationIdRef.current = myTeam.currentStationId;
+
+          const colourLabel = norm.color
+            ? ` ${norm.color.toUpperCase()}`
+            : "";
+
+          setStatusMessage(
+            `Scan your${colourLabel} station to get started.`
+          );
         } else {
-          setScore(0);
+          // No station assigned yet – do not enable scanner yet
+          lastStationIdRef.current = null;
+          setStatusMessage(
+            "Waiting for your teacher to assign your station."
+          );
+          setScannerActive(false);
+          setScannedStationId(null);
         }
       }
     );
+
+    console.log("STUDENT: socket.emit('student:join-room') called");
   };
 
-  const handleTaskSubmit = (answerPayload) => {
-    if (!socket || !roomCode || !teamId || currentTask == null) return;
+  // ─────────────────────────────────────────────
+  // QR Scan handler – checks colour + room
+  // ─────────────────────────────────────────────
 
-    const payload = {
-      roomCode: roomCode.toUpperCase(),
-      teamId,
-      taskIndex,
-      answer: answerPayload,
-    };
+  const handleScannedCode = (code) => {
+    if (!joined || !teamId) {
+      setScanError("Join a room first, then scan a station.");
+      return;
+    }
 
-    console.log("STUDENT: Submitting answer:", payload);
+    if (!assignedStationId) {
+      setScanError("Wait until your teacher assigns a station, then scan.");
+      return;
+    }
 
-    setSubmitting(true);
+    const normAssigned = normalizeStationId(assignedStationId);
+    const expectedColour = normAssigned.color;
 
-    socket.emit("student:submitAnswer", payload, (ack) => {
-      console.log("STUDENT: Submit ACK:", ack);
-      setSubmitting(false);
+    // Parse QR payload – expected pattern: ".../<location>/<colour>"
+    let scannedColour = null;
+    let scannedLocationRaw = null;
 
-      if (!ack || ack.ok !== true) {
-        alert(ack?.error || "We couldn't submit your answer. Check your connection and tell your teacher.");
-        return;
+    try {
+      const url = new URL(code);
+      const segments = url.pathname.split("/").filter(Boolean);
+
+      if (segments.length >= 2) {
+        scannedLocationRaw = segments[segments.length - 2];
+        scannedColour = (segments[segments.length - 1] || "").toLowerCase();
+      } else if (segments.length === 1) {
+        scannedColour = (segments[0] || "").toLowerCase();
       }
+    } catch {
+      // Non-URL payload → treat entire string as the colour
+      scannedColour = (code || "").toLowerCase().trim();
+    }
 
-      if (typeof ack.newScore === "number") {
-        setScore(ack.newScore);
-      }
+    const scannedLocationSlug = normalizeLocationSlug(scannedLocationRaw);
 
-      setCurrentTask(null);
-      setAnswerDraft(null);
-      setScannerActive(true);
-      setStatusMessage("Answer received! Get ready for your next station.");
-    });
-  };
+    const scannedLabel = [
+      scannedLocationRaw || "",
+      scannedColour ? scannedColour.toUpperCase() : "",
+    ]
+      .filter(Boolean)
+      .join(" / ");
 
-  const handleAnswerChange = (partialAnswer) => {
-    setAnswerDraft(partialAnswer);
-  };
+    if (!scannedColour) {
+      setScanError(
+        "That code didn’t look like a station. Try another or ask your teacher."
+      );
+      return;
+    }
 
-  const handleScanStation = (decodedText) => {
-    if (!socket || !joined) return;
-    const trimmed = decodedText.trim();
-    const norm = normalizeStationId(trimmed);
+    if (!expectedColour || scannedColour !== expectedColour) {
+      const expectedLabel = expectedColour
+        ? expectedColour.toUpperCase()
+        : "the correct";
+      setScanError(
+        `That’s the wrong station colour. You scanned ${
+          scannedLabel || "this code"
+        }, but your team needs the ${expectedLabel} station.`
+      );
 
-    setScannedStationId(norm.id);
+      // 🔹 Re-arm the scanner so they can try again
+      setScannedStationId(null);
+      setScannerActive(false);
+      setTimeout(() => setScannerActive(true), 100);
+
+      return;
+    }
+
+    // ✅ Colour matches – we *ignore* location for now.
+    setScanError(null);
+    setScannerActive(false);
+    setScannedStationId(assignedStationId);
 
     socket.emit(
       "station:scan",
       {
-        roomCode: roomCode.toUpperCase(),
-        teamId: teamId,
-        stationId: norm.id,
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+        stationId: normAssigned.id,
       },
       (ack) => {
-        console.log("station:scan ACK:", ack);
         if (!ack || !ack.ok) {
-          alert(
-            ack?.error ||
-              "Scan failed. Make sure you are scanning the correct station for this task."
+          setScanError(
+            ack?.error || "We couldn't read that station. Try again."
           );
-          setScannerActive(true);
+
+          // Reset scanner so the student can try again
+          setScannedStationId(null);
+          setScannerActive(false);
+          setTimeout(() => setScannerActive(true), 100);
           return;
         }
 
-        setAssignedStationId(norm.id);
-        setAssignedColor(norm.color || null);
+        // Success
+        setScanError(null);
         setScannerActive(false);
-        setStatusMessage("Station scanned! Wait for your task…");
+        setScannedStationId(normAssigned.id);
       }
     );
-  };
 
-  const renderJoinScreen = () => {
-    return (
-      <div className="student-join-screen">
-        <h1 className="student-title">Join the Game</h1>
-        <p className="student-subtitle">
-          Enter your room code and team name to get started.
-        </p>
-
-        <div className="join-form">
-          <div className="form-group">
-            <label>Room Code</label>
-            <input
-              type="text"
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value)}
-              placeholder="e.g. ABC123"
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Team Name</label>
-            <input
-              type="text"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              placeholder="e.g. The Innovators"
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Team Members (optional)</label>
-            <input
-              type="text"
-              value={teamMembersText}
-              onChange={(e) => setTeamMembersText(e.target.value)}
-              placeholder="Comma-separated names"
-            />
-          </div>
-
-          <button
-            className="join-button"
-            onClick={handleJoin}
-            disabled={joiningRoom || !connected}
-          >
-            {joiningRoom ? "Joining…" : "Join Room"}
-          </button>
-
-          {!connected && (
-            <p className="connection-hint">
-              Connecting to server… please wait a moment.
-            </p>
-          )}
-        </div>
-      </div>
+    setStatusMessage(
+      `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`
     );
   };
 
-  const renderTaskScreen = () => {
-    const normalizedStation = assignedStationId
-      ? normalizeStationId(assignedStationId)
-      : null;
+  // ─────────────────────────────────────────────
+  // Submit answer
+  // ─────────────────────────────────────────────
 
-    const showScanner =
-      scannerActive &&
-      (!assignedStationId ||
-        (normalizedStation && normalizedStation.id !== scannedStationId));
+  const handleSubmitAnswer = async (answerPayload) => {
+    if (!roomCode || !joined || !currentTask || teamId == null) return;
+    if (submitting) return;
 
-    return (
-      <div className="student-task-screen">
-        <header className="student-header">
-          <div className="room-tag">
-            {roomCode
-              ? `Connected Room ${roomCode.toUpperCase()}`
-              : "Joining Room…"}
-          </div>
-          <div className="team-tag">
-            Team: <strong>{teamName || "Unnamed Team"}</strong>
-          </div>
-          <div className="score-tag">
-            Score: <strong>{score}</strong>
-          </div>
-        </header>
+    setSubmitting(true);
+    try {
+      await new Promise((resolve, reject) => {
+        socket
+          .timeout(8000)
+          .emit(
+            "student:submitAnswer",
+            {
+              roomCode: roomCode.trim().toUpperCase(),
+              teamId,
+              taskIndex:
+                typeof currentTaskIndex === "number"
+                  ? currentTaskIndex
+                  : undefined,
+              answer: answerPayload,
+            },
+            (err, ack) => {
+              if (err) {
+                console.warn("Submit timeout/error:", err);
+                reject(err);
+                return;
+              }
+              if (!ack || !ack.ok) {
+                console.warn("Submit not OK:", ack);
+                reject(
+                  new Error(ack?.error || "Submit failed")
+                );
+                return;
+              }
+              resolve();
+            }
+          );
+      });
 
-        {petTreatMessage && (
-          <div className="pet-treat-banner">{petTreatMessage}</div>
-        )}
+      // Clear timer
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+      setTimeLimitSeconds(null);
+      setRemainingMs(0);
 
-        <main className="student-main">
-          <div className="left-column">
-            {currentTask ? (
-              <div className="task-card">
-                <TaskRunner
-                  task={currentTask}
-                  taskTypes={TASK_TYPES}
-                  onSubmit={handleTaskSubmit}
-                  submitting={submitting}
-                  onAnswerChange={handleAnswerChange}
-                  answerDraft={answerDraft}
-                  disabled={submitting}
-                  socket={socket}
-                  roomCode={roomCode.toUpperCase()}
-                  playerTeam={teamId}
-                />
-              </div>
-            ) : (
-              <div className="waiting-card">
-                <h2>Waiting for your next task…</h2>
-                <p>
-                  Stay ready! Your teacher will send a new challenge to your
-                  station soon.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="right-column">
-            <div className="station-info-card">
-              <h3>Your Station</h3>
-              {assignedStationId ? (
-                <>
-                  <p>
-                    Station:{" "}
-                    <strong>
-                      {normalizedStation?.label || assignedStationId}
-                    </strong>
-                  </p>
-                  {assignedColor && (
-                    <div
-                      className="station-colour-pill"
-                      style={{ backgroundColor: assignedColor }}
-                    />
-                  )}
-                  {roomLocation && (
-                    <p className="station-location">
-                      Location: <strong>{roomLocation}</strong>
-                    </p>
-                  )}
-                  {showScanner ? (
-                    <p className="scanner-instructions">
-                      Scan the QR code at your station to begin.
-                    </p>
-                  ) : currentTask ? (
-                    <p className="scanner-instructions">
-                      Complete your task, then wait for the next scan.
-                    </p>
-                  ) : (
-                    <p className="scanner-instructions">
-                      Wait for your teacher to send the next task.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="scanner-instructions">
-                  Wait for your teacher to assign you a station.
-                </p>
-              )}
-            </div>
-
-            <div className="scanner-card">
-              <h3>Station Scanner</h3>
-              {showScanner ? (
-                <QrScanner
-                  onDecode={handleScanStation}
-                  onError={(err) => console.error("QR scanner error:", err)}
-                />
-              ) : (
-                <p>
-                  {currentTask
-                    ? "You’re at the right station. Complete your task!"
-                    : "No scan needed right now."}
-                </p>
-              )}
-            </div>
-
-            <div className="noise-card">
-              <h3>Noise Level</h3>
-              <NoiseSensor level={noiseLevel} enabled={noiseEnabled} />
-            </div>
-          </div>
-        </main>
-
-        {sessionComplete && (
-          <div className="session-complete-banner">
-            Session complete! Great work today.
-          </div>
-        )}
-      </div>
-    );
+      // After submission, hide task and force a rescan
+      setCurrentTask(null);
+      setCurrentTaskIndex(null);
+      setScannedStationId(null);
+      setScannerActive(true);
+      setStatusMessage(
+        "Answer submitted! Find your next station colour and scan it."
+      );
+    } catch (err) {
+      console.error("Submit error:", err);
+      alert(
+        "We couldn't submit your answer. Check your connection and tell your teacher."
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  // ─────────────────────────────────────────────
+  // Derived display values
+  // ─────────────────────────────────────────────
+
+  const assignedNorm = normalizeStationId(assignedStationId);
+  const scannedNorm = normalizeStationId(scannedStationId);
+
+  const mustScan =
+    joined &&
+    scannerActive && // only nag when the camera is actually on
+    !!assignedStationId &&
+    scannedStationId !== assignedStationId;
+
+  const assignedColour = assignedNorm.color;
+
+  // Normalized display location for prompt (use roomState.locationCode when available)
+  const displayLocation =
+    (roomLocationFromStateRef.current || DEFAULT_LOCATION).toUpperCase();
+
+  // Build the scan prompt:
+  // - If multi-room / fixed-station (enforceLocation === true):
+  //     "Scan your HALLWAY RED station."
+  // - Otherwise:
+  //     "Scan your RED station."
+  let scanPrompt = "";
+
+  if (assignedColour) {
+    const colorLabel = assignedColour.toUpperCase();
+
+    if (enforceLocation) {
+      scanPrompt = `Scan your ${displayLocation} ${colorLabel} station.`;
+    } else {
+      scanPrompt = `Scan your ${colorLabel} station.`;
+    }
+  } else {
+    // Safety fallback (rare): colour not known yet
+    scanPrompt = "Scan your station.";
+  }
+
+  // Font scaling for younger grades
+  let responseFontSize = "1rem";
+  let responseHeadingFontSize = "1rem";
+  const gradeRaw =
+    currentTask?.gradeLevel ?? currentTask?.meta?.gradeLevel ?? null;
+  const parsedGrade =
+    gradeRaw != null ? parseInt(String(gradeRaw), 10) : null;
+
+  if (!Number.isNaN(parsedGrade) && parsedGrade > 0) {
+    if (parsedGrade <= 4) {
+      responseFontSize = "1.15rem";
+      responseHeadingFontSize = "1.2rem";
+    } else if (parsedGrade <= 6) {
+      responseFontSize = "1.08rem";
+      responseHeadingFontSize = "1.15rem";
+    } else if (parsedGrade <= 8) {
+      responseFontSize = "1.02rem";
+      responseHeadingFontSize = "1.1rem";
+    } else {
+      responseFontSize = "0.98rem";
+      responseHeadingFontSize = "1.05rem";
+    }
+  }
+
+  // Theme-enriched task object
+  const themedTask =
+    currentTask && uiTheme
+      ? { ...currentTask, uiTheme }
+      : currentTask;
+
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
 
   return (
-    <div className="student-app-root">
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: 16,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "stretch",
+        justifyContent: "flex-start",
+        fontFamily:
+          "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        background: themeShell.pageBg,
+        color: themeShell.text,
+        opacity: noiseState.enabled ? noiseState.brightness : 1,
+        transition: "opacity 120ms ease-out",
+      }}
+    >
+      {/* Scoped styles for task presentation & submission */}
+      <style>{`
+        .task-card input[type="text"],
+        .task-card input[type="number"],
+        .task-card input[type="email"],
+        .task-card textarea {
+          width: 100%;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid #d1d5db;
+          font-size: 1rem;
+          outline: none;
+          background: #ffffff;
+          transition: border-color 0.15s ease, box-shadow 0.15s ease,
+            background-color 0.15s ease;
+        }
+
+        .task-card input:focus,
+        .task-card textarea:focus {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 2px rgba(129,140,248,0.3);
+          background-color: #f9fafb;
+        }
+
+        /* General button polish inside the task card */
+        .task-card button {
+          border-radius: 999px;
+          padding: 8px 12px;
+          font-size: 0.95rem;
+          font-weight: 600;
+          border: none;
+          cursor: pointer;
+          transition: transform 0.1s ease, box-shadow 0.1s ease,
+            opacity 0.1s ease;
+          box-shadow: 0 4px 12px rgba(15,23,42,0.15);
+        }
+
+        .task-card button:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(15,23,42,0.25);
+        }
+
+        .task-card button:active:not(:disabled) {
+          transform: translateY(0);
+          box-shadow: 0 3px 8px rgba(15,23,42,0.3);
+        }
+
+        .task-card button:disabled {
+          opacity: 0.6;
+          cursor: default;
+          box-shadow: none;
+        }
+      `}</style>
+
+      {/* Hidden audio elements for task / scan sounds */}
       <audio
-        ref={joinSoundRef}
-        src="/sounds/join.mp3"
+        ref={sndAlert}
+        src="/sounds/scan-alert.mp3"
         preload="auto"
+        style={{ display: "none" }}
       />
       <audio
-        ref={treatSoundRef}
-        src="/sounds/treat.mp3"
+        ref={sndTreat}
+        src="/sounds/treat-chime.mp3"
         preload="auto"
+        style={{ display: "none" }}
       />
 
-      {joined ? renderTaskScreen() : renderJoinScreen()}
+      {/* Main content column */}
+      <div
+        style={{
+          flex: 1,
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <header style={{ marginBottom: 4 }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.4rem",
+            }}
+          >
+            Curriculate – Team Station
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.85rem",
+              color: "#4b5563",
+            }}
+          >
+            {joined
+              ? roomCode
+                ? `Connected · Room ${roomCode.toUpperCase()}`
+                : "Connected"
+              : joiningRoom
+              ? roomCode
+                ? `Joining Room ${roomCode.toUpperCase()}…`
+                : "Joining Room…"
+              : connected
+              ? "Connected to server"
+              : "Connecting…"}
+          </p>
+        </header>
+
+        {treatMessage && (
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 10,
+              background: "#f97316",
+              color: "#ffffff",
+              fontSize: "0.9rem",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+            }}
+          >
+            <div>
+              <strong style={{ marginRight: 4 }}>Treat time!</strong>
+              {treatMessage}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTreatMessage(null)}
+              style={{
+                border: "none",
+                background: "rgba(255,255,255,0.15)",
+                color: "#ffffff",
+                padding: "4px 8px",
+                borderRadius: 999,
+                fontSize: "0.8rem",
+                cursor: "pointer",
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        )}
+
+        {/* JOIN PANEL */}
+        {!joined && (
+          <section
+            style={{
+              maxWidth: 480,
+              width: "100%",
+              background: themeShell.cardBg,
+              borderRadius: 16,
+              padding: 16,
+              border: themeShell.cardBorder,
+              color: themeShell.text,
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1.1rem",
+              }}
+            >
+              Join your room
+            </h2>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <label style={{ fontSize: "0.85rem" }}>
+                Room code
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) =>
+                    setRoomCode(e.target.value.toUpperCase())
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "4px 6px",
+                    marginTop: 2,
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                    fontSize: "1rem",
+                  }}
+                />
+              </label>
+
+              <label style={{ fontSize: "0.85rem" }}>
+                Team name
+                <input
+                  type="text"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "4px 6px",
+                    marginTop: 2,
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                    fontSize: "1rem",
+                  }}
+                />
+              </label>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Team members (optional)
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  {members.map((m, idx) => (
+                    <input
+                      key={idx}
+                      type="text"
+                      value={m}
+                      onChange={(e) =>
+                        setMembers((prev) => {
+                          const next = [...prev];
+                          next[idx] = e.target.value;
+                          return next;
+                        })
+                      }
+                      placeholder={`Member ${idx + 1}`}
+                      style={{
+                        width: "100%",
+                        padding: "4px 6px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        fontSize: "0.95rem",
+                      }}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMembers((prev) => [...prev, ""])
+                  }
+                  style={{
+                    marginTop: 4,
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#e5e7eb",
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  + Add member field
+                </button>
+              </div>
+
+              <div style={{ marginTop: 8 }}>
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Choose a theme
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {["modern", "bold", "minimal"].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setUiTheme(t)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #d1d5db",
+                        background:
+                          uiTheme === t ? "#0ea5e9" : "#f9fafb",
+                        color:
+                          uiTheme === t ? "#ffffff" : "#111827",
+                        fontSize: "0.8rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t === "modern"
+                        ? "Theme 1"
+                        : t === "bold"
+                        ? "Bold"
+                        : "Minimal"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleJoin}
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "#16a34a",
+                  color: "#ffffff",
+                  fontSize: "0.95rem",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                Ready for action
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* STATUS + STATION CARD */}
+        {joined && (
+          <section
+            style={{
+              marginBottom: 8,
+              padding: 12,
+              borderRadius: 12,
+              ...getStationBubbleStyles(assignedColor),
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 4,
+                fontSize: "1rem",
+              }}
+            >
+              Team {teamName || "?"}
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.85rem",
+                color: "inherit",
+              }}
+            >
+              {statusMessage}
+            </p>
+
+            <div
+              style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: "1px solid #e5e7eb",
+                fontSize: "0.85rem",
+              }}
+            >
+              <div>
+                <strong>Current station: </strong>
+                {assignedNorm.label}
+              </div>
+              {/* 🔢 Score info */}
+              <div style={{ marginTop: 2 }}>
+                <strong>Score:</strong> {scoreTotal} pts
+              </div>
+              {lastTaskResult && (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: "0.8rem",
+                    color:
+                      lastTaskResult.correct === true
+                        ? "#166534"
+                        : lastTaskResult.correct === false
+                        ? "#b91c1c"
+                        : "#111827",
+                  }}
+                >
+                  Last task:{" "}
+                  {lastTaskResult.correct === true
+                    ? "✅ Correct"
+                    : lastTaskResult.correct === false
+                    ? "❌ Incorrect"
+                    : "☑️ Submitted"}
+                  {typeof lastTaskResult.points === "number" && (
+                    <> ({lastTaskResult.points} pts)</>
+                  )}
+                </div>
+              )}
+              {mustScan ? (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontWeight: 600,
+                    color: "inherit",
+                  }}
+                >
+                  {scanPrompt}
+                </div>
+              ) : scannedStationId ? (
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "inherit",
+                  }}
+                >
+                  Station confirmed ({scannedNorm.label}).
+                </div>
+              ) : (
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "inherit",
+                  }}
+                >
+                  Waiting for a task…
+                </div>
+              )}
+              {scanError && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    color: "#b91c1c",
+                    fontSize: "0.8rem",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {scanError}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* SCANNER CARD */}
+        {joined && scannerActive && (
+          <section
+            style={{
+              marginBottom: 8,
+              padding: 12,
+              borderRadius: 12,
+              background: assignedColor
+                ? `var(--${assignedColor}-500, #eff6ff)`
+                : "#eff6ff",
+              boxShadow:
+                scannerActive && assignedColor
+                  ? "0 0 0 0 rgba(255,255,255,0.9)"
+                  : "0 1px 3px rgba(15,23,42,0.12)",
+              transition:
+                "background 0.2s ease, box-shadow 0.2s ease",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1rem",
+                color: assignedColor ? "#ffffff" : "#111827",
+              }}
+            >
+              {scanPrompt}
+            </h2>
+            <QrScanner
+              active={scannerActive}
+              onCode={handleScannedCode}
+              onError={setScanError}
+            />
+          </section>
+        )}
+
+        {/* TASK CARD */}
+        {joined && currentTask && !mustScan && (
+          <section
+            className="task-card"
+            style={{
+              marginBottom: 12,
+              padding: 14,
+              borderRadius: 20,
+              background:
+                "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)",
+              boxShadow: "0 10px 25px rgba(15,23,42,0.18)",
+              border: "1px solid rgba(129,140,248,0.35)",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 6,
+                fontSize: responseHeadingFontSize,
+                letterSpacing: 0.2,
+              }}
+            >
+              {currentTask?.taskType === TASK_TYPES.JEOPARDY
+                ? "Jeopardy clue"
+                : "Your task"}
+            </h2>
+
+            {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
+              currentTask?.jeopardyConfig?.boardTitle && (
+                <p
+                  style={{
+                    margin: "0 0 6px",
+                    fontSize: "0.88rem",
+                    color: "#4b5563",
+                  }}
+                >
+                  Game:{" "}
+                  <strong>
+                    {currentTask.jeopardyConfig.boardTitle}
+                  </strong>
+                </p>
+              )}
+
+            {timeLimitSeconds && timeLimitSeconds > 0 && (
+              <p
+                style={{
+                  margin: "0 0 10px",
+                  fontSize: "0.9rem",
+                  color: "#b91c1c",
+                  fontWeight: 500,
+                }}
+              >
+                Time left: {formatRemainingMs(remainingMs)}
+              </p>
+            )}
+
+            <div
+              style={{
+                marginTop: 6,
+                padding: 12,
+                borderRadius: 16,
+                background: "rgba(255,255,255,0.98)",
+                border: "1px solid rgba(209,213,219,0.9)",
+                fontSize: responseFontSize,
+                lineHeight: 1.5,
+              }}
+            >
+              <TaskRunner
+                task={themedTask}
+                taskTypes={TASK_TYPES}
+                onSubmit={handleSubmitAnswer}
+                submitting={submitting}
+                onAnswerChange={setCurrentAnswerDraft}
+                answerDraft={currentAnswerDraft}
+              />
+            </div>
+          </section>
+        )}
+      </div>
+
+      {joined && (
+        <NoiseSensor
+          active={noiseState.enabled}
+          roomCode={roomCode}
+          socket={socket}
+          ignoreNoise={!!currentTask?.ignoreNoise}
+        />
+      )}
+
+      {/* +points toast */}
+      {pointToast && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "20vh",
+            transform: "translateX(-50%)",
+            padding: "8px 16px",
+            borderRadius: 999,
+            background: "rgba(22,163,74,0.96)",
+            color: "#f9fafb",
+            fontWeight: 700,
+            fontSize: "0.95rem",
+            boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
+            zIndex: 120,
+          }}
+        >
+          +{pointToast.points} points!
+        </div>
+      )}
+
+      {/* Persistent colour band at the bottom */}
+      <div
+        style={{
+          marginTop: 16,
+          width: "100%",
+          height: "50vh",
+          borderTopLeftRadius: 32,
+          borderTopRightRadius: 32,
+          backgroundColor: assignedColor
+            ? `var(--${assignedColor}-500, #e5e7eb)`
+            : "#e5e7eb",
+          boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
+        }}
+      />
     </div>
   );
 }
+
+export default StudentApp;
