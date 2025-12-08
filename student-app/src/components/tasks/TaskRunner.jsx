@@ -113,6 +113,9 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
     (Array.isArray(task.questions) && task.questions.length > 0 && task.questions) ||
     (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
+    (Array.isArray(task.multiQuestions) &&
+      task.multiQuestions.length > 0 &&
+      task.multiQuestions) ||
     [];
 
   const items =
@@ -227,7 +230,14 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {items.map((item, idx) => {
-          const label = item.label || item.stem || item.prompt || item.text;
+          const label =
+            item.label ||
+            item.question ||
+            item.prompt ||
+            item.stem ||
+            item.text ||
+            item.title ||
+            item.description;
           const opts = isChoice ? itemOptions[idx] || [] : [];
           const answerVal = answers[idx]?.value ?? "";
 
