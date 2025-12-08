@@ -1552,24 +1552,30 @@ io.on("connection", (socket) => {
       submittedAt,
     });
 
-    // Determine if this is a "quick taskset"
-    const isQuickTaskset =
+    // After every graded submission, advance THIS team to the next station so they must rescan.
+    reassignStationForTeam(room, effectiveTeamId);
+
+    // Maybe award a random treat for this submission
+    const isQuick =
       !!room.taskset &&
       room.taskset.name === "Quick task" &&
       Array.isArray(room.taskset.tasks) &&
       room.taskset.tasks.length === 1;
 
-    // After every graded submission, advance THIS team to the next station so they must rescan.
-    reassignStationForTeam(room, effectiveTeamId);
-
-    // Maybe award a random treat for this submission – but NOT for quick tasks
-    if (!isQuickTaskset) {
+    if (!isQuick) {
       maybeAwardTreat(code, room, effectiveTeamId);
     }
 
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
+
+    // Determine if this is a "quick taskset"
+    const isQuickTaskset =
+      !!room.taskset &&
+      room.taskset.name === "Quick task" &&
+      Array.isArray(room.taskset.tasks) &&
+      room.taskset.tasks.length === 1;
 
     // Per-team progression
     if (room.taskset && Array.isArray(room.taskset.tasks)) {
@@ -1839,83 +1845,79 @@ io.on("connection", (socket) => {
 
   // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
   // so that handleStudentSubmit + scoring logic work.
-  socket.on("teacherLaunchTask", async (payload = {}) => {
-    const { roomCode, prompt, correctAnswer, task, selectedRooms } = payload;
-    const code = (roomCode || "").toUpperCase();
-    if (!code) return;
+  // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
+// so that handleStudentSubmit + scoring logic work.
+socket.on(
+  "teacherLaunchTask",
+  async (payload = {}) => {
+    try {
+      const { roomCode, task, prompt, correctAnswer, selectedRooms } = payload;
+      const code = (roomCode || "").toUpperCase();
+      if (!code) return;
 
-    let room = rooms[code];
-    if (!room) {
-      room = (rooms[code] = await createRoom(code, socket.id));
+      // Decide where the prompt is coming from
+      const basePrompt =
+        (task &&
+          typeof task.prompt === "string" &&
+          task.prompt.trim()) ||
+        (typeof prompt === "string" && prompt.trim()) ||
+        "";
+
+      if (!basePrompt) return;
+
+      let room = rooms[code];
+      if (!room) {
+        room = rooms[code] = await createRoom(code, socket.id);
+      }
+
+      // Preserve as much info as LiveSession gave us as possible
+      const quickTask = {
+        taskType: (task && task.taskType) || "short-answer",
+        prompt: basePrompt,
+        correctAnswer:
+          (task && task.correctAnswer) ||
+          (typeof correctAnswer === "string" ? correctAnswer : null),
+        options:
+          task &&
+          Array.isArray(task.options) &&
+          task.options.length > 0
+            ? task.options
+            : undefined,
+        points:
+          task && typeof task.points === "number" ? task.points : 10,
+        subject: (task && task.subject) || "Ad-hoc",
+        gradeLevel: (task && task.gradeLevel) || "",
+        clue:
+          task && typeof task.clue === "string" ? task.clue : undefined,
+        timeLimitSeconds:
+          task && typeof task.timeLimitSeconds === "number"
+            ? task.timeLimitSeconds
+            : 0,
+        quickTask: true,
+      };
+
+      // Tiny, ephemeral taskset so AI scoring + analytics all work
+      room.taskset = {
+        name: "Quick task",
+        subject: quickTask.subject,
+        gradeLevel: quickTask.gradeLevel,
+        tasks: [quickTask],
+        isQuickTaskset: true,
+      };
+
+      // Leave room.taskIndex "out of the way" – student sends taskIndex=0
+      room.taskIndex = -1;
+
+      io.to(code).emit("task:launch", {
+        index: 0,
+        task: quickTask,
+        timeLimitSeconds: quickTask.timeLimitSeconds || 0,
+      });
+    } catch (err) {
+      console.error("Error in teacherLaunchTask:", err);
     }
-
-    // Support both shapes:
-    //  1) new: { roomCode, task: { prompt, correctAnswer, ... } }
-    //  2) old: { roomCode, prompt, correctAnswer }
-    const basePrompt =
-      (task && typeof task.prompt === "string" && task.prompt.trim()) ||
-      (typeof prompt === "string" && prompt.trim()) ||
-      "";
-
-    if (!basePrompt) {
-      console.warn("teacherLaunchTask: missing prompt for room", code);
-      return;
-    }
-
-    const quickTask = {
-      // allow dynamic task types, default to short-answer
-      taskType: (task && task.taskType) || "short-answer",
-      prompt: basePrompt,
-
-      // prefer nested correctAnswer, fall back to top-level
-      correctAnswer:
-        task && "correctAnswer" in task
-          ? task.correctAnswer
-          : correctAnswer || null,
-
-      // points – prefer explicit, else 10
-      points:
-        task && typeof task.points === "number" ? task.points : 10,
-    };
-
-    // Optional extras for MCQ / other types
-    if (task && Array.isArray(task.options) && task.options.length > 0) {
-      quickTask.options = task.options;
-    }
-    if (task && typeof task.clue === "string" && task.clue.trim()) {
-      quickTask.clue = task.clue.trim();
-    }
-    if (task && typeof task.timeLimitSeconds === "number") {
-      quickTask.timeLimitSeconds = task.timeLimitSeconds;
-    }
-
-    // Attach tiny, ephemeral taskset
-    room.taskset = {
-      name: "Quick task",
-      subject: (task && task.subject) || "Ad-hoc",
-      gradeLevel: (task && task.gradeLevel) || "",
-      tasks: [quickTask],
-    };
-
-    // Not a full multi-task flow
-    room.taskIndex = -1;
-
-    // Respect multi-room selection if present
-    if (Array.isArray(selectedRooms) && selectedRooms.length > 0) {
-      room.selectedRooms = selectedRooms;
-    } else {
-      room.selectedRooms = null;
-    }
-
-    io.to(code).emit("task:launch", {
-      index: 0, // StudentApp will pass this back on submit
-      task: quickTask,
-      timeLimitSeconds:
-        typeof quickTask.timeLimitSeconds === "number"
-          ? quickTask.timeLimitSeconds
-          : 0,
-    });
-  });
+  }
+);
 
   // --------------------------
   // Teacher: random treats config
