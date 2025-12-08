@@ -178,25 +178,6 @@ function formatRemainingMs(ms) {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-function getStationColorStyles(colorName) {
-  if (!colorName) {
-    return { background: "#fef9c3", color: "#111" };
-  }
-  const COLOR_MAP = {
-    red: "#ef4444",
-    blue: "#3b82f6",
-    green: "#22c55e",
-    yellow: "#eab308",
-    purple: "#a855f7",
-    orange: "#f97316",
-    teal: "#14b8a6",
-    pink: "#ec4899",
-  };
-  const bg = COLOR_MAP[colorName] || "#fef9c3";
-  const isLight = ["yellow", "orange", "pink", "teal"].includes(colorName);
-  return { background: bg, color: isLight ? "#111" : "#fff" };
-}
-
 // ---------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------
@@ -246,18 +227,10 @@ function StudentApp() {
   });
   const [treatMessage, setTreatMessage] = useState(null);
 
-  // Noise + treats
-  const [noiseState, setNoiseState] = useState({
-    enabled: false,
-    threshold: 0,
-    level: 0,
-    brightness: 1,
-  });
-  const [treatMessage, setTreatMessage] = useState(null);
-
-  // 🔢 Scoring: running total + last-task result
+  // 🔢 Scoring: running total + last-task result + toast
   const [scoreTotal, setScoreTotal] = useState(0);
   const [lastTaskResult, setLastTaskResult] = useState(null);
+  const [pointToast, setPointToast] = useState(null);
 
   // Whether to enforce location as well as colour (fixed-station / multi-room scavenger hunts)
   const [enforceLocation, setEnforceLocation] = useState(false);
@@ -283,7 +256,7 @@ function StudentApp() {
       console.log("SOCKET: Connected", socket.id);
       setConnected(true);
 
-      // Try to resume from localStorage
+      // Try to resume from sessionStorage
       try {
         const stored = sessionStorage.getItem("teamSession");
         if (!stored) return;
@@ -347,10 +320,7 @@ function StudentApp() {
           }
         );
       } catch (err) {
-        console.warn(
-          "Error reading teamSession from localStorage:",
-          err
-        );
+        console.warn("Error reading teamSession from sessionStorage:", err);
       }
     };
 
@@ -374,10 +344,12 @@ function StudentApp() {
   }, []);
 
   // ─────────────────────────────────────────────
-  // Server event listeners – room, tasks, noise, treats
+  // Server event listeners – room, tasks, noise, treats, scoring
   // ─────────────────────────────────────────────
 
   useEffect(() => {
+    if (!teamId) return;
+
     // Room / station state updates
     const handleRoomState = (state) => {
       if (!state || !teamId) return;
@@ -416,9 +388,33 @@ function StudentApp() {
       }
     };
 
+    // Last-task result for this team (score + correctness)
+    const handleTaskSubmission = (submission) => {
+      if (!submission || !teamId) return;
+
+      // Ignore other rooms
+      if (
+        submission.roomCode &&
+        roomCode &&
+        submission.roomCode.toUpperCase() !== roomCode.trim().toUpperCase()
+      ) {
+        return;
+      }
+
+      // Only care about this team
+      if (submission.teamId !== teamId) return;
+
+      setLastTaskResult({
+        points: typeof submission.points === "number" ? submission.points : 0,
+        correct: submission.correct,
+        answerText: submission.answerText || "",
+        submittedAt: submission.submittedAt || Date.now(),
+      });
+    };
+
     socket.on("room:state", handleRoomState);
     socket.on("roomState", handleRoomState);
-    socket.on("taskSubmission", handleTaskSubmission);  // 🔢 NEW
+    socket.on("taskSubmission", handleTaskSubmission);
 
     // Task launches from teacher / engine
     socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
@@ -460,30 +456,6 @@ function StudentApp() {
         // ignore
       }
     });
-
-    // Last-task result for this team
-    const handleTaskSubmission = (submission) => {
-      if (!submission || !teamId) return;
-
-      // Ignore other rooms
-      if (
-        submission.roomCode &&
-        roomCode &&
-        submission.roomCode.toUpperCase() !== roomCode.trim().toUpperCase()
-      ) {
-        return;
-      }
-
-      // Only care about this team
-      if (submission.teamId !== teamId) return;
-
-      setLastTaskResult({
-        points: typeof submission.points === "number" ? submission.points : 0,
-        correct: submission.correct,
-        answerText: submission.answerText || "",
-        submittedAt: submission.submittedAt || Date.now(),
-      });
-    };
 
     // Session ended via REST / teacher
     socket.on("session-ended", () => {
@@ -528,7 +500,7 @@ function StudentApp() {
     return () => {
       socket.off("room:state", handleRoomState);
       socket.off("roomState", handleRoomState);
-      socket.off("taskSubmission", handleTaskSubmission); // 🔢 NEW
+      socket.off("taskSubmission", handleTaskSubmission);
       socket.off("task:launch");
       socket.off("session:complete");
       socket.off("session-ended");
@@ -576,6 +548,32 @@ function StudentApp() {
       }
     };
   }, [timeLimitSeconds]);
+
+  // ─────────────────────────────────────────────
+  // Toast for positive-point submissions
+  // ─────────────────────────────────────────────
+
+  useEffect(() => {
+    if (
+      !lastTaskResult ||
+      typeof lastTaskResult.points !== "number" ||
+      lastTaskResult.points <= 0
+    ) {
+      return;
+    }
+
+    const id = lastTaskResult.submittedAt || Date.now();
+    const toast = { id, points: lastTaskResult.points };
+    setPointToast(toast);
+
+    const timer = setTimeout(() => {
+      setPointToast((current) =>
+        current && current.id === id ? null : current
+      );
+    }, 1800);
+
+    return () => clearTimeout(timer);
+  }, [lastTaskResult]);
 
   // ─────────────────────────────────────────────
   // Utility – unlock browser audio
@@ -798,31 +796,32 @@ function StudentApp() {
     setScannerActive(false);
     setScannedStationId(assignedStationId);
 
-      socket.emit(
-        "station:scan",
-        {
-          roomCode: roomCode.trim().toUpperCase(),
-          teamId,
-          stationId: normAssigned.id,
-        },
-        (ack) => {
-          // This function runs when the server responds
-          if (!ack || !ack.ok) {
-            setScanError(ack?.error || "We couldn't read that station. Try again.");
+    socket.emit(
+      "station:scan",
+      {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+        stationId: normAssigned.id,
+      },
+      (ack) => {
+        if (!ack || !ack.ok) {
+          setScanError(
+            ack?.error || "We couldn't read that station. Try again."
+          );
 
-            // Reset scanner so the student can try again
-            setScannedStationId(null);
-            setScannerActive(false);
-            setTimeout(() => setScannerActive(true), 100);
-            return;
-          }
-
-          // Success
-          setScanError(null);
+          // Reset scanner so the student can try again
+          setScannedStationId(null);
           setScannerActive(false);
-          setScannedStationId(normAssigned.id); // or whatever you store
+          setTimeout(() => setScannerActive(true), 100);
+          return;
         }
-      );
+
+        // Success
+        setScanError(null);
+        setScannerActive(false);
+        setScannedStationId(normAssigned.id);
+      }
+    );
 
     setStatusMessage(
       `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`
@@ -966,7 +965,7 @@ function StudentApp() {
       ? { ...currentTask, uiTheme }
       : currentTask;
 
-    // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────
 
@@ -1557,6 +1556,28 @@ function StudentApp() {
           socket={socket}
           ignoreNoise={!!currentTask?.ignoreNoise}
         />
+      )}
+
+      {/* +points toast */}
+      {pointToast && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "20vh",
+            transform: "translateX(-50%)",
+            padding: "8px 16px",
+            borderRadius: 999,
+            background: "rgba(22,163,74,0.96)",
+            color: "#f9fafb",
+            fontWeight: 700,
+            fontSize: "0.95rem",
+            boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
+            zIndex: 120,
+          }}
+        >
+          +{pointToast.points} points!
+        </div>
       )}
 
       {/* Persistent colour band at the bottom */}
