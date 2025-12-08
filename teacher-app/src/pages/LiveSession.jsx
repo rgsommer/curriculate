@@ -1429,14 +1429,54 @@ const handleLaunchQuickTask = () => {
                     Last launched quick task
                   </div>
                   <div>{lastQuickTask.prompt}</div>
-                  {lastQuickTask.correctAnswer && (
-                    <div style={{ marginTop: 2 }}>
-                      <strong>Answer:</strong>{" "}
-                      {lastQuickTask.correctAnswer}
+                  {Array.isArray(lastQuickTask.items) &&
+                  lastQuickTask.items.length > 0 ? (
+                    <div style={{ marginTop: 4 }}>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: "0.78rem",
+                          marginBottom: 2,
+                        }}
+                      >
+                        Answer key
+                      </div>
+                      <ol
+                        style={{
+                          paddingLeft: 16,
+                          margin: 0,
+                          fontSize: "0.78rem",
+                          color: "#4b5563",
+                        }}
+                      >
+                        {lastQuickTask.items.map((item, idx) => {
+                          const prompt =
+                            item.prompt || item.question || `Q${idx + 1}`;
+                          const ans =
+                            item.correctAnswer != null &&
+                            String(item.correctAnswer).trim().length > 0
+                              ? String(item.correctAnswer).trim()
+                              : "(no correct answer set)";
+                          return (
+                            <li key={item.id || idx} style={{ marginBottom: 2 }}>
+                              <span style={{ fontWeight: 500 }}>
+                                {prompt}
+                                {": "}
+                              </span>
+                              <span>{ans}</span>
+                            </li>
+                          );
+                        })}
+                      </ol>
                     </div>
+                  ) : (
+                    lastQuickTask.correctAnswer && (
+                      <div style={{ marginTop: 2 }}>
+                        <strong>Answer:</strong>{" "}
+                        {lastQuickTask.correctAnswer}
+                      </div>
+                    )
                   )}
-                </div>
-              )}
 
               {/* Multi-room selector (for special types) */}
               {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") &&
@@ -1965,16 +2005,21 @@ const handleLaunchQuickTask = () => {
                           {packSummary}
                         </div>
                       )}
-                      {trimmedAnswer && (
-                        <div
-                          style={{
-                            fontSize: "0.75rem",
-                            color: "#4b5563",
-                          }}
-                        >
-                          {trimmedAnswer}
+                     {trimmedAnswer && (
+                      <div
+                        style={{
+                          fontSize: "0.75rem",
+                          color: "#4b5563",
+                        }}
+                      >
+                        <div style={{ fontWeight: 500, marginBottom: 1 }}>
+                          Submitted answer(s):
                         </div>
-                      )}
+                        {trimmedAnswer.split(/; |\n/).map((line, idx) => (
+                          <div key={idx}>{line}</div>
+                        ))}
+                      </div>
+                    )}
                     </div>
                   );
                 })}
