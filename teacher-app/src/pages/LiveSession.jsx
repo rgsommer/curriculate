@@ -42,6 +42,8 @@ const PURPOSE_OPTIONS = [
   "Assessment",
 ];
 
+const [quickStatus, setQuickStatus] = useState("");
+
 function stationIdToColor(id) {
   const m = /^station-(\d+)$/.exec(id || "");
   const idx = m ? parseInt(m[1], 10) - 1 : -1;
