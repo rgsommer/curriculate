@@ -1477,6 +1477,8 @@ const handleLaunchQuickTask = () => {
                       </div>
                     )
                   )}
+                </div>
+              )}  
 
               {/* Multi-room selector (for special types) */}
               {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") &&
