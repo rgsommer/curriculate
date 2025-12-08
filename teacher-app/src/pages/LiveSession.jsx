@@ -553,37 +553,42 @@ export default function LiveSession({ roomCode }) {
     setShowRoomSetup(true);
   };
 
-  const handleLaunchQuickTask = () => {
-    if (!taskConfig.prompt?.trim()) return;
+  // inside LiveSession.jsx
+const handleLaunchQuickTask = () => {
+  if (!roomCode || !taskConfig.prompt?.trim()) return;
 
-    setIsLaunchingQuick(true);
+  setIsLaunchingQuick(true);
+  setQuickStatus(null);
 
-    const taskToSend = {
-      taskType,
-      prompt: taskConfig.prompt.trim(),
-      ...(taskConfig.correctAnswer && {
-        correctAnswer: taskConfig.correctAnswer.trim(),
-      }),
-      ...(taskConfig.options && { options: taskConfig.options }),
-      ...(taskConfig.clue && { clue: taskConfig.clue.trim() }),
-    };
-
-    socket.emit("teacherLaunchTask", {
-      roomCode: roomCode.toUpperCase(),
-      task: taskToSend,
-      selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
-    });
-
-    setLastQuickTask({
-      ...taskToSend,
-      launchedAt: Date.now(),
-    });
-
-    setTimeout(() => {
-      setIsLaunchingQuick(false);
-      setStatus("Quick task launched!");
-    }, 300);
+  const taskToSend = {
+    taskType: taskType || "short-answer",
+    prompt: taskConfig.prompt.trim(),
+    correctAnswer: taskConfig.correctAnswer || null,
+    options:
+      Array.isArray(taskConfig.options) && taskConfig.options.length > 0
+        ? taskConfig.options
+        : undefined,
+    points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
+    subject: taskConfig.subject || "Ad-hoc",
+    gradeLevel: taskConfig.gradeLevel || "",
+    clue: taskConfig.clue || undefined,
+    timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
   };
+
+  // 🔴 Important: use teacherLaunchTask, not launch-quick-task
+  socket.emit("teacherLaunchTask", {
+    roomCode: roomCode.toUpperCase(),
+    task: taskToSend,
+    selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
+  });
+
+  // UI reset
+  setLastQuickTask(taskToSend);
+  setTimeout(() => {
+    setIsLaunchingQuick(false);
+    setQuickStatus("Quick task launched!");
+  }, 300);
+};
 
   const handleLocationOverrideClick = (loc) => {
     setSelectedLocation(loc);
