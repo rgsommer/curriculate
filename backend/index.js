@@ -763,6 +763,11 @@ io.on("connection", (socket) => {
     socket.handshake.headers.referer
   );
 
+  socket.on('launch-quick-task', (data) => {
+    const { roomCode, task } = data;
+    io.to(roomCode.toUpperCase()).emit('new-quick-task', task);
+  });
+
   // LOG EVERY EVENT THIS SOCKET EMITS
   socket.onAny((event, ...args) => {
     console.log(
