@@ -414,12 +414,24 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     }
 
     // ---------- Normalize AI tasks into TaskSet schema ----------
-    const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
-      const rawType = (t.taskType || "").toString().toLowerCase();
+      const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
+      // Try to interpret the AI's taskType using the same normalizer we use for UI input
+      const rawTypeToken = t.taskType || t.type || "";
+      const normalizedFromAi = normalizeSelectedType(rawTypeToken);
 
       let taskType = TASK_TYPES.SHORT_ANSWER;
-      if (typePool.includes(rawType)) {
-        taskType = rawType;
+
+      if (normalizedFromAi && typePool.includes(normalizedFromAi)) {
+        taskType = normalizedFromAi;
+      } else if (typeof rawTypeToken === "string") {
+        // Fallback: use the literal lowercased token if it matches typePool
+        const lowered = rawTypeToken.toString().trim().toLowerCase();
+        if (typePool.includes(lowered)) {
+          taskType = lowered;
+        } else if (typePool.length === 1) {
+          // As a last resort, if only one type was allowed, trust that.
+          taskType = typePool[0];
+        }
       }
 
       const meta = TASK_TYPE_META[taskType] || {};
@@ -472,52 +484,23 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         if (options.length < 2) {
           options = ["Option A", "Option B"];
         }
-      } else if (taskType === TASK_TYPES.TRUE_FALSE) {
-        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
-          items = t.items.map((it, idx) => {
-            const id = it.id || `s${idx + 1}`;
-            const iprompt =
-              it.prompt && String(it.prompt).trim()
-                ? String(it.prompt).trim()
-                : `Statement ${idx + 1}`;
-
-            // Force TF options
-            const ioptions = ["True", "False"];
-
-            let icorrect = it.correctAnswer ?? null;
-            if (typeof icorrect === "string") {
-              const v = icorrect.toLowerCase().trim();
-              icorrect = v === "false" ? 1 : 0;
-            } else if (Number.isInteger(icorrect)) {
-              icorrect = icorrect === 1 ? 1 : 0;
-            } else {
-              icorrect = 0;
-            }
-
-            return {
-              id,
-              prompt: iprompt,
-              options: ioptions,
-              correctAnswer: icorrect,
-            };
-          });
-        }
-
-        // Top-level TF options
-        if (options.length !== 2) {
-          options = ["True", "False"];
-        }
-      } else if (taskType === TASK_TYPES.SORT) {
+            } else if (taskType === TASK_TYPES.SORT) {
         // Normalise sort/categorize into config.buckets + config.items
-        const aiConfig = (t.config && typeof t.config === "object") ? t.config : {};
+        const aiConfig =
+          t.config && typeof t.config === "object" ? t.config : {};
 
+        // Buckets / categories: accept a few common field names
         const rawBuckets = Array.isArray(aiConfig.buckets)
           ? aiConfig.buckets
+          : Array.isArray(aiConfig.categories)
+          ? aiConfig.categories
           : Array.isArray(t.buckets)
           ? t.buckets
+          : Array.isArray(t.categories)
+          ? t.categories
           : [];
 
-        const buckets = rawBuckets.map((b) => {
+        const buckets = rawBuckets.map((b, i) => {
           if (typeof b === "string") return b;
           if (b && typeof b === "object") {
             return (
@@ -525,22 +508,32 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
               b.name ||
               b.title ||
               b.category ||
-              String(b)
+              `Category ${i + 1}`
             );
           }
-          return String(b);
+          return `Category ${i + 1}`;
         });
 
+        // Items / events to sort: accept a few field names
         const rawItems = Array.isArray(aiConfig.items)
           ? aiConfig.items
+          : Array.isArray(aiConfig.sortItems)
+          ? aiConfig.sortItems
+          : Array.isArray(aiConfig.events)
+          ? aiConfig.events
           : Array.isArray(t.items)
           ? t.items
+          : Array.isArray(t.sortItems)
+          ? t.sortItems
+          : Array.isArray(t.events)
+          ? t.events
           : [];
 
         const sortItems = rawItems.map((it, idx) => {
           if (typeof it === "string") {
             return { text: it, bucketIndex: null };
           }
+
           if (it && typeof it === "object") {
             const text =
               it.text ||
@@ -548,6 +541,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
               it.name ||
               it.prompt ||
               `Item ${idx + 1}`;
+
             let bucketIndex = null;
             if (typeof it.bucketIndex === "number") {
               bucketIndex = it.bucketIndex;
@@ -556,8 +550,18 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             } else if (typeof it.categoryIndex === "number") {
               bucketIndex = it.categoryIndex;
             }
+
+            // Clamp out-of-range indices
+            if (
+              typeof bucketIndex === "number" &&
+              (bucketIndex < 0 || bucketIndex >= buckets.length)
+            ) {
+              bucketIndex = null;
+            }
+
             return { text, bucketIndex };
           }
+
           return { text: String(it), bucketIndex: null };
         });
 
