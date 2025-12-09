@@ -363,66 +363,94 @@ export default function SortTask({
   const allItemsPlaced =
     Object.values(assignments).flat().length === items.length;
 
+  const unassignedItems = items.filter(
+    (i) =>
+      !Object.values(assignments)
+        .flat()
+        .includes(i.id),
+  );
+
+
   // -------------------------------
   // Render
   // -------------------------------
   return (
     <div style={{ marginTop: 16 }}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        {buckets.map((bucket, idx) => (
-          <DroppableBucket
-            key={bucket.id}
-            id={bucket.id}
-            title={bucket.title}
-            scoreInfo={disabled ? bucketScores[idx] : null}
+          <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      {unassignedItems.length > 0 && (
+        <DroppableBucket
+          id="pool"
+          title="Items to sort"
+          scoreInfo={null}
+        >
+          <SortableContext
+            items={unassignedItems.map((i) => i.id)}
+            strategy={rectSortingStrategy}
           >
-            <SortableContext
-              items={assignments[bucket.id] || []}
-              strategy={rectSortingStrategy}
-            >
-              {(assignments[bucket.id] || [])
-                .map((id) =>
-                  items.find((i) => i.id === id),
-                )
-                .filter(Boolean)
-                .map((item) => {
-                  const placedIn = Object.entries(
-                    assignments,
-                  ).find(([, ids]) =>
-                    ids.includes(item.id),
-                  )?.[0];
-                  const score =
-                    placedIn === item.correctBucket
-                      ? 1
-                      : item.correctBucket !== null
-                      ? 0
-                      : 0.5;
+            {unassignedItems.map((item) => (
+              <SortableItem
+                key={item.id}
+                id={item.id}
+                disabled={disabled}
+                score={null}
+              >
+                {item.text}
+              </SortableItem>
+            ))}
+          </SortableContext>
+        </DroppableBucket>
+      )}
 
-                  return (
-                    <SortableItem
-                      key={item.id}
-                      id={item.id}
-                      disabled={disabled}
-                      score={disabled ? score : null}
-                    >
-                      {item.text}
-                    </SortableItem>
-                  );
-                })}
-            </SortableContext>
-          </DroppableBucket>
-        ))}
+      {buckets.map((bucket, idx) => (
+        <DroppableBucket
+          key={bucket.id}
+          id={bucket.id}
+          title={bucket.title}
+          scoreInfo={disabled ? bucketScores[idx] : null}
+        >
+          <SortableContext
+            items={assignments[bucket.id] || []}
+            strategy={rectSortingStrategy}
+          >
+            {(assignments[bucket.id] || [])
+              .map((id) =>
+                items.find((i) => i.id === id),
+              )
+              .filter(Boolean)
+              .map((item) => {
+                const placedIn = Object.entries(
+                  assignments,
+                ).find(([, ids]) =>
+                  ids.includes(item.id),
+                )?.[0];
+                const score =
+                  placedIn === item.correctBucket
+                    ? 1
+                    : item.correctBucket !== null
+                    ? 0
+                    : 0.5;
 
-        {items.filter(
-          (i) =>
-            !Object.values(assignments)
-              .flat()
-              .includes(i.id),
-        ).length > 0 && (
+                return (
+                  <SortableItem
+                    key={item.id}
+                    id={item.id}
+                    disabled={disabled}
+                    score={disabled ? score : null}
+                  >
+                    {item.text}
+                  </SortableItem>
+                );
+              })}
+          </SortableContext>
+        </DroppableBucket>
+      ))}
+
+      {unassignedItems.length > 0 && (
+
           <div
             style={{
               padding: 20,
