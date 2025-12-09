@@ -232,7 +232,10 @@ function StudentApp() {
   const [lastTaskResult, setLastTaskResult] = useState(null);
   const [pointToast, setPointToast] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false); // NEW
- 
+  // Correct-answer reveal for SHORT_ANSWER tasks
+  // { prompt, correctAnswer } or null
+  const [shortAnswerReveal, setShortAnswerReveal] = useState(null);
+
   // How long to keep task visible after submit for review (teacher can override per task)
   const [reviewPauseSeconds, setReviewPauseSeconds] = useState(15);
   const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
@@ -632,6 +635,15 @@ function StudentApp() {
     return () => clearTimeout(timer);
   }, [lastTaskResult]);
 
+    // Auto-hide the short-answer correct-answer overlay after 10 seconds
+    useEffect(() => {
+      if (!shortAnswerReveal) return;
+      const timer = setTimeout(() => {
+        setShortAnswerReveal(null);
+      }, 10000);
+      return () => clearTimeout(timer);
+    }, [shortAnswerReveal]);
+
   // Cleanup for post-submit countdown timer
   useEffect(() => {
     return () => {
@@ -915,27 +927,29 @@ function StudentApp() {
               teamId,
               taskIndex:
                 typeof currentTaskIndex === "number"
-                  ? currentTaskIndex
-                  : undefined,
-              answer: answerPayload,
+                // ...
             },
             (err, ack) => {
-              if (err) {
-                console.warn("Submit timeout/error:", err);
-                reject(err);
-                return;
-              }
-              if (!ack || !ack.ok) {
-                console.warn("Submit not OK:", ack);
-                reject(
-                  new Error(ack?.error || "Submit failed")
-                );
-                return;
-              }
+              // ...
               resolve();
             }
           );
       });
+
+      // Decide whether to show a "correct answer" overlay for SHORT_ANSWER
+      if (
+        currentTask &&
+        currentTask.taskType === TASK_TYPES.SHORT_ANSWER &&
+        typeof currentTask.correctAnswer === "string" &&
+        currentTask.correctAnswer.trim() !== ""
+      ) {
+        setShortAnswerReveal({
+          prompt: currentTask.prompt || "",
+          correctAnswer: currentTask.correctAnswer.trim(),
+        });
+      } else {
+        setShortAnswerReveal(null);
+      }
 
       // Clear timer
       if (countdownTimerRef.current) {
@@ -1804,8 +1818,89 @@ function StudentApp() {
           ))}
         </div>
       )}
+      {/* Correct-answer overlay for SHORT_ANSWER tasks (only when we know it) */}
+      {shortAnswerReveal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(15,23,42,0.55)",
+            zIndex: 130,
+          }}
+          onClick={() => setShortAnswerReveal(null)}
+        >
+          <div
+            style={{
+              maxWidth: 420,
+              width: "90%",
+              background: "#f9fafb",
+              borderRadius: 18,
+              padding: 16,
+              boxShadow: "0 18px 45px rgba(15,23,42,0.5)",
+              textAlign: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "1rem",
+                marginBottom: 6,
+                color: "#0f172a",
+              }}
+            >
+              Correct answer
+            </div>
+
+            {shortAnswerReveal.prompt && (
+              <div
+                style={{
+                  fontSize: "0.8rem",
+                  color: "#6b7280",
+                  marginBottom: 8,
+                }}
+              >
+                {shortAnswerReveal.prompt}
+              </div>
+            )}
+
+            <div
+              style={{
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                marginBottom: 12,
+                color: "#111827",
+              }}
+            >
+              {shortAnswerReveal.correctAnswer}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShortAnswerReveal(null)}
+              style={{
+                border: "none",
+                borderRadius: 999,
+                padding: "6px 16px",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                background: "#22c55e",
+                color: "#f9fafb",
+                cursor: "pointer",
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* +points toast */}
       {pointToast && (
+
         <div
           style={{
             position: "fixed",
