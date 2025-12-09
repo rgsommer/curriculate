@@ -123,10 +123,11 @@ export default function TaskSetEditor() {
             aiScoringRequired:
               typeof t.aiScoringRequired === "boolean"
                 ? t.aiScoringRequired
-                : // Default: if there is a correctAnswer, auto-score (no AI).
-                  !(
+                : !(
                     t.correctAnswer !== undefined && t.correctAnswer !== null
                   ),
+            config:
+              t.config && typeof t.config === "object" ? t.config : {}, // ✅ ensure config
             _tempId: Math.random().toString(36).slice(2),
             orderIndex: t.orderIndex ?? idx,
           }))
@@ -234,6 +235,18 @@ export default function TaskSetEditor() {
         const options = Array.isArray(t.options) ? [...t.options] : [];
         options[index] = value;
         return { ...t, options };
+      })
+    );
+  };
+
+  const updateSortConfig = (tempId, updater) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t._tempId !== tempId) return t;
+        const prevConfig =
+          t.config && typeof t.config === "object" ? t.config : {};
+        const nextConfig = updater(prevConfig);
+        return { ...t, config: nextConfig };
       })
     );
   };
@@ -853,10 +866,261 @@ export default function TaskSetEditor() {
                   />
                 </div>
 
+                {/* SORT: Categories / buckets */}
+                {task.taskType === TASK_TYPES.SORT && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.8rem",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Categories / buckets
+                    </label>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
+                    >
+                      {(Array.isArray(task.config?.buckets)
+                        ? task.config.buckets
+                        : []
+                      ).map((bucketLabel, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={bucketLabel || ""}
+                            onChange={(e) =>
+                              updateSortConfig(task._tempId, (cfg) => {
+                                const buckets = Array.isArray(cfg.buckets)
+                                  ? [...cfg.buckets]
+                                  : [];
+                                buckets[i] = e.target.value;
+                                return { ...cfg, buckets };
+                              })
+                            }
+                            placeholder={`Category ${i + 1}`}
+                            style={{
+                              flex: 1,
+                              borderRadius: 6,
+                              border: "1px solid #d1d5db",
+                              padding: 6,
+                              fontSize: "0.8rem",
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateSortConfig(task._tempId, (cfg) => {
+                                const buckets = Array.isArray(cfg.buckets)
+                                  ? [...cfg.buckets]
+                                  : [];
+                                const items = Array.isArray(cfg.items)
+                                  ? [...cfg.items]
+                                  : [];
+                                if (i < buckets.length) {
+                                  buckets.splice(i, 1);
+                                  // Reset any items that pointed at this bucket
+                                  const nextItems = items.map((it) => {
+                                    if (it.bucketIndex === i) {
+                                      return { ...it, bucketIndex: null };
+                                    }
+                                    if (
+                                      typeof it.bucketIndex === "number" &&
+                                      it.bucketIndex > i
+                                    ) {
+                                      return {
+                                        ...it,
+                                        bucketIndex: it.bucketIndex - 1,
+                                      };
+                                    }
+                                    return it;
+                                  });
+                                  return { ...cfg, buckets, items: nextItems };
+                                }
+                                return cfg;
+                              })
+                            }
+                            style={redTextButton}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSortConfig(task._tempId, (cfg) => {
+                            const buckets = Array.isArray(cfg.buckets)
+                              ? [...cfg.buckets]
+                              : [];
+                            buckets.push(`Category ${buckets.length + 1}`);
+                            return { ...cfg, buckets };
+                          })
+                        }
+                        style={grayButton}
+                      >
+                        + Add category
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* SORT: Items to sort */}
+                {task.taskType === TASK_TYPES.SORT && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.8rem",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Items to sort
+                    </label>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
+                    >
+                      {(Array.isArray(task.config?.items)
+                        ? task.config.items
+                        : []
+                      ).map((item, idx) => {
+                        const buckets = Array.isArray(task.config?.buckets)
+                          ? task.config.buckets
+                          : [];
+                        const currentIndex =
+                          typeof item.bucketIndex === "number"
+                            ? item.bucketIndex
+                            : "";
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={item.text || ""}
+                              onChange={(e) =>
+                                updateSortConfig(task._tempId, (cfg) => {
+                                  const items = Array.isArray(cfg.items)
+                                    ? [...cfg.items]
+                                    : [];
+                                  items[idx] = {
+                                    ...(items[idx] || {}),
+                                    text: e.target.value,
+                                  };
+                                  return { ...cfg, items };
+                                })
+                              }
+                              placeholder={`Item ${idx + 1}`}
+                              style={{
+                                flex: 2,
+                                borderRadius: 6,
+                                border: "1px solid #d1d5db",
+                                padding: 6,
+                                fontSize: "0.8rem",
+                              }}
+                            />
+                            <select
+                              value={currentIndex}
+                              onChange={(e) =>
+                                updateSortConfig(task._tempId, (cfg) => {
+                                  const items = Array.isArray(cfg.items)
+                                    ? [...cfg.items]
+                                    : [];
+                                  const nextIndex = e.target.value === ""
+                                    ? null
+                                    : Number(e.target.value);
+                                  items[idx] = {
+                                    ...(items[idx] || {}),
+                                    bucketIndex: nextIndex,
+                                  };
+                                  return { ...cfg, items };
+                                })
+                              }
+                              style={{
+                                flex: 1,
+                                borderRadius: 6,
+                                border: "1px solid #d1d5db",
+                                padding: 6,
+                                fontSize: "0.8rem",
+                              }}
+                            >
+                              <option value="">
+                                — Select category —
+                              </option>
+                              {buckets.map((bLabel, bIdx) => (
+                                <option key={bIdx} value={bIdx}>
+                                  {bLabel || `Category ${bIdx + 1}`}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSortConfig(task._tempId, (cfg) => {
+                                  const items = Array.isArray(cfg.items)
+                                    ? [...cfg.items]
+                                    : [];
+                                  if (idx < items.length) {
+                                    items.splice(idx, 1);
+                                  }
+                                  return { ...cfg, items };
+                                })
+                              }
+                              style={redTextButton}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSortConfig(task._tempId, (cfg) => {
+                            const items = Array.isArray(cfg.items)
+                              ? [...cfg.items]
+                              : [];
+                            const buckets = Array.isArray(cfg.buckets)
+                              ? cfg.buckets
+                              : [];
+                            items.push({
+                              text: "",
+                              bucketIndex: buckets.length > 0 ? 0 : null,
+                            });
+                            return { ...cfg, items };
+                          })
+                        }
+                        style={grayButton}
+                      >
+                        + Add item
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Options area for MC / sort / sequence */}
                 {[
                   TASK_TYPES.MULTIPLE_CHOICE,
-                  TASK_TYPES.SORT,
                   TASK_TYPES.SEQUENCE,
                 ].includes(task.taskType) && (
                   <div style={{ marginBottom: 6 }}>

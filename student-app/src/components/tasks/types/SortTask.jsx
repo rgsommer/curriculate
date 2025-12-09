@@ -197,11 +197,26 @@ export default function SortTask({
         : b.label || b.name || `Bucket ${i + 1}`,
   }));
 
-  const rawItems = Array.isArray(config.items)
-    ? config.items
-    : Array.isArray(task?.items)
-    ? task.items
-    : [];
+    // Try several possible locations for the items, depending on how the task was saved
+  const rawItems =
+    (Array.isArray(config.items) && config.items.length > 0
+      ? config.items
+      : Array.isArray(config.sortItems) && config.sortItems.length > 0
+      ? config.sortItems
+      : Array.isArray(config.events) && config.events.length > 0
+      ? config.events
+      : Array.isArray(task?.items) && task.items.length > 0
+      ? task.items
+      : []);
+
+  // Helpful debug (safe to leave in for now)
+  if (rawItems.length === 0) {
+    console.log("[SortTask] No items found for sort task", {
+      task,
+      config,
+      configKeys: Object.keys(config || {}),
+    });
+  }
 
   // Support both manual tasks (correctBucket) and AI tasks (bucketIndex)
   const items = rawItems.map((it, idx) => {
