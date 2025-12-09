@@ -132,6 +132,7 @@ export default function TaskSetEditor() {
             _tempId: Math.random().toString(36).slice(2),
             orderIndex: t.orderIndex ?? idx,
           }))
+          
         );
 
         const meta = data.meta || {};
@@ -978,6 +979,11 @@ export default function TaskSetEditor() {
                 )}
 
                 {/* SORT: Items to sort */}
+                {task.taskType === TASK_TYPES.SORT && (
+                  <pre style={{ fontSize: "0.7rem", background: "#eef2ff", padding: 4 }}>
+                    {JSON.stringify(task.config, null, 2)}
+                  </pre>
+                )}
                 {task.taskType === TASK_TYPES.SORT && (
                   <div style={{ marginBottom: 6 }}>
                     <label
