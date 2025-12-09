@@ -682,6 +682,12 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         config, // e.g., SortTask uses this
         items,  // prepared for multi-question packs (MC / TF / SA), not yet consumed by StudentApp
       };
+
+console.log(
+  "AI RAW TASKS (debug)",
+  JSON.stringify(aiTasks, null, 2)
+);
+
     });
 
     // ---------- Word-bank usage analysis ----------
@@ -750,10 +756,5 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     });
   }
 };
-
-console.log(
-  "AI RAW TASKS (debug)",
-  JSON.stringify(aiTasks, null, 2)
-);
 
 export default { generateAiTaskset };
