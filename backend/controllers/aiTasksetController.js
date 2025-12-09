@@ -751,4 +751,9 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
   }
 };
 
+console.log(
+  "AI RAW TASKS (debug)",
+  JSON.stringify(aiTasks, null, 2)
+);
+
 export default { generateAiTaskset };
