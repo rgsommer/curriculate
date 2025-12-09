@@ -911,12 +911,13 @@ function StudentApp() {
   // Submit answer
   // ─────────────────────────────────────────────
 
-  const handleSubmitAnswer = async (answerPayload) => {
+    const handleSubmitAnswer = async (answerPayload) => {
     if (!roomCode || !joined || !currentTask || teamId == null) return;
     if (submitting) return;
 
     setSubmitting(true);
     try {
+      // Send answer to server and wait for ack
       await new Promise((resolve, reject) => {
         socket
           .timeout(8000)
@@ -926,11 +927,29 @@ function StudentApp() {
               roomCode: roomCode.trim().toUpperCase(),
               teamId,
               taskIndex:
-                typeof currentTaskIndex === "number"
-                // ...
+                typeof currentTaskIndex === "number" &&
+                currentTaskIndex >= 0
+                  ? currentTaskIndex
+                  : null,
+              answer: answerPayload,
             },
             (err, ack) => {
-              // ...
+              if (err) {
+                console.error(
+                  "Submit timeout / transport error:",
+                  err
+                );
+                return reject(err);
+              }
+              if (!ack || !ack.ok) {
+                console.error("Submit failed:", ack?.error);
+                return reject(
+                  new Error(
+                    ack?.error ||
+                      "Submission failed — please tell your teacher."
+                  )
+                );
+              }
               resolve();
             }
           );
@@ -980,7 +999,7 @@ function StudentApp() {
         postSubmitTimerRef.current = null;
       }
 
-      // Start countdown
+      // Start countdown before returning to scan mode
       postSubmitTimerRef.current = setInterval(() => {
         setPostSubmitSecondsLeft((current) => {
           if (current == null) return null;
