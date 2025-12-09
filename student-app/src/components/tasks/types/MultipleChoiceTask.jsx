@@ -362,10 +362,20 @@ export default function MultipleChoiceTask({
           disabled={disabled}
           className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
           style={{
-            background: disabled ? "#9ca3af" : "#0ea5e9",
-            color: "#fff",
-            fontWeight: 600,
-            paddingInline: 20,
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid #d1d5db",
+            cursor: disabled ? "default" : "pointer",
+            background:
+              showCorrect
+                ? option === task.correctAnswer
+                  ? "#4ade80"   // GREEN for correct
+                  : answer === option
+                  ? "#f87171"   // RED for wrong selection
+                  : "#ffffff"
+                : answer === option
+                ? "#bfdbfe"     // normal selection blue
+                : "#ffffff",
           }}
         >
           Submit

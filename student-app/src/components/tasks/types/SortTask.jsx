@@ -330,35 +330,62 @@ export default function SortTask({
     }),
   );
 
-  const handleDragEnd = (event) => {
-    if (disabled) return;
+    const handleDragEnd = (event) => {
+      if (disabled) return;
 
-    const { active, over } = event;
-    if (!over) return;
+      const { active, over } = event;
+      if (!over) return;
 
-    const itemId = active.id;
-    const bucketId = over.id;
+      const itemId = active.id;
+      const overId = over.id;
 
-    let fromBucket = null;
-    for (const [bId, ids] of Object.entries(assignments)) {
-      if (ids.includes(itemId)) {
-        fromBucket = bId;
-        break;
+      // 1) Find where the item came from
+      let fromBucket = null;
+      for (const [bId, ids] of Object.entries(assignments)) {
+        if (ids.includes(itemId)) {
+          fromBucket = bId;
+          break;
+        }
       }
-    }
 
-    const newAssignments = { ...assignments };
-    if (fromBucket) {
-      newAssignments[fromBucket] = newAssignments[fromBucket].filter(
-        (id) => id !== itemId,
-      );
-    }
+      // 2) Work out which container we actually dropped into
+      let targetBucketId = null;
 
-    if (!newAssignments[bucketId]) newAssignments[bucketId] = [];
-    newAssignments[bucketId].push(itemId);
+      if (overId === "pool") {
+        // Dropped back into the "Items to sort" pool → unassign item
+        targetBucketId = null;
+      } else if (buckets.some((b) => b.id === overId)) {
+        // Dropped on a bucket itself (empty area)
+        targetBucketId = overId;
+      } else {
+        // Likely dropped on TOP OF another item → find that item's bucket
+        const found = Object.entries(assignments).find(([, ids]) =>
+          ids.includes(overId),
+        );
+        if (found) {
+          targetBucketId = found[0];
+        } else {
+          // Fallback: treat as unassigned
+          targetBucketId = null;
+        }
+      }
 
-    setAssignments(newAssignments);
-  };
+      // 3) Build new assignments: remove from old bucket
+      const newAssignments = {};
+      for (const [bId, ids] of Object.entries(assignments)) {
+        newAssignments[bId] = ids.filter((id) => id !== itemId);
+      }
+
+      // 4) Add to new bucket (if not pool/unassigned)
+      if (targetBucketId) {
+        newAssignments[targetBucketId] = [
+          ...newAssignments[targetBucketId],
+          itemId,
+        ];
+      }
+
+      setAssignments(newAssignments);
+    };
 
   const allItemsPlaced =
     Object.values(assignments).flat().length === items.length;
