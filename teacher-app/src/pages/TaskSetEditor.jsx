@@ -126,8 +126,9 @@ export default function TaskSetEditor() {
                 : !(
                     t.correctAnswer !== undefined && t.correctAnswer !== null
                   ),
+            // ✅ make sure config exists
             config:
-              t.config && typeof t.config === "object" ? t.config : {}, // ✅ ensure config
+              t.config && typeof t.config === "object" ? t.config : {},
             _tempId: Math.random().toString(36).slice(2),
             orderIndex: t.orderIndex ?? idx,
           }))
@@ -930,7 +931,7 @@ export default function TaskSetEditor() {
                                   : [];
                                 if (i < buckets.length) {
                                   buckets.splice(i, 1);
-                                  // Reset any items that pointed at this bucket
+                                  // Fix any items pointing at this bucket
                                   const nextItems = items.map((it) => {
                                     if (it.bucketIndex === i) {
                                       return { ...it, bucketIndex: null };
@@ -1046,9 +1047,10 @@ export default function TaskSetEditor() {
                                   const items = Array.isArray(cfg.items)
                                     ? [...cfg.items]
                                     : [];
-                                  const nextIndex = e.target.value === ""
-                                    ? null
-                                    : Number(e.target.value);
+                                  const nextIndex =
+                                    e.target.value === ""
+                                      ? null
+                                      : Number(e.target.value);
                                   items[idx] = {
                                     ...(items[idx] || {}),
                                     bucketIndex: nextIndex,
