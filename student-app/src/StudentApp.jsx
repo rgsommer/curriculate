@@ -231,6 +231,12 @@ function StudentApp() {
   const [scoreTotal, setScoreTotal] = useState(0);
   const [lastTaskResult, setLastTaskResult] = useState(null);
   const [pointToast, setPointToast] = useState(null);
+  const [showConfetti, setShowConfetti] = useState(false); // NEW
+ 
+  // How long to keep task visible after submit for review (teacher can override per task)
+  const [reviewPauseSeconds, setReviewPauseSeconds] = useState(15);
+  const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
+  const [taskLocked, setTaskLocked] = useState(false);
 
   // Whether to enforce location as well as colour (fixed-station / multi-room scavenger hunts)
   const [enforceLocation, setEnforceLocation] = useState(false);
@@ -246,6 +252,7 @@ function StudentApp() {
 
   // Timer ref
   const countdownTimerRef = useRef(null);
+  const postSubmitTimerRef = useRef(null);
 
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
@@ -404,12 +411,13 @@ function StudentApp() {
       // Only care about this team
       if (submission.teamId !== teamId) return;
 
-      setLastTaskResult({
-        points: typeof submission.points === "number" ? submission.points : 0,
-        correct: submission.correct,
-        answerText: submission.answerText || "",
-        submittedAt: submission.submittedAt || Date.now(),
-      });
+        setLastTaskResult({
+          points: typeof submission.points === "number" ? submission.points : 0,
+          correct: submission.correct,
+          answerText: submission.answerText || "",
+          submittedAt: submission.submittedAt || Date.now(),
+          aiScore: submission.aiScore || null,     // NEW: full scoring info
+        });
     };
 
     socket.on("room:state", handleRoomState);
@@ -420,6 +428,14 @@ function StudentApp() {
     socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
       console.log("SOCKET: task:launch", { index, task, timeLimitSeconds });
 
+      // Cancel any post-submit countdown from the previous task
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
+      setTaskLocked(false);
+      setPostSubmitSecondsLeft(null);
+
       // Just set the task – do NOT touch scan state here.
       setCurrentTask(task || null);
       setCurrentTaskIndex(
@@ -427,6 +443,18 @@ function StudentApp() {
       );
       setCurrentAnswerDraft("");
       setScanError(null);
+
+      // Teacher-controlled review pause (if provided on the task)
+      if (
+        task &&
+        typeof task.reviewPauseSeconds === "number" &&
+        task.reviewPauseSeconds >= 5 &&
+        task.reviewPauseSeconds <= 60
+      ) {
+        setReviewPauseSeconds(task.reviewPauseSeconds);
+      } else {
+        setReviewPauseSeconds(15);
+      }
 
       if (sndAlert.current) {
         sndAlert.current.play().catch(() => {});
@@ -574,6 +602,45 @@ function StudentApp() {
 
     return () => clearTimeout(timer);
   }, [lastTaskResult]);
+
+  // Confetti burst on "perfect score"
+  useEffect(() => {
+    if (!lastTaskResult) return;
+
+    const { points, correct, aiScore } = lastTaskResult;
+
+    let isPerfect = false;
+
+    // Prefer rich aiScore when available (multi-item, etc.)
+    if (
+      aiScore &&
+      typeof aiScore.totalScore === "number" &&
+      typeof aiScore.maxPoints === "number" &&
+      aiScore.maxPoints > 0
+    ) {
+      isPerfect = aiScore.totalScore >= aiScore.maxPoints;
+    } else if (correct === true && typeof points === "number" && points > 0) {
+      // Fallback: single objective question (full credit or nothing)
+      isPerfect = true;
+    }
+
+    if (!isPerfect) return;
+
+    setShowConfetti(true);
+    const timer = setTimeout(() => setShowConfetti(false), 2000);
+
+    return () => clearTimeout(timer);
+  }, [lastTaskResult]);
+
+  // Cleanup for post-submit countdown timer
+  useEffect(() => {
+    return () => {
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // ─────────────────────────────────────────────
   // Utility – unlock browser audio
@@ -878,14 +945,49 @@ function StudentApp() {
       setTimeLimitSeconds(null);
       setRemainingMs(0);
 
-      // After submission, hide task and force a rescan
-      setCurrentTask(null);
-      setCurrentTaskIndex(null);
-      setScannedStationId(null);
-      setScannerActive(true);
+      // 🔒 Lock the task for review and start a countdown
+      const pause =
+        typeof reviewPauseSeconds === "number" &&
+        reviewPauseSeconds >= 5 &&
+        reviewPauseSeconds <= 60
+          ? reviewPauseSeconds
+          : 15;
+
+      setTaskLocked(true);
+      setPostSubmitSecondsLeft(pause);
+      setScannerActive(false);
       setStatusMessage(
-        "Answer submitted! Find your next station colour and scan it."
+        "Review your answers. Next round is starting soon…"
       );
+
+      // Clear any existing post-submit timer
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
+
+      // Start countdown
+      postSubmitTimerRef.current = setInterval(() => {
+        setPostSubmitSecondsLeft((current) => {
+          if (current == null) return null;
+          if (current <= 1) {
+            clearInterval(postSubmitTimerRef.current);
+            postSubmitTimerRef.current = null;
+
+            // ✅ Now hide task and move to next station
+            setCurrentTask(null);
+            setCurrentTaskIndex(null);
+            setScannedStationId(null);
+            setScannerActive(true);
+            setStatusMessage(
+              "Answer submitted! Find your next station colour and scan it."
+            );
+            setTaskLocked(false);
+            return 0;
+          }
+          return current - 1;
+        });
+      }, 1000);
     } catch (err) {
       console.error("Submit error:", err);
       alert(
@@ -1037,6 +1139,56 @@ function StudentApp() {
           opacity: 0.6;
           cursor: default;
           box-shadow: none;
+        }
+        /* ───────────────────────────────────────────
+           CONFETTI LAYER FOR PERFECT SCORE
+        ─────────────────────────────────────────── */
+        .confetti-layer {
+          position: fixed;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+          z-index: 9999;
+        }
+
+        .confetti-piece {
+          position: absolute;
+          top: -10%;
+          width: 8px;
+          height: 14px;
+          border-radius: 2px;
+          opacity: 0;
+          animation-name: confettiFall;
+          animation-duration: 1.6s;
+          animation-timing-function: linear;
+          animation-fill-mode: forwards;
+        }
+
+        .confetti-piece:nth-child(4n) {
+          background-color: #f97316; /* orange */
+        }
+        .confetti-piece:nth-child(4n + 1) {
+          background-color: #22c55e; /* green */
+        }
+        .confetti-piece:nth-child(4n + 2) {
+          background-color: #3b82f6; /* blue */
+        }
+        .confetti-piece:nth-child(4n + 3) {
+          background-color: #e11d48; /* red/pink */
+        }
+
+        @keyframes confettiFall {
+          0% {
+            transform: translate3d(0, 0, 0) rotateZ(0deg);
+            opacity: 0;
+          }
+          10% {
+            opacity: 1;
+          }
+          100% {
+            transform: translate3d(0, 120vh, 0) rotateZ(360deg);
+            opacity: 0;
+          }
         }
       `}</style>
 
@@ -1550,9 +1702,81 @@ function StudentApp() {
                   submitting={submitting}
                   onAnswerChange={setCurrentAnswerDraft}
                   answerDraft={currentAnswerDraft}
-                  readOnly={false}
+                  readOnly={taskLocked || submitting}
                 />
             </div>
+            {taskLocked && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: 12,
+                  background: "rgba(45,212,191,0.08)",
+                  border: "1px solid rgba(45,212,191,0.5)",
+                  fontSize: "0.85rem",
+                  color: "#0f172a",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    marginBottom: 4,
+                  }}
+                >
+                  Round summary
+                </div>
+
+                {lastTaskResult?.aiScore &&
+                typeof lastTaskResult.aiScore.totalItems === "number" ? (
+                  <div>
+                    You answered{" "}
+                    <strong>
+                      {lastTaskResult.aiScore.correctCount ??
+                        lastTaskResult.aiScore.totalScore ??
+                        "?"}
+                    </strong>{" "}
+                    of{" "}
+                    <strong>
+                      {lastTaskResult.aiScore.totalItems}
+                    </strong>{" "}
+                    correctly
+                    {typeof lastTaskResult.points === "number" && (
+                      <>
+                        {" "}
+                        and earned{" "}
+                        <strong>{lastTaskResult.points} pts</strong>.
+                      </>
+                    )}
+                  </div>
+                ) : lastTaskResult ? (
+                  <div>
+                    Your answer was{" "}
+                    {lastTaskResult.correct === true
+                      ? "correct 🎉"
+                      : lastTaskResult.correct === false
+                      ? "not correct"
+                      : "submitted"}
+                    {typeof lastTaskResult.points === "number" && (
+                      <> ({lastTaskResult.points} pts)</>
+                    )}
+                    .
+                  </div>
+                ) : (
+                  <div>Waiting for scoring from your teacher…</div>
+                )}
+
+                {postSubmitSecondsLeft != null &&
+                  postSubmitSecondsLeft > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      Next round starting in{" "}
+                      <strong>{postSubmitSecondsLeft}</strong>{" "}
+                      second
+                      {postSubmitSecondsLeft === 1 ? "" : "s"}
+                      …
+                    </div>
+                  )}
+              </div>
+            )}
           </section>
         )}
       </div>
@@ -1566,6 +1790,20 @@ function StudentApp() {
         />
       )}
 
+      {showConfetti && (
+        <div className="confetti-layer">
+          {Array.from({ length: 40 }).map((_, i) => (
+            <div
+              key={i}
+              className="confetti-piece"
+              style={{
+                left: `${(i * 2.5) % 100}%`,
+                animationDelay: `${(i % 10) * 0.08}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
       {/* +points toast */}
       {pointToast && (
         <div
@@ -1604,6 +1842,7 @@ function StudentApp() {
       />
     </div>
   );
+  
 }
 
 export default StudentApp;

@@ -181,6 +181,8 @@ export default function LiveSession({ roomCode }) {
   const [pendingHideTaskset, setPendingHideTaskset] = useState(null);
   const [launchingTaskset, setLaunchingTaskset] = useState(false);
 
+  const [reviewPauseSeconds, setReviewPauseSeconds] = useState(15);
+
   const [isNarrow, setIsNarrow] = useState(
     typeof window !== "undefined" ? window.innerWidth < 900 : false
   );
@@ -578,6 +580,7 @@ const handleLaunchQuickTask = () => {
     gradeLevel: taskConfig.gradeLevel || "",
     clue: taskConfig.clue || undefined,
     timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
+    reviewPauseSeconds: reviewPauseSeconds || 15,
   };
 
   // 🔴 Important: use teacherLaunchTask, not launch-quick-task
@@ -1673,6 +1676,31 @@ const handleLaunchQuickTask = () => {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: "0.8rem" }}>
+            <label>
+              Post-submit review time:{" "}
+              <select
+                value={reviewPauseSeconds}
+                onChange={(e) =>
+                  setReviewPauseSeconds(
+                    parseInt(e.target.value, 10) || 15
+                  )
+                }
+                style={{
+                  marginLeft: 4,
+                  padding: "2px 6px",
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <option value={10}>10 seconds</option>
+                <option value={15}>15 seconds</option>
+                <option value={20}>20 seconds</option>
+              </select>
+            </label>
           </div>
 
           {/* Noise & Treats Controls */}

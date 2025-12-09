@@ -186,6 +186,9 @@ export default function SortTask({
     ? task.buckets
     : [];
 
+  // A special pool for items not yet placed
+  const UNSORTED_BUCKET_ID = "unsorted";
+
   const buckets = rawBuckets.map((b, i) => ({
     id: `bucket-${i}`,
     title:
@@ -242,10 +245,17 @@ export default function SortTask({
     ) {
       return { ...answerDraft.assignments };
     }
+
     const empty = {};
+
+    // Start with everything in the unsorted pool
+    empty[UNSORTED_BUCKET_ID] = items.map((it) => it.id);
+
+    // Real buckets start empty
     buckets.forEach((b) => {
       empty[b.id] = [];
     });
+
     return empty;
   };
 
@@ -257,7 +267,8 @@ export default function SortTask({
   const scoring = items.reduce(
     (acc, item) => {
       const placedIn = Object.entries(assignments).find(
-        ([, ids]) => ids.includes(item.id),
+        ([bucketId, ids]) =>
+          bucketId !== UNSORTED_BUCKET_ID && ids.includes(item.id),
       )?.[0];
       const isCorrect = placedIn === item.correctBucket;
       const score =
@@ -330,154 +341,153 @@ export default function SortTask({
     }),
   );
 
-    const handleDragEnd = (event) => {
-      if (disabled) return;
+  const handleDragEnd = (event) => {
+    if (disabled) return;
 
-      const { active, over } = event;
-      if (!over) return;
+    const { active, over } = event;
+    if (!over) return;
 
-      const itemId = active.id;
-      const overId = over.id;
+    const itemId = active.id;
+    const overId = over.id;
 
-      // 1) Find where the item came from
-      let fromBucket = null;
-      for (const [bId, ids] of Object.entries(assignments)) {
-        if (ids.includes(itemId)) {
-          fromBucket = bId;
-          break;
-        }
+    // 1) Find where the item came from
+    let fromBucket = null;
+    for (const [bId, ids] of Object.entries(assignments)) {
+      if (ids.includes(itemId)) {
+        fromBucket = bId;
+        break;
       }
+    }
 
-      // 2) Work out which container we actually dropped into
-      let targetBucketId = null;
+    // 2) Work out which container we actually dropped into
+    let targetBucketId = null;
 
-      if (overId === "pool") {
-        // Dropped back into the "Items to sort" pool → unassign item
-        targetBucketId = null;
-      } else if (buckets.some((b) => b.id === overId)) {
-        // Dropped on a bucket itself (empty area)
-        targetBucketId = overId;
+    if (overId === UNSORTED_BUCKET_ID) {
+      // Dropped into the unsorted pool
+      targetBucketId = UNSORTED_BUCKET_ID;
+    } else if (buckets.some((b) => b.id === overId)) {
+      // Dropped on a bucket itself (empty area)
+      targetBucketId = overId;
+    } else {
+      // Likely dropped on TOP OF another item → find that item's bucket
+      const found = Object.entries(assignments).find(([, ids]) =>
+        ids.includes(overId),
+      );
+      if (found) {
+        targetBucketId = found[0];
       } else {
-        // Likely dropped on TOP OF another item → find that item's bucket
-        const found = Object.entries(assignments).find(([, ids]) =>
-          ids.includes(overId),
-        );
-        if (found) {
-          targetBucketId = found[0];
-        } else {
-          // Fallback: treat as unassigned
-          targetBucketId = null;
-        }
+        // Fallback: put it back into unsorted
+        targetBucketId = UNSORTED_BUCKET_ID;
       }
+    }
 
-      // 3) Build new assignments: remove from old bucket
-      const newAssignments = {};
-      for (const [bId, ids] of Object.entries(assignments)) {
-        newAssignments[bId] = ids.filter((id) => id !== itemId);
-      }
+    // 3) Build new assignments: remove from all buckets
+    const newAssignments = {};
+    for (const [bId, ids] of Object.entries(assignments)) {
+      newAssignments[bId] = ids.filter((id) => id !== itemId);
+    }
 
-      // 4) Add to new bucket (if not pool/unassigned)
-      if (targetBucketId) {
-        newAssignments[targetBucketId] = [
-          ...newAssignments[targetBucketId],
-          itemId,
-        ];
-      }
+    // 4) Add to new bucket
+    if (!newAssignments[targetBucketId]) {
+      newAssignments[targetBucketId] = [];
+    }
+    newAssignments[targetBucketId].push(itemId);
 
-      setAssignments(newAssignments);
-    };
+    setAssignments(newAssignments);
+  };
 
   const allItemsPlaced =
-    Object.values(assignments).flat().length === items.length;
+    assignments &&
+    Array.isArray(assignments[UNSORTED_BUCKET_ID]) &&
+    assignments[UNSORTED_BUCKET_ID].length === 0 &&
+    items.length > 0;
 
-  const unassignedItems = items.filter(
-    (i) =>
-      !Object.values(assignments)
-        .flat()
-        .includes(i.id),
-  );
-
+  const unassignedItems =
+    assignments[UNSORTED_BUCKET_ID] || [];
 
   // -------------------------------
   // Render
   // -------------------------------
   return (
     <div style={{ marginTop: 16 }}>
-          <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
-      {unassignedItems.length > 0 && (
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        {/* Unsorted pool at the top */}
         <DroppableBucket
-          id="pool"
-          title="Items to sort"
+          id={UNSORTED_BUCKET_ID}
+          title="Unsorted items"
           scoreInfo={null}
         >
           <SortableContext
-            items={unassignedItems.map((i) => i.id)}
+            items={assignments[UNSORTED_BUCKET_ID] || []}
             strategy={rectSortingStrategy}
           >
-            {unassignedItems.map((item) => (
-              <SortableItem
-                key={item.id}
-                id={item.id}
-                disabled={disabled}
-                score={null}
-              >
-                {item.text}
-              </SortableItem>
-            ))}
-          </SortableContext>
-        </DroppableBucket>
-      )}
-
-      {buckets.map((bucket, idx) => (
-        <DroppableBucket
-          key={bucket.id}
-          id={bucket.id}
-          title={bucket.title}
-          scoreInfo={disabled ? bucketScores[idx] : null}
-        >
-          <SortableContext
-            items={assignments[bucket.id] || []}
-            strategy={rectSortingStrategy}
-          >
-            {(assignments[bucket.id] || [])
-              .map((id) =>
-                items.find((i) => i.id === id),
-              )
+            {(assignments[UNSORTED_BUCKET_ID] || [])
+              .map((id) => items.find((i) => i.id === id))
               .filter(Boolean)
-              .map((item) => {
-                const placedIn = Object.entries(
-                  assignments,
-                ).find(([, ids]) =>
-                  ids.includes(item.id),
-                )?.[0];
-                const score =
-                  placedIn === item.correctBucket
-                    ? 1
-                    : item.correctBucket !== null
-                    ? 0
-                    : 0.5;
-
-                return (
-                  <SortableItem
-                    key={item.id}
-                    id={item.id}
-                    disabled={disabled}
-                    score={disabled ? score : null}
-                  >
-                    {item.text}
-                  </SortableItem>
-                );
-              })}
+              .map((item) => (
+                <SortableItem
+                  key={item.id}
+                  id={item.id}
+                  disabled={disabled}
+                  score={null}
+                >
+                  {item.text}
+                </SortableItem>
+              ))}
           </SortableContext>
         </DroppableBucket>
-      ))}
 
-      {unassignedItems.length > 0 && (
+        {/* Actual target buckets */}
+        {buckets.map((bucket, idx) => (
+          <DroppableBucket
+            key={bucket.id}
+            id={bucket.id}
+            title={bucket.title}
+            scoreInfo={disabled ? bucketScores[idx] : null}
+          >
+            <SortableContext
+              items={assignments[bucket.id] || []}
+              strategy={rectSortingStrategy}
+            >
+              {(assignments[bucket.id] || [])
+                .map((id) => items.find((i) => i.id === id))
+                .filter(Boolean)
+                .map((item) => {
+                  // Where is this item placed?
+                  const placedIn = Object.entries(assignments).find(
+                    ([bucketId, ids]) =>
+                      bucketId !== UNSORTED_BUCKET_ID &&
+                      ids.includes(item.id),
+                  )?.[0];
 
+                  const isCorrect = placedIn === item.correctBucket;
+                  const score =
+                    isCorrect
+                      ? 1
+                      : item.correctBucket !== null
+                      ? 0
+                      : 0.5;
+
+                  return (
+                    <SortableItem
+                      key={item.id}
+                      id={item.id}
+                      disabled={disabled}
+                      score={disabled ? score : null}
+                    >
+                      {item.text}
+                    </SortableItem>
+                  );
+                })}
+            </SortableContext>
+          </DroppableBucket>
+        ))}
+
+        {unassignedItems.length > 0 && (
           <div
             style={{
               padding: 20,
@@ -537,9 +547,7 @@ export default function SortTask({
           borderRadius: 999,
           border: "none",
           background:
-            disabled || !allItemsPlaced
-              ? "#94a3b8"
-              : "#22c55e",
+            disabled || !allItemsPlaced ? "#94a3b8" : "#22c55e",
           color: "white",
           fontWeight: 700,
           fontSize: "1.1rem",
