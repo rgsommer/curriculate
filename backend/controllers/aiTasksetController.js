@@ -351,8 +351,16 @@ For "${TASK_TYPES.SORT}":
   - "options" must be an empty array.
   - "correctAnswer" should be null (sorting is scored from config.items.bucketIndex).
 
-Return ONLY valid JSON in this exact format (no backticks, no extra text):
+For "${TASK_TYPES.SEQUENCE}":
+  - Use a "config" object with:
+    - "items": an array of 4–8 objects of the form
+      { "text": "Step or event in the correct order" }.
+  - The array MUST list the items in the correct logical / chronological order.
+  - Students will be given these items in random order and will re-order them.
+  - "options" should normally be an empty array.
+  - "correctAnswer" should be null (ordering is scored from the full sequence, not a single index).
 
+Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
   {
     "title": "Short title",
@@ -412,6 +420,11 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         .status(500)
         .json({ error: "AI returned no tasks for this request" });
     }
+
+    console.log(
+      "AI RAW TASKS (debug)",
+      JSON.stringify(aiTasks, null, 2)
+    );
 
     // ---------- Normalize AI tasks into TaskSet schema ----------
       const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
@@ -484,7 +497,45 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         if (options.length < 2) {
           options = ["Option A", "Option B"];
         }
-            } else if (taskType === TASK_TYPES.SORT) {
+      } else if (taskType === TASK_TYPES.SEQUENCE) {
+        // Normalise sequence/timeline tasks into config.items
+        const aiConfig =
+          t.config && typeof t.config === "object" ? t.config : {};
+
+        const rawItems = Array.isArray(aiConfig.items)
+          ? aiConfig.items
+          : Array.isArray(t.items)
+          ? t.items
+          : Array.isArray(t.options)
+          ? t.options
+          : [];
+
+        const seqItems = rawItems.map((it, idx) => {
+          if (typeof it === "string") {
+            return { text: it };
+          }
+
+          if (it && typeof it === "object") {
+            const text =
+              it.text ||
+              it.label ||
+              it.name ||
+              it.prompt ||
+              `Step ${idx + 1}`;
+            return { text };
+          }
+
+          return { text: String(it) };
+        });
+
+        config = {
+          ...aiConfig,
+          items: seqItems,
+        };
+
+        // We don't need flat options for sequence; items live in config.items
+        options = [];
+      } else if (taskType === TASK_TYPES.SORT) {
         // Normalise sort/categorize into config.buckets + config.items
         const aiConfig =
           t.config && typeof t.config === "object" ? t.config : {};
@@ -629,8 +680,11 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         } else {
           correctAnswer = correctAnswer.trim();
         }
-      } else if (taskType === TASK_TYPES.SORT) {
-        // Sort scoring uses config; no flat correctAnswer
+      } else if (
+        taskType === TASK_TYPES.SORT ||
+        taskType === TASK_TYPES.SEQUENCE
+      ) {
+        // Sort & Sequence scoring use config; no flat correctAnswer
         correctAnswer = null;
       } else {
         // For other types, we do not enforce a flat correct answer here
@@ -682,11 +736,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         config, // e.g., SortTask uses this
         items,  // prepared for multi-question packs (MC / TF / SA), not yet consumed by StudentApp
       };
-
-console.log(
-  "AI RAW TASKS (debug)",
-  JSON.stringify(aiTasks, null, 2)
-);
 
     });
 

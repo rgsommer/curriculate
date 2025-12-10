@@ -1,16 +1,20 @@
 // student-app/src/components/tasks/types/SequenceTask.jsx
 import React, { useState } from "react";
 
-export default function SequenceTask({
-  task,
-  onSubmit,
-  disabled,
-  onAnswerChange,
-  answerDraft,
-}) {
-  const [order, setOrder] = useState(
-    (task.config?.items || []).map((_, idx) => idx)
+export default function SequenceTask({ task, onSubmit, disabled, onAnswerChange }) {
+  const baseItems = (
+    Array.isArray(task.config?.items) && task.config.items.length > 0
+      ? task.config.items.map((it) =>
+          typeof it === "string" ? { text: it } : it
+        )
+      : Array.isArray(task.options)
+      ? task.options.map((opt) =>
+          typeof opt === "string" ? { text: opt } : opt
+        )
+      : []
   );
+
+  const [order, setOrder] = useState(baseItems.map((_, idx) => idx));
 
   const pushDraft = (nextOrder) => {
     if (onAnswerChange) {
@@ -23,9 +27,7 @@ export default function SequenceTask({
     const toIdx = fromIdx + direction;
     if (toIdx < 0 || toIdx >= order.length) return;
     const newOrder = [...order];
-    const temp = newOrder[fromIdx];
-    newOrder[fromIdx] = newOrder[toIdx];
-    newOrder[toIdx] = temp;
+    [newOrder[fromIdx], newOrder[toIdx]] = [newOrder[toIdx], newOrder[fromIdx]];
     setOrder(newOrder);
     pushDraft(newOrder);
   };
@@ -43,7 +45,7 @@ export default function SequenceTask({
             key={itemIdx}
             className="flex items-center justify-between border rounded px-3 py-2"
           >
-            <span>{task.config.items[itemIdx].text}</span>
+            <span>{baseItems[itemIdx].text}</span>
             <div className="flex gap-1">
               <button
                 className="border rounded px-2 text-xs"
@@ -73,3 +75,4 @@ export default function SequenceTask({
     </div>
   );
 }
+

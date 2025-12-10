@@ -979,7 +979,7 @@ export default function TaskSetEditor() {
                 )}
 
                 {/* SORT: Items to sort */}
-                {task.taskType === TASK_TYPES.SORT && (
+                {false && task.taskType === TASK_TYPES.SORT && (
                   <pre style={{ fontSize: "0.7rem", background: "#eef2ff", padding: 4 }}>
                     {JSON.stringify(task.config, null, 2)}
                   </pre>
