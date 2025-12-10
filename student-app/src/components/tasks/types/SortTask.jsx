@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import clsx from "clsx";
 
 import {
   DndContext,
@@ -276,6 +277,24 @@ export default function SortTask({
 
   const [assignments, setAssignments] = useState(initialAssignments);
 
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const getBucketIndexForItem = (itemId) => {
+    // Find the bucket (except UNSORTED) that contains this item id
+    const bucketId = Object.entries(assignments).find(
+        ([bId, ids]) =>
+          bId !== UNSORTED_BUCKET_ID && ids.includes(itemId)
+      )?.[0];
+
+      if (!bucketId) return null;
+
+      const idx = buckets.findIndex((b) => b.id === bucketId);
+      return idx >= 0 ? idx : null;
+    };
+
+  useEffect(() => {
+    setHasSubmitted(false);
+  }, [task?._id, task?.id]);
+
   // -------------------------------
   // Partial Credit Scoring
   // -------------------------------
@@ -548,36 +567,32 @@ export default function SortTask({
       )}
 
       <button
-        onClick={() =>
-          onSubmit({
-            assignments,
-            score: finalScore,
-          })
-        }
-        disabled={disabled || !allItemsPlaced}
-        style={{
-          marginTop: 24,
-          width: "100%",
-          padding: "16px",
-          borderRadius: 999,
-          border: "none",
-          background:
-            disabled || !allItemsPlaced ? "#94a3b8" : "#22c55e",
-          color: "white",
-          fontWeight: 700,
-          fontSize: "1.1rem",
-          cursor:
-            disabled || !allItemsPlaced
-              ? "not-allowed"
-              : "pointer",
+        type="button"
+        onClick={() => {
+          const payloadItems = items.map((item) => ({
+            text: item.text,
+            bucketIndex: getBucketIndexForItem(item.id),
+          }));
+
+          const payload = {
+            buckets: buckets.map((b) => b.title),
+            items: payloadItems,
+          };
+
+          onSubmit(payload);
+          setHasSubmitted(true);   // ← locks the button
         }}
+        disabled={disabled || hasSubmitted || !allItemsPlaced}
+        className={clsx(
+          "w-full px-4 py-2 rounded-lg text-sm font-semibold border transition",
+          disabled || hasSubmitted || !allItemsPlaced
+            ? "bg-slate-200 text-slate-500 border-slate-300 cursor-not-allowed"
+            : "bg-blue-600 text-white border-blue-700 hover:bg-blue-700"
+        )}
       >
-        {disabled
-          ? "Submitted"
-          : allItemsPlaced
-          ? "Submit Sorting"
-          : "Place all items first"}
+        {disabled || hasSubmitted ? "Submitted" : "Submit answer"}
       </button>
+
     </div>
   );
 }

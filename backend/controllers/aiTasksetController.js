@@ -678,7 +678,18 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         if (typeof correctAnswer !== "string") {
           correctAnswer = null;
         } else {
-          correctAnswer = correctAnswer.trim();
+          const trimmed = correctAnswer.trim();
+          const lower = trimmed.toLowerCase();
+
+          // If the AI tried to make a “short answer” that’s just True/False,
+          // auto-convert it into a proper TRUE_FALSE item instead.
+          if (lower === "true" || lower === "false") {
+            taskType = TASK_TYPES.TRUE_FALSE;
+            options = ["True", "False"];
+            correctAnswer = lower === "true" ? 0 : 1;
+          } else {
+            correctAnswer = trimmed;
+          }
         }
       } else if (
         taskType === TASK_TYPES.SORT ||
@@ -686,11 +697,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       ) {
         // Sort & Sequence scoring use config; no flat correctAnswer
         correctAnswer = null;
-      } else {
-        // For other types, we do not enforce a flat correct answer here
-        if (typeof correctAnswer !== "string") {
-          correctAnswer = null;
-        }
       }
 
       // For objective types, we can score directly; others need AI/rubric.
