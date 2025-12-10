@@ -99,6 +99,7 @@ export default function LiveSession({ roomCode }) {
   const [aiPurpose, setAiPurpose] = useState("");
   const [aiSubject, setAiSubject] = useState("");
   const [aiWordList, setAiWordList] = useState("");
+  const [quickFlashcardsText, setQuickFlashcardsText] = useState("");
 
   // Quick AI task / error state
   const [isGenerating, setIsGenerating] = useState(false);
@@ -588,6 +589,27 @@ const handleLaunchQuickTask = () => {
       }),
   };
 
+  // FLASHCARDS: parse bulk input into cards[]
+  if (taskType === TASK_TYPES.FLASHCARDS && quickFlashcardsText.trim()) {
+    const lines = quickFlashcardsText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const cards = lines.map((line, idx) => {
+      const [term, def] = line.split(/\s*[-–—]\s*/); // handles -, – , —
+      return {
+        id: String(idx),
+        question: term || line,
+        answer: def || "",
+      };
+    });
+
+    if (cards.length > 0) {
+      taskToSend.cards = cards;
+    }
+  }
+
   // 🔴 Important: use teacherLaunchTask, not launch-quick-task
   socket.emit("teacherLaunchTask", {
     roomCode: roomCode.toUpperCase(),
@@ -601,6 +623,8 @@ const handleLaunchQuickTask = () => {
     setIsLaunchingQuick(false);
     setQuickStatus("Quick task launched!");
   }, 300);
+  setLastQuickTask(taskToSend);
+  setQuickFlashcardsText("");
 };
 
   const handleLocationOverrideClick = (loc) => {
@@ -1377,40 +1401,42 @@ const handleLaunchQuickTask = () => {
               </p>
 
               {taskConfig.prompt?.trim() ? (
+                <>
+                  {/* FLASHCARDS Quick Input */}
+                  {taskType === TASK_TYPES.FLASHCARDS && (
+                    <div style={{ marginTop: 10, marginBottom: 10 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          marginBottom: 4,
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Flashcards (one per line, “term — definition”):
+                      </label>
 
-              {/* FLASHCARDS Quick Input */}
-              {taskType === TASK_TYPES.FLASHCARDS && (
-                <div style={{ marginTop: 10, marginBottom: 10 }}>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: 4,
-                      fontSize: "0.8rem",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Flashcards (one per line, “term — definition”):
-                  </label>
-
-                  <textarea
-                    rows={5}
-                    placeholder={`Evaporation — water turns into vapour
+                      <textarea
+                        rows={5}
+                        placeholder={`Evaporation — water turns into vapour
 Condensation — vapour cools
 Precipitation — rain, snow, hail`}
-                    value={quickFlashcardsText}
-                    onChange={(e) => setQuickFlashcardsText(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: 8,
-                      borderRadius: 8,
-                      border: "1px solid #cbd5e1",
-                      fontSize: "0.85rem",
-                      background: "#ffffff",
-                    }}
-                  />
-                </div>
-              )}
-                <>
+                        value={quickFlashcardsText}
+                        onChange={(e) =>
+                          setQuickFlashcardsText(e.target.value)
+                        }
+                        style={{
+                          width: "100%",
+                          padding: 8,
+                          borderRadius: 8,
+                          border: "1px solid #cbd5e1",
+                          fontSize: "0.85rem",
+                          background: "#ffffff",
+                        }}
+                      />
+                    </div>
+                  )}
+
                   <div
                     style={{
                       fontWeight: 600,
@@ -1450,6 +1476,7 @@ Precipitation — rain, snow, hail`}
                   <strong>Generate Task</strong> to create one.
                 </div>
               )}
+
 
               {lastQuickTask && (
                 <div

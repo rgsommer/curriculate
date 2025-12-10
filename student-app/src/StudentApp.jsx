@@ -1139,7 +1139,7 @@ function StudentApp() {
 
   // JEOPARDY / Draw-Mime / FlashcardsRace flags for header + styling
   const isJeopardy =
-    currentTask?.taskType === TASK_TYPES.JEOPARDY;
+  currentTask?.taskType === TASK_TYPES.JEOPARDY;
 
   const isDrawMime =
     currentTask?.taskType === TASK_TYPES.DRAW ||
@@ -1148,6 +1148,9 @@ function StudentApp() {
 
   const isFlashcardsRace =
     currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
+
+  const isLiveDebate =
+    currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
 
   // Theme-enriched task object
   const themedTask =
@@ -1166,6 +1169,8 @@ function StudentApp() {
     ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
     : isDrawMime
     ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
+    : isLiveDebate
+    ? "linear-gradient(135deg, #0f172a 0%, #fb7185 35%, #f97316 70%, #facc15 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
@@ -1854,12 +1859,15 @@ function StudentApp() {
                 </div>
               )}
               {isFlashcardsRace
-                ? "Flashcards Race!"
-                : isJeopardy
-                ? "Jeopardy clue"
-                : isDrawMime
-                ? "Draw or Mime!"
-                : "Your task"}
+              ? "Flashcards Race!"
+              : isJeopardy
+              ? "Jeopardy clue"
+              : isDrawMime
+              ? "Draw or Mime!"
+              : isLiveDebate
+              ? "Live debate!"
+              : "Your task"}
+
             </h2>
 
             {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
