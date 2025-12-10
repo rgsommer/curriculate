@@ -20,6 +20,15 @@ function extractStudentAnswer(submission = {}) {
     return submission.selectedOptionIndex;
   }
   if (typeof submission.choiceIndex === "number") return submission.choiceIndex;
+
+  // Some tasks may embed the final answer in "value"
+  if (submission.value !== undefined) return submission.value;
+
+  // Older or alternate shapes
+  if (typeof submission.choice === "number") return submission.choice;
+  if (typeof submission.optionIndex === "number") return submission.optionIndex;
+
+  // Direct "answer"
   if (typeof submission.answer === "number" || typeof submission.answer === "string") {
     return submission.answer;
   }
@@ -36,62 +45,41 @@ function extractStudentAnswer(submission = {}) {
  *
  * Returns the same shape as AI scoring:
  * {
- *   totalScore,
- *   maxPoints,
+ *   totalScore: number,
+ *   maxPoints: number,
  *   criteria: [{ id, score, maxPoints, comment }],
- *   overallComment
+ *   overallComment: string
  * }
  */
-export function scoreSubmissionRuleBased({ task, submission }) {
-  const safeTask = task || {};
-  const safeSubmission = submission || {};
-
-  const maxPoints =
-    typeof safeTask.points === "number" && safeTask.points > 0
-      ? safeTask.points
-      : 1;
-
-  const correctAnswer = safeTask.correctAnswer;
-  const studentAnswer = extractStudentAnswer(safeSubmission);
+function scoreSubmissionRuleBased({ task, submission }) {
+  const maxPoints = typeof task.points === "number" ? task.points : 10;
+  const correctAnswer = task.correctAnswer;
+  const studentAnswer = extractStudentAnswer(submission);
 
   let isCorrect = false;
   let explanation = "";
 
-  // If correctAnswer is a number → index-based (MC / True-False)
-  if (typeof correctAnswer === "number") {
-    const studentIndex =
-      typeof studentAnswer === "number"
-        ? studentAnswer
-        : Number.isInteger(Number(studentAnswer))
-        ? Number(studentAnswer)
-        : null;
-
-    if (
-      studentIndex != null &&
-      Array.isArray(safeTask.options) &&
-      studentIndex >= 0 &&
-      studentIndex < safeTask.options.length
-    ) {
-      isCorrect = studentIndex === correctAnswer;
-      explanation = isCorrect
-        ? "Selected option matches the correct answer."
-        : "Selected option does not match the correct answer.";
-    } else {
-      isCorrect = false;
-      explanation = "Student did not provide a valid option index.";
-    }
-  }
-  // If correctAnswer is a string → short-answer style
-  else if (typeof correctAnswer === "string") {
+  if (correctAnswer === undefined || correctAnswer === null) {
+    // No reference answer → cannot objectively score
+    isCorrect = false;
+    explanation = "No correctAnswer is configured for this task.";
+  } else if (studentAnswer == null) {
+    isCorrect = false;
+    explanation = "Student did not submit an answer.";
+  } else if (
+    typeof correctAnswer === "number" ||
+    typeof correctAnswer === "boolean"
+  ) {
+    // Numeric / boolean exact equality
+    isCorrect = Number(studentAnswer) === Number(correctAnswer);
+    explanation = isCorrect
+      ? "Student answer matches the required value."
+      : `Expected ${correctAnswer}, but got ${studentAnswer}.`;
+  } else if (typeof correctAnswer === "string") {
+    const studentText = String(studentAnswer).trim().toLowerCase();
     const correct = correctAnswer.trim().toLowerCase();
-    const studentText =
-      typeof studentAnswer === "string"
-        ? studentAnswer.trim().toLowerCase()
-        : typeof studentAnswer === "number"
-        ? String(studentAnswer)
-        : "";
 
-    if (!correct || !studentText) {
+    if (!studentText) {
       isCorrect = false;
       explanation = "Missing or empty answer.";
     } else {
@@ -127,366 +115,8 @@ export function scoreSubmissionRuleBased({ task, submission }) {
 }
 
 /**
- * Specialized AI scoring for Diff Detective tasks (text, image, code modes).
- */
-async function scoreDiffDetective({ task, submission }) {
-  const mode = task.mode || "text";
-  const studentText = typeof submission?.answerText === "string"
-    ? submission.answerText
-    : typeof submission?.answer === "string"
-      ? submission.answer
-      : "";
-
-  if (!studentText.trim()) {
-    return {
-      totalScore: 0,
-      maxPoints: task.points || 30,
-      criteria: [],
-      overallComment: "No answer submitted.",
-    };
-  }
-
-  const differences = Array.isArray(task.differences) ? task.differences : [];
-
-  if (differences.length === 0) {
-    return scoreSubmissionRuleBased({ task, submission }); // fallback
-  }
-
-  let prompt = `
-You are grading a "Diff Detective" task where students spot differences.
-
-Expected differences:
-${differences.map((d, i) => `${i + 1}. ${d.expected} (${d.type || "change"})`).join("\n")}
-
-Student's answer:
-"""${studentText.trim()}"""
-
-Instructions:
-- Accept natural language descriptions (e.g., "jumps to jumped", "missing comma").
-- Award partial credit: 1 point per correctly identified difference.
-- Be fair but accurate.
-
-Return ONLY JSON:
-{
-  "totalScore": number,
-  "maxPoints": number,
-  "found": number,
-  "totalExpected": number,
-  "feedback": "string",
-  "details": array of {expected: string, found: boolean, studentSaid: string}
-}
-`.trim();
-
-  let model = "gpt-4o-mini";
-  let messages = [{ role: "user", content: prompt }];
-
-  if (mode === "image" && submission.imageUrl) {
-    model = "gpt-4o"; // Need vision model
-    prompt = `
-Analyze this student-submitted image and describe what they circled/pointed to.
-Compare to expected differences: ${differences.map(d => d.expected).join(", ")}.
-
-Student text: "${studentText}"
-
-Score how many they found.
-` + prompt;
-
-    messages = [
-      { role: "user", content: [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: submission.imageUrl } }
-      ]}
-    ];
-  } else if (mode === "code") {
-    prompt = `
-This is a code debugging task.
-Original code:
-"""${task.original}"""
-
-Modified (buggy) code:
-"""${task.modified}"""
-
-` + prompt;
-  } else if (mode === "audio") {
-    prompt = `
-This is an "Audio Diff Detective" task for language learning.
-
-Correct sentence:
-"""${task.correctText}"""
-
-Incorrect sentence spoken:
-"""${task.incorrectText || "unknown"}"""
-
-` + prompt;
-  }
-
-  try {
-    const response = await openai.chat.completions.create({
-      model,
-      messages,
-      response_format: { type: "json_object" },
-      temperature: 0.1,
-      max_tokens: 500,
-    });
-
-    const result = JSON.parse(response.choices[0].message.content);
-
-    const score = Math.min(result.totalScore || 0, result.maxPoints || task.points || 30);
-
-    return {
-      totalScore: score,
-      maxPoints: result.maxPoints || task.points || 30,
-      criteria: [
-        {
-          id: "differences_found",
-          score: score,
-          maxPoints: result.maxPoints || task.points || 30,
-          comment: result.feedback || `Found ${result.found || 0}/${result.totalExpected || differences.length}`,
-        },
-      ],
-      overallComment: result.feedback || "Good effort on spotting differences!",
-    };
-  } catch (err) {
-    console.error("Diff Detective AI scoring failed:", err);
-    // Simple fallback: keyword matching
-    let found = 0;
-    const lowerStudent = studentText.toLowerCase();
-    differences.forEach(diff => {
-      const [from, to] = diff.expected.split("→").map(s => s.trim().toLowerCase());
-      if (lowerStudent.includes(from) || (to && lowerStudent.includes(to))) {
-        found++;
-      }
-    });
-    const score = Math.floor((found / differences.length) * (task.points || 30));
-    return {
-      totalScore: score,
-      maxPoints: task.points || 30,
-      criteria: [{
-        id: "differences_found",
-        score,
-        maxPoints: task.points || 30,
-        comment: `Fallback: found ~${found}/${differences.length} differences`,
-      }],
-      overallComment: "Scored with backup method.",
-    };
-  }
-}
-
-/**
- * Specialized AI scoring for pronunciation tasks, with accent comparison.
- */
-async function scorePronunciation({ task, submission }) {
-  if (!submission.audioUrl) {
-    return { totalScore: 0, maxPoints: 30, overallComment: "No audio recorded." };
-  }
-
-  // Transcribe student's audio
-  const audioFile = await fetch(submission.audioUrl).then(r => r.blob());
-  const transcription = await openai.audio.transcriptions.create({
-    model: "whisper-1",
-    file: audioFile,
-  });
-
-  const targetAccent = submission.targetAccent || task.targetAccent || "american";
-  const language = task.language || "English";
-
-  const prompt = `
-You are a world-class pronunciation coach for ${language}.
-
-Reference sentence: "${task.referenceText}"
-
-Student said (transcribed): "${transcription.text}"
-
-Focus sounds: ${task.focusSounds?.join(", ") || "general pronunciation"}
-
-Target accent: ${targetAccent.toUpperCase()} English
-
-Assess:
-- Accuracy: Correct words (0-10)
-- Fluency: Rhythm, speed (0-10)
-- Pronunciation: Clarity of sounds (0-10)
-- Accent match: How close to ${targetAccent} (0-10, with British vs American differences noted)
-
-Total score = sum / 4 * 3 (max 30)
-
-Be encouraging. Return ONLY JSON:
-{
-  "totalScore": number,
-  "accuracy": number,
-  "fluency": number,
-  "pronunciation": number,
-  "accentMatch": number,
-  "feedback": "string",
-  "britishVsAmerican": ["string", "string"]
-}
-`;
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{ role: "user", content: prompt }],
-    response_format: { type: "json_object" },
-    temperature: 0.2,
-  });
-
-  const result = JSON.parse(response.choices[0].message.content);
-
-  return {
-    totalScore: result.totalScore || 20,
-    maxPoints: 30,
-    criteria: [
-      { id: "accuracy", score: result.accuracy || 10, maxPoints: 10, comment: "Word recognition" },
-      { id: "fluency", score: result.fluency || 10, maxPoints: 10, comment: "Flow and rhythm" },
-      { id: "pronunciation", score: result.pronunciation || 10, maxPoints: 10, comment: "Sound clarity" },
-    ],
-    overallComment: result.feedback || "Well spoken!",
-    studentTranscription: transcription.text,
-    accentAnalysis: {
-      accentMatch: result.accentMatch || 10,
-      britishVsAmerican: result.britishVsAmerican || [],
-    }
-  };
-}
-
-/**
- * Specialized AI scoring for speech recognition tasks (real-time spoken answers).
- */
-async function scoreSpeechRecognition({ task, submission }) {
-  const spoken = submission.spokenText?.trim() || "";
-  const reference = task.referenceText?.trim() || "";
-
-  if (!spoken) {
-    return {
-      totalScore: 0,
-      maxPoints: 30,
-      overallComment: "No speech detected.",
-    };
-  }
-
-  const prompt = `
-You are grading a spoken answer.
-
-Task: ${task.prompt || "Read aloud or answer verbally"}
-Reference text (if reading): "${reference || "none"}"
-Student said: "${spoken}"
-
-Score out of 30:
-- Accuracy (words correct): 0–15
-- Grammar & structure: 0–8
-- Fluency & clarity: 0–7
-
-Return JSON:
-{
-  "totalScore": 28,
-  "accuracy": 14,
-  "grammar": 8,
-  "fluency": 6,
-  "feedback": "Great job! You said 'environment' clearly...",
-  "wordMatch": 92,
-  "missingWords": ["the", "and"],
-  "extraWords": ["um", "like"]
-}
-`;
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    response_format: { type: "json_object" },
-    temperature: 0.2,
-  });
-
-  const result = JSON.parse(response.choices[0].message.content);
-
-  return {
-    totalScore: result.totalScore || 20,
-    maxPoints: 30,
-    criteria: [
-      { id: "accuracy", score: result.accuracy || 10, maxPoints: 15, comment: "Word recognition" },
-      { id: "grammar", score: result.grammar || 6, maxPoints: 8, comment: "Sentence structure" },
-      { id: "fluency", score: result.fluency || 5, maxPoints: 7, comment: "Flow and clarity" },
-    ],
-    overallComment: result.feedback || "Well spoken!",
-    speechAnalysis: {
-      transcript: spoken,
-      wordMatch: result.wordMatch,
-      missing: result.missingWords,
-      fillers: result.extraWords,
-    }
-  };
-}
-
-/**
- * Specialized AI scoring for AI Debate Judge tasks.
- */
-async function scoreDebate({ task, submission }) {
-  const debateData = submission.debateData || {}; // { resolution, speeches: [{team, speaker, audioUrl, phase}] }
-  const resolution = debateData.resolution || task.resolution;
-
-  const speechesWithTranscripts = await Promise.all(
-    debateData.speeches.map(async s => {
-      const audioBlob = await fetch(s.audioUrl).then(r => r.blob());
-      const transcription = await openai.audio.transcriptions.create({
-        model: "whisper-1",
-        file: audioBlob,
-      });
-      return { ...s, transcript: transcription.text };
-    })
-  );
-
-  const speechesText = speechesWithTranscripts
-    .map(s => `${s.team.toUpperCase()} (${s.speaker}, ${s.phase}): ${s.transcript}`)
-    .join("\n\n");
-
-  const prompt = `
-You are the world's most respected high school debate judge.
-
-Resolution: "${resolution}"
-
-Full debate transcript:
-${speechesText}
-
-Write a complete, professional judging decision including:
-1. Winner declaration
-2. Final scores (out of 100 per team)
-3. Strengths and weaknesses of each side
-4. Best individual speaker
-5. Key moments that decided the debate
-6. Constructive feedback for improvement
-
-Be fair, specific, encouraging, and decisive.
-
-Return ONLY JSON:
-{
-  "winner": "affirmative" or "negative",
-  "scores": { "affirmative": 94, "negative": 89 },
-  "bestSpeaker": "Maria (Affirmative)",
-  "feedback": "The Affirmative team won this debate due to their superior use of evidence..."
-}
-`;
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [{ role: "user", content: prompt }],
-    response_format: { type: "json_object" },
-    temperature: 0.3,
-  });
-
-  const result = JSON.parse(response.choices[0].message.content);
-
-  return {
-    totalScore: result.scores[result.winner] || 50, // For winner only
-    maxPoints: 100,
-    criteria: [
-      { id: "overall", score: result.scores.affirmative || 50, maxPoints: 100, comment: "Affirmative Score" },
-      { id: "overall", score: result.scores.negative || 50, maxPoints: 100, comment: "Negative Score" },
-    ],
-    overallComment: result.feedback,
-    bestSpeaker: result.bestSpeaker,
-    winner: result.winner
-  };
-}
-
-/**
- * Build a description of the student's work, depending on task type.
+ * Build a human-readable description of the student's work, so the AI
+ * can "see" what the student did without dumping raw JSON.
  */
 function buildStudentWorkDescription(task, submission) {
   const taskType = task?.taskType || task?.type;
@@ -504,38 +134,87 @@ function buildStudentWorkDescription(task, submission) {
   if (
     taskType === "draw" ||
     taskType === "mime" ||
-    taskType === "draw-mime"
+    taskType === "draw-mime" ||
+    taskType === "draw_mime"
   ) {
-    const hasImageUrl = typeof submission?.imageUrl === "string" && submission.imageUrl;
-    const hasImageData = !!submission?.imageData;
+    const note =
+      submission?.answerText ??
+      (typeof submission?.caption === "string" ? submission.caption : "") ??
+      "";
 
-    let desc = `This is a visual "Draw or Mime" style task.\n\n`;
+    let desc =
+      "The student completed a visual or performance task (drawing or miming). " +
+      "You cannot see the actual image or performance, but you can see their note or caption, if any.\n\n";
 
-    desc += `The student responded by creating a drawing or acted-out performance instead of typing text.\n`;
-
-    if (hasImageUrl) {
-      desc += `\nThe platform stored the student's drawing at this URL: ${submission.imageUrl}.\n`;
-    } else if (hasImageData) {
-      desc += `\nThe student's drawing is stored as an image (binary/base64 data omitted here to keep this prompt concise).\n`;
+    if (note) {
+      desc += `Student note/caption:\n"${note}"`;
     } else {
-      desc += `\nNo drawing image data was attached to this submission.\n`;
+      desc += "The student did not provide any written note or caption.";
     }
-
-    desc += `\nImportant: You CANNOT see the actual drawing or performance. You must score based on:\n` +
-      `- The task prompt and instructions\n` +
-      `- The teacher's rubric\n` +
-      `- Any textual notes or meta-data provided about the student's work.\n\n` +
-      `Be fair and encourage creativity, but only use the rubric and the information you have, not imagined details.`;
-
     return desc;
   }
 
-  // Collaboration task
+  // Diff Detective: text or code differences
+  if (taskType === "diff-detective" || taskType === "diff_detective") {
+    const mode = task.mode || "text";
+    const found = Array.isArray(submission?.foundDiffs)
+      ? submission.foundDiffs.length
+      : submission?.foundCount ?? 0;
+    const total = task.targetDifferences
+      ? task.targetDifferences.length
+      : task.totalDifferences ?? task.differences?.length ?? "unknown";
+
+    return (
+      `This is a Diff Detective task in "${mode}" mode.\n` +
+      `The student reported finding approximately ${found} differences out of ${total}.\n\n` +
+      `Raw submission object:\n${JSON.stringify(submission, null, 2)}`
+    );
+  }
+
+  // Motion Mission: body movement / steps
+  if (taskType === "motion-mission" || taskType === "motion_mission") {
+    const rawCount = submission?.stepCount ?? submission?.motionCount;
+    const steps = typeof rawCount === "number" ? rawCount : "unknown";
+
+    return (
+      "This is a Motion Mission task where students had to move their bodies (e.g., steps, jumps, actions).\n" +
+      `The recorded movement count for this submission is: ${steps}.\n\n` +
+      "Additional raw submission:\n" +
+      JSON.stringify(submission, null, 2)
+    );
+  }
+
+  // Pet Feeding: scoreboard-style data
+  if (taskType === "pet-feeding" || taskType === "pet_feeding") {
+    const totalFed = submission?.totalFed ?? submission?.score ?? null;
+    return (
+      "This is a Pet Feeding / virtual pet task, where students keep a digital pet fed or cared for.\n" +
+      (totalFed != null
+        ? `The student's recorded feeding / care score is: ${totalFed}.\n\n`
+        : "") +
+      "Raw submission data:\n" +
+      JSON.stringify(submission, null, 2)
+    );
+  }
+
+  // Pronunciation / speaking tasks might use "transcript"
+  if (taskType === "pronunciation" || taskType === "speaking") {
+    const transcript =
+      submission?.transcript ??
+      submission?.answerText ??
+      submission?.answer ??
+      "";
+    return (
+      "This is a speaking/pronunciation task. The student's spoken answer has been transcribed as follows:\n\n" +
+      `"${transcript}"`
+    );
+  }
+
+  // Collaboration tasks
   if (taskType === "collaboration") {
     const main =
       submission?.answerText ??
-      submission?.main ??
-      (typeof submission?.answer === "string" ? submission.answer : "") ??
+      submission?.answer ??
       "";
 
     const reply =
@@ -559,6 +238,26 @@ function buildStudentWorkDescription(task, submission) {
     }
 
     return description;
+  }
+
+  // Make & Snap - creative build + photo tasks
+  if (taskType === "make-and-snap" || taskType === "make_and_snap") {
+    const text =
+      submission?.answerText ??
+      (typeof submission?.answer === "string" ? submission.answer : "") ??
+      "";
+
+    const note =
+      text && typeof text === "string"
+        ? text
+        : "(no written note was provided; only a photo indicator, if any).";
+
+    return (
+      'This was a "Make & Snap" creative task. ' +
+      "The student built, drew, or demonstrated something at a station and then took a photo of it. " +
+      "You cannot see the actual image from here, but you can see any written note or description they provided.\n\n" +
+      `Student note / description:\n"${note}"`
+    );
   }
 
   // Fallback for other types
@@ -593,37 +292,45 @@ Always:
 - Return ONLY valid JSON in the exact structure requested, with no extra commentary.
 `.trim();
 
-  const userPrompt = `
-Here is the grading rubric (JSON):
-
-${JSON.stringify(rubric, null, 2)}
-
-Here is the task the student was given:
-
-${(task && task.prompt) || ""}
-
-Here is the student's work:
-
-${studentWorkDescription}
-
-Score the work according to the rubric. For each criterion, assign a score from 0 up to maxPoints. Then compute the total score (sum of criteria) and ensure it does not exceed rubric.maxPoints.
-
-Return ONLY JSON in this format:
-
-{
-  "totalScore": number,
-  "maxPoints": number,
-  "criteria": [
+  const userPrompt = JSON.stringify(
     {
-      "id": string,
-      "score": number,
-      "maxPoints": number,
-      "comment": string
-    }
-  ],
-  "overallComment": string
-}
-`.trim();
+      rubric,
+      task: {
+        title: task.title ?? task.name ?? null,
+        instructions: task.prompt ?? task.description ?? null,
+        taskType: task.taskType ?? task.type ?? null,
+        maxPoints: typeof task.points === "number" ? task.points : undefined,
+      },
+      submission: {
+        description: studentWorkDescription,
+        raw: submission,
+      },
+      responseSchema: {
+        type: "object",
+        properties: {
+          totalScore: { type: "number" },
+          maxPoints: { type: "number" },
+          criteria: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                score: { type: "number" },
+                maxPoints: { type: "number" },
+                comment: { type: "string" },
+              },
+              required: ["id", "score", "maxPoints"],
+            },
+          },
+          overallComment: { type: "string" },
+        },
+        required: ["totalScore", "maxPoints", "criteria"],
+      },
+    },
+    null,
+    2
+  );
 
   const response = await openai.chat.completions.create({
     model: DEFAULT_MODEL,
@@ -646,7 +353,122 @@ Return ONLY JSON in this format:
     throw new Error("Failed to parse AI scoring response");
   }
 
-  return parsed;
+  const maxPoints =
+    typeof parsed.maxPoints === "number"
+      ? parsed.maxPoints
+      : typeof task.points === "number"
+      ? task.points
+      : rubric.totalPoints ?? 10;
+
+  const totalScore =
+    typeof parsed.totalScore === "number"
+      ? parsed.totalScore
+      : Array.isArray(parsed.criteria)
+      ? parsed.criteria.reduce(
+          (sum, c) => sum + (typeof c.score === "number" ? c.score : 0),
+          0
+        )
+      : 0;
+
+  const criteria = Array.isArray(parsed.criteria)
+    ? parsed.criteria.map((c, idx) => ({
+        id: c.id ?? rubric.criteria[idx]?.id ?? `criterion_${idx + 1}`,
+        score: typeof c.score === "number" ? c.score : 0,
+        maxPoints:
+          typeof c.maxPoints === "number"
+            ? c.maxPoints
+            : rubric.criteria[idx]?.maxPoints ?? 0,
+        comment: c.comment ?? "",
+      }))
+    : [];
+
+  return {
+    totalScore,
+    maxPoints,
+    criteria,
+    overallComment: parsed.overallComment ?? "",
+  };
+}
+
+/**
+ * Specialized AI scoring for Diff Detective tasks (text, image, code modes).
+ */
+async function scoreDiffDetective({ task, submission }) {
+  const mode = task.mode || "text";
+
+  // If we already have a raw "foundCount" from the client, we can score quickly.
+  if (typeof submission?.foundCount === "number") {
+    const found = submission.foundCount;
+    const total =
+      (Array.isArray(task.targetDifferences) && task.targetDifferences.length) ||
+      task.totalDifferences ||
+      10;
+
+    const ratio = total > 0 ? found / total : 0;
+    const maxPoints = task.points || 30;
+    const score = Math.round(ratio * maxPoints);
+
+    return {
+      totalScore: score,
+      maxPoints,
+      criteria: [
+        {
+          id: "differences_found",
+          score,
+          maxPoints,
+          comment: `Student found approximately ${found} of ${total} differences.`,
+        },
+      ],
+      overallComment: `Student found about ${found} of ${total} differences in ${mode} mode.`,
+    };
+  }
+
+  // If not, fall back to AI-based scoring that looks at the raw submission.
+  const rubric = {
+    totalPoints: task.points || 30,
+    criteria: [
+      {
+        id: "differences_found",
+        maxPoints: task.points || 30,
+        description:
+          "How many of the intended differences did the student successfully identify? Consider both quantity and accuracy.",
+      },
+    ],
+  };
+
+  try {
+    const aiResult = await scoreSubmissionWithAI({ task, rubric, submission });
+    return aiResult;
+  } catch (err) {
+    console.error("Diff Detective AI scoring failed, falling back:", err);
+
+    const differences =
+      Array.isArray(task.targetDifferences) && task.targetDifferences.length
+        ? task.targetDifferences
+        : [];
+
+    const found =
+      Array.isArray(submission?.foundDiffs) && submission.foundDiffs.length
+        ? submission.foundDiffs.length
+        : 0;
+
+    const total = differences.length || task.totalDifferences || 10;
+    const ratio = total > 0 ? found / total : 0;
+    const maxPoints = task.points || 30;
+    const score = Math.round(ratio * maxPoints);
+
+    return {
+      totalScore: score,
+      maxPoints,
+      criteria: [{
+        id: "differences_found",
+        score,
+        maxPoints: task.points || 30,
+        comment: `Fallback: found ~${found}/${differences.length} differences`,
+      }],
+      overallComment: "Scored with backup method.",
+    };
+  }
 }
 
 /**
@@ -668,16 +490,31 @@ export async function generateAIScore({ task, rubric, submission }) {
   const hasCorrect =
     safeTask.correctAnswer !== undefined && safeTask.correctAnswer !== null;
 
-  const requiresAI =
-    typeof safeTask.aiScoringRequired === "boolean"
-      ? safeTask.aiScoringRequired
-      : !hasCorrect; // default: if we don't have a correctAnswer, we need AI
+  const hasRubric =
+    rubric && Array.isArray(rubric.criteria) && rubric.criteria.length > 0;
+
+  const hasExplicitFlag = typeof safeTask.aiScoringRequired === "boolean";
+
+  const requiresAI = hasExplicitFlag
+    ? safeTask.aiScoringRequired
+    : !hasCorrect && hasRubric; // default: only use AI when no correctAnswer AND a rubric is provided
 
   if (!requiresAI && hasCorrect) {
-    // Instant objective scoring
+    // Instant objective scoring for objective tasks
     return scoreSubmissionRuleBased({ task: safeTask, submission });
   }
 
-  // Fallback to AI + rubric
+  if (!requiresAI && !hasCorrect) {
+    // Neither AI nor objective scoring is enabled → return a neutral result
+    return {
+      totalScore: 0,
+      maxPoints: safeTask.points || 0,
+      criteria: [],
+      overallComment:
+        "AI scoring was not enabled for this task and no objective scoring rules were found.",
+    };
+  }
+
+  // At this point, AI scoring is required and a rubric should be present
   return scoreSubmissionWithAI({ task: safeTask, rubric, submission });
 }

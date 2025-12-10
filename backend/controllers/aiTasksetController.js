@@ -419,6 +419,19 @@ For "${TASK_TYPES.DRAW_MIME}":
   - Example: "Draw the water cycle with arrows to show how water moves from
     evaporation to condensation to precipitation."
 
+For "${TASK_TYPES.MIND_MAPPER}":
+  - Create a concept-mapping puzzle with 6–10 idea nodes.
+  - Provide a "config" object with:
+      "items": [
+        { "text": "Idea text", "correctIndex": 0 },
+        { "text": "Another idea", "correctIndex": 1 },
+        ...
+      ]
+  - The array MUST be in the correct conceptual order.
+  - Do NOT shuffle; the StudentApp will handle the randomization.
+  - "options" should be an empty array.
+  - "correctAnswer" must be null (scoring is based on matching correctIndex).
+
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
   {
@@ -511,7 +524,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         }
       }
 
-      const meta = TASK_TYPE_META[taskType] || {};
+            const meta = TASK_TYPE_META[taskType] || {};
       const multiItemCapable = !!meta.multiItemCapable;
 
       // Base options, config, items
@@ -688,6 +701,49 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
         // No flat options / correctAnswer for SORT; scoring uses config
         options = [];
+      } else if (taskType === TASK_TYPES.MIND_MAPPER) {
+        // Normalize MindMapper into config.items with { text, correctIndex }
+        const aiConfig =
+          t.config && typeof t.config === "object" ? t.config : {};
+
+        const rawItems =
+          Array.isArray(aiConfig.items)
+            ? aiConfig.items
+            : Array.isArray(t.items)
+            ? t.items
+            : Array.isArray(t.options)
+            ? t.options
+            : [];
+
+        const mappedItems = rawItems.map((it, idx) => {
+          if (typeof it === "string") {
+            return { text: it, correctIndex: idx };
+          }
+          if (it && typeof it === "object") {
+            const text =
+              it.text ||
+              it.label ||
+              it.name ||
+              it.prompt ||
+              `Idea ${idx + 1}`;
+
+            let correctIndex = it.correctIndex;
+            if (typeof correctIndex !== "number") {
+              correctIndex = idx;
+            }
+
+            return { text, correctIndex };
+          }
+          return { text: String(it), correctIndex: idx };
+        });
+
+        config = {
+          ...aiConfig,
+          items: mappedItems,
+        };
+
+        // StudentApp MindMapperTask expects no "options" for this type
+        options = [];
       } else {
         // Other types – assume no options by default
         options = Array.isArray(t.options) ? t.options : [];
@@ -757,7 +813,8 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         }
       } else if (
         taskType === TASK_TYPES.SORT ||
-        taskType === TASK_TYPES.SEQUENCE
+        taskType === TASK_TYPES.SEQUENCE ||
+        taskType === TASK_TYPES.MIND_MAPPER
       ) {
         // Sort & Sequence scoring use config; no flat correctAnswer
         correctAnswer = null;
@@ -877,6 +934,16 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         items = [];
       }
 
+      // ---------- MindMapper: attach shuffledItems for StudentApp ----------
+      if (taskType === TASK_TYPES.MIND_MAPPER && config && Array.isArray(config.items)) {
+        const uiItems = config.items.map((it, idx) => ({
+          id: `item-${idx}`,
+          text: it.text,
+          correctIndex: it.correctIndex,
+        }));
+        t.shuffledItems = uiItems;
+      }
+
       return {
         index,
         title,
@@ -890,11 +957,15 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         config,
         items,
         ...(taskType === TASK_TYPES.FLASHCARDS && { cards }),
-        // Only present for DiffDetective tasks:
         ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
           original,
           modified,
           differences,
+        }),
+
+        // MindMapper data for Student UI
+        ...(taskType === TASK_TYPES.MIND_MAPPER && {
+          shuffledItems: t.shuffledItems,
         }),
       };
     });
@@ -902,7 +973,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     // ---------- Word-bank usage analysis ----------
     let aiWordsUsed = [];
     let aiWordsUnused = [];
-
+    
     if (rawWordBank.length && Array.isArray(tasks)) {
       const allText = tasks
         .map((t) => `${t.title || ""} ${t.prompt || ""}`)

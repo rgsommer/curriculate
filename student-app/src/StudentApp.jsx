@@ -1159,6 +1159,9 @@ function StudentApp() {
   const isMakeAndSnap =
     currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
 
+  const isMindMapper =
+    currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1172,17 +1175,19 @@ function StudentApp() {
     border: "1px solid rgba(129,140,248,0.35)",
   };
 
-  const taskCardBackground = isFlashcardsRace
-    ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
-    : isMadDash
-    ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
-    : isMakeAndSnap
-    ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
-    : isDrawMime
-    ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
-    : isLiveDebate
-    ? "linear-gradient(135deg, #0f172a 0%, #fb7185 35%, #f97316 70%, #facc15 100%)"
-    : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
+    const taskCardBackground = isFlashcardsRace
+      ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
+      : isMadDash
+      ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
+      : isMakeAndSnap
+      ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
+      : isDrawMime
+      ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
+      : isLiveDebate
+      ? "linear-gradient(135deg, #0f172a 0%, #fb7185 35%, #f97316 70%, #facc15 100%)"
+      : isMindMapper
+      ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
+      : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
   const currentTaskNumber =
@@ -1219,6 +1224,8 @@ function StudentApp() {
           ? "radial-gradient(circle at top, #1e293b 0%, #0f172a 25%, #4f46e5 60%, #f97316 100%)"
           : isMadDash
           ? "radial-gradient(circle at top, #b91c1c 0%, #f97316 40%, #facc15 75%, #fee2e2 100%)"
+          : isMindMapper
+          ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
           : themeShell.pageBg,
         color: themeShell.text,
         opacity: noiseState.enabled ? noiseState.brightness : 1,
@@ -1883,6 +1890,8 @@ function StudentApp() {
               ? "Draw or Mime!"
               : isLiveDebate
               ? "Live debate!"
+              : isMindMapper
+              ? "Mind Mapper!"
               : "Your task"}
 
             </h2>
