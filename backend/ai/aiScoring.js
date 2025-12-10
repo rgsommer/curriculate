@@ -630,6 +630,11 @@ Return ONLY JSON in this format:
 export async function generateAIScore({ task, rubric, submission }) {
   const safeTask = task || {};
 
+  // ----- Diff Detective Integration -----
+  if (task?.taskType === "diff-detective") {
+    return await scoreDiffDetective({ task, submission });
+  }
+
   const hasCorrect =
     safeTask.correctAnswer !== undefined && safeTask.correctAnswer !== null;
 
