@@ -35,16 +35,24 @@ const TaskSchema = new Schema(
     prompt: { type: String, required: true },
     taskType: { type: String, required: true }, // mcq, true_false, sequence, etc.
 
-    options: [String],                  // for MCQ / SORT etc.
-    correctAnswer: Schema.Types.Mixed,  // was "answer" → now "correctAnswer"
-    mediaUrl: String,
-    timeLimitSeconds: Number,
-    points: { type: Number, default: 10 },
+    options: [String],                  // for MCQ / simple lists
+      correctAnswer: Schema.Types.Mixed,  // index, string, boolean, etc.
+      mediaUrl: String,
+      timeLimitSeconds: Number,
+      points: { type: Number, default: 10 },
 
-    // NEW: Multi-question support – MC/TF/SA groups, etc.
-    // If present, this task represents several related items that should be
-    // presented together on the student device.
-    items: [TaskItemSchema],
+      // 🔹 Arbitrary task configuration (used by SORT, SEQUENCE, etc.)
+      config: {
+        type: Schema.Types.Mixed,
+        default: {},
+      },
+
+      // 🔹 Multi-question support – MC/TF/SA groups, timelines, etc.
+      // Using Mixed for flexibility so AI/other tasks can shape items as needed.
+      items: {
+        type: [Schema.Types.Mixed],
+        default: [],
+      },
 
     // Link this task to a physical display (optional)
     // Should match one of TaskSet.displays[].key if used
