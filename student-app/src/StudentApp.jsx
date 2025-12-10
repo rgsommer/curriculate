@@ -1161,6 +1161,9 @@ function StudentApp() {
 
   const isMindMapper =
     currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
+  
+  const isMotionMission =
+    currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
 
   // Theme-enriched task object
   const themedTask =
@@ -1818,7 +1821,17 @@ function StudentApp() {
             className="task-card"
             style={{
               ...baseTaskCardStyle,
-              background: taskCardBackground,
+              ...(isMotionMission
+                ? {
+                    // Let MotionMissionTask own the look
+                    background: "transparent",
+                    padding: 0,
+                    border: "none",
+                    boxShadow: "none",
+                  }
+                : {
+                    background: taskCardBackground,
+                  }),
             }}
           >
             <h2
@@ -1892,6 +1905,8 @@ function StudentApp() {
               ? "Live debate!"
               : isMindMapper
               ? "Mind Mapper!"
+              : isMotionMission
+              ? "Motion Mission!"
               : "Your task"}
 
             </h2>
@@ -1940,13 +1955,19 @@ function StudentApp() {
 
             <div
               style={{
-                marginTop: 6,
-                padding: 12,
-                borderRadius: 16,
-                background: "rgba(255,255,255,0.98)",
-                border: "1px solid rgba(209,213,219,0.9)",
+                marginTop: isMotionMission ? 0 : 6,
+                padding: isMotionMission ? 0 : 12,
+                borderRadius: isMotionMission ? 0 : 16,
+                background: isMotionMission
+                  ? "transparent"
+                  : "rgba(255,255,255,0.98)",
+                border: isMotionMission
+                  ? "none"
+                  : "1px solid rgba(209,213,219,0.9)",
                 fontSize: responseFontSize,
                 lineHeight: 1.5,
+                // Let the MotionMissionTask stretch
+                minHeight: isMotionMission ? "60vh" : undefined,
               }}
             >
               <TaskRunner

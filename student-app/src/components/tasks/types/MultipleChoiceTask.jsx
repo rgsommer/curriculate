@@ -1,4 +1,3 @@
-// student-app/src/components/tasks/types/MultipleChoiceTask.jsx
 import React from "react";
 
 /**
@@ -27,11 +26,21 @@ export default function MultipleChoiceTask({
 
   // For single-question mode
   const [singleOptionOrder, setSingleOptionOrder] = React.useState([]);
-  const [singleSelectedDisplayIdx, setSingleSelectedDisplayIdx] = React.useState(null);
+  const [singleSelectedDisplayIdx, setSingleSelectedDisplayIdx] =
+    React.useState(null);
 
   // For multi-question mode
   const [presentedItems, setPresentedItems] = React.useState([]);
-  const [multiSelectedByDisplayIdx, setMultiSelectedByDisplayIdx] = React.useState([]);
+  const [multiSelectedByDisplayIdx, setMultiSelectedByDisplayIdx] =
+    React.useState([]);
+
+  // Helper – Fisher-Yates shuffle (in-place)
+  function shuffleArray(arr) {
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
 
   // Rebuild shuffle state whenever the task changes
   React.useEffect(() => {
@@ -45,19 +54,24 @@ export default function MultipleChoiceTask({
 
       const built = order.map((canonicalIndex) => {
         const item = canonicalItems[canonicalIndex] || {};
-        const baseOptions = Array.isArray(item.options) && item.options.length
-          ? item.options
-          : Array.isArray(task.options) && task.options.length
-          ? task.options
-          : [];
+        const baseOptions =
+          Array.isArray(item.options) && item.options.length
+            ? item.options
+            : Array.isArray(task.options) && task.options.length
+            ? task.options
+            : [];
 
-        const optionOrder = Array.from({ length: baseOptions.length }, (_, i) => i);
+        const optionOrder = Array.from(
+          { length: baseOptions.length },
+          (_, i) => i
+        );
         shuffleArray(optionOrder);
         const displayOptions = optionOrder.map((i) => baseOptions[i]);
 
         return {
           canonicalIndex,
-          prompt: item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
+          prompt:
+            item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
           baseOptions,
           optionOrder,
           displayOptions,
@@ -74,14 +88,6 @@ export default function MultipleChoiceTask({
       setSingleSelectedDisplayIdx(null);
     }
   }, [task, hasItems]);
-
-  // Helper – Fisher-Yates shuffle (in-place)
-  function shuffleArray(arr) {
-    for (let i = arr.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-  }
 
   const handleSubmitClick = () => {
     if (disabled) return;
@@ -168,8 +174,13 @@ export default function MultipleChoiceTask({
     });
   };
 
-  const { cardBg, cardHeaderBg, cardHeaderText, optionBaseBg, optionSelectedBg } =
-    getThemeColors(theme);
+  const {
+    cardBg,
+    cardHeaderBg,
+    cardHeaderText,
+    optionBaseBg,
+    optionSelectedBg,
+  } = getThemeColors(theme);
 
   // -------------------------
   // Render multi-question mode
@@ -240,7 +251,8 @@ export default function MultipleChoiceTask({
 
                 <div className="flex flex-col gap-2">
                   {pItem.displayOptions.map((opt, optIdx) => {
-                    const selected = multiSelectedByDisplayIdx[displayIdx] === optIdx;
+                    const selected =
+                      multiSelectedByDisplayIdx[displayIdx] === optIdx;
                     return (
                       <button
                         key={optIdx}
@@ -253,7 +265,8 @@ export default function MultipleChoiceTask({
                           color: selected ? "#ffffff" : "#111827",
                           opacity: disabled ? 0.6 : 1,
                           borderColor: "rgba(15,23,42,0.12)",
-                          transition: "background 0.15s ease, transform 0.05s ease",
+                          transition:
+                            "background 0.15s ease, transform 0.05s ease",
                           transform: selected ? "scale(1.01)" : "scale(1)",
                         }}
                       >
@@ -276,6 +289,7 @@ export default function MultipleChoiceTask({
               color: "#fff",
               fontWeight: 600,
               paddingInline: 20,
+              cursor: disabled ? "default" : "pointer",
             }}
           >
             Submit all answers
@@ -286,9 +300,13 @@ export default function MultipleChoiceTask({
   }
 
   // -------------------------
-  // Legacy single-question mode (still randomized options)
+  // Legacy single-question mode (with visible randomized options)
   // -------------------------
   const baseOptions = Array.isArray(task.options) ? task.options : [];
+  const displayOptions =
+    singleOptionOrder.length && baseOptions.length
+      ? singleOptionOrder.map((canonicalIdx) => baseOptions[canonicalIdx])
+      : baseOptions;
 
   return (
     <div className="flex flex-col h-full p-3 gap-3">
@@ -311,7 +329,9 @@ export default function MultipleChoiceTask({
             marginBottom: 10,
           }}
         >
-          <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>Multiple Choice</div>
+          <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>
+            Multiple Choice
+          </div>
           <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>
             {task.title || "Quick Check"}
           </div>
@@ -323,13 +343,12 @@ export default function MultipleChoiceTask({
           </div>
 
           <div className="flex-1 flex flex-col gap-2">
-            {baseOptions.map((opt, canonicalIdx) => {
-              const displayIdx = singleOptionOrder.indexOf(canonicalIdx);
+            {displayOptions.map((opt, displayIdx) => {
               const selected = singleSelectedDisplayIdx === displayIdx;
 
               return (
                 <button
-                  key={canonicalIdx}
+                  key={displayIdx}
                   type="button"
                   onClick={() => handleSingleSelect(displayIdx)}
                   disabled={disabled}
@@ -339,7 +358,8 @@ export default function MultipleChoiceTask({
                     color: selected ? "#ffffff" : "#111827",
                     opacity: disabled ? 0.6 : 1,
                     borderColor: "rgba(15,23,42,0.12)",
-                    transition: "background 0.15s ease, transform 0.05s ease",
+                    transition:
+                      "background 0.15s ease, transform 0.05s ease",
                     transform: selected ? "scale(1.01)" : "scale(1)",
                   }}
                 >
@@ -348,7 +368,7 @@ export default function MultipleChoiceTask({
               );
             })}
 
-            {baseOptions.length === 0 && (
+            {displayOptions.length === 0 && (
               <p className="text-sm text-gray-500">
                 (No options provided for this multiple-choice task.)
               </p>
@@ -362,20 +382,11 @@ export default function MultipleChoiceTask({
           disabled={disabled}
           className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
           style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid #d1d5db",
+            background: disabled ? "#9ca3af" : "#0ea5e9",
+            color: "#fff",
+            fontWeight: 600,
+            paddingInline: 20,
             cursor: disabled ? "default" : "pointer",
-            background:
-              showCorrect
-                ? option === task.correctAnswer
-                  ? "#4ade80"   // GREEN for correct
-                  : answer === option
-                  ? "#f87171"   // RED for wrong selection
-                  : "#ffffff"
-                : answer === option
-                ? "#bfdbfe"     // normal selection blue
-                : "#ffffff",
           }}
         >
           Submit

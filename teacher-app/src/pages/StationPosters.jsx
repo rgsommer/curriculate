@@ -59,7 +59,10 @@ export default function StationPosters() {
   const handlePrint = () => window.print();
 
   return (
-    <div style={{ fontFamily: "system-ui, sans-serif" }}>
+    <div
+      className="station-posters-print-root"
+      style={{ fontFamily: "system-ui, sans-serif" }}
+    >
       {/* Print layout */}
       <style>
         {`
@@ -69,6 +72,23 @@ export default function StationPosters() {
           }
 
           @media print {
+            /* Hide everything in the app except this page's root */
+            body * {
+              visibility: hidden;
+            }
+
+            .station-posters-print-root,
+            .station-posters-print-root * {
+              visibility: visible;
+            }
+
+            .station-posters-print-root {
+              position: absolute;
+              inset: 0;
+              margin: 0;
+              padding: 0;
+            }
+
             body {
               margin: 0;
               padding: 0;
@@ -115,7 +135,7 @@ export default function StationPosters() {
           Station Posters
         </h1>
         <p style={{ color: "#555", marginBottom: "2rem" }}>
-          Clean 1" margins • Perfect for letter paper • Ready to print
+          Clean 1&quot; margins • Perfect for letter paper • Ready to print
         </p>
 
         <div
@@ -212,17 +232,12 @@ export default function StationPosters() {
         const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(
           qrTarget,
         )}&size=620&margin=3`;
-        const textColor = ["yellow", "lime", "pink", "orange"].includes(
-          color,
-        )
+        const textColor = ["yellow", "lime", "pink", "orange"].includes(color)
           ? "#000"
           : "#fff";
 
         return (
-          <div
-            key={`${location}-${color}`}
-            className="print-page"
-          >
+          <div key={`${location}-${color}`} className="print-page">
             {/* Header */}
             <div
               style={{

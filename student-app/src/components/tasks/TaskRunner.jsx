@@ -577,11 +577,11 @@ export default function TaskRunner({
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultipleChoiceTask
-          task={task}
-          disabled={disabled}
-          answer={answerDraft}
-          onChange={onAnswerChange}
-          showCorrect={disabled && task.objectiveScoring === true}
+          task={t}
+          disabled={effectiveDisabled}
+          onSubmit={onSubmit}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
         />
       );
       break;
