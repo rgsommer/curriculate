@@ -1,6 +1,5 @@
-// student-app/src/components/tasks/types/MusicalChairsTask.jsx
 import React, { useEffect, useState } from "react";
-//import VictoryScreen from "../VictoryScreen";
+import VictoryScreen from "../VictoryScreen";
 
 export default function MusicalChairsTask({
   task,
@@ -11,20 +10,36 @@ export default function MusicalChairsTask({
   const [scanned, setScanned] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
 
+  // Play sounds and show victory overlay when winnerTeam changes
   useEffect(() => {
-    if (task.winnerTeam) {
-      if (task.winnerTeam === "current") {
+    if (!task || !task.winnerTeam) return;
+
+    if (task.winnerTeam === "current") {
+      // Winning team sound + overlay
+      try {
         new Audio("/sounds/victory.mp3").play();
-        setShowVictory(true);
-        setTimeout(() => setShowVictory(false), 5000);
-      } else if (task.winnerTeam !== "eliminated") {
+      } catch (err) {
+        console.error("Error playing victory sound:", err);
+      }
+      setShowVictory(true);
+      const timer = setTimeout(() => setShowVictory(false), 5000);
+      return () => clearTimeout(timer);
+    }
+
+    if (task.winnerTeam !== "eliminated") {
+      // Another team wins
+      try {
         new Audio("/sounds/lose.mp3").play();
+      } catch (err) {
+        console.error("Error playing lose sound:", err);
       }
     }
-  }, [task.winnerTeam]);
+  }, [task?.winnerTeam]);
 
   const handleScan = () => {
     if (scanned || disabled) return;
+    if (!socket || !task?.roomCode) return; // safety guard
+
     setScanned(true);
     socket.emit("musical-chairs-scan", { roomCode: task.roomCode });
   };
@@ -35,15 +50,16 @@ export default function MusicalChairsTask({
         MUSICAL CHAIRS!
       </h2>
 
-      {task.question && (
+      {task?.question && (
         <div className="mb-6 p-4 bg-yellow-100 rounded-lg border-4 border-yellow-400">
           <p className="text-xl font-semibold">{task.question}</p>
-          {task.options && (
+
+          {Array.isArray(task.options) && task.options.length > 0 && (
             <div className="mt-3 grid grid-cols-2 gap-3">
               {task.options.map((opt, i) => (
                 <button
                   key={i}
-                  onClick={() => onSubmit(opt)}
+                  onClick={() => onSubmit && onSubmit(opt)}
                   disabled={disabled}
                   className="p-4 bg-white border-2 border-gray-400 rounded-lg font-bold text-lg hover:bg-gray-100"
                 >
@@ -55,9 +71,11 @@ export default function MusicalChairsTask({
         </div>
       )}
 
-      <div className="text-6xl font-bold text-indigo-700 mb-8">
-        {task.stationsLeft} STATIONS LEFT
-      </div>
+      {typeof task?.stationsLeft === "number" && (
+        <div className="text-6xl font-bold text-indigo-700 mb-8">
+          {task.stationsLeft} STATIONS LEFT
+        </div>
+      )}
 
       <button
         onClick={handleScan}
@@ -71,7 +89,7 @@ export default function MusicalChairsTask({
         {scanned ? "SCANNED!" : "SCAN NOW!"}
       </button>
 
-      {task.winnerTeam && (
+      {task?.winnerTeam && (
         <div className="mt-8 text-5xl font-bold animate-pulse">
           {task.winnerTeam === "current" ? (
             <span className="text-green-600">YOU WIN! +5</span>
@@ -84,7 +102,10 @@ export default function MusicalChairsTask({
           )}
         </div>
       )}
-      {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
+
+      {showVictory && (
+        <VictoryScreen onClose={() => setShowVictory(false)} />
+      )}
     </div>
   );
 }

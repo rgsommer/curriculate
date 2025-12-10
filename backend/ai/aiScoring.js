@@ -1,4 +1,3 @@
-// backend/ai/aiScoring.js
 import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
@@ -24,6 +23,19 @@ function clamp(num, min, max) {
   return Math.min(max, Math.max(min, num));
 }
 
+// Normalize a student’s answer that might be a primitive or a MultiPartTask object
+// { value, baseIndex, answer } → best primitive we can use.
+function normalizeStudentAnswerPrimitive(raw) {
+  if (raw == null) return null;
+  if (typeof raw !== "object") return raw;
+
+  if (typeof raw.baseIndex === "number") return raw.baseIndex;
+  if (raw.value != null) return raw.value;
+  if (raw.answer != null) return raw.answer;
+
+  return raw;
+}
+
 // --- RULE-BASED SCORING FOR OBJECTIVE TASKS ---
 
 function scoreSubmissionRuleBased({ task, submission }) {
@@ -35,7 +47,7 @@ function scoreSubmissionRuleBased({ task, submission }) {
   let maxPoints = points;
 
   const correct = task.correctAnswer;
-  const studentAnswer = submission?.answer;
+  const studentAnswerRaw = submission?.answer;
 
   // Multiple-choice / True-False / Short-answer with explicit correctAnswer
   if (
@@ -43,49 +55,106 @@ function scoreSubmissionRuleBased({ task, submission }) {
       task.taskType
     )
   ) {
+    // Multi-question item set
     if (Array.isArray(task.items) && task.items.length > 0) {
-      // Multi-question item set
       const items = task.items;
       maxPoints = points * items.length;
 
       items.forEach((item, index) => {
-        const studentItemAnswer =
+        const studentItemAnswerRaw =
           submission?.answers && Array.isArray(submission.answers)
             ? submission.answers[index]
             : undefined;
 
-        if (studentItemAnswer == null) return;
-
+        if (studentItemAnswerRaw == null) return;
         if (item.correctAnswer == null) return;
 
-        // String or primitive comparison
+        const studentItemAnswer = normalizeStudentAnswerPrimitive(
+          studentItemAnswerRaw
+        );
+        const baseOptions = Array.isArray(item.options)
+          ? item.options
+          : Array.isArray(task.options)
+          ? task.options
+          : null;
+
+        let isCorrect = false;
+
+        // Correct answer is a single primitive
         if (
           typeof item.correctAnswer === "string" ||
           typeof item.correctAnswer === "number" ||
           typeof item.correctAnswer === "boolean"
         ) {
-          if (String(studentItemAnswer).trim().toLowerCase() ===
-              String(item.correctAnswer).trim().toLowerCase()) {
-            score += points;
+          // If it's a numeric index and we have options, allow both index and option-text matches
+          if (
+            typeof item.correctAnswer === "number" &&
+            baseOptions &&
+            baseOptions[item.correctAnswer] != null
+          ) {
+            const correctIndex = item.correctAnswer;
+            const correctText = String(baseOptions[correctIndex]).trim().toLowerCase();
+
+            if (typeof studentItemAnswer === "number") {
+              isCorrect = studentItemAnswer === correctIndex;
+            } else {
+              const normStudent = String(studentItemAnswer).trim().toLowerCase();
+              isCorrect = normStudent === correctText;
+            }
+          } else {
+            // Plain primitive compare
+            const normStudent = String(studentItemAnswer).trim().toLowerCase();
+            const normCorrect = String(item.correctAnswer).trim().toLowerCase();
+            isCorrect = normStudent === normCorrect;
           }
         } else if (Array.isArray(item.correctAnswer)) {
           // Accept any of a list
-          const norm = String(studentItemAnswer).trim().toLowerCase();
-          const matches = item.correctAnswer.some((ans) =>
-            String(ans).trim().toLowerCase() === norm
+          const normStudent = String(studentItemAnswer).trim().toLowerCase();
+          const matches = item.correctAnswer.some(
+            (ans) => String(ans).trim().toLowerCase() === normStudent
           );
-          if (matches) score += points;
+          isCorrect = matches;
+        }
+
+        if (isCorrect) {
+          score += points;
         }
       });
     } else {
       // Single question
-      if (correct != null && studentAnswer != null) {
-        const c = Array.isArray(correct) ? correct : [correct];
-        const normStudent = String(studentAnswer).trim().toLowerCase();
-        const correctMatch = c.some(
-          (ans) => String(ans).trim().toLowerCase() === normStudent
-        );
-        if (correctMatch) score = points;
+      if (correct != null && studentAnswerRaw != null) {
+        const studentAnswer = normalizeStudentAnswerPrimitive(studentAnswerRaw);
+        const options = Array.isArray(task.options) ? task.options : null;
+
+        let candidates;
+
+        if (Array.isArray(correct)) {
+          candidates = correct.slice();
+        } else if (
+          typeof correct === "number" &&
+          options &&
+          options[correct] != null
+        ) {
+          // Index-based correct answer → allow both index and option text
+          candidates = [correct, options[correct]];
+        } else {
+          candidates = [correct];
+        }
+
+        const correctMatch = candidates.some((ans) => {
+          // If both numeric, compare numerically
+          if (typeof ans === "number" && typeof studentAnswer === "number") {
+            return ans === studentAnswer;
+          }
+
+          const normStudent = String(studentAnswer).trim().toLowerCase();
+          const normCorrect = String(ans).trim().toLowerCase();
+          return normStudent === normCorrect;
+        });
+
+        if (correctMatch) {
+          score = points;
+        }
       }
     }
 
@@ -96,7 +165,7 @@ function scoreSubmissionRuleBased({ task, submission }) {
       details: {
         type: task.taskType,
         correctAnswer: task.correctAnswer,
-        studentAnswer,
+        studentAnswer: submission?.answer,
       },
     };
   }
@@ -258,15 +327,20 @@ function buildStudentWorkDescription(task, submission) {
     if (Array.isArray(task.items) && task.items.length > 0) {
       return {
         summary: "Set of question/answer pairs.",
-        items: task.items.map((item, index) => ({
-          id: item.id || `q${index + 1}`,
-          prompt: item.prompt,
-          correctAnswer: item.correctAnswer,
-          studentAnswer:
+        items: task.items.map((item, index) => {
+          let rawStudent =
             submission?.answers && Array.isArray(submission.answers)
               ? submission.answers[index]
-              : undefined,
-        })),
+              : undefined;
+          const normalizedStudent = normalizeStudentAnswerPrimitive(rawStudent);
+
+          return {
+            id: item.id || `q${index + 1}`,
+            prompt: item.prompt,
+            correctAnswer: item.correctAnswer,
+            studentAnswer: normalizedStudent,
+          };
+        }),
       };
     }
 
@@ -274,7 +348,10 @@ function buildStudentWorkDescription(task, submission) {
       summary: "Single question/answer pair.",
       prompt: task.prompt,
       correctAnswer: task.correctAnswer,
-      studentAnswer: submission?.answer ?? submission?.text ?? null,
+      studentAnswer:
+        normalizeStudentAnswerPrimitive(
+          submission?.answer ?? submission?.text ?? null
+        ),
     };
   }
 
@@ -288,7 +365,11 @@ function buildStudentWorkDescription(task, submission) {
   }
 
   // Photo / Make-and-snap / Draw / Mime etc.
-  if ([TASK_TYPES.PHOTO, TASK_TYPES.MAKE_AND_SNAP, TASK_TYPES.DRAW, TASK_TYPES.MIME].includes(type)) {
+  if (
+    [TASK_TYPES.PHOTO, TASK_TYPES.MAKE_AND_SNAP, TASK_TYPES.DRAW, TASK_TYPES.MIME].includes(
+      type
+    )
+  ) {
     return {
       summary: "Media-based submission (photo / drawing / mime).",
       prompt: task.prompt,
@@ -321,14 +402,14 @@ function buildStudentWorkDescription(task, submission) {
     };
   }
 
-  // Make-and-snap special description
+  // Make-and-snap special description (kept for compatibility)
   if (type === TASK_TYPES.MAKE_AND_SNAP || type === "make_and_snap") {
     return {
       summary:
         "Make-and-Snap task: students built or drew something, then took a photo as evidence.",
       prompt: task.prompt,
       descriptionText: submission?.text || submission?.notes || "",
-      // Again, raw media is not passed here; AI only sees textual description.
+      // Raw media not passed to AI
     };
   }
 
@@ -372,7 +453,8 @@ function buildStudentWorkDescription(task, submission) {
 async function scoreDiffDetective({ task, submission }) {
   const points = typeof task.points === "number" ? task.points : 10;
   const foundCount = submission?.foundCount ?? 0;
-  const totalDifferences = task.config?.differences?.length ?? task.totalDifferences ?? 5;
+  const totalDifferences =
+    task.config?.differences?.length ?? task.totalDifferences ?? 5;
 
   if (totalDifferences <= 0) {
     return {
@@ -463,7 +545,10 @@ export async function generateAIScore({ task, submission, rubric }) {
   }
 
   // Specialized path: Diff Detective (rule-based, no rubric needed)
-  if (task?.taskType === TASK_TYPES.DIFF_DETECTIVE || task?.taskType === "diff-detective") {
+  if (
+    task?.taskType === TASK_TYPES.DIFF_DETECTIVE ||
+    task?.taskType === "diff-detective"
+  ) {
     return scoreDiffDetective({ task, submission });
   }
 

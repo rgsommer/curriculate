@@ -1497,6 +1497,7 @@ Precipitation — rain, snow, hail`}
                     Last launched quick task
                   </div>
                   <div>{lastQuickTask.prompt}</div>
+
                   {Array.isArray(lastQuickTask.items) &&
                   lastQuickTask.items.length > 0 ? (
                     <div style={{ marginTop: 4 }}>
@@ -1520,33 +1521,104 @@ Precipitation — rain, snow, hail`}
                         {lastQuickTask.items.map((item, idx) => {
                           const prompt =
                             item.prompt || item.question || `Q${idx + 1}`;
-                          const ans =
+
+                          const isChoiceType =
+                            lastQuickTask.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
+                            lastQuickTask.taskType === TASK_TYPES.TRUE_FALSE;
+
+                          let ansText = "(no correct answer set)";
+
+                          if (
                             item.correctAnswer != null &&
                             String(item.correctAnswer).trim().length > 0
-                              ? String(item.correctAnswer).trim()
-                              : "(no correct answer set)";
+                          ) {
+                            if (isChoiceType) {
+                              const options = Array.isArray(item.options)
+                                ? item.options
+                                : Array.isArray(lastQuickTask.options)
+                                ? lastQuickTask.options
+                                : null;
+
+                              if (
+                                options &&
+                                typeof item.correctAnswer === "number" &&
+                                options[item.correctAnswer] != null
+                              ) {
+                                // correctAnswer is an index → show that option text
+                                ansText = String(options[item.correctAnswer]);
+                              } else if (options) {
+                                // correctAnswer might be a string that is actually an index
+                                const raw = String(item.correctAnswer).trim();
+                                const asNum = Number(raw);
+                                if (
+                                  Number.isFinite(asNum) &&
+                                  options[asNum] != null
+                                ) {
+                                  ansText = String(options[asNum]);
+                                } else {
+                                  // fall back to raw value
+                                  ansText = raw;
+                                }
+                              } else {
+                                ansText = String(item.correctAnswer).trim();
+                              }
+                            } else {
+                              // Non-choice task: just show the value
+                              ansText = String(item.correctAnswer).trim();
+                            }
+                          }
+
                           return (
                             <li key={item.id || idx} style={{ marginBottom: 2 }}>
                               <span style={{ fontWeight: 500 }}>
                                 {prompt}
                                 {": "}
                               </span>
-                              <span>{ans}</span>
+                              <span>{ansText}</span>
                             </li>
                           );
                         })}
                       </ol>
                     </div>
                   ) : (
-                    lastQuickTask.correctAnswer && (
+                    lastQuickTask.correctAnswer != null &&
+                    String(lastQuickTask.correctAnswer).trim().length > 0 && (
                       <div style={{ marginTop: 2 }}>
                         <strong>Answer:</strong>{" "}
-                        {lastQuickTask.correctAnswer}
+                        {(() => {
+                          const raw = lastQuickTask.correctAnswer;
+                          const baseOptions = Array.isArray(lastQuickTask.options)
+                            ? lastQuickTask.options
+                            : null;
+                          const isChoiceType =
+                            lastQuickTask.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
+                            lastQuickTask.taskType === TASK_TYPES.TRUE_FALSE;
+
+                          if (isChoiceType && baseOptions) {
+                            // If correctAnswer is an index, map to option text
+                            if (
+                              typeof raw === "number" &&
+                              baseOptions[raw] != null
+                            ) {
+                              return baseOptions[raw];
+                            }
+                            const asNum = Number(raw);
+                            if (
+                              Number.isFinite(asNum) &&
+                              baseOptions[asNum] != null
+                            ) {
+                              return baseOptions[asNum];
+                            }
+                          }
+
+                          // Fallback: just show the raw value
+                          return String(raw).trim();
+                        })()}
                       </div>
                     )
                   )}
                 </div>
-              )}  
+              )}
 
               {/* Multi-room selector (for special types) */}
               {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") &&

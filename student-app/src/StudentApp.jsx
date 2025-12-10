@@ -1165,6 +1165,9 @@ function StudentApp() {
   const isMotionMission =
     currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
 
+  const isMultipleChoice =
+    currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1184,6 +1187,8 @@ function StudentApp() {
       ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
       : isMakeAndSnap
       ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
+      : isMultipleChoice
+      ? "linear-gradient(135deg, #22c55e 0%, #0ea5e9 40%, #eef2ff 100%)"
       : isDrawMime
       ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
       : isLiveDebate
@@ -1907,6 +1912,8 @@ function StudentApp() {
               ? "Mind Mapper!"
               : isMotionMission
               ? "Motion Mission!"
+              : isMultipleChoice
+              ? "Multiple choice!"
               : "Your task"}
 
             </h2>
