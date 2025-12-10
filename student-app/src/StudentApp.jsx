@@ -1260,6 +1260,52 @@ function StudentApp() {
           box-shadow: none;
         }
 
+        /* FLASHCARDS — realistic card appearance */
+        .flashcard-container {
+          perspective: 1200px;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+          margin: 12px 0;
+        }
+
+        .flashcard {
+          width: 90%;
+          max-width: 360px;
+          min-height: 200px;
+          padding: 20px;
+          border-radius: 16px;
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+          transform-style: preserve-3d;
+          transition: transform 0.6s ease;
+          cursor: pointer;
+          backface-visibility: hidden;
+          font-size: 1.1rem;
+          line-height: 1.5;
+        }
+
+        /* When flipped */
+        .flashcard.flipped {
+          transform: rotateY(180deg);
+        }
+
+        .flashcard-back {
+          position: absolute;
+          inset: 0;
+          backface-visibility: hidden;
+          transform: rotateY(180deg);
+          padding: 20px;
+          border-radius: 16px;
+          background: #f1f5f9;
+          border: 1px solid #d1d5db;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 600;
+        }
+
         /* ───────────────────────────────────────────
            CONFETTI LAYER FOR PERFECT SCORE
         ─────────────────────────────────────────── */

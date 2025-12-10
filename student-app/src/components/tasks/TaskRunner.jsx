@@ -52,55 +52,73 @@ function normalizeTaskType(raw) {
   if (!raw) return TASK_TYPES.SHORT_ANSWER;
 
   switch (raw) {
+    // MC / TF / SHORT
     case "mc":
     case "multiple-choice":
       return TASK_TYPES.MULTIPLE_CHOICE;
+
     case "tf":
     case "true_false":
     case "true-false":
       return TASK_TYPES.TRUE_FALSE;
-    case "open":
+
     case "short":
     case "short-answer":
+    case "open":
       return TASK_TYPES.SHORT_ANSWER;
+
     case "open-text":
     case "open_text":
       return TASK_TYPES.OPEN_TEXT;
+
+    // Sorting & Sequence
     case "sort":
       return TASK_TYPES.SORT;
+
     case "seq":
     case "sequence":
       return TASK_TYPES.SEQUENCE;
+
+    // Photo / Media
     case "photo":
       return TASK_TYPES.PHOTO;
+
     case "make-and-snap":
     case "make_and_snap":
       return TASK_TYPES.MAKE_AND_SNAP;
-    case "body-break":
-    case "body_break":
-      return TASK_TYPES.BODY_BREAK;
+
     case "record-audio":
     case "record_audio":
       return TASK_TYPES.RECORD_AUDIO;
+
+    // Body break
+    case "body-break":
+    case "body_break":
+      return TASK_TYPES.BODY_BREAK;
+
+    // Draw-only tasks
     case "Draw":
     case "draw":
     case "drawing":
       return TASK_TYPES.DRAW;
+
+    // Mime-only tasks
     case "mime":
     case "act":
     case "act-out":
       return TASK_TYPES.MIME;
+
+    // Combined draw–mime tasks
     case "draw-mime":
     case "draw_mime":
       return TASK_TYPES.DRAW_MIME;
-    case "mime":
-    case "act":
-    case "act-out":
-      return TASK_TYPES.MIME;
+
+    // Diff Detective
     case "diff-detective":
     case "diff_detective":
     case "diff":
       return TASK_TYPES.DIFF_DETECTIVE;
+
     default:
       return raw;
   }
