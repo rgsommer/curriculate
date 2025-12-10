@@ -240,6 +240,7 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     // Filled only when a mad-dash game is running
     madDashSequence: null,
     diffDetectiveRace: null,
+    flashcardsRace: null,
   };
 
   // Load existing teams from DB
@@ -610,6 +611,36 @@ function sendTaskToTeam(room, teamId, index) {
         roomCode: room.code,
         taskIndex: index,
         startedAt: room.diffDetectiveRace.startedAt,
+      });
+    }
+  }
+
+  // If this is a Flashcards Race task, initialise race state the first time
+  // any team is sent this particular index.
+  if (task.taskType === "flashcards-race") {
+    if (
+      !room.flashcardsRace ||
+      room.flashcardsRace.taskIndex !== index
+    ) {
+      const deck =
+        (Array.isArray(task.cards) && task.cards.length > 0
+          ? task.cards
+          : Array.isArray(task.items) && task.items.length > 0
+          ? task.items
+          : []) || [];
+
+      room.flashcardsRace = {
+        active: deck.length > 0,
+        taskIndex: index,
+        deck,
+        currentIndex: 0,
+      };
+
+      // Broadcast initial "start" event so FlashcardsRaceTask can show card 0
+      io.to(room.code).emit("flashcards-race:start", {
+        card: deck[0] || null,
+        cardIndex: 0,
+        totalCards: deck.length,
       });
     }
   }
@@ -2411,6 +2442,94 @@ socket.on(
       teamName,
       timeMs,
       rank: state.completedTeams.size,
+    });
+  });
+
+  // ─────────────────────────────────────────────
+  // Flashcards Race – multi-round shout-to-answer game
+  // ─────────────────────────────────────────────
+
+  // Teacher moves to the next card in the deck
+  socket.on("teacher:flashcards-race-next", (payload = {}) => {
+    const code = (payload.roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.flashcardsRace || !room.flashcardsRace.active) return;
+
+    const state = room.flashcardsRace;
+    const deck = Array.isArray(state.deck) ? state.deck : [];
+    if (deck.length === 0) return;
+
+    const nextIndex = (state.currentIndex || 0) + 1;
+
+    // Reached the end of the deck → broadcast end event
+    if (nextIndex >= deck.length) {
+      state.active = false;
+      io.to(code).emit("flashcards-race:end", {
+        totalCards: deck.length,
+      });
+      return;
+    }
+
+    state.currentIndex = nextIndex;
+
+    io.to(code).emit("flashcards-race:next", {
+      card: deck[nextIndex],
+      cardIndex: nextIndex,
+      totalCards: deck.length,
+    });
+  });
+
+  // Teacher awards a point (or N points) to the team that won that card
+  socket.on("teacher:flashcards-race-award", (payload = {}) => {
+    const code = (payload.roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const { teamId, teamName, points } = payload;
+    const safePoints =
+      typeof points === "number" && !Number.isNaN(points) ? points : 1;
+
+    if (teamId && room.teams?.[teamId]) {
+      // This updates room.teams[teamId].score (used by some game UIs)
+      updateTeamScore(room, teamId, safePoints);
+    }
+
+    let label = teamName;
+    if (!label && teamId && room.teams?.[teamId]) {
+      label =
+        room.teams[teamId].teamName ||
+        `Team-${String(teamId).slice(-4)}`;
+    }
+
+    // Notify all students so FlashcardsRaceTask can bump local scoreboard
+    io.to(code).emit("flashcards-race:winner", {
+      teamId: teamId || null,
+      teamName: label || "Unknown team",
+      points: safePoints,
+    });
+
+    // Refresh LiveSession scores (these still come from submissions;
+    // if you later want race points reflected there, you can optionally
+    // push pseudo-submissions too)
+    const state = buildRoomState(room);
+    io.to(code).emit("room:state", state);
+    io.to(code).emit("roomState", state);
+  });
+
+  // Teacher ends the race early (or after last card)
+  socket.on("teacher:flashcards-race-end", (payload = {}) => {
+    const code = (payload.roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room || !room.flashcardsRace) return;
+
+    const deck = Array.isArray(room.flashcardsRace.deck)
+      ? room.flashcardsRace.deck
+      : [];
+
+    room.flashcardsRace = null;
+
+    io.to(code).emit("flashcards-race:end", {
+      totalCards: deck.length,
     });
   });
 

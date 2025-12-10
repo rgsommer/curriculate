@@ -1143,11 +1143,59 @@ function StudentApp() {
     }
   }
 
+    // Font scaling for younger grades
+  let responseFontSize = "1rem";
+  let responseHeadingFontSize = "1rem";
+  const gradeRaw =
+    currentTask?.gradeLevel ?? currentTask?.meta?.gradeLevel ?? null;
+  const parsedGrade =
+    gradeRaw != null ? parseInt(String(gradeRaw), 10) : null;
+
+  if (!Number.isNaN(parsedGrade) && parsedGrade > 0) {
+    if (parsedGrade <= 4) {
+      responseFontSize = "1.15rem";
+      responseHeadingFontSize = "1.2rem";
+    } else if (parsedGrade <= 6) {
+      responseFontSize = "1.08rem";
+      responseHeadingFontSize = "1.15rem";
+    } else if (parsedGrade <= 8) {
+      responseFontSize = "1.02rem";
+      responseHeadingFontSize = "1.1rem";
+    } else {
+      responseFontSize = "0.98rem";
+      responseHeadingFontSize = "1.05rem";
+    }
+  }
+
+  // JEOPARDY / Draw-Mime flags for header + styling
+  const isJeopardy =
+    currentTask?.taskType === TASK_TYPES.JEOPARDY;
+
+  const isDrawMime =
+    currentTask?.taskType === TASK_TYPES.DRAW ||
+    currentTask?.taskType === TASK_TYPES.MIME ||
+    currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+  const isFlashcardsRace =
+  currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
+
   // Theme-enriched task object
   const themedTask =
-    currentTask && uiTheme
-      ? { ...currentTask, uiTheme }
-      : currentTask;
+    currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
+
+  // Base card styles + background variant for Draw/Mime rounds
+  const baseTaskCardStyle = {
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 20,
+    boxShadow: "0 10px 25px rgba(15,23,42,0.18)",
+    border: "1px solid rgba(129,140,248,0.35)",
+  };
+
+  const taskCardBackground = isFlashcardsRace
+    ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
+    : isDrawMime
+    ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
+    : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // ─────────────────────────────────────────────
   // Render
@@ -1186,7 +1234,9 @@ function StudentApp() {
         justifyContent: "flex-start",
         fontFamily:
           "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        background: themeShell.pageBg,
+        background: isFlashcardsRace
+          ? "radial-gradient(circle at top, #1e293b 0%, #0f172a 25%, #4f46e5 60%, #f97316 100%)"
+          : themeShell.pageBg,
         color: themeShell.text,
         opacity: noiseState.enabled ? noiseState.brightness : 1,
         transition: "opacity 120ms ease-out",
@@ -1730,13 +1780,8 @@ function StudentApp() {
           <section
             className="task-card"
             style={{
-              marginBottom: 12,
-              padding: 14,
-              borderRadius: 20,
-              background:
-                "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)",
-              boxShadow: "0 10px 25px rgba(15,23,42,0.18)",
-              border: "1px solid rgba(129,140,248,0.35)",
+              ...baseTaskCardStyle,
+              background: taskCardBackground,
             }}
           >
             <h2
@@ -1747,60 +1792,63 @@ function StudentApp() {
                 letterSpacing: 0.2,
               }}
             >
-            {currentTaskNumber && (
-              <div
-                style={{
-                  marginBottom: 8,
-                  fontSize: "0.8rem",
-                  color: "#4b5563",
-                }}
-              >
+              {currentTaskNumber && (
                 <div
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 4,
+                    marginBottom: 8,
+                    fontSize: "0.8rem",
+                    color: "#4b5563",
                   }}
                 >
-                  <span>
-                    Task{" "}
-                    <strong>{currentTaskNumber}</strong>
-                    {totalTasks
-                      ? ` of ${totalTasks}`
-                      : ""}
-                  </span>
-                  {progressPercent != null && (
-                    <span>{Math.round(progressPercent)}%</span>
-                  )}
-                </div>
-                {progressPercent != null && (
                   <div
                     style={{
-                      width: "100%",
-                      height: 6,
-                      borderRadius: 999,
-                      background: "rgba(209,213,219,0.8)",
-                      overflow: "hidden",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
                     }}
                   >
+                    <span>
+                      Task{" "}
+                      <strong>{currentTaskNumber}</strong>
+                      {totalTasks ? ` of ${totalTasks}` : ""}
+                    </span>
+                    {progressPercent != null && (
+                      <span>{Math.round(progressPercent)}%</span>
+                    )}
+                  </div>
+                  {progressPercent != null && (
                     <div
                       style={{
-                        width: `${progressPercent}%`,
-                        height: "100%",
+                        width: "100%",
+                        height: 6,
                         borderRadius: 999,
-                        background:
-                          "linear-gradient(90deg,#22c55e,#0ea5e9)",
-                        transition: "width 0.25s ease-out",
+                        background: "rgba(209,213,219,0.8)",
+                        overflow: "hidden",
                       }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-              {currentTask?.taskType === TASK_TYPES.JEOPARDY
-                ? "Jeopardy clue"
-                : "Your task"}
+                    >
+                      <div
+                        style={{
+                          width: `${progressPercent}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background:
+                            "linear-gradient(90deg,#22c55e,#0ea5e9)",
+                          transition: "width 0.25s ease-out",
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+              {isFlashcardsRace
+              ? "Flashcards Race!"
+              : isJeopardy
+              ? "Jeopardy clue"
+              : isDrawMime
+              ? "Draw or Mime!"
+              : "Your task"}
+
             </h2>
 
             {currentTask?.taskType === TASK_TYPES.JEOPARDY &&

@@ -1,4 +1,3 @@
-// backend/ai/aiScoring.js
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -492,6 +491,7 @@ Return ONLY JSON:
 function buildStudentWorkDescription(task, submission) {
   const taskType = task?.taskType || task?.type;
 
+  // Open text / short-answer
   if (taskType === "open-text" || taskType === "short-answer") {
     const text =
       submission?.answerText ??
@@ -500,7 +500,37 @@ function buildStudentWorkDescription(task, submission) {
     return `The student wrote the following response:\n\n"${text}"`;
   }
 
-  // 🔹 NEW: collaboration-friendly description
+  // Draw / Mime / Draw-Mime → do NOT dump raw base64 image data
+  if (
+    taskType === "draw" ||
+    taskType === "mime" ||
+    taskType === "draw-mime"
+  ) {
+    const hasImageUrl = typeof submission?.imageUrl === "string" && submission.imageUrl;
+    const hasImageData = !!submission?.imageData;
+
+    let desc = `This is a visual "Draw or Mime" style task.\n\n`;
+
+    desc += `The student responded by creating a drawing or acted-out performance instead of typing text.\n`;
+
+    if (hasImageUrl) {
+      desc += `\nThe platform stored the student's drawing at this URL: ${submission.imageUrl}.\n`;
+    } else if (hasImageData) {
+      desc += `\nThe student's drawing is stored as an image (binary/base64 data omitted here to keep this prompt concise).\n`;
+    } else {
+      desc += `\nNo drawing image data was attached to this submission.\n`;
+    }
+
+    desc += `\nImportant: You CANNOT see the actual drawing or performance. You must score based on:\n` +
+      `- The task prompt and instructions\n` +
+      `- The teacher's rubric\n` +
+      `- Any textual notes or meta-data provided about the student's work.\n\n` +
+      `Be fair and encourage creativity, but only use the rubric and the information you have, not imagined details.`;
+
+    return desc;
+  }
+
+  // Collaboration task
   if (taskType === "collaboration") {
     const main =
       submission?.answerText ??

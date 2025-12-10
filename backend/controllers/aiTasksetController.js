@@ -93,7 +93,7 @@ function normalizeSelectedType(raw) {
   ) {
     return TASK_TYPES.DIFF_DETECTIVE;
   }
-    if (v === "draw-mime" || v === "drawmime" || v === "draw-or-mime") {
+  if (v === "draw-mime" || v === "drawmime" || v === "draw-or-mime") {
     return TASK_TYPES.DRAW_MIME;
   }
 
@@ -399,6 +399,18 @@ For "${TASK_TYPES.DIFF_DETECTIVE}":
     describing each difference succinctly (e.g., "jumps → jumped", "206 → 208").
   - Time limit should be 60–120 seconds depending on difficulty.
 
+For "${TASK_TYPES.FLASHCARDS}":
+  - Create a deck of 8–12 flashcards focused on the vocabulary terms.
+  - Use a "cards" array where each card is:
+    {
+      "question": "Short cue or question",
+      "answer": "Short word or phrase"
+    }
+  - Questions should be concise prompts tied directly to the vocabulary.
+  - Answers must be short words/phrases, not full paragraphs.
+  - Top-level "options" should be an empty array.
+  - Top-level "correctAnswer" should be null (each card has its own answer).
+
 For "${TASK_TYPES.DRAW_MIME}":
   - Create a single, vivid prompt that invites students to respond with a drawing
     (or act it out, if the teacher chooses).
@@ -434,7 +446,12 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       "items": [
         { "text": "Item 1", "bucketIndex": 0 }
       ]
-    }
+    },
+
+    // OPTIONAL for flashcards:
+    // "cards": [
+    //   { "question": "Q1", "answer": "A1" }
+    // ]
   },
   ...
 ]
@@ -474,7 +491,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     );
 
     // ---------- Normalize AI tasks into TaskSet schema ----------
-      const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
+    const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
       // Try to interpret the AI's taskType using the same normalizer we use for UI input
       const rawTypeToken = t.taskType || t.type || "";
       const normalizedFromAi = normalizeSelectedType(rawTypeToken);
@@ -748,20 +765,66 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
       // For objective types, we can score directly; others need AI/rubric.
       const objective = meta.objectiveScoring === true;
-        let aiScoringRequired;
-        if (typeof t.aiScoringRequired === "boolean") {
-          // If AI or UI explicitly set it, respect that.
-          aiScoringRequired = t.aiScoringRequired;
-        } else if (objective) {
-          // Objective types can be auto-scored without AI.
-          aiScoringRequired = false;
-        } else if (typeof meta.defaultAiScoringRequired === "boolean") {
-          // Fall back to the metadata default.
-          aiScoringRequired = meta.defaultAiScoringRequired;
-        } else {
-          // Safe default: non-objective types need AI/rubric.
-          aiScoringRequired = true;
-        }
+      let aiScoringRequired;
+      if (typeof t.aiScoringRequired === "boolean") {
+        // If AI or UI explicitly set it, respect that.
+        aiScoringRequired = t.aiScoringRequired;
+      } else if (objective) {
+        // Objective types can be auto-scored without AI.
+        aiScoringRequired = false;
+      } else if (typeof meta.defaultAiScoringRequired === "boolean") {
+        // Fall back to the metadata default.
+        aiScoringRequired = meta.defaultAiScoringRequired;
+      } else {
+        // Safe default: non-objective types need AI/rubric.
+        aiScoringRequired = true;
+      }
+
+      // ---------- Flashcards deck (cards) ----------
+      let cards = null;
+      if (taskType === TASK_TYPES.FLASHCARDS) {
+        const rawCards =
+          (Array.isArray(t.cards) && t.cards.length
+            ? t.cards
+            : Array.isArray(t.items) && t.items.length
+            ? t.items
+            : []) || [];
+
+        cards = rawCards.map((c, idx) => {
+          if (!c || (typeof c !== "object" && typeof c !== "string")) {
+            return { question: `Card ${idx + 1}`, answer: "" };
+          }
+
+          if (typeof c === "string") {
+            return { question: c, answer: "" };
+          }
+
+          const question =
+            c.question ||
+            c.prompt ||
+            c.clue ||
+            `Card ${idx + 1}`;
+
+          let answer = c.answer ?? c.correctAnswer ?? "";
+
+          if (Array.isArray(answer)) {
+            answer = answer[0] ?? "";
+          }
+
+          if (typeof answer !== "string") {
+            answer = String(answer || "");
+          }
+
+          return {
+            question: String(question),
+            answer: answer.trim(),
+          };
+        });
+
+        // Flashcards rely on per-card answers, not top-level options/correctAnswer
+        options = [];
+        correctAnswer = null;
+      }
 
       // ---------- Common fields ----------
       const title =
@@ -785,7 +848,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         ? Math.max(1, Math.min(50, Math.round(t.points)))
         : 10;
 
-            // Diff Detective specific normalization
+      // Diff Detective specific normalization
       let original = null;
       let modified = null;
       let differences = null;
@@ -826,6 +889,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         points,
         config,
         items,
+        ...(taskType === TASK_TYPES.FLASHCARDS && { cards }),
         // Only present for DiffDetective tasks:
         ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
           original,
