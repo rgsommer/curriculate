@@ -614,7 +614,7 @@ const handleLaunchQuickTask = () => {
     });
   };
 
-    const handleGenerateQuickTask = async () => {
+  const handleGenerateQuickTask = async () => {
     if (!roomCode) {
       alert("You must have a room code to generate a task.");
       return;
@@ -632,21 +632,6 @@ const handleLaunchQuickTask = () => {
       return;
     }
 
-    if (generatedType === TASK_TYPES.DIFF_DETECTIVE) {
-      setTaskConfig({
-        prompt: baseTask.prompt || "",
-        subject: aiSubject || "Ad-hoc",
-        gradeLevel: gradeStr || "",
-        original: baseTask.original || "",
-        modified: baseTask.modified || "",
-        differences: Array.isArray(baseTask.differences)
-          ? baseTask.differences
-          : [],
-      });
-      setShowAiGen(false);
-      return;
-    }
-
     setIsGenerating(true);
     setAiError(null);
 
@@ -656,32 +641,25 @@ const handleLaunchQuickTask = () => {
 
       const gradeStr = aiGrade ? String(aiGrade).trim() : "";
 
-      // 🔵 Decide if this taskType should be multi-item
       const typeMeta = TASK_TYPE_META[taskType] || {};
       const isMultiCapable = !!typeMeta.multiItemCapable;
-
-      // For multi-item capable types, ask AI for up to 5 questions; else just 1.
       const desiredNumTasks = isMultiCapable ? 5 : 1;
 
       const payload = {
         title: "Quick Task",
         description: aiPurpose || "",
         purpose: aiPurpose || undefined,
-
         numTasks: desiredNumTasks,
         taskType,
         requiredTaskTypes: [taskType],
-
         gradeLevel: gradeStr
           ? gradeStr.toLowerCase().startsWith("grade")
             ? gradeStr
             : `Grade ${gradeStr}`
           : undefined,
         grade: gradeStr || undefined,
-
         difficulty: aiDifficulty || "medium",
         subject: aiSubject || undefined,
-
         aiWordBank: aiWordList
           .split(/[\n,]+/)
           .map((w) => w.trim())
@@ -690,7 +668,6 @@ const handleLaunchQuickTask = () => {
         wordList: rawWords,
         keyTerms: rawWords,
         vocabulary: rawWords,
-
         roomCode: roomCode.toUpperCase(),
         mode: "quick-live-session",
       };
@@ -715,7 +692,6 @@ const handleLaunchQuickTask = () => {
         throw new Error(data?.error || `AI generator error (${res.status})`);
       }
 
-      // Normalise taskset structure
       const taskset = data?.taskset || data;
       const tasks = Array.isArray(taskset?.tasks)
         ? taskset.tasks
@@ -728,7 +704,6 @@ const handleLaunchQuickTask = () => {
       }
 
       const baseTask = tasks[0];
-
       const generatedType =
         baseTask.taskType || baseTask.task_type || taskType;
 
@@ -736,6 +711,23 @@ const handleLaunchQuickTask = () => {
 
       const generatedMeta = TASK_TYPE_META[generatedType] || {};
       const generatedIsMulti = !!generatedMeta.multiItemCapable;
+
+      // 🔵 DiffDetective special case (single-item)
+      if (generatedType === TASK_TYPES.DIFF_DETECTIVE) {
+        setTaskConfig({
+          prompt: baseTask.prompt || "",
+          subject: aiSubject || "Ad-hoc",
+          gradeLevel: gradeStr || "",
+          original: baseTask.original || "",
+          modified: baseTask.modified || "",
+          differences: Array.isArray(baseTask.differences)
+            ? baseTask.differences
+            : [],
+        });
+
+        setShowAiGen(false);
+        return;
+      }
 
       // 🟢 SIMPLE (single-question) CASE
       if (!generatedIsMulti) {
@@ -762,14 +754,9 @@ const handleLaunchQuickTask = () => {
       const MAX_ITEMS = 5;
 
       let itemsSource = [];
-      if (
-        Array.isArray(baseTask.items) &&
-        baseTask.items.length > 0
-      ) {
-        // Some generators already put sub-questions into items[]
+      if (Array.isArray(baseTask.items) && baseTask.items.length > 0) {
         itemsSource = baseTask.items;
       } else {
-        // Else: treat each returned task as an item in the pack
         itemsSource = tasks;
       }
 
@@ -784,8 +771,7 @@ const handleLaunchQuickTask = () => {
               : Array.isArray(t.choices)
               ? t.choices
               : [],
-          correctAnswer:
-            t.correctAnswer ?? t.answer ?? t.correct ?? null,
+          correctAnswer: t.correctAnswer ?? t.answer ?? t.correct ?? null,
         }))
         .filter((it) => it.prompt && it.prompt.trim().length > 0);
 
@@ -796,12 +782,11 @@ const handleLaunchQuickTask = () => {
       }
 
       setTaskConfig({
-        // Top-level prompt describes the pack; actual questions live in items[]
         prompt:
           taskset.description ||
           baseTask.prompt ||
           `Answer all ${items.length} questions.`,
-        correctAnswer: null, // answers are per item
+        correctAnswer: null,
         options:
           Array.isArray(items[0].options) && items[0].options.length > 0
             ? items[0].options
