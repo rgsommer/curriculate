@@ -500,11 +500,38 @@ function buildStudentWorkDescription(task, submission) {
     return `The student wrote the following response:\n\n"${text}"`;
   }
 
-  // Future:
-  // if (taskType === "record-audio") {... use transcript ...}
-  // if (taskType === "make-and-snap" || taskType === "draw") {... use image description + OCR ...}
+  // 🔹 NEW: collaboration-friendly description
+  if (taskType === "collaboration") {
+    const main =
+      submission?.answerText ??
+      submission?.main ??
+      (typeof submission?.answer === "string" ? submission.answer : "") ??
+      "";
 
-  // Fallback
+    const reply =
+      submission?.reply ??
+      submission?.partnerReply ??
+      "";
+
+    const partner =
+      submission?.partnerAnswer ??
+      "";
+
+    let description = `This is a pair collaboration task.\n\n` +
+      `Student's main answer:\n"${main || "(no main answer)"}"`;
+
+    if (partner) {
+      description += `\n\nPartner's answer they were responding to:\n"${partner}"`;
+    }
+
+    if (reply) {
+      description += `\n\nStudent's reply to their partner:\n"${reply}"`;
+    }
+
+    return description;
+  }
+
+  // Fallback for other types
   return `Raw submission:\n${JSON.stringify(submission, null, 2)}`;
 }
 
