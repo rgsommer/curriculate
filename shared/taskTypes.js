@@ -450,26 +450,25 @@ export const TASK_TYPE_META = {
       "Fast-paced idea shouting game. Give seed words or a topic. Kids shout ideas in rounds. Great for divergent thinking.",
   },
 
-    [TASK_TYPES.MIND_MAPPER]: {
-      label: "Mind Mapper",
-      category: CATEGORY.CREATIVE,
-      hasOptions: false,
-      expectsText: false,
-      maxTime: 240,
-      maxTimeSeconds: 240,
-      implemented: true,
+  [TASK_TYPES.MIND_MAPPER]: {
+    label: "Mind Mapper",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 240,
+    maxTimeSeconds: 240,
+    implemented: true,
+    aiEligible: true,
 
-      // IMPORTANT: this is now an interactive drag-and-drop organizer
-      // that is authored manually in the editor. We do NOT want the
-      // AI generator to guess a structure for it yet.
-      aiEligible: true,
-      objectiveScoring: false,
-      defaultAiScoringRequired: false,
-      correctAnswerShape: null,
-      quickTaskEligible: true, // can still be used as a one-off manual task
-      description:
-        "AI generates a concept-mapping puzzle. The AI must return a config.items array where each item has { text, correctIndex }. Students drag cards into correct order or structure.",
-    },
+    objectiveScoring: false,
+    defaultAiScoringRequired: true, // <-- was false
+    correctAnswerShape: null,
+
+    quickTaskEligible: true, // one-off mind-map prompt
+
+    description:
+      "Student draws a graphical organizer such as a mind map or concept web on paper and photographs it. Prompt should be a central topic (e.g., 'Water Cycle', 'Fractions').",
+  },
 
   [TASK_TYPES.HIDENSEEK]: {
     label: "Hide & Seek",

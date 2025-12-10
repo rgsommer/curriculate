@@ -1,520 +1,523 @@
+// backend/ai/aiScoring.js
 import OpenAI from "openai";
+import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+
+const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const DEFAULT_MODEL = process.env.AI_SCORING_MODEL || "gpt-4o-mini";
+// --- Helpers ---
 
-/**
- * Try to infer the student's "answer" value from a submission object.
- * Supports several shapes for backwards compatibility.
- */
-function extractStudentAnswer(submission = {}) {
-  if (submission == null || typeof submission !== "object") return null;
-
-  // Most likely fields first
-  if (typeof submission.answerIndex === "number") return submission.answerIndex;
-  if (typeof submission.selectedIndex === "number") return submission.selectedIndex;
-  if (typeof submission.selectedOptionIndex === "number") {
-    return submission.selectedOptionIndex;
+function safeJsonParse(str, fallback = null) {
+  if (!str || typeof str !== "string") return fallback;
+  try {
+    return JSON.parse(str);
+  } catch (err) {
+    return fallback;
   }
-  if (typeof submission.choiceIndex === "number") return submission.choiceIndex;
+}
 
-  // Some tasks may embed the final answer in "value"
-  if (submission.value !== undefined) return submission.value;
+// Simple clamp helper
+function clamp(num, min, max) {
+  return Math.min(max, Math.max(min, num));
+}
 
-  // Older or alternate shapes
-  if (typeof submission.choice === "number") return submission.choice;
-  if (typeof submission.optionIndex === "number") return submission.optionIndex;
+// --- RULE-BASED SCORING FOR OBJECTIVE TASKS ---
 
-  // Direct "answer"
-  if (typeof submission.answer === "number" || typeof submission.answer === "string") {
-    return submission.answer;
+function scoreSubmissionRuleBased({ task, submission }) {
+  const meta = TASK_TYPE_META[task.taskType] || {};
+  if (!meta.objectiveScoring) return null;
+
+  const points = typeof task.points === "number" ? task.points : 1;
+  let score = 0;
+  let maxPoints = points;
+
+  const correct = task.correctAnswer;
+  const studentAnswer = submission?.answer;
+
+  // Multiple-choice / True-False / Short-answer with explicit correctAnswer
+  if (
+    [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(
+      task.taskType
+    )
+  ) {
+    if (Array.isArray(task.items) && task.items.length > 0) {
+      // Multi-question item set
+      const items = task.items;
+      maxPoints = points * items.length;
+
+      items.forEach((item, index) => {
+        const studentItemAnswer =
+          submission?.answers && Array.isArray(submission.answers)
+            ? submission.answers[index]
+            : undefined;
+
+        if (studentItemAnswer == null) return;
+
+        if (item.correctAnswer == null) return;
+
+        // String or primitive comparison
+        if (
+          typeof item.correctAnswer === "string" ||
+          typeof item.correctAnswer === "number" ||
+          typeof item.correctAnswer === "boolean"
+        ) {
+          if (String(studentItemAnswer).trim().toLowerCase() ===
+              String(item.correctAnswer).trim().toLowerCase()) {
+            score += points;
+          }
+        } else if (Array.isArray(item.correctAnswer)) {
+          // Accept any of a list
+          const norm = String(studentItemAnswer).trim().toLowerCase();
+          const matches = item.correctAnswer.some((ans) =>
+            String(ans).trim().toLowerCase() === norm
+          );
+          if (matches) score += points;
+        }
+      });
+    } else {
+      // Single question
+      if (correct != null && studentAnswer != null) {
+        const c = Array.isArray(correct) ? correct : [correct];
+        const normStudent = String(studentAnswer).trim().toLowerCase();
+        const correctMatch = c.some(
+          (ans) => String(ans).trim().toLowerCase() === normStudent
+        );
+        if (correctMatch) score = points;
+      }
+    }
+
+    return {
+      score,
+      maxPoints,
+      method: "rule-based",
+      details: {
+        type: task.taskType,
+        correctAnswer: task.correctAnswer,
+        studentAnswer,
+      },
+    };
   }
 
-  // Open-text style
-  if (typeof submission.answerText === "string") return submission.answerText;
+  // Sort / Sequence / Timeline use config for correctness
+  if (
+    [TASK_TYPES.SORT, TASK_TYPES.SEQUENCE, TASK_TYPES.TIMELINE].includes(task.taskType) &&
+    task.config &&
+    Array.isArray(task.config.items)
+  ) {
+    const items = task.config.items;
+    const studentOrder = submission?.order || [];
+    if (!Array.isArray(studentOrder) || studentOrder.length === 0) {
+      return {
+        score: 0,
+        maxPoints: points,
+        method: "rule-based",
+        details: {
+          reason: "No student order provided.",
+        },
+      };
+    }
 
+    // For SEQUENCE / TIMELINE, we treat items as in correct order; studentOrder is array of item ids.
+    // For SORT, each item has bucketIndex; we expect submission.mapping[itemId] = bucketIndex
+    if (task.taskType === TASK_TYPES.SORT) {
+      const mapping = submission?.mapping || {};
+      const perItem = points / items.length;
+      score = 0;
+
+      items.forEach((it) => {
+        const expectedBucket = it.bucketIndex;
+        if (expectedBucket == null) return;
+        const studentBucket = mapping[it.id] ?? mapping[it.text];
+        if (studentBucket == null) return;
+        if (Number(studentBucket) === Number(expectedBucket)) {
+          score += perItem;
+        }
+      });
+
+      return {
+        score,
+        maxPoints: points,
+        method: "rule-based",
+        details: {
+          type: task.taskType,
+          config: task.config,
+          submission: { mapping },
+        },
+      };
+    } else {
+      // SEQUENCE / TIMELINE
+      const correctOrderIds = items.map((it) => it.id);
+      const perItem = points / correctOrderIds.length;
+      score = 0;
+
+      correctOrderIds.forEach((id, index) => {
+        const studentIndex = studentOrder.indexOf(id);
+        if (studentIndex === index) {
+          score += perItem;
+        }
+      });
+
+      return {
+        score,
+        maxPoints: points,
+        method: "rule-based",
+        details: {
+          type: task.taskType,
+          correctOrder: correctOrderIds,
+          studentOrder,
+        },
+      };
+    }
+  }
+
+  // Everything else: not rule-based
   return null;
 }
 
-/**
- * Objective / rule-based scoring for tasks that have a correctAnswer baked in
- * and do NOT require AI scoring.
- *
- * Returns the same shape as AI scoring:
- * {
- *   totalScore: number,
- *   maxPoints: number,
- *   criteria: [{ id, score, maxPoints, comment }],
- *   overallComment: string
- * }
- */
-function scoreSubmissionRuleBased({ task, submission }) {
-  const maxPoints = typeof task.points === "number" ? task.points : 10;
-  const correctAnswer = task.correctAnswer;
-  const studentAnswer = extractStudentAnswer(submission);
+// --- AI SCORING CORE ---
 
-  let isCorrect = false;
-  let explanation = "";
-
-  if (correctAnswer === undefined || correctAnswer === null) {
-    // No reference answer → cannot objectively score
-    isCorrect = false;
-    explanation = "No correctAnswer is configured for this task.";
-  } else if (studentAnswer == null) {
-    isCorrect = false;
-    explanation = "Student did not submit an answer.";
-  } else if (
-    typeof correctAnswer === "number" ||
-    typeof correctAnswer === "boolean"
-  ) {
-    // Numeric / boolean exact equality
-    isCorrect = Number(studentAnswer) === Number(correctAnswer);
-    explanation = isCorrect
-      ? "Student answer matches the required value."
-      : `Expected ${correctAnswer}, but got ${studentAnswer}.`;
-  } else if (typeof correctAnswer === "string") {
-    const studentText = String(studentAnswer).trim().toLowerCase();
-    const correct = correctAnswer.trim().toLowerCase();
-
-    if (!studentText) {
-      isCorrect = false;
-      explanation = "Missing or empty answer.";
-    } else {
-      // Basic normalization: trim + lower-case; allow simple equality
-      // (You can later expand with synonyms or fuzzy matching.)
-      isCorrect = studentText === correct;
-      explanation = isCorrect
-        ? "Student response matches the reference answer."
-        : `Expected "${correctAnswer}", but got "${studentAnswer ?? ""}".`;
-    }
-  } else {
-    // We don't know how to auto-score this task
-    isCorrect = false;
-    explanation =
-      "This task is not configured for automatic scoring (no correctAnswer).";
+async function scoreSubmissionWithAI({
+  task,
+  submission,
+  rubric,
+  explicitTotalPoints,
+}) {
+  if (!rubric || !rubric.totalPoints) {
+    throw new Error("AI scoring requires a rubric with totalPoints.");
   }
 
-  const totalScore = isCorrect ? maxPoints : 0;
+  const totalPoints =
+    typeof explicitTotalPoints === "number" ? explicitTotalPoints : rubric.totalPoints;
 
-  return {
-    totalScore,
-    maxPoints,
-    criteria: [
-      {
-        id: "correctness",
-        score: totalScore,
-        maxPoints,
-        comment: explanation,
-      },
-    ],
-    overallComment: explanation,
-  };
-}
-
-/**
- * Build a human-readable description of the student's work, so the AI
- * can "see" what the student did without dumping raw JSON.
- */
-function buildStudentWorkDescription(task, submission) {
-  const taskType = task?.taskType || task?.type;
-
-  // Open text / short-answer
-  if (taskType === "open-text" || taskType === "short-answer") {
-    const text =
-      submission?.answerText ??
-      (typeof submission?.answer === "string" ? submission.answer : "") ??
-      "";
-    return `The student wrote the following response:\n\n"${text}"`;
-  }
-
-  // Draw / Mime / Draw-Mime → do NOT dump raw base64 image data
-  if (
-    taskType === "draw" ||
-    taskType === "mime" ||
-    taskType === "draw-mime" ||
-    taskType === "draw_mime"
-  ) {
-    const note =
-      submission?.answerText ??
-      (typeof submission?.caption === "string" ? submission.caption : "") ??
-      "";
-
-    let desc =
-      "The student completed a visual or performance task (drawing or miming). " +
-      "You cannot see the actual image or performance, but you can see their note or caption, if any.\n\n";
-
-    if (note) {
-      desc += `Student note/caption:\n"${note}"`;
-    } else {
-      desc += "The student did not provide any written note or caption.";
-    }
-    return desc;
-  }
-
-  // Diff Detective: text or code differences
-  if (taskType === "diff-detective" || taskType === "diff_detective") {
-    const mode = task.mode || "text";
-    const found = Array.isArray(submission?.foundDiffs)
-      ? submission.foundDiffs.length
-      : submission?.foundCount ?? 0;
-    const total = task.targetDifferences
-      ? task.targetDifferences.length
-      : task.totalDifferences ?? task.differences?.length ?? "unknown";
-
-    return (
-      `This is a Diff Detective task in "${mode}" mode.\n` +
-      `The student reported finding approximately ${found} differences out of ${total}.\n\n` +
-      `Raw submission object:\n${JSON.stringify(submission, null, 2)}`
-    );
-  }
-
-  // Motion Mission: body movement / steps
-  if (taskType === "motion-mission" || taskType === "motion_mission") {
-    const rawCount = submission?.stepCount ?? submission?.motionCount;
-    const steps = typeof rawCount === "number" ? rawCount : "unknown";
-
-    return (
-      "This is a Motion Mission task where students had to move their bodies (e.g., steps, jumps, actions).\n" +
-      `The recorded movement count for this submission is: ${steps}.\n\n` +
-      "Additional raw submission:\n" +
-      JSON.stringify(submission, null, 2)
-    );
-  }
-
-  // Pet Feeding: scoreboard-style data
-  if (taskType === "pet-feeding" || taskType === "pet_feeding") {
-    const totalFed = submission?.totalFed ?? submission?.score ?? null;
-    return (
-      "This is a Pet Feeding / virtual pet task, where students keep a digital pet fed or cared for.\n" +
-      (totalFed != null
-        ? `The student's recorded feeding / care score is: ${totalFed}.\n\n`
-        : "") +
-      "Raw submission data:\n" +
-      JSON.stringify(submission, null, 2)
-    );
-  }
-
-  // Pronunciation / speaking tasks might use "transcript"
-  if (taskType === "pronunciation" || taskType === "speaking") {
-    const transcript =
-      submission?.transcript ??
-      submission?.answerText ??
-      submission?.answer ??
-      "";
-    return (
-      "This is a speaking/pronunciation task. The student's spoken answer has been transcribed as follows:\n\n" +
-      `"${transcript}"`
-    );
-  }
-
-  // Collaboration tasks
-  if (taskType === "collaboration") {
-    const main =
-      submission?.answerText ??
-      submission?.answer ??
-      "";
-
-    const reply =
-      submission?.reply ??
-      submission?.partnerReply ??
-      "";
-
-    const partner =
-      submission?.partnerAnswer ??
-      "";
-
-    let description = `This is a pair collaboration task.\n\n` +
-      `Student's main answer:\n"${main || "(no main answer)"}"`;
-
-    if (partner) {
-      description += `\n\nPartner's answer they were responding to:\n"${partner}"`;
-    }
-
-    if (reply) {
-      description += `\n\nStudent's reply to their partner:\n"${reply}"`;
-    }
-
-    return description;
-  }
-
-  // Make & Snap - creative build + photo tasks
-  if (taskType === "make-and-snap" || taskType === "make_and_snap") {
-    const text =
-      submission?.answerText ??
-      (typeof submission?.answer === "string" ? submission.answer : "") ??
-      "";
-
-    const note =
-      text && typeof text === "string"
-        ? text
-        : "(no written note was provided; only a photo indicator, if any).";
-
-    return (
-      'This was a "Make & Snap" creative task. ' +
-      "The student built, drew, or demonstrated something at a station and then took a photo of it. " +
-      "You cannot see the actual image from here, but you can see any written note or description they provided.\n\n" +
-      `Student note / description:\n"${note}"`
-    );
-  }
-
-  // Fallback for other types
-  return `Raw submission:\n${JSON.stringify(submission, null, 2)}`;
-}
-
-/**
- * Ask the model to score a submission according to a rubric.
- *
- * Returns:
- * {
- *   totalScore: number,
- *   maxPoints: number,
- *   criteria: [{ id, score, maxPoints, comment }],
- *   overallComment: string
- * }
- */
-export async function scoreSubmissionWithAI({ task, rubric, submission }) {
-  if (!rubric || !rubric.criteria || rubric.criteria.length === 0) {
-    throw new Error("Missing rubric for AI scoring");
-  }
-
-  const studentWorkDescription = buildStudentWorkDescription(task || {}, submission || {});
+  const work = buildStudentWorkDescription(task, submission);
 
   const systemPrompt = `
-You are an assistant helping a Grade 7–8 teacher score student work.
+You are an expert teacher evaluating a student team's work.
 
-Always:
-- Use the rubric provided.
-- Give partial credit when a criterion is partially met.
-- Be generous but honest, and avoid being overly strict about spelling, grammar, or accents.
-- Return ONLY valid JSON in the exact structure requested, with no extra commentary.
+- Always return JSON ONLY, with no extra commentary.
+- Use the provided rubric strictly.
+- Score fairly but generously when in doubt.
+- totalPoints is the maximum score you can award.
 `.trim();
 
-  const userPrompt = JSON.stringify(
-    {
-      rubric,
-      task: {
-        title: task.title ?? task.name ?? null,
-        instructions: task.prompt ?? task.description ?? null,
-        taskType: task.taskType ?? task.type ?? null,
-        maxPoints: typeof task.points === "number" ? task.points : undefined,
-      },
-      submission: {
-        description: studentWorkDescription,
-        raw: submission,
-      },
-      responseSchema: {
-        type: "object",
-        properties: {
-          totalScore: { type: "number" },
-          maxPoints: { type: "number" },
-          criteria: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                score: { type: "number" },
-                maxPoints: { type: "number" },
-                comment: { type: "string" },
-              },
-              required: ["id", "score", "maxPoints"],
-            },
-          },
-          overallComment: { type: "string" },
-        },
-        required: ["totalScore", "maxPoints", "criteria"],
-      },
-    },
-    null,
-    2
-  );
+  const userPrompt = `
+Task Type: ${task.taskType}
+Task Title: ${task.title || "(untitled)"}
+Task Prompt: ${task.prompt || "(no prompt)"}
+
+Rubric:
+${JSON.stringify(rubric, null, 2)}
+
+Student Work (normalized):
+${JSON.stringify(work, null, 2)}
+
+Return JSON of the form:
+{
+  "score": number,  // 0–${totalPoints}
+  "maxPoints": number,
+  "reason": string  // brief explanation for the teacher
+}
+`.trim();
 
   const response = await openai.chat.completions.create({
     model: DEFAULT_MODEL,
+    temperature: 0.2,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
     response_format: { type: "json_object" },
-    temperature: 0, // scoring should be deterministic
-    max_tokens: 1024,
   });
 
-  const content = response.choices[0]?.message?.content?.trim() || "{}";
-
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch (err) {
-    console.error("AI scoring JSON parse error:", err, content);
-    throw new Error("Failed to parse AI scoring response");
-  }
-
-  const maxPoints =
-    typeof parsed.maxPoints === "number"
-      ? parsed.maxPoints
-      : typeof task.points === "number"
-      ? task.points
-      : rubric.totalPoints ?? 10;
-
-  const totalScore =
-    typeof parsed.totalScore === "number"
-      ? parsed.totalScore
-      : Array.isArray(parsed.criteria)
-      ? parsed.criteria.reduce(
-          (sum, c) => sum + (typeof c.score === "number" ? c.score : 0),
-          0
-        )
-      : 0;
-
-  const criteria = Array.isArray(parsed.criteria)
-    ? parsed.criteria.map((c, idx) => ({
-        id: c.id ?? rubric.criteria[idx]?.id ?? `criterion_${idx + 1}`,
-        score: typeof c.score === "number" ? c.score : 0,
-        maxPoints:
-          typeof c.maxPoints === "number"
-            ? c.maxPoints
-            : rubric.criteria[idx]?.maxPoints ?? 0,
-        comment: c.comment ?? "",
-      }))
-    : [];
+  const raw = response.choices?.[0]?.message?.content || "{}";
+  const parsed = safeJsonParse(raw, {});
+  const score = clamp(Number(parsed.score ?? 0), 0, totalPoints);
 
   return {
-    totalScore,
-    maxPoints,
-    criteria,
-    overallComment: parsed.overallComment ?? "",
+    score,
+    maxPoints: totalPoints,
+    reason: parsed.reason || "AI-scored based on rubric.",
+    method: "ai-rubric",
   };
 }
 
-/**
- * Specialized AI scoring for Diff Detective tasks (text, image, code modes).
- */
-async function scoreDiffDetective({ task, submission }) {
-  const mode = task.mode || "text";
+// --- BUILD NORMALIZED STUDENT-WORK DESCRIPTION FOR AI ---
 
-  // If we already have a raw "foundCount" from the client, we can score quickly.
-  if (typeof submission?.foundCount === "number") {
-    const found = submission.foundCount;
-    const total =
-      (Array.isArray(task.targetDifferences) && task.targetDifferences.length) ||
-      task.totalDifferences ||
-      10;
+function buildStudentWorkDescription(task, submission) {
+  const type = task.taskType;
 
-    const ratio = total > 0 ? found / total : 0;
-    const maxPoints = task.points || 30;
-    const score = Math.round(ratio * maxPoints);
+  // Multi-question Q&A descriptions
+  if (
+    [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(
+      type
+    )
+  ) {
+    if (Array.isArray(task.items) && task.items.length > 0) {
+      return {
+        summary: "Set of question/answer pairs.",
+        items: task.items.map((item, index) => ({
+          id: item.id || `q${index + 1}`,
+          prompt: item.prompt,
+          correctAnswer: item.correctAnswer,
+          studentAnswer:
+            submission?.answers && Array.isArray(submission.answers)
+              ? submission.answers[index]
+              : undefined,
+        })),
+      };
+    }
 
     return {
-      totalScore: score,
-      maxPoints,
-      criteria: [
-        {
-          id: "differences_found",
-          score,
-          maxPoints,
-          comment: `Student found approximately ${found} of ${total} differences.`,
-        },
-      ],
-      overallComment: `Student found about ${found} of ${total} differences in ${mode} mode.`,
+      summary: "Single question/answer pair.",
+      prompt: task.prompt,
+      correctAnswer: task.correctAnswer,
+      studentAnswer: submission?.answer ?? submission?.text ?? null,
     };
   }
 
-  // If not, fall back to AI-based scoring that looks at the raw submission.
+  // Open text
+  if (type === TASK_TYPES.OPEN_TEXT) {
+    return {
+      summary: "Open-text response.",
+      prompt: task.prompt,
+      studentText: submission?.text || "",
+    };
+  }
+
+  // Photo / Make-and-snap / Draw / Mime etc.
+  if ([TASK_TYPES.PHOTO, TASK_TYPES.MAKE_AND_SNAP, TASK_TYPES.DRAW, TASK_TYPES.MIME].includes(type)) {
+    return {
+      summary: "Media-based submission (photo / drawing / mime).",
+      prompt: task.prompt,
+      notes: submission?.notes || "",
+      // We don't pass raw image blobs to AI here; teacher sees media separately.
+    };
+  }
+
+  // Pronunciation / speech recognition
+  if (
+    type === TASK_TYPES.PRONUNCIATION ||
+    type === TASK_TYPES.SPEECH_RECOGNITION
+  ) {
+    return {
+      summary: "Spoken response evaluated for pronunciation / speech.",
+      prompt: task.prompt,
+      targetText: task.targetText || null,
+      recognizedText: submission?.recognizedText || null,
+      audioReference: submission?.audioUrl || null,
+    };
+  }
+
+  // Collaboration summary
+  if (type === TASK_TYPES.COLLABORATION) {
+    return {
+      summary: "Collaboration task: description of team process and outcome.",
+      prompt: task.prompt,
+      teamNotes: submission?.notes || "",
+      artifacts: submission?.artifacts || [],
+    };
+  }
+
+  // Make-and-snap special description
+  if (type === TASK_TYPES.MAKE_AND_SNAP || type === "make_and_snap") {
+    return {
+      summary:
+        "Make-and-Snap task: students built or drew something, then took a photo as evidence.",
+      prompt: task.prompt,
+      descriptionText: submission?.text || submission?.notes || "",
+      // Again, raw media is not passed here; AI only sees textual description.
+    };
+  }
+
+  // NEW: Mind Mapper – use completion flag + node info for AI
+  if (type === TASK_TYPES.MIND_MAPPER || type === "mind-mapper") {
+    const configItems =
+      (task.config && Array.isArray(task.config.items) && task.config.items) || [];
+    const shuffledItems =
+      (Array.isArray(task.shuffledItems) && task.shuffledItems) || [];
+    const nodes = configItems.length ? configItems : shuffledItems;
+    const organizerType = task.organizerType || "mind-map";
+    const completed = submission?.completed === true;
+
+    return {
+      summary: `Mind Mapper puzzle on organizer "${organizerType}". Students dragged concept nodes into an order; client logic reports the puzzle as ${
+        completed ? "COMPLETED (all nodes correctly ordered)." : "NOT completed."
+      }`,
+      organizerType,
+      nodes: (nodes || []).map((it, index) => ({
+        id: it.id || `node-${index + 1}`,
+        text: it.text || it.label || "",
+        correctIndex:
+          typeof it.correctIndex === "number" ? it.correctIndex : null,
+      })),
+      clientCompletionFlag: completed,
+    };
+  }
+
+  // Fallback: generic
+  return {
+    summary: `Student submission for taskType "${type}" with generic structure.`,
+    details: {
+      taskPrompt: task.prompt,
+      studentAnswer: submission?.answer ?? submission ?? null,
+    },
+  };
+}
+
+// --- SPECIAL CASE: DIFF DETECTIVE ---
+
+async function scoreDiffDetective({ task, submission }) {
+  const points = typeof task.points === "number" ? task.points : 10;
+  const foundCount = submission?.foundCount ?? 0;
+  const totalDifferences = task.config?.differences?.length ?? task.totalDifferences ?? 5;
+
+  if (totalDifferences <= 0) {
+    return {
+      score: 0,
+      maxPoints: points,
+      method: "rule-based",
+      details: {
+        reason: "No totalDifferences configured for DiffDetective.",
+      },
+    };
+  }
+
+  const ratio = clamp(foundCount / totalDifferences, 0, 1);
+  const score = Math.round(ratio * points);
+
+  return {
+    score,
+    maxPoints: points,
+    method: "rule-based",
+    details: {
+      type: TASK_TYPES.DIFF_DETECTIVE,
+      foundCount,
+      totalDifferences,
+      ratio,
+    },
+  };
+}
+
+// --- NEW: SPECIAL CASE – MIND MAPPER (AI-ASSISTED BUT SIMPLE) ---
+
+async function scoreMindMapper({ task, submission }) {
+  const points = typeof task.points === "number" ? task.points : 20;
+  const completed = submission?.completed === true;
+
+  // Simple rubric: full credit if completed, partial/zero otherwise.
   const rubric = {
-    totalPoints: task.points || 30,
+    totalPoints: points,
     criteria: [
       {
-        id: "differences_found",
-        maxPoints: task.points || 30,
+        id: "mindmap_completion",
+        label: "Mind Mapper puzzle completion",
+        maxPoints: points,
         description:
-          "How many of the intended differences did the student successfully identify? Consider both quantity and accuracy.",
+          "Give FULL points if the student successfully completed the Mind Mapper puzzle and the client reports completed=true. " +
+          "If not completed, give between 0 and 50% of the points depending on how close or thorough the attempt appears from the description. " +
+          "Always include a brief explanation for your decision.",
       },
     ],
   };
 
-  try {
-    const aiResult = await scoreSubmissionWithAI({ task, rubric, submission });
-    return aiResult;
-  } catch (err) {
-    console.error("Diff Detective AI scoring failed, falling back:", err);
+  const result = await scoreSubmissionWithAI({
+    task,
+    submission,
+    rubric,
+    explicitTotalPoints: points,
+  });
 
-    const differences =
-      Array.isArray(task.targetDifferences) && task.targetDifferences.length
-        ? task.targetDifferences
-        : [];
+  const clampedScore = clamp(
+    typeof result.score === "number" ? result.score : 0,
+    0,
+    points
+  );
 
-    const found =
-      Array.isArray(submission?.foundDiffs) && submission.foundDiffs.length
-        ? submission.foundDiffs.length
-        : 0;
-
-    const total = differences.length || task.totalDifferences || 10;
-    const ratio = total > 0 ? found / total : 0;
-    const maxPoints = task.points || 30;
-    const score = Math.round(ratio * maxPoints);
-
-    return {
-      totalScore: score,
-      maxPoints,
-      criteria: [{
-        id: "differences_found",
-        score,
-        maxPoints: task.points || 30,
-        comment: `Fallback: found ~${found}/${differences.length} differences`,
-      }],
-      overallComment: "Scored with backup method.",
-    };
-  }
+  return {
+    ...result,
+    score: clampedScore,
+    maxPoints: points,
+    method: "ai-rubric",
+    rubricUsed: rubric,
+    details: {
+      ...(result.details || {}),
+      type: TASK_TYPES.MIND_MAPPER,
+      completed,
+    },
+  };
 }
 
-/**
- * Backwards-compatible entry point.
- *
- * Anywhere that calls generateAIScore({ task, rubric, submission })
- * will now:
- *  - Use rule-based scoring if task.aiScoringRequired === false AND a correctAnswer exists.
- *  - Otherwise fall back to AI scoring with rubric.
- */
-export async function generateAIScore({ task, rubric, submission }) {
-  const safeTask = task || {};
+// --- PUBLIC ENTRYPOINT ---
 
-  // ----- Diff Detective Integration -----
-  if (task?.taskType === "diff-detective") {
-    return await scoreDiffDetective({ task, submission });
+export async function generateAIScore({ task, submission, rubric }) {
+  if (!task) {
+    throw new Error("generateAIScore requires a task.");
   }
 
+  // Specialized path: Mind Mapper
+  if (task?.taskType === TASK_TYPES.MIND_MAPPER || task?.taskType === "mind-mapper") {
+    return scoreMindMapper({ task, submission });
+  }
+
+  // Specialized path: Diff Detective (rule-based, no rubric needed)
+  if (task?.taskType === TASK_TYPES.DIFF_DETECTIVE || task?.taskType === "diff-detective") {
+    return scoreDiffDetective({ task, submission });
+  }
+
+  const meta = TASK_TYPE_META[task.taskType] || {};
   const hasCorrect =
-    safeTask.correctAnswer !== undefined && safeTask.correctAnswer !== null;
+    task.correctAnswer != null ||
+    (Array.isArray(task.items) &&
+      task.items.some((it) => it.correctAnswer != null));
 
-  const hasRubric =
-    rubric && Array.isArray(rubric.criteria) && rubric.criteria.length > 0;
+  const safeTask = {
+    ...task,
+    aiScoringRequired:
+      typeof task.aiScoringRequired === "boolean"
+        ? task.aiScoringRequired
+        : meta.defaultAiScoringRequired,
+  };
 
+  // 1) Try rule-based if objective and correct answers exist
+  const ruleResult = scoreSubmissionRuleBased({ task: safeTask, submission });
+  if (ruleResult) return ruleResult;
+
+  // 2) If AI is not required and no rubric, skip
   const hasExplicitFlag = typeof safeTask.aiScoringRequired === "boolean";
-
   const requiresAI = hasExplicitFlag
     ? safeTask.aiScoringRequired
-    : !hasCorrect && hasRubric; // default: only use AI when no correctAnswer AND a rubric is provided
+    : !hasCorrect && !!rubric;
 
-  if (!requiresAI && hasCorrect) {
-    // Instant objective scoring for objective tasks
-    return scoreSubmissionRuleBased({ task: safeTask, submission });
-  }
-
-  if (!requiresAI && !hasCorrect) {
-    // Neither AI nor objective scoring is enabled → return a neutral result
+  if (!requiresAI) {
     return {
-      totalScore: 0,
-      maxPoints: safeTask.points || 0,
-      criteria: [],
-      overallComment:
-        "AI scoring was not enabled for this task and no objective scoring rules were found.",
+      score: null,
+      maxPoints: typeof safeTask.points === "number" ? safeTask.points : null,
+      method: "none",
+      details: {
+        reason:
+          "AI scoring not required and no objective rule-based scoring available.",
+      },
     };
   }
 
-  // At this point, AI scoring is required and a rubric should be present
-  return scoreSubmissionWithAI({ task: safeTask, rubric, submission });
+  // 3) Use provided rubric or fail
+  if (!rubric) {
+    throw new Error(
+      `AI scoring is required for taskType "${task.taskType}" but no rubric was provided.`
+    );
+  }
+
+  return await scoreSubmissionWithAI({
+    task: safeTask,
+    submission,
+    rubric,
+    explicitTotalPoints: safeTask.points,
+  });
 }
+
+export default {
+  generateAIScore,
+};
