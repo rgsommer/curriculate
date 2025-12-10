@@ -627,6 +627,7 @@ function sendTaskToTeam(room, teamId, index) {
     index,
     task,
     timeLimitSeconds,
+    totalTasks: tasks.length,   // NEW
   });
 }
 

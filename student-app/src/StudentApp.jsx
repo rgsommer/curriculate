@@ -217,6 +217,7 @@ function StudentApp() {
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
+  const [tasksetTotalTasks, setTasksetTotalTasks] = useState(null); // NEW
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
   const [remainingMs, setRemainingMs] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -432,8 +433,15 @@ function StudentApp() {
     socket.on("taskSubmission", handleTaskSubmission);
 
     // Task launches from teacher / engine
-    socket.on("task:launch", ({ index, task, timeLimitSeconds }) => {
-      console.log("SOCKET: task:launch", { index, task, timeLimitSeconds });
+    socket.on(
+      "task:launch",
+      ({ index, task, timeLimitSeconds, totalTasks, tasksetSize, taskCount }) => {
+        console.log("SOCKET: task:launch", {
+          index,
+          task,
+          timeLimitSeconds,
+          totalTasks,
+        });
 
       // Cancel any post-submit countdown from the previous task
       if (postSubmitTimerRef.current) {
@@ -447,13 +455,28 @@ function StudentApp() {
       setPartnerAnswer(null);
       setShowPartnerReply(false);
 
+      setCurrentAnswerDraft("");
+      setScanError(null);
+
       // Just set the task – do NOT touch scan state here.
       setCurrentTask(task || null);
       setCurrentTaskIndex(
         typeof index === "number" && index >= 0 ? index : null
       );
-      setCurrentAnswerDraft("");
-      setScanError(null);
+
+      // NEW: try to capture total tasks in the taskset
+      const explicitTotal =
+        typeof totalTasks === "number" && totalTasks > 0
+          ? totalTasks
+          : typeof tasksetSize === "number" && tasksetSize > 0
+          ? tasksetSize
+          : typeof taskCount === "number" && taskCount > 0
+          ? taskCount
+          : null;
+
+      if (explicitTotal) {
+        setTasksetTotalTasks(explicitTotal);
+      }
 
       // Teacher-controlled review pause (if provided on the task)
       if (
@@ -487,6 +510,7 @@ function StudentApp() {
       console.log("SOCKET: session:complete");
       setCurrentTask(null);
       setCurrentTaskIndex(null);
+      setTasksetTotalTasks(null); // NEW
       setScannerActive(false);
       setStatusMessage("Session complete! Please wait for your teacher.");
       try {
@@ -501,6 +525,7 @@ function StudentApp() {
       console.log("SOCKET: session-ended");
       setCurrentTask(null);
       setCurrentTaskIndex(null);
+      setTasksetTotalTasks(null); // NEW
       setJoined(false);
       setScannerActive(false);
       setAssignedStationId(null);
@@ -1128,6 +1153,28 @@ function StudentApp() {
   // Render
   // ─────────────────────────────────────────────
 
+  // Theme-enriched task object
+  const themedTask =
+    currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
+
+  // ─────────────────────────────────────────────
+  // Taskset progress
+  // ─────────────────────────────────────────────
+  const currentTaskNumber =
+    typeof currentTaskIndex === "number" && currentTaskIndex >= 0
+      ? currentTaskIndex + 1
+      : null;
+
+  const totalTasks =
+    typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0
+      ? tasksetTotalTasks
+      : null;
+
+  const progressPercent =
+    currentTaskNumber && totalTasks
+      ? Math.min((currentTaskNumber / totalTasks) * 100, 100)
+      : null;
+
   return (
     <div
       style={{
@@ -1700,6 +1747,57 @@ function StudentApp() {
                 letterSpacing: 0.2,
               }}
             >
+            {currentTaskNumber && (
+              <div
+                style={{
+                  marginBottom: 8,
+                  fontSize: "0.8rem",
+                  color: "#4b5563",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 4,
+                  }}
+                >
+                  <span>
+                    Task{" "}
+                    <strong>{currentTaskNumber}</strong>
+                    {totalTasks
+                      ? ` of ${totalTasks}`
+                      : ""}
+                  </span>
+                  {progressPercent != null && (
+                    <span>{Math.round(progressPercent)}%</span>
+                  )}
+                </div>
+                {progressPercent != null && (
+                  <div
+                    style={{
+                      width: "100%",
+                      height: 6,
+                      borderRadius: 999,
+                      background: "rgba(209,213,219,0.8)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${progressPercent}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        background:
+                          "linear-gradient(90deg,#22c55e,#0ea5e9)",
+                        transition: "width 0.25s ease-out",
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
               {currentTask?.taskType === TASK_TYPES.JEOPARDY
                 ? "Jeopardy clue"
                 : "Your task"}
