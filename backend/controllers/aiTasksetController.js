@@ -82,6 +82,9 @@ function normalizeSelectedType(raw) {
   if (v === "brain-blitz" || v === "jeopardy" || v === "jeopardy_game") {
     return TASK_TYPES.JEOPARDY;
   }
+  if (v === "collaboration" || v === "collab" || v === "pair-discussion") {
+    return TASK_TYPES.COLLABORATION;
+  }
 
   // Fallback: if already a canonical value, keep it
   if (Object.values(TASK_TYPES).includes(v)) return v;
@@ -359,6 +362,15 @@ For "${TASK_TYPES.SEQUENCE}":
   - Students will be given these items in random order and will re-order them.
   - "options" should normally be an empty array.
   - "correctAnswer" should be null (ordering is scored from the full sequence, not a single index).
+
+For "${TASK_TYPES.COLLABORATION}":
+  - Use a single open-ended prompt that invites opinion, prediction, explanation,
+    or reflection related to the topic.
+  - Do NOT include an "options" array; students will type their own answer.
+  - "correctAnswer" should be null (these are scored by rubric / AI, not by a single key).
+  - Good examples: "Do you agree with this statement? Why or why not?",
+    "Predict what might happen next and explain your reasoning.",
+    "Explain how this idea would affect people living in X situation."
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
@@ -700,12 +712,21 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       }
 
       // For objective types, we can score directly; others need AI/rubric.
-      const objective =
-        typeof meta.objectiveScoring === "boolean"
-          ? meta.objectiveScoring
-          : false;
-
-      const aiScoringRequired = objective ? false : true;
+      const objective = meta.objectiveScoring === true;
+        let aiScoringRequired;
+        if (typeof t.aiScoringRequired === "boolean") {
+          // If AI or UI explicitly set it, respect that.
+          aiScoringRequired = t.aiScoringRequired;
+        } else if (objective) {
+          // Objective types can be auto-scored without AI.
+          aiScoringRequired = false;
+        } else if (typeof meta.defaultAiScoringRequired === "boolean") {
+          // Fall back to the metadata default.
+          aiScoringRequired = meta.defaultAiScoringRequired;
+        } else {
+          // Safe default: non-objective types need AI/rubric.
+          aiScoringRequired = true;
+        }
 
       // ---------- Common fields ----------
       const title =

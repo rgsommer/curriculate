@@ -359,7 +359,6 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 180,
     implemented: true,
     aiEligible: true,
-
     objectiveScoring: false,
     defaultAiScoringRequired: true,
     correctAnswerShape: null,
