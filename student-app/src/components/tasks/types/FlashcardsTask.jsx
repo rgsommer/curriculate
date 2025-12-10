@@ -1,6 +1,6 @@
 // FlashcardsTask.jsx
 import React, { useState } from "react";
-import { TASK_TYPES } from "../../../../shared/taskTypes";
+import { TASK_TYPES } from "../../shared/taskTypes";
 
 export default function FlashcardsTask({
   task,
