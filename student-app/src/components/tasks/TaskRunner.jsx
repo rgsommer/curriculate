@@ -372,6 +372,9 @@ export default function TaskRunner({
   // for FlashcardsRace
   roomCode,
   playerTeam,
+  partnerAnswer,
+  showPartnerReply,
+  onPartnerReply,
 }) {
   if (!task) return null;
 
@@ -650,12 +653,18 @@ export default function TaskRunner({
         />
       );
       break;
-    case TASK_TYPES.COLLABORATION:
+      case TASK_TYPES.COLLABORATION:
       content = (
         <CollaborationTask
           task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
+          // NEW: wire drafting + partner flow
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          partnerAnswer={partnerAnswer}
+          showPartnerReply={showPartnerReply}
+          onPartnerReply={onPartnerReply}
         />
       );
       break;

@@ -198,6 +198,10 @@ function StudentApp() {
   const [teamName, setTeamName] = useState("");
   const [members, setMembers] = useState(["", "", ""]);
 
+  //collaboration
+  const [partnerAnswer, setPartnerAnswer] = useState(null);
+  const [showPartnerReply, setShowPartnerReply] = useState(false);
+
   // Persistent identifiers
   const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
   const [teamSessionId, setTeamSessionId] = useState(null);
@@ -439,6 +443,10 @@ function StudentApp() {
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
 
+      // 🔹 Reset collaboration state for the new task
+      setPartnerAnswer(null);
+      setShowPartnerReply(false);
+
       // Just set the task – do NOT touch scan state here.
       setCurrentTask(task || null);
       setCurrentTaskIndex(
@@ -643,6 +651,22 @@ function StudentApp() {
       }, 10000);
       return () => clearTimeout(timer);
     }, [shortAnswerReveal]);
+
+    useEffect(() => {
+      if (!socket) return;
+
+      const handlePartnerAnswer = (payload) => {
+        // payload: { partnerAnswer: string }
+        setPartnerAnswer(payload.partnerAnswer);
+        setShowPartnerReply(true);
+      };
+
+      socket.on("collab:partner-answer", handlePartnerAnswer);
+
+      return () => {
+        socket.off("collab:partner-answer", handlePartnerAnswer);
+      };
+    }, [socket]);
 
   // Cleanup for post-submit countdown timer
   useEffect(() => {
@@ -1735,7 +1759,26 @@ function StudentApp() {
                   submitting={submitting}
                   onAnswerChange={setCurrentAnswerDraft}
                   answerDraft={currentAnswerDraft}
-                  readOnly={taskLocked || submitting}
+                  disabled={taskLocked || submitting}
+                  socket={socket}
+                  roomCode={roomCode}
+                  playerTeam={teamName}
+                  // 🔹 Collaboration-specific wiring
+                  partnerAnswer={partnerAnswer}
+                  showPartnerReply={showPartnerReply}
+                  onPartnerReply={(replyText) => {
+                    if (!roomCode || !joined || !currentTask || teamId == null) return;
+
+                    socket.emit("collab:reply", {
+                      roomCode: roomCode.trim().toUpperCase(),
+                      teamId,
+                      taskIndex:
+                        typeof currentTaskIndex === "number" && currentTaskIndex >= 0
+                          ? currentTaskIndex
+                          : null,
+                      reply: replyText,
+                    });
+                  }}
                 />
             </div>
             {taskLocked && (
