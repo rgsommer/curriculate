@@ -581,6 +581,11 @@ const handleLaunchQuickTask = () => {
     clue: taskConfig.clue || undefined,
     timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
     reviewPauseSeconds: reviewPauseSeconds || 15,
+    ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
+      original: taskConfig.original || "",
+      modified: taskConfig.modified || "",
+      differences: taskConfig.differences || [],
+      }),
   };
 
   // 🔴 Important: use teacherLaunchTask, not launch-quick-task
@@ -624,6 +629,21 @@ const handleLaunchQuickTask = () => {
       alert(
         "Please enter at least one vocabulary word or key term (e.g. 'photosynthesis', 'Confederation')."
       );
+      return;
+    }
+
+    if (generatedType === TASK_TYPES.DIFF_DETECTIVE) {
+      setTaskConfig({
+        prompt: baseTask.prompt || "",
+        subject: aiSubject || "Ad-hoc",
+        gradeLevel: gradeStr || "",
+        original: baseTask.original || "",
+        modified: baseTask.modified || "",
+        differences: Array.isArray(baseTask.differences)
+          ? baseTask.differences
+          : [],
+      });
+      setShowAiGen(false);
       return;
     }
 

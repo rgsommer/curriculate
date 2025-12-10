@@ -85,6 +85,14 @@ function normalizeSelectedType(raw) {
   if (v === "collaboration" || v === "collab" || v === "pair-discussion") {
     return TASK_TYPES.COLLABORATION;
   }
+  if (
+    v === "diff-detective" ||
+    v === "spot-the-difference" ||
+    v === "diff" ||
+    v === "find-differences"
+  ) {
+    return TASK_TYPES.DIFF_DETECTIVE;
+  }
 
   // Fallback: if already a canonical value, keep it
   if (Object.values(TASK_TYPES).includes(v)) return v;
@@ -371,6 +379,22 @@ For "${TASK_TYPES.COLLABORATION}":
   - Good examples: "Do you agree with this statement? Why or why not?",
     "Predict what might happen next and explain your reasoning.",
     "Explain how this idea would affect people living in X situation."
+
+For "${TASK_TYPES.DIFF_DETECTIVE}":
+  - Create a task where students must spot specific differences between two texts
+    (or two lists, code snippets, etc.).
+  - Provide these fields at the top level:
+    - "original": the original passage or list (string).
+    - "modified": the changed passage or list (string).
+    - "differences": an array of objects, each:
+      {
+        "expected": "original fragment → changed fragment",
+        "hint": "short optional hint for this difference (or null)"
+      }
+  - "options" should be an empty array.
+  - "correctAnswer" should be an array of short strings, one per difference,
+    describing each difference succinctly (e.g., "jumps → jumped", "206 → 208").
+  - Time limit should be 60–120 seconds depending on difficulty.
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
@@ -750,6 +774,35 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         ? Math.max(1, Math.min(50, Math.round(t.points)))
         : 10;
 
+            // Diff Detective specific normalization
+      let original = null;
+      let modified = null;
+      let differences = null;
+
+      if (taskType === TASK_TYPES.DIFF_DETECTIVE) {
+        original = t.original ? String(t.original) : "";
+        modified = t.modified ? String(t.modified) : "";
+
+        const rawDiffs = Array.isArray(t.differences) ? t.differences : [];
+        differences = rawDiffs.map((d, i) => {
+          if (!d || typeof d !== "object") {
+            return { expected: String(d || ""), hint: null };
+          }
+          return {
+            expected: d.expected ? String(d.expected) : "",
+            hint:
+              typeof d.hint === "string" && d.hint.trim()
+                ? d.hint.trim()
+                : null,
+          };
+        });
+
+        // DiffDetective doesn't need options/config/items
+        options = [];
+        config = null;
+        items = [];
+      }
+
       return {
         index,
         title,
@@ -760,10 +813,15 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         aiScoringRequired,
         timeLimitSeconds,
         points,
-        config, // e.g., SortTask uses this
-        items,  // prepared for multi-question packs (MC / TF / SA), not yet consumed by StudentApp
+        config,
+        items,
+        // Only present for DiffDetective tasks:
+        ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
+          original,
+          modified,
+          differences,
+        }),
       };
-
     });
 
     // ---------- Word-bank usage analysis ----------

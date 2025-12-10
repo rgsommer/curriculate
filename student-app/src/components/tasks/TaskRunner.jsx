@@ -796,15 +796,15 @@ export default function TaskRunner({
       );
       break;
     case TASK_TYPES.DIFF_DETECTIVE:
-    case "diff-detective":
       return (
         <DiffDetectiveTask
-          task={t}
-          disabled={effectiveDisabled}
-          onSubmit={onSubmit}
-          onAnswerChange={onAnswerChange}
-          answerDraft={answerDraft}
-          raceStatus={diffRaceStatus}
+          task={task}
+          disabled={disabled}
+          onSubmit={handleSubmit}
+          onAnswerChange={handleDraftChange}
+          answerDraft={currentDraft}
+          isMultiplayer={isMultiplayer}
+          raceStatus={raceStatus}
         />
       );
 
