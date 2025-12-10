@@ -93,6 +93,9 @@ function normalizeSelectedType(raw) {
   ) {
     return TASK_TYPES.DIFF_DETECTIVE;
   }
+    if (v === "draw-mime" || v === "drawmime" || v === "draw-or-mime") {
+    return TASK_TYPES.DRAW_MIME;
+  }
 
   // Fallback: if already a canonical value, keep it
   if (Object.values(TASK_TYPES).includes(v)) return v;
@@ -395,6 +398,14 @@ For "${TASK_TYPES.DIFF_DETECTIVE}":
   - "correctAnswer" should be an array of short strings, one per difference,
     describing each difference succinctly (e.g., "jumps → jumped", "206 → 208").
   - Time limit should be 60–120 seconds depending on difficulty.
+
+For "${TASK_TYPES.DRAW_MIME}":
+  - Create a single, vivid prompt that invites students to respond with a drawing
+    (or act it out, if the teacher chooses).
+  - Do NOT include options; students respond with a drawing only.
+  - "correctAnswer" must be null.
+  - Example: "Draw the water cycle with arrows to show how water moves from
+    evaporation to condensation to precipitation."
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [

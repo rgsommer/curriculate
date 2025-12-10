@@ -90,6 +90,13 @@ function normalizeTaskType(raw) {
     case "act":
     case "act-out":
       return TASK_TYPES.MIME;
+    case "draw-mime":
+    case "draw_mime":
+      return TASK_TYPES.DRAW_MIME;
+    case "mime":
+    case "act":
+    case "act-out":
+      return TASK_TYPES.MIME;
     case "diff-detective":
     case "diff_detective":
     case "diff":
@@ -613,6 +620,18 @@ export default function TaskRunner({
         />
       );
       break;
+    case TASK_TYPES.DRAW_MIME:
+      content = (
+        <DrawMimeTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+
     case TASK_TYPES.BODY_BREAK:
       content = (
         <BodyBreakTask

@@ -40,6 +40,7 @@ export const TASK_TYPES = {
   HIDENSEEK: "hidenseek",
   SPEED_DRAW: "speed-draw",
   DIFF_DETECTIVE: "diff-detective",
+  DRAW_MIME: "draw-mime",
 
   // Kept for backwards compatibility; behaviour now largely driven by location
   MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
@@ -715,6 +716,17 @@ export const TASK_TYPE_META = {
 
     description:
       "Spot the differences between two passages or lists. Builds discernment and attention to detail.",
+  },
+
+  [TASK_TYPES.DRAW_MIME]: {
+    label: "Draw or Mime",
+    description:
+      "Teams respond by drawing (or miming in front of the class) instead of typing a text answer.",
+    implemented: true,              // important: so it shows up in UIs
+    multiItemCapable: false,        // one drawing per task
+    objectiveScoring: false,        // no auto-correct key
+    defaultAiScoringRequired: true, // scored by rubric / teacher / AI
+    aiEligible: false,              // set to true if you want AI to generate these
   },
 
   [TASK_TYPES.PRONUNCIATION]: {
