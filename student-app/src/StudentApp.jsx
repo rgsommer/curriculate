@@ -198,7 +198,7 @@ function StudentApp() {
   const [teamName, setTeamName] = useState("");
   const [members, setMembers] = useState(["", "", ""]);
 
-  //collaboration
+  // Collaboration
   const [partnerAnswer, setPartnerAnswer] = useState(null);
   const [showPartnerReply, setShowPartnerReply] = useState(false);
 
@@ -217,7 +217,7 @@ function StudentApp() {
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
-  const [tasksetTotalTasks, setTasksetTotalTasks] = useState(null); // NEW
+  const [tasksetTotalTasks, setTasksetTotalTasks] = useState(null);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
   const [remainingMs, setRemainingMs] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -236,17 +236,16 @@ function StudentApp() {
   const [scoreTotal, setScoreTotal] = useState(0);
   const [lastTaskResult, setLastTaskResult] = useState(null);
   const [pointToast, setPointToast] = useState(null);
-  const [showConfetti, setShowConfetti] = useState(false); // NEW
+  const [showConfetti, setShowConfetti] = useState(false);
   // Correct-answer reveal for SHORT_ANSWER tasks
-  // { prompt, correctAnswer } or null
   const [shortAnswerReveal, setShortAnswerReveal] = useState(null);
 
-  // How long to keep task visible after submit for review (teacher can override per task)
+  // How long to keep task visible after submit for review
   const [reviewPauseSeconds, setReviewPauseSeconds] = useState(15);
   const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
   const [taskLocked, setTaskLocked] = useState(false);
 
-  // Whether to enforce location as well as colour (fixed-station / multi-room scavenger hunts)
+  // Whether to enforce location (fixed-station / multi-room hunts)
   const [enforceLocation, setEnforceLocation] = useState(false);
 
   // Teacher-defined location (e.g. "Classroom", "Hallway") + stable ref
@@ -258,7 +257,7 @@ function StudentApp() {
   const sndAlert = useRef(null);
   const sndTreat = useRef(null);
 
-  // Timer ref
+  // Timer refs
   const countdownTimerRef = useRef(null);
   const postSubmitTimerRef = useRef(null);
 
@@ -316,7 +315,7 @@ function StudentApp() {
               setScannedStationId(null);
               setScannerActive(true);
 
-              // 🔑 Seed lastStationId so next room:state doesn't force a fake "new" station
+              // Seed lastStationId so next room:state doesn't force a fake "new" station
               lastStationIdRef.current = myTeam.currentStationId;
 
               const colourLabel = norm.color
@@ -335,7 +334,10 @@ function StudentApp() {
           }
         );
       } catch (err) {
-        console.warn("Error reading teamSession from sessionStorage:", err);
+        console.warn(
+          "Error reading teamSession from sessionStorage:",
+          err
+        );
       }
     };
 
@@ -396,10 +398,7 @@ function StudentApp() {
         const colourLabel = norm.color
           ? norm.color.charAt(0).toUpperCase() + norm.color.slice(1)
           : "your";
-        // Location is basically only for multi-room hunts; ignore it here.
         setStatusMessage(`Scan your ${colourLabel} station.`);
-      } else {
-        // Same station → leave scannerActive / scannedStationId alone
       }
     };
 
@@ -411,7 +410,8 @@ function StudentApp() {
       if (
         submission.roomCode &&
         roomCode &&
-        submission.roomCode.toUpperCase() !== roomCode.trim().toUpperCase()
+        submission.roomCode.toUpperCase() !==
+          roomCode.trim().toUpperCase()
       ) {
         return;
       }
@@ -419,13 +419,14 @@ function StudentApp() {
       // Only care about this team
       if (submission.teamId !== teamId) return;
 
-        setLastTaskResult({
-          points: typeof submission.points === "number" ? submission.points : 0,
-          correct: submission.correct,
-          answerText: submission.answerText || "",
-          submittedAt: submission.submittedAt || Date.now(),
-          aiScore: submission.aiScore || null,     // NEW: full scoring info
-        });
+      setLastTaskResult({
+        points:
+          typeof submission.points === "number" ? submission.points : 0,
+        correct: submission.correct,
+        answerText: submission.answerText || "",
+        submittedAt: submission.submittedAt || Date.now(),
+        aiScore: submission.aiScore || null,
+      });
     };
 
     socket.on("room:state", handleRoomState);
@@ -443,74 +444,75 @@ function StudentApp() {
           totalTasks,
         });
 
-      // Cancel any post-submit countdown from the previous task
-      if (postSubmitTimerRef.current) {
-        clearInterval(postSubmitTimerRef.current);
-        postSubmitTimerRef.current = null;
+        // Cancel any post-submit countdown from the previous task
+        if (postSubmitTimerRef.current) {
+          clearInterval(postSubmitTimerRef.current);
+          postSubmitTimerRef.current = null;
+        }
+        setTaskLocked(false);
+        setPostSubmitSecondsLeft(null);
+
+        // Reset collaboration state for the new task
+        setPartnerAnswer(null);
+        setShowPartnerReply(false);
+
+        setCurrentAnswerDraft("");
+        setScanError(null);
+
+        // Just set the task – do NOT touch scan state here.
+        setCurrentTask(task || null);
+        setCurrentTaskIndex(
+          typeof index === "number" && index >= 0 ? index : null
+        );
+
+        // Try to capture total tasks in the taskset
+        const explicitTotal =
+          typeof totalTasks === "number" && totalTasks > 0
+            ? totalTasks
+            : typeof tasksetSize === "number" && tasksetSize > 0
+            ? tasksetSize
+            : typeof taskCount === "number" && taskCount > 0
+            ? taskCount
+            : null;
+
+        if (explicitTotal) {
+          setTasksetTotalTasks(explicitTotal);
+        }
+
+        // Teacher-controlled review pause (if provided on the task)
+        if (
+          task &&
+          typeof task.reviewPauseSeconds === "number" &&
+          task.reviewPauseSeconds >= 5 &&
+          task.reviewPauseSeconds <= 60
+        ) {
+          setReviewPauseSeconds(task.reviewPauseSeconds);
+        } else {
+          setReviewPauseSeconds(15);
+        }
+
+        if (sndAlert.current) {
+          sndAlert.current.play().catch(() => {});
+        }
+
+        if (
+          typeof timeLimitSeconds === "number" &&
+          timeLimitSeconds > 0
+        ) {
+          setTimeLimitSeconds(timeLimitSeconds);
+        } else {
+          setTimeLimitSeconds(null);
+          setRemainingMs(0);
+        }
       }
-      setTaskLocked(false);
-      setPostSubmitSecondsLeft(null);
-
-      // 🔹 Reset collaboration state for the new task
-      setPartnerAnswer(null);
-      setShowPartnerReply(false);
-
-      setCurrentAnswerDraft("");
-      setScanError(null);
-
-      // Just set the task – do NOT touch scan state here.
-      setCurrentTask(task || null);
-      setCurrentTaskIndex(
-        typeof index === "number" && index >= 0 ? index : null
-      );
-
-      // NEW: try to capture total tasks in the taskset
-      const explicitTotal =
-        typeof totalTasks === "number" && totalTasks > 0
-          ? totalTasks
-          : typeof tasksetSize === "number" && tasksetSize > 0
-          ? tasksetSize
-          : typeof taskCount === "number" && taskCount > 0
-          ? taskCount
-          : null;
-
-      if (explicitTotal) {
-        setTasksetTotalTasks(explicitTotal);
-      }
-
-      // Teacher-controlled review pause (if provided on the task)
-      if (
-        task &&
-        typeof task.reviewPauseSeconds === "number" &&
-        task.reviewPauseSeconds >= 5 &&
-        task.reviewPauseSeconds <= 60
-      ) {
-        setReviewPauseSeconds(task.reviewPauseSeconds);
-      } else {
-        setReviewPauseSeconds(15);
-      }
-
-      if (sndAlert.current) {
-        sndAlert.current.play().catch(() => {});
-      }
-
-      if (
-        typeof timeLimitSeconds === "number" &&
-        timeLimitSeconds > 0
-      ) {
-        setTimeLimitSeconds(timeLimitSeconds);
-      } else {
-        setTimeLimitSeconds(null);
-        setRemainingMs(0);
-      }
-    });
+    );
 
     // Session complete from server
     socket.on("session:complete", () => {
       console.log("SOCKET: session:complete");
       setCurrentTask(null);
       setCurrentTaskIndex(null);
-      setTasksetTotalTasks(null); // NEW
+      setTasksetTotalTasks(null);
       setScannerActive(false);
       setStatusMessage("Session complete! Please wait for your teacher.");
       try {
@@ -525,7 +527,7 @@ function StudentApp() {
       console.log("SOCKET: session-ended");
       setCurrentTask(null);
       setCurrentTaskIndex(null);
-      setTasksetTotalTasks(null); // NEW
+      setTasksetTotalTasks(null);
       setJoined(false);
       setScannerActive(false);
       setAssignedStationId(null);
@@ -668,30 +670,30 @@ function StudentApp() {
     return () => clearTimeout(timer);
   }, [lastTaskResult]);
 
-    // Auto-hide the short-answer correct-answer overlay after 10 seconds
-    useEffect(() => {
-      if (!shortAnswerReveal) return;
-      const timer = setTimeout(() => {
-        setShortAnswerReveal(null);
-      }, 10000);
-      return () => clearTimeout(timer);
-    }, [shortAnswerReveal]);
+  // Auto-hide the short-answer correct-answer overlay after 10 seconds
+  useEffect(() => {
+    if (!shortAnswerReveal) return;
+    const timer = setTimeout(() => {
+      setShortAnswerReveal(null);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [shortAnswerReveal]);
 
-    useEffect(() => {
-      if (!socket) return;
+  // Collaboration partner answer listener
+  useEffect(() => {
+    if (!socket) return;
 
-      const handlePartnerAnswer = (payload) => {
-        // payload: { partnerAnswer: string }
-        setPartnerAnswer(payload.partnerAnswer);
-        setShowPartnerReply(true);
-      };
+    const handlePartnerAnswer = (payload) => {
+      setPartnerAnswer(payload.partnerAnswer);
+      setShowPartnerReply(true);
+    };
 
-      socket.on("collab:partner-answer", handlePartnerAnswer);
+    socket.on("collab:partner-answer", handlePartnerAnswer);
 
-      return () => {
-        socket.off("collab:partner-answer", handlePartnerAnswer);
-      };
-    }, [socket]);
+    return () => {
+      socket.off("collab:partner-answer", handlePartnerAnswer);
+    };
+  }, []);
 
   // Cleanup for post-submit countdown timer
   useEffect(() => {
@@ -823,7 +825,6 @@ function StudentApp() {
           setScannerActive(true);
 
           // Seed lastStationId so later room:state updates
-          // don’t force a fake “new station” rescan
           lastStationIdRef.current = myTeam.currentStationId;
 
           const colourLabel = norm.color
@@ -911,7 +912,7 @@ function StudentApp() {
         }, but your team needs the ${expectedLabel} station.`
       );
 
-      // 🔹 Re-arm the scanner so they can try again
+      // Re-arm the scanner so they can try again
       setScannedStationId(null);
       setScannerActive(false);
       setTimeout(() => setScannerActive(true), 100);
@@ -960,7 +961,7 @@ function StudentApp() {
   // Submit answer
   // ─────────────────────────────────────────────
 
-    const handleSubmitAnswer = async (answerPayload) => {
+  const handleSubmitAnswer = async (answerPayload) => {
     if (!roomCode || !joined || !currentTask || teamId == null) return;
     if (submitting) return;
 
@@ -1089,23 +1090,17 @@ function StudentApp() {
 
   const mustScan =
     joined &&
-    scannerActive && // only nag when the camera is actually on
+    scannerActive &&
     !!assignedStationId &&
     scannedStationId !== assignedStationId;
 
   const assignedColour = assignedNorm.color;
 
-  // Normalized display location for prompt (use roomState.locationCode when available)
+  // Normalized display location for prompt
   const displayLocation =
     (roomLocationFromStateRef.current || DEFAULT_LOCATION).toUpperCase();
 
-  // Build the scan prompt:
-  // - If multi-room / fixed-station (enforceLocation === true):
-  //     "Scan your HALLWAY RED station."
-  // - Otherwise:
-  //     "Scan your RED station."
   let scanPrompt = "";
-
   if (assignedColour) {
     const colorLabel = assignedColour.toUpperCase();
 
@@ -1115,7 +1110,6 @@ function StudentApp() {
       scanPrompt = `Scan your ${colorLabel} station.`;
     }
   } else {
-    // Safety fallback (rare): colour not known yet
     scanPrompt = "Scan your station.";
   }
 
@@ -1143,31 +1137,7 @@ function StudentApp() {
     }
   }
 
-    // Font scaling for younger grades
-  let responseFontSize = "1rem";
-  let responseHeadingFontSize = "1rem";
-  const gradeRaw =
-    currentTask?.gradeLevel ?? currentTask?.meta?.gradeLevel ?? null;
-  const parsedGrade =
-    gradeRaw != null ? parseInt(String(gradeRaw), 10) : null;
-
-  if (!Number.isNaN(parsedGrade) && parsedGrade > 0) {
-    if (parsedGrade <= 4) {
-      responseFontSize = "1.15rem";
-      responseHeadingFontSize = "1.2rem";
-    } else if (parsedGrade <= 6) {
-      responseFontSize = "1.08rem";
-      responseHeadingFontSize = "1.15rem";
-    } else if (parsedGrade <= 8) {
-      responseFontSize = "1.02rem";
-      responseHeadingFontSize = "1.1rem";
-    } else {
-      responseFontSize = "0.98rem";
-      responseHeadingFontSize = "1.05rem";
-    }
-  }
-
-  // JEOPARDY / Draw-Mime flags for header + styling
+  // JEOPARDY / Draw-Mime / FlashcardsRace flags for header + styling
   const isJeopardy =
     currentTask?.taskType === TASK_TYPES.JEOPARDY;
 
@@ -1175,14 +1145,15 @@ function StudentApp() {
     currentTask?.taskType === TASK_TYPES.DRAW ||
     currentTask?.taskType === TASK_TYPES.MIME ||
     currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+
   const isFlashcardsRace =
-  currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
+    currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
 
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
 
-  // Base card styles + background variant for Draw/Mime rounds
+  // Base card styles + background variant for Draw/Mime & Race rounds
   const baseTaskCardStyle = {
     marginBottom: 12,
     padding: 14,
@@ -1197,17 +1168,7 @@ function StudentApp() {
     ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
-  // ─────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────
-
-  // Theme-enriched task object
-  const themedTask =
-    currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
-
-  // ─────────────────────────────────────────────
   // Taskset progress
-  // ─────────────────────────────────────────────
   const currentTaskNumber =
     typeof currentTaskIndex === "number" && currentTaskIndex >= 0
       ? currentTaskIndex + 1
@@ -1222,6 +1183,10 @@ function StudentApp() {
     currentTaskNumber && totalTasks
       ? Math.min((currentTaskNumber / totalTasks) * 100, 100)
       : null;
+
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
 
   return (
     <div
@@ -1294,6 +1259,7 @@ function StudentApp() {
           cursor: default;
           box-shadow: none;
         }
+
         /* ───────────────────────────────────────────
            CONFETTI LAYER FOR PERFECT SCORE
         ─────────────────────────────────────────── */
@@ -1319,16 +1285,16 @@ function StudentApp() {
         }
 
         .confetti-piece:nth-child(4n) {
-          background-color: #f97316; /* orange */
+          background-color: #f97316;
         }
         .confetti-piece:nth-child(4n + 1) {
-          background-color: #22c55e; /* green */
+          background-color: #22c55e;
         }
         .confetti-piece:nth-child(4n + 2) {
-          background-color: #3b82f6; /* blue */
+          background-color: #3b82f6;
         }
         .confetti-piece:nth-child(4n + 3) {
-          background-color: #e11d48; /* red/pink */
+          background-color: #e11d48;
         }
 
         @keyframes confettiFall {
@@ -1666,7 +1632,7 @@ function StudentApp() {
                 <strong>Current station: </strong>
                 {assignedNorm.label}
               </div>
-              {/* 🔢 Score info */}
+              {/* Score info */}
               <div style={{ marginTop: 2 }}>
                 <strong>Score:</strong> {scoreTotal} pts
               </div>
@@ -1842,13 +1808,12 @@ function StudentApp() {
                 </div>
               )}
               {isFlashcardsRace
-              ? "Flashcards Race!"
-              : isJeopardy
-              ? "Jeopardy clue"
-              : isDrawMime
-              ? "Draw or Mime!"
-              : "Your task"}
-
+                ? "Flashcards Race!"
+                : isJeopardy
+                ? "Jeopardy clue"
+                : isDrawMime
+                ? "Draw or Mime!"
+                : "Your task"}
             </h2>
 
             {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
@@ -1891,42 +1856,50 @@ function StudentApp() {
                 lineHeight: 1.5,
               }}
             >
-                <TaskRunner
-                  key={
-                    currentTask?.id ??
-                    currentTask?._id ??
-                    currentTaskIndex ??
-                    currentTask?.prompt ??
-                    "task"
-                  }
-                  task={themedTask}
-                  taskTypes={TASK_TYPES}
-                  onSubmit={handleSubmitAnswer}
-                  submitting={submitting}
-                  onAnswerChange={setCurrentAnswerDraft}
-                  answerDraft={currentAnswerDraft}
-                  disabled={taskLocked || submitting}
-                  socket={socket}
-                  roomCode={roomCode}
-                  playerTeam={teamName}
-                  // 🔹 Collaboration-specific wiring
-                  partnerAnswer={partnerAnswer}
-                  showPartnerReply={showPartnerReply}
-                  onPartnerReply={(replyText) => {
-                    if (!roomCode || !joined || !currentTask || teamId == null) return;
+              <TaskRunner
+                key={
+                  currentTask?.id ??
+                  currentTask?._id ??
+                  currentTaskIndex ??
+                  currentTask?.prompt ??
+                  "task"
+                }
+                task={themedTask}
+                taskTypes={TASK_TYPES}
+                onSubmit={handleSubmitAnswer}
+                submitting={submitting}
+                onAnswerChange={setCurrentAnswerDraft}
+                answerDraft={currentAnswerDraft}
+                disabled={taskLocked || submitting}
+                socket={socket}
+                roomCode={roomCode}
+                playerTeam={teamName}
+                // Collaboration wiring
+                partnerAnswer={partnerAnswer}
+                showPartnerReply={showPartnerReply}
+                onPartnerReply={(replyText) => {
+                  if (
+                    !roomCode ||
+                    !joined ||
+                    !currentTask ||
+                    teamId == null
+                  )
+                    return;
 
-                    socket.emit("collab:reply", {
-                      roomCode: roomCode.trim().toUpperCase(),
-                      teamId,
-                      taskIndex:
-                        typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-                          ? currentTaskIndex
-                          : null,
-                      reply: replyText,
-                    });
-                  }}
-                />
+                  socket.emit("collab:reply", {
+                    roomCode: roomCode.trim().toUpperCase(),
+                    teamId,
+                    taskIndex:
+                      typeof currentTaskIndex === "number" &&
+                      currentTaskIndex >= 0
+                        ? currentTaskIndex
+                        : null,
+                    reply: replyText,
+                  });
+                }}
+              />
             </div>
+
             {taskLocked && (
               <div
                 style={{
@@ -2026,7 +1999,8 @@ function StudentApp() {
           ))}
         </div>
       )}
-      {/* Correct-answer overlay for SHORT_ANSWER tasks (only when we know it) */}
+
+      {/* Correct-answer overlay for SHORT_ANSWER tasks */}
       {shortAnswerReveal && (
         <div
           style={{
@@ -2108,7 +2082,6 @@ function StudentApp() {
 
       {/* +points toast */}
       {pointToast && (
-
         <div
           style={{
             position: "fixed",
@@ -2145,7 +2118,6 @@ function StudentApp() {
       />
     </div>
   );
-  
 }
 
 export default StudentApp;
