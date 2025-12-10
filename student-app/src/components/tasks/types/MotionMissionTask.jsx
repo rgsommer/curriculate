@@ -2,43 +2,48 @@
 import React, { useEffect, useState, useRef } from "react";
 import Lottie from "lottie-react";
 
+// Import animations from /public/animations (Vite will resolve these)
+import jumpAnim from "/animations/jump.json";
+import squatAnim from "/animations/squat.json";
+import runAnim from "/animations/run.json";
+import danceAnim from "/animations/dance.json";
+import spinAnim from "/animations/spin.json";
+
 // All animations are loaded directly from /public/animations/
 const ACTIVITY_CONFIG = {
   "Jump 10 times": {
     type: "jump",
     target: 10,
-    animation: "/animations/jump.json",
+    animationData: jumpAnim,
   },
   "Do 8 squats": {
     type: "squat",
     target: 8,
-    animation: "/animations/squat.json",
+    animationData: squatAnim,
   },
   "Run on the spot": {
     type: "run",
     target: 15,
-    animation: "/animations/run.json",
+    animationData: runAnim,
   },
   "Dance wildly!": {
     type: "dance",
     target: 12,
-    animation: "/animations/dance.json",
+    animationData: danceAnim,
   },
   "Spin around 5 times": {
     type: "spin",
     target: 5,
-    animation: "/animations/spin.json",
+    animationData: spinAnim,
   },
 };
 
-export default function MotionMissionTask({
-  task,
-  onSubmit,
-  disabled,
-}) {
-  const [activityName] = useState(task.prompt || "Jump 10 times");
-  const config = ACTIVITY_CONFIG[activityName] || ACTIVITY_CONFIG["Jump 10 times"];
-  const { animation: animationUrl, target } = config;
+export default function MotionMissionTask({ task, onSubmit, disabled }) {
+  const activityPrompt = task?.prompt || "Jump 10 times";
+  const [activityName] = useState(activityPrompt);
+  const config =
+    ACTIVITY_CONFIG[activityName] || ACTIVITY_CONFIG["Jump 10 times"];
+  const { animationData, target } = config;
 
   const [count, setCount] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -48,41 +53,23 @@ export default function MotionMissionTask({
 
   const lastShakeTime = useRef(0);
   const shakeThreshold = 1.9; // Fine-tuned for kids' energy
-  const minInterval = 380;   // Prevent double-counting
+  const minInterval = 380; // Prevent double-counting
 
   // Request permission and start motion detection
   useEffect(() => {
-    let cleanup = () => {};
-
-    const requestMotionPermission = async () => {
-      // iOS 13+ requires explicit permission
-      if (typeof DeviceMotionEvent?.requestPermission === "function") {
-        try {
-          const response = await DeviceMotionEvent.requestPermission();
-          if (response === "granted") {
-            window.addEventListener("devicemotion", handleMotion);
-          } else {
-            setNoMotionSupport(true);
-          }
-        } catch (err) {
-          setNoMotionSupport(true);
-        }
-      }
-      // Android / Desktop Chrome
-      else if (window.DeviceMotionEvent) {
-        window.addEventListener("devicemotion", handleMotion);
-      } else {
-        setNoMotionSupport(true);
-      }
-    };
+    let cancelled = false;
 
     const handleMotion = (event) => {
-      if (disabled || completed) return;
+      if (cancelled || disabled || completed) return;
 
       const acc = event.accelerationIncludingGravity;
-      if (!acc?.x || !acc?.y || !acc?.z) return;
+      if (!acc) return;
 
-      const total = Math.abs(acc.x) + Math.abs(acc.y) + Math.abs(acc.z);
+      const ax = typeof acc.x === "number" ? acc.x : 0;
+      const ay = typeof acc.y === "number" ? acc.y : 0;
+      const az = typeof acc.z === "number" ? acc.z : 0;
+
+      const total = Math.abs(ax) + Math.abs(ay) + Math.abs(az);
       const now = Date.now();
 
       if (total > shakeThreshold && now - lastShakeTime.current > minInterval) {
@@ -91,30 +78,59 @@ export default function MotionMissionTask({
         setCount((prev) => {
           const next = prev + 1;
           if (next >= target) {
+            const clamped = target;
             setCompleted(true);
-            new Audio("/sounds/victory.mp3").play();
-            onSubmit({ completed: true, points: 15 });
+            try {
+              new Audio("/sounds/victory.mp3").play();
+            } catch (e) {
+              // ignore audio errors
+            }
+            onSubmit?.({ completed: true, points: 15, count: clamped });
+            return clamped;
           }
           return Math.min(next, target);
         });
       }
     };
 
-    // Show demo for 5 seconds
-    const demoTimer = setTimeout(() => setShowDemo(false), 5000);
+    const requestMotionPermission = async () => {
+      try {
+        // iOS 13+ requires explicit permission
+        if (
+          typeof DeviceMotionEvent !== "undefined" &&
+          typeof DeviceMotionEvent.requestPermission === "function"
+        ) {
+          const response = await DeviceMotionEvent.requestPermission();
+          if (response === "granted") {
+            window.addEventListener("devicemotion", handleMotion);
+          } else {
+            setNoMotionSupport(true);
+          }
+        } else if (typeof window !== "undefined" && window.DeviceMotionEvent) {
+          // Android / desktop that supports DeviceMotion
+          window.addEventListener("devicemotion", handleMotion);
+        } else {
+          setNoMotionSupport(true);
+        }
+      } catch (err) {
+        setNoMotionSupport(true);
+      }
+    };
 
-    // Start motion detection right after demo
+    // Show demo for 5 seconds, then request motion permission
+    const demoTimer = setTimeout(() => setShowDemo(false), 5000);
     const motionTimer = setTimeout(() => {
-      requestMotionPermission();
+      if (!cancelled) {
+        requestMotionPermission();
+      }
     }, 5500);
 
-    cleanup = () => {
+    return () => {
+      cancelled = true;
       clearTimeout(demoTimer);
       clearTimeout(motionTimer);
       window.removeEventListener("devicemotion", handleMotion);
     };
-
-    return cleanup;
   }, [disabled, completed, target, onSubmit]);
 
   // Update progress bar
@@ -136,7 +152,7 @@ export default function MotionMissionTask({
             Watch and Copy!
           </p>
           <div className="w-80 h-80 md:w-96 md:h-96 mx-auto">
-            <Lottie animationData={animationUrl} loop={true} />
+            <Lottie animationData={animationData} loop={true} />
           </div>
           <p className="text-5xl md:text-7xl font-black text-yellow-300 mt-12 drop-shadow-2xl">
             {activityName.toUpperCase()}
@@ -174,10 +190,15 @@ export default function MotionMissionTask({
               </p>
               <button
                 onClick={() => {
-                  setCount(target);
+                  const finalCount = target;
+                  setCount(finalCount);
                   setCompleted(true);
-                  onSubmit({ completed: true, points: 15 });
-                  new Audio("/sounds/victory.mp3").play();
+                  try {
+                    new Audio("/sounds/victory.mp3").play();
+                  } catch (e) {
+                    // ignore audio errors
+                  }
+                  onSubmit?.({ completed: true, points: 15, count: finalCount });
                 }}
                 className="px-16 py-8 bg-yellow-400 text-black text-5xl font-bold rounded-3xl hover:scale-110 transition shadow-2xl"
               >
@@ -189,7 +210,7 @@ export default function MotionMissionTask({
           {/* Victory State */}
           {completed && (
             <div className="text-center animate-bounce">
-              <div className="text-9xl mb-8">Trophy</div>
+              <div className="text-9xl mb-8">🏆</div>
               <p className="text-9xl md:text-10xl font-black text-yellow-400">
                 MISSION COMPLETE!
               </p>
