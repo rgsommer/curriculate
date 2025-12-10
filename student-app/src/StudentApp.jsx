@@ -1152,6 +1152,10 @@ function StudentApp() {
   const isLiveDebate =
     currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
 
+  const isMadDash =
+    currentTask?.taskType === TASK_TYPES.MAD_DASH ||
+    currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1167,6 +1171,8 @@ function StudentApp() {
 
   const taskCardBackground = isFlashcardsRace
     ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
+    : isMadDash
+    ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
     : isDrawMime
     ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
     : isLiveDebate
@@ -1206,6 +1212,8 @@ function StudentApp() {
           "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         background: isFlashcardsRace
           ? "radial-gradient(circle at top, #1e293b 0%, #0f172a 25%, #4f46e5 60%, #f97316 100%)"
+          : isMadDash
+          ? "radial-gradient(circle at top, #b91c1c 0%, #f97316 40%, #facc15 75%, #fee2e2 100%)"
           : themeShell.pageBg,
         color: themeShell.text,
         opacity: noiseState.enabled ? noiseState.brightness : 1,
@@ -1858,10 +1866,12 @@ function StudentApp() {
                   )}
                 </div>
               )}
-              {isFlashcardsRace
+            {isFlashcardsRace
               ? "Flashcards Race!"
               : isJeopardy
               ? "Jeopardy clue"
+              : isMadDash
+              ? "Mad Dash!"
               : isDrawMime
               ? "Draw or Mime!"
               : isLiveDebate

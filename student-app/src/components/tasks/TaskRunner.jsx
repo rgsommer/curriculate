@@ -119,8 +119,9 @@ function normalizeTaskType(raw) {
     case "diff":
       return TASK_TYPES.DIFF_DETECTIVE;
 
-    default:
+    default {
       return raw;
+    }
   }
 }
 
@@ -432,16 +433,16 @@ export default function TaskRunner({
     }
 
     const handleRaceStart = (payload) => {
-      setDiffRaceStatus(() => ({
+      setDiffRaceStatus({
         startedAt: payload.startedAt || Date.now(),
         leader: null,
         timeLeft: null,
-      }));
+      });
     };
 
     const handleRaceWinner = (payload) => {
       setDiffRaceStatus((prev) => ({
-        ...prev,
+        ...(prev || {}),
         leader: payload.teamName,
         winnerTeamId: payload.teamId,
       }));
@@ -690,13 +691,13 @@ export default function TaskRunner({
         />
       );
       break;
-      case TASK_TYPES.COLLABORATION:
+    case TASK_TYPES.COLLABORATION:
       content = (
         <CollaborationTask
           task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
-          // NEW: wire drafting + partner flow
+          // drafting + partner flow
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
           partnerAnswer={partnerAnswer}
@@ -833,17 +834,16 @@ export default function TaskRunner({
       );
       break;
     case TASK_TYPES.DIFF_DETECTIVE:
-      return (
+      content = (
         <DiffDetectiveTask
-          task={task}
-          disabled={disabled}
-          onSubmit={handleSubmit}
-          onAnswerChange={handleDraftChange}
-          answerDraft={currentDraft}
-          isMultiplayer={isMultiplayer}
-          raceStatus={raceStatus}
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          raceStatus={diffRaceStatus}
         />
       );
+      break;
 
     default:
       return (
