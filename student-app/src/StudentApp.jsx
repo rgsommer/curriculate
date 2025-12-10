@@ -1168,6 +1168,15 @@ function StudentApp() {
   const isMultipleChoice =
     currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
 
+  const isMusicalChairs =
+    currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
+
+  const musicalChairsHeaderStyle = isMusicalChairs
+    ? {
+        animation: "mc-header-pulse 1.4s ease-in-out infinite",
+      }
+    : {};
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1195,6 +1204,8 @@ function StudentApp() {
       ? "linear-gradient(135deg, #0f172a 0%, #fb7185 35%, #f97316 70%, #facc15 100%)"
       : isMindMapper
       ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
+      : isMusicalChairs
+      ? "linear-gradient(135deg, #f97316 0%, #ec4899 35%, #8b5cf6 70%, #fef3c7 100%)"
       : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
@@ -1234,7 +1245,10 @@ function StudentApp() {
           ? "radial-gradient(circle at top, #b91c1c 0%, #f97316 40%, #facc15 75%, #fee2e2 100%)"
           : isMindMapper
           ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
+          : isMusicalChairs
+          ? "radial-gradient(circle at top, #7c3aed 0%, #fb7185 40%, #facc15 75%, #fef9c3 100%)"
           : themeShell.pageBg,
+
         color: themeShell.text,
         opacity: noiseState.enabled ? noiseState.brightness : 1,
         transition: "opacity 120ms ease-out",
@@ -1389,6 +1403,21 @@ function StudentApp() {
             opacity: 0;
           }
         }
+        @keyframes mc-header-pulse {
+          0% {
+            transform: translateY(0) scale(1);
+            text-shadow: 0 0 0 rgba(251, 113, 133, 0);
+          }
+          50% {
+            transform: translateY(-2px) scale(1.03);
+            text-shadow: 0 0 10px rgba(251, 113, 133, 0.9);
+          }
+          100% {
+            transform: translateY(0) scale(1);
+            text-shadow: 0 0 0 rgba(251, 113, 133, 0);
+          }
+        }
+
       `}</style>
 
       {/* Hidden audio elements for task / scan sounds */}
@@ -1845,6 +1874,7 @@ function StudentApp() {
                 marginBottom: 6,
                 fontSize: responseHeadingFontSize,
                 letterSpacing: 0.2,
+                ...musicalChairsHeaderStyle,
               }}
             >
               {currentTaskNumber && (
@@ -1912,6 +1942,8 @@ function StudentApp() {
               ? "Mind Mapper!"
               : isMotionMission
               ? "Motion Mission!"
+              : isMusicalChairs
+              ? "Musical Chairs!"
               : isMultipleChoice
               ? "Multiple choice!"
               : "Your task"}
