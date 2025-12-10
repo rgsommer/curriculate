@@ -1377,6 +1377,39 @@ const handleLaunchQuickTask = () => {
               </p>
 
               {taskConfig.prompt?.trim() ? (
+
+              {/* FLASHCARDS Quick Input */}
+              {taskType === TASK_TYPES.FLASHCARDS && (
+                <div style={{ marginTop: 10, marginBottom: 10 }}>
+                  <label
+                    style={{
+                      display: "block",
+                      marginBottom: 4,
+                      fontSize: "0.8rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Flashcards (one per line, “term — definition”):
+                  </label>
+
+                  <textarea
+                    rows={5}
+                    placeholder={`Evaporation — water turns into vapour
+Condensation — vapour cools
+Precipitation — rain, snow, hail`}
+                    value={quickFlashcardsText}
+                    onChange={(e) => setQuickFlashcardsText(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: 8,
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                      fontSize: "0.85rem",
+                      background: "#ffffff",
+                    }}
+                  />
+                </div>
+              )}
                 <>
                   <div
                     style={{
