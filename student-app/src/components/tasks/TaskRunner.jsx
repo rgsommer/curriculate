@@ -119,9 +119,8 @@ function normalizeTaskType(raw) {
     case "diff":
       return TASK_TYPES.DIFF_DETECTIVE;
 
-    default {
+    default:
       return raw;
-    }
   }
 }
 
@@ -137,7 +136,9 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
   // if none exist, treat as a single-question pack.
   const rawItems =
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
-    (Array.isArray(task.questions) && task.questions.length > 0 && task.questions) ||
+    (Array.isArray(task.questions) &&
+      task.questions.length > 0 &&
+      task.questions) ||
     (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
     (Array.isArray(task.multiQuestions) &&
       task.multiQuestions.length > 0 &&
@@ -163,7 +164,8 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
       const base =
         (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
         (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-        (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
+        (task.taskType === TASK_TYPES.TRUE_FALSE ||
+        task.type === TASK_TYPES.TRUE_FALSE
           ? ["True", "False"]
           : []);
       if (!base || base.length === 0) return [];
@@ -188,9 +190,7 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
 
   const handleTextChange = (itemIndex, value) => {
     setAnswers((prev) =>
-      prev.map((ans, idx) =>
-        idx === itemIndex ? { ...ans, value } : ans
-      )
+      prev.map((ans, idx) => (idx === itemIndex ? { ...ans, value } : ans))
     );
   };
 
@@ -212,7 +212,8 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
         const base =
           (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
           (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-          (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
+          (task.taskType === TASK_TYPES.TRUE_FALSE ||
+          task.type === TASK_TYPES.TRUE_FALSE
             ? ["True", "False"]
             : []);
 
@@ -335,7 +336,7 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
                     width: "100%",
                     padding: "6px 8px",
                     borderRadius: 10,
-                    border: "1px solid #d1d5db",
+                    border: "1px solid " + "#d1d5db",
                     fontSize: "0.9rem",
                     resize: "vertical",
                   }}
@@ -412,9 +413,10 @@ export default function TaskRunner({
   const isShortType = type === TASK_TYPES.SHORT_ANSWER;
 
   const hasMultiItems =
-    ((Array.isArray(t.items) && t.items.length > 1) ||
-      (Array.isArray(t.questions) && t.questions.length > 1) ||
-      (Array.isArray(t.subItems) && t.subItems.length > 1));
+    (Array.isArray(t.items) && t.items.length > 1) ||
+    (Array.isArray(t.questions) && t.questions.length > 1) ||
+    (Array.isArray(t.subItems) && t.subItems.length > 1) ||
+    (Array.isArray(t.multiQuestions) && t.multiQuestions.length > 1);
 
   const meta = TASK_TYPE_META[type];
   const [diffRaceStatus, setDiffRaceStatus] = useState(null);
@@ -585,20 +587,12 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.TRUE_FALSE:
       content = (
-        <TrueFalseTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <TrueFalseTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
     case TASK_TYPES.SORT:
       content = (
-        <SortTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <SortTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
     case TASK_TYPES.SEQUENCE:
@@ -613,11 +607,7 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.PHOTO:
       content = (
-        <PhotoTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <PhotoTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
     case TASK_TYPES.MAKE_AND_SNAP:
@@ -626,6 +616,8 @@ export default function TaskRunner({
           task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
         />
       );
       break;
@@ -650,7 +642,6 @@ export default function TaskRunner({
         />
       );
       break;
-
     case TASK_TYPES.BODY_BREAK:
       content = (
         <BodyBreakTask

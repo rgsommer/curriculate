@@ -1156,6 +1156,9 @@ function StudentApp() {
     currentTask?.taskType === TASK_TYPES.MAD_DASH ||
     currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE;
 
+  const isMakeAndSnap =
+    currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1173,6 +1176,8 @@ function StudentApp() {
     ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
     : isMadDash
     ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
+    : isMakeAndSnap
+    ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
     : isDrawMime
     ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
     : isLiveDebate
@@ -1872,6 +1877,8 @@ function StudentApp() {
               ? "Jeopardy clue"
               : isMadDash
               ? "Mad Dash!"
+              : isMakeAndSnap
+              ? "Make it & Snap it!"
               : isDrawMime
               ? "Draw or Mime!"
               : isLiveDebate
@@ -1879,6 +1886,19 @@ function StudentApp() {
               : "Your task"}
 
             </h2>
+
+            {isMakeAndSnap && (
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: "0.85rem",
+                  color: "#0369a1",
+                  fontWeight: 500,
+                }}
+              >
+                Build, draw, or act it out — then snap a clear photo of what you made!
+              </p>
+            )}
 
             {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
               currentTask?.jeopardyConfig?.boardTitle && (
