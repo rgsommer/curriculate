@@ -1199,6 +1199,9 @@ function StudentApp() {
   const isPhotoJournal =
     currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL;
 
+  const isRecordAudio =
+    currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1901,9 +1904,9 @@ function StudentApp() {
             className="task-card"
             style={{
               ...baseTaskCardStyle,
-              ...(isMotionMission || isPetFeeding
+              ...(isMotionMission || isPetFeeding || isRecordAudio
                 ? {
-                    // Let MotionMissionTask own the look
+                    // Let MotionMissionTask / PetFeeding / RecordAudio own the look
                     background: "transparent",
                     padding: 0,
                     border: "none",
@@ -2001,6 +2004,8 @@ function StudentApp() {
               ? "Multiple choice!"
               : isPetFeeding
               ? "Feed the pet!"
+              : isRecordAudio
+              ? "Record your voice!"
               : isOpenText
               ? "Open response!"
               : "Your task"}
