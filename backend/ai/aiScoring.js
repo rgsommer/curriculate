@@ -75,14 +75,18 @@ function scoreSubmissionRuleBased({ task, submission }) {
   }
 
   // Multiple-choice / True-False / Short-answer with explicit correctAnswer
-  if (
+    if (
     [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(
       task.taskType
     )
   ) {
+    let totalItems = 0;
+    let correctCount = 0;
+
     // Multi-question item set
     if (Array.isArray(task.items) && task.items.length > 0) {
       const items = task.items;
+      totalItems = items.length;
       maxPoints = points * items.length;
 
       items.forEach((item, index) => {
@@ -147,10 +151,13 @@ function scoreSubmissionRuleBased({ task, submission }) {
 
         if (isCorrect) {
           score += points;
+          correctCount += 1;
         }
       });
     } else {
       // Single question
+      totalItems = 1;
+
       if (correct != null && studentAnswerRaw != null) {
         const studentAnswer = normalizeStudentAnswerPrimitive(studentAnswerRaw);
         const options = Array.isArray(task.options) ? task.options : null;
@@ -183,6 +190,7 @@ function scoreSubmissionRuleBased({ task, submission }) {
 
         if (correctMatch) {
           score = points;
+          correctCount = 1;
         }
       }
     }
@@ -191,6 +199,9 @@ function scoreSubmissionRuleBased({ task, submission }) {
       score,
       maxPoints,
       method: "rule-based",
+      totalScore: score,
+      totalItems,
+      correctCount,
       details: {
         type: task.taskType,
         correctAnswer: task.correctAnswer,
@@ -199,31 +210,15 @@ function scoreSubmissionRuleBased({ task, submission }) {
     };
   }
 
-  // Sort / Sequence / Timeline use config for correctness
+    // Sort / Sequence / Timeline use config for correctness
   if (
     [TASK_TYPES.SORT, TASK_TYPES.SEQUENCE, TASK_TYPES.TIMELINE].includes(task.taskType) &&
     task.config &&
     Array.isArray(task.config.items)
   ) {
-    const items = task.config.items;
-    const studentOrderRaw = submission?.order || [];
-    const studentOrder = Array.isArray(studentOrderRaw) ? studentOrderRaw : [];
+    const items = task.config.items || [];
 
-    if (!Array.isArray(studentOrder) || studentOrder.length === 0) {
-      return {
-        score: 0,
-        maxPoints: points,
-        method: "rule-based",
-        details: {
-          reason: "No student order provided.",
-        },
-      };
-    }
-
-    // For SEQUENCE / TIMELINE, we treat items as in correct order; studentOrder
-    // may be an array of item IDs or an array of numeric indices (0..n-1).
-    // For SORT, each item has bucketIndex; we expect either submission.mapping[itemId] = bucketIndex
-    // or a payload.items array with { text, bucketIndex } which we normalize into a mapping here.
+    // SORT uses a mapping (or items payload) instead of a simple order array
     if (task.taskType === TASK_TYPES.SORT) {
       let mapping = submission?.mapping || null;
 
@@ -244,16 +239,21 @@ function scoreSubmissionRuleBased({ task, submission }) {
 
       mapping = mapping || {};
 
-      const perItem = points / items.length;
+      const gradedItems = items.filter(
+        (it) => it && typeof it.bucketIndex === "number"
+      );
+      const totalItems = gradedItems.length || items.length || 1;
+      const perItem = points / totalItems;
       score = 0;
+      let correctCount = 0;
 
-      items.forEach((it) => {
+      gradedItems.forEach((it) => {
         const expectedBucket = it.bucketIndex;
-        if (expectedBucket == null) return;
         const studentBucket = mapping[it.id] ?? mapping[it.text];
         if (studentBucket == null) return;
         if (Number(studentBucket) === Number(expectedBucket)) {
           score += perItem;
+          correctCount += 1;
         }
       });
 
@@ -261,57 +261,83 @@ function scoreSubmissionRuleBased({ task, submission }) {
         score,
         maxPoints: points,
         method: "rule-based",
+        totalScore: score,
+        totalItems,
+        correctCount,
         details: {
           type: task.taskType,
           config: task.config,
           submission: { mapping },
         },
       };
-    } else {
-      // SEQUENCE / TIMELINE
-      const totalItems = items.length || 1;
-      const perItem = points / totalItems;
-      score = 0;
+    }
 
-      const allNumeric =
-        Array.isArray(studentOrder) &&
-        studentOrder.length === totalItems &&
-        studentOrder.every((v) => Number.isInteger(v));
+    // SEQUENCE / TIMELINE use an order array
+    const studentOrderRaw = submission?.order || [];
+    const studentOrder = Array.isArray(studentOrderRaw) ? studentOrderRaw : [];
+    const totalItems = items.length || 1;
 
-      if (allNumeric) {
-        // Student order is an array of indices (0..n-1); award credit when
-        // the item in each position matches the original correct index.
-        for (let correctIndex = 0; correctIndex < totalItems; correctIndex++) {
-          if (studentOrder[correctIndex] === correctIndex) {
-            score += perItem;
-          }
-        }
-      } else {
-        // Fallback: treat studentOrder as array of item IDs.
-        const correctOrderIds = items.map(
-          (it, idx) => it.id ?? `item-${idx}`
-        );
-        correctOrderIds.forEach((id, index) => {
-          const studentIndex = studentOrder.indexOf(id);
-          if (studentIndex === index) {
-            score += perItem;
-          }
-        });
-      }
-
+    if (!Array.isArray(studentOrder) || studentOrder.length === 0) {
       return {
-        score,
+        score: 0,
         maxPoints: points,
         method: "rule-based",
+        totalScore: 0,
+        totalItems,
+        correctCount: 0,
         details: {
-          type: task.taskType,
-          // For numeric-based submissions correctOrderIds is implicit (0..n-1),
-          // but we still include ids when they are present for debugging.
-          correctOrder: items.map((it, idx) => it.id ?? `item-${idx}`),
-          studentOrder,
+          reason: "No student order provided.",
         },
       };
     }
+
+    // SEQUENCE / TIMELINE
+    const perItem = points / totalItems;
+    score = 0;
+    let correctCount = 0;
+
+    const allNumeric =
+      Array.isArray(studentOrder) &&
+      studentOrder.length === totalItems &&
+      studentOrder.every((v) => Number.isInteger(v));
+
+    if (allNumeric) {
+      // Student order is an array of indices (0..n-1); award credit when
+      // the item in each position matches the original correct index.
+      for (let correctIndex = 0; correctIndex < totalItems; correctIndex++) {
+        if (studentOrder[correctIndex] === correctIndex) {
+          score += perItem;
+          correctCount += 1;
+        }
+      }
+    } else {
+      // Student order is an array of item IDs; we derive the correct order
+      const correctOrderIds = items.map((it, idx) => it.id ?? `item-${idx}`);
+
+      correctOrderIds.forEach((id, index) => {
+        const studentIndex = studentOrder.indexOf(id);
+        if (studentIndex === index) {
+          score += perItem;
+          correctCount += 1;
+        }
+      });
+    }
+
+    return {
+      score,
+      maxPoints: points,
+      method: "rule-based",
+      totalScore: score,
+      totalItems,
+      correctCount,
+      details: {
+        type: task.taskType,
+        // For numeric-based submissions correctOrderIds is implicit (0..n-1),
+        // but we still include ids when they are present for debugging.
+        correctOrder: items.map((it, idx) => it.id ?? `item-${idx}`),
+        studentOrder,
+      },
+    };
   }
 
   // Everything else: not rule-based
@@ -970,11 +996,16 @@ async function scoreBrainSparkNotes({ task, submission }) {
     submission?.answer?.completed === true;
 
   const score = completed ? points : 0;
+  const totalItems = 1;
+  const correctCount = completed ? 1 : 0;
 
   return {
     score,
     maxPoints: points,
     method: "rule-based",
+    totalScore: score,
+    totalItems,
+    correctCount,
     reason: completed
       ? "Nice work—your Spark Notes are marked complete, so you earned full credit for writing them down."
       : "No credit: this Spark Notes task was not marked complete.",
