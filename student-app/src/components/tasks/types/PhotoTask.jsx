@@ -15,7 +15,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
 
   const handlePickPhoto = () => {
     if (uiDisabled) return;
-    fileRef.current?.click();
+    fileRef.current?.click(); // will open camera on most mobile browsers
   };
 
   const handleFileChange = (e) => {
@@ -32,8 +32,13 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
   const handleSubmit = () => {
     if (uiDisabled) return;
 
+    if (!imagePreview) {
+      alert("Please take a photo before submitting.");
+      return;
+    }
+
     const parts = [];
-    parts.push(imagePreview ? "[PHOTO TAKEN]" : "[NO PHOTO SELECTED]");
+    parts.push("[PHOTO TAKEN]");
     if (note.trim()) {
       parts.push(`Note: ${note.trim()}`);
     }
@@ -92,7 +97,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
           marginBottom: 10,
         }}
       >
-        {imagePreview ? "Retake Photo" : "Open Camera / Pick Photo"}
+        {imagePreview ? "Retake Photo" : "Open Camera / Take Photo"}
       </button>
 
       {/* Hidden input that opens camera/gallery on mobile */}
@@ -157,18 +162,20 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={uiDisabled}
+        disabled={uiDisabled || !imagePreview}
         style={{
           display: "block",
           width: "100%",
           padding: "10px 14px",
           borderRadius: 10,
           border: "none",
-          background: uiDisabled ? "#64748b" : "#22c55e",
+          background:
+            uiDisabled || !imagePreview ? "#64748b" : "#22c55e",
           color: "#fff",
           fontSize: "1rem",
           fontWeight: 600,
-          cursor: uiDisabled ? "default" : "pointer",
+          cursor:
+            uiDisabled || !imagePreview ? "default" : "pointer",
         }}
       >
         {submitted ? "Submitted" : "Submit"}

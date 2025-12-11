@@ -37,7 +37,7 @@ export default function MakeAndSnapTask({
 
   const handlePickPhoto = () => {
     if (uiDisabled) return;
-    fileRef.current?.click();
+    fileRef.current?.click(); // triggers camera/gallery; on mobile with `capture` this prefers camera
   };
 
   const handleFileChange = (e) => {
@@ -54,6 +54,11 @@ export default function MakeAndSnapTask({
 
   const handleSubmit = () => {
     if (uiDisabled) return;
+
+    if (!imagePreview) {
+      alert("Please take a photo of what you made before submitting.");
+      return;
+    }
 
     const answerText = buildAnswerText(note, !!imagePreview);
     onSubmit(answerText);
@@ -115,7 +120,7 @@ export default function MakeAndSnapTask({
           marginBottom: 10,
         }}
       >
-        {imagePreview ? "Retake Photo" : "Open Camera / Pick Photo"}
+        {imagePreview ? "Retake Photo" : "Open Camera / Take Photo"}
       </button>
 
       <input
@@ -179,18 +184,20 @@ export default function MakeAndSnapTask({
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={uiDisabled}
+        disabled={uiDisabled || !imagePreview}
         style={{
           display: "block",
           width: "100%",
           padding: "10px 14px",
           borderRadius: 10,
           border: "none",
-          background: uiDisabled ? "#64748b" : "#22c55e",
+          background:
+            uiDisabled || !imagePreview ? "#64748b" : "#22c55e",
           color: "#fff",
           fontSize: "1rem",
           fontWeight: 600,
-          cursor: uiDisabled ? "default" : "pointer",
+          cursor:
+            uiDisabled || !imagePreview ? "default" : "pointer",
         }}
       >
         {submitted ? "Submitted" : "Submit"}

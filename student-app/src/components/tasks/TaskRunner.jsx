@@ -34,6 +34,12 @@ import SpeechRecognitionTask from "./types/SpeechRecognitionTask"; // NEW
 import PronunciationTask from "./types/PronunciationTask"; // NEW
 import AIDebateJudgeTask from "./types/AIDebateJudgeTask"; // NEW
 
+// High-contrast neutrals for inner task cards / text
+const CONTRAST_TEXT_DARK = "#0f172a";
+const CONTRAST_BG_LIGHT = "#f9fafb";
+const CONTRAST_BORDER = "#d1d5db";
+const CONTRAST_ACCENT = "#0ea5e9";
+
 function shuffleArray(array) {
   const copy = [...array];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -287,6 +293,7 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
             marginBottom: 12,
             fontSize: "1rem",
             fontWeight: 500,
+            color: CONTRAST_TEXT_DARK,
           }}
         >
           {task.prompt}
@@ -312,8 +319,9 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
               style={{
                 padding: 10,
                 borderRadius: 12,
-                border: "1px solid #e5e7eb",
-                background: "#f9fafb",
+                border: `1px solid ${CONTRAST_BORDER}`,
+                background: CONTRAST_BG_LIGHT,
+                color: CONTRAST_TEXT_DARK,
               }}
             >
               {label && (
@@ -322,6 +330,7 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
                     marginBottom: 8,
                     fontSize: "0.95rem",
                     fontWeight: 500,
+                    color: CONTRAST_TEXT_DARK,
                   }}
                 >
                   <span style={{ marginRight: 4 }}>{idx + 1}.</span>
@@ -337,32 +346,37 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
                     gap: 6,
                   }}
                 >
-                  {opts.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => handleChoiceClick(idx, opt)}
-                      disabled={submitting || disabled}
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: 999,
-                        border:
-                          answerVal === opt
-                            ? "2px solid #0ea5e9"
-                            : "1px solid #d1d5db",
-                        background:
-                          answerVal === opt
-                            ? "rgba(14,165,233,0.12)"
+                  {opts.map((opt) => {
+                    const isSelected = answerVal === opt;
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => handleChoiceClick(idx, opt)}
+                        disabled={submitting || disabled}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 999,
+                          border: isSelected
+                            ? `2px solid ${CONTRAST_ACCENT}`
+                            : `1px solid ${CONTRAST_BORDER}`,
+                          background: isSelected
+                            ? CONTRAST_ACCENT
                             : "#ffffff",
-                        textAlign: "left",
-                        cursor:
-                          submitting || disabled ? "not-allowed" : "pointer",
-                        fontSize: "0.9rem",
-                      }}
-                    >
-                      {opt}
-                    </button>
-                  ))}
+                          color: isSelected ? "#ffffff" : CONTRAST_TEXT_DARK,
+                          textAlign: "left",
+                          cursor:
+                            submitting || disabled
+                              ? "not-allowed"
+                              : "pointer",
+                          fontSize: "0.9rem",
+                          transition: "background 0.15s, border-color 0.15s",
+                        }}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <textarea
@@ -374,9 +388,10 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
                     width: "100%",
                     padding: "6px 8px",
                     borderRadius: 10,
-                    border: "1px solid " + "#d1d5db",
+                    border: `1px solid ${CONTRAST_BORDER}`,
                     fontSize: "0.9rem",
                     resize: "vertical",
+                    color: CONTRAST_TEXT_DARK,
                   }}
                   placeholder="Type your answer…"
                 />
@@ -582,15 +597,25 @@ export default function TaskRunner({
         )}
 
         {currentDisplay && (
-          <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
-            <div className="font-semibold text-slate-800">
+          <div
+            className="rounded-lg border px-3 py-2 text-sm"
+            style={{
+              borderColor: CONTRAST_BORDER,
+              background: CONTRAST_BG_LIGHT,
+              color: CONTRAST_TEXT_DARK,
+            }}
+          >
+            <div className="font-semibold">
               Look at this station object:
             </div>
-            <div className="text-slate-900">
+            <div>
               {currentDisplay.name || currentDisplay.key}
             </div>
             {currentDisplay.description && (
-              <div className="mt-1 text-xs text-slate-600">
+              <div
+                className="mt-1 text-xs"
+                style={{ color: "#4b5563" }}
+              >
                 {currentDisplay.description}
               </div>
             )}
@@ -625,12 +650,20 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.TRUE_FALSE:
       content = (
-        <TrueFalseTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <TrueFalseTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.SORT:
       content = (
-        <SortTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <SortTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.SEQUENCE:
@@ -645,7 +678,11 @@ export default function TaskRunner({
       break;
     case TASK_TYPES.PHOTO:
       content = (
-        <PhotoTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+        <PhotoTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
       );
       break;
     case TASK_TYPES.MAKE_AND_SNAP:
@@ -955,15 +992,23 @@ export default function TaskRunner({
       )}
 
       {currentDisplay && (
-        <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
-          <div className="font-semibold text-slate-800">
+        <div
+          className="rounded-lg border px-3 py-2 text-sm"
+          style={{
+            borderColor: CONTRAST_BORDER,
+            background: CONTRAST_BG_LIGHT,
+            color: CONTRAST_TEXT_DARK,
+          }}
+        >
+          <div className="font-semibold">
             Look at this station object:
           </div>
-          <div className="text-slate-900">
-            {currentDisplay.name || currentDisplay.key}
-          </div>
+          <div>{currentDisplay.name || currentDisplay.key}</div>
           {currentDisplay.description && (
-            <div className="mt-1 text-xs text-slate-600">
+            <div
+              className="mt-1 text-xs"
+              style={{ color: "#4b5563" }}
+            >
               {currentDisplay.description}
             </div>
           )}
