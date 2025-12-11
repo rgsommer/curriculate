@@ -1073,7 +1073,7 @@ function StudentApp() {
     setScanError(null);
     setScannedStationId(data);
 
-    if (!roomCode || !joined || !teamId) return;
+    if (!roomCode || !teamId) return;
 
     socket.emit(
       "station:scan",
@@ -1083,17 +1083,24 @@ function StudentApp() {
         stationId: data,
       },
       (response) => {
-        if (!response || response.error) {
+        if (!response || response.error || response.ok === false) {
           setScanError(response?.error || "Scan was not accepted.");
+          // Keep scanner open on failure
+          setScannerActive(true);
           return;
         }
+
         if (response.stationId) {
           const stationInfo = normalizeStationId(response.stationId);
           setAssignedStationId(stationInfo.id);
           setAssignedColor(stationInfo.color || null);
           lastStationIdRef.current = stationInfo.id;
         }
+
+        // Successful scan → close scanner and show “joined + waiting”
         setScannerActive(false);
+        setStatusMessage("Station scanned! Waiting for your teacher’s next task…");
+        setJoined(true);
       }
     );
   };
@@ -2242,62 +2249,6 @@ function StudentApp() {
                 }}
               />
             </div>
-          </section>
-
-          {/* QR SCANNER TOGGLE */}
-          <section
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              marginTop: 4,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setScannerActive((prev) => !prev)}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: scannerActive
-                  ? "linear-gradient(135deg, #22c55e, #0ea5e9)"
-                  : "rgba(15,23,42,0.8)",
-                color: "#f9fafb",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <span role="img" aria-label="qr">
-                📷
-              </span>
-              {scannerActive ? "Hide Scanner" : "Scan Station"}
-            </button>
-
-            {progressLabel && (
-              <div style={{ textAlign: "right", fontSize: "0.8rem" }}>
-                <div style={{ color: "#e5e7eb", fontWeight: 600 }}>
-                  {progressLabel}
-                </div>
-                {currentTaskNumber && totalTasks && (
-                  <div className="progress-line">
-                    <div
-                      className="progress-line-inner"
-                      style={{
-                        width: `${Math.round(
-                          (currentTaskNumber / totalTasks) * 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </section>
 
           {/* QR SCANNER */}
