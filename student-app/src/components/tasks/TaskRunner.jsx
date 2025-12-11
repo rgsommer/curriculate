@@ -1,1055 +1,889 @@
-// backend/controllers/aiTasksetController.js
+// student-app/src/components/tasks/TaskRunner.jsx
+import React, { useMemo, useState, useEffect } from "react";
+import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
 
-import TaskSet from "../models/TaskSet.js";
-import OpenAI from "openai";
-import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+import BodyBreakTask from "./types/BodyBreakTask";
+import MakeAndSnapTask from "./types/MakeAndSnapTask";
+import MultipleChoiceTask from "./types/MultipleChoiceTask";
+import OpenTextTask from "./types/OpenTextTask";
+import PhotoTask from "./types/PhotoTask";
+import RecordAudioTask from "./types/RecordAudioTask";
+import SequenceTask from "./types/SequenceTask";
+import ShortAnswerTask from "./types/ShortAnswerTask";
+import SortTask from "./types/SortTask";
+import TrueFalseTask from "./types/TrueFalseTask";
+import DrawMimeTask from "./types/DrawMimeTask";
+import CollaborationTask from "./types/CollaborationTask";
+import MusicalChairsTask from "./types/MusicalChairsTask";
+import MysteryCluesTask from "./types/MysteryCluesTask";
+import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
+import MadDashSequenceTask from "./types/MadDashSequenceTask";
+import LiveDebateTask from "./types/LiveDebateTask";
+import FlashcardsTask from "./types/FlashcardsTask";
+import FlashcardsRaceTask from "./types/FlashcardsRaceTask";
+import TimelineTask from "./types/TimelineTask";
+import PetFeedingTask from "./types/PetFeedingTask";
+import MotionMissionTask from "./types/MotionMissionTask";
+import BrainstormBattleTask from "./types/BrainstormBattleTask";
+import MindMapperTask from "./types/MindMapperTask";
+import SpeedDrawTask from "./types/SpeedDrawTask";
+import DiffDetectiveTask from "./types/DiffDetectiveTask";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Build a list of implemented, AI-eligible task types
-const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.implemented !== false && meta.aiEligible !== false)
-  .map(([type]) => type);
-
-// Fallback core types if metadata is missing / empty
-const CORE_TYPES =
-  AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
-    ? AI_ELIGIBLE_TYPES
-    : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
-
-// Types that can sensibly hold multiple sub-questions ("items") in one task
-const MULTI_ITEM_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.multiItemCapable)
-  .map(([type]) => type);
-
-function validateGeneratePayload(payload = {}) {
-  const errors = [];
-
-  if (!payload.gradeLevel) errors.push("gradeLevel is required");
-  if (!payload.subject) errors.push("subject is required");
-
-  const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
-  const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
-
-  const difficulty = (payload.difficulty || "MEDIUM").toString().toUpperCase();
-  const learningGoal = (payload.learningGoal || "REVIEW")
-    .toString()
-    .toUpperCase();
-
-  if (!difficultiesAllowed.includes(difficulty)) {
-    errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
+function shuffleArray(array) {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
   }
-
-  if (!goalsAllowed.includes(learningGoal)) {
-    errors.push("learningGoal must be one of " + goalsAllowed.join(", "));
-  }
-
-  return { errors, difficulty, learningGoal };
+  return copy;
 }
 
-/**
- * Normalize a user-facing type token to a canonical TASK_TYPES value.
- * This lets the UI send legacy values like "multiple_choice".
- */
-function normalizeSelectedType(raw) {
-  if (!raw) return null;
-  const v = String(raw).trim().toLowerCase().replace(/_/g, "-");
-
-  if (v === "multiple-choice" || v === "multiplechoice" || v === "mcq") {
-    return TASK_TYPES.MULTIPLE_CHOICE;
-  }
-  if (v === "true-false" || v === "truefalse" || v === "tf") {
-    return TASK_TYPES.TRUE_FALSE;
-  }
-  if (v === "short-answer" || v === "shortanswer" || v === "sa") {
-    return TASK_TYPES.SHORT_ANSWER;
-  }
-  if (v === "open-text" || v === "open_text" || v === "open") {
-    return TASK_TYPES.OPEN_TEXT;
-  }
-  if (v === "sort" || v === "categorize" || v === "sort-task") {
-    return TASK_TYPES.SORT;
-  }
-  if (v === "sequence" || v === "timeline" || v === "order") {
-    return TASK_TYPES.SEQUENCE;
-  }
-  if (v === "photo" || v === "photo-evidence" || v === "photo_description") {
-    return TASK_TYPES.PHOTO;
-  }
-  if (
-    v === "photo-journal" ||
-    v === "photo_journal" ||
-    v === "photojournal" ||
-    v === "photo-journal-task"
-  ) {
-    return TASK_TYPES.PHOTO_JOURNAL;
-  }
-  if (v === "make-and-snap" || v === "make_and_snap") {
-    return TASK_TYPES.MAKE_AND_SNAP;
-  }
-  if (v === "body-break" || v === "body_break") {
-    return TASK_TYPES.BODY_BREAK;
-  }
-  if (v === "brain-blitz" || v === "jeopardy" || v === "jeopardy_game") {
-    return TASK_TYPES.JEOPARDY;
-  }
-  if (v === "collaboration" || v === "collab" || v === "pair-discussion") {
-    return TASK_TYPES.COLLABORATION;
-  }
-  if (
-    v === "diff-detective" ||
-    v === "spot-the-difference" ||
-    v === "diff" ||
-    v === "find-differences"
-  ) {
-    return TASK_TYPES.DIFF_DETECTIVE;
-  }
-  if (v === "draw-mime" || v === "drawmime" || v === "draw-or-mime") {
-    return TASK_TYPES.DRAW_MIME;
-  }
-
-  // Fallback: if already a canonical value, keep it
-  if (Object.values(TASK_TYPES).includes(v)) return v;
-
-  return null;
+// Convert "quick_response" → "Quick Response"
+function toTitleCase(str) {
+  if (!str) return "";
+  return str
+    .replace(/[_-]+/g, " ")
+    .replace(/\w\S*/g, (txt) =>
+      txt.charAt(0).toUpperCase() + txt.substring(1).toLowerCase()
+    );
 }
 
-/**
- * POST /api/ai/tasksets
- */
-export const generateAiTaskset = async (req, res) => {
-  try {
-    const {
-      subject,
-      gradeLevel,
+function normalizeTaskType(raw) {
+  if (!raw) return TASK_TYPES.SHORT_ANSWER;
 
-      // Old shape
-      numTasks,
-      selectedTypes,
-      customInstructions = "",
+  switch (raw) {
+    // MC / TF / SHORT
+    case "mc":
+    case "multiple-choice":
+      return TASK_TYPES.MULTIPLE_CHOICE;
 
-      // New / current shape from AiTasksetGenerator
-      difficulty,
-      learningGoal,
-      topicDescription = "", // "Special considerations" from UI
-      topicTitle = "", // Task set title: main topic
-      totalDurationMinutes,
-      durationMinutes,
-      numberOfTasks,
-      presenterProfile,
-      aiWordBank,
+    case "tf":
+    case "true_false":
+    case "true-false":
+      return TASK_TYPES.TRUE_FALSE;
 
-      // Session / room context
-      tasksetName: explicitName,
-      roomLocation,
-      locationCode,
-      isFixedStationTaskset,
-      displays,
-    } = req.body || {};
+    case "short":
+    case "short-answer":
+    case "open":
+      return TASK_TYPES.SHORT_ANSWER;
 
-    const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
-    const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
+    case "open-text":
+    case "open_text":
+      return TASK_TYPES.OPEN_TEXT;
 
-    const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
-      validateGeneratePayload({
-        subject,
-        gradeLevel,
-        difficulty,
-        learningGoal,
-      });
+    // Sorting & Sequence
+    case "sort":
+      return TASK_TYPES.SORT;
 
-    if (errors.length) {
-      return res
-        .status(400)
-        .json({ error: "Invalid payload: " + errors.join(", ") });
-    }
+    case "seq":
+    case "sequence":
+      return TASK_TYPES.SEQUENCE;
 
-    const safeCount = Math.max(4, Math.min(20, requestedCount || 8));
+    // Photo / Media
+    case "photo":
+      return TASK_TYPES.PHOTO;
 
-    // ------------- Resolve allowed task types -------------
-    const rawSelected =
-      (Array.isArray(selectedTypes) && selectedTypes) ||
-      (Array.isArray(req.body.requiredTaskTypes) &&
-        req.body.requiredTaskTypes) ||
-      [];
+    case "make-and-snap":
+    case "make_and_snap":
+      return TASK_TYPES.MAKE_AND_SNAP;
 
-    let typePool;
+    case "record-audio":
+    case "record_audio":
+      return TASK_TYPES.RECORD_AUDIO;
 
-    if (rawSelected.length > 0) {
-      const normalized = rawSelected
-        .map(normalizeSelectedType)
-        .filter(Boolean)
-        .filter((t) => AI_ELIGIBLE_TYPES.includes(t));
-      typePool = normalized.length ? normalized : CORE_TYPES;
-    } else {
-      typePool = CORE_TYPES;
-    }
+    // Body break
+    case "body-break":
+    case "body_break":
+      return TASK_TYPES.BODY_BREAK;
 
-    // ------------- Presenter lenses / perspectives -------------
-    let lenses = [];
-    if (
-      presenterProfile &&
-      Array.isArray(presenterProfile.curriculumLenses) &&
-      presenterProfile.curriculumLenses.length
-    ) {
-      lenses = presenterProfile.curriculumLenses;
-    } else if (
-      presenterProfile &&
-      Array.isArray(presenterProfile.perspectives) &&
-      presenterProfile.perspectives.length
-    ) {
-      lenses = presenterProfile.perspectives;
-    }
-    const lensesText = lenses.length ? lenses.join(", ") : "none specified";
+    // Draw-only tasks
+    case "Draw":
+    case "draw":
+    case "drawing":
+      return TASK_TYPES.DRAW;
 
-    // ------------- Vocabulary / word bank -------------
-    let rawWordBank = [];
-    if (Array.isArray(aiWordBank)) {
-      rawWordBank = aiWordBank;
-    } else if (typeof aiWordBank === "string") {
-      rawWordBank = aiWordBank
-        .split(/[\n,;]+/)
-        .map((w) => w.trim())
-        .filter(Boolean);
-    }
+    // Mime-only tasks
+    case "mime":
+    case "act":
+    case "act-out":
+      return TASK_TYPES.MIME;
 
-    // If the UI somehow sent nothing, still guard here
-    if (!rawWordBank.length) {
-      return res.status(400).json({
-        error:
-          "Vocabulary / key terms are required. The AI needs at least one term to stay on topic.",
-      });
-    }
+    // Combined draw–mime tasks
+    case "draw-mime":
+    case "draw_mime":
+      return TASK_TYPES.DRAW_MIME;
 
-    const vocabularyText = rawWordBank.map((w) => `- ${w}`).join("\n");
+    // Diff Detective
+    case "diff-detective":
+    case "diff_detective":
+    case "diff":
+      return TASK_TYPES.DIFF_DETECTIVE;
 
-    // ------------- Topic & subject discipline -------------
-    const titleTrimmed = (topicTitle || explicitName || "").trim();
-    const topicLabel =
-      titleTrimmed ||
-      `${subject || "Lesson"} – Grade ${gradeLevel || "?"} review`;
+    default:
+      return raw;
+  }
+}
 
-    const specialConsiderations = (topicDescription || "").trim();
-    const customNotes = (customInstructions || "").trim();
+/* ─────────────────────────────────────────────
+   Multi-part renderer for MC / TF / Short Answer
+   ───────────────────────────────────────────── */
 
-    const normalizedSubject = (subject || "").toString().toLowerCase();
+function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
+  const isChoice = mode === "choice";
+  const isShort = mode === "short";
 
-    // Allow religious content ONLY if the subject actually is Bible / Religion, etc.
-    const subjectIsReligious = /bible|religion|religious|christian|faith/.test(
-      normalizedSubject
-    );
+  // Prefer AI "items" array; fall back to older shapes;
+  // if none exist, treat as a single-question pack.
+  const rawItems =
+    (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
+    (Array.isArray(task.questions) &&
+      task.questions.length > 0 &&
+      task.questions) ||
+    (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
+    (Array.isArray(task.multiQuestions) &&
+      task.multiQuestions.length > 0 &&
+      task.multiQuestions) ||
+    [];
 
-    const religiousGuardrail = subjectIsReligious
-      ? ""
-      : `
-You MUST NOT introduce religious, Bible, theological, or spiritual content,
-and you MUST NOT write about unrelated subjects. Stay strictly within the
-given subject and topic.`.trim();
+  const items =
+    rawItems.length > 0
+      ? rawItems
+      : [
+          {
+            id: task.id || "only",
+            prompt: task.prompt,
+            options: task.options || [],
+            correctAnswer: task.correctAnswer ?? null,
+          },
+        ];
 
-    // ------------- Build per-type guidelines from TASK_TYPE_META -------------
-    const typeGuidelines = typePool
-      .map((t) => {
-        const meta = TASK_TYPE_META[t] || {};
-        const label = meta.label || t;
-        const desc = meta.description || "";
-        return `- "${t}" (${label}): ${desc}`;
-      })
-      .join("\n");
-
-    // ------------- System & user prompts -------------
-    const systemPrompt = `
-You are an expert classroom teacher using Curriculate, a station-based task system.
-
-Your job:
-- Generate short, engaging, curriculum-aligned tasks for the given grade, subject, and topic.
-- Use ONLY the allowed task types provided.
-- Obey all constraints and special considerations from the teacher.
-- Use the vocabulary list as the core of the topic—do not drift.
-
-${religiousGuardrail}
-
-For each allowed taskType, follow these guidelines:
-${typeGuidelines}
-`.trim();
-
-    const vocabSection = `
-Vocabulary / key terms for this task set.
-These define the boundaries of the topic. Do NOT generate tasks unrelated
-to these terms.
-
-${vocabularyText}
-`.trim();
-
-    const considerationsSection = specialConsiderations
-      ? `
-Special considerations from the teacher (these constrain style or emphasis,
-but do NOT change the core topic):
-
-${specialConsiderations}
-`.trim()
-      : "";
-
-    const lensesSection =
-      lensesText && lensesText !== "none specified"
-        ? `
-Curricular lenses / perspectives to emphasize (when natural):
-
-${lensesText}
-`.trim()
-        : "";
-
-    const taskTypeList = typePool.join(", ");
-
-    const multiItemTypesList = MULTI_ITEM_TYPES.filter((t) =>
-      typePool.includes(t)
-    );
-
-    const userPrompt = `
-Create ${safeCount} tasks for the following class:
-
-- Subject: ${subject}
-- Grade level: ${gradeLevel}
-- Difficulty: ${normDifficulty}
-- Learning goal: ${normGoal}
-- Topic / unit: ${topicLabel}
-- Approx lesson duration (minutes): ${duration}
-
-${vocabSection}
-
-${considerationsSection}
-
-${lensesSection}
-
-Rules:
-- Mix of the allowed taskTypes only: ${taskTypeList}.
-- Each task has a short clear title and a prompt that students will see.
-- Tasks should, whenever possible, reflect the listed curricular lenses
-  (for example, by connecting content or examples to that perspective).
-
-For "${TASK_TYPES.MULTIPLE_CHOICE}":
-  - Each task may be a SINGLE question or a SHORT SET (mini-quiz) of 3–5 multiple-choice questions.
-  - If it is a short set, use an "items" array where each item is:
-    {
-      "id": "q1",
-      "prompt": "Question text",
-      "options": ["A", "B", "C"],
-      "correctAnswer": 0
-    }
-  - The top-level "prompt" should still be a brief instruction like
-    "Answer each of the following multiple-choice questions."
-  - For each question, provide 3–5 options (short strings).
-  - For each question, correctAnswer is the ZERO-BASED index of the correct option.
-
-For "${TASK_TYPES.TRUE_FALSE}":
-  - Each task may be a SINGLE statement or a SHORT SET of 3–5 True/False statements.
-  - If it is a short set, use an "items" array where each item is:
-    {
-      "id": "s1",
-      "prompt": "Statement text",
-      "options": ["True", "False"],
-      "correctAnswer": 0
-    }
-  - The top-level "prompt" should be a brief instruction like
-    "Decide if each statement is True or False."
-  - For each question, options must be ["True", "False"].
-  - For each question, correctAnswer is the ZERO-BASED index (0 or 1).
-
-For "${TASK_TYPES.SHORT_ANSWER}":
-  - Each task may be a SINGLE prompt or a SHORT SET of 3–5 short-answer prompts.
-  - If it is a short set, use an "items" array where each item is:
-    {
-      "id": "sa1",
-      "prompt": "Prompt text",
-      "correctAnswer": "reference answer"
-    }
-  - The top-level "prompt" should be a brief instruction like
-    "Answer each question with a word or short phrase."
-  - For short-answer tasks, top-level "options" should be an empty array.
-  - For each question, correctAnswer is a short reference answer string (or null).
-
-For "${TASK_TYPES.OPEN_TEXT}":
-  - Use a SINGLE open-ended prompt that calls for a paragraph-length written response.
-  - Do NOT include an "options" array; students will type their own answer.
-  - "correctAnswer" should be null (these are evaluated with a rubric / AI scoring).
-  - Good uses: short reflections, explanations, or justifications about the topic.
-
-For "${TASK_TYPES.SORT}":
-  - Use a "config" object with:
-    - "buckets": an array of 2–4 category labels (short strings).
-    - "items": an array of 6–10 objects of the form
-      { "text": "Item text", "bucketIndex": 0 }
-      where bucketIndex is the ZERO-BASED index into "buckets" for the correct category.
-  - "options" must be an empty array.
-  - "correctAnswer" should be null (sorting is scored from config.items.bucketIndex).
-
-For "${TASK_TYPES.SEQUENCE}":
-  - Use a "config" object with:
-    - "items": an array of 4–8 objects of the form
-      { "text": "Step or event in the correct order" }.
-  - The array MUST list the items in the correct logical / chronological order.
-  - Students will be given these items in random order and will re-order them.
-  - "options" should normally be an empty array.
-  - "correctAnswer" should be null (ordering is scored from the full sequence, not a single index).
-
-For "${TASK_TYPES.COLLABORATION}":
-  - Use a single open-ended prompt that invites opinion, prediction, explanation,
-    or reflection related to the topic.
-  - Do NOT include an "options" array; students will type their own answer.
-  - "correctAnswer" should be null (these are scored by rubric / AI, not by a single key).
-  - Good examples: "Do you agree with this statement? Why or why not?",
-    "Predict what might happen next and explain your reasoning.",
-    "Explain how this idea would affect people living in X situation."
-
-For "${TASK_TYPES.DIFF_DETECTIVE}":
-  - Create a task where students must spot specific differences between two texts
-    (or two lists, code snippets, etc.).
-  - Provide these fields at the top level:
-    - "original": the original passage or list (string).
-    - "modified": the changed passage or list (string).
-    - "differences": an array of objects, each:
-      {
-        "expected": "original fragment → changed fragment",
-        "hint": "short optional hint for this difference (or null)"
-      }
-  - "options" should be an empty array.
-  - "correctAnswer" should be an array of short strings, one per difference,
-    describing each difference succinctly (e.g., "jumps → jumped", "206 → 208").
-  - Time limit should be 60–120 seconds depending on difficulty.
-
-For "${TASK_TYPES.FLASHCARDS}":
-  - Create a deck of 8–12 flashcards focused on the vocabulary terms.
-  - Use a "cards" array where each card is:
-    {
-      "question": "Short cue or question",
-      "answer": "Short word or phrase"
-    }
-  - Questions should be concise prompts tied directly to the vocabulary.
-  - Answers must be short words/phrases, not full paragraphs.
-  - Top-level "options" should be an empty array.
-  - Top-level "correctAnswer" should be null (each card has its own answer).
-
-For "${TASK_TYPES.DRAW_MIME}":
-  - Create a single, vivid prompt that invites students to respond with a drawing
-    (or act it out, if the teacher chooses).
-  - Do NOT include options; students respond with a drawing only.
-  - "correctAnswer" must be null.
-  - Example: "Draw the water cycle with arrows to show how water moves from
-    evaporation to condensation to precipitation."
-
-For "${TASK_TYPES.MIND_MAPPER}":
-  - Create a concept-mapping puzzle with 6–10 idea nodes.
-  - Provide a "config" object with:
-      "items": [
-        { "text": "Idea text", "correctIndex": 0 },
-        { "text": "Another idea", "correctIndex": 1 },
-        ...
-      ]
-  - The array MUST be in the correct conceptual order.
-  - Do NOT shuffle; the StudentApp will handle the randomization.
-  - "options" should be an empty array.
-  - "correctAnswer" must be null (scoring is based on matching correctIndex).
-
-Return ONLY valid JSON in this exact format (no backticks, no extra text):
-[
-  {
-    "title": "Short title",
-    "prompt": "Student-facing instructions / question or mini-quiz heading.",
-    "taskType": "multiple-choice",
-    "options": ["Option A", "Option B"],
-    "correctAnswer": 0,
-    "timeLimitSeconds": 60,
-    "points": 10,
-
-    // OPTIONAL for multi-question tasks (MC / TF / Short Answer):
-    "items": [
-      {
-        "id": "q1",
-        "prompt": "First question",
-        "options": ["A", "B", "C"],
-        "correctAnswer": 0
-      }
-    ],
-
-    // OPTIONAL for sort tasks:
-    "config": {
-      "buckets": ["Category 1", "Category 2"],
-      "items": [
-        { "text": "Item 1", "bucketIndex": 0 }
-      ]
-    },
-
-    // OPTIONAL for flashcards:
-    // "cards": [
-    //   { "question": "Q1", "answer": "A1" }
-    // ]
-  },
-  ...
-]
-`.trim();
-
-    const completion = await client.chat.completions.create({
-      model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
-      temperature: 0.6,
-      max_tokens: 2000,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
+  // Per-item shuffled options; base options always reconstructed in submit.
+  const itemOptions = useMemo(() => {
+    if (!isChoice) return null;
+    return items.map((item) => {
+      const base =
+        (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+        (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+        (task.taskType === TASK_TYPES.TRUE_FALSE ||
+        task.type === TASK_TYPES.TRUE_FALSE
+          ? ["True", "False"]
+          : []);
+      if (!base || base.length === 0) return [];
+      return shuffleArray(base);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, isChoice, task.taskType, task.type]);
 
-    const raw = completion.choices[0]?.message?.content?.trim() || "[]";
+  const [answers, setAnswers] = useState(() =>
+    items.map(() => ({
+      value: isChoice ? null : "",
+    }))
+  );
 
-    let aiTasks;
-    try {
-      aiTasks = JSON.parse(raw);
-    } catch (err) {
-      console.error("AI taskset JSON parse error:", err, raw.slice(0, 500));
-      return res.status(500).json({
-        error: "AI returned invalid JSON for taskset",
-      });
-    }
+  const handleChoiceClick = (itemIndex, option) => {
+    setAnswers((prev) =>
+      prev.map((ans, idx) =>
+        idx === itemIndex ? { ...ans, value: option } : ans
+      )
+    );
+  };
 
-    if (!Array.isArray(aiTasks) || aiTasks.length === 0) {
-      return res
-        .status(500)
-        .json({ error: "AI returned no tasks for this request" });
-    }
+  const handleTextChange = (itemIndex, value) => {
+    setAnswers((prev) =>
+      prev.map((ans, idx) => (idx === itemIndex ? { ...ans, value } : ans))
+    );
+  };
 
-    console.log("AI RAW TASKS (debug)", JSON.stringify(aiTasks, null, 2));
+  const allAnswered = answers.every(
+    (ans) => ans.value !== null && String(ans.value).trim() !== ""
+  );
 
-    // ---------- Normalize AI tasks into TaskSet schema ----------
-    const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
-      // Try to interpret the AI's taskType using the same normalizer we use for UI input
-      const rawTypeToken = t.taskType || t.type || "";
-      const normalizedFromAi = normalizeSelectedType(rawTypeToken);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (submitting || disabled || !allAnswered) return;
 
-      let taskType = TASK_TYPES.SHORT_ANSWER;
+    const payload = items.map((item, idx) => {
+      const answerVal = answers[idx]?.value ?? null;
 
-      if (normalizedFromAi && typePool.includes(normalizedFromAi)) {
-        taskType = normalizedFromAi;
-      } else if (typeof rawTypeToken === "string") {
-        // Fallback: use the literal lowercased token if it matches typePool
-        const lowered = rawTypeToken.toString().trim().toLowerCase();
-        if (typePool.includes(lowered)) {
-          taskType = lowered;
-        } else if (typePool.length === 1) {
-          // As a last resort, if only one type was allowed, trust that.
-          taskType = typePool[0];
-        }
-      }
+      // For choice-based items, compute index in ORIGINAL base options,
+      // not in the shuffled order.
+      let baseIndex = null;
+      if (isChoice && answerVal != null) {
+        const base =
+          (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+          (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+          (task.taskType === TASK_TYPES.TRUE_FALSE ||
+          task.type === TASK_TYPES.TRUE_FALSE
+            ? ["True", "False"]
+            : []);
 
-      const meta = TASK_TYPE_META[taskType] || {};
-      const multiItemCapable = !!meta.multiItemCapable;
-
-      // Base options, config, items
-      let options = Array.isArray(t.options) ? t.options : [];
-      let config = null;
-      let items = [];
-
-      // ---------- Options / config / items by type ----------
-      if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
-        // Normalise multi-item MC, if present
-        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
-          items = t.items.map((it, idx) => {
-            const id = it.id || `q${idx + 1}`;
-            const iprompt =
-              it.prompt && String(it.prompt).trim()
-                ? String(it.prompt).trim()
-                : `Question ${idx + 1}`;
-            let ioptions = Array.isArray(it.options) ? it.options : [];
-            if (ioptions.length < 2) {
-              ioptions = ["Option A", "Option B"];
-            }
-
-            let icorrect = it.correctAnswer ?? null;
-            if (typeof icorrect === "string") {
-              const idxMatch = ioptions.findIndex(
-                (opt) => String(opt).trim() === icorrect.trim()
-              );
-              icorrect = idxMatch >= 0 ? idxMatch : 0;
-            } else if (Number.isInteger(icorrect)) {
-              let idxNum = icorrect;
-              if (idxNum < 0 || idxNum >= ioptions.length) idxNum = 0;
-              icorrect = idxNum;
-            } else {
-              icorrect = 0;
-            }
-
-            return {
-              id,
-              prompt: iprompt,
-              options: ioptions,
-              correctAnswer: icorrect,
-            };
-          });
-        }
-
-        // Legacy / single-question MC at top-level
-        if (options.length < 2) {
-          options = ["Option A", "Option B"];
-        }
-      } else if (taskType === TASK_TYPES.SEQUENCE) {
-        // Normalise sequence/timeline tasks into config.items
-        const aiConfig =
-          t.config && typeof t.config === "object" ? t.config : {};
-
-        const rawItems = Array.isArray(aiConfig.items)
-          ? aiConfig.items
-          : Array.isArray(t.items)
-          ? t.items
-          : Array.isArray(t.options)
-          ? t.options
-          : [];
-
-        const seqItems = rawItems.map((it, idx) => {
-          if (typeof it === "string") {
-            return { text: it };
-          }
-
-          if (it && typeof it === "object") {
-            const text =
-              it.text ||
-              it.label ||
-              it.name ||
-              it.prompt ||
-              `Step ${idx + 1}`;
-            return { text };
-          }
-
-          return { text: String(it) };
-        });
-
-        config = {
-          ...aiConfig,
-          items: seqItems,
-        };
-
-        // We don't need flat options for sequence; items live in config.items
-        options = [];
-      } else if (taskType === TASK_TYPES.SORT) {
-        // Normalise sort/categorize into config.buckets + config.items
-        const aiConfig =
-          t.config && typeof t.config === "object" ? t.config : {};
-
-        // Buckets / categories: accept a few common field names
-        const rawBuckets = Array.isArray(aiConfig.buckets)
-          ? aiConfig.buckets
-          : Array.isArray(aiConfig.categories)
-          ? aiConfig.categories
-          : Array.isArray(t.buckets)
-          ? t.buckets
-          : Array.isArray(t.categories)
-          ? t.categories
-          : [];
-
-        const buckets = rawBuckets.map((b, i) => {
-          if (typeof b === "string") return b;
-          if (b && typeof b === "object") {
-            return (
-              b.label ||
-              b.name ||
-              b.title ||
-              b.category ||
-              `Category ${i + 1}`
-            );
-          }
-          return `Category ${i + 1}`;
-        });
-
-        // Items / events to sort: accept a few field names
-        const rawItems = Array.isArray(aiConfig.items)
-          ? aiConfig.items
-          : Array.isArray(aiConfig.sortItems)
-          ? aiConfig.sortItems
-          : Array.isArray(aiConfig.events)
-          ? aiConfig.events
-          : Array.isArray(t.items)
-          ? t.items
-          : Array.isArray(t.sortItems)
-          ? t.sortItems
-          : Array.isArray(t.events)
-          ? t.events
-          : [];
-
-        const sortItems = rawItems.map((it, idx) => {
-          if (typeof it === "string") {
-            return { text: it, bucketIndex: null };
-          }
-
-          if (it && typeof it === "object") {
-            const text =
-              it.text ||
-              it.label ||
-              it.name ||
-              it.prompt ||
-              `Item ${idx + 1}`;
-
-            let bucketIndex = null;
-            if (typeof it.bucketIndex === "number") {
-              bucketIndex = it.bucketIndex;
-            } else if (typeof it.bucket === "number") {
-              bucketIndex = it.bucket;
-            } else if (typeof it.categoryIndex === "number") {
-              bucketIndex = it.categoryIndex;
-            }
-
-            // Clamp out-of-range indices
-            if (
-              typeof bucketIndex === "number" &&
-              (bucketIndex < 0 || bucketIndex >= buckets.length)
-            ) {
-              bucketIndex = null;
-            }
-
-            return { text, bucketIndex };
-          }
-
-          return { text: String(it), bucketIndex: null };
-        });
-
-        config = {
-          ...aiConfig,
-          buckets,
-          items: sortItems,
-        };
-
-        // No flat options / correctAnswer for SORT; scoring uses config
-        options = [];
-      } else if (taskType === TASK_TYPES.MIND_MAPPER) {
-        // Normalize MindMapper into config.items with { text, correctIndex }
-        const aiConfig =
-          t.config && typeof t.config === "object" ? t.config : {};
-
-        const rawItems = Array.isArray(aiConfig.items)
-          ? aiConfig.items
-          : Array.isArray(t.items)
-          ? t.items
-          : Array.isArray(t.options)
-          ? t.options
-          : [];
-
-        const mappedItems = rawItems.map((it, idx) => {
-          if (typeof it === "string") {
-            return { text: it, correctIndex: idx };
-          }
-          if (it && typeof it === "object") {
-            const text =
-              it.text ||
-              it.label ||
-              it.name ||
-              it.prompt ||
-              `Idea ${idx + 1}`;
-
-            let correctIndex = it.correctIndex;
-            if (typeof correctIndex !== "number") {
-              correctIndex = idx;
-            }
-
-            return { text, correctIndex };
-          }
-          return { text: String(it), correctIndex: idx };
-        });
-
-        config = {
-          ...aiConfig,
-          items: mappedItems,
-        };
-
-        // StudentApp MindMapperTask expects no "options" for this type
-        options = [];
-      } else {
-        // Other types – assume no options by default
-        options = Array.isArray(t.options) ? t.options : [];
-      }
-
-      // For SHORT_ANSWER, we may also receive an "items" array
-      if (taskType === TASK_TYPES.SHORT_ANSWER && multiItemCapable) {
-        if (Array.isArray(t.items) && t.items.length) {
-          items = t.items.map((it, idx) => {
-            const id = it.id || `sa${idx + 1}`;
-            const iprompt =
-              it.prompt && String(it.prompt).trim()
-                ? String(it.prompt).trim()
-                : `Prompt ${idx + 1}`;
-            let icorrect = it.correctAnswer ?? null;
-            if (typeof icorrect === "string") {
-              icorrect = icorrect.trim();
-            } else {
-              icorrect = null;
-            }
-            return {
-              id,
-              prompt: iprompt,
-              correctAnswer: icorrect,
-            };
-          });
-        }
-      }
-
-      // ---------- correctAnswer + aiScoringRequired ----------
-      let correctAnswer = t.correctAnswer ?? null;
-
-      if (
-        (taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-          taskType === TASK_TYPES.TRUE_FALSE) &&
-        options.length > 0
-      ) {
-        // normalise to a valid index
-        if (typeof correctAnswer === "string") {
-          const idx = options.findIndex(
-            (opt) => String(opt).trim() === correctAnswer.trim()
+        if (base && base.length > 0) {
+          const idxBase = base.findIndex(
+            (opt) => String(opt).trim() === String(answerVal).trim()
           );
-          correctAnswer = idx >= 0 ? idx : 0;
-        } else if (Number.isInteger(correctAnswer)) {
-          let idx = correctAnswer;
-          if (idx < 0 || idx >= options.length) idx = 0;
-          correctAnswer = idx;
-        } else {
-          correctAnswer = 0;
+          baseIndex = idxBase >= 0 ? idxBase : null;
         }
-      } else if (taskType === TASK_TYPES.SHORT_ANSWER) {
-        if (typeof correctAnswer !== "string") {
-          correctAnswer = null;
-        } else {
-          const trimmed = correctAnswer.trim();
-          const lower = trimmed.toLowerCase();
-
-          // If the AI tried to make a “short answer” that’s just True/False,
-          // auto-convert it into a proper TRUE_FALSE item instead.
-          if (lower === "true" || lower === "false") {
-            taskType = TASK_TYPES.TRUE_FALSE;
-            options = ["True", "False"];
-            correctAnswer = lower === "true" ? 0 : 1;
-          } else {
-            correctAnswer = trimmed;
-          }
-        }
-      } else if (
-        taskType === TASK_TYPES.SORT ||
-        taskType === TASK_TYPES.SEQUENCE ||
-        taskType === TASK_TYPES.MIND_MAPPER
-      ) {
-        // Sort & Sequence scoring use config; no flat correctAnswer
-        correctAnswer = null;
-      }
-
-      // For objective types, we can score directly; others need AI/rubric.
-      const objective = meta.objectiveScoring === true;
-      let aiScoringRequired;
-      if (typeof t.aiScoringRequired === "boolean") {
-        // If AI or UI explicitly set it, respect that.
-        aiScoringRequired = t.aiScoringRequired;
-      } else if (objective) {
-        // Objective types can be auto-scored without AI.
-        aiScoringRequired = false;
-      } else if (typeof meta.defaultAiScoringRequired === "boolean") {
-        // Fall back to the metadata default.
-        aiScoringRequired = meta.defaultAiScoringRequired;
-      } else {
-        // Safe default: non-objective types need AI/rubric.
-        aiScoringRequired = true;
-      }
-
-      // ---------- Flashcards deck (cards) ----------
-      let cards = null;
-      if (taskType === TASK_TYPES.FLASHCARDS) {
-        const rawCards =
-          (Array.isArray(t.cards) && t.cards.length
-            ? t.cards
-            : Array.isArray(t.items) && t.items.length
-            ? t.items
-            : []) || [];
-
-        cards = rawCards.map((c, idx) => {
-          if (!c || (typeof c !== "object" && typeof c !== "string")) {
-            return { question: `Card ${idx + 1}`, answer: "" };
-          }
-
-          if (typeof c === "string") {
-            return { question: c, answer: "" };
-          }
-
-          const question = c.question || c.prompt || c.clue || `Card ${idx + 1}`;
-
-          let answer = c.answer ?? c.correctAnswer ?? "";
-
-          if (Array.isArray(answer)) {
-            answer = answer[0] ?? "";
-          }
-
-          if (typeof answer !== "string") {
-            answer = String(answer || "");
-          }
-
-          return {
-            question: String(question),
-            answer: answer.trim(),
-          };
-        });
-
-        // Flashcards rely on per-card answers, not top-level options/correctAnswer
-        options = [];
-        correctAnswer = null;
-      }
-
-      // ---------- Common fields ----------
-      const title =
-        t.title && String(t.title).trim()
-          ? String(t.title).trim().slice(0, 120)
-          : `Task ${index + 1}`;
-
-      // If this is a multi-item task and the prompt is missing, fall back to a generic heading.
-      let prompt =
-        t.prompt && String(t.prompt).trim()
-          ? String(t.prompt).trim()
-          : multiItemCapable && items.length
-          ? "Answer each of the questions below."
-          : "Follow the instructions given by your teacher.";
-
-      const timeLimitSeconds = Number.isFinite(t.timeLimitSeconds)
-        ? Math.max(10, Math.min(600, Math.round(t.timeLimitSeconds)))
-        : null;
-
-      const points = Number.isFinite(t.points)
-        ? Math.max(1, Math.min(50, Math.round(t.points)))
-        : 10;
-
-      // Diff Detective specific normalization
-      let original = null;
-      let modified = null;
-      let differences = null;
-
-      if (taskType === TASK_TYPES.DIFF_DETECTIVE) {
-        original = t.original ? String(t.original) : "";
-        modified = t.modified ? String(t.modified) : "";
-
-        const rawDiffs = Array.isArray(t.differences) ? t.differences : [];
-        differences = rawDiffs.map((d, i) => {
-          if (!d || typeof d !== "object") {
-            return { expected: String(d || ""), hint: null };
-          }
-          return {
-            expected: d.expected ? String(d.expected) : "",
-            hint:
-              typeof d.hint === "string" && d.hint.trim()
-                ? d.hint.trim()
-                : null,
-          };
-        });
-
-        // DiffDetective doesn't need options/config/items
-        options = [];
-        config = null;
-        items = [];
-      }
-
-      // ---------- MindMapper: attach shuffledItems for StudentApp ----------
-      if (
-        taskType === TASK_TYPES.MIND_MAPPER &&
-        config &&
-        Array.isArray(config.items)
-      ) {
-        const uiItems = config.items.map((it, idx) => ({
-          id: `item-${idx}`,
-          text: it.text,
-          correctIndex: it.correctIndex,
-        }));
-        t.shuffledItems = uiItems;
       }
 
       return {
-        index,
-        title,
-        prompt,
-        taskType,
-        options,
-        correctAnswer,
-        aiScoringRequired,
-        timeLimitSeconds,
-        points,
-        config,
-        items,
-        ...(taskType === TASK_TYPES.FLASHCARDS && { cards }),
-        ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
-          original,
-          modified,
-          differences,
-        }),
-
-        // MindMapper data for Student UI
-        ...(taskType === TASK_TYPES.MIND_MAPPER && {
-          shuffledItems: t.shuffledItems,
-        }),
+        itemId: item.id ?? idx,
+        prompt: item.prompt ?? item.text ?? "",
+        value: answerVal,
+        baseIndex,
       };
     });
 
-    // ---------- Word-bank usage analysis ----------
-    let aiWordsUsed = [];
-    let aiWordsUnused = [];
+    onSubmit &&
+      onSubmit({
+        type: isChoice ? "multi-choice" : "multi-short",
+        answers: payload,
+      });
+  };
 
-    if (rawWordBank.length && Array.isArray(tasks)) {
-      const allText = tasks
-        .map((t) => `${t.title || ""} ${t.prompt || ""}`)
-        .join(" ")
-        .toLowerCase();
+  return (
+    <form onSubmit={handleSubmit}>
+      {task.prompt && (
+        <p
+          style={{
+            marginTop: 0,
+            marginBottom: 12,
+            fontSize: "1rem",
+            fontWeight: 500,
+          }}
+        >
+          {task.prompt}
+        </p>
+      )}
 
-      aiWordsUsed = rawWordBank.filter((w) =>
-        allText.includes(String(w).toLowerCase())
-      );
-      aiWordsUnused = rawWordBank.filter(
-        (w) => !allText.includes(String(w).toLowerCase())
-      );
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {items.map((item, idx) => {
+          const label =
+            item.label ||
+            item.question ||
+            item.prompt ||
+            item.stem ||
+            item.text ||
+            item.title ||
+            item.description;
+          const opts = isChoice ? itemOptions[idx] || [] : [];
+          const answerVal = answers[idx]?.value ?? "";
+
+          return (
+            <div
+              key={item.id ?? idx}
+              style={{
+                padding: 10,
+                borderRadius: 12,
+                border: "1px solid #e5e7eb",
+                background: "#f9fafb",
+              }}
+            >
+              {label && (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    fontSize: "0.95rem",
+                    fontWeight: 500,
+                  }}
+                >
+                  <span style={{ marginRight: 4 }}>{idx + 1}.</span>
+                  {label}
+                </div>
+              )}
+
+              {isChoice ? (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr",
+                    gap: 6,
+                  }}
+                >
+                  {opts.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => handleChoiceClick(idx, opt)}
+                      disabled={submitting || disabled}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 999,
+                        border:
+                          answerVal === opt
+                            ? "2px solid #0ea5e9"
+                            : "1px solid #d1d5db",
+                        background:
+                          answerVal === opt
+                            ? "rgba(14,165,233,0.12)"
+                            : "#ffffff",
+                        textAlign: "left",
+                        cursor:
+                          submitting || disabled ? "not-allowed" : "pointer",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <textarea
+                  rows={2}
+                  value={answerVal}
+                  onChange={(e) => handleTextChange(idx, e.target.value)}
+                  disabled={submitting || disabled}
+                  style={{
+                    width: "100%",
+                    padding: "6px 8px",
+                    borderRadius: 10,
+                    border: "1px solid " + "#d1d5db",
+                    fontSize: "0.9rem",
+                    resize: "vertical",
+                  }}
+                  placeholder="Type your answer…"
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          type="submit"
+          disabled={!allAnswered || submitting || disabled}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 999,
+            border: "none",
+            background: allAnswered ? "#16a34a" : "#9ca3af",
+            color: "#ffffff",
+            fontSize: "0.9rem",
+            fontWeight: 600,
+            cursor:
+              !allAnswered || submitting || disabled
+                ? "not-allowed"
+                : "pointer",
+          }}
+        >
+          {submitting
+            ? "Sending…"
+            : items.length > 1
+            ? "Submit all"
+            : "Submit"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Main TaskRunner
+   ───────────────────────────────────────────── */
+
+export default function TaskRunner({
+  task,
+  taskTypes,
+  onSubmit,
+  submitting = false,
+  onAnswerChange,
+  answerDraft,
+  disabled = false,
+  socket,
+  // for FlashcardsRace
+  roomCode,
+  playerTeam,
+  partnerAnswer,
+  showPartnerReply,
+  onPartnerReply,
+}) {
+  if (!task) return null;
+
+  const t = task;
+  const type = normalizeTaskType(t.taskType || t.type);
+
+  const isChoiceType =
+    type === TASK_TYPES.MULTIPLE_CHOICE || type === TASK_TYPES.TRUE_FALSE;
+  const isShortType = type === TASK_TYPES.SHORT_ANSWER;
+
+  const hasMultiItems =
+    (Array.isArray(t.items) && t.items.length > 1) ||
+    (Array.isArray(t.questions) && t.questions.length > 1) ||
+    (Array.isArray(t.subItems) && t.subItems.length > 1) ||
+    (Array.isArray(t.multiQuestions) && t.multiQuestions.length > 1);
+
+  const meta = TASK_TYPE_META[type];
+  const [diffRaceStatus, setDiffRaceStatus] = useState(null);
+
+  // Listen for race events from the server when this is a diff-detective task
+  useEffect(() => {
+    if (!socket) return;
+
+    const isDiffDetective =
+      (t.taskType || t.type) === TASK_TYPES.DIFF_DETECTIVE ||
+      (t.taskType || t.type) === "diff-detective";
+
+    if (!isDiffDetective) {
+      setDiffRaceStatus(null);
+      return;
     }
 
-    const now = new Date();
+    const handleRaceStart = (payload) => {
+      setDiffRaceStatus({
+        startedAt: payload.startedAt || Date.now(),
+        leader: null,
+        timeLeft: null,
+      });
+    };
 
-    const finalName = explicitName || topicLabel;
+    const handleRaceWinner = (payload) => {
+      setDiffRaceStatus((prev) => ({
+        ...(prev || {}),
+        leader: payload.teamName,
+        winnerTeamId: payload.teamId,
+      }));
+    };
 
-    const tasksetDoc = new TaskSet({
-      name: finalName,
-      description: specialConsiderations || "",
-      subject,
-      gradeLevel,
-      difficulty: normDifficulty,
-      learningGoal: normGoal,
-      tasks,
-      displays: Array.isArray(displays) ? displays : [],
-      meta: {
-        source: "ai",
-        sourceConfig: {
-          aiWordBank: rawWordBank,
-          aiWordsUsed,
-          aiWordsUnused,
-          topicTitle,
-          notes: customNotes || "",
+    const handleRaceTick = (payload) => {
+      setDiffRaceStatus((prev) => ({
+        ...(prev || {}),
+        timeLeft: payload.timeLeft ?? null,
+      }));
+    };
+
+    const handleRaceUpdate = (payload) => {
+      setDiffRaceStatus((prev) => ({
+        ...(prev || {}),
+        leader: payload.teamName ?? prev?.leader ?? null,
+      }));
+    };
+
+    const handleRaceFinish = (payload) => {
+      setDiffRaceStatus((prev) => ({
+        ...(prev || {}),
+        lastFinish: {
+          teamId: payload.teamId,
+          teamName: payload.teamName,
+          rank: payload.rank,
+          correct: payload.correct,
         },
-      },
-      requiredTaskTypes: typePool,
-      totalDurationMinutes: duration,
-      createdAt: now,
-      updatedAt: now,
-      roomLocation: roomLocation || locationCode || "Classroom",
-      isFixedStationTaskset:
-        !!isFixedStationTaskset ||
-        (Array.isArray(displays) && displays.length > 0),
-    });
+      }));
+    };
 
-    await tasksetDoc.save();
+    socket.on("diff:race-start", handleRaceStart);
+    socket.on("diff:race-tick", handleRaceTick);
+    socket.on("diff:race-update", handleRaceUpdate);
+    socket.on("diff:race-end", handleRaceFinish);
 
-    return res.json({
-      ok: true,
-      taskset: tasksetDoc.toObject(),
-      tasksetId: tasksetDoc._id,
-    });
-  } catch (err) {
-    console.error("AI Taskset generation failed:", err);
-    return res.status(500).json({
-      error: "Failed to generate taskset",
-      details: err.message || String(err),
-    });
+    return () => {
+      socket.off("diff:race-start", handleRaceStart);
+      socket.off("diff:race-tick", handleRaceTick);
+      socket.off("diff:race-update", handleRaceUpdate);
+      socket.off("diff:race-end", handleRaceFinish);
+    };
+  }, [socket, t.taskType, t.type]);
+
+  const effectiveDisabled = disabled || submitting;
+
+  const currentDisplay =
+    Array.isArray(t.displays) && t.displayKey
+      ? t.displays.find((d) => d.key === t.displayKey) || null
+      : null;
+
+  let displayTitle = "";
+  if (meta?.label) {
+    displayTitle = toTitleCase(meta.label);
+  } else if (t.title) {
+    displayTitle = toTitleCase(t.title);
+  } else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) {
+    displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
   }
-};
 
-export default { generateAiTaskset };
+  console.log("[TaskRunner] Task received:", {
+    rawTask: t,
+    normalizedType: type,
+    multiItems: hasMultiItems,
+  });
+
+  if (meta && meta.implemented === false) {
+    return (
+      <div className="p-4 text-center text-red-600 space-y-2">
+        <div className="font-semibold">
+          ⚠ This task type is not available yet on student devices.
+        </div>
+        <div className="text-sm text-red-500">
+          Task type: <strong>{meta.label || type}</strong>
+        </div>
+      </div>
+    );
+  }
+
+  // MULTI-PART: MC / TF / SHORT-ANSWER with items → render all parts together
+  if (hasMultiItems && (isChoiceType || isShortType)) {
+    const mode = isChoiceType ? "choice" : "short";
+    return (
+      <div className="space-y-3">
+        {displayTitle && (
+          <div
+            className="task-title-fun text-center mb-1"
+            style={{
+              fontFamily:
+                '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+              fontSize: "1.4rem",
+              letterSpacing: "1px",
+            }}
+          >
+            {displayTitle}
+          </div>
+        )}
+
+        {currentDisplay && (
+          <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+            <div className="font-semibold text-slate-800">
+              Look at this station object:
+            </div>
+            <div className="text-slate-900">
+              {currentDisplay.name || currentDisplay.key}
+            </div>
+            {currentDisplay.description && (
+              <div className="mt-1 text-xs text-slate-600">
+                {currentDisplay.description}
+              </div>
+            )}
+          </div>
+        )}
+
+        <MultiPartTask
+          mode={mode}
+          task={t}
+          onSubmit={onSubmit}
+          submitting={submitting}
+          disabled={effectiveDisabled}
+        />
+      </div>
+    );
+  }
+
+  // Single-part / other task types → your existing components
+  let content = null;
+
+  switch (type) {
+    case TASK_TYPES.MULTIPLE_CHOICE:
+      content = (
+        <MultipleChoiceTask
+          task={t}
+          disabled={effectiveDisabled}
+          onSubmit={onSubmit}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.TRUE_FALSE:
+      content = (
+        <TrueFalseTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
+    case TASK_TYPES.SORT:
+      content = (
+        <SortTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
+    case TASK_TYPES.SEQUENCE:
+      content = (
+        <SequenceTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.PHOTO:
+      content = (
+        <PhotoTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
+    case TASK_TYPES.MAKE_AND_SNAP:
+      content = (
+        <MakeAndSnapTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.DRAW:
+    case TASK_TYPES.MIME:
+      content = (
+        <DrawMimeTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.DRAW_MIME:
+      content = (
+        <DrawMimeTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.BODY_BREAK:
+      content = (
+        <BodyBreakTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.OPEN_TEXT:
+      content = (
+        <OpenTextTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.RECORD_AUDIO:
+      content = (
+        <RecordAudioTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.SHORT_ANSWER:
+      content = (
+        <ShortAnswerTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.COLLABORATION:
+      content = (
+        <CollaborationTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          // drafting + partner flow
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          partnerAnswer={partnerAnswer}
+          showPartnerReply={showPartnerReply}
+          onPartnerReply={onPartnerReply}
+        />
+      );
+      break;
+    case TASK_TYPES.MUSICAL_CHAIRS:
+      content = (
+        <MusicalChairsTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.MYSTERY_CLUES:
+      content = (
+        <MysteryCluesTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.TRUE_FALSE_TICTACTOE:
+      content = (
+        <TrueFalseTicTacToeTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          teamRole={t.teamRole}
+        />
+      );
+      break;
+    case TASK_TYPES.MAD_DASH:
+    case TASK_TYPES.MAD_DASH_SEQUENCE:
+      content = (
+        <MadDashSequenceTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.LIVE_DEBATE:
+      content = (
+        <LiveDebateTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          teamMembers={t.teamMembers || ["Alice", "Bob", "Charlie", "Dana"]}
+        />
+      );
+      break;
+    case TASK_TYPES.FLASHCARDS:
+      content = (
+        <FlashcardsTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.FLASHCARDS_RACE:
+      return (
+        <FlashcardsRaceTask
+          socket={socket}
+          roomCode={roomCode}
+          playerTeam={playerTeam}
+        />
+      );
+    case TASK_TYPES.TIMELINE:
+      content = (
+        <TimelineTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.PET_FEEDING:
+      content = (
+        <PetFeedingTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.MOTION_MISSION:
+      content = (
+        <MotionMissionTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.BRAINSTORM_BATTLE:
+      content = (
+        <BrainstormBattleTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.MIND_MAPPER:
+      content = (
+        <MindMapperTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.SPEED_DRAW:
+      content = (
+        <SpeedDrawTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+    case TASK_TYPES.DIFF_DETECTIVE:
+      content = (
+        <DiffDetectiveTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          raceStatus={diffRaceStatus}
+        />
+      );
+      break;
+
+    default:
+      return (
+        <div className="p-4 text-center text-red-600 space-y-2">
+          <div className="font-semibold">
+            ⚠ Unsupported task type from server.
+          </div>
+          <div className="text-sm text-red-500">
+            Received type: <strong>{String(type)}</strong>
+          </div>
+        </div>
+      );
+  }
+
+  return (
+    <div className="space-y-3">
+      {displayTitle && (
+        <div
+          className="task-title-fun text-center mb-1"
+          style={{
+            fontFamily:
+              '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontSize: "1.4rem",
+            letterSpacing: "1px",
+          }}
+        >
+          {displayTitle}
+        </div>
+      )}
+
+      {currentDisplay && (
+        <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+          <div className="font-semibold text-slate-800">
+            Look at this station object:
+          </div>
+          <div className="text-slate-900">
+            {currentDisplay.name || currentDisplay.key}
+          </div>
+          {currentDisplay.description && (
+            <div className="mt-1 text-xs text-slate-600">
+              {currentDisplay.description}
+            </div>
+          )}
+        </div>
+      )}
+
+      {content}
+    </div>
+  );
+}
