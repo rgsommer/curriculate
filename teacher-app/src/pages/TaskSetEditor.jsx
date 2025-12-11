@@ -34,6 +34,15 @@ function normalizeTaskType(raw) {
   if (v === "sort") {
     return TASK_TYPES.SORT;
   }
+  // Legacy aliases for Hide & Seek
+  if (
+    v === "hidenseek" ||
+    v === "hide-and-seek" ||
+    v === "hide-n-seek" ||
+    v === "hide_and_seek"
+  ) {
+    return TASK_TYPES.HIDENSEEK || "hidenseek";
+  }
   if (v === "sequence" || v === "seq" || v === "timeline") {
     return TASK_TYPES.SEQUENCE;
   }
@@ -132,7 +141,6 @@ export default function TaskSetEditor() {
             _tempId: Math.random().toString(36).slice(2),
             orderIndex: t.orderIndex ?? idx,
           }))
-          
         );
 
         const meta = data.meta || {};
@@ -330,12 +338,26 @@ export default function TaskSetEditor() {
         correctAnswer = null;
       }
 
-      // Infer aiScoringRequired if not explicitly set
+      // Infer aiScoringRequired if not explicitly set.
+      // We want objective tasks (MC, TF, Sort, Sequence, etc.) to be scored
+      // rule-based without calling the AI model, while non-objective types
+      // (OpenText, HideNSeek, PhotoJournal, etc.) may use AI / rubric scoring.
+      const meta = TASK_TYPE_META[normalizedType] || {};
+      const objective = meta.objectiveScoring === true;
+
       let aiScoringRequired = base.aiScoringRequired;
       if (typeof aiScoringRequired !== "boolean") {
-        aiScoringRequired = !(
-          correctAnswer !== null && correctAnswer !== undefined
-        );
+        if (objective) {
+          // Objective types can be auto-scored without AI.
+          aiScoringRequired = false;
+        } else if (typeof meta.defaultAiScoringRequired === "boolean") {
+          aiScoringRequired = meta.defaultAiScoringRequired;
+        } else {
+          // Fallback: require AI unless we clearly have a direct correctAnswer.
+          aiScoringRequired = !(
+            correctAnswer !== null && correctAnswer !== undefined
+          );
+        }
       }
 
       return {
@@ -868,6 +890,85 @@ export default function TaskSetEditor() {
                   />
                 </div>
 
+                {/* Hide & Seek specific config */}
+                {task.taskType === TASK_TYPES.HIDENSEEK && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.8rem",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Page / location students must find
+                    </label>
+                    <input
+                      type="text"
+                      value={task.config?.pageReference || ""}
+                      onChange={(e) =>
+                        updateTask(task._tempId, "config", {
+                          ...(task.config && typeof task.config === "object"
+                            ? task.config
+                            : {}),
+                          pageReference: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., Textbook p. 142, paragraph 3"
+                      style={{
+                        width: "100%",
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                        padding: 6,
+                        fontSize: "0.8rem",
+                      }}
+                    />
+                  </div>
+                )}
+                {task.taskType === TASK_TYPES.HIDENSEEK && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.8rem",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Teacher reference answer – why is this important?
+                    </label>
+                    <textarea
+                      value={task.config?.referenceAnswer || ""}
+                      onChange={(e) =>
+                        updateTask(task._tempId, "config", {
+                          ...(task.config && typeof task.config === "object"
+                            ? task.config
+                            : {}),
+                          referenceAnswer: e.target.value,
+                        })
+                      }
+                      rows={3}
+                      placeholder="Write the model explanation you’d like AI to compare student answers to."
+                      style={{
+                        width: "100%",
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                        padding: 6,
+                        fontSize: "0.8rem",
+                        resize: "vertical",
+                      }}
+                    />
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: "0.7rem",
+                        color: "#6b7280",
+                      }}
+                    >
+                      If you leave this blank, you can still review answers manually. When filled in, AI can help
+                      compare student explanations to your model answer.
+                    </div>
+                  </div>
+                )}
+
                 {/* SORT: Categories / buckets */}
                 {task.taskType === TASK_TYPES.SORT && (
                   <div style={{ marginBottom: 6 }}>
@@ -1257,12 +1358,37 @@ export default function TaskSetEditor() {
                     color: "#6b7280",
                   }}
                 >
-                  Scoring mode:{" "}
-                  {task.correctAnswer !== null &&
-                  task.correctAnswer !== undefined &&
-                  task.aiScoringRequired === false
-                    ? "Automatic (based on correct answer – no AI needed)"
-                    : "AI / manual scoring (no correct answer configured)"}
+                  {(() => {
+                    const meta = TASK_TYPE_META[task.taskType] || {};
+                    const objective = meta.objectiveScoring === true;
+
+                    // 1) Purely objective tasks (MC, TF, Sort, Sequence, etc.)
+                    if (objective && task.aiScoringRequired === false) {
+                      return "Scoring mode: Automatic (objective rule-based – no AI needed)";
+                    }
+
+                    // 2) Short-answer style with explicit reference answer
+                    if (
+                      task.correctAnswer !== null &&
+                      task.correctAnswer !== undefined &&
+                      task.aiScoringRequired === false
+                    ) {
+                      return "Scoring mode: Automatic (based on reference answer – no AI needed)";
+                    }
+
+                    // 3) Hide & Seek with teacher reference answer (AI will compare student explanation)
+                    if (
+                      task.taskType === TASK_TYPES.HIDENSEEK &&
+                      task.config &&
+                      typeof task.config.referenceAnswer === "string" &&
+                      task.config.referenceAnswer.trim().length > 0
+                    ) {
+                      return "Scoring mode: AI-assisted (Hide & Seek explanation compared with your reference answer)";
+                    }
+
+                    // 4) Everything else falls back to AI / manual scoring
+                    return "Scoring mode: AI / manual scoring (no objective answer configured)";
+                  })()}
                 </div>
               </div>
             ))}

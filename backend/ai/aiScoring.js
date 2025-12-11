@@ -47,7 +47,32 @@ function scoreSubmissionRuleBased({ task, submission }) {
   let maxPoints = points;
 
   const correct = task.correctAnswer;
-  const studentAnswerRaw = submission?.answer;
+  let studentAnswerRaw = submission?.answer;
+
+  // Allow for SHORT_ANSWER multi-question payloads that were stringified
+  // as JSON with shape: { kind: "multi-short-answer", answers: [...] }.
+  let workingSubmission = submission || {};
+  if (
+    task.taskType === TASK_TYPES.SHORT_ANSWER &&
+    Array.isArray(task.items) &&
+    task.items.length > 0 &&
+    (!Array.isArray(workingSubmission.answers) ||
+      workingSubmission.answers.length === 0)
+  ) {
+    let payload = null;
+    if (typeof workingSubmission.answer === "string") {
+      payload = safeJsonParse(workingSubmission.answer);
+    } else if (typeof workingSubmission === "string") {
+      payload = safeJsonParse(workingSubmission);
+    }
+    if (
+      payload &&
+      payload.kind === "multi-short-answer" &&
+      Array.isArray(payload.answers)
+    ) {
+      workingSubmission = { ...workingSubmission, answers: payload.answers };
+    }
+  }
 
   // Multiple-choice / True-False / Short-answer with explicit correctAnswer
   if (
@@ -61,9 +86,13 @@ function scoreSubmissionRuleBased({ task, submission }) {
       maxPoints = points * items.length;
 
       items.forEach((item, index) => {
+        const answersArray =
+          workingSubmission?.answers && Array.isArray(workingSubmission.answers)
+            ? workingSubmission.answers
+            : null;
         const studentItemAnswerRaw =
-          submission?.answers && Array.isArray(submission.answers)
-            ? submission.answers[index]
+          answersArray && index < answersArray.length
+            ? answersArray[index]
             : undefined;
 
         if (studentItemAnswerRaw == null) return;
@@ -177,7 +206,9 @@ function scoreSubmissionRuleBased({ task, submission }) {
     Array.isArray(task.config.items)
   ) {
     const items = task.config.items;
-    const studentOrder = submission?.order || [];
+    const studentOrderRaw = submission?.order || [];
+    const studentOrder = Array.isArray(studentOrderRaw) ? studentOrderRaw : [];
+
     if (!Array.isArray(studentOrder) || studentOrder.length === 0) {
       return {
         score: 0,
@@ -189,10 +220,30 @@ function scoreSubmissionRuleBased({ task, submission }) {
       };
     }
 
-    // For SEQUENCE / TIMELINE, we treat items as in correct order; studentOrder is array of item ids.
-    // For SORT, each item has bucketIndex; we expect submission.mapping[itemId] = bucketIndex
+    // For SEQUENCE / TIMELINE, we treat items as in correct order; studentOrder
+    // may be an array of item IDs or an array of numeric indices (0..n-1).
+    // For SORT, each item has bucketIndex; we expect either submission.mapping[itemId] = bucketIndex
+    // or a payload.items array with { text, bucketIndex } which we normalize into a mapping here.
     if (task.taskType === TASK_TYPES.SORT) {
-      const mapping = submission?.mapping || {};
+      let mapping = submission?.mapping || null;
+
+      // If no explicit mapping was provided, but we have a payload-style
+      // submission with buckets/items, build a mapping keyed by item id/text.
+      if (!mapping && Array.isArray(submission?.items)) {
+        mapping = {};
+        submission.items.forEach((it) => {
+          if (it == null) return;
+          if (it.id != null) {
+            mapping[it.id] = it.bucketIndex;
+          }
+          if (it.text != null) {
+            mapping[it.text] = it.bucketIndex;
+          }
+        });
+      }
+
+      mapping = mapping || {};
+
       const perItem = points / items.length;
       score = 0;
 
@@ -218,16 +269,35 @@ function scoreSubmissionRuleBased({ task, submission }) {
       };
     } else {
       // SEQUENCE / TIMELINE
-      const correctOrderIds = items.map((it) => it.id);
-      const perItem = points / correctOrderIds.length;
+      const totalItems = items.length || 1;
+      const perItem = points / totalItems;
       score = 0;
 
-      correctOrderIds.forEach((id, index) => {
-        const studentIndex = studentOrder.indexOf(id);
-        if (studentIndex === index) {
-          score += perItem;
+      const allNumeric =
+        Array.isArray(studentOrder) &&
+        studentOrder.length === totalItems &&
+        studentOrder.every((v) => Number.isInteger(v));
+
+      if (allNumeric) {
+        // Student order is an array of indices (0..n-1); award credit when
+        // the item in each position matches the original correct index.
+        for (let correctIndex = 0; correctIndex < totalItems; correctIndex++) {
+          if (studentOrder[correctIndex] === correctIndex) {
+            score += perItem;
+          }
         }
-      });
+      } else {
+        // Fallback: treat studentOrder as array of item IDs.
+        const correctOrderIds = items.map(
+          (it, idx) => it.id ?? `item-${idx}`
+        );
+        correctOrderIds.forEach((id, index) => {
+          const studentIndex = studentOrder.indexOf(id);
+          if (studentIndex === index) {
+            score += perItem;
+          }
+        });
+      }
 
       return {
         score,
@@ -235,7 +305,9 @@ function scoreSubmissionRuleBased({ task, submission }) {
         method: "rule-based",
         details: {
           type: task.taskType,
-          correctOrder: correctOrderIds,
+          // For numeric-based submissions correctOrderIds is implicit (0..n-1),
+          // but we still include ids when they are present for debugging.
+          correctOrder: items.map((it, idx) => it.id ?? `item-${idx}`),
           studentOrder,
         },
       };
@@ -446,6 +518,76 @@ function buildStudentWorkDescription(task, submission) {
       prompt: task.prompt,
       explanation,
       notes,
+      hasPhoto,
+      photoMeta,
+    };
+  }
+
+  // Hide & Seek – student finds a specific reference and explains its significance
+  if (type === TASK_TYPES.HIDENSEEK || type === "hidenseek") {
+    const rawAnswer = submission?.answer ?? submission ?? null;
+
+    let significance = "";
+    let hasPhoto = false;
+    let photoMeta = null;
+
+    if (rawAnswer && typeof rawAnswer === "object") {
+      significance =
+        rawAnswer.significance ??
+        rawAnswer.explanation ??
+        rawAnswer.text ??
+        rawAnswer.response ??
+        rawAnswer.answerText ??
+        "";
+
+      if (rawAnswer.photo && typeof rawAnswer.photo === "object") {
+        hasPhoto = true;
+        photoMeta = {
+          url: rawAnswer.photo.url || null,
+          filename: rawAnswer.photo.filename || null,
+          mimetype: rawAnswer.photo.mimetype || null,
+          size: rawAnswer.photo.size || null,
+        };
+      } else if (rawAnswer.hasPhoto === true) {
+        hasPhoto = true;
+      }
+    } else if (typeof rawAnswer === "string") {
+      significance = rawAnswer;
+    }
+
+    if (!significance) {
+      significance =
+        submission?.significance ??
+        submission?.text ??
+        submission?.response ??
+        submission?.answerText ??
+        "";
+    }
+
+    significance =
+      typeof significance === "string"
+        ? significance
+        : String(significance || "");
+
+    const pageReference =
+      task?.config?.pageReference ||
+      task?.config?.page ||
+      task?.config?.location ||
+      null;
+
+    const referenceAnswer =
+      task?.config?.referenceAnswer ||
+      task?.config?.modelAnswer ||
+      task?.correctAnswer ||
+      null;
+
+    return {
+      summary:
+        "Hide & Seek task: student found a specific page or location and explained why it is important.",
+      prompt: task.prompt,
+      pageReference,
+      referenceAnswer,
+      significance,
       hasPhoto,
       photoMeta,
     };
@@ -733,6 +875,68 @@ async function scorePhotoJournal({ task, submission, rubric }) {
   };
 }
 
+// --- SPECIAL CASE: HIDENSEEK (PAGE REFERENCE + SIGNIFICANCE EXPLANATION) ---
+
+async function scoreHideNSeek({ task, submission, rubric }) {
+  const points = typeof task.points === "number" ? task.points : 10;
+
+  const referenceAnswer =
+    task?.config?.referenceAnswer ||
+    task?.config?.modelAnswer ||
+    task?.correctAnswer ||
+    null;
+
+  const effectiveRubric =
+    rubric ||
+    {
+      totalPoints: points,
+      criteria: [
+        {
+          id: "alignment",
+          label: "Matches the key idea or significance",
+          maxPoints: Math.round(points * 0.6),
+          description:
+            "Compare the student's explanation of WHY this page/location is important to the teacher's reference answer. " +
+            "Give most or all of these points if the student clearly captures the main idea, even if wording is different.",
+        },
+        {
+          id: "clarity_detail",
+          label: "Clarity and appropriate detail",
+          maxPoints: points - Math.round(points * 0.6),
+          description:
+            "Is the explanation clear, understandable, and reasonably detailed for the grade level? " +
+            "Reward brief but focused answers that show understanding; do not require long paragraphs.",
+        },
+      ],
+    };
+
+  const result = await scoreSubmissionWithAI({
+    task,
+    submission,
+    rubric: effectiveRubric,
+    explicitTotalPoints: points,
+  });
+
+  const clampedScore = clamp(
+    typeof result.score === "number" ? result.score : 0,
+    0,
+    points
+  );
+
+  return {
+    ...result,
+    score: clampedScore,
+    maxPoints: points,
+    method: "ai-rubric",
+    rubricUsed: effectiveRubric,
+    details: {
+      ...(result.details || {}),
+      type: TASK_TYPES.HIDENSEEK,
+      referenceAnswer,
+    },
+  };
+}
+
 // --- SPECIAL CASE: BRAIN SPARK NOTES (COMPLETION-BASED) ---
 
 async function scoreBrainSparkNotes({ task, submission }) {
@@ -786,6 +990,11 @@ export async function generateAIScore({ task, submission, rubric }) {
     task?.taskType === "photojournal"
   ) {
     return scorePhotoJournal({ task, submission, rubric });
+  }
+
+  // Specialized path: Hide & Seek (page reference + significance explanation)
+  if (task?.taskType === TASK_TYPES.HIDENSEEK || task?.taskType === "hidenseek") {
+    return scoreHideNSeek({ task, submission, rubric });
   }
 
   // Specialized path: Brain Spark Notes (completion-based, no rubric needed)
