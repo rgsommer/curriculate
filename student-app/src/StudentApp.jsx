@@ -413,6 +413,9 @@ function StudentApp() {
         correctAnswer: correctAnswer ?? null,
       });
 
+      const review = buildAnswerReview(currentTask);
+      if (review) setShortAnswerReveal(review);
+
       if (reveal) {
         setShortAnswerReveal(reveal);
       }
@@ -663,6 +666,232 @@ function StudentApp() {
           typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
       }));
     });
+  };
+
+  // ─────────────────────────────────────────────
+  // Leave current room and allow joining a new one
+  // ─────────────────────────────────────────────
+  const handleLeaveRoom = () => {
+    if (!joined) return;
+
+    const ok = window.confirm(
+      "Leave this room and join a different one?"
+    );
+    if (!ok) return;
+
+    // Let the server know this team is leaving
+    try {
+      socket.emit("student:leave-room", {
+        roomCode,
+        teamId,
+        teamSessionId,
+      });
+    } catch (err) {
+      console.warn("Error emitting student:leave-room:", err);
+    }
+
+    // Clear persisted resume info
+    try {
+      sessionStorage.removeItem("teamSession");
+    } catch (err) {
+      console.warn("Unable to clear teamSession:", err);
+    }
+
+    // Reset local state so the Join UI re-appears
+    setJoined(false);
+    setTeamId(null);
+    setTeamSessionId(null);
+
+    setAssignedStationId(null);
+    setAssignedColor(null);
+    setScannedStationId(null);
+    setScannerActive(false);
+    setScanError(null);
+
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setTasksetTotalTasks(null);
+    setPostSubmitSecondsLeft(0);
+    setLastTaskResult(null);
+    setShortAnswerReveal(null);
+
+    setTreatMessage(null);
+    setNoiseState({
+      enabled: false,
+      threshold: 0,
+      level: 0,
+      brightness: 1,
+    });
+
+    lastStationIdRef.current = null;
+    roomLocationFromStateRef.current = null;
+
+    setStatusMessage("Enter your new room code to get started.");
+  };
+
+  // Build a "correct answer" review payload based on the current task
+  const buildAnswerReview = (task) => {
+    if (!task) return null;
+    const type = task.taskType;
+
+    // SHORT ANSWER – existing behaviour
+    if (
+      type === TASK_TYPES.SHORT_ANSWER &&
+      typeof task.correctAnswer === "string" &&
+      task.correctAnswer.trim() !== ""
+    ) {
+      return {
+        mode: "short",
+        prompt: task.prompt || "",
+        correctAnswer: task.correctAnswer.trim(),
+      };
+    }
+
+    // MULTIPLE CHOICE / TRUE-FALSE – list each question + correct choice text
+    if (
+      type === TASK_TYPES.MULTIPLE_CHOICE ||
+      type === TASK_TYPES.TRUE_FALSE
+    ) {
+      const rawItems =
+        (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
+        [];
+
+      const items =
+        rawItems.length > 0
+          ? rawItems
+          : [
+              {
+                id: task.id || "only",
+                prompt: task.prompt,
+                options: task.options || [],
+                correctAnswer: task.correctAnswer,
+              },
+            ];
+
+      const reviewItems = items
+        .map((item, idx) => {
+          const label =
+            item.prompt ||
+            item.question ||
+            item.text ||
+            item.title ||
+            `Question ${idx + 1}`;
+
+          let correctText = "";
+
+          if (
+            typeof item.correctAnswer === "number" &&
+            Array.isArray(item.options) &&
+            item.options[item.correctAnswer] != null
+          ) {
+            correctText = String(item.options[item.correctAnswer]);
+          } else if (typeof item.correctAnswer === "string") {
+            correctText = item.correctAnswer;
+          } else if (
+            Array.isArray(item.correctAnswer) &&
+            item.correctAnswer.length > 0
+          ) {
+            correctText = String(item.correctAnswer[0]);
+          }
+
+          if (!correctText) return null;
+          return { label, correctText };
+        })
+        .filter(Boolean);
+
+      if (!reviewItems.length) return null;
+
+      return {
+        mode: "mc_tf",
+        title: task.prompt || task.title || "Correct answers",
+        items: reviewItems,
+      };
+    }
+
+    // SORT / SEQUENCE / TIMELINE
+    if (
+      type === TASK_TYPES.SORT ||
+      type === TASK_TYPES.SEQUENCE ||
+      type === TASK_TYPES.TIMELINE
+    ) {
+      const cfg = task.config || {};
+      const cfgItems = Array.isArray(cfg.items) ? cfg.items : [];
+      if (!cfgItems.length) return null;
+
+      // SORT – show which items belong in which bucket
+      if (type === TASK_TYPES.SORT) {
+        const rawBuckets =
+          (Array.isArray(cfg.buckets) && cfg.buckets) ||
+          (Array.isArray(task.buckets) && task.buckets) ||
+          [];
+
+        const bucketLabels = rawBuckets.map((b, index) =>
+          typeof b === "string"
+            ? b
+            : b.label || b.name || `Bucket ${index + 1}`
+        );
+
+        const buckets = {};
+        bucketLabels.forEach((label, index) => {
+          buckets[index] = { label, items: [] };
+        });
+
+        cfgItems.forEach((it, idx) => {
+          const bucketIndex =
+            typeof it.bucketIndex === "number"
+              ? it.bucketIndex
+              : typeof it.correctBucket === "number"
+              ? it.correctBucket
+              : null;
+          if (bucketIndex == null) return;
+
+          const text =
+            it.text ||
+            it.label ||
+            it.name ||
+            it.prompt ||
+            `Item ${idx + 1}`;
+
+          if (!buckets[bucketIndex]) {
+            buckets[bucketIndex] = {
+              label: `Bucket ${bucketIndex + 1}`,
+              items: [],
+            };
+          }
+          buckets[bucketIndex].items.push(text);
+        });
+
+        const bucketList = Object.keys(buckets)
+          .map((key) => buckets[Number(key)])
+          .filter((b) => b.items.length > 0);
+
+        if (!bucketList.length) return null;
+
+        return {
+          mode: "sort",
+          title: task.prompt || "Correct grouping",
+          buckets: bucketList,
+        };
+      }
+
+      // SEQUENCE / TIMELINE – show correct order
+      const orderedItems = cfgItems.map((it, idx) => ({
+        text:
+          it.text ||
+          it.label ||
+          it.name ||
+          it.prompt ||
+          `Item ${idx + 1}`,
+      }));
+
+      return {
+        mode: "sequence",
+        title: task.prompt || "Correct order",
+        items: orderedItems,
+      };
+    }
+
+    return null;
   };
 
   const handleSubmitAnswer = (answerPayload) => {
@@ -1684,6 +1913,32 @@ function StudentApp() {
             </div>
           )}
         </div>
+
+            <div
+              style={{
+                marginTop: 6,
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleLeaveRoom}
+                style={{
+                  border: "none",
+                  borderRadius: 999,
+                  padding: "4px 8px",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  background: "rgba(15,23,42,0.14)",
+                  color: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                Join a different room
+              </button>
+            </div>
+
       </header>
 
       {/* JOIN CARD */}
@@ -2015,19 +2270,6 @@ function StudentApp() {
                   )}
                 </div>
               )}
-
-              {lastTaskResult && lastTaskResult.aiFeedback && (
-                <div className="ai-feedback">
-                  <strong>AI Feedback</strong>
-                  <div>{lastTaskResult.aiFeedback}</div>
-                  {shortAnswerReveal && (
-                    <div style={{ marginTop: 6, fontSize: "0.8rem" }}>
-                      <strong>Sample correct answer:</strong>{" "}
-                      {shortAnswerReveal}
-                    </div>
-                  )}
-                </div>
-              )}
             </section>
           )}
 
@@ -2078,6 +2320,188 @@ function StudentApp() {
             </section>
           )}
         </main>
+      )}
+
+      {/* CORRECT-ANSWER OVERLAY */}
+      {shortAnswerReveal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.55)",
+            zIndex: 130,
+          }}
+          onClick={() => setShortAnswerReveal(null)}
+        >
+          <div
+            style={{
+              maxWidth: 480,
+              width: "90%",
+              margin: "0 auto",
+              marginTop: "15vh",
+              background: "#f9fafb",
+              borderRadius: 18,
+              padding: 16,
+              boxShadow: "0 18px 45px rgba(15,23,42,0.5)",
+              textAlign: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Title */}
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "1rem",
+                marginBottom: 6,
+                color: "#0f172a",
+              }}
+            >
+              {shortAnswerReveal.mode === "sort"
+                ? "Correct grouping"
+                : shortAnswerReveal.mode === "sequence"
+                ? "Correct order"
+                : "Correct answer"}
+            </div>
+
+            {/* Subtitle / prompt / title */}
+            {shortAnswerReveal.mode === "mc_tf" &&
+              shortAnswerReveal.title && (
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#6b7280",
+                    marginBottom: 8,
+                  }}
+                >
+                  {shortAnswerReveal.title}
+                </div>
+              )}
+
+            {(!shortAnswerReveal.mode ||
+              shortAnswerReveal.mode === "short") &&
+              shortAnswerReveal.prompt && (
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#6b7280",
+                    marginBottom: 8,
+                  }}
+                >
+                  {shortAnswerReveal.prompt}
+                </div>
+              )}
+
+            {/* SHORT ANSWER content (existing behaviour) */}
+            {(!shortAnswerReveal.mode ||
+              shortAnswerReveal.mode === "short") &&
+              shortAnswerReveal.correctAnswer && (
+                <div
+                  style={{
+                    fontSize: "1.1rem",
+                    fontWeight: 700,
+                    marginBottom: 12,
+                    color: "#111827",
+                  }}
+                >
+                  {shortAnswerReveal.correctAnswer}
+                </div>
+              )}
+
+            {/* MC / TF list of correct choices */}
+            {shortAnswerReveal.mode === "mc_tf" &&
+              Array.isArray(shortAnswerReveal.items) && (
+                <div
+                  style={{
+                    textAlign: "left",
+                    fontSize: "0.95rem",
+                    color: "#111827",
+                    marginBottom: 12,
+                  }}
+                >
+                  <ul style={{ paddingLeft: 18, margin: 0 }}>
+                    {shortAnswerReveal.items.map((item, idx) => (
+                      <li key={idx} style={{ marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600 }}>
+                          {item.label}:
+                        </span>{" "}
+                        <span>{item.correctText}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+            {/* SORT – buckets with correct items */}
+            {shortAnswerReveal.mode === "sort" &&
+              Array.isArray(shortAnswerReveal.buckets) && (
+                <div
+                  style={{
+                    textAlign: "left",
+                    fontSize: "0.95rem",
+                    color: "#111827",
+                    marginBottom: 12,
+                  }}
+                >
+                  {shortAnswerReveal.buckets.map((bucket, idx) => (
+                    <div key={idx} style={{ marginBottom: 8 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          marginBottom: 2,
+                        }}
+                      >
+                        {bucket.label}
+                      </div>
+                      <ul style={{ paddingLeft: 18, margin: 0 }}>
+                        {bucket.items.map((text, j) => (
+                          <li key={j}>{text}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+            {/* SEQUENCE / TIMELINE – correct order */}
+            {shortAnswerReveal.mode === "sequence" &&
+              Array.isArray(shortAnswerReveal.items) && (
+                <ol
+                  style={{
+                    textAlign: "left",
+                    fontSize: "0.95rem",
+                    color: "#111827",
+                    marginBottom: 12,
+                    paddingLeft: 18,
+                  }}
+                >
+                  {shortAnswerReveal.items.map((item, idx) => (
+                    <li key={idx} style={{ marginBottom: 4 }}>
+                      {item.text}
+                    </li>
+                  ))}
+                </ol>
+              )}
+
+            <button
+              type="button"
+              onClick={() => setShortAnswerReveal(null)}
+              style={{
+                border: "none",
+                borderRadius: 999,
+                padding: "8px 16px",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                background:
+                  "linear-gradient(90deg,#4f46e5,#6366f1,#a855f7)",
+                color: "#f9fafb",
+                cursor: "pointer",
+                marginTop: 4,
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
       )}
 
       {/* TREAT BANNER */}
