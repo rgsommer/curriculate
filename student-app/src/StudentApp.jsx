@@ -2074,7 +2074,9 @@ function StudentApp() {
             </div>
           )}
         </div>
-     
+          </div>
+      </header>
+      
       {/* JOIN CARD */}
       {!joined && (
         <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
