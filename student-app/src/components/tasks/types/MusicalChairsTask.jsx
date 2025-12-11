@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import VictoryScreen from "../VictoryScreen";
+import VictoryScreen from "../../VictoryScreen";
 
 export default function MusicalChairsTask({
   task,
