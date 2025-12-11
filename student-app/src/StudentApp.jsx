@@ -1507,6 +1507,7 @@ function StudentApp() {
             style={{
               margin: 0,
               fontSize: "1.4rem",
+              color: "#ffffff", // good contrast on the gradient header bar
             }}
           >
             Curriculate – Team Station
