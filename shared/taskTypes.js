@@ -22,6 +22,7 @@ export const TASK_TYPES = {
   PHOTO: "photo",
   MAKE_AND_SNAP: "make-and-snap", // build/draw something then snap a photo
   BODY_BREAK: "body-break",       // movement break
+  PHOTO_JOURNAL: "photo-journal", // NEW: photo + written explanation combo
 
   // Extended task types (some may not be AI-generated yet)
   JEOPARDY: "brain-blitz",        // renamed from "jeopardy"
@@ -193,17 +194,20 @@ export const TASK_TYPE_META = {
     expectsText: false,
     maxTime: 180,
     maxTimeSeconds: 180,
-    implemented: true,
-    aiEligible: true,
 
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    implemented: true,
+
+    // AI: optional scoring
+    aiEligible: true,               // AI *can* be used for scoring/generation
+    objectiveScoring: false,        // no built-in answer key
+    defaultAiScoringRequired: false,// teacher can toggle AI scoring on/off
     correctAnswerShape: null,
 
+    // Quick Task: yes – great for fast evidence checks
     quickTaskEligible: true,
 
     description:
-      "Student takes a photo showing proof (e.g., 'Show something magnetic', 'Photo of a triangle in the room'). Prompt must be visual and doable in classroom.",
+      "Student takes a photo showing proof of completing a task or finding an item (e.g., 'Take a picture of your team forming a right angle').",
   },
 
   [TASK_TYPES.MAKE_AND_SNAP]: {
@@ -213,17 +217,20 @@ export const TASK_TYPE_META = {
     expectsText: false,
     maxTime: 240,
     maxTimeSeconds: 240,
-    implemented: true,
-    aiEligible: true,
 
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    implemented: true,
+
+    // AI: default ON (you asked for AI to assess make-and-snap)
+    aiEligible: true,                // AI can judge whether the build matches
+    objectiveScoring: false,         // no simple answer key
+    defaultAiScoringRequired: true,  // AI scoring required by default
     correctAnswerShape: null,
 
+    // Quick Task: yes – works nicely for short build challenges
     quickTaskEligible: true,
 
     description:
-      "Student builds, draws, or demonstrates something with materials then photographs it (e.g., 'Build a bridge with 10 popsicle sticks', 'Draw a food chain').",
+      "Student or team builds, creates, or arranges something (e.g., with blocks, paper, objects) and then snaps a photo to prove what they made (e.g., 'Build a bridge with 10 popsicle sticks'). AI can score how well the photo matches the prompt.",
   },
 
   [TASK_TYPES.BODY_BREAK]: {
@@ -244,6 +251,27 @@ export const TASK_TYPE_META = {
 
     description:
       "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, etc.). No scoring.",
+  },
+
+  [TASK_TYPES.PHOTO_JOURNAL]: {
+    label: "Photo Journal",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: true, // photo + written explanation
+    maxTime: 300,
+    maxTimeSeconds: 300,
+    implemented: true,
+
+    // AI: optional scoring (helpful to judge both evidence + explanation)
+    aiEligible: true,
+    objectiveScoring: false,
+    defaultAiScoringRequired: true,
+    correctAnswerShape: null,
+
+    quickTaskEligible: true,
+
+    description:
+      "Student snaps a photo and writes a short explanation, caption, or reflection about what the photo shows (e.g., 'Find an example of erosion and explain how you know.'). Great for evidence-gathering or reflective journaling.",
   },
 
   // === Open / media types used with AI scoring / rubrics ===
@@ -717,13 +745,26 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.DRAW_MIME]: {
     label: "Draw or Mime",
+    category: CATEGORY.CREATIVE,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 180,
+    maxTimeSeconds: 180,
+
+    implemented: true,
+    multiItemCapable: false,        // one drawing/mime per task
+
+    // AI: optional – good for “did they represent the concept?”
+    aiEligible: true,               // allow AI generation/scoring
+    objectiveScoring: false,        // no strict key
+    defaultAiScoringRequired: false,// teacher decides whether to use AI
+    correctAnswerShape: null,
+
+    // Quick Task: usually not listed as a one-tap Quick Task
+    quickTaskEligible: false,
+
     description:
-      "Teams respond by drawing (or miming in front of the class) instead of typing a text answer.",
-    implemented: true,              // important: so it shows up in UIs
-    multiItemCapable: false,        // one drawing per task
-    objectiveScoring: false,        // no auto-correct key
-    defaultAiScoringRequired: true, // scored by rubric / teacher / AI
-    aiEligible: false,              // set to true if you want AI to generate these
+      "Teams respond by either drawing the idea or miming it (optionally taking a picture of their drawing or pose). Great for creative review, vocabulary, or drama-style stations where AI or the teacher can judge how well the response matches the prompt.",
   },
 
   [TASK_TYPES.PRONUNCIATION]: {
@@ -857,6 +898,14 @@ export function normalizeTaskType(value) {
   }
   if (v === "photo" || v === "photo-evidence" || v === "image") {
     return TASK_TYPES.PHOTO;
+  }
+  if (
+    v === "photo-journal" ||
+    v === "photo_journal" ||
+    v === "photojournal" ||
+    v === "photo-journal-task"
+  ) {
+    return TASK_TYPES.PHOTO_JOURNAL;
   }
   if (v === "make_and_snap" || v === "make-and-snap") {
     return TASK_TYPES.MAKE_AND_SNAP;

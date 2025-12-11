@@ -78,6 +78,14 @@ function normalizeSelectedType(raw) {
   if (v === "photo" || v === "photo-evidence" || v === "photo_description") {
     return TASK_TYPES.PHOTO;
   }
+  if (
+    v === "photo-journal" ||
+    v === "photo_journal" ||
+    v === "photojournal" ||
+    v === "photo-journal-task"
+  ) {
+    return TASK_TYPES.PHOTO_JOURNAL;
+  }
   if (v === "make-and-snap" || v === "make_and_snap") {
     return TASK_TYPES.MAKE_AND_SNAP;
   }

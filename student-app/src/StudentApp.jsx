@@ -1192,6 +1192,13 @@ function StudentApp() {
   const isPetFeeding =
     currentTask?.taskType === TASK_TYPES.PET_FEEDING;
 
+  const isPhoto =
+    currentTask?.taskType === TASK_TYPES.PHOTO ||
+    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL;
+
+  const isPhotoJournal =
+    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1225,6 +1232,8 @@ function StudentApp() {
     ? "linear-gradient(135deg, #020617 0%, #1e293b 30%, #4f46e5 65%, #22c55e 100%)"
     : isOpenText
     ? "linear-gradient(135deg, #e0f2fe 0%, #f5f3ff 40%, #f9fafb 100%)"
+    : isPhoto
+    ? "linear-gradient(135deg, #0f172a 0%, #38bdf8 40%, #e0f2fe 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
@@ -1972,6 +1981,10 @@ function StudentApp() {
               ? "Mad Dash!"
               : isMakeAndSnap
               ? "Make it & Snap it!"
+              : isPhotoJournal
+              ? "Photo journal!"
+              : isPhoto
+              ? "Photo evidence!"
               : isDrawMime
               ? "Draw or Mime!"
               : isLiveDebate
@@ -2003,6 +2016,32 @@ function StudentApp() {
                 }}
               >
                 Build, draw, or act it out — then snap a clear photo of what you made!
+              </p>
+            )}
+
+            {isPhoto && !isPhotoJournal && (
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: "0.85rem",
+                  color: "#0369a1",
+                  fontWeight: 500,
+                }}
+              >
+                Take a clear photo that matches the prompt. Make sure your whole idea is visible!
+              </p>
+            )}
+
+            {isPhotoJournal && (
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: "0.85rem",
+                  color: "#0369a1",
+                  fontWeight: 500,
+                }}
+              >
+                Snap a clear photo, then write a short explanation of what it shows and why it matters.
               </p>
             )}
 

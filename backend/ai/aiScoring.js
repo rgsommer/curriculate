@@ -355,7 +355,7 @@ function buildStudentWorkDescription(task, submission) {
     };
   }
 
-  // Open text – **patched to pull the real typed response**
+  // Open text – pulls the real typed response
   if (type === TASK_TYPES.OPEN_TEXT) {
     const rawAnswer = submission?.answer ?? submission ?? null;
     let studentText = "";
@@ -388,17 +388,129 @@ function buildStudentWorkDescription(task, submission) {
     };
   }
 
-  // Photo / Make-and-snap / Draw / Mime etc.
+  // Photo Journal – explicit handling for photo + explanation
   if (
-    [TASK_TYPES.PHOTO, TASK_TYPES.MAKE_AND_SNAP, TASK_TYPES.DRAW, TASK_TYPES.MIME].includes(
-      type
-    )
+    type === TASK_TYPES.PHOTO_JOURNAL ||
+    type === "photo-journal" ||
+    type === "photo_journal" ||
+    type === "photojournal"
   ) {
+    const rawAnswer = submission?.answer ?? submission ?? null;
+
+    let explanation = "";
+    let notes = "";
+    let hasPhoto = false;
+    let photoMeta = null;
+
+    if (rawAnswer && typeof rawAnswer === "object") {
+      explanation =
+        rawAnswer.explanation ??
+        rawAnswer.caption ??
+        rawAnswer.text ??
+        rawAnswer.response ??
+        rawAnswer.answerText ??
+        "";
+
+      notes = rawAnswer.notes ?? "";
+
+      if (rawAnswer.photo && typeof rawAnswer.photo === "object") {
+        hasPhoto = true;
+        // Only pass safe, non-binary metadata through to AI (no raw image data).
+        photoMeta = {
+          url: rawAnswer.photo.url || null,
+          filename: rawAnswer.photo.filename || null,
+          mimetype: rawAnswer.photo.mimetype || null,
+          size: rawAnswer.photo.size || null,
+        };
+      } else if (rawAnswer.hasPhoto === true) {
+        hasPhoto = true;
+      }
+    } else if (typeof rawAnswer === "string") {
+      explanation = rawAnswer;
+    }
+
+    if (!explanation) {
+      explanation =
+        submission?.text ??
+        submission?.response ??
+        submission?.answerText ??
+        "";
+    }
+
+    explanation =
+      typeof explanation === "string" ? explanation : String(explanation || "");
+
     return {
-      summary: "Media-based submission (photo / drawing / mime).",
+      summary:
+        "Photo journal task: student took or uploaded a photo and wrote a short explanation/caption about it.",
       prompt: task.prompt,
-      notes: submission?.notes || "",
-      // We don't pass raw image blobs to AI here; teacher sees media separately.
+      explanation,
+      notes,
+      hasPhoto,
+      photoMeta,
+    };
+  }
+
+  // Photo / Make-and-Snap / Draw-Mime and related media tasks
+  if (
+    type === TASK_TYPES.PHOTO ||
+    type === TASK_TYPES.MAKE_AND_SNAP ||
+    type === TASK_TYPES.DRAW_MIME ||
+    type === "photo" ||
+    type === "make-and-snap" ||
+    type === "make_and_snap" ||
+    type === "draw-mime"
+  ) {
+    const rawAnswer = submission?.answer ?? submission ?? null;
+    let studentText = "";
+
+    if (rawAnswer && typeof rawAnswer === "object") {
+      studentText =
+        rawAnswer.text ??
+        rawAnswer.response ??
+        rawAnswer.answerText ??
+        rawAnswer.notes ??
+        "";
+    } else if (typeof rawAnswer === "string") {
+      studentText = rawAnswer;
+    }
+
+    if (!studentText) {
+      studentText =
+        submission?.text ??
+        submission?.notes ??
+        submission?.answerText ??
+        "";
+    }
+
+    studentText =
+      typeof studentText === "string" ? studentText : String(studentText || "");
+
+    let summary;
+    if (
+      type === TASK_TYPES.MAKE_AND_SNAP ||
+      type === "make-and-snap" ||
+      type === "make_and_snap"
+    ) {
+      summary =
+        "Make-and-Snap task: students built or created something, then took a photo as evidence.";
+    } else if (type === TASK_TYPES.DRAW_MIME || type === "draw-mime") {
+      summary =
+        "Draw/Mime task: students drew or acted out the idea, often taking a photo of their work or pose.";
+    } else {
+      summary =
+        "Photo evidence task: students took or uploaded a photo as evidence connected to the prompt.";
+    }
+
+    return {
+      summary,
+      prompt: task.prompt,
+      studentText,
+      hasPhoto:
+        submission?.hasPhoto === true ||
+        (typeof studentText === "string" &&
+          studentText.toLowerCase().includes("[photo taken]")),
+      // Raw image blobs/URLs are not sent to AI here; teacher sees the media separately.
     };
   }
 
@@ -423,17 +535,6 @@ function buildStudentWorkDescription(task, submission) {
       prompt: task.prompt,
       teamNotes: submission?.notes || "",
       artifacts: submission?.artifacts || [],
-    };
-  }
-
-  // Make-and-snap special description (kept for compatibility)
-  if (type === TASK_TYPES.MAKE_AND_SNAP || type === "make_and_snap") {
-    return {
-      summary:
-        "Make-and-Snap task: students built or drew something, then took a photo as evidence.",
-      prompt: task.prompt,
-      descriptionText: submission?.text || submission?.notes || "",
-      // Raw media not passed to AI
     };
   }
 
@@ -507,7 +608,7 @@ async function scoreDiffDetective({ task, submission }) {
   };
 }
 
-// --- NEW: SPECIAL CASE – MIND MAPPER (AI-ASSISTED BUT SIMPLE) ---
+// --- SPECIAL CASE: MIND MAPPER (AI-ASSISTED BUT SIMPLE) ---
 
 async function scoreMindMapper({ task, submission }) {
   const points = typeof task.points === "number" ? task.points : 20;
@@ -556,6 +657,62 @@ async function scoreMindMapper({ task, submission }) {
   };
 }
 
+// --- SPECIAL CASE: PHOTO JOURNAL (PHOTO + TEXT) ---
+
+async function scorePhotoJournal({ task, submission, rubric }) {
+  const points = typeof task.points === "number" ? task.points : 10;
+
+  // Default rubric if the caller didn't provide one.
+  const effectiveRubric =
+    rubric ||
+    {
+      totalPoints: points,
+      criteria: [
+        {
+          id: "photo_match",
+          label: "Photo matches the prompt",
+          maxPoints: Math.round(points * 0.6),
+          description:
+            "Does the photo clearly show something that matches the teacher's prompt or evidence requested? " +
+            "Give most or all of these points if the image is mostly on-topic, even if not perfect.",
+        },
+        {
+          id: "explanation_quality",
+          label: "Explanation clarity and accuracy",
+          maxPoints: points - Math.round(points * 0.6),
+          description:
+            "Is the written explanation accurate, clear, and appropriately detailed for the grade level? " +
+            "Does it explain WHY the photo is a good example of the idea or evidence requested?",
+        },
+      ],
+    };
+
+  const result = await scoreSubmissionWithAI({
+    task,
+    submission,
+    rubric: effectiveRubric,
+    explicitTotalPoints: points,
+  });
+
+  const clampedScore = clamp(
+    typeof result.score === "number" ? result.score : 0,
+    0,
+    points
+  );
+
+  return {
+    ...result,
+    score: clampedScore,
+    maxPoints: points,
+    method: "ai-rubric",
+    rubricUsed: effectiveRubric,
+    details: {
+      ...(result.details || {}),
+      type: TASK_TYPES.PHOTO_JOURNAL,
+    },
+  };
+}
+
 // --- PUBLIC ENTRYPOINT ---
 
 export async function generateAIScore({ task, submission, rubric }) {
@@ -574,6 +731,16 @@ export async function generateAIScore({ task, submission, rubric }) {
     task?.taskType === "diff-detective"
   ) {
     return scoreDiffDetective({ task, submission });
+  }
+
+  // Specialized path: Photo Journal (photo + written explanation)
+  if (
+    task?.taskType === TASK_TYPES.PHOTO_JOURNAL ||
+    task?.taskType === "photo-journal" ||
+    task?.taskType === "photo_journal" ||
+    task?.taskType === "photojournal"
+  ) {
+    return scorePhotoJournal({ task, submission, rubric });
   }
 
   const meta = TASK_TYPE_META[task.taskType] || {};
@@ -613,7 +780,7 @@ export async function generateAIScore({ task, submission, rubric }) {
   }
 
   // 3) Use provided rubric or fail
-  if (!rubric) {
+  if (!rubric && task.taskType !== TASK_TYPES.PHOTO_JOURNAL) {
     throw new Error(
       `AI scoring is required for taskType "${task.taskType}" but no rubric was provided.`
     );
@@ -622,7 +789,7 @@ export async function generateAIScore({ task, submission, rubric }) {
   return await scoreSubmissionWithAI({
     task: safeTask,
     submission,
-    rubric,
+    rubric: rubric,
     explicitTotalPoints: safeTask.points,
   });
 }
