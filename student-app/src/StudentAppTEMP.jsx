@@ -283,104 +283,6 @@ function StudentApp() {
       setStatusMessage("Error connecting. Retrying…");
     });
 
-    // ─────────────────────────────────────────────
-    // AUTO-RESUME FROM sessionStorage IF ROOM STILL EXISTS
-    // ─────────────────────────────────────────────
-    socket.on("connect", () => {
-      try {
-        const saved = sessionStorage.getItem("teamSession");
-        if (!saved) return;
-
-        const parsed = JSON.parse(saved);
-        if (!parsed?.roomCode || !parsed?.teamSessionId) return;
-
-        socket.emit(
-          "resume-team-session",
-          {
-            roomCode: parsed.roomCode.toUpperCase(),
-            teamSessionId: parsed.teamSessionId,
-          },
-          (ack) => {
-            if (!ack?.success) {
-              console.warn("Resume failed:", ack?.error);
-
-              try {
-                sessionStorage.removeItem("teamSession");
-              } catch {}
-
-              // FALLBACK → force return to join screen
-              setJoined(false);
-              setRoomCode("");
-              setTeamId(null);
-              setTeamSessionId(null);
-
-              setAssignedStationId(null);
-              setAssignedColor(null);
-              setScannerActive(false);
-              setScannedStationId(null);
-              setScanError(null);
-
-              setCurrentTask(null);
-              setCurrentTaskIndex(null);
-              setTasksetTotalTasks(null);
-              setPostSubmitSecondsLeft(null);
-              setLastTaskResult(null);
-              setShortAnswerReveal(null);
-
-              lastStationIdRef.current = null;
-              roomLocationFromStateRef.current = null;
-
-              setStatusMessage(
-                "That room is no longer active. Enter a new room code to join."
-              );
-
-              return;
-            }
-
-            // SUCCESSFUL RESUME → restore user into room
-            setJoined(true);
-            setRoomCode(parsed.roomCode);
-            setTeamSessionId(parsed.teamSessionId);
-            setTeamId(ack.teamId ?? null);
-
-            if (ack.currentTask) {
-              setCurrentTask(ack.currentTask.task || null);
-              setCurrentTaskIndex(ack.currentTask.taskIndex ?? null);
-              setTasksetTotalTasks(ack.currentTask.totalTasks ?? null);
-
-              const limit = ack.currentTask.timeLimitSeconds || null;
-              if (limit && limit > 0) {
-                const end = Date.now() + limit * 1000;
-                setRemainingMs(end - Date.now());
-              }
-            }
-
-            if (ack.stationId) {
-              const info = normalizeStationId(ack.stationId);
-              setAssignedStationId(info.id);
-              setAssignedColor(info.color || null);
-              lastStationIdRef.current = info.id;
-            }
-
-            const locSlug =
-              ack.locationSlug || roomLocationFromStateRef.current || DEFAULT_LOCATION;
-            setRoomLocation(locSlug);
-            roomLocationFromStateRef.current = locSlug;
-
-            const noiseCfg = ack.noiseConfig || {};
-            setNoiseState((prev) => ({
-              ...prev,
-              enabled: !!noiseCfg.enabled,
-              threshold:
-                typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
-            }));
-          }
-        );
-      } catch (err) {
-        console.warn("Resume session parse error:", err);
-      }
-    });
-
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
@@ -412,11 +314,6 @@ function StudentApp() {
         const stationInfo = normalizeStationId(newStationId);
         setAssignedStationId(stationInfo.id);
         setAssignedColor(stationInfo.color || null);
-
-        // NEW: new station → reset scan + force camera on
-        setScannedStationId(null);
-        setScanError(null);
-        setScannerActive(true);
       }
 
       const loc =
@@ -594,35 +491,6 @@ function StudentApp() {
       }
     };
 
-    const handleArrivalBonus = (payload) => {
-      if (!payload || payload.teamId !== teamId) return;
-
-      const { bonus, position, taskIndex } = payload;
-      if (typeof bonus !== "number" || bonus === 0) return;
-
-      let baseMsg =
-        bonus >= 10
-          ? `Speed bonus! +${bonus} points for arriving at your new station quickly!`
-          : `Quick move! +${bonus} bonus points for fast arrival.`;
-
-      if (typeof position === "number") {
-        baseMsg += ` (You were #${position} to arrive${
-          typeof taskIndex === "number" ? ` for task ${taskIndex + 1}` : ""
-        }.)`;
-      }
-
-      setPointToast({
-        message: baseMsg,
-        positive: true,
-      });
-
-      tryPlayTreatSound();
-
-      setTimeout(() => {
-        setPointToast(null);
-      }, 2500);
-    };
-
     const handleCollabPartner = (payload) => {
       if (!payload || payload.teamId !== teamId) return;
       setPartnerAnswer(payload.answer ?? null);
@@ -641,7 +509,6 @@ function StudentApp() {
     socket.on("treat:event", handleTreat);
     socket.on("collab:partner-answer", handleCollabPartner);
     socket.on("collab:reply", handleCollabReply);
-    socket.off("station:arrival-bonus", handleArrivalBonus);
 
     socket.emit("room:request-state", { teamId });
 
@@ -653,7 +520,6 @@ function StudentApp() {
       socket.off("treat:event", handleTreat);
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
-      socket.off("station:arrival-bonus", handleArrivalBonus);
     };
   }, [teamId, reviewPauseSeconds]);
 
@@ -710,8 +576,8 @@ function StudentApp() {
   // Join room + submit handlers
   // ─────────────────────────────────────────────
 
-    const canJoin =
-    roomCode.trim().length >= 2 &&
+  const canJoin =
+    roomCode.trim().length >= 3 &&
     teamName.trim().length >= 1 &&
     members.some((m) => m.trim().length > 0);
 
@@ -728,91 +594,77 @@ function StudentApp() {
       members: members.filter((m) => m.trim().length > 0),
     };
 
-    // IMPORTANT: match backend event name
-    socket.emit("student:join-room", payload, (response) => {
+    socket.emit("student-join-room", payload, (response) => {
       setJoiningRoom(false);
-
-      if (!response || response.error || response.ok === false) {
+      if (!response || response.error) {
         setStatusMessage(
-          response?.error ||
-            "Could not join. Check the code with your teacher."
+          response?.error || "Could not join. Check the code with your teacher."
         );
         return;
       }
 
-      const nextTeamId = response.teamId;
-      const nextTeamSessionId = response.teamSessionId || nextTeamId || null;
-
       setJoined(true);
       setStatusMessage("");
-      setTeamId(nextTeamId);
-      setTeamSessionId(nextTeamSessionId);
+      setTeamId(response.teamId);
+      setTeamSessionId(response.teamSessionId || null);
 
-      // Persist for auto-resume
-      try {
-        if (nextTeamSessionId && payload.roomCode) {
-          sessionStorage.setItem(
-            "teamSession",
-            JSON.stringify({
-              roomCode: payload.roomCode,
-              teamSessionId: nextTeamSessionId,
-            })
-          );
-        }
-      } catch (err) {
-        console.warn("Unable to persist teamSession:", err);
-      }
-
-      // If the server already gave us a roomState, hydrate station + location
-      const state = response.roomState || null;
-      let assignedInfo = null;
-
-      if (
-        state &&
-        state.teams &&
-        nextTeamId &&
-        state.teams[nextTeamId]
-      ) {
-        const myTeam = state.teams[nextTeamId];
-        const newStationId = myTeam.currentStationId || myTeam.stationId;
-
-        if (newStationId) {
-          assignedInfo = normalizeStationId(newStationId);
-          setAssignedStationId(assignedInfo.id);
-          setAssignedColor(assignedInfo.color || null);
-          lastStationIdRef.current = assignedInfo.id;
-        }
-
-        const loc =
-          myTeam.locationSlug ||
-          state.locationSlug ||
-          roomLocationFromStateRef.current ||
-          DEFAULT_LOCATION;
-        setRoomLocation(loc);
-        roomLocationFromStateRef.current = loc;
-      }
-
-      // If this room has stations, scanning should be the next step
-      const hasStations =
-        state &&
-        state.stations &&
-        Object.keys(state.stations).length > 0;
-
-      if (hasStations) {
-        setScannedStationId(null);
-        setScannerActive(true);
-
-        const colorLabel = assignedInfo?.color || null;
-
-        setStatusMessage(
-          colorLabel
-            ? `Scan your ${colorLabel} station QR code to finish joining.`
-            : "Scan your station QR code to finish joining."
+      if (response.currentTask) {
+        setCurrentTask(response.currentTask.task || null);
+        setCurrentTaskIndex(
+          typeof response.currentTask.taskIndex === "number"
+            ? response.currentTask.taskIndex
+            : null
         );
-      } else {
-        // Non-station sessions: just wait for teacher
-        setStatusMessage("Joined room. Waiting for your teacher to start a task.");
+        setTasksetTotalTasks(
+          typeof response.currentTask.totalTasks === "number"
+            ? response.currentTask.totalTasks
+            : null
+        );
+
+        const limit = response.currentTask.timeLimitSeconds || null;
+        setTimeLimitSeconds(limit);
+
+        if (limit && limit > 0) {
+          const endTime = Date.now() + limit * 1000;
+          setRemainingMs(endTime - Date.now());
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+          }
+          countdownTimerRef.current = setInterval(() => {
+            setRemainingMs((prev) => {
+              if (!prev || prev <= 1000) {
+                clearInterval(countdownTimerRef.current);
+                return 0;
+              }
+              return prev - 1000;
+            });
+          }, 1000);
+        } else {
+          setRemainingMs(0);
+        }
       }
+
+      if (response.stationId) {
+        const stationInfo = normalizeStationId(response.stationId);
+        setAssignedStationId(stationInfo.id);
+        setAssignedColor(stationInfo.color || null);
+        lastStationIdRef.current = stationInfo.id;
+      }
+
+      const locSlug =
+        response.locationSlug ||
+        roomLocationFromStateRef.current ||
+        DEFAULT_LOCATION;
+      setRoomLocation(locSlug);
+      roomLocationFromStateRef.current = locSlug;
+
+      const noiseCfg = response.noiseConfig || {};
+      setNoiseState((prev) => ({
+        ...prev,
+        enabled: !!noiseCfg.enabled,
+        threshold:
+          typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
+      }));
     });
   };
 
@@ -1100,46 +952,39 @@ function StudentApp() {
     });
   };
 
-// ─────────────────────────────────────────────
-// QR Scanner
-// ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // QR Scanner
+  // ─────────────────────────────────────────────
 
-const handleScan = (data) => {
-  if (!data) return;
-  setScanError(null);
-  setScannedStationId(data);
+  const handleScan = (data) => {
+    if (!data) return;
+    setScanError(null);
+    setScannedStationId(data);
 
-  if (!roomCode || !teamId) return;
+    if (!roomCode || !joined || !teamId) return;
 
-  socket.emit(
-    "station:scan",
-    {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      stationId: data,
-    },
-    (response) => {
-      if (!response || response.error || response.ok === false) {
-        setScanError(response?.error || "Scan was not accepted.");
-        // IMPORTANT: keep scanner open on failure
-        setScannerActive(true);
-        return;
+    socket.emit(
+      "station-scan",
+      {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+        stationId: data,
+      },
+      (response) => {
+        if (!response || response.error) {
+          setScanError(response?.error || "Scan was not accepted.");
+          return;
+        }
+        if (response.stationId) {
+          const stationInfo = normalizeStationId(response.stationId);
+          setAssignedStationId(stationInfo.id);
+          setAssignedColor(stationInfo.color || null);
+          lastStationIdRef.current = stationInfo.id;
+        }
+        setScannerActive(false);
       }
-
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
-        lastStationIdRef.current = stationInfo.id;
-      }
-
-      // SUCCESSFUL scan → close scanner and show “joined + waiting”
-      setScannerActive(false);
-      setStatusMessage("Station scanned! Waiting for your teacher’s next task…");
-      setJoined(true);
-    }
-  );
-};
+    );
+  };
 
   // ─────────────────────────────────────────────
   // Location enforcement & station gating
@@ -1225,13 +1070,6 @@ const handleScan = (data) => {
   const isPhoto = currentTask?.taskType === TASK_TYPES.PHOTO;
   const isBrainSparkNotes =
     currentTask?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES;
-
-  const isDrawMime =
-    currentTask?.taskType === TASK_TYPES.DRAW_AND_MIME ||
-    currentTask?.taskType === TASK_TYPES.DRAW_MIME;
-
-  const isLiveDebate =
-    currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
 
   const baseTaskCardStyle = {
     marginBottom: 12,
@@ -1893,223 +1731,168 @@ const handleScan = (data) => {
       </style>
 
       {/* HEADER */}
-            <header
+      <header
         style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           marginBottom: 12,
+          gap: 10,
         }}
       >
-        {/* Top title row spanning full width */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginBottom: 4,
-          }}
-        >
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "1.6rem",
-              color: "#ffffff",
-              textAlign: "center",
-              flex: 1,
-            }}
-          >
-            Curriculate – Team Station
-          </h1>
-        </div>
-
-        {/* Subheader: left info + right controls */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 10,
-            flexWrap: "wrap",
-          }}
-        >
-          {/* Left: join instructions + pills */}
-          <div style={{ minWidth: 0 }}>
+        <div>
+          <header style={{ marginBottom: 4 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "1.4rem",
+                color: "#ffffff",
+              }}
+            >
+              Curriculate – Team Station
+            </h1>
             <p
               style={{
                 margin: 0,
                 fontSize: "0.85rem",
-                color: "#e5e7eb",
+                color: "#4b5563",
               }}
             >
               Join your teacher&apos;s room, then scan stations as you move.
             </p>
+          </header>
 
-            <div
-              style={{
-                marginTop: 6,
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-              }}
-            >
-              {joined && (
-                <span className="pill-muted">
-                  Team: <strong>{teamName || "…"}</strong>
-                </span>
-              )}
-              {joined && (
-                <span className="pill-muted">
-                  Room: <strong>{roomCode.toUpperCase()}</strong>
-                </span>
-              )}
-
-              {stationInfo.id && (
-                <span className="station-pill">
-                  <span
-                    className="station-dot"
-                    style={
-                      stationInfo.color
-                        ? { background: stationInfo.color }
-                        : undefined
-                    }
-                  />
-                  {stationInfo.label}
-                </span>
-              )}
-
-              {roomLocation && (
-                <span className="location-pill">
-                  <span className="location-dot" />
-                  <span>{roomLocation}</span>
-                </span>
-              )}
-
-              {timerDisplay && (
-                <span className="countdown-pill">
-                  <span
-                    className={
-                      remainingMs <= 15000
-                        ? "timer-dot critical"
-                        : remainingMs <= 30000
-                        ? "timer-dot low-time"
-                        : "timer-dot"
-                    }
-                  />
-                  {timerDisplay}
-                </span>
-              )}
-
-              <span className="score-pill">
-                <span role="img" aria-label="sparkles">
-                  ✨
-                </span>
-                <span>{scoreTotal} pts</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {joined && (
+              <span className="pill-muted">
+                Team: <strong>{teamName || "…"}</strong>
               </span>
-            </div>
-          </div>
+            )}
+            {joined && (
+              <span className="pill-muted">
+                Room: <strong>{roomCode.toUpperCase()}</strong>
+              </span>
+            )}
 
-          {/* Right: theme toggles + connection + leave-room button */}
-                  <div style={{ textAlign: "right", minWidth: 140 }}>
-          {/* Top row: theme toggles + join-different-room */}
+            {stationInfo.id && (
+              <span className="station-pill">
+                <span
+                  className="station-dot"
+                  style={
+                    stationInfo.color
+                      ? { background: stationInfo.color }
+                      : undefined
+                  }
+                />
+                {stationInfo.label}
+              </span>
+            )}
+
+            {roomLocation && (
+              <span className="location-pill">
+                <span className="location-dot" />
+                <span>{roomLocation}</span>
+              </span>
+            )}
+
+            {timerDisplay && (
+              <span className="countdown-pill">
+                <span
+                  className={
+                    remainingMs <= 15000
+                      ? "timer-dot critical"
+                      : remainingMs <= 30000
+                      ? "timer-dot low-time"
+                      : "timer-dot"
+                  }
+                />
+                {timerDisplay}
+              </span>
+            )}
+
+            <span className="score-pill">
+              <span role="img" aria-label="sparkles">
+                ✨
+              </span>
+              <span>{scoreTotal} pts</span>
+            </span>
+          </div>
+        </div>
+
+        <div style={{ textAlign: "right", minWidth: 140 }}>
           <div
             style={{
               display: "flex",
               justifyContent: "flex-end",
-              alignItems: "center",
-              gap: 6,
+              gap: 4,
               marginBottom: 4,
-              flexWrap: "wrap",
             }}
           >
-            {/* Theme buttons group */}
-            <div
-              style={{
-                display: "flex",
-                gap: 4,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setUiTheme("modern")}
-                style={{
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border:
-                    uiTheme === "modern"
-                      ? "2px solid rgba(59,130,246,0.9)"
-                      : "1px solid rgba(148,163,184,0.7)",
-                  background:
-                    uiTheme === "modern"
-                      ? "rgba(191,219,254,0.35)"
-                      : "rgba(15,23,42,0.15)",
-                  color: "#e5e7eb",
-                  fontSize: "0.75rem",
-                  cursor: "pointer",
-                }}
-              >
-                Eager
-              </button>
-              <button
-                type="button"
-                onClick={() => setUiTheme("bold")}
-                style={{
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border:
-                    uiTheme === "bold"
-                      ? "2px solid rgba(248,250,252,0.9)"
-                      : "1px solid rgba(148,163,184,0.6)",
-                  background:
-                    uiTheme === "bold"
-                      ? "rgba(15,23,42,0.9)"
-                      : "rgba(15,23,42,0.25)",
-                  color: "#e5e7eb",
-                  fontSize: "0.75rem",
-                  cursor: "pointer",
-                }}
-              >
-                Bold
-              </button>
-              <button
-                type="button"
-                onClick={() => setUiTheme("minimal")}
-                style={{
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border:
-                    uiTheme === "minimal"
-                      ? "2px solid rgba(15,23,42,0.85)"
-                      : "1px solid rgba(148,163,184,0.6)",
-                  background:
-                    uiTheme === "minimal"
-                      ? "#e5e7eb"
-                      : "rgba(249,250,251,0.85)",
-                  color: "#111827",
-                  fontSize: "0.75rem",
-                  cursor: "pointer",
-                }}
-              >
-                Dyno
-              </button>
-            </div>
-
-            {/* Join-a-different-room button, same row, all themes */}
             <button
               type="button"
-              onClick={handleLeaveRoom}
+              onClick={() => setUiTheme("modern")}
               style={{
+                padding: "4px 8px",
                 borderRadius: 999,
-                padding: "4px 10px",
+                border:
+                  uiTheme === "modern"
+                    ? "2px solid rgba(59,130,246,0.9)"
+                    : "1px solid rgba(148,163,184,0.7)",
+                background:
+                  uiTheme === "modern"
+                    ? "rgba(191,219,254,0.35)"
+                    : "rgba(15,23,42,0.15)",
+                color: "#e5e7eb",
                 fontSize: "0.75rem",
-                fontWeight: 600,
-                border: "1px solid rgba(148,163,184,0.9)",
-                background: "rgba(248,250,252,0.95)",
-                color: "#0f172a",
                 cursor: "pointer",
               }}
             >
-              Join a different room
+              Theme 1
+            </button>
+            <button
+              type="button"
+              onClick={() => setUiTheme("bold")}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border:
+                  uiTheme === "bold"
+                    ? "2px solid rgba(248,250,252,0.9)"
+                    : "1px solid rgba(148,163,184,0.6)",
+                background:
+                  uiTheme === "bold"
+                    ? "rgba(15,23,42,0.9)"
+                    : "rgba(15,23,42,0.25)",
+                color: "#e5e7eb",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+              }}
+            >
+              Theme 2
+            </button>
+            <button
+              type="button"
+              onClick={() => setUiTheme("minimal")}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border:
+                  uiTheme === "minimal"
+                    ? "2px solid rgba(15,23,42,0.85)"
+                    : "1px solid rgba(148,163,184,0.6)",
+                background:
+                  uiTheme === "minimal"
+                    ? "#e5e7eb"
+                    : "rgba(249,250,251,0.85)",
+                color: "#111827",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+              }}
+            >
+              Theme 3
             </button>
           </div>
 
-          {/* Connection + status under the buttons */}
           <div
             style={{
               fontSize: "0.75rem",
@@ -2118,7 +1901,6 @@ const handleScan = (data) => {
           >
             {connected ? "Connected to server" : "Connecting…"}
           </div>
-
           {statusMessage && (
             <div
               style={{
@@ -2131,20 +1913,38 @@ const handleScan = (data) => {
             </div>
           )}
         </div>
-          </div>
+
+            <div
+              style={{
+                marginTop: 6,
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleLeaveRoom}
+                style={{
+                  border: "none",
+                  borderRadius: 999,
+                  padding: "4px 8px",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  background: "rgba(15,23,42,0.14)",
+                  color: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                Join a different room
+              </button>
+            </div>
+
       </header>
-      
+
       {/* JOIN CARD */}
       {!joined && (
         <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
-          <div
-            className="join-card"
-            style={{
-              background: themeShell.cardBg,
-              border: themeShell.cardBorder,
-              color: themeShell.text,
-            }}
-          >
+          <div className="join-card">
             <h2
               style={{
                 marginTop: 0,
@@ -2152,7 +1952,7 @@ const handleScan = (data) => {
                 fontSize: "1.1rem",
               }}
             >
-              Join a room
+              Join your teacher’s room
             </h2>
             <p
               style={{
@@ -2162,7 +1962,7 @@ const handleScan = (data) => {
                 color: "#9ca3af",
               }}
             >
-              Enter the code your presenter shows on the board, pick a team name,
+              Enter the code your teacher shows on the board, pick a team name,
               and list your team members.
             </p>
 
@@ -2285,6 +2085,62 @@ const handleScan = (data) => {
                 }}
               />
             </div>
+          </section>
+
+          {/* QR SCANNER TOGGLE */}
+          <section
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginTop: 4,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setScannerActive((prev) => !prev)}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "none",
+                background: scannerActive
+                  ? "linear-gradient(135deg, #22c55e, #0ea5e9)"
+                  : "rgba(15,23,42,0.8)",
+                color: "#f9fafb",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span role="img" aria-label="qr">
+                📷
+              </span>
+              {scannerActive ? "Hide Scanner" : "Scan Station"}
+            </button>
+
+            {progressLabel && (
+              <div style={{ textAlign: "right", fontSize: "0.8rem" }}>
+                <div style={{ color: "#e5e7eb", fontWeight: 600 }}>
+                  {progressLabel}
+                </div>
+                {currentTaskNumber && totalTasks && (
+                  <div className="progress-line">
+                    <div
+                      className="progress-line-inner"
+                      style={{
+                        width: `${Math.round(
+                          (currentTaskNumber / totalTasks) * 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           {/* QR SCANNER */}
@@ -2418,35 +2274,51 @@ const handleScan = (data) => {
           )}
 
           {/* Must scan gate */}
-            {joined && currentTask && mustScan && (
-              <section
+          {joined && currentTask && mustScan && (
+            <section
+              style={{
+                marginTop: 10,
+                padding: 16,
+                borderRadius: 18,
+                background: "rgba(15,23,42,0.9)",
+                border: "1px solid rgba(248,250,252,0.8)",
+                color: "#fefce8",
+                textAlign: "center",
+                boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
+              }}
+            >
+              <div style={{ fontSize: "1rem", fontWeight: 700 }}>
+                🚪 Scan the correct station first
+              </div>
+              <p
                 style={{
-                  marginTop: 10,
-                  padding: 16,
-                  borderRadius: 18,
-                  background: "rgba(15,23,42,0.9)",
-                  border: "1px solid rgba(248,250,252,0.8)",
-                  color: "#fefce8",
-                  textAlign: "center",
-                  boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
+                  marginTop: 6,
+                  fontSize: "0.9rem",
+                  marginBottom: 10,
                 }}
               >
-                <div style={{ fontSize: "1rem", fontWeight: 700 }}>
-                  🚪 Scan the correct station first
-                </div>
-                <p
-                  style={{
-                    marginTop: 6,
-                    fontSize: "0.9rem",
-                    marginBottom: 0,
-                  }}
-                >
-                  Your teacher has locked this task to a specific station.
-                  The scanner is open—hold your device up to the station’s
-                  QR code to unlock this task.
-                </p>
-              </section>
-            )}
+                Your teacher has locked this task to a specific station. Scan
+                the station&apos;s QR code to unlock it.
+              </p>
+              <button
+                type="button"
+                onClick={() => setScannerActive(true)}
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #22c55e, #0ea5e9)",
+                  color: "#f9fafb",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Scan Station QR
+              </button>
+            </section>
+          )}
         </main>
       )}
 
