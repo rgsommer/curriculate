@@ -2,48 +2,48 @@
 import React, { useEffect, useState, useRef } from "react";
 import Lottie from "lottie-react";
 
-// Import animations from /public/animations (Vite will resolve these)
-import jumpAnim from "/animations/jump.json";
-import squatAnim from "/animations/squat.json";
-import runAnim from "/animations/run.json";
-import danceAnim from "/animations/dance.json";
-import spinAnim from "/animations/spin.json";
-
-// All animations are loaded directly from /public/animations/
+// We assume the JSON files live in student-app/public/animations
+// and are served at /animations/*.json at runtime.
 const ACTIVITY_CONFIG = {
   "Jump 10 times": {
     type: "jump",
     target: 10,
-    animationData: jumpAnim,
+    emoji: "🦘",
+    file: "jump.json",
   },
   "Do 8 squats": {
     type: "squat",
     target: 8,
-    animationData: squatAnim,
+    emoji: "🏋️‍♂️",
+    file: "squat.json",
   },
   "Run on the spot": {
     type: "run",
     target: 15,
-    animationData: runAnim,
+    emoji: "🏃‍♂️",
+    file: "run.json",
   },
   "Dance wildly!": {
     type: "dance",
     target: 12,
-    animationData: danceAnim,
+    emoji: "💃",
+    file: "dance.json",
   },
   "Spin around 5 times": {
     type: "spin",
     target: 5,
-    animationData: spinAnim,
+    emoji: "🌀",
+    file: "spin.json",
   },
 };
 
 export default function MotionMissionTask({ task, onSubmit, disabled }) {
   const activityPrompt = task?.prompt || "Jump 10 times";
   const [activityName] = useState(activityPrompt);
+
   const config =
     ACTIVITY_CONFIG[activityName] || ACTIVITY_CONFIG["Jump 10 times"];
-  const { animationData, target } = config;
+  const { emoji, target, file } = config;
 
   const [count, setCount] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -51,11 +51,37 @@ export default function MotionMissionTask({ task, onSubmit, disabled }) {
   const [showDemo, setShowDemo] = useState(true);
   const [noMotionSupport, setNoMotionSupport] = useState(false);
 
-  const lastShakeTime = useRef(0);
-  const shakeThreshold = 1.9; // Fine-tuned for kids' energy
-  const minInterval = 380; // Prevent double-counting
+  // Lottie animation data, loaded at runtime from /animations/*.json
+  const [animData, setAnimData] = useState(null);
 
-  // Request permission and start motion detection
+  const lastShakeTime = useRef(0);
+  const shakeThreshold = 1.9; // Tuned for kids' movement
+  const minInterval = 380; // ms between counted shakes
+
+  // Load the correct Lottie JSON from /public/animations at runtime
+  useEffect(() => {
+    let cancelled = false;
+    setAnimData(null);
+
+    if (!file) return;
+
+    fetch(`/animations/${file}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) {
+          setAnimData(data);
+        }
+      })
+      .catch(() => {
+        // If it fails, we just fall back to the emoji-based demo
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+
+  // Request motion permission and attach / detach listener
   useEffect(() => {
     let cancelled = false;
 
@@ -107,7 +133,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled }) {
             setNoMotionSupport(true);
           }
         } else if (typeof window !== "undefined" && window.DeviceMotionEvent) {
-          // Android / desktop that supports DeviceMotion
+          // Android / browsers that support DeviceMotion
           window.addEventListener("devicemotion", handleMotion);
         } else {
           setNoMotionSupport(true);
@@ -117,7 +143,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled }) {
       }
     };
 
-    // Show demo for 5 seconds, then request motion permission
+    // Show the demo briefly, then kick off motion permission
     const demoTimer = setTimeout(() => setShowDemo(false), 5000);
     const motionTimer = setTimeout(() => {
       if (!cancelled) {
@@ -133,7 +159,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled }) {
     };
   }, [disabled, completed, target, onSubmit]);
 
-  // Update progress bar
+  // Update progress bar as count changes
   useEffect(() => {
     setProgress((count / target) * 100);
   }, [count, target]);
@@ -151,8 +177,19 @@ export default function MotionMissionTask({ task, onSubmit, disabled }) {
           <p className="text-5xl md:text-7xl font-bold mb-12 drop-shadow-2xl">
             Watch and Copy!
           </p>
-          <div className="w-80 h-80 md:w-96 md:h-96 mx-auto">
-            <Lottie animationData={animationData} loop={true} />
+          <div className="w-80 h-80 md:w-96 md:h-96 mx-auto flex items-center justify-center">
+            {animData ? (
+              <Lottie
+                animationData={animData}
+                loop
+                autoplay
+                style={{ width: "100%", height: "100%" }}
+              />
+            ) : (
+              <div className="text-9xl md:text-[8rem] animate-bounce drop-shadow-2xl">
+                {emoji}
+              </div>
+            )}
           </div>
           <p className="text-5xl md:text-7xl font-black text-yellow-300 mt-12 drop-shadow-2xl">
             {activityName.toUpperCase()}

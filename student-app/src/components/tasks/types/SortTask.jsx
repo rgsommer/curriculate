@@ -5,6 +5,7 @@ import {
   DndContext,
   closestCenter,
   PointerSensor,
+  TouchSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
@@ -76,6 +77,7 @@ function SortableItem({ id, children, disabled, score }) {
     gap: 12,
     cursor: disabled ? "not-allowed" : "grab",
     userSelect: "none",
+    touchAction: "none", // 💡 important for touch dragging on Android/iOS
   };
 
   return (
@@ -198,7 +200,7 @@ export default function SortTask({
         : b.label || b.name || `Bucket ${i + 1}`,
   }));
 
-    // Try several possible locations for the items, depending on how the task was saved
+  // Try several possible locations for the items, depending on how the task was saved
   const rawItems =
     (Array.isArray(config.items) && config.items.length > 0
       ? config.items
@@ -210,7 +212,6 @@ export default function SortTask({
       ? task.items
       : []);
 
-  // Helpful debug (safe to leave in for now)
   if (rawItems.length === 0) {
     console.log("[SortTask] No items found for sort task", {
       task,
@@ -276,20 +277,20 @@ export default function SortTask({
   };
 
   const [assignments, setAssignments] = useState(initialAssignments);
-
   const [hasSubmitted, setHasSubmitted] = useState(false);
+
   const getBucketIndexForItem = (itemId) => {
     // Find the bucket (except UNSORTED) that contains this item id
     const bucketId = Object.entries(assignments).find(
-        ([bId, ids]) =>
-          bId !== UNSORTED_BUCKET_ID && ids.includes(itemId)
-      )?.[0];
+      ([bId, ids]) =>
+        bId !== UNSORTED_BUCKET_ID && ids.includes(itemId),
+    )?.[0];
 
-      if (!bucketId) return null;
+    if (!bucketId) return null;
 
-      const idx = buckets.findIndex((b) => b.id === bucketId);
-      return idx >= 0 ? idx : null;
-    };
+    const idx = buckets.findIndex((b) => b.id === bucketId);
+    return idx >= 0 ? idx : null;
+  };
 
   useEffect(() => {
     setHasSubmitted(false);
@@ -364,11 +365,14 @@ export default function SortTask({
   }, [assignments, finalScore, onAnswerChange]);
 
   // -------------------------------
-  // Drag & Drop setup
+  // Drag & Drop setup (with touch support)
   // -------------------------------
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { distance: 6 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -580,7 +584,7 @@ export default function SortTask({
           };
 
           onSubmit(payload);
-          setHasSubmitted(true);   // ← locks the button
+          setHasSubmitted(true);
         }}
         disabled={disabled || hasSubmitted || !allItemsPlaced}
         className={clsx(
@@ -592,7 +596,6 @@ export default function SortTask({
       >
         {disabled || hasSubmitted ? "Submitted" : "Submit answer"}
       </button>
-
     </div>
   );
 }
