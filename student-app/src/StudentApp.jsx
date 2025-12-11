@@ -1829,214 +1829,233 @@ function StudentApp() {
       </style>
 
       {/* HEADER */}
-      <header
+            <header
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
           marginBottom: 12,
-          gap: 10,
         }}
       >
-        <div>
-          <header style={{ marginBottom: 4 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "1.4rem",
-                color: "#ffffff",
-              }}
-            >
-              Curriculate – Team Station
-            </h1>
+        {/* Top title row spanning full width */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginBottom: 4,
+          }}
+        >
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.6rem",
+              color: "#ffffff",
+              textAlign: "center",
+              flex: 1,
+            }}
+          >
+            Curriculate – Team Station
+          </h1>
+        </div>
+
+        {/* Subheader: left info + right controls */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          {/* Left: join instructions + pills */}
+          <div style={{ minWidth: 0 }}>
             <p
               style={{
                 margin: 0,
                 fontSize: "0.85rem",
-                color: "#4b5563",
+                color: "#e5e7eb",
               }}
             >
               Join your teacher&apos;s room, then scan stations as you move.
             </p>
-          </header>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {joined && (
-              <span className="pill-muted">
-                Team: <strong>{teamName || "…"}</strong>
-              </span>
-            )}
-            {joined && (
-              <span className="pill-muted">
-                Room: <strong>{roomCode.toUpperCase()}</strong>
-              </span>
-            )}
-
-            {stationInfo.id && (
-              <span className="station-pill">
-                <span
-                  className="station-dot"
-                  style={
-                    stationInfo.color
-                      ? { background: stationInfo.color }
-                      : undefined
-                  }
-                />
-                {stationInfo.label}
-              </span>
-            )}
-
-            {roomLocation && (
-              <span className="location-pill">
-                <span className="location-dot" />
-                <span>{roomLocation}</span>
-              </span>
-            )}
-
-            {timerDisplay && (
-              <span className="countdown-pill">
-                <span
-                  className={
-                    remainingMs <= 15000
-                      ? "timer-dot critical"
-                      : remainingMs <= 30000
-                      ? "timer-dot low-time"
-                      : "timer-dot"
-                  }
-                />
-                {timerDisplay}
-              </span>
-            )}
-
-            <span className="score-pill">
-              <span role="img" aria-label="sparkles">
-                ✨
-              </span>
-              <span>{scoreTotal} pts</span>
-            </span>
-          </div>
-        </div>
-
-        <div style={{ textAlign: "right", minWidth: 140 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 4,
-              marginBottom: 4,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setUiTheme("modern")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "modern"
-                    ? "2px solid rgba(59,130,246,0.9)"
-                    : "1px solid rgba(148,163,184,0.7)",
-                background:
-                  uiTheme === "modern"
-                    ? "rgba(191,219,254,0.35)"
-                    : "rgba(15,23,42,0.15)",
-                color: "#e5e7eb",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Eager
-            </button>
-            <button
-              type="button"
-              onClick={() => setUiTheme("bold")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "bold"
-                    ? "2px solid rgba(248,250,252,0.9)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "bold"
-                    ? "rgba(15,23,42,0.9)"
-                    : "rgba(15,23,42,0.25)",
-                color: "#e5e7eb",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Bold
-            </button>
-            <button
-              type="button"
-              onClick={() => setUiTheme("minimal")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "minimal"
-                    ? "2px solid rgba(15,23,42,0.85)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "minimal"
-                    ? "#e5e7eb"
-                    : "rgba(249,250,251,0.85)",
-                color: "#111827",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Dyno
-            </button>
-          </div>
-
-          <div
-            style={{
-              fontSize: "0.75rem",
-              color: connected ? "#bbf7d0" : "#fecaca",
-            }}
-          >
-            {connected ? "Connected to server" : "Connecting…"}
-          </div>
-          {statusMessage && (
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: "0.75rem",
-                color: "#fee2e2",
-              }}
-            >
-              {statusMessage}
-            </div>
-          )}
-        </div>
 
             <div
               style={{
                 marginTop: 6,
                 display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+              }}
+            >
+              {joined && (
+                <span className="pill-muted">
+                  Team: <strong>{teamName || "…"}</strong>
+                </span>
+              )}
+              {joined && (
+                <span className="pill-muted">
+                  Room: <strong>{roomCode.toUpperCase()}</strong>
+                </span>
+              )}
+
+              {stationInfo.id && (
+                <span className="station-pill">
+                  <span
+                    className="station-dot"
+                    style={
+                      stationInfo.color
+                        ? { background: stationInfo.color }
+                        : undefined
+                    }
+                  />
+                  {stationInfo.label}
+                </span>
+              )}
+
+              {roomLocation && (
+                <span className="location-pill">
+                  <span className="location-dot" />
+                  <span>{roomLocation}</span>
+                </span>
+              )}
+
+              {timerDisplay && (
+                <span className="countdown-pill">
+                  <span
+                    className={
+                      remainingMs <= 15000
+                        ? "timer-dot critical"
+                        : remainingMs <= 30000
+                        ? "timer-dot low-time"
+                        : "timer-dot"
+                    }
+                  />
+                  {timerDisplay}
+                </span>
+              )}
+
+              <span className="score-pill">
+                <span role="img" aria-label="sparkles">
+                  ✨
+                </span>
+                <span>{scoreTotal} pts</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Right: theme toggles + connection + leave-room button */}
+          <div style={{ textAlign: "right", minWidth: 160 }}>
+            <div
+              style={{
+                display: "flex",
                 justifyContent: "flex-end",
+                gap: 4,
+                marginBottom: 4,
               }}
             >
               <button
                 type="button"
-                onClick={handleLeaveRoom}
+                onClick={() => setUiTheme("modern")}
                 style={{
-                  border: "none",
-                  borderRadius: 999,
                   padding: "4px 8px",
+                  borderRadius: 999,
+                  border:
+                    uiTheme === "modern"
+                      ? "2px solid rgba(59,130,246,0.9)"
+                      : "1px solid rgba(148,163,184,0.7)",
+                  background:
+                    uiTheme === "modern"
+                      ? "rgba(191,219,254,0.35)"
+                      : "rgba(15,23,42,0.15)",
+                  color: "#e5e7eb",
                   fontSize: "0.75rem",
-                  fontWeight: 600,
-                  background: "rgba(15,23,42,0.14)",
-                  color: "inherit",
                   cursor: "pointer",
                 }}
               >
-                Join a different room
+                Eager
+              </button>
+              <button
+                type="button"
+                onClick={() => setUiTheme("bold")}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border:
+                    uiTheme === "bold"
+                      ? "2px solid rgba(248,250,252,0.9)"
+                      : "1px solid rgba(148,163,184,0.6)",
+                  background:
+                    uiTheme === "bold"
+                      ? "rgba(15,23,42,0.9)"
+                      : "rgba(15,23,42,0.25)",
+                  color: "#e5e7eb",
+                  fontSize: "0.75rem",
+                  cursor: "pointer",
+                }}
+              >
+                Bold
+              </button>
+              <button
+                type="button"
+                onClick={() => setUiTheme("minimal")}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  border:
+                    uiTheme === "minimal"
+                      ? "2px solid rgba(15,23,42,0.85)"
+                      : "1px solid rgba(148,163,184,0.6)",
+                  background:
+                    uiTheme === "minimal"
+                      ? "#e5e7eb"
+                      : "rgba(249,250,251,0.85)",
+                  color: "#111827",
+                  fontSize: "0.75rem",
+                  cursor: "pointer",
+                }}
+              >
+                Dyno
               </button>
             </div>
 
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: connected ? "#bbf7d0" : "#fecaca",
+              }}
+            >
+              {connected ? "Connected to server" : "Connecting…"}
+            </div>
+
+            {statusMessage && (
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: "0.75rem",
+                  color: "#fee2e2",
+                }}
+              >
+                {statusMessage}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleLeaveRoom}
+              style={{
+                marginTop: 6,
+                borderRadius: 999,
+                padding: "4px 10px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                border: "1px solid rgba(148,163,184,0.9)",
+                background: "rgba(248,250,252,0.9)",
+                color: "#0f172a",
+                cursor: "pointer",
+              }}
+            >
+              Join a different room
+            </button>
+          </div>
+        </div>
       </header>
 
       {/* JOIN CARD */}
@@ -2050,7 +2069,7 @@ function StudentApp() {
                 fontSize: "1.1rem",
               }}
             >
-              Join your teacher’s room
+              Join a room
             </h2>
             <p
               style={{
@@ -2060,7 +2079,7 @@ function StudentApp() {
                 color: "#9ca3af",
               }}
             >
-              Enter the code your teacher shows on the board, pick a team name,
+              Enter the code your presenter shows on the board, pick a team name,
               and list your team members.
             </p>
 
