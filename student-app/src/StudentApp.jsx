@@ -1189,6 +1189,9 @@ function StudentApp() {
   const isOpenText =
     currentTask?.taskType === TASK_TYPES.OPEN_TEXT;
 
+  const isPetFeeding =
+    currentTask?.taskType === TASK_TYPES.PET_FEEDING;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1265,6 +1268,8 @@ function StudentApp() {
           ? "radial-gradient(circle at top, #7c3aed 0%, #fb7185 40%, #facc15 75%, #fef9c3 100%)"
           : isMysteryClues
           ? "radial-gradient(circle at top, #020617 0%, #1e293b 30%, #4f46e5 60%, #22c55e 100%)"
+          : isPetFeeding
+          ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #0ea5e9 70%, #fef9c3 100%)"
           : themeShell.pageBg,
 
         color: themeShell.text,
@@ -1887,7 +1892,7 @@ function StudentApp() {
             className="task-card"
             style={{
               ...baseTaskCardStyle,
-              ...(isMotionMission
+              ...(isMotionMission || isPetFeeding
                 ? {
                     // Let MotionMissionTask own the look
                     background: "transparent",
@@ -1981,6 +1986,8 @@ function StudentApp() {
               ? "Mystery Clues!"
               : isMultipleChoice
               ? "Multiple choice!"
+              : isPetFeeding
+              ? "Feed the pet!"
               : isOpenText
               ? "Open response!"
               : "Your task"}
@@ -2030,19 +2037,20 @@ function StudentApp() {
 
             <div
               style={{
-                marginTop: isMotionMission ? 0 : 6,
-                padding: isMotionMission ? 0 : 12,
-                borderRadius: isMotionMission ? 0 : 16,
-                background: isMotionMission
+                marginTop: isMotionMission || isPetFeeding ? 0 : 6,
+                padding: isMotionMission || isPetFeeding ? 0 : 12,
+                borderRadius: isMotionMission || isPetFeeding ? 0 : 16,
+                background: isMotionMission || isPetFeeding
                   ? "transparent"
                   : "rgba(255,255,255,0.98)",
-                border: isMotionMission
+                border: isMotionMission || isPetFeeding
                   ? "none"
                   : "1px solid rgba(209,213,219,0.9)",
                 fontSize: responseFontSize,
                 lineHeight: 1.5,
-                // Let the MotionMissionTask stretch
-                minHeight: isMotionMission ? "60vh" : undefined,
+                // Let the MotionMissionTask / PetFeedingTask stretch
+                minHeight:
+                  isMotionMission || isPetFeeding ? "60vh" : undefined,
               }}
             >
               <TaskRunner
