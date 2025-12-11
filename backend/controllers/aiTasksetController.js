@@ -10,7 +10,12 @@ const client = new OpenAI({
 
 // Build a list of implemented, AI-eligible task types
 const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.implemented !== false && meta.aiEligible !== false)
+  .filter(
+    ([type, meta]) =>
+      meta.implemented !== false &&
+      meta.aiEligible !== false &&
+      type !== TASK_TYPES.HIDENSEEK // allow AI scoring but never auto-generate HideNSeek
+  )
   .map(([type]) => type);
 
 // Fallback core types if metadata is missing / empty

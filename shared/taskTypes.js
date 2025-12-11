@@ -506,7 +506,9 @@ export const TASK_TYPE_META = {
     maxTime: 300,
     maxTimeSeconds: 300,
     implemented: true,
-    aiEligible: false,
+    // Now AI-eligible: AI can compare student significance text
+    // with a teacher-provided reference answer.
+    aiEligible: true,
 
     objectiveScoring: false,
     defaultAiScoringRequired: false,
