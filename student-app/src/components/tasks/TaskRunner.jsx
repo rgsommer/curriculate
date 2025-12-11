@@ -28,8 +28,9 @@ import BrainstormBattleTask from "./types/BrainstormBattleTask";
 import MindMapperTask from "./types/MindMapperTask";
 import SpeedDrawTask from "./types/SpeedDrawTask";
 import DiffDetectiveTask from "./types/DiffDetectiveTask";
-import BrainSparkNotesTask from "./types/BrainSparkNotesTask"; // NEW
-import HideNSeekTask from "./types/HideNSeekTask"; // NEW
+import BrainSparkNotesTask from "./types/BrainSparkNotesTask";
+import HideNSeekTask from "./types/HideNSeekTask";
+import SpeechRecognitionTask from "./types/SpeechRecognitionTask"; // NEW
 
 function shuffleArray(array) {
   const copy = [...array];
@@ -81,6 +82,10 @@ function normalizeTaskType(raw) {
     case "sequence":
       return TASK_TYPES.SEQUENCE;
 
+    // Timeline
+    case "timeline":
+      return TASK_TYPES.TIMELINE;
+
     // Photo / Media
     case "photo":
       return TASK_TYPES.PHOTO;
@@ -92,6 +97,11 @@ function normalizeTaskType(raw) {
     case "record-audio":
     case "record_audio":
       return TASK_TYPES.RECORD_AUDIO;
+
+    // Speech recognition
+    case "speech-recognition":
+    case "speech_recognition":
+      return TASK_TYPES.SPEECH_RECOGNITION;
 
     // Body break
     case "body-break":
@@ -127,6 +137,11 @@ function normalizeTaskType(raw) {
     case "hide_and_seek":
     case "hide-and-seek":
       return TASK_TYPES.HIDENSEEK;
+
+    // Speed Draw (aliases)
+    case "speed-draw":
+    case "speed_draw":
+      return TASK_TYPES.SPEED_DRAW;
 
     default:
       return raw;
@@ -679,6 +694,15 @@ export default function TaskRunner({
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+        />
+      );
+      break;
+    case TASK_TYPES.SPEECH_RECOGNITION:
+      content = (
+        <SpeechRecognitionTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
         />
       );
       break;
