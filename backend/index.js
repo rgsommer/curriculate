@@ -571,7 +571,7 @@ function buildRoomState(room) {
           : 1,
     },
 
-    // Brainstorm battle – light summary so LiveSession can show per-team counts
+    // Brainstorm battle – light summary so LiveSession can show counts
     brainstorm: brainstormSummary,
   };
 }
@@ -589,7 +589,7 @@ function sendTaskToTeam(room, teamId, index) {
     return;
   }
 
-    const task = tasks[index];
+  const task = tasks[index];
 
   // If this is a Diff Detective task, initialise / reset race state
   // the first time any team is sent this particular index.
@@ -1261,7 +1261,7 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
   });
 
-    const handleStudentSubmit = async (payload, ack) => {
+  const handleStudentSubmit = async (payload, ack) => {
     const { roomCode, teamId, taskIndex, answer, timeMs } = payload || {};
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -1323,6 +1323,28 @@ io.on("connection", (socket) => {
       }
 
       if (typeof answer === "string") return answer;
+
+      if (answer && typeof answer === "object") {
+        const textLike =
+          answer.explanation ??
+          answer.caption ??
+          answer.text ??
+          answer.response ??
+          answer.answerText ??
+          answer.notes ??
+          null;
+
+        if (typeof textLike === "string" && textLike.trim().length > 0) {
+          return textLike;
+        }
+
+        try {
+          return JSON.stringify(answer);
+        } catch {
+          return "[object]";
+        }
+      }
+
       if (answer != null) return String(answer);
       return "";
     })();
@@ -1446,35 +1468,40 @@ io.on("connection", (socket) => {
     }
 
     // ----------------------------
-    // 2) Non-multi tasks → existing AI / rule-based scoring
+    // 2) Non-multi tasks → AI / rule-based scoring core
     // ----------------------------
     if (!isMultiPack) {
       try {
-        // If we have either an objective correctAnswer OR a full rubric,
-        // let aiScoring handle it. For QuickTask we only have correctAnswer,
-        // so this will go through the rule-based path (no OpenAI call).
-        if (task.correctAnswer != null || task.aiRubric) {
-          aiScore = await generateAIScore({
-            task,
-            rubric: task.aiRubric || null,
-            submission: submissionForScoring,
-          });
-        }
+        // Let the central AI/rule-based scorer decide how to grade this task.
+        // For objective tasks this stays rule-based only; for PhotoJournal
+        // and other subjective tasks this may call OpenAI.
+        aiScore = await generateAIScore({
+          task,
+          rubric: task.aiRubric || null,
+          submission: submissionForScoring,
+        });
       } catch (e) {
         console.error("AI / rule-based scoring failed:", e);
       }
 
+      const submittedAt = Date.now();
+
+      const aiNumericScore =
+        aiScore && typeof aiScore.score === "number"
+          ? aiScore.score
+          : aiScore && typeof aiScore.totalScore === "number"
+          ? aiScore.totalScore
+          : null;
+
       correct = (() => {
-        // Prefer aiScore when available (AI or rule-based)
-        if (aiScore && typeof aiScore.totalScore === "number") {
-          return aiScore.totalScore > 0;
+        // Prefer AI / central scorer when available (AI or rule-based)
+        if (aiNumericScore != null) {
+          return aiNumericScore > 0;
         }
-        // Fallback: legacy behaviour
+        // Fallback: legacy behaviour for simple correctAnswer tasks
         if (task.correctAnswer == null) return null;
         return String(answer).trim() === String(task.correctAnswer).trim();
       })();
-
-      const submittedAt = Date.now();
 
       // “Evidence tasks” are ones that don’t expect text and don’t have options,
       // e.g. photo, make-and-snap, body-break, etc.
@@ -1499,8 +1526,11 @@ io.on("connection", (socket) => {
       ) {
         const pct = Math.max(0, Math.min(100, answer.score));
         pointsEarned = Math.round((pct / 100) * basePoints);
+      } else if (aiNumericScore != null) {
+        // Use the central scorer's numeric score (may be partial credit)
+        pointsEarned = aiNumericScore;
       } else if (correct === true) {
-        // Normal case: AI or exact match says it's correct → full points
+        // Normal case: exact match says it's correct → full points
         pointsEarned = basePoints;
       } else if (correct === null && isEvidenceTask && hasEvidence) {
         // Evidence tasks with "something" submitted get full credit.
@@ -1643,10 +1673,9 @@ io.on("connection", (socket) => {
       points: pointsEarned,
       timeMs: timeMs ?? null,
       submittedAt,
-      aiScore, // <-- NEW: carries multi-pack info like correctCount/totalItems
+      aiScore, // <-- carries multi-pack or AI info, including PhotoJournal feedback
     };
     io.to(code).emit("taskSubmission", submissionSummary);
-
 
     socket.emit("task:received");
     if (typeof ack === "function") {
@@ -1878,85 +1907,85 @@ io.on("connection", (socket) => {
   // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
   // so that handleStudentSubmit + scoring logic work.
   // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
-// so that handleStudentSubmit + scoring logic work.
-socket.on(
-  "teacherLaunchTask",
-  async (payload = {}) => {
-    try {
-      const { roomCode, task, prompt, correctAnswer, selectedRooms } = payload;
-      const code = (roomCode || "").toUpperCase();
-      if (!code) return;
+  // so that handleStudentSubmit + scoring logic work.
+  socket.on(
+    "teacherLaunchTask",
+    async (payload = {}) => {
+      try {
+        const { roomCode, task, prompt, correctAnswer, selectedRooms } = payload;
+        const code = (roomCode || "").toUpperCase();
+        if (!code) return;
 
-      // Decide where the prompt is coming from
-      const basePrompt =
-        (task &&
-          typeof task.prompt === "string" &&
-          task.prompt.trim()) ||
-        (typeof prompt === "string" && prompt.trim()) ||
-        "";
+        // Decide where the prompt is coming from
+        const basePrompt =
+          (task &&
+            typeof task.prompt === "string" &&
+            task.prompt.trim()) ||
+          (typeof prompt === "string" && prompt.trim()) ||
+          "";
 
-      if (!basePrompt) return;
+        if (!basePrompt) return;
 
-      let room = rooms[code];
-      if (!room) {
-        room = rooms[code] = await createRoom(code, socket.id);
+        let room = rooms[code];
+        if (!room) {
+          room = rooms[code] = await createRoom(code, socket.id);
+        }
+
+        // Preserve as much info as LiveSession gave us as possible
+        const quickTask = {
+          taskType: (task && task.taskType) || "short-answer",
+          prompt: basePrompt,
+          correctAnswer:
+            (task && task.correctAnswer) ||
+            (typeof correctAnswer === "string" ? correctAnswer : null),
+          options:
+            task &&
+            Array.isArray(task.options) &&
+            task.options.length > 0
+              ? task.options
+              : undefined,
+          // NEW: carry multi-question pack items into the quick task
+          items:
+            task &&
+            Array.isArray(task.items) &&
+            task.items.length > 0
+              ? task.items
+              : undefined,
+          points:
+            task && typeof task.points === "number" ? task.points : 10,
+          subject: (task && task.subject) || "Ad-hoc",
+          gradeLevel: (task && task.gradeLevel) || "",
+          clue:
+            task && typeof task.clue === "string" ? task.clue : undefined,
+          timeLimitSeconds:
+            task && typeof task.timeLimitSeconds === "number"
+              ? task.timeLimitSeconds
+              : 0,
+          quickTask: true,
+        };
+
+        // Tiny, ephemeral taskset so AI scoring + analytics all work
+        room.taskset = {
+          name: "Quick task",
+          subject: quickTask.subject,
+          gradeLevel: quickTask.gradeLevel,
+          tasks: [quickTask],
+          isQuickTaskset: true,
+        };
+
+        // Leave room.taskIndex "out of the way" – student sends taskIndex=0
+        room.taskIndex = -1;
+
+        io.to(code).emit("task:launch", {
+          index: 0,
+          task: quickTask,
+          timeLimitSeconds: quickTask.timeLimitSeconds || 0,
+        });
+      } catch (err) {
+        console.error("Error in teacherLaunchTask:", err);
       }
-
-      // Preserve as much info as LiveSession gave us as possible
-      const quickTask = {
-        taskType: (task && task.taskType) || "short-answer",
-        prompt: basePrompt,
-        correctAnswer:
-          (task && task.correctAnswer) ||
-          (typeof correctAnswer === "string" ? correctAnswer : null),
-        options:
-          task &&
-          Array.isArray(task.options) &&
-          task.options.length > 0
-            ? task.options
-            : undefined,
-        // NEW: carry multi-question pack items into the quick task
-        items:
-          task &&
-          Array.isArray(task.items) &&
-          task.items.length > 0
-            ? task.items
-            : undefined,
-        points:
-          task && typeof task.points === "number" ? task.points : 10,
-        subject: (task && task.subject) || "Ad-hoc",
-        gradeLevel: (task && task.gradeLevel) || "",
-        clue:
-          task && typeof task.clue === "string" ? task.clue : undefined,
-        timeLimitSeconds:
-          task && typeof task.timeLimitSeconds === "number"
-            ? task.timeLimitSeconds
-            : 0,
-        quickTask: true,
-      };
-
-      // Tiny, ephemeral taskset so AI scoring + analytics all work
-      room.taskset = {
-        name: "Quick task",
-        subject: quickTask.subject,
-        gradeLevel: quickTask.gradeLevel,
-        tasks: [quickTask],
-        isQuickTaskset: true,
-      };
-
-      // Leave room.taskIndex "out of the way" – student sends taskIndex=0
-      room.taskIndex = -1;
-
-      io.to(code).emit("task:launch", {
-        index: 0,
-        task: quickTask,
-        timeLimitSeconds: quickTask.timeLimitSeconds || 0,
-      });
-    } catch (err) {
-      console.error("Error in teacherLaunchTask:", err);
     }
-  }
-);
+  );
 
   // --------------------------
   // Teacher: random treats config
@@ -2208,17 +2237,37 @@ socket.on(
 
     const bonus = await generateAIScore({
       task: {
+        taskType: "collaboration-bonus",
         prompt:
           "Score this peer reply 0-5: thoughtful, specific, kind, and helpful.",
+        points: 5,
       },
-      rubric: { maxPoints: 5, criteria: [{ id: "quality", maxPoints: 5 }] },
+      rubric: {
+        totalPoints: 5,
+        criteria: [
+          {
+            id: "quality",
+            label: "Reply quality",
+            maxPoints: 5,
+            description:
+              "Reward replies that are thoughtful, specific, kind, and helpful to their partner.",
+          },
+        ],
+      },
       submission: { answerText: reply },
     });
 
-    updateTeamScore(session, team.id, bonus.totalScore);
+    const bonusPoints =
+      (bonus && typeof bonus.score === "number"
+        ? bonus.score
+        : typeof bonus?.totalScore === "number"
+        ? bonus.totalScore
+        : 0) || 0;
+
+    updateTeamScore(session, team.id, bonusPoints);
     // saveTeamSubmission(session, team.id, taskId, { reply });
 
-    socket.emit("collaboration-bonus", { bonus: bonus.totalScore });
+    socket.emit("collaboration-bonus", { bonus: bonusPoints });
   });
 
   // Mystery Clue Cards — Memory Bonus
