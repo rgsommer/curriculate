@@ -1169,6 +1169,13 @@ function StudentApp() {
   const isBrainSparkNotes =
     currentTask?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES;
 
+  const isDrawMime =
+    currentTask?.taskType === TASK_TYPES.DRAW_AND_MIME ||
+    currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+
+  const isLiveDebate =
+    currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
+
   const baseTaskCardStyle = {
     marginBottom: 12,
     padding: 14,
@@ -2066,26 +2073,6 @@ function StudentApp() {
               {statusMessage}
             </div>
           )}
-        </div>
-
-            <button
-              type="button"
-              onClick={handleLeaveRoom}
-              style={{
-                marginTop: 6,
-                borderRadius: 999,
-                padding: "4px 10px",
-                fontSize: "0.75rem",
-                fontWeight: 600,
-                border: "1px solid rgba(148,163,184,0.9)",
-                background: "rgba(248,250,252,0.9)",
-                color: "#0f172a",
-                cursor: "pointer",
-              }}
-            >
-              Join a different room
-            </button>
-          </div>
         </div>
      
       {/* JOIN CARD */}
