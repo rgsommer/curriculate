@@ -1141,6 +1141,16 @@ const handleScan = (data) => {
 );
 };
 
+  // Bridge for QrScanner → keep it scanning until *we* turn it off
+  const handleScannerCode = (value) => {
+    if (!value) return false;
+    // Re-use your existing async logic
+    handleScan(value);
+    // Always return false so QrScanner keeps running until scannerActive is set false
+    return false;
+  };
+
+
   // ─────────────────────────────────────────────
   // Location enforcement & station gating
   // ─────────────────────────────────────────────
@@ -2287,10 +2297,14 @@ const handleScan = (data) => {
             </div>
           </section>
 
-          {/* QR SCANNER */}
+        {/* QR SCANNER */}
           {scannerActive && (
             <section className="scanner-shell">
-              <QrScanner onScan={handleScan} onError={setScanError} />
+              <QrScanner
+                active={scannerActive}
+                onCode={handleScannerCode}
+                onError={setScanError}
+              />
               {scanError && (
                 <div className="scan-error">⚠ {scanError}</div>
               )}
