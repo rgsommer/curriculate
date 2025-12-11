@@ -2431,51 +2431,35 @@ function StudentApp() {
           )}
 
           {/* Must scan gate */}
-          {joined && currentTask && mustScan && (
-            <section
-              style={{
-                marginTop: 10,
-                padding: 16,
-                borderRadius: 18,
-                background: "rgba(15,23,42,0.9)",
-                border: "1px solid rgba(248,250,252,0.8)",
-                color: "#fefce8",
-                textAlign: "center",
-                boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
-              }}
-            >
-              <div style={{ fontSize: "1rem", fontWeight: 700 }}>
-                🚪 Scan the correct station first
-              </div>
-              <p
+            {joined && currentTask && mustScan && (
+              <section
                 style={{
-                  marginTop: 6,
-                  fontSize: "0.9rem",
-                  marginBottom: 10,
+                  marginTop: 10,
+                  padding: 16,
+                  borderRadius: 18,
+                  background: "rgba(15,23,42,0.9)",
+                  border: "1px solid rgba(248,250,252,0.8)",
+                  color: "#fefce8",
+                  textAlign: "center",
+                  boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
                 }}
               >
-                Your teacher has locked this task to a specific station. Scan
-                the station&apos;s QR code to unlock it.
-              </p>
-              <button
-                type="button"
-                onClick={() => setScannerActive(true)}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: 999,
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg, #22c55e, #0ea5e9)",
-                  color: "#f9fafb",
-                  fontSize: "0.9rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Scan Station QR
-              </button>
-            </section>
-          )}
+                <div style={{ fontSize: "1rem", fontWeight: 700 }}>
+                  🚪 Scan the correct station first
+                </div>
+                <p
+                  style={{
+                    marginTop: 6,
+                    fontSize: "0.9rem",
+                    marginBottom: 0,
+                  }}
+                >
+                  Your teacher has locked this task to a specific station.
+                  The scanner is open—hold your device up to the station’s
+                  QR code to unlock this task.
+                </p>
+              </section>
+            )}
         </main>
       )}
 
