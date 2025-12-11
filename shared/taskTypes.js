@@ -643,13 +643,10 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 180,
     implemented: true,
     aiEligible: false,
-
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
-
     quickTaskEligible: false, // meta-game around other tasks
-
     description:
       "Gamified review where correct answers ‘feed’ a virtual pet or progress a status bar. Fun positive reinforcement.",
   },

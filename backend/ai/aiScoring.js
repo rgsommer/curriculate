@@ -355,12 +355,36 @@ function buildStudentWorkDescription(task, submission) {
     };
   }
 
-  // Open text
+  // Open text – **patched to pull the real typed response**
   if (type === TASK_TYPES.OPEN_TEXT) {
+    const rawAnswer = submission?.answer ?? submission ?? null;
+    let studentText = "";
+
+    if (rawAnswer && typeof rawAnswer === "object") {
+      studentText =
+        rawAnswer.text ??
+        rawAnswer.response ??
+        rawAnswer.answerText ??
+        "";
+    } else if (typeof rawAnswer === "string") {
+      studentText = rawAnswer;
+    }
+
+    // Fallbacks if answer was stored directly on submission
+    if (!studentText) {
+      studentText =
+        submission?.text ??
+        submission?.response ??
+        submission?.answerText ??
+        "";
+    }
+
+    studentText = typeof studentText === "string" ? studentText : String(studentText || "");
+
     return {
       summary: "Open-text response.",
       prompt: task.prompt,
-      studentText: submission?.text || "",
+      studentText,
     };
   }
 

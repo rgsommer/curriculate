@@ -34,7 +34,9 @@ function validateGeneratePayload(payload = {}) {
   const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
   const difficulty = (payload.difficulty || "MEDIUM").toString().toUpperCase();
-  const learningGoal = (payload.learningGoal || "REVIEW").toString().toUpperCase();
+  const learningGoal = (payload.learningGoal || "REVIEW")
+    .toString()
+    .toUpperCase();
 
   if (!difficultiesAllowed.includes(difficulty)) {
     errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
@@ -61,8 +63,11 @@ function normalizeSelectedType(raw) {
   if (v === "true-false" || v === "truefalse" || v === "tf") {
     return TASK_TYPES.TRUE_FALSE;
   }
-  if (v === "short-answer" || v === "shortanswer" || v === "sa" || v === "open-text") {
+  if (v === "short-answer" || v === "shortanswer" || v === "sa") {
     return TASK_TYPES.SHORT_ANSWER;
+  }
+  if (v === "open-text" || v === "open_text" || v === "open") {
+    return TASK_TYPES.OPEN_TEXT;
   }
   if (v === "sort" || v === "categorize" || v === "sort-task") {
     return TASK_TYPES.SORT;
@@ -121,7 +126,7 @@ export const generateAiTaskset = async (req, res) => {
       difficulty,
       learningGoal,
       topicDescription = "", // "Special considerations" from UI
-      topicTitle = "",       // Task set title: main topic
+      topicTitle = "", // Task set title: main topic
       totalDurationMinutes,
       durationMinutes,
       numberOfTasks,
@@ -137,8 +142,7 @@ export const generateAiTaskset = async (req, res) => {
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
-    const duration =
-      Number(totalDurationMinutes) || Number(durationMinutes) || 45;
+    const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({
@@ -159,7 +163,8 @@ export const generateAiTaskset = async (req, res) => {
     // ------------- Resolve allowed task types -------------
     const rawSelected =
       (Array.isArray(selectedTypes) && selectedTypes) ||
-      (Array.isArray(req.body.requiredTaskTypes) && req.body.requiredTaskTypes) ||
+      (Array.isArray(req.body.requiredTaskTypes) &&
+        req.body.requiredTaskTypes) ||
       [];
 
     let typePool;
@@ -356,6 +361,12 @@ For "${TASK_TYPES.SHORT_ANSWER}":
   - For short-answer tasks, top-level "options" should be an empty array.
   - For each question, correctAnswer is a short reference answer string (or null).
 
+For "${TASK_TYPES.OPEN_TEXT}":
+  - Use a SINGLE open-ended prompt that calls for a paragraph-length written response.
+  - Do NOT include an "options" array; students will type their own answer.
+  - "correctAnswer" should be null (these are evaluated with a rubric / AI scoring).
+  - Good uses: short reflections, explanations, or justifications about the topic.
+
 For "${TASK_TYPES.SORT}":
   - Use a "config" object with:
     - "buckets": an array of 2–4 category labels (short strings).
@@ -498,10 +509,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         .json({ error: "AI returned no tasks for this request" });
     }
 
-    console.log(
-      "AI RAW TASKS (debug)",
-      JSON.stringify(aiTasks, null, 2)
-    );
+    console.log("AI RAW TASKS (debug)", JSON.stringify(aiTasks, null, 2));
 
     // ---------- Normalize AI tasks into TaskSet schema ----------
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
@@ -524,7 +532,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         }
       }
 
-            const meta = TASK_TYPE_META[taskType] || {};
+      const meta = TASK_TYPE_META[taskType] || {};
       const multiItemCapable = !!meta.multiItemCapable;
 
       // Base options, config, items
@@ -706,14 +714,13 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         const aiConfig =
           t.config && typeof t.config === "object" ? t.config : {};
 
-        const rawItems =
-          Array.isArray(aiConfig.items)
-            ? aiConfig.items
-            : Array.isArray(t.items)
-            ? t.items
-            : Array.isArray(t.options)
-            ? t.options
-            : [];
+        const rawItems = Array.isArray(aiConfig.items)
+          ? aiConfig.items
+          : Array.isArray(t.items)
+          ? t.items
+          : Array.isArray(t.options)
+          ? t.options
+          : [];
 
         const mappedItems = rawItems.map((it, idx) => {
           if (typeof it === "string") {
@@ -856,11 +863,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             return { question: c, answer: "" };
           }
 
-          const question =
-            c.question ||
-            c.prompt ||
-            c.clue ||
-            `Card ${idx + 1}`;
+          const question = c.question || c.prompt || c.clue || `Card ${idx + 1}`;
 
           let answer = c.answer ?? c.correctAnswer ?? "";
 
@@ -935,7 +938,11 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       }
 
       // ---------- MindMapper: attach shuffledItems for StudentApp ----------
-      if (taskType === TASK_TYPES.MIND_MAPPER && config && Array.isArray(config.items)) {
+      if (
+        taskType === TASK_TYPES.MIND_MAPPER &&
+        config &&
+        Array.isArray(config.items)
+      ) {
         const uiItems = config.items.map((it, idx) => ({
           id: `item-${idx}`,
           text: it.text,
@@ -973,7 +980,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     // ---------- Word-bank usage analysis ----------
     let aiWordsUsed = [];
     let aiWordsUnused = [];
-    
+
     if (rawWordBank.length && Array.isArray(tasks)) {
       const allText = tasks
         .map((t) => `${t.title || ""} ${t.prompt || ""}`)
