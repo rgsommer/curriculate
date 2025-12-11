@@ -502,7 +502,7 @@ export const TASK_TYPE_META = {
     label: "Hide & Seek",
     category: CATEGORY.MOVEMENT,
     hasOptions: false,
-    expectsText: false,
+    expectsText: true,          // student writes a significance explanation
     maxTime: 300,
     maxTimeSeconds: 300,
     implemented: true,
@@ -515,7 +515,7 @@ export const TASK_TYPE_META = {
     quickTaskEligible: false, // multi-step, location-heavy
 
     description:
-      "Hide concept cards around room; find and explain to team. Physical search with knowledge application.",
+      "Give a page or location reference; students find it, snap a photo, and explain the significance.",
   },
 
   [TASK_TYPES.AI_DEBATE_JUDGE]: {

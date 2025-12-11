@@ -29,6 +29,7 @@ import MindMapperTask from "./types/MindMapperTask";
 import SpeedDrawTask from "./types/SpeedDrawTask";
 import DiffDetectiveTask from "./types/DiffDetectiveTask";
 import BrainSparkNotesTask from "./types/BrainSparkNotesTask"; // NEW
+import HideNSeekTask from "./types/HideNSeekTask"; // NEW
 
 function shuffleArray(array) {
   const copy = [...array];
@@ -119,6 +120,13 @@ function normalizeTaskType(raw) {
     case "diff_detective":
     case "diff":
       return TASK_TYPES.DIFF_DETECTIVE;
+
+    // Hide & Seek
+    case "hidenseek":
+    case "hide-n-seek":
+    case "hide_and_seek":
+    case "hide-and-seek":
+      return TASK_TYPES.HIDENSEEK;
 
     default:
       return raw;
@@ -841,6 +849,15 @@ export default function TaskRunner({
     case TASK_TYPES.BRAIN_SPARK_NOTES:
       content = (
         <BrainSparkNotesTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
+      break;
+    case TASK_TYPES.HIDENSEEK:
+      content = (
+        <HideNSeekTask
           task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}

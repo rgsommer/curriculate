@@ -563,6 +563,26 @@ function buildStudentWorkDescription(task, submission) {
     };
   }
 
+  // NEW: Brain Spark Notes – completion + bullet structure
+  if (type === TASK_TYPES.BRAIN_SPARK_NOTES || type === "brain-spark-notes") {
+    const completed =
+      submission?.completed === true ||
+      submission?.answer?.completed === true;
+    const studentNotes =
+      submission?.notes ||
+      submission?.answer?.notes ||
+      "";
+
+    return {
+      summary:
+        "Brain Spark Notes task: students were given bullet-point prompts for their notebook and marked whether they completed the notes.",
+      prompt: task.prompt,
+      bullets: Array.isArray(task.bullets) ? task.bullets : [],
+      completed,
+      studentNotes,
+    };
+  }
+
   // Fallback: generic
   return {
     summary: `Student submission for taskType "${type}" with generic structure.`,
@@ -713,6 +733,31 @@ async function scorePhotoJournal({ task, submission, rubric }) {
   };
 }
 
+// --- SPECIAL CASE: BRAIN SPARK NOTES (COMPLETION-BASED) ---
+
+async function scoreBrainSparkNotes({ task, submission }) {
+  const points = typeof task.points === "number" ? task.points : 5;
+
+  const completed =
+    submission?.completed === true ||
+    submission?.answer?.completed === true;
+
+  const score = completed ? points : 0;
+
+  return {
+    score,
+    maxPoints: points,
+    method: "rule-based",
+    reason: completed
+      ? "Nice work—your Spark Notes are marked complete, so you earned full credit for writing them down."
+      : "No credit: this Spark Notes task was not marked complete.",
+    details: {
+      type: TASK_TYPES.BRAIN_SPARK_NOTES,
+      completed,
+    },
+  };
+}
+
 // --- PUBLIC ENTRYPOINT ---
 
 export async function generateAIScore({ task, submission, rubric }) {
@@ -741,6 +786,14 @@ export async function generateAIScore({ task, submission, rubric }) {
     task?.taskType === "photojournal"
   ) {
     return scorePhotoJournal({ task, submission, rubric });
+  }
+
+  // Specialized path: Brain Spark Notes (completion-based, no rubric needed)
+  if (
+    task?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES ||
+    task?.taskType === "brain-spark-notes"
+  ) {
+    return scoreBrainSparkNotes({ task, submission });
   }
 
   const meta = TASK_TYPE_META[task.taskType] || {};

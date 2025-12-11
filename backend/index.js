@@ -1906,8 +1906,6 @@ io.on("connection", (socket) => {
 
   // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
   // so that handleStudentSubmit + scoring logic work.
-  // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
-  // so that handleStudentSubmit + scoring logic work.
   socket.on(
     "teacherLaunchTask",
     async (payload = {}) => {
@@ -1950,6 +1948,13 @@ io.on("connection", (socket) => {
             Array.isArray(task.items) &&
             task.items.length > 0
               ? task.items
+              : undefined,
+          // NEW: carry Brain Spark Notes bullets into quick task payload
+          bullets:
+            task &&
+            Array.isArray(task.bullets) &&
+            task.bullets.length > 0
+              ? task.bullets
               : undefined,
           points:
             task && typeof task.points === "number" ? task.points : 10,
