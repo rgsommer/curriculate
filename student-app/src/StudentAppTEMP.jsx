@@ -267,21 +267,91 @@ function StudentApp() {
 
   useEffect(() => {
     const handleConnect = () => {
+      console.log("SOCKET: Connected", socket.id);
       setConnected(true);
-      setStatusMessage("");
+
+      // Try to resume from sessionStorage
+      try {
+        const stored = sessionStorage.getItem("teamSession");
+        if (!stored) return;
+
+        const parsed = JSON.parse(stored);
+        if (!parsed.roomCode || !parsed.teamSessionId) return;
+
+        console.log("Attempting resume-team-session with", parsed);
+        socket.emit(
+          "resume-team-session",
+          {
+            roomCode: parsed.roomCode.toUpperCase(),
+            teamSessionId: parsed.teamSessionId,
+          },
+          (ack) => {
+            console.log("resume-team-session ack:", ack);
+            if (!ack?.success) {
+              console.warn("Resume failed:", ack?.error);
+              sessionStorage.removeItem("teamSession");
+              return;
+            }
+
+            // Fixed-station / multi-room + location from room state
+            setEnforceLocation(!!ack.roomState?.enforceLocation);
+            if (ack.roomState?.locationCode) {
+              setRoomLocation(ack.roomState.locationCode);
+              roomLocationFromStateRef.current =
+                ack.roomState.locationCode;
+            }
+
+            setJoined(true);
+            setRoomCode(parsed.roomCode.toUpperCase());
+            setTeamId(ack.teamId);
+            setTeamSessionId(parsed.teamSessionId);
+
+            const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
+
+            if (myTeam?.currentStationId) {
+              const norm = normalizeStationId(myTeam.currentStationId);
+              setAssignedStationId(myTeam.currentStationId);
+              setAssignedColor(norm.color || null);
+              setScannedStationId(null);
+              setScannerActive(true);
+
+              // Seed lastStationId so next room:state doesn't force a fake "new" station
+              lastStationIdRef.current = myTeam.currentStationId;
+
+              const colourLabel = norm.color
+                ? ` ${norm.color.toUpperCase()}`
+                : "";
+              setStatusMessage(
+                `Scan your${colourLabel} station to get started.`
+              );
+            } else {
+              lastStationIdRef.current = null;
+              setStatusMessage(
+                "Waiting for your teacher to assign your station."
+              );
+              setScannerActive(false);
+            }
+          }
+        );
+      } catch (err) {
+        console.warn(
+          "Error reading teamSession from sessionStorage:",
+          err
+        );
+      }
     };
 
     const handleDisconnect = () => {
+      console.log("SOCKET: Disconnected");
       setConnected(false);
-      setStatusMessage("Disconnected from server. Trying to reconnect…");
     };
 
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", (err) => {
-      console.error("Socket connection error:", err);
-      setStatusMessage("Error connecting. Retrying…");
-    });
+
+    socket.on("connect_error", (err) =>
+      console.log("SOCKET: Connect error:", err.message)
+    );
 
     return () => {
       socket.off("connect", handleConnect);
@@ -308,733 +378,780 @@ function StudentApp() {
         setScoreTotal(state.scores[teamId]);
       }
 
-      const newStationId = myTeam.currentStationId || myTeam.stationId;
-      if (newStationId && newStationId !== lastStationIdRef.current) {
+      const newStationId = myTeam.currentStationId || null;
+      if (!newStationId) return;
+
+      const isNewStation = lastStationIdRef.current !== newStationId;
+      const norm = normalizeStationId(newStationId);
+
+      // Keep these in sync for UI
+      setAssignedStationId(newStationId);
+      setAssignedColor(norm.color ? norm.color : null);
+
+      // Only force a re-scan when the station actually CHANGES
+      if (isNewStation) {
         lastStationIdRef.current = newStationId;
-        const stationInfo = normalizeStationId(newStationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
+
+        setScannedStationId(null);
+        setScannerActive(true);
+
+        const colourLabel = norm.color
+          ? norm.color.charAt(0).toUpperCase() + norm.color.slice(1)
+          : "your";
+        setStatusMessage(`Scan your ${colourLabel} station.`);
       }
-
-      const loc =
-        myTeam.locationSlug ||
-        state.locationSlug ||
-        roomLocationFromStateRef.current ||
-        DEFAULT_LOCATION;
-      setRoomLocation(loc);
-      roomLocationFromStateRef.current = loc;
-
-      const noiseCfg = state.noiseConfig || {};
-      setNoiseState((prev) => ({
-        ...prev,
-        enabled: !!noiseCfg.enabled,
-        threshold:
-          typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
-      }));
     };
 
-    const handleTaskAssigned = (payload) => {
-      if (!payload) return;
-      setCurrentTask(payload.task || null);
-      setCurrentTaskIndex(
-        typeof payload.taskIndex === "number" ? payload.taskIndex : null
-      );
-      setTasksetTotalTasks(
-        typeof payload.totalTasks === "number" ? payload.totalTasks : null
-      );
+    // Last-task result for this team (score + correctness)
+    const handleTaskSubmission = (submission) => {
+      if (!submission || !teamId) return;
 
-      const limit = payload.timeLimitSeconds || null;
-      setTimeLimitSeconds(limit);
-
-      if (limit && limit > 0) {
-        const endTime = Date.now() + limit * 1000;
-        setRemainingMs(endTime - Date.now());
-        if (countdownTimerRef.current) {
-          clearInterval(countdownTimerRef.current);
-        }
-        countdownTimerRef.current = setInterval(() => {
-          setRemainingMs((prev) => {
-            if (!prev || prev <= 1000) {
-              clearInterval(countdownTimerRef.current);
-              return 0;
-            }
-            return prev - 1000;
-          });
-        }, 1000);
-      } else {
-        setRemainingMs(0);
-        if (countdownTimerRef.current) {
-          clearInterval(countdownTimerRef.current);
-          countdownTimerRef.current = null;
-        }
+      // Ignore other rooms
+      if (
+        submission.roomCode &&
+        roomCode &&
+        submission.roomCode.toUpperCase() !==
+          roomCode.trim().toUpperCase()
+      ) {
+        return;
       }
 
-      setCurrentAnswerDraft("");
-      setTaskLocked(false);
-      setPostSubmitSecondsLeft(null);
-      setLastTaskResult(null);
-      setPointToast(null);
-      setShortAnswerReveal(null);
-    };
-
-    // AI scoring + feedback
-    const handleTaskScored = (payload) => {
-      if (!payload || typeof payload !== "object") return;
-
-      const {
-        teamId: scoredTeamId,
-        taskId,
-        taskIndex,
-        scoreDelta,
-        totalScore,
-        maxPoints,
-        aiFeedback,
-        correctAnswer,
-        shortAnswerReveal: reveal,
-        method,
-      } = payload;
-
-      if (!teamId || scoredTeamId !== teamId) return;
-
-      if (typeof totalScore === "number") {
-        setScoreTotal(totalScore);
-      } else if (typeof scoreDelta === "number") {
-        setScoreTotal((prev) => prev + scoreDelta);
-      }
+      // Only care about this team
+      if (submission.teamId !== teamId) return;
 
       setLastTaskResult({
-        scoreDelta: typeof scoreDelta === "number" ? scoreDelta : null,
-        maxPoints: typeof maxPoints === "number" ? maxPoints : null,
-        aiFeedback: aiFeedback || null,
-        taskId: taskId || null,
-        taskIndex:
-          typeof taskIndex === "number" && taskIndex >= 0 ? taskIndex : null,
-        method: method || null,
-        correctAnswer: correctAnswer ?? null,
+        points:
+          typeof submission.points === "number" ? submission.points : 0,
+        correct: submission.correct,
+        answerText: submission.answerText || "",
+        submittedAt: submission.submittedAt || Date.now(),
+        aiScore: submission.aiScore || null,
       });
-
-      const review = buildAnswerReview(currentTask);
-      if (review) setShortAnswerReveal(review);
-
-      if (reveal) {
-        setShortAnswerReveal(reveal);
-      }
-
-      if (typeof scoreDelta === "number") {
-        setPointToast({
-          message:
-            scoreDelta > 0
-              ? `+${scoreDelta} point${scoreDelta === 1 ? "" : "s"}`
-              : scoreDelta < 0
-              ? `${scoreDelta} points`
-              : "No points this time",
-          positive: scoreDelta > 0,
-        });
-
-        if (scoreDelta > 0 && maxPoints && scoreDelta >= maxPoints) {
-          setShowConfetti(true);
-          setTimeout(() => setShowConfetti(false), 2200);
-        }
-
-        setTimeout(() => {
-          setPointToast(null);
-        }, 2500);
-      }
-
-      if (typeof reviewPauseSeconds === "number" && reviewPauseSeconds > 0) {
-        setTaskLocked(true);
-        setPostSubmitSecondsLeft(reviewPauseSeconds);
-
-        if (postSubmitTimerRef.current) {
-          clearInterval(postSubmitTimerRef.current);
-        }
-
-        postSubmitTimerRef.current = setInterval(() => {
-          setPostSubmitSecondsLeft((prev) => {
-            if (prev == null || prev <= 1) {
-              clearInterval(postSubmitTimerRef.current);
-              postSubmitTimerRef.current = null;
-              setTaskLocked(false);
-              return null;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      }
-    };
-
-    const handleNoiseUpdate = (payload) => {
-      if (!payload) return;
-      setNoiseState((prev) => ({
-        ...prev,
-        level:
-          typeof payload.level === "number" ? payload.level : prev.level,
-        brightness:
-          typeof payload.brightness === "number"
-            ? payload.brightness
-            : prev.brightness,
-      }));
-    };
-
-    const handleTreat = (payload) => {
-      if (!payload) return;
-      if (payload.type === "point-bonus") {
-        setTreatMessage(
-          payload.message || "Surprise point bonus for your team!"
-        );
-        tryPlayTreatSound();
-        setTimeout(() => setTreatMessage(null), 4000);
-      } else if (payload.type === "fun-message") {
-        setTreatMessage(payload.message || "Random treat for being awesome!");
-        tryPlayTreatSound();
-        setTimeout(() => setTreatMessage(null), 4000);
-      }
-    };
-
-    const handleCollabPartner = (payload) => {
-      if (!payload || payload.teamId !== teamId) return;
-      setPartnerAnswer(payload.answer ?? null);
-    };
-
-    const handleCollabReply = (payload) => {
-      if (!payload || payload.teamId !== teamId) return;
-      setShowPartnerReply(true);
-      setTimeout(() => setShowPartnerReply(false), 4000);
     };
 
     socket.on("room:state", handleRoomState);
-    socket.on("task:assigned", handleTaskAssigned);
-    socket.on("task:scored", handleTaskScored);
-    socket.on("noise:update", handleNoiseUpdate);
-    socket.on("treat:event", handleTreat);
-    socket.on("collab:partner-answer", handleCollabPartner);
-    socket.on("collab:reply", handleCollabReply);
+    socket.on("roomState", handleRoomState);
+    socket.on("taskSubmission", handleTaskSubmission);
 
-    socket.emit("room:request-state", { teamId });
+    // Task launches from teacher / engine
+    socket.on(
+      "task:launch",
+      ({ index, task, timeLimitSeconds, totalTasks, tasksetSize, taskCount }) => {
+        console.log("SOCKET: task:launch", {
+          index,
+          task,
+          timeLimitSeconds,
+          totalTasks,
+        });
 
-    return () => {
-      socket.off("room:state", handleRoomState);
-      socket.off("task:assigned", handleTaskAssigned);
-      socket.off("task:scored", handleTaskScored);
-      socket.off("noise:update", handleNoiseUpdate);
-      socket.off("treat:event", handleTreat);
-      socket.off("collab:partner-answer", handleCollabPartner);
-      socket.off("collab:reply", handleCollabReply);
-    };
-  }, [teamId, reviewPauseSeconds]);
+        // Cancel any post-submit countdown from the previous task
+        if (postSubmitTimerRef.current) {
+          clearInterval(postSubmitTimerRef.current);
+          postSubmitTimerRef.current = null;
+        }
+        setTaskLocked(false);
+        setPostSubmitSecondsLeft(null);
 
-  // Clean up timers on unmount
-  useEffect(() => {
-    return () => {
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-      }
-      if (postSubmitTimerRef.current) {
-        clearInterval(postSubmitTimerRef.current);
-      }
-    };
-  }, []);
+        // Reset collaboration state for the new task
+        setPartnerAnswer(null);
+        setShowPartnerReply(false);
 
-  // ─────────────────────────────────────────────
-  // Audio setup (alert + treat sounds)
-  // ─────────────────────────────────────────────
-  useEffect(() => {
-    try {
-      const alertAudio = new Audio(
-        "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"
-      );
-      alertAudio.volume = 0.15;
-      sndAlert.current = alertAudio;
+        setCurrentAnswerDraft("");
+        setScanError(null);
 
-      const treatAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
-      treatAudio.volume = 0.2;
-      sndTreat.current = treatAudio;
-    } catch (err) {
-      console.warn("Could not preload audio:", err);
-    }
-  }, []);
-
-  function tryPlayAlertSound() {
-    try {
-      sndAlert.current && sndAlert.current.play();
-    } catch (err) {
-      console.warn("Alert sound play blocked:", err);
-    }
-  }
-
-  function tryPlayTreatSound() {
-    try {
-      sndTreat.current && sndTreat.current.play();
-    } catch (err) {
-      console.warn("Treat sound play blocked:", err);
-    }
-  }
-
-  // ─────────────────────────────────────────────
-  // Join room + submit handlers
-  // ─────────────────────────────────────────────
-
-  const canJoin =
-    roomCode.trim().length >= 3 &&
-    teamName.trim().length >= 1 &&
-    members.some((m) => m.trim().length > 0);
-
-  const handleJoin = (e) => {
-    e.preventDefault();
-    if (!canJoin || joiningRoom) return;
-
-    setJoiningRoom(true);
-    setStatusMessage("");
-
-    const payload = {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamName: teamName.trim(),
-      members: members.filter((m) => m.trim().length > 0),
-    };
-
-    socket.emit("student-join-room", payload, (response) => {
-      setJoiningRoom(false);
-      if (!response || response.error) {
-        setStatusMessage(
-          response?.error || "Could not join. Check the code with your teacher."
-        );
-        return;
-      }
-
-      setJoined(true);
-      setStatusMessage("");
-      setTeamId(response.teamId);
-      setTeamSessionId(response.teamSessionId || null);
-
-      if (response.currentTask) {
-        setCurrentTask(response.currentTask.task || null);
+        // Just set the task – do NOT touch scan state here.
+        setCurrentTask(task || null);
         setCurrentTaskIndex(
-          typeof response.currentTask.taskIndex === "number"
-            ? response.currentTask.taskIndex
-            : null
-        );
-        setTasksetTotalTasks(
-          typeof response.currentTask.totalTasks === "number"
-            ? response.currentTask.totalTasks
-            : null
+          typeof index === "number" && index >= 0 ? index : null
         );
 
-        const limit = response.currentTask.timeLimitSeconds || null;
-        setTimeLimitSeconds(limit);
+        // Try to capture total tasks in the taskset
+        const explicitTotal =
+          typeof totalTasks === "number" && totalTasks > 0
+            ? totalTasks
+            : typeof tasksetSize === "number" && tasksetSize > 0
+            ? tasksetSize
+            : typeof taskCount === "number" && taskCount > 0
+            ? taskCount
+            : null;
 
-        if (limit && limit > 0) {
-          const endTime = Date.now() + limit * 1000;
-          setRemainingMs(endTime - Date.now());
-          if (countdownTimerRef.current) {
-            clearInterval(countdownTimerRef.current);
-          }
-          countdownTimerRef.current = setInterval(() => {
-            setRemainingMs((prev) => {
-              if (!prev || prev <= 1000) {
-                clearInterval(countdownTimerRef.current);
-                return 0;
-              }
-              return prev - 1000;
-            });
-          }, 1000);
+        if (explicitTotal) {
+          setTasksetTotalTasks(explicitTotal);
+        }
+
+        // Teacher-controlled review pause (if provided on the task)
+        if (
+          task &&
+          typeof task.reviewPauseSeconds === "number" &&
+          task.reviewPauseSeconds >= 5 &&
+          task.reviewPauseSeconds <= 60
+        ) {
+          setReviewPauseSeconds(task.reviewPauseSeconds);
         } else {
+          setReviewPauseSeconds(15);
+        }
+
+        if (sndAlert.current) {
+          sndAlert.current.play().catch(() => {});
+        }
+
+        if (
+          typeof timeLimitSeconds === "number" &&
+          timeLimitSeconds > 0
+        ) {
+          setTimeLimitSeconds(timeLimitSeconds);
+        } else {
+          setTimeLimitSeconds(null);
           setRemainingMs(0);
         }
       }
-
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
-        lastStationIdRef.current = stationInfo.id;
-      }
-
-      const locSlug =
-        response.locationSlug ||
-        roomLocationFromStateRef.current ||
-        DEFAULT_LOCATION;
-      setRoomLocation(locSlug);
-      roomLocationFromStateRef.current = locSlug;
-
-      const noiseCfg = response.noiseConfig || {};
-      setNoiseState((prev) => ({
-        ...prev,
-        enabled: !!noiseCfg.enabled,
-        threshold:
-          typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
-      }));
-    });
-  };
-
-  // ─────────────────────────────────────────────
-  // Leave current room and allow joining a new one
-  // ─────────────────────────────────────────────
-  const handleLeaveRoom = () => {
-    if (!joined) return;
-
-    const ok = window.confirm(
-      "Leave this room and join a different one?"
     );
-    if (!ok) return;
 
-    // Let the server know this team is leaving
-    try {
-      socket.emit("student:leave-room", {
-        roomCode,
-        teamId,
-        teamSessionId,
+    // Session complete from server
+    socket.on("session:complete", () => {
+      console.log("SOCKET: session:complete");
+      setCurrentTask(null);
+      setCurrentTaskIndex(null);
+      setTasksetTotalTasks(null);
+      setScannerActive(false);
+      setStatusMessage("Session complete! Please wait for your teacher.");
+      try {
+        sessionStorage.removeItem("teamSession");
+      } catch {
+        // ignore
+      }
+    });
+
+    // Session ended via REST / teacher
+    socket.on("session-ended", () => {
+      console.log("SOCKET: session-ended");
+      setCurrentTask(null);
+      setCurrentTaskIndex(null);
+      setTasksetTotalTasks(null);
+      setJoined(false);
+      setScannerActive(false);
+      setAssignedStationId(null);
+      setAssignedColor(null);
+      setStatusMessage("This session has ended. Thanks for playing!");
+      try {
+        sessionStorage.removeItem("teamSession");
+      } catch {
+        // ignore
+      }
+      alert("This session has ended. Thanks for playing!");
+    });
+
+    // Noise state from backend
+    socket.on("session:noiseLevel", (payload) => {
+      if (!payload) return;
+      setNoiseState({
+        enabled: !!payload.enabled,
+        threshold: payload.threshold ?? 0,
+        level: payload.level ?? 0,
+        brightness: payload.brightness ?? 1,
       });
-    } catch (err) {
-      console.warn("Error emitting student:leave-room:", err);
-    }
-
-    // Clear persisted resume info
-    try {
-      sessionStorage.removeItem("teamSession");
-    } catch (err) {
-      console.warn("Unable to clear teamSession:", err);
-    }
-
-    // Reset local state so the Join UI re-appears
-    setJoined(false);
-    setTeamId(null);
-    setTeamSessionId(null);
-
-    setAssignedStationId(null);
-    setAssignedColor(null);
-    setScannedStationId(null);
-    setScannerActive(false);
-    setScanError(null);
-
-    setCurrentTask(null);
-    setCurrentTaskIndex(null);
-    setTasksetTotalTasks(null);
-    setPostSubmitSecondsLeft(0);
-    setLastTaskResult(null);
-    setShortAnswerReveal(null);
-
-    setTreatMessage(null);
-    setNoiseState({
-      enabled: false,
-      threshold: 0,
-      level: 0,
-      brightness: 1,
     });
 
-    lastStationIdRef.current = null;
-    roomLocationFromStateRef.current = null;
-
-    setStatusMessage("Enter your new room code to get started.");
-  };
-
-  // Build a "correct answer" review payload based on the current task
-  const buildAnswerReview = (task) => {
-    if (!task) return null;
-    const type = task.taskType;
-
-    // SHORT ANSWER – existing behaviour
-    if (
-      type === TASK_TYPES.SHORT_ANSWER &&
-      typeof task.correctAnswer === "string" &&
-      task.correctAnswer.trim() !== ""
-    ) {
-      return {
-        mode: "short",
-        prompt: task.prompt || "",
-        correctAnswer: task.correctAnswer.trim(),
-      };
-    }
-
-    // MULTIPLE CHOICE / TRUE-FALSE – list each question + correct choice text
-    if (
-      type === TASK_TYPES.MULTIPLE_CHOICE ||
-      type === TASK_TYPES.TRUE_FALSE
-    ) {
-      const rawItems =
-        (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
-        [];
-
-      const items =
-        rawItems.length > 0
-          ? rawItems
-          : [
-              {
-                id: task.id || "only",
-                prompt: task.prompt,
-                options: task.options || [],
-                correctAnswer: task.correctAnswer,
-              },
-            ];
-
-      const reviewItems = items
-        .map((item, idx) => {
-          const label =
-            item.prompt ||
-            item.question ||
-            item.text ||
-            item.title ||
-            `Question ${idx + 1}`;
-
-          let correctText = "";
-
-          if (
-            typeof item.correctAnswer === "number" &&
-            Array.isArray(item.options) &&
-            item.options[item.correctAnswer] != null
-          ) {
-            correctText = String(item.options[item.correctAnswer]);
-          } else if (typeof item.correctAnswer === "string") {
-            correctText = item.correctAnswer;
-          } else if (
-            Array.isArray(item.correctAnswer) &&
-            item.correctAnswer.length > 0
-          ) {
-            correctText = String(item.correctAnswer[0]);
-          }
-
-          if (!correctText) return null;
-          return { label, correctText };
-        })
-        .filter(Boolean);
-
-      if (!reviewItems.length) return null;
-
-      return {
-        mode: "mc_tf",
-        title: task.prompt || task.title || "Correct answers",
-        items: reviewItems,
-      };
-    }
-
-    // SORT / SEQUENCE / TIMELINE
-    if (
-      type === TASK_TYPES.SORT ||
-      type === TASK_TYPES.SEQUENCE ||
-      type === TASK_TYPES.TIMELINE
-    ) {
-      const cfg = task.config || {};
-      const cfgItems = Array.isArray(cfg.items) ? cfg.items : [];
-      if (!cfgItems.length) return null;
-
-      // SORT – show which items belong in which bucket
-      if (type === TASK_TYPES.SORT) {
-        const rawBuckets =
-          (Array.isArray(cfg.buckets) && cfg.buckets) ||
-          (Array.isArray(task.buckets) && task.buckets) ||
-          [];
-
-        const bucketLabels = rawBuckets.map((b, index) =>
-          typeof b === "string"
-            ? b
-            : b.label || b.name || `Bucket ${index + 1}`
-        );
-
-        const buckets = {};
-        bucketLabels.forEach((label, index) => {
-          buckets[index] = { label, items: [] };
-        });
-
-        cfgItems.forEach((it, idx) => {
-          const bucketIndex =
-            typeof it.bucketIndex === "number"
-              ? it.bucketIndex
-              : typeof it.correctBucket === "number"
-              ? it.correctBucket
-              : null;
-          if (bucketIndex == null) return;
-
-          const text =
-            it.text ||
-            it.label ||
-            it.name ||
-            it.prompt ||
-            `Item ${idx + 1}`;
-
-          if (!buckets[bucketIndex]) {
-            buckets[bucketIndex] = {
-              label: `Bucket ${bucketIndex + 1}`,
-              items: [],
-            };
-          }
-          buckets[bucketIndex].items.push(text);
-        });
-
-        const bucketList = Object.keys(buckets)
-          .map((key) => buckets[Number(key)])
-          .filter((b) => b.items.length > 0);
-
-        if (!bucketList.length) return null;
-
-        return {
-          mode: "sort",
-          title: task.prompt || "Correct grouping",
-          buckets: bucketList,
-        };
+    // Random treat assigned to this team
+    socket.on("student:treatAssigned", (payload) => {
+      console.log("SOCKET: student:treatAssigned", payload);
+      setTreatMessage(
+        payload?.message || "See your teacher for a treat!"
+      );
+      if (sndTreat.current) {
+        sndTreat.current.play().catch(() => {});
       }
+    });
 
-      // SEQUENCE / TIMELINE – show correct order
-      const orderedItems = cfgItems.map((it, idx) => ({
-        text:
-          it.text ||
-          it.label ||
-          it.name ||
-          it.prompt ||
-          `Item ${idx + 1}`,
-      }));
-
-      return {
-        mode: "sequence",
-        title: task.prompt || "Correct order",
-        items: orderedItems,
-      };
-    }
-
-    return null;
-  };
-
-  const handleSubmitAnswer = (answerPayload) => {
-    if (!roomCode || !joined || !currentTask || submitting || taskLocked) {
-      return;
-    }
-
-    setSubmitting(true);
-
-    const payload = {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      taskId: currentTask._id || currentTask.id,
-      taskIndex:
-        typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-          ? currentTaskIndex
-          : null,
-      answer: answerPayload,
+    return () => {
+      socket.off("room:state", handleRoomState);
+      socket.off("roomState", handleRoomState);
+      socket.off("taskSubmission", handleTaskSubmission);
+      socket.off("task:launch");
+      socket.off("session:complete");
+      socket.off("session-ended");
+      socket.off("session:noiseLevel");
+      socket.off("student:treatAssigned");
     };
-
-    socket.emit("submit-answer", payload, (response) => {
-      setSubmitting(false);
-      if (!response || response.error) {
-        console.warn("Submit error:", response?.error || "Unknown error");
-        setStatusMessage(
-          response?.error || "There was a problem submitting. Try again."
-        );
-        return;
-      }
-
-      setStatusMessage("");
-      setTaskLocked(true);
-
-      if (!response.aiScoring && !response.objectiveScoring) {
-        if (typeof reviewPauseSeconds === "number" && reviewPauseSeconds > 0) {
-          setPostSubmitSecondsLeft(reviewPauseSeconds);
-
-          if (postSubmitTimerRef.current) {
-            clearInterval(postSubmitTimerRef.current);
-          }
-          postSubmitTimerRef.current = setInterval(() => {
-            setPostSubmitSecondsLeft((prev) => {
-              if (prev == null || prev <= 1) {
-                clearInterval(postSubmitTimerRef.current);
-                postSubmitTimerRef.current = null;
-                setTaskLocked(false);
-                return null;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-        }
-      }
-
-      if (response.alertSound) {
-        tryPlayAlertSound();
-      }
-    });
-  };
+  }, [teamId, roomCode]);
 
   // ─────────────────────────────────────────────
-  // QR Scanner
-  // ─────────────────────────────────────────────
-
-  const handleScan = (data) => {
-    if (!data) return;
-    setScanError(null);
-    setScannedStationId(data);
-
-    if (!roomCode || !joined || !teamId) return;
-
-    socket.emit(
-      "station-scan",
-      {
-        roomCode: roomCode.trim().toUpperCase(),
-        teamId,
-        stationId: data,
-      },
-      (response) => {
-        if (!response || response.error) {
-          setScanError(response?.error || "Scan was not accepted.");
-          return;
-        }
-        if (response.stationId) {
-          const stationInfo = normalizeStationId(response.stationId);
-          setAssignedStationId(stationInfo.id);
-          setAssignedColor(stationInfo.color || null);
-          lastStationIdRef.current = stationInfo.id;
-        }
-        setScannerActive(false);
-      }
-    );
-  };
-
-  // ─────────────────────────────────────────────
-  // Location enforcement & station gating
+  // Timer effect for task time limits
   // ─────────────────────────────────────────────
 
   useEffect(() => {
-    if (!currentTask) {
-      setEnforceLocation(false);
+    if (!timeLimitSeconds || timeLimitSeconds <= 0) {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+      setRemainingMs(0);
       return;
     }
-    const cfg = currentTask.config || {};
-    const enforce = !!cfg.requireScan && !!cfg.stationBased;
-    setEnforceLocation(enforce);
-  }, [currentTask]);
+
+    const totalMs = timeLimitSeconds * 1000;
+    const start = Date.now();
+    setRemainingMs(totalMs);
+
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+    }
+
+    countdownTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const remaining = totalMs - elapsed;
+      setRemainingMs(remaining > 0 ? remaining : 0);
+      if (remaining <= 0) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    }, 250);
+
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+    };
+  }, [timeLimitSeconds]);
+
+  // ─────────────────────────────────────────────
+  // Toast for positive-point submissions
+  // ─────────────────────────────────────────────
+
+  useEffect(() => {
+    if (
+      !lastTaskResult ||
+      typeof lastTaskResult.points !== "number" ||
+      lastTaskResult.points <= 0
+    ) {
+      return;
+    }
+
+    const id = lastTaskResult.submittedAt || Date.now();
+    const toast = { id, points: lastTaskResult.points };
+    setPointToast(toast);
+
+    const timer = setTimeout(() => {
+      setPointToast((current) =>
+        current && current.id === id ? null : current
+      );
+    }, 1800);
+
+    return () => clearTimeout(timer);
+  }, [lastTaskResult]);
+
+  // Confetti burst on "perfect score"
+  useEffect(() => {
+    if (!lastTaskResult) return;
+
+    const { points, correct, aiScore } = lastTaskResult;
+
+    let isPerfect = false;
+
+    // Prefer rich aiScore when available (multi-item, etc.)
+    if (
+      aiScore &&
+      typeof aiScore.totalScore === "number" &&
+      typeof aiScore.maxPoints === "number" &&
+      aiScore.maxPoints > 0
+    ) {
+      isPerfect = aiScore.totalScore >= aiScore.maxPoints;
+    } else if (correct === true && typeof points === "number" && points > 0) {
+      // Fallback: single objective question (full credit or nothing)
+      isPerfect = true;
+    }
+
+    if (!isPerfect) return;
+
+    setShowConfetti(true);
+    const timer = setTimeout(() => setShowConfetti(false), 2000);
+
+    return () => clearTimeout(timer);
+  }, [lastTaskResult]);
+
+  // Auto-hide the short-answer correct-answer overlay after 10 seconds
+  useEffect(() => {
+    if (!shortAnswerReveal) return;
+    const timer = setTimeout(() => {
+      setShortAnswerReveal(null);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [shortAnswerReveal]);
+
+  // Collaboration partner answer listener
+  useEffect(() => {
+    if (!socket) return;
+
+    const handlePartnerAnswer = (payload) => {
+      setPartnerAnswer(payload.partnerAnswer);
+      setShowPartnerReply(true);
+    };
+
+    socket.on("collab:partner-answer", handlePartnerAnswer);
+
+    return () => {
+      socket.off("collab:partner-answer", handlePartnerAnswer);
+    };
+  }, []);
+
+  // Cleanup for post-submit countdown timer
+  useEffect(() => {
+    return () => {
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // ─────────────────────────────────────────────
+  // Utility – unlock browser audio
+  // ─────────────────────────────────────────────
+
+  const unlockAudioForBrowser = () => {
+    if (audioContext) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const newContext = new Ctx();
+    newContext
+      .resume()
+      .then(() => {
+        console.log("AudioContext unlocked");
+        setAudioContext(newContext);
+      })
+      .catch((err) => console.warn("AudioContext unlock failed:", err));
+  };
+
+  // ─────────────────────────────────────────────
+  // Join room (persistent student:join-room)
+  // ─────────────────────────────────────────────
+
+  const handleJoin = () => {
+    const finalRoom = roomCode.trim().toUpperCase();
+
+    if (!finalRoom || !teamName.trim()) {
+      alert("Please enter both a room code and team name.");
+      return;
+    }
+
+    if (!connected) {
+      alert("Not connected to server yet. Please wait a moment.");
+      return;
+    }
+
+    unlockAudioForBrowser();
+
+    const filteredMembers = members
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0);
+
+    console.log("STUDENT: Attempting to join room:", {
+      finalRoom,
+      teamName: teamName.trim(),
+      members: filteredMembers,
+      socketId: socket.id,
+    });
+
+    setJoiningRoom(true);
+    setStatusMessage(`Joining Room ${finalRoom}…`);
+
+    // TIMEOUT SAFETY — if no ack in 8 seconds, fail
+    const timeoutId = setTimeout(() => {
+      console.error(
+        "STUDENT: JOIN TIMEOUT — no response from server after 8s"
+      );
+      setJoiningRoom(false);
+      setStatusMessage("Join failed — timeout");
+      alert("Join timed out. Is the teacher in the room?");
+    }, 8000);
+
+    socket.emit(
+      "student:join-room",
+      {
+        roomCode: finalRoom,
+        teamName: teamName.trim(),
+        members: filteredMembers,
+      },
+      (ack) => {
+        clearTimeout(timeoutId);
+        console.log("STUDENT: ACK FROM SERVER:", ack);
+
+        if (!ack || !ack.ok) {
+          setJoiningRoom(false);
+          setStatusMessage("Join failed");
+          alert(ack?.error || "Unable to join room.");
+          return;
+        }
+
+        const teamSession = ack.teamSessionId || ack.teamId;
+
+        setJoined(true);
+        setJoiningRoom(false);
+        setRoomCode(finalRoom);
+        setTeamId(ack.teamId || teamSession);
+        setTeamSessionId(teamSession);
+
+        // Persist for resume-team-session
+        try {
+          sessionStorage.setItem(
+            "teamSession",
+            JSON.stringify({
+              roomCode: finalRoom,
+              teamSessionId: teamSession,
+            })
+          );
+          console.log("STUDENT: teamSession persisted to sessionStorage");
+        } catch (err) {
+          console.warn("Unable to persist teamSession:", err);
+        }
+
+        // Fixed-station / multi-room is signaled from the room state
+        setEnforceLocation(!!ack.roomState?.enforceLocation);
+        if (ack.roomState?.locationCode) {
+          setRoomLocation(ack.roomState.locationCode);
+          roomLocationFromStateRef.current =
+            ack.roomState.locationCode;
+        }
+
+        const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
+
+        if (myTeam?.currentStationId) {
+          const norm = normalizeStationId(myTeam.currentStationId);
+
+          setAssignedStationId(myTeam.currentStationId);
+          setAssignedColor(norm.color || null);
+          setScannedStationId(null);
+          setScannerActive(true);
+
+          // Seed lastStationId so later room:state updates
+          lastStationIdRef.current = myTeam.currentStationId;
+
+          const colourLabel = norm.color
+            ? ` ${norm.color.toUpperCase()}`
+            : "";
+
+          setStatusMessage(
+            `Scan your${colourLabel} station to get started.`
+          );
+        } else {
+          // No station assigned yet – do not enable scanner yet
+          lastStationIdRef.current = null;
+          setStatusMessage(
+            "Waiting for your teacher to assign your station."
+          );
+          setScannerActive(false);
+          setScannedStationId(null);
+        }
+      }
+    );
+
+    console.log("STUDENT: socket.emit('student:join-room') called");
+  };
+
+  // ─────────────────────────────────────────────
+  // QR Scan handler – checks colour + room
+  // ─────────────────────────────────────────────
+
+  const handleScannedCode = (code) => {
+    if (!joined || !teamId) {
+      setScanError("Join a room first, then scan a station.");
+      return;
+    }
+
+    if (!assignedStationId) {
+      setScanError("Wait until your teacher assigns a station, then scan.");
+      return;
+    }
+
+    const normAssigned = normalizeStationId(assignedStationId);
+    const expectedColour = normAssigned.color;
+
+    // Parse QR payload – expected pattern: ".../<location>/<colour>"
+    let scannedColour = null;
+    let scannedLocationRaw = null;
+
+    try {
+      const url = new URL(code);
+      const segments = url.pathname.split("/").filter(Boolean);
+
+      if (segments.length >= 2) {
+        scannedLocationRaw = segments[segments.length - 2];
+        scannedColour = (segments[segments.length - 1] || "").toLowerCase();
+      } else if (segments.length === 1) {
+        scannedColour = (segments[0] || "").toLowerCase();
+      }
+    } catch {
+      // Non-URL payload → treat entire string as the colour
+      scannedColour = (code || "").toLowerCase().trim();
+    }
+
+    const scannedLocationSlug = normalizeLocationSlug(scannedLocationRaw);
+
+    const scannedLabel = [
+      scannedLocationRaw || "",
+      scannedColour ? scannedColour.toUpperCase() : "",
+    ]
+      .filter(Boolean)
+      .join(" / ");
+
+    if (!scannedColour) {
+      setScanError(
+        "That code didn’t look like a station. Try another or ask your teacher."
+      );
+      return;
+    }
+
+    if (!expectedColour || scannedColour !== expectedColour) {
+      const expectedLabel = expectedColour
+        ? expectedColour.toUpperCase()
+        : "the correct";
+      setScanError(
+        `That’s the wrong station colour. You scanned ${
+          scannedLabel || "this code"
+        }, but your team needs the ${expectedLabel} station.`
+      );
+
+      // Re-arm the scanner so they can try again
+      setScannedStationId(null);
+      setScannerActive(false);
+      setTimeout(() => setScannerActive(true), 100);
+
+      return;
+    }
+
+    // ✅ Colour matches – we *ignore* location for now.
+    setScanError(null);
+    setScannerActive(false);
+    setScannedStationId(assignedStationId);
+
+    socket.emit(
+      "station:scan",
+      {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+        stationId: normAssigned.id,
+      },
+      (ack) => {
+        if (!ack || !ack.ok) {
+          setScanError(
+            ack?.error || "We couldn't read that station. Try again."
+          );
+
+          // Reset scanner so the student can try again
+          setScannedStationId(null);
+          setScannerActive(false);
+          setTimeout(() => setScannerActive(true), 100);
+          return;
+        }
+
+        // Success
+        setScanError(null);
+        setScannerActive(false);
+        setScannedStationId(normAssigned.id);
+      }
+    );
+
+    setStatusMessage(
+      `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`
+    );
+  };
+
+  // ─────────────────────────────────────────────
+  // Submit answer
+  // ─────────────────────────────────────────────
+
+  const handleSubmitAnswer = async (answerPayload) => {
+    if (!roomCode || !joined || !currentTask || teamId == null) return;
+    if (submitting) return;
+
+    setSubmitting(true);
+    try {
+      // Send answer to server and wait for ack
+      await new Promise((resolve, reject) => {
+        socket
+          .timeout(8000)
+          .emit(
+            "student:submitAnswer",
+            {
+              roomCode: roomCode.trim().toUpperCase(),
+              teamId,
+              taskIndex:
+                typeof currentTaskIndex === "number" &&
+                currentTaskIndex >= 0
+                  ? currentTaskIndex
+                  : null,
+              answer: answerPayload,
+            },
+            (err, ack) => {
+              if (err) {
+                console.error(
+                  "Submit timeout / transport error:",
+                  err
+                );
+                return reject(err);
+              }
+              if (!ack || !ack.ok) {
+                console.error("Submit failed:", ack?.error);
+                return reject(
+                  new Error(
+                    ack?.error ||
+                      "Submission failed — please tell your teacher."
+                  )
+                );
+              }
+              resolve();
+            }
+          );
+      });
+
+      // Decide whether to show a "correct answer" overlay for SHORT_ANSWER
+      if (
+        currentTask &&
+        currentTask.taskType === TASK_TYPES.SHORT_ANSWER &&
+        typeof currentTask.correctAnswer === "string" &&
+        currentTask.correctAnswer.trim() !== ""
+      ) {
+        setShortAnswerReveal({
+          prompt: currentTask.prompt || "",
+          correctAnswer: currentTask.correctAnswer.trim(),
+        });
+      } else {
+        setShortAnswerReveal(null);
+      }
+
+      // Clear timer
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+      setTimeLimitSeconds(null);
+      setRemainingMs(0);
+
+      // 🔒 Lock the task for review and start a countdown
+      const pause =
+        typeof reviewPauseSeconds === "number" &&
+        reviewPauseSeconds >= 5 &&
+        reviewPauseSeconds <= 60
+          ? reviewPauseSeconds
+          : 15;
+
+      setTaskLocked(true);
+      setPostSubmitSecondsLeft(pause);
+      setScannerActive(false);
+      setStatusMessage(
+        "Review your answers. Next round is starting soon…"
+      );
+
+      // Clear any existing post-submit timer
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
+
+      // Start countdown before returning to scan mode
+      postSubmitTimerRef.current = setInterval(() => {
+        setPostSubmitSecondsLeft((current) => {
+          if (current == null) return null;
+          if (current <= 1) {
+            clearInterval(postSubmitTimerRef.current);
+            postSubmitTimerRef.current = null;
+
+            // ✅ Now hide task and move to next station
+            setCurrentTask(null);
+            setCurrentTaskIndex(null);
+            setScannedStationId(null);
+            setScannerActive(true);
+            setStatusMessage(
+              "Answer submitted! Find your next station colour and scan it."
+            );
+            setTaskLocked(false);
+            return 0;
+          }
+          return current - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error("Submit error:", err);
+      alert(
+        "We couldn't submit your answer. Check your connection and tell your teacher."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  // Derived display values
+  // ─────────────────────────────────────────────
+
+  const assignedNorm = normalizeStationId(assignedStationId);
+  const scannedNorm = normalizeStationId(scannedStationId);
 
   const mustScan =
-    enforceLocation &&
-    assignedStationId &&
-    scannedStationId &&
-    assignedStationId !== scannedStationId;
+    joined &&
+    scannerActive &&
+    !!assignedStationId &&
+    scannedStationId !== assignedStationId;
 
-  // ─────────────────────────────────────────────
-  // Derived values for UI
-  // ─────────────────────────────────────────────
+  const assignedColour = assignedNorm.color;
 
-  const themedTask = currentTask
-    ? {
-        ...currentTask,
-        locationSlug: normalizeLocationSlug(roomLocation),
-      }
-    : null;
+  // Normalized display location for prompt
+  const displayLocation =
+    (roomLocationFromStateRef.current || DEFAULT_LOCATION).toUpperCase();
 
-  const stationInfo = normalizeStationId(assignedStationId);
+  let scanPrompt = "";
+  if (assignedColour) {
+    const colorLabel = assignedColour.toUpperCase();
 
-  const noiseBarOpacity = noiseState.enabled ? noiseState.brightness : 0.08;
+    if (enforceLocation) {
+      scanPrompt = `Scan your ${displayLocation} ${colorLabel} station.`;
+    } else {
+      scanPrompt = `Scan your ${colorLabel} station.`;
+    }
+  } else {
+    scanPrompt = "Scan your station.";
+  }
 
-  const timerDisplay = timeLimitSeconds ? formatRemainingMs(remainingMs) : null;
+  // Font scaling for younger grades
+  let responseFontSize = "1rem";
+  let responseHeadingFontSize = "1rem";
+  const gradeRaw =
+    currentTask?.gradeLevel ?? currentTask?.meta?.gradeLevel ?? null;
+  const parsedGrade =
+    gradeRaw != null ? parseInt(String(gradeRaw), 10) : null;
 
-  const responseFontSize = currentTask && currentTask.largeText ? "1.1rem" : "1rem";
-  const responseHeadingFontSize =
-    currentTask && currentTask.largeText ? "1.4rem" : "1.2rem";
+  if (!Number.isNaN(parsedGrade) && parsedGrade > 0) {
+    if (parsedGrade <= 4) {
+      responseFontSize = "1.15rem";
+      responseHeadingFontSize = "1.2rem";
+    } else if (parsedGrade <= 6) {
+      responseFontSize = "1.08rem";
+      responseHeadingFontSize = "1.15rem";
+    } else if (parsedGrade <= 8) {
+      responseFontSize = "1.02rem";
+      responseHeadingFontSize = "1.1rem";
+    } else {
+      responseFontSize = "0.98rem";
+      responseHeadingFontSize = "1.05rem";
+    }
+  }
 
-  const isMotionMission =
-    currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
-  const isPetFeeding = currentTask?.taskType === TASK_TYPES.PET_FEEDING;
-  const isRecordAudio = currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
+  // JEOPARDY / Draw-Mime / FlashcardsRace flags for header + styling
+  const isJeopardy =
+  currentTask?.taskType === TASK_TYPES.JEOPARDY;
 
-  const isJeopardy = currentTask?.taskType === TASK_TYPES.BRAINSTORM_BATTLE;
+  const isDrawMime =
+    currentTask?.taskType === TASK_TYPES.DRAW ||
+    currentTask?.taskType === TASK_TYPES.MIME ||
+    currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+
   const isFlashcardsRace =
     currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
+
+  const isLiveDebate =
+    currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
+
   const isMadDash =
     currentTask?.taskType === TASK_TYPES.MAD_DASH ||
     currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE;
@@ -1045,6 +1162,9 @@ function StudentApp() {
   const isMindMapper =
     currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
   
+  const isMotionMission =
+    currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
+
   const isMultipleChoice =
     currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
 
@@ -1066,11 +1186,30 @@ function StudentApp() {
       }
     : {};
 
-  const isOpenText = currentTask?.taskType === TASK_TYPES.OPEN_TEXT;
-  const isPhoto = currentTask?.taskType === TASK_TYPES.PHOTO;
+  const isOpenText =
+    currentTask?.taskType === TASK_TYPES.OPEN_TEXT;
+
+  const isPetFeeding =
+    currentTask?.taskType === TASK_TYPES.PET_FEEDING;
+
+  const isPhoto =
+    currentTask?.taskType === TASK_TYPES.PHOTO ||
+    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL;
+
+  const isPhotoJournal =
+    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL;
+
+  const isRecordAudio =
+    currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
+
   const isBrainSparkNotes =
     currentTask?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES;
 
+  // Theme-enriched task object
+  const themedTask =
+    currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
+
+  // Base card styles + background variant for Draw/Mime & Race rounds
   const baseTaskCardStyle = {
     marginBottom: 12,
     padding: 14,
@@ -1116,11 +1255,9 @@ function StudentApp() {
       ? tasksetTotalTasks
       : null;
 
-  const progressLabel =
+  const progressPercent =
     currentTaskNumber && totalTasks
-      ? `Task ${currentTaskNumber} of ${totalTasks}`
-      : currentTaskNumber
-      ? `Task ${currentTaskNumber}`
+      ? Math.min((currentTaskNumber / totalTasks) * 100, 100)
       : null;
 
   // ─────────────────────────────────────────────
@@ -1143,250 +1280,33 @@ function StudentApp() {
           : isMadDash
           ? "radial-gradient(circle at top, #b91c1c 0%, #f97316 40%, #facc15 75%, #fee2e2 100%)"
           : isMindMapper
-          ? "radial-gradient(circle at top, #0f172a 0%, #0ea5e9 40%, #22c55e 75%, #e0f2fe 100%)"
+          ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
+          : isMusicalChairs
+          ? "radial-gradient(circle at top, #7c3aed 0%, #fb7185 40%, #facc15 75%, #fef9c3 100%)"
+          : isMysteryClues
+          ? "radial-gradient(circle at top, #020617 0%, #1e293b 30%, #4f46e5 60%, #22c55e 100%)"
+          : isPetFeeding
+          ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #0ea5e9 70%, #fef9c3 100%)"
+          : isJeopardy
+          ? "radial-gradient(circle at top, #312e81 0%, #4c1d95 35%, #7e22ce 70%, #f97316 100%)"
           : themeShell.pageBg,
+  
         color: themeShell.text,
-        transition: "background 0.35s ease, color 0.25s ease",
+        opacity: noiseState.enabled ? noiseState.brightness : 1,
+        transition: "opacity 120ms ease-out",
       }}
     >
-      <style>
-        {`
-        * {
-          box-sizing: border-box;
-        }
-
-        .station-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          border: 1px solid rgba(15,23,42,0.25);
-          background: rgba(255,255,255,0.85);
-        }
-
-        .station-dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 999px;
-          background: #e5e7eb;
-        }
-
-        .score-pill {
-          display: inline-flex;
-          align-items: center;
-          padding: 4px 10px;
-          border-radius: 999px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          color: #fefce8;
-          background: linear-gradient(135deg, #16a34a, #22c55e);
-          box-shadow: 0 8px 18px rgba(22,163,74,0.35);
-        }
-
-        .score-pill span {
-          margin-left: 4px;
-        }
-
-        .toast {
-          position: fixed;
-          left: 50%;
-          bottom: 20px;
-          transform: translateX(-50%);
-          padding: 10px 16px;
-          border-radius: 999px;
-          font-size: 0.9rem;
-          font-weight: 600;
-          color: #111827;
-          background: #fef9c3;
-          border: 1px solid #facc15;
-          box-shadow: 0 10px 25px rgba(15,23,42,0.4);
-          z-index: 999;
-        }
-
-        .toast.negative {
-          background: #fee2e2;
-          border-color: #ef4444;
-        }
-
-        .pill-muted {
-          padding: 4px 10px;
-          border-radius: 999px;
-          background: rgba(15,23,42,0.08);
-          color: #e5e7eb;
-          font-size: 0.8rem;
-        }
-
-        .countdown-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          background: rgba(15,23,42,0.85);
-          color: #f9fafb;
-          border: 1px solid rgba(148,163,184,0.8);
-        }
-
-        .timer-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: #22c55e;
-        }
-
-        .timer-dot.low-time {
-          background: #f97316;
-        }
-
-        .timer-dot.critical {
-          background: #ef4444;
-        }
-
-        .join-card {
-          max-width: 480px;
-          margin: 0 auto;
-          padding: 20px 18px 18px 18px;
-          border-radius: 24px;
-          background: rgba(15,23,42,0.92);
-          border: 1px solid rgba(148,163,184,0.7);
-          box-shadow: 0 18px 45px rgba(15,23,42,0.9);
-          color: #e5e7eb;
-        }
-
-        .join-card input {
-          width: 100%;
-          padding: 8px 10px;
-          border-radius: 10px;
-          border: 1px solid rgba(148,163,184,0.7);
-          background: rgba(15,23,42,0.95);
-          color: #f9fafb;
-          font-size: 0.9rem;
-          outline: none;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease;
-        }
-
-        .join-card input:focus {
-          border-color: #6366f1;
-          box-shadow: 0 0 0 2px rgba(99,102,241,0.5);
-        }
-
-        .join-card button {
-          width: 100%;
-          padding: 9px 12px;
-          border-radius: 999px;
-          border: none;
-          font-weight: 700;
-          font-size: 0.95rem;
-          cursor: pointer;
-          background: linear-gradient(135deg, #6366f1, #0ea5e9);
-          color: #f9fafb;
-          box-shadow: 0 10px 30px rgba(37,99,235,0.7);
-          transition: transform 0.15s ease, box-shadow 0.15s ease,
-            opacity 0.15s ease;
-        }
-
-        .join-card button:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 35px rgba(37,99,235,0.9);
-        }
-
-        .join-card button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-          box-shadow: none;
-        }
-
-        .join-card small {
-          display: block;
-          margin-top: 8px;
-          font-size: 0.75rem;
-          color: #9ca3af;
-        }
-
-        .task-card {
-          position: relative;
-          overflow: hidden;
-        }
-
-        .task-card::before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          opacity: 0.9;
-          pointer-events: none;
-        }
-
-        .task-content-inner {
-          position: relative;
-          z-index: 1;
-        }
-
-        .noise-bar {
-          height: 6px;
-          border-radius: 999px;
-          background: linear-gradient(90deg, #22c55e, #facc15, #f97316, #ef4444);
-          margin-top: 8px;
-        }
-
-        .noise-bar-track {
-          width: 100%;
-          height: 8px;
-          border-radius: 999px;
-          background: rgba(15,23,42,0.25);
-        }
-
-        .noise-bar-inner {
-          height: 100%;
-          border-radius: 999px;
-        }
-
-        .scan-error {
-          color: #fee2e2;
-          background: rgba(127,29,29,0.9);
-          padding: 6px 10px;
-          border-radius: 999px;
-          font-size: 0.8rem;
-          margin-top: 6px;
-          border: 1px solid rgba(248,113,113,0.9);
-        }
-
-        .location-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          font-size: 0.8rem;
-          font-weight: 500;
-          background: rgba(15,23,42,0.85);
-          color: #e5e7eb;
-          border: 1px solid rgba(148,163,184,0.8);
-        }
-
-        .location-pill span {
-          opacity: 0.9;
-        }
-
-        .location-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: #22c55e;
-        }
-
-        .task-card input,
+      {/* Scoped styles for task presentation & submission */}
+      <style>{`
+        .task-card input[type="text"],
+        .task-card input[type="number"],
+        .task-card input[type="email"],
         .task-card textarea {
-          font-family: inherit;
-          color: #0f172a;
+          width: 100%;
+          padding: 10px 12px;
           border-radius: 10px;
           border: 1px solid #d1d5db;
-          padding: 7px 9px;
-          font-size: 0.95rem;
+          font-size: 1rem;
           outline: none;
           background: #ffffff;
           transition: border-color 0.15s ease, box-shadow 0.15s ease,
@@ -1402,7 +1322,6 @@ function StudentApp() {
 
         /* General button polish inside the task card */
         .task-card button {
-          font-family: inherit;
           border-radius: 999px;
           padding: 8px 12px;
           font-size: 0.95rem;
@@ -1419,915 +1338,927 @@ function StudentApp() {
           box-shadow: 0 6px 16px rgba(15,23,42,0.25);
         }
 
+        .task-card button:active:not(:disabled) {
+          transform: translateY(0);
+          box-shadow: 0 3px 8px rgba(15,23,42,0.3);
+        }
+
         .task-card button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
+          opacity: 0.6;
+          cursor: default;
           box-shadow: none;
         }
 
-        /* For BrainSparkNotes / MakeAndSnap etc, subtle bullet styling */
-        .bullet-chip {
-          display: inline-flex;
-          align-items: center;
-          padding: 4px 8px;
-          border-radius: 999px;
-          font-size: 0.8rem;
-          background: rgba(15,23,42,0.06);
-          margin: 0 4px 4px 0;
+        /* FLASHCARDS — realistic card appearance */
+        .flashcard-container {
+          perspective: 1200px;
+          width: 100%;
+          display: flex;
+          justify-content: center;
+          margin: 12px 0;
         }
 
-        .bullet-chip span {
-          opacity: 0.9;
+        .flashcard {
+          width: 90%;
+          max-width: 360px;
+          min-height: 200px;
+          padding: 20px;
+          border-radius: 16px;
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+          transform-style: preserve-3d;
+          transition: transform 0.6s ease;
+          cursor: pointer;
+          backface-visibility: hidden;
+          font-size: 1.1rem;
+          line-height: 1.5;
         }
 
-        /* AI feedback callout */
-        .ai-feedback {
-          margin-top: 10px;
-          padding: 10px;
-          border-radius: 12px;
-          background: #eef2ff;
-          border: 1px solid #c7d2fe;
-          font-size: 0.85rem;
-          color: #111827;
+        /* When flipped */
+        .flashcard.flipped {
+          transform: rotateY(180deg);
         }
 
-        .ai-feedback strong {
-          display: block;
-          margin-bottom: 4px;
-          font-size: 0.9rem;
-        }
-
-        /* NOISE SENSOR */
-        .noise-fade {
-          transition: opacity 0.3s ease, transform 0.3s ease;
-        }
-
-        /* TREAT BANNER */
-        .treat-banner {
-          position: fixed;
-          top: 10px;
-          left: 50%;
-          transform: translateX(-50%);
-          padding: 8px 14px;
-          border-radius: 999px;
-          background: radial-gradient(circle at top, #22c55e, #15803d);
-          color: #fefce8;
-          font-size: 0.85rem;
-          font-weight: 600;
-          box-shadow: 0 15px 35px rgba(22,163,74,0.7);
-          z-index: 999;
-        }
-
-        /* QR SCANNER SHELL */
-        .scanner-shell {
-          margin-top: 10px;
-          border-radius: 18px;
-          padding: 10px;
-          background: rgba(15,23,42,0.9);
-          border: 1px solid rgba(148,163,184,0.75);
-          box-shadow: 0 15px 35px rgba(15,23,42,0.9);
-        }
-
-        /* TASK-LOCKED OVERLAY */
-        .task-locked-overlay {
+        .flashcard-back {
           position: absolute;
           inset: 0;
-          border-radius: inherit;
-          background: radial-gradient(
-            circle at top,
-            rgba(15,23,42,0.3),
-            rgba(15,23,42,0.9)
-          );
+          backface-visibility: hidden;
+          transform: rotateY(180deg);
+          padding: 20px;
+          border-radius: 16px;
+          background: #f1f5f9;
+          border: 1px solid #d1d5db;
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #f9fafb;
           font-weight: 600;
-          font-size: 0.95rem;
-          z-index: 20;
-          text-align: center;
-          padding: 14px;
         }
 
-        /* PROGRESS LINE */
-        .progress-line {
-          width: 100%;
-          height: 4px;
-          border-radius: 999px;
-          background: rgba(148,163,184,0.4);
-          overflow: hidden;
-          margin-top: 4px;
-        }
-
-        .progress-line-inner {
-          height: 100%;
-          border-radius: 999px;
-          background: linear-gradient(90deg, #22c55e, #0ea5e9);
-          transition: width 0.25s ease-out;
-        }
-
-        /* JEOPARDY / BRAINSTORM BATTLE STYLING */
-        .jeopardy-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-          gap: 10px;
-        }
-
-        .jeopardy-card {
-          padding: 12px 10px;
-          border-radius: 12px;
-          background: rgba(15,23,42,0.9);
-          border: 1px solid rgba(148,163,184,0.7);
-          color: #fef9c3;
-          font-size: 0.85rem;
-          text-align: center;
-          box-shadow: 0 10px 25px rgba(15,23,42,0.8);
-        }
-
-        .jeopardy-card strong {
-          display: block;
-          margin-bottom: 4px;
-          font-size: 0.95rem;
-        }
-
-        .jeopardy-card button {
-          margin-top: 6px;
-          width: 100%;
-          border-radius: 999px;
-          padding: 6px 8px;
-          background: linear-gradient(135deg, #22c55e, #0ea5e9);
-          color: #f9fafb;
-        }
-
-        /* MIND MAPPER background hints */
-        .mindmap-hint-chip {
-          display: inline-flex;
-          align-items: center;
-          padding: 4px 8px;
-          border-radius: 999px;
-          background: rgba(15,23,42,0.06);
-          font-size: 0.8rem;
-        }
-
-        .mindmap-hint-chip span {
-          opacity: 0.9;
-        }
-
-        /* BRAIN SPARK NOTES decorative */
-        .spark-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 8px;
-          border-radius: 999px;
-          background: rgba(251,191,36,0.15);
-          border: 1px solid rgba(245,158,11,0.9);
-          font-size: 0.8rem;
-          color: #92400e;
-        }
-
-        .spark-badge span {
-          font-size: 1rem;
-        }
-
-        /* FLASHCARDS RACE indicator */
-        .race-indicator {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          background: rgba(15,23,42,0.85);
-          color: #f9fafb;
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-
-        .race-indicator-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 999px;
-          background: #22c55e;
-        }
-
-        /* MYSTERY CLUES header animation */
-        @keyframes mystery-glow {
-          0% {
-            text-shadow: 0 0 4px rgba(56,189,248,0.3);
-          }
-          50% {
-            text-shadow: 0 0 12px rgba(56,189,248,0.9);
-          }
-          100% {
-            text-shadow: 0 0 4px rgba(56,189,248,0.3);
-          }
-        }
-
-        /* MUSICAL CHAIRS header pulse */
-        @keyframes mc-header-pulse {
-          0%, 100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.04);
-          }
-        }
-
-        /* JEOPARDY lightning */
-        @keyframes lightning-flash {
-          0%, 100% {
-            opacity: 0;
-          }
-          40% {
-            opacity: 1;
-          }
-        }
-
-        /* PET-HEALTH BAR */
-        .pet-health-bar-wrapper {
-          width: 100%;
-          height: 14px;
-          border-radius: 999px;
-          background: rgba(15,23,42,0.15);
-          overflow: hidden;
-          border: 1px solid rgba(15,23,42,0.3);
-        }
-
-        .pet-health-bar-inner {
-          height: 100%;
-          border-radius: 999px;
-          background: linear-gradient(90deg, #ef4444, #f97316, #22c55e);
-          transition: width 0.3s ease-out;
-        }
-
-        .pet-health-label {
-          font-size: 0.8rem;
-          font-weight: 500;
-          color: #0f172a;
-          margin-bottom: 2px;
-        }
-
-        /* DIFF-DETECTIVE RACE BANNER */
-        .diff-race-banner {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          background: rgba(248,250,252,0.85);
-          border: 1px solid rgba(148,163,184,0.9);
-          font-size: 0.75rem;
-          color: #0f172a;
-        }
-
-        .diff-race-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: #22c55e;
-        }
-
-        .diff-race-dot.leader {
-          background: #f97316;
-        }
-
-        .diff-race-dot.finished {
-          background: #22c55e;
-        }
-
-        .diff-race-time {
-          font-variant-numeric: tabular-nums;
-        }
-
-        /* CONFETTI LAYER FOR PERFECT SCORE */
+        /* ───────────────────────────────────────────
+           CONFETTI LAYER FOR PERFECT SCORE
+        ─────────────────────────────────────────── */
         .confetti-layer {
           position: fixed;
           inset: 0;
+          overflow: hidden;
           pointer-events: none;
-          z-index: 900;
-          background: radial-gradient(
-            circle at top,
-            rgba(250,250,250,0.4),
-            transparent 60%
-          );
+          z-index: 9999;
         }
 
         .confetti-piece {
           position: absolute;
+          top: -10%;
           width: 8px;
-          height: 12px;
+          height: 14px;
           border-radius: 2px;
+          opacity: 0;
+          animation-name: confettiFall;
+          animation-duration: 1.6s;
+          animation-timing-function: linear;
+          animation-fill-mode: forwards;
         }
 
-        .confetti-piece:nth-child(odd) {
-          background: #f97316;
+        .confetti-piece:nth-child(4n) {
+          background-color: #f97316;
+        }
+        .confetti-piece:nth-child(4n + 1) {
+          background-color: #22c55e;
+        }
+        .confetti-piece:nth-child(4n + 2) {
+          background-color: #3b82f6;
+        }
+        .confetti-piece:nth-child(4n + 3) {
+          background-color: #e11d48;
         }
 
-        .confetti-piece:nth-child(even) {
-          background: #22c55e;
+        @keyframes confettiFall {
+          0% {
+            transform: translate3d(0, 0, 0) rotateZ(0deg);
+            opacity: 0;
+          }
+          10% {
+            opacity: 1;
+          }
+          100% {
+            transform: translate3d(0, 120vh, 0) rotateZ(360deg);
+            opacity: 0;
+          }
         }
-      `}
-      </style>
+        @keyframes mc-header-pulse {
+          0% {
+            transform: translateY(0) scale(1);
+            text-shadow: 0 0 0 rgba(251, 113, 133, 0);
+          }
+          50% {
+            transform: translateY(-2px) scale(1.03);
+            text-shadow: 0 0 10px rgba(251, 113, 133, 0.9);
+          }
+          100% {
+            transform: translateY(0) scale(1);
+            text-shadow: 0 0 0 rgba(251, 113, 133, 0);
+          }
+        }
+        @keyframes mystery-glow {
+          0% {
+            transform: scale(1);
+            text-shadow: 0 0 0 rgba(56,189,248,0);
+          }
+          50% {
+            transform: scale(1.03);
+            text-shadow: 0 0 16px rgba(56,189,248,0.9);
+          }
+          100% {
+            transform: scale(1);
+            text-shadow: 0 0 0 rgba(56,189,248,0);
+          }
+        }
 
-      {/* HEADER */}
-      <header
+      `}</style>
+
+      {/* Hidden audio elements for task / scan sounds */}
+      <audio
+        ref={sndAlert}
+        src="/sounds/scan-alert.mp3"
+        preload="auto"
+        style={{ display: "none" }}
+      />
+      <audio
+        ref={sndTreat}
+        src="/sounds/treat-chime.mp3"
+        preload="auto"
+        style={{ display: "none" }}
+      />
+
+      {/* Main content column */}
+      <div
         style={{
+          flex: 1,
+          width: "100%",
+          maxWidth: 520,
+          margin: "0 auto",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 12,
-          gap: 10,
+          flexDirection: "column",
+          gap: 16,
         }}
       >
-        <div>
-          <header style={{ marginBottom: 4 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: "1.4rem",
-                color: "#ffffff",
-              }}
-            >
-              Curriculate – Team Station
-            </h1>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "0.85rem",
-                color: "#4b5563",
-              }}
-            >
-              Join your teacher&apos;s room, then scan stations as you move.
-            </p>
-          </header>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {joined && (
-              <span className="pill-muted">
-                Team: <strong>{teamName || "…"}</strong>
-              </span>
-            )}
-            {joined && (
-              <span className="pill-muted">
-                Room: <strong>{roomCode.toUpperCase()}</strong>
-              </span>
-            )}
-
-            {stationInfo.id && (
-              <span className="station-pill">
-                <span
-                  className="station-dot"
-                  style={
-                    stationInfo.color
-                      ? { background: stationInfo.color }
-                      : undefined
-                  }
-                />
-                {stationInfo.label}
-              </span>
-            )}
-
-            {roomLocation && (
-              <span className="location-pill">
-                <span className="location-dot" />
-                <span>{roomLocation}</span>
-              </span>
-            )}
-
-            {timerDisplay && (
-              <span className="countdown-pill">
-                <span
-                  className={
-                    remainingMs <= 15000
-                      ? "timer-dot critical"
-                      : remainingMs <= 30000
-                      ? "timer-dot low-time"
-                      : "timer-dot"
-                  }
-                />
-                {timerDisplay}
-              </span>
-            )}
-
-            <span className="score-pill">
-              <span role="img" aria-label="sparkles">
-                ✨
-              </span>
-              <span>{scoreTotal} pts</span>
-            </span>
-          </div>
-        </div>
-
-        <div style={{ textAlign: "right", minWidth: 140 }}>
-          <div
+        <header style={{ marginBottom: 4 }}>
+          <h1
             style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 4,
-              marginBottom: 4,
+              margin: 0,
+              fontSize: "1.4rem",
             }}
           >
-            <button
-              type="button"
-              onClick={() => setUiTheme("modern")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "modern"
-                    ? "2px solid rgba(59,130,246,0.9)"
-                    : "1px solid rgba(148,163,184,0.7)",
-                background:
-                  uiTheme === "modern"
-                    ? "rgba(191,219,254,0.35)"
-                    : "rgba(15,23,42,0.15)",
-                color: "#e5e7eb",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Theme 1
-            </button>
-            <button
-              type="button"
-              onClick={() => setUiTheme("bold")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "bold"
-                    ? "2px solid rgba(248,250,252,0.9)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "bold"
-                    ? "rgba(15,23,42,0.9)"
-                    : "rgba(15,23,42,0.25)",
-                color: "#e5e7eb",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Theme 2
-            </button>
-            <button
-              type="button"
-              onClick={() => setUiTheme("minimal")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "minimal"
-                    ? "2px solid rgba(15,23,42,0.85)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "minimal"
-                    ? "#e5e7eb"
-                    : "rgba(249,250,251,0.85)",
-                color: "#111827",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Theme 3
-            </button>
-          </div>
-
-          <div
+            Curriculate – Team Station
+          </h1>
+          <p
             style={{
-              fontSize: "0.75rem",
-              color: connected ? "#bbf7d0" : "#fecaca",
+              margin: 0,
+              fontSize: "0.85rem",
+              color: "#4b5563",
             }}
           >
-            {connected ? "Connected to server" : "Connecting…"}
-          </div>
-          {statusMessage && (
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: "0.75rem",
-                color: "#fee2e2",
-              }}
-            >
-              {statusMessage}
-            </div>
-          )}
-        </div>
+            {joined
+              ? roomCode
+                ? `Connected · Room ${roomCode.toUpperCase()}`
+                : "Connected"
+              : joiningRoom
+              ? roomCode
+                ? `Joining Room ${roomCode.toUpperCase()}…`
+                : "Joining Room…"
+              : connected
+              ? "Connected to server"
+              : "Connecting…"}
+          </p>
+        </header>
 
-            <div
-              style={{
-                marginTop: 6,
-                display: "flex",
-                justifyContent: "flex-end",
-              }}
-            >
-              <button
-                type="button"
-                onClick={handleLeaveRoom}
-                style={{
-                  border: "none",
-                  borderRadius: 999,
-                  padding: "4px 8px",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                  background: "rgba(15,23,42,0.14)",
-                  color: "inherit",
-                  cursor: "pointer",
-                }}
-              >
-                Join a different room
-              </button>
-            </div>
-
-      </header>
-
-      {/* JOIN CARD */}
-      {!joined && (
-        <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
-          <div className="join-card">
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 6,
-                fontSize: "1.1rem",
-              }}
-            >
-              Join your teacher’s room
-            </h2>
-            <p
-              style={{
-                marginTop: 0,
-                marginBottom: 12,
-                fontSize: "0.85rem",
-                color: "#9ca3af",
-              }}
-            >
-              Enter the code your teacher shows on the board, pick a team name,
-              and list your team members.
-            </p>
-
-            <form onSubmit={handleJoin}>
-              <div style={{ marginBottom: 10 }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: 4,
-                  }}
-                >
-                  Room Code
-                </label>
-                <input
-                  value={roomCode}
-                  onChange={(e) => setRoomCode(e.target.value)}
-                  placeholder="e.g. ABC123"
-                  style={{ textTransform: "uppercase" }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 10 }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: 4,
-                  }}
-                >
-                  Team Name
-                </label>
-                <input
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  placeholder="Your epic team name"
-                />
-              </div>
-
-              <div style={{ marginBottom: 10 }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: 4,
-                  }}
-                >
-                  Team Members
-                </label>
-                {members.map((m, idx) => (
-                  <input
-                    key={idx}
-                    value={m}
-                    onChange={(e) => {
-                      const copy = [...members];
-                      copy[idx] = e.target.value;
-                      setMembers(copy);
-                    }}
-                    placeholder={`Member ${idx + 1}`}
-                    style={{ marginBottom: 6 }}
-                  />
-                ))}
-              </div>
-
-              <button type="submit" disabled={!canJoin || joiningRoom}>
-                {joiningRoom ? "Joining…" : "Join Room"}
-              </button>
-
-              <small>
-                Tip: you can add more members later if your teacher allows.
-              </small>
-            </form>
-          </div>
-        </main>
-      )}
-
-      {/* MAIN TASK AREA */}
-      {joined && (
-        <main
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            marginTop: 8,
-            gap: 8,
-          }}
-        >
-          {/* Noise/temperature bar */}
-          <section>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 4,
-                gap: 8,
-              }}
-            >
-              <div style={{ fontSize: "0.8rem", color: "#e5e7eb" }}>
-                Classroom Noise
-              </div>
-              {noiseState.enabled && (
-                <div style={{ fontSize: "0.75rem", color: "#e5e7eb" }}>
-                  Target:{" "}
-                  <span style={{ fontWeight: 600 }}>
-                    {noiseState.threshold}
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="noise-bar-track noise-fade">
-              <div
-                className="noise-bar-inner"
-                style={{
-                  width: `${Math.min(
-                    Math.max(noiseState.level * 100, 0),
-                    100
-                  )}%`,
-                  opacity: noiseBarOpacity,
-                }}
-              />
-            </div>
-          </section>
-
-          {/* QR SCANNER TOGGLE */}
-          <section
+        {treatMessage && (
+          <div
             style={{
+              padding: 10,
+              borderRadius: 10,
+              background: "#f97316",
+              color: "#ffffff",
+              fontSize: "0.9rem",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               gap: 8,
-              marginTop: 4,
             }}
           >
+            <div>
+              <strong style={{ marginRight: 4 }}>Treat time!</strong>
+              {treatMessage}
+            </div>
             <button
               type="button"
-              onClick={() => setScannerActive((prev) => !prev)}
+              onClick={() => setTreatMessage(null)}
               style={{
-                padding: "6px 10px",
-                borderRadius: 999,
                 border: "none",
-                background: scannerActive
-                  ? "linear-gradient(135deg, #22c55e, #0ea5e9)"
-                  : "rgba(15,23,42,0.8)",
-                color: "#f9fafb",
-                fontSize: "0.85rem",
-                fontWeight: 600,
+                background: "rgba(255,255,255,0.15)",
+                color: "#ffffff",
+                padding: "4px 8px",
+                borderRadius: 999,
+                fontSize: "0.8rem",
                 cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
               }}
             >
-              <span role="img" aria-label="qr">
-                📷
-              </span>
-              {scannerActive ? "Hide Scanner" : "Scan Station"}
+              Got it
             </button>
+          </div>
+        )}
 
-            {progressLabel && (
-              <div style={{ textAlign: "right", fontSize: "0.8rem" }}>
-                <div style={{ color: "#e5e7eb", fontWeight: 600 }}>
-                  {progressLabel}
-                </div>
-                {currentTaskNumber && totalTasks && (
-                  <div className="progress-line">
-                    <div
-                      className="progress-line-inner"
-                      style={{
-                        width: `${Math.round(
-                          (currentTaskNumber / totalTasks) * 100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* QR SCANNER */}
-          {scannerActive && (
-            <section className="scanner-shell">
-              <QrScanner onScan={handleScan} onError={setScanError} />
-              {scanError && (
-                <div className="scan-error">⚠ {scanError}</div>
-              )}
-            </section>
-          )}
-
-          {/* TASK CARD */}
-          {joined && currentTask && !mustScan && (
-            <section
-              className="task-card"
+        {/* JOIN PANEL */}
+        {!joined && (
+          <section
+            style={{
+              maxWidth: 480,
+              width: "100%",
+              background: themeShell.cardBg,
+              borderRadius: 16,
+              padding: 16,
+              border: themeShell.cardBorder,
+              color: themeShell.text,
+            }}
+          >
+            <h2
               style={{
-                ...baseTaskCardStyle,
-                ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
-                  ? {
-                      // Let MotionMissionTask / PetFeeding / RecordAudio own the look
-                      background: "transparent",
-                      padding: 0,
-                      border: "none",
-                      boxShadow: "none",
-                    }
-                  : {
-                      background: taskCardBackground,
-                  }),
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1.1rem",
               }}
             >
-              <h2
-                style={{
-                  marginTop: 0,
-                  marginBottom: 6,
-                  fontSize: responseHeadingFontSize,
-                  letterSpacing: 0.2,
-                  color: "#0f172a",
-                  ...musicalChairsHeaderStyle,
-                  ...mysteryHeaderStyle,
-                }}
-              >
-                {currentTaskNumber && (
-                  <div
-                    style={{
-                      marginBottom: 8,
-                      fontSize: "0.8rem",
-                      color: "#4b5563",
-                    }}
-                  >
-                    {progressLabel}
-                  </div>
-                )}
-                {currentTask.title || currentTask.name || "Task"}
-              </h2>
-
-              <div
-                className="task-content-inner"
-                style={{
-                  position: "relative",
-                  fontSize: responseFontSize,
-                  lineHeight: 1.5,
-                  minHeight:
-                    isMotionMission || isPetFeeding ? "60vh" : undefined,
-                }}
-              >
-                <TaskRunner
-                  key={
-                    currentTask?.id ??
-                    currentTask?._id ??
-                    currentTaskIndex ??
-                    currentTask?.prompt ??
-                    "task"
+              Join your room
+            </h2>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <label style={{ fontSize: "0.85rem" }}>
+                Room code
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) =>
+                    setRoomCode(e.target.value.toUpperCase())
                   }
-                  task={themedTask}
-                  taskTypes={TASK_TYPES}
-                  onSubmit={handleSubmitAnswer}
-                  submitting={submitting}
-                  onAnswerChange={setCurrentAnswerDraft}
-                  answerDraft={currentAnswerDraft}
-                  disabled={taskLocked || submitting}
-                  socket={socket}
-                  roomCode={roomCode}
-                  playerTeam={teamName}
-                  // Collaboration wiring
-                  partnerAnswer={partnerAnswer}
-                  showPartnerReply={showPartnerReply}
-                  onPartnerReply={(replyText) => {
-                    if (
-                      !roomCode ||
-                      !joined ||
-                      !currentTask ||
-                      teamId == null
-                    )
-                      return;
-
-                    socket.emit("collab:reply", {
-                      roomCode: roomCode.trim().toUpperCase(),
-                      teamId,
-                      taskIndex:
-                        typeof currentTaskIndex === "number" &&
-                        currentTaskIndex >= 0
-                          ? currentTaskIndex
-                          : null,
-                      reply: replyText,
-                    });
+                  style={{
+                    width: "100%",
+                    padding: "4px 6px",
+                    marginTop: 2,
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                    fontSize: "1rem",
                   }}
                 />
+              </label>
+
+              <label style={{ fontSize: "0.85rem" }}>
+                Team name
+                <input
+                  type="text"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "4px 6px",
+                    marginTop: 2,
+                    borderRadius: 6,
+                    border: "1px solid #d1d5db",
+                    fontSize: "1rem",
+                  }}
+                />
+              </label>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Team members (optional)
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  {members.map((m, idx) => (
+                    <input
+                      key={idx}
+                      type="text"
+                      value={m}
+                      onChange={(e) =>
+                        setMembers((prev) => {
+                          const next = [...prev];
+                          next[idx] = e.target.value;
+                          return next;
+                        })
+                      }
+                      placeholder={`Member ${idx + 1}`}
+                      style={{
+                        width: "100%",
+                        padding: "4px 6px",
+                        borderRadius: 6,
+                        border: "1px solid #e5e7eb",
+                        fontSize: "0.95rem",
+                      }}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMembers((prev) => [...prev, ""])
+                  }
+                  style={{
+                    marginTop: 4,
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#e5e7eb",
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  + Add member field
+                </button>
               </div>
 
-              {taskLocked && (
-                <div className="task-locked-overlay">
-                  {postSubmitSecondsLeft != null ? (
-                    <div>
-                      Locked while your teacher reviews… <br />
-                      <span
-                        style={{
-                          fontVariantNumeric: "tabular-nums",
-                          fontSize: "1.1rem",
-                        }}
-                      >
-                        {postSubmitSecondsLeft}s
-                      </span>
-                    </div>
-                  ) : (
-                    <div>Waiting for your teacher to unlock the next task…</div>
+              <div style={{ marginTop: 8 }}>
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    marginBottom: 4,
+                  }}
+                >
+                  Choose a theme
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {["modern", "bold", "minimal"].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setUiTheme(t)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #d1d5db",
+                        background:
+                          uiTheme === t ? "#0ea5e9" : "#f9fafb",
+                        color:
+                          uiTheme === t ? "#ffffff" : "#111827",
+                        fontSize: "0.8rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t === "modern"
+                        ? "Theme 1"
+                        : t === "bold"
+                        ? "Bold"
+                        : "Minimal"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleJoin}
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: "#16a34a",
+                  color: "#ffffff",
+                  fontSize: "0.95rem",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                Ready for action
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* STATUS + STATION CARD */}
+        {joined && (
+          <section
+            style={{
+              marginBottom: 8,
+              padding: 12,
+              borderRadius: 12,
+              ...getStationBubbleStyles(assignedColor),
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 4,
+                fontSize: "1rem",
+              }}
+            >
+              Team {teamName || "?"}
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.85rem",
+                color: "inherit",
+              }}
+            >
+              {statusMessage}
+            </p>
+
+            <div
+              style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: "1px solid #e5e7eb",
+                fontSize: "0.85rem",
+              }}
+            >
+              <div>
+                <strong>Current station: </strong>
+                {assignedNorm.label}
+              </div>
+              {/* Score info */}
+              <div style={{ marginTop: 2 }}>
+                <strong>Score:</strong> {scoreTotal} pts
+              </div>
+              {lastTaskResult && (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: "0.8rem",
+                    color:
+                      lastTaskResult.correct === true
+                        ? "#166534"
+                        : lastTaskResult.correct === false
+                        ? "#b91c1c"
+                        : "#111827",
+                  }}
+                >
+                  Last task:{" "}
+                  {lastTaskResult.correct === true
+                    ? "✅ Correct"
+                    : lastTaskResult.correct === false
+                    ? "❌ Incorrect"
+                    : "☑️ Submitted"}
+                  {typeof lastTaskResult.points === "number" && (
+                    <> ({lastTaskResult.points} pts)</>
                   )}
                 </div>
               )}
-            </section>
-          )}
+              {mustScan ? (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontWeight: 600,
+                    color: "inherit",
+                  }}
+                >
+                  {scanPrompt}
+                </div>
+              ) : scannedStationId ? (
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "inherit",
+                  }}
+                >
+                  Station confirmed ({scannedNorm.label}).
+                </div>
+              ) : (
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "inherit",
+                  }}
+                >
+                  Waiting for a task…
+                </div>
+              )}
+              {scanError && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    color: "#b91c1c",
+                    fontSize: "0.8rem",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {scanError}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
-          {/* Must scan gate */}
-          {joined && currentTask && mustScan && (
-            <section
+        {/* SCANNER CARD */}
+        {joined && scannerActive && (
+          <section
+            style={{
+              marginBottom: 8,
+              padding: 12,
+              borderRadius: 12,
+              background: assignedColor
+                ? `var(--${assignedColor}-500, #eff6ff)`
+                : "#eff6ff",
+              boxShadow:
+                scannerActive && assignedColor
+                  ? "0 0 0 0 rgba(255,255,255,0.9)"
+                  : "0 1px 3px rgba(15,23,42,0.12)",
+              transition:
+                "background 0.2s ease, box-shadow 0.2s ease",
+            }}
+          >
+            <h2
               style={{
-                marginTop: 10,
-                padding: 16,
-                borderRadius: 18,
-                background: "rgba(15,23,42,0.9)",
-                border: "1px solid rgba(248,250,252,0.8)",
-                color: "#fefce8",
-                textAlign: "center",
-                boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
+                marginTop: 0,
+                marginBottom: 8,
+                fontSize: "1rem",
+                color: assignedColor ? "#ffffff" : "#111827",
               }}
             >
-              <div style={{ fontSize: "1rem", fontWeight: 700 }}>
-                🚪 Scan the correct station first
-              </div>
+              {scanPrompt}
+            </h2>
+            <QrScanner
+              active={scannerActive}
+              onCode={handleScannedCode}
+              onError={setScanError}
+            />
+          </section>
+        )}
+
+        {/* TASK CARD */}
+        {joined && currentTask && !mustScan && (
+          <section
+            className="task-card"
+            style={{
+              ...baseTaskCardStyle,
+              ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
+                ? {
+                    // Let MotionMissionTask / PetFeeding / RecordAudio own the look
+                    background: "transparent",
+                    padding: 0,
+                    border: "none",
+                    boxShadow: "none",
+                  }
+                : {
+                    background: taskCardBackground,
+                  }),
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                marginBottom: 6,
+                fontSize: responseHeadingFontSize,
+                letterSpacing: 0.2,
+                ...musicalChairsHeaderStyle,
+                ...mysteryHeaderStyle,
+              }}
+            >
+              {currentTaskNumber && (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    fontSize: "0.8rem",
+                    color: "#4b5563",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span>
+                      Task{" "}
+                      <strong>{currentTaskNumber}</strong>
+                      {totalTasks ? ` of ${totalTasks}` : ""}
+                    </span>
+                    {progressPercent != null && (
+                      <span>{Math.round(progressPercent)}%</span>
+                    )}
+                  </div>
+                  {progressPercent != null && (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 6,
+                        borderRadius: 999,
+                        background: "rgba(209,213,219,0.8)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${progressPercent}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background:
+                            "linear-gradient(90deg,#22c55e,#0ea5e9)",
+                          transition: "width 0.25s ease-out",
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            {isFlashcardsRace
+              ? "Flashcards Race!"
+              : isJeopardy
+              ? "Brain Blitz!"
+              : isMadDash
+              ? "Mad Dash!"
+              : isMakeAndSnap
+              ? "Make it & Snap it!"
+              : isPhotoJournal
+              ? "Photo journal!"
+              : isPhoto
+              ? "Photo evidence!"
+              : isDrawMime
+              ? "Draw or Mime!"
+              : isLiveDebate
+              ? "Live debate!"
+              : isMindMapper
+              ? "Mind Mapper!"
+              : isMotionMission
+              ? "Motion Mission!"
+              : isMusicalChairs
+              ? "Musical Chairs!"
+              : isMysteryClues
+              ? "Mystery Clues!"
+              : isMultipleChoice
+              ? "Multiple choice!"
+              : isPetFeeding
+              ? "Feed the pet!"
+              : isRecordAudio
+              ? "Record your voice!"
+              : isOpenText
+              ? "Open response!"
+              : isBrainSparkNotes
+              ? "Spark Notes!"
+              : "Your task"}
+            </h2>
+
+            {isMakeAndSnap && (
               <p
                 style={{
-                  marginTop: 6,
-                  fontSize: "0.9rem",
-                  marginBottom: 10,
+                  margin: "0 0 6px",
+                  fontSize: "0.85rem",
+                  color: "#0369a1",
+                  fontWeight: 500,
                 }}
               >
-                Your teacher has locked this task to a specific station. Scan
-                the station&apos;s QR code to unlock it.
+                Build, draw, or act it out — then snap a clear photo of what you made!
               </p>
-              <button
-                type="button"
-                onClick={() => setScannerActive(true)}
+            )}
+
+            {isPhoto && !isPhotoJournal && (
+              <p
                 style={{
-                  padding: "7px 12px",
-                  borderRadius: 999,
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg, #22c55e, #0ea5e9)",
-                  color: "#f9fafb",
-                  fontSize: "0.9rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
+                  margin: "0 0 6px",
+                  fontSize: "0.85rem",
+                  color: "#0369a1",
+                  fontWeight: 500,
                 }}
               >
-                Scan Station QR
-              </button>
-            </section>
-          )}
-        </main>
+                Take a clear photo that matches the prompt. Make sure your whole idea is visible!
+              </p>
+            )}
+
+            {isPhotoJournal && (
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: "0.85rem",
+                  color: "#0369a1",
+                  fontWeight: 500,
+                }}
+              >
+                Snap a clear photo, then write a short explanation of what it shows and why it matters.
+              </p>
+            )}
+
+            {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
+              currentTask?.jeopardyConfig?.boardTitle && (
+                <p
+                  style={{
+                    margin: "0 0 6px",
+                    fontSize: "0.88rem",
+                    color: "#4b5563",
+                  }}
+                >
+                  Game:{" "}
+                  <strong>
+                    {currentTask.jeopardyConfig.boardTitle}
+                  </strong>
+                </p>
+              )}
+
+            {timeLimitSeconds && timeLimitSeconds > 0 && (
+              <p
+                style={{
+                  margin: "0 0 10px",
+                  fontSize: "0.9rem",
+                  color: "#b91c1c",
+                  fontWeight: 500,
+                }}
+              >
+                Time left: {formatRemainingMs(remainingMs)}
+              </p>
+            )}
+
+            <div
+              style={{
+                marginTop: isMotionMission || isPetFeeding ? 0 : 6,
+                padding: isMotionMission || isPetFeeding ? 0 : 12,
+                borderRadius: isMotionMission || isPetFeeding ? 0 : 16,
+                background: isMotionMission || isPetFeeding
+                  ? "transparent"
+                  : "rgba(255,255,255,0.98)",
+                border: isMotionMission || isPetFeeding
+                  ? "none"
+                  : "1px solid rgba(209,213,219,0.9)",
+                fontSize: responseFontSize,
+                lineHeight: 1.5,
+                // Let the MotionMissionTask / PetFeedingTask stretch
+                minHeight:
+                  isMotionMission || isPetFeeding ? "60vh" : undefined,
+              }}
+            >
+              <TaskRunner
+                key={
+                  currentTask?.id ??
+                  currentTask?._id ??
+                  currentTaskIndex ??
+                  currentTask?.prompt ??
+                  "task"
+                }
+                task={themedTask}
+                taskTypes={TASK_TYPES}
+                onSubmit={handleSubmitAnswer}
+                submitting={submitting}
+                onAnswerChange={setCurrentAnswerDraft}
+                answerDraft={currentAnswerDraft}
+                disabled={taskLocked || submitting}
+                socket={socket}
+                roomCode={roomCode}
+                playerTeam={teamName}
+                // Collaboration wiring
+                partnerAnswer={partnerAnswer}
+                showPartnerReply={showPartnerReply}
+                onPartnerReply={(replyText) => {
+                  if (
+                    !roomCode ||
+                    !joined ||
+                    !currentTask ||
+                    teamId == null
+                  )
+                    return;
+
+                  socket.emit("collab:reply", {
+                    roomCode: roomCode.trim().toUpperCase(),
+                    teamId,
+                    taskIndex:
+                      typeof currentTaskIndex === "number" &&
+                      currentTaskIndex >= 0
+                        ? currentTaskIndex
+                        : null,
+                    reply: replyText,
+                  });
+                }}
+              />
+            </div>
+
+            {taskLocked && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: 12,
+                  background: "rgba(45,212,191,0.08)",
+                  border: "1px solid rgba(45,212,191,0.5)",
+                  fontSize: "0.85rem",
+                  color: "#0f172a",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    marginBottom: 4,
+                  }}
+                >
+                  Round summary
+                </div>
+
+                {lastTaskResult?.aiScore &&
+                typeof lastTaskResult.aiScore.totalItems === "number" ? (
+                  <div>
+                    You answered{" "}
+                    <strong>
+                      {lastTaskResult.aiScore.correctCount ??
+                        lastTaskResult.aiScore.totalScore ??
+                        "?"}
+                    </strong>{" "}
+                    of{" "}
+                    <strong>
+                      {lastTaskResult.aiScore.totalItems}
+                    </strong>{" "}
+                    correctly
+                    {typeof lastTaskResult.points === "number" && (
+                      <>
+                        {" "}
+                        and earned{" "}
+                        <strong>{lastTaskResult.points} pts</strong>.
+                      </>
+                    )}
+                  </div>
+                ) : lastTaskResult ? (
+                  <div>
+                    Your answer was{" "}
+                    {lastTaskResult.correct === true
+                      ? "correct 🎉"
+                      : lastTaskResult.correct === false
+                      ? "not correct"
+                      : "submitted"}
+                    {typeof lastTaskResult.points === "number" && (
+                      <> ({lastTaskResult.points} pts)</>
+                    )}
+                    .
+                  </div>
+                ) : (
+                  <div>Waiting for scoring from your teacher…</div>
+                )}
+
+                {postSubmitSecondsLeft != null &&
+                  postSubmitSecondsLeft > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      Next round starting in{" "}
+                      <strong>{postSubmitSecondsLeft}</strong>{" "}
+                      second
+                      {postSubmitSecondsLeft === 1 ? "" : "s"}
+                      …
+                    </div>
+                  )}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+
+      {joined && (
+        <NoiseSensor
+          active={noiseState.enabled}
+          roomCode={roomCode}
+          socket={socket}
+          ignoreNoise={!!currentTask?.ignoreNoise}
+        />
       )}
 
-      {/* CORRECT-ANSWER OVERLAY */}
+      {showConfetti && (
+        <div className="confetti-layer">
+          {Array.from({ length: 40 }).map((_, i) => (
+            <div
+              key={i}
+              className="confetti-piece"
+              style={{
+                left: `${(i * 2.5) % 100}%`,
+                animationDelay: `${(i % 10) * 0.08}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Correct-answer overlay for SHORT_ANSWER tasks */}
       {shortAnswerReveal && (
         <div
           style={{
             position: "fixed",
             inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             background: "rgba(15,23,42,0.55)",
             zIndex: 130,
           }}
@@ -2335,10 +2266,8 @@ function StudentApp() {
         >
           <div
             style={{
-              maxWidth: 480,
+              maxWidth: 420,
               width: "90%",
-              margin: "0 auto",
-              marginTop: "15vh",
               background: "#f9fafb",
               borderRadius: 18,
               padding: 16,
@@ -2347,7 +2276,6 @@ function StudentApp() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Title */}
             <div
               style={{
                 fontWeight: 700,
@@ -2356,131 +2284,31 @@ function StudentApp() {
                 color: "#0f172a",
               }}
             >
-              {shortAnswerReveal.mode === "sort"
-                ? "Correct grouping"
-                : shortAnswerReveal.mode === "sequence"
-                ? "Correct order"
-                : "Correct answer"}
+              Correct answer
             </div>
 
-            {/* Subtitle / prompt / title */}
-            {shortAnswerReveal.mode === "mc_tf" &&
-              shortAnswerReveal.title && (
-                <div
-                  style={{
-                    fontSize: "0.9rem",
-                    color: "#6b7280",
-                    marginBottom: 8,
-                  }}
-                >
-                  {shortAnswerReveal.title}
-                </div>
-              )}
+            {shortAnswerReveal.prompt && (
+              <div
+                style={{
+                  fontSize: "0.8rem",
+                  color: "#6b7280",
+                  marginBottom: 8,
+                }}
+              >
+                {shortAnswerReveal.prompt}
+              </div>
+            )}
 
-            {(!shortAnswerReveal.mode ||
-              shortAnswerReveal.mode === "short") &&
-              shortAnswerReveal.prompt && (
-                <div
-                  style={{
-                    fontSize: "0.9rem",
-                    color: "#6b7280",
-                    marginBottom: 8,
-                  }}
-                >
-                  {shortAnswerReveal.prompt}
-                </div>
-              )}
-
-            {/* SHORT ANSWER content (existing behaviour) */}
-            {(!shortAnswerReveal.mode ||
-              shortAnswerReveal.mode === "short") &&
-              shortAnswerReveal.correctAnswer && (
-                <div
-                  style={{
-                    fontSize: "1.1rem",
-                    fontWeight: 700,
-                    marginBottom: 12,
-                    color: "#111827",
-                  }}
-                >
-                  {shortAnswerReveal.correctAnswer}
-                </div>
-              )}
-
-            {/* MC / TF list of correct choices */}
-            {shortAnswerReveal.mode === "mc_tf" &&
-              Array.isArray(shortAnswerReveal.items) && (
-                <div
-                  style={{
-                    textAlign: "left",
-                    fontSize: "0.95rem",
-                    color: "#111827",
-                    marginBottom: 12,
-                  }}
-                >
-                  <ul style={{ paddingLeft: 18, margin: 0 }}>
-                    {shortAnswerReveal.items.map((item, idx) => (
-                      <li key={idx} style={{ marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600 }}>
-                          {item.label}:
-                        </span>{" "}
-                        <span>{item.correctText}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-            {/* SORT – buckets with correct items */}
-            {shortAnswerReveal.mode === "sort" &&
-              Array.isArray(shortAnswerReveal.buckets) && (
-                <div
-                  style={{
-                    textAlign: "left",
-                    fontSize: "0.95rem",
-                    color: "#111827",
-                    marginBottom: 12,
-                  }}
-                >
-                  {shortAnswerReveal.buckets.map((bucket, idx) => (
-                    <div key={idx} style={{ marginBottom: 8 }}>
-                      <div
-                        style={{
-                          fontWeight: 700,
-                          marginBottom: 2,
-                        }}
-                      >
-                        {bucket.label}
-                      </div>
-                      <ul style={{ paddingLeft: 18, margin: 0 }}>
-                        {bucket.items.map((text, j) => (
-                          <li key={j}>{text}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-            {/* SEQUENCE / TIMELINE – correct order */}
-            {shortAnswerReveal.mode === "sequence" &&
-              Array.isArray(shortAnswerReveal.items) && (
-                <ol
-                  style={{
-                    textAlign: "left",
-                    fontSize: "0.95rem",
-                    color: "#111827",
-                    marginBottom: 12,
-                    paddingLeft: 18,
-                  }}
-                >
-                  {shortAnswerReveal.items.map((item, idx) => (
-                    <li key={idx} style={{ marginBottom: 4 }}>
-                      {item.text}
-                    </li>
-                  ))}
-                </ol>
-              )}
+            <div
+              style={{
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                marginBottom: 12,
+                color: "#111827",
+              }}
+            >
+              {shortAnswerReveal.correctAnswer}
+            </div>
 
             <button
               type="button"
@@ -2488,14 +2316,12 @@ function StudentApp() {
               style={{
                 border: "none",
                 borderRadius: 999,
-                padding: "8px 16px",
+                padding: "6px 16px",
+                fontSize: "0.85rem",
                 fontWeight: 600,
-                fontSize: "0.9rem",
-                background:
-                  "linear-gradient(90deg,#4f46e5,#6366f1,#a855f7)",
+                background: "#22c55e",
                 color: "#f9fafb",
                 cursor: "pointer",
-                marginTop: 4,
               }}
             >
               Got it
@@ -2504,37 +2330,33 @@ function StudentApp() {
         </div>
       )}
 
-      {/* TREAT BANNER */}
-      {treatMessage && <div className="treat-banner">{treatMessage}</div>}
-
-      {/* POINT TOAST */}
+      {/* +points toast */}
       {pointToast && (
-        <div className={`toast ${pointToast.positive ? "" : "negative"}`}>
-          {pointToast.message}
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "20vh",
+            transform: "translateX(-50%)",
+            padding: "8px 16px",
+            borderRadius: 999,
+            background: "rgba(22,163,74,0.96)",
+            color: "#f9fafb",
+            fontWeight: 700,
+            fontSize: "0.95rem",
+            boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
+            zIndex: 120,
+          }}
+        >
+          +{pointToast.points} points!
         </div>
       )}
 
-      {/* CONFETTI LAYER */}
-      {showConfetti && (
-        <div className="confetti-layer">
-          {Array.from({ length: 40 }).map((_, i) => (
-            <div
-              key={i}
-              className="confetti-piece"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 40}%`,
-                transform: `rotate(${Math.random() * 45}deg)`,
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* FOOTER STRIP */}
+      {/* Persistent colour band at the bottom */}
       <div
         style={{
           marginTop: 16,
+          width: "100%",
           height: "50vh",
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
