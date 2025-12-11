@@ -665,7 +665,7 @@ function buildStudentWorkDescription(task, submission) {
       summary: "Spoken response evaluated for pronunciation / speech.",
       prompt: task.prompt,
       targetText: task.targetText || null,
-      recognizedText: submission?.recognizedText || null,
+      recognizedText: submission?.recognizedText || submission?.answerText || null,
       audioReference: submission?.audioUrl || null,
     };
   }
@@ -962,6 +962,68 @@ async function scoreBrainSparkNotes({ task, submission }) {
   };
 }
 
+// --- SPECIAL CASE: SPEECH RECOGNITION / PRONUNCIATION ---
+
+async function scoreSpeechRecognition({ task, submission, rubric }) {
+  const points = typeof task.points === "number" ? task.points : 10;
+
+  const effectiveRubric =
+    rubric ||
+    {
+      totalPoints: points,
+      criteria: [
+        {
+          id: "accuracy",
+          label: "Content / wording accuracy",
+          maxPoints: Math.round(points * 0.5),
+          description:
+            "Compare the recognizedText with the targetText (if provided) or the prompt. " +
+            "Give more points when the spoken words closely match the intended text or answer.",
+        },
+        {
+          id: "pronunciation",
+          label: "Pronunciation and clarity",
+          maxPoints: Math.round(points * 0.3),
+          description:
+            "Judge how clear and understandable the student's speech would likely be to a fluent speaker. " +
+            "Reward reasonably clear speech, even if accent is present.",
+        },
+        {
+          id: "fluency",
+          label: "Fluency and pacing",
+          maxPoints: points - Math.round(points * 0.5) - Math.round(points * 0.3),
+          description:
+            "Consider smoothness and pacing. Give higher points if the student speaks in a mostly smooth way without excessive pauses or restarts.",
+        },
+      ],
+    };
+
+  const result = await scoreSubmissionWithAI({
+    task,
+    submission,
+    rubric: effectiveRubric,
+    explicitTotalPoints: points,
+  });
+
+  const clampedScore = clamp(
+    typeof result.score === "number" ? result.score : 0,
+    0,
+    points
+  );
+
+  return {
+    ...result,
+    score: clampedScore,
+    maxPoints: points,
+    method: "ai-rubric",
+    rubricUsed: effectiveRubric,
+    details: {
+      ...(result.details || {}),
+      type: task.taskType,
+    },
+  };
+}
+
 // --- PUBLIC ENTRYPOINT ---
 
 export async function generateAIScore({ task, submission, rubric }) {
@@ -1003,6 +1065,15 @@ export async function generateAIScore({ task, submission, rubric }) {
     task?.taskType === "brain-spark-notes"
   ) {
     return scoreBrainSparkNotes({ task, submission });
+  }
+
+  // Specialized path: Speech Recognition / Pronunciation
+  if (
+    task?.taskType === TASK_TYPES.SPEECH_RECOGNITION ||
+    task?.taskType === "speech-recognition" ||
+    task?.taskType === TASK_TYPES.PRONUNCIATION
+  ) {
+    return scoreSpeechRecognition({ task, submission, rubric });
   }
 
   const meta = TASK_TYPE_META[task.taskType] || {};
