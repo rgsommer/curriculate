@@ -1945,7 +1945,7 @@ function StudentApp() {
                 cursor: "pointer",
               }}
             >
-              Theme 1
+              Eager
             </button>
             <button
               type="button"
@@ -1966,7 +1966,7 @@ function StudentApp() {
                 cursor: "pointer",
               }}
             >
-              Theme 2
+              Bold
             </button>
             <button
               type="button"
@@ -1987,7 +1987,7 @@ function StudentApp() {
                 cursor: "pointer",
               }}
             >
-              Theme 3
+              Dyno
             </button>
           </div>
 
