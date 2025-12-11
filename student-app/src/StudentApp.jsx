@@ -589,6 +589,35 @@ function StudentApp() {
       }
     };
 
+    const handleArrivalBonus = (payload) => {
+      if (!payload || payload.teamId !== teamId) return;
+
+      const { bonus, position, taskIndex } = payload;
+      if (typeof bonus !== "number" || bonus === 0) return;
+
+      let baseMsg =
+        bonus >= 10
+          ? `Speed bonus! +${bonus} points for arriving at your new station quickly!`
+          : `Quick move! +${bonus} bonus points for fast arrival.`;
+
+      if (typeof position === "number") {
+        baseMsg += ` (You were #${position} to arrive${
+          typeof taskIndex === "number" ? ` for task ${taskIndex + 1}` : ""
+        }.)`;
+      }
+
+      setPointToast({
+        message: baseMsg,
+        positive: true,
+      });
+
+      tryPlayTreatSound();
+
+      setTimeout(() => {
+        setPointToast(null);
+      }, 2500);
+    };
+
     const handleCollabPartner = (payload) => {
       if (!payload || payload.teamId !== teamId) return;
       setPartnerAnswer(payload.answer ?? null);
@@ -607,6 +636,7 @@ function StudentApp() {
     socket.on("treat:event", handleTreat);
     socket.on("collab:partner-answer", handleCollabPartner);
     socket.on("collab:reply", handleCollabReply);
+    socket.off("station:arrival-bonus", handleArrivalBonus);
 
     socket.emit("room:request-state", { teamId });
 
@@ -618,6 +648,7 @@ function StudentApp() {
       socket.off("treat:event", handleTreat);
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
+      socket.off("station:arrival-bonus", handleArrivalBonus);
     };
   }, [teamId, reviewPauseSeconds]);
 
