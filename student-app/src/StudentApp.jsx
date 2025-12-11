@@ -675,7 +675,7 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   const canJoin =
-    roomCode.trim().length >= 3 &&
+    roomCode.trim().length >= 2 &&
     teamName.trim().length >= 1 &&
     members.some((m) => m.trim().length > 0);
 
