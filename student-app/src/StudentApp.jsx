@@ -1112,33 +1112,33 @@ const handleScan = (data) => {
   if (!roomCode || !teamId) return;
 
   socket.emit(
-    "station:scan",
-    {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      stationId: data,
-    },
-    (response) => {
-      if (!response || response.error || response.ok === false) {
-        setScanError(response?.error || "Scan was not accepted.");
-        // IMPORTANT: keep scanner open on failure
-        setScannerActive(true);
-        return;
-      }
-
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
-        lastStationIdRef.current = stationInfo.id;
-      }
-
-      // SUCCESSFUL scan → close scanner and show “joined + waiting”
-      setScannerActive(false);
-      setStatusMessage("Station scanned! Waiting for your teacher’s next task…");
-      setJoined(true);
+  "station-scan",
+  {
+    roomCode: roomCode.trim().toUpperCase(),
+    teamId,
+    stationId: data,
+  },
+  (response) => {
+    if (!response || response.error || response.ok === false) {
+      setScanError(response?.error || "Scan was not accepted.");
+      // IMPORTANT: keep scanner open on failure
+      setScannerActive(true);
+      return;
     }
-  );
+
+    if (response.stationId) {
+      const stationInfo = normalizeStationId(response.stationId);
+      setAssignedStationId(stationInfo.id);
+      setAssignedColor(stationInfo.color || null);
+      lastStationIdRef.current = stationInfo.id;
+    }
+
+    // SUCCESSFUL scan → close scanner and show “joined + waiting”
+    setScannerActive(false);
+    setStatusMessage("Station scanned! Waiting for your teacher’s next task…");
+    setJoined(true);
+  }
+);
 };
 
   // ─────────────────────────────────────────────
