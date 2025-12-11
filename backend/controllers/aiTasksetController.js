@@ -14,6 +14,7 @@ const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
     ([type, meta]) =>
       meta.implemented !== false &&
       meta.aiEligible !== false &&
+      meta.generatorEligible !== false && // NEW: exclude non-generator types (Pronunciation, AI Debate Judge, etc.)
       type !== TASK_TYPES.HIDENSEEK // allow AI scoring but never auto-generate HideNSeek
   )
   .map(([type]) => type);

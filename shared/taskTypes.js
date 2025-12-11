@@ -529,6 +529,7 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 180,
     implemented: true,
     aiEligible: true,
+    generatorEligible: false, // NEW: do not auto-generate in AI tasksets
 
     objectiveScoring: false, // rubric / AI-verdict based
     defaultAiScoringRequired: true,
@@ -778,6 +779,7 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 90,
     implemented: true,
     aiEligible: true,
+    generatorEligible: false, // NEW: scoring yes, AI taskset generation no
 
     objectiveScoring: true,
     defaultAiScoringRequired: true,

@@ -659,14 +659,37 @@ function buildStudentWorkDescription(task, submission) {
   // Pronunciation / speech recognition
   if (
     type === TASK_TYPES.PRONUNCIATION ||
-    type === TASK_TYPES.SPEECH_RECOGNITION
+    type === TASK_TYPES.SPEECH_RECOGNITION ||
+    type === "pronunciation" ||
+    type === "speech-recognition"
   ) {
+    const targetText =
+      task.targetText ||
+      task.referenceText ||
+      submission?.referenceText ||
+      null;
+
+    const recognizedText =
+      submission?.recognizedText ||
+      submission?.transcript ||
+      submission?.answerText ||
+      null;
+
+    const audioReference = submission?.audioUrl || submission?.audio || null;
+
+    const targetAccent =
+      submission?.targetAccent || task.targetAccent || null;
+
+    const language = submission?.language || task.language || null;
+
     return {
       summary: "Spoken response evaluated for pronunciation / speech.",
       prompt: task.prompt,
-      targetText: task.targetText || null,
-      recognizedText: submission?.recognizedText || submission?.answerText || null,
-      audioReference: submission?.audioUrl || null,
+      targetText,
+      recognizedText,
+      audioReference,
+      targetAccent,
+      language,
     };
   }
 

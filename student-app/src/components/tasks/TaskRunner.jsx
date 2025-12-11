@@ -31,6 +31,8 @@ import DiffDetectiveTask from "./types/DiffDetectiveTask";
 import BrainSparkNotesTask from "./types/BrainSparkNotesTask";
 import HideNSeekTask from "./types/HideNSeekTask";
 import SpeechRecognitionTask from "./types/SpeechRecognitionTask"; // NEW
+import PronunciationTask from "./types/PronunciationTask"; // NEW
+import AIDebateJudgeTask from "./types/AIDebateJudgeTask"; // NEW
 
 function shuffleArray(array) {
   const copy = [...array];
@@ -103,6 +105,12 @@ function normalizeTaskType(raw) {
     case "speech_recognition":
       return TASK_TYPES.SPEECH_RECOGNITION;
 
+    // Pronunciation (NEW)
+    case "pronunciation":
+    case "pronounce":
+    case "speech-practice":
+      return TASK_TYPES.PRONUNCIATION;
+
     // Body break
     case "body-break":
     case "body_break":
@@ -142,6 +150,12 @@ function normalizeTaskType(raw) {
     case "speed-draw":
     case "speed_draw":
       return TASK_TYPES.SPEED_DRAW;
+
+    // AI Debate Judge (NEW)
+    case "ai-debate-judge":
+    case "ai_debate_judge":
+    case "debate-judge":
+      return TASK_TYPES.AI_DEBATE_JUDGE;
 
     default:
       return raw;
@@ -706,6 +720,16 @@ export default function TaskRunner({
         />
       );
       break;
+    case TASK_TYPES.PRONUNCIATION:
+      content = (
+        <PronunciationTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
     case TASK_TYPES.SHORT_ANSWER:
       content = (
         <ShortAnswerTask
@@ -781,6 +805,18 @@ export default function TaskRunner({
           disabled={effectiveDisabled}
           socket={socket}
           teamMembers={t.teamMembers || ["Alice", "Bob", "Charlie", "Dana"]}
+        />
+      );
+      break;
+    case TASK_TYPES.AI_DEBATE_JUDGE:
+      content = (
+        <AIDebateJudgeTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+          roomCode={roomCode}
+          playerTeam={playerTeam}
         />
       );
       break;
