@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import VictoryScreen from "../VictoryScreen";
+import VictoryScreen from "../../VictoryScreen";
 
 const CARD_EMOJIS = [
   "Apple",
