@@ -3,14 +3,20 @@ import React, { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 
 /**
- * Props:
- *   - active: boolean  → whether scanner should run
- *   - onCode: (value: string) => boolean | void
- *        • If it returns true, we stop scanning
- *        • If it returns false, we keep scanning
- *   - onError: (msg: string) => void
+ * Props (backwards compatible):
+ *   - active?: boolean  → whether scanner should run (defaults to true)
+ *   - onCode?: (value: string) => boolean | void
+ *   - onScan?: (value: string) => boolean | void   // legacy alias used by StudentApp
+ *        • If handler returns true, we stop scanning
+ *        • If handler returns false, we keep scanning
+ *   - onError?: (msg: string) => void
  */
-export default function QrScanner({ active, onCode, onError }) {
+export default function QrScanner({
+  active = true,
+  onCode,
+  onScan,
+  onError,
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -22,6 +28,8 @@ export default function QrScanner({ active, onCode, onError }) {
     let animationId = null;
     let stopped = false;
     let isMounted = true;
+
+    const handler = onCode || onScan;
 
     async function start() {
       if (!active || !isMounted) return;
@@ -61,7 +69,9 @@ export default function QrScanner({ active, onCode, onError }) {
 
       const video = videoRef.current;
       if (!video) {
-        console.warn("[QrScanner] videoRef missing after getUserMedia (component changed)");
+        console.warn(
+          "[QrScanner] videoRef missing after getUserMedia (component changed)"
+        );
         if (stream) {
           stream.getTracks().forEach((t) => t.stop());
           stream = null;
@@ -116,7 +126,7 @@ export default function QrScanner({ active, onCode, onError }) {
         const vw = v.videoWidth || 0;
         const vh = v.videoHeight || 0;
 
-        if (vw === 0 || vh === 0) {
+        if (!vw || !vh) {
           animationId = requestAnimationFrame(loop);
           return;
         }
@@ -132,7 +142,12 @@ export default function QrScanner({ active, onCode, onError }) {
           if (qr && qr.data) {
             const rawValue = qr.data;
             console.log("[QrScanner] jsQR detected:", rawValue);
-            const accepted = onCode ? onCode(rawValue) : true;
+
+            let accepted = true;
+            if (handler) {
+              accepted = handler(rawValue);
+            }
+
             if (accepted !== false) {
               stop();
               return;
@@ -158,8 +173,6 @@ export default function QrScanner({ active, onCode, onError }) {
     function stop() {
       stopped = true;
       if (animationId) {
-        // animationId can be from setTimeout wrapper or requestAnimationFrame.
-        // clear both just to be safe.
         try {
           cancelAnimationFrame(animationId);
         } catch (e) {
@@ -181,14 +194,28 @@ export default function QrScanner({ active, onCode, onError }) {
       isMounted = false;
       stop();
     };
-  }, [active, onCode, onError]);
+  }, [active, onCode, onScan, onError]);
 
   // If not active, render nothing
   if (!active) {
     return null;
   }
 
+  const handler = onCode || onScan;
   const showManualOnly = !!cameraError;
+
+  const handleManualSubmit = () => {
+    const trimmed = manualValue.trim();
+    if (!trimmed) return;
+    if (handler) {
+      const accepted = handler(trimmed);
+      if (accepted !== false) {
+        setManualValue("");
+      }
+    } else {
+      setManualValue("");
+    }
+  };
 
   return (
     <div
@@ -213,10 +240,7 @@ export default function QrScanner({ active, onCode, onError }) {
             muted
             playsInline
           />
-          <canvas
-            ref={canvasRef}
-            style={{ display: "none" }}
-          />
+          <canvas ref={canvasRef} style={{ display: "none" }} />
           <p
             style={{
               margin: 0,
@@ -247,38 +271,29 @@ export default function QrScanner({ active, onCode, onError }) {
             type="text"
             value={manualValue}
             onChange={(e) => setManualValue(e.target.value)}
-            placeholder="e.g. https://play.curriculate.net/Classroom/red"
+            placeholder="e.g. RED-01"
             style={{
-              width: "100%",
-              padding: "6px 8px",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              fontSize: "0.95rem",
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              fontSize: "0.9rem",
             }}
           />
           <button
             type="button"
-            onClick={() => {
-              if (!manualValue.trim()) return;
-              const accepted = onCode ? onCode(manualValue.trim()) : true;
-              if (accepted !== false) {
-                setManualValue("");
-              }
-            }}
+            onClick={handleManualSubmit}
             style={{
-              marginTop: 4,
-              alignSelf: "flex-start",
-              padding: "6px 10px",
+              padding: "8px 10px",
               borderRadius: 999,
               border: "none",
-              background: "#3b82f6",
-              color: "#ffffff",
+              background: "#0f766e",
+              color: "#ecfdf5",
               fontSize: "0.9rem",
-              cursor: "pointer",
               fontWeight: 600,
+              cursor: "pointer",
             }}
           >
-            Use this code
+            Submit code
           </button>
         </>
       )}
