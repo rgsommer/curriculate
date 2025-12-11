@@ -283,6 +283,104 @@ function StudentApp() {
       setStatusMessage("Error connecting. Retrying…");
     });
 
+    // ─────────────────────────────────────────────
+    // AUTO-RESUME FROM sessionStorage IF ROOM STILL EXISTS
+    // ─────────────────────────────────────────────
+    socket.on("connect", () => {
+      try {
+        const saved = sessionStorage.getItem("teamSession");
+        if (!saved) return;
+
+        const parsed = JSON.parse(saved);
+        if (!parsed?.roomCode || !parsed?.teamSessionId) return;
+
+        socket.emit(
+          "resume-team-session",
+          {
+            roomCode: parsed.roomCode.toUpperCase(),
+            teamSessionId: parsed.teamSessionId,
+          },
+          (ack) => {
+            if (!ack?.success) {
+              console.warn("Resume failed:", ack?.error);
+
+              try {
+                sessionStorage.removeItem("teamSession");
+              } catch {}
+
+              // FALLBACK → force return to join screen
+              setJoined(false);
+              setRoomCode("");
+              setTeamId(null);
+              setTeamSessionId(null);
+
+              setAssignedStationId(null);
+              setAssignedColor(null);
+              setScannerActive(false);
+              setScannedStationId(null);
+              setScanError(null);
+
+              setCurrentTask(null);
+              setCurrentTaskIndex(null);
+              setTasksetTotalTasks(null);
+              setPostSubmitSecondsLeft(null);
+              setLastTaskResult(null);
+              setShortAnswerReveal(null);
+
+              lastStationIdRef.current = null;
+              roomLocationFromStateRef.current = null;
+
+              setStatusMessage(
+                "That room is no longer active. Enter a new room code to join."
+              );
+
+              return;
+            }
+
+            // SUCCESSFUL RESUME → restore user into room
+            setJoined(true);
+            setRoomCode(parsed.roomCode);
+            setTeamSessionId(parsed.teamSessionId);
+            setTeamId(ack.teamId ?? null);
+
+            if (ack.currentTask) {
+              setCurrentTask(ack.currentTask.task || null);
+              setCurrentTaskIndex(ack.currentTask.taskIndex ?? null);
+              setTasksetTotalTasks(ack.currentTask.totalTasks ?? null);
+
+              const limit = ack.currentTask.timeLimitSeconds || null;
+              if (limit && limit > 0) {
+                const end = Date.now() + limit * 1000;
+                setRemainingMs(end - Date.now());
+              }
+            }
+
+            if (ack.stationId) {
+              const info = normalizeStationId(ack.stationId);
+              setAssignedStationId(info.id);
+              setAssignedColor(info.color || null);
+              lastStationIdRef.current = info.id;
+            }
+
+            const locSlug =
+              ack.locationSlug || roomLocationFromStateRef.current || DEFAULT_LOCATION;
+            setRoomLocation(locSlug);
+            roomLocationFromStateRef.current = locSlug;
+
+            const noiseCfg = ack.noiseConfig || {};
+            setNoiseState((prev) => ({
+              ...prev,
+              enabled: !!noiseCfg.enabled,
+              threshold:
+                typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
+            }));
+          }
+        );
+      } catch (err) {
+        console.warn("Resume session parse error:", err);
+      }
+    });
+
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
