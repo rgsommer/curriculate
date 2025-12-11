@@ -1062,7 +1062,7 @@ function StudentApp() {
     if (!roomCode || !joined || !teamId) return;
 
     socket.emit(
-      "station-scan",
+      "station:scan",
       {
         roomCode: roomCode.trim().toUpperCase(),
         teamId,
