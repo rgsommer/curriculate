@@ -28,6 +28,7 @@ import BrainstormBattleTask from "./types/BrainstormBattleTask";
 import MindMapperTask from "./types/MindMapperTask";
 import SpeedDrawTask from "./types/SpeedDrawTask";
 import DiffDetectiveTask from "./types/DiffDetectiveTask";
+import BrainSparkNotesTask from "./types/BrainSparkNotesTask"; // NEW
 
 function shuffleArray(array) {
   const copy = [...array];
@@ -834,6 +835,15 @@ export default function TaskRunner({
           disabled={effectiveDisabled}
           socket={socket}
           raceStatus={diffRaceStatus}
+        />
+      );
+      break;
+    case TASK_TYPES.BRAIN_SPARK_NOTES:
+      content = (
+        <BrainSparkNotesTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
         />
       );
       break;

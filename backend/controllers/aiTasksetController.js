@@ -150,7 +150,8 @@ export const generateAiTaskset = async (req, res) => {
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
-    const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
+    const duration =
+      Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({
@@ -430,6 +431,17 @@ For "${TASK_TYPES.FLASHCARDS}":
   - Top-level "options" should be an empty array.
   - Top-level "correctAnswer" should be null (each card has its own answer).
 
+For "${TASK_TYPES.JEOPARDY}":
+  - Create a Brain Blitz / Jeopardy-style round made of several fast clues.
+  - Provide a "clues" array where each clue is:
+    {
+      "clue": "Text shown to students",
+      "answer": "Expected student question in 'What is...?' or 'Who was...?' form"
+    }
+  - Aim for 4–8 clues per task; all clues must be tightly tied to the vocabulary list.
+  - Top-level "options" should be an empty array and "correctAnswer" must be null.
+  - The title or prompt can describe the overall round (e.g., "Brain Blitz: Early Explorers").
+
 For "${TASK_TYPES.DRAW_MIME}":
   - Create a single, vivid prompt that invites students to respond with a drawing
     (or act it out, if the teacher chooses).
@@ -450,6 +462,18 @@ For "${TASK_TYPES.MIND_MAPPER}":
   - Do NOT shuffle; the StudentApp will handle the randomization.
   - "options" should be an empty array.
   - "correctAnswer" must be null (scoring is based on matching correctIndex).
+
+For "${TASK_TYPES.BRAIN_SPARK_NOTES}":
+  - Create a single clear prompt that tells students what key idea or question
+    their notes should cover.
+  - Provide a "bullets" array of 3–7 short bullet points that students should
+    copy into their notebook.
+  - Each bullet must be a short, student-friendly sentence or phrase
+    (not a full paragraph).
+  - Do NOT include an "options" array.
+  - "correctAnswer" must be null (these are participation/AI-scored, not right/wrong).
+  - Example bullets:
+    ["Definition of erosion", "Two real-world examples", "Why it matters"].
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
@@ -484,6 +508,9 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     // "cards": [
     //   { "question": "Q1", "answer": "A1" }
     // ]
+
+    // OPTIONAL for Brain Spark Notes:
+    // "bullets": ["Key idea 1", "Key idea 2"]
   },
   ...
 ]
@@ -759,6 +786,73 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
         // StudentApp MindMapperTask expects no "options" for this type
         options = [];
+      } else if (taskType === TASK_TYPES.JEOPARDY) {
+        // Normalise BrainBlitz / Jeopardy tasks: preserve a structured "clues" array
+        const rawClues =
+          (Array.isArray(t.clues) && t.clues.length && t.clues) ||
+          (Array.isArray(t.items) && t.items.length && t.items) ||
+          [];
+
+        const clues = rawClues.map((cl, idx) => {
+          if (!cl || (typeof cl !== "object" && typeof cl !== "string")) {
+            const text = typeof cl === "string" ? cl : `Clue ${idx + 1}`;
+            return { clue: text, answer: "" };
+          }
+
+          if (typeof cl === "string") {
+            return { clue: cl, answer: "" };
+          }
+
+          const clueText =
+            cl.clue ||
+            cl.prompt ||
+            cl.text ||
+            cl.question ||
+            `Clue ${idx + 1}`;
+
+          let answer = cl.answer ?? "";
+          if (typeof answer !== "string") {
+            answer = String(answer || "");
+          }
+
+          return {
+            clue: String(clueText),
+            answer: answer.trim(),
+          };
+        });
+
+        t.clues = clues;
+        // BrainBlitz doesn’t use top-level options
+        options = [];
+      } else if (taskType === TASK_TYPES.BRAIN_SPARK_NOTES) {
+        // Normalize Brain Spark Notes into a bullets array of strings
+        const rawBullets =
+          (Array.isArray(t.bullets) && t.bullets.length && t.bullets) ||
+          (Array.isArray(t.items) && t.items.length && t.items) ||
+          [];
+
+        const bullets = rawBullets
+          .map((b, idx) => {
+            if (typeof b === "string") {
+              return b.trim();
+            }
+            if (b && typeof b === "object") {
+              const text =
+                b.text ||
+                b.prompt ||
+                b.title ||
+                b.note ||
+                b.description ||
+                `Note ${idx + 1}`;
+              return String(text).trim();
+            }
+            return String(b || `Note ${idx + 1}`).trim();
+          })
+          .filter((line) => !!line);
+
+        t.bullets = bullets;
+        // No options for Brain Spark Notes
+        options = [];
       } else {
         // Other types – assume no options by default
         options = Array.isArray(t.options) ? t.options : [];
@@ -829,9 +923,11 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       } else if (
         taskType === TASK_TYPES.SORT ||
         taskType === TASK_TYPES.SEQUENCE ||
-        taskType === TASK_TYPES.MIND_MAPPER
+        taskType === TASK_TYPES.MIND_MAPPER ||
+        taskType === TASK_TYPES.JEOPARDY ||
+        taskType === TASK_TYPES.BRAIN_SPARK_NOTES
       ) {
-        // Sort & Sequence scoring use config; no flat correctAnswer
+        // These rely on richer structures, not a flat correctAnswer
         correctAnswer = null;
       }
 
@@ -977,10 +1073,17 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           modified,
           differences,
         }),
-
         // MindMapper data for Student UI
         ...(taskType === TASK_TYPES.MIND_MAPPER && {
           shuffledItems: t.shuffledItems,
+        }),
+        // BrainBlitz / Jeopardy clues
+        ...(taskType === TASK_TYPES.JEOPARDY && {
+          clues: Array.isArray(t.clues) ? t.clues : [],
+        }),
+        // Brain Spark Notes bullets
+        ...(taskType === TASK_TYPES.BRAIN_SPARK_NOTES && {
+          bullets: Array.isArray(t.bullets) ? t.bullets : [],
         }),
       };
     });

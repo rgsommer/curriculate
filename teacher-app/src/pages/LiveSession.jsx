@@ -557,75 +557,87 @@ export default function LiveSession({ roomCode }) {
     setShowRoomSetup(true);
   };
 
-  // inside LiveSession.jsx
-const handleLaunchQuickTask = () => {
-  if (!roomCode || !taskConfig.prompt?.trim()) return;
+  const handleLaunchQuickTask = () => {
+    if (!roomCode || !taskConfig.prompt?.trim()) return;
 
-  setIsLaunchingQuick(true);
-  setQuickStatus(null);
+    setIsLaunchingQuick(true);
+    setQuickStatus(null);
 
-  const taskToSend = {
-    taskType: taskType || "short-answer",
-    prompt: taskConfig.prompt.trim(),
-    correctAnswer: taskConfig.correctAnswer || null,
-    options:
-      Array.isArray(taskConfig.options) && taskConfig.options.length > 0
-        ? taskConfig.options
-        : undefined,
-    items:
-      Array.isArray(taskConfig.items) && taskConfig.items.length > 0
-        ? taskConfig.items
-        : undefined,
-    points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
-    subject: taskConfig.subject || "Ad-hoc",
-    gradeLevel: taskConfig.gradeLevel || "",
-    clue: taskConfig.clue || undefined,
-    timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
-    reviewPauseSeconds: reviewPauseSeconds || 15,
-    ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
-      original: taskConfig.original || "",
-      modified: taskConfig.modified || "",
-      differences: taskConfig.differences || [],
+    const taskToSend = {
+      taskType: taskType || "short-answer",
+      prompt: taskConfig.prompt.trim(),
+      correctAnswer: taskConfig.correctAnswer || null,
+      options:
+        Array.isArray(taskConfig.options) && taskConfig.options.length > 0
+          ? taskConfig.options
+          : undefined,
+      items:
+        Array.isArray(taskConfig.items) && taskConfig.items.length > 0
+          ? taskConfig.items
+          : undefined,
+      points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
+      subject: taskConfig.subject || "Ad-hoc",
+      gradeLevel: taskConfig.gradeLevel || "",
+      clue: taskConfig.clue || undefined,
+      timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
+      reviewPauseSeconds: reviewPauseSeconds || 15,
+
+      // Diff Detective special fields
+      ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
+        original: taskConfig.original || "",
+        modified: taskConfig.modified || "",
+        differences: taskConfig.differences || [],
       }),
-  };
 
-  // FLASHCARDS: parse bulk input into cards[]
-  if (taskType === TASK_TYPES.FLASHCARDS && quickFlashcardsText.trim()) {
-    const lines = quickFlashcardsText
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+      // Brain Spark Notes: send bullets to students
+      ...(taskType === TASK_TYPES.BRAIN_SPARK_NOTES && {
+        bullets:
+          Array.isArray(taskConfig.bullets) && taskConfig.bullets.length > 0
+            ? taskConfig.bullets
+            : [],
+        // These are not used by the student component
+        correctAnswer: null,
+        options: undefined,
+      }),
+    };
 
-    const cards = lines.map((line, idx) => {
-      const [term, def] = line.split(/\s*[-–—]\s*/); // handles -, – , —
-      return {
-        id: String(idx),
-        question: term || line,
-        answer: def || "",
-      };
+    // FLASHCARDS: parse bulk input into cards[]
+    if (taskType === TASK_TYPES.FLASHCARDS && quickFlashcardsText.trim()) {
+      const lines = quickFlashcardsText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      const cards = lines.map((line, idx) => {
+        const [term, def] = line.split(/\s*[-–—]\s*/); // handles -, – , —
+        return {
+          id: String(idx),
+          question: term || line,
+          answer: def || "",
+        };
+      });
+
+      if (cards.length > 0) {
+        taskToSend.cards = cards;
+      }
+    }
+
+    // 🔴 Important: use teacherLaunchTask, not launch-quick-task
+    socket.emit("teacherLaunchTask", {
+      roomCode: roomCode.toUpperCase(),
+      task: taskToSend,
+      selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
     });
 
-    if (cards.length > 0) {
-      taskToSend.cards = cards;
-    }
-  }
-
-  // 🔴 Important: use teacherLaunchTask, not launch-quick-task
-  socket.emit("teacherLaunchTask", {
-    roomCode: roomCode.toUpperCase(),
-    task: taskToSend,
-    selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
-  });
-
-  // UI reset
-  setLastQuickTask(taskToSend);
-  setTimeout(() => {
-    setIsLaunchingQuick(false);
-    setQuickStatus("Quick task launched!");
-  }, 300);
-  setLastQuickTask(taskToSend);
-  setQuickFlashcardsText("");
-};
+    // UI reset
+    setLastQuickTask(taskToSend);
+    setTimeout(() => {
+      setIsLaunchingQuick(false);
+      setQuickStatus("Quick task launched!");
+    }, 300);
+    setLastQuickTask(taskToSend);
+    setQuickFlashcardsText("");
+  };
 
   const handleLocationOverrideClick = (loc) => {
     setSelectedLocation(loc);
@@ -748,6 +760,21 @@ const handleLaunchQuickTask = () => {
             ? baseTask.differences
             : [],
         });
+
+      // 🟡 Brain Spark Notes special case
+      if (generatedType === TASK_TYPES.BRAIN_SPARK_NOTES) {
+        setTaskConfig({
+          prompt: baseTask.prompt || "",
+          subject: aiSubject || "Ad-hoc",
+          gradeLevel: gradeStr || "",
+          bullets: Array.isArray(baseTask.bullets)
+            ? baseTask.bullets
+            : [],
+        });
+
+        setShowAiGen(false);
+        return;
+      }
 
         setShowAiGen(false);
         return;

@@ -1202,6 +1202,9 @@ function StudentApp() {
   const isRecordAudio =
     currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
 
+  const isBrainSparkNotes =
+    currentTask?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES;
+
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1237,6 +1240,8 @@ function StudentApp() {
     ? "linear-gradient(135deg, #e0f2fe 0%, #f5f3ff 40%, #f9fafb 100%)"
     : isPhoto
     ? "linear-gradient(135deg, #0f172a 0%, #38bdf8 40%, #e0f2fe 100%)"
+    : isBrainSparkNotes
+    ? "linear-gradient(135deg, #fef9c3 0%, #fee2e2 40%, #f9fafb 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
@@ -1282,8 +1287,10 @@ function StudentApp() {
           ? "radial-gradient(circle at top, #020617 0%, #1e293b 30%, #4f46e5 60%, #22c55e 100%)"
           : isPetFeeding
           ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #0ea5e9 70%, #fef9c3 100%)"
+          : isJeopardy
+          ? "radial-gradient(circle at top, #312e81 0%, #4c1d95 35%, #7e22ce 70%, #f97316 100%)"
           : themeShell.pageBg,
-
+  
         color: themeShell.text,
         opacity: noiseState.enabled ? noiseState.brightness : 1,
         transition: "opacity 120ms ease-out",
@@ -1904,7 +1911,7 @@ function StudentApp() {
             className="task-card"
             style={{
               ...baseTaskCardStyle,
-              ...(isMotionMission || isPetFeeding || isRecordAudio
+              ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
                 ? {
                     // Let MotionMissionTask / PetFeeding / RecordAudio own the look
                     background: "transparent",
@@ -1979,7 +1986,7 @@ function StudentApp() {
             {isFlashcardsRace
               ? "Flashcards Race!"
               : isJeopardy
-              ? "Jeopardy clue"
+              ? "Brain Blitz!"
               : isMadDash
               ? "Mad Dash!"
               : isMakeAndSnap
@@ -2008,6 +2015,8 @@ function StudentApp() {
               ? "Record your voice!"
               : isOpenText
               ? "Open response!"
+              : isBrainSparkNotes
+              ? "Spark Notes!"
               : "Your task"}
             </h2>
 
