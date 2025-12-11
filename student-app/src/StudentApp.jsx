@@ -674,7 +674,7 @@ function StudentApp() {
   // Join room + submit handlers
   // ─────────────────────────────────────────────
 
-  const canJoin =
+    const canJoin =
     roomCode.trim().length >= 2 &&
     teamName.trim().length >= 1 &&
     members.some((m) => m.trim().length > 0);
@@ -692,77 +692,91 @@ function StudentApp() {
       members: members.filter((m) => m.trim().length > 0),
     };
 
+    // IMPORTANT: match backend event name
     socket.emit("student:join-room", payload, (response) => {
       setJoiningRoom(false);
-      if (!response || response.error) {
+
+      if (!response || response.error || response.ok === false) {
         setStatusMessage(
-          response?.error || "Could not join. Check the code with your teacher."
+          response?.error ||
+            "Could not join. Check the code with your teacher."
         );
         return;
       }
 
+      const nextTeamId = response.teamId;
+      const nextTeamSessionId = response.teamSessionId || nextTeamId || null;
+
       setJoined(true);
       setStatusMessage("");
-      setTeamId(response.teamId);
-      setTeamSessionId(response.teamSessionId || null);
+      setTeamId(nextTeamId);
+      setTeamSessionId(nextTeamSessionId);
 
-      if (response.currentTask) {
-        setCurrentTask(response.currentTask.task || null);
-        setCurrentTaskIndex(
-          typeof response.currentTask.taskIndex === "number"
-            ? response.currentTask.taskIndex
-            : null
-        );
-        setTasksetTotalTasks(
-          typeof response.currentTask.totalTasks === "number"
-            ? response.currentTask.totalTasks
-            : null
-        );
-
-        const limit = response.currentTask.timeLimitSeconds || null;
-        setTimeLimitSeconds(limit);
-
-        if (limit && limit > 0) {
-          const endTime = Date.now() + limit * 1000;
-          setRemainingMs(endTime - Date.now());
-          if (countdownTimerRef.current) {
-            clearInterval(countdownTimerRef.current);
-          }
-          countdownTimerRef.current = setInterval(() => {
-            setRemainingMs((prev) => {
-              if (!prev || prev <= 1000) {
-                clearInterval(countdownTimerRef.current);
-                return 0;
-              }
-              return prev - 1000;
-            });
-          }, 1000);
-        } else {
-          setRemainingMs(0);
+      // Persist for auto-resume
+      try {
+        if (nextTeamSessionId && payload.roomCode) {
+          sessionStorage.setItem(
+            "teamSession",
+            JSON.stringify({
+              roomCode: payload.roomCode,
+              teamSessionId: nextTeamSessionId,
+            })
+          );
         }
+      } catch (err) {
+        console.warn("Unable to persist teamSession:", err);
       }
 
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
-        lastStationIdRef.current = stationInfo.id;
+      // If the server already gave us a roomState, hydrate station + location
+      const state = response.roomState || null;
+      let assignedInfo = null;
+
+      if (
+        state &&
+        state.teams &&
+        nextTeamId &&
+        state.teams[nextTeamId]
+      ) {
+        const myTeam = state.teams[nextTeamId];
+        const newStationId = myTeam.currentStationId || myTeam.stationId;
+
+        if (newStationId) {
+          assignedInfo = normalizeStationId(newStationId);
+          setAssignedStationId(assignedInfo.id);
+          setAssignedColor(assignedInfo.color || null);
+          lastStationIdRef.current = assignedInfo.id;
+        }
+
+        const loc =
+          myTeam.locationSlug ||
+          state.locationSlug ||
+          roomLocationFromStateRef.current ||
+          DEFAULT_LOCATION;
+        setRoomLocation(loc);
+        roomLocationFromStateRef.current = loc;
       }
 
-      const locSlug =
-        response.locationSlug ||
-        roomLocationFromStateRef.current ||
-        DEFAULT_LOCATION;
-      setRoomLocation(locSlug);
-      roomLocationFromStateRef.current = locSlug;
+      // If this room has stations, scanning should be the next step
+      const hasStations =
+        state &&
+        state.stations &&
+        Object.keys(state.stations).length > 0;
 
-      const noiseCfg = response.noiseConfig || {};
-      setNoiseState((prev) => ({
-        ...prev,
-        enabled: !!noiseCfg.enabled,
-        threshold:
-          typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
-      }));
+      if (hasStations) {
+        setScannedStationId(null);
+        setScannerActive(true);
+
+        const colorLabel = assignedInfo?.color || null;
+
+        setStatusMessage(
+          colorLabel
+            ? `Scan your ${colorLabel} station QR code to finish joining.`
+            : "Scan your station QR code to finish joining."
+        );
+      } else {
+        // Non-station sessions: just wait for teacher
+        setStatusMessage("Joined room. Waiting for your teacher to start a task.");
+      }
     });
   };
 
