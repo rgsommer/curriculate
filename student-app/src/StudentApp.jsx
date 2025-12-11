@@ -692,7 +692,7 @@ function StudentApp() {
       members: members.filter((m) => m.trim().length > 0),
     };
 
-    socket.emit("student-join-room", payload, (response) => {
+    socket.emit("student:join-room", payload, (response) => {
       setJoiningRoom(false);
       if (!response || response.error) {
         setStatusMessage(
