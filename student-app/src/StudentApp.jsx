@@ -1942,13 +1942,23 @@ function StudentApp() {
           </div>
 
           {/* Right: theme toggles + connection + leave-room button */}
-          <div style={{ textAlign: "right", minWidth: 160 }}>
+                  <div style={{ textAlign: "right", minWidth: 140 }}>
+          {/* Top row: theme toggles + join-different-room */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              gap: 6,
+              marginBottom: 4,
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Theme buttons group */}
             <div
               style={{
                 display: "flex",
-                justifyContent: "flex-end",
                 gap: 4,
-                marginBottom: 4,
               }}
             >
               <button
@@ -2016,26 +2026,47 @@ function StudentApp() {
               </button>
             </div>
 
-            <div
+            {/* Join-a-different-room button, same row, all themes */}
+            <button
+              type="button"
+              onClick={handleLeaveRoom}
               style={{
+                borderRadius: 999,
+                padding: "4px 10px",
                 fontSize: "0.75rem",
-                color: connected ? "#bbf7d0" : "#fecaca",
+                fontWeight: 600,
+                border: "1px solid rgba(148,163,184,0.9)",
+                background: "rgba(248,250,252,0.95)",
+                color: "#0f172a",
+                cursor: "pointer",
               }}
             >
-              {connected ? "Connected to server" : "Connecting…"}
-            </div>
+              Join a different room
+            </button>
+          </div>
 
-            {statusMessage && (
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: "0.75rem",
-                  color: "#fee2e2",
-                }}
-              >
-                {statusMessage}
-              </div>
-            )}
+          {/* Connection + status under the buttons */}
+          <div
+            style={{
+              fontSize: "0.75rem",
+              color: connected ? "#bbf7d0" : "#fecaca",
+            }}
+          >
+            {connected ? "Connected to server" : "Connecting…"}
+          </div>
+
+          {statusMessage && (
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: "0.75rem",
+                color: "#fee2e2",
+              }}
+            >
+              {statusMessage}
+            </div>
+          )}
+        </div>
 
             <button
               type="button"
@@ -2056,12 +2087,18 @@ function StudentApp() {
             </button>
           </div>
         </div>
-      </header>
-
+     
       {/* JOIN CARD */}
       {!joined && (
         <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
-          <div className="join-card">
+          <div
+            className="join-card"
+            style={{
+              background: themeShell.cardBg,
+              border: themeShell.cardBorder,
+              color: themeShell.text,
+            }}
+          >
             <h2
               style={{
                 marginTop: 0,
