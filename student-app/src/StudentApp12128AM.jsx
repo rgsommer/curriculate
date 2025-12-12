@@ -691,10 +691,10 @@ export default function StudentApp() {
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
 
-      // Task object itself
+      // The actual task object
       setCurrentTask(payload.task || null);
 
-      // Accept both `taskIndex` (older events) and `index` (task:launch events)
+      // Accept both `taskIndex` (old) and `index` (new `task:launch` payload)
       const idx =
         typeof payload.taskIndex === "number"
           ? payload.taskIndex
@@ -703,12 +703,12 @@ export default function StudentApp() {
           : null;
       setCurrentTaskIndex(idx);
 
-      // Total tasks in the taskset, if provided
+      // Total tasks in the set (if provided)
       setTasksetTotalTasks(
         typeof payload.totalTasks === "number" ? payload.totalTasks : null
       );
 
-      // Time limit support
+      // Time limit
       const limit =
         typeof payload.timeLimitSeconds === "number"
           ? payload.timeLimitSeconds
@@ -738,7 +738,7 @@ export default function StudentApp() {
         }
       }
 
-      // Reset answer UI whenever a new task comes in
+      // Reset answer UI
       setCurrentAnswerDraft("");
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
@@ -872,8 +872,8 @@ export default function StudentApp() {
     };
 
     socket.on("room:state", handleRoomState);
-    socket.on("task:assigned", handleTaskAssigned); // legacy / per-team
-    socket.on("task:launch", handleTaskAssigned);   // taskset + quick tasks
+    socket.on("task:assigned", handleTaskAssigned); // legacy / per-team flows
+    socket.on("task:launch", handleTaskAssigned);   // new launch event
     socket.on("task:scored", handleTaskScored);
     socket.on("noise:update", handleNoiseUpdate);
     socket.on("treat:event", handleTreat);
@@ -892,6 +892,7 @@ export default function StudentApp() {
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
+
   }, [teamId, reviewPauseSeconds, currentTask]);
 
   // ─────────────────────────────────────────────
