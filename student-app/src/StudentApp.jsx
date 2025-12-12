@@ -19,6 +19,18 @@ const COLOR_NAMES = COLORS;
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
+function getReadableTextColor(bg) {
+  // Simple safe default: white for your station palette
+  // If you ever add very light colors, we can switch to dynamic contrast.
+  return "#fff";
+}
+
+function formatScanLabel({ isMultiRoom, locationLabel, color }) {
+  const colorUpper = (color || "").toUpperCase();
+  if (isMultiRoom && locationLabel) return `Scan at ${locationLabel.toUpperCase()} ${colorUpper}`;
+  return `Scan at ${colorUpper}`;
+}
+
 // Normalize a human-readable location into a slug like "room-12"
 function normalizeLocationSlug(raw) {
   if (!raw) return "";
@@ -752,13 +764,15 @@ function StudentApp() {
   }
 
   setScannedStationId(norm.id);
+  const roomCode = (roomState?.roomCode || "").trim().toUpperCase();
 
   socket.emit(
     "station:scan",
     {
       roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      stationId: norm.id,
+      teamId: roomState?.teamId,            // if you track it
+      stationColor: payload.stationColor,   // from QR
+      location: payload.location,           // from QR if present
     },
     (response) => {
       if (!response || response.error) {
@@ -1867,7 +1881,41 @@ function StudentApp() {
                 )}
               </div>
             )}
+const scanBg = expectedColor || "black";
+const scanText = formatScanLabel({
+  isMultiRoom,
+  locationLabel: expectedLocationLabel, // e.g. "Hallway"
+  color: expectedColor,                 // e.g. "red"
+});
 
+return (
+  <div
+    style={{
+      background: scanBg,
+      color: getReadableTextColor(scanBg),
+      borderRadius: 18,
+      padding: 14,
+      boxShadow: "0 10px 25px rgba(0,0,0,0.20)",
+      border: "2px solid rgba(255,255,255,0.35)",
+    }}
+  >
+    <div style={{ textAlign: "center", padding: "8px 8px 12px" }}>
+      <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: 0.5 }}>
+        {scanText}
+      </div>
+      <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
+        Hold the QR code inside the frame
+      </div>
+    </div>
+
+    <div
+      style={{
+        background: "rgba(0,0,0,0.20)",
+        borderRadius: 14,
+        overflow: "hidden",
+        border: "2px solid rgba(255,255,255,0.45)",
+      }}
+      >
           {/* QR SCANNER */}
           {scannerActive && (
             <section className="scanner-shell">
@@ -1877,7 +1925,9 @@ function StudentApp() {
               )}
             </section>
           )}
-
+      </div>
+        </div>
+      );
           {/* TASK CARD */}
           {joined && currentTask && !mustScan && (
             <section
@@ -2018,28 +2068,51 @@ function StudentApp() {
                 marginTop: 10,
                 padding: 16,
                 borderRadius: 18,
-                background: "rgba(15,23,42,0.9)",
-                border: "1px solid rgba(248,250,252,0.8)",
-                color: "#fefce8",
+                background: expectedColor || "black",   // ✅ station colour
+                border: "2px solid rgba(255,255,255,0.55)",
+                color: "#fff",
                 textAlign: "center",
-                boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
+                boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
               }}
             >
-              <div style={{ fontSize: "1rem", fontWeight: 700 }}>
-                🚪 Scan the correct station first
+              <div style={{ fontSize: "1.4rem", fontWeight: 900, letterSpacing: 0.5 }}>
+                {isMultiRoom && expectedLocationLabel
+                  ? `Scan at ${expectedLocationLabel.toUpperCase()} ${expectedColor?.toUpperCase()}`
+                  : `Scan at ${expectedColor?.toUpperCase()}`}
               </div>
+
               <p
                 style={{
                   marginTop: 6,
-                  fontSize: "0.9rem",
-                  marginBottom: 10,
+                  fontSize: "0.95rem",
+                  marginBottom: 12,
+                  opacity: 0.95,
                 }}
               >
-                Your teacher has locked this task to a specific station. Scan
-                the station&apos;s QR code to unlock it.
+                This task is locked to a station. Scan the station QR code to unlock it.
               </p>
+
+              <div
+                style={{
+                  background: "rgba(0,0,0,0.25)",
+                  borderRadius: 14,
+                  overflow: "hidden",
+                  border: "2px solid rgba(255,255,255,0.55)",
+                }}
+              >
+                {scannerActive && (
+                  <section className="scanner-shell">
+                    <QrScanner onScan={handleScan} onError={setScanError} />
+                    {scanError && (
+                      <div className="scan-error" style={{ padding: 10 }}>
+                        ⚠ {scanError}
+                      </div>
+                    )}
+                  </section>
+                )}
+              </div>
             </section>
-          )}
+)}
         </main>
       )}
 

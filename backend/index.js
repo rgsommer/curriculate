@@ -1039,21 +1039,27 @@ io.on("connection", (socket) => {
   });
 
   // Student scans station – unified handler for legacy + new flow
+  const normalizeRoomCode = (c) => (c || "").trim().toUpperCase();
+
   const handleStationScan = (payload = {}, ack) => {
     console.log("station:scan received:", payload);
 
     const { roomCode, teamId, stationId, locationSlug } = payload || {};
-    const code = (roomCode || "").toUpperCase();
+    const code = normalizeRoomCode(roomCode);
 
-    if (!code || !teamId || !rooms[code]?.teams?.[teamId]) {
-      console.error("Invalid scan:", { code, teamId });
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Invalid session" });
-      }
+    if (!code || !teamId) {
+      console.error("Invalid scan (missing code/teamId):", { code, teamId });
+      if (typeof ack === "function") ack({ ok: false, error: "Invalid session" });
       return;
     }
 
     const room = rooms[code];
+    if (!room || !room.teams?.[teamId]) {
+      console.error("Invalid scan (no room or team):", { code, teamId });
+      if (typeof ack === "function") ack({ ok: false, error: "Invalid session" });
+      return;
+    }
+
     const team = room.teams[teamId];
 
     // Helper: normalize a location slug (QR codes may include raw "214", "Classroom", etc.)
@@ -1089,6 +1095,10 @@ io.on("connection", (socket) => {
         "station-2": "blue",
         "station-3": "green",
         "station-4": "yellow",
+        "station-5": "purple",
+        "station-6": "orange",
+        "station-7": "teal",
+        "station-8": "pink",
       };
 
       const parts = String(stationId || "").split("-");
@@ -1097,11 +1107,7 @@ io.on("connection", (socket) => {
 
       const expectedRaw = String(expectedStation || "").toLowerCase().trim();
       const expectsStationId = expectedRaw.startsWith("station-");
-      const expectsColour =
-        expectedRaw === "red" ||
-        expectedRaw === "blue" ||
-        expectedRaw === "green" ||
-        expectedRaw === "yellow";
+      const expectsColour = Object.values(stationColourMap).includes(expectedRaw);
 
       const stationOk = expectsStationId
         ? scannedStation === expectedRaw
@@ -1110,9 +1116,7 @@ io.on("connection", (socket) => {
         : scannedStation === expectedRaw;
 
       if (!stationOk) {
-        if (typeof ack === "function") {
-          ack({ ok: false, error: "Wrong station colour." });
-        }
+        if (typeof ack === "function") ack({ ok: false, error: "Wrong station colour." });
         return;
       }
     }
@@ -1124,14 +1128,20 @@ io.on("connection", (socket) => {
 
       if (expectedLoc && scannedLoc && expectedLoc !== scannedLoc) {
         // If the colour is correct but location is wrong, guide them clearly.
-        // (Matches your prior UX: “Go to LOCATION COLOUR”.)
-        const stationColourMap = {
-          "station-1": "RED",
-          "station-2": "BLUE",
-          "station-3": "GREEN",
-          "station-4": "YELLOW",
-        };
-        const colourLabel = stationColourMap[expectedStation] || "your station";
+        const colourLabel = (() => {
+          const map = {
+            "station-1": "RED",
+            "station-2": "BLUE",
+            "station-3": "GREEN",
+            "station-4": "YELLOW",
+            "station-5": "PURPLE",
+            "station-6": "ORANGE",
+            "station-7": "TEAL",
+            "station-8": "PINK",
+          };
+          return map[String(expectedStation)] || "your station";
+        })();
+
         const locLabel = String(team.locationSlug || room.locationCode || expectedLoc);
 
         if (typeof ack === "function") {
@@ -1151,14 +1161,12 @@ io.on("connection", (socket) => {
           : -1;
 
       if (queuedIndex >= 0) {
-        // sendTaskToTeam will also update team.taskIndex and handle "session complete"
         sendTaskToTeam(room, teamId, queuedIndex);
-        // Clear the queue so we don't re-send on the next scan.
         delete team.nextTaskIndex;
       }
     }
 
-    // Optional: special "scan-and-confirm" task type which awards points just for scanning the correct station.
+    // Optional: scan-and-confirm awards points just for correct scan
     let currentTask = {};
     if (room.taskset && Array.isArray(room.taskset.tasks)) {
       const idx =
@@ -1174,9 +1182,7 @@ io.on("connection", (socket) => {
       updateTeamScore(room, teamId, currentTask.points || 10);
     }
 
-    if (typeof ack === "function") {
-      ack({ ok: true, message: "Correct station!" });
-    }
+    if (typeof ack === "function") ack({ ok: true, message: "Correct station!" });
   };
 
   socket.on("station:scan", handleStationScan);
