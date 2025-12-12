@@ -14,6 +14,7 @@ console.log("STUDENT BUILD MARKER v2025-12-12-AB, API_BASE_URL:", API_BASE_URL);
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
 // ---------------------------------------------------------------------
+const COLOR_NAMES = COLORS;
 
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
