@@ -27,7 +27,7 @@ import {
 import authRoutes from "./routes/auth.js";
 import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
-import { COLORS } from "@shared/colors.js";
+import { COLORS } from "../shared/colors.js";
 
 const app = express();
 const server = http.createServer(app);
