@@ -14,122 +14,72 @@ console.log("STUDENT BUILD MARKER v2025-12-02-A, API_BASE_URL:", API_BASE_URL);
 // Station colour helpers – numeric ids (station-1, station-2…)
 // ---------------------------------------------------------------------
 
-const COLOR_NAMES = [
-  "red",
-  "blue",
-  "green",
-  "yellow",
-  "purple",
-  "orange",
-  "teal",
-  "pink",
-];
+// Map station id → colour name
+const STATION_COLOURS = {
+  "station-1": "red",
+  "station-2": "blue",
+  "station-3": "green",
+  "station-4": "yellow",
+  "station-5": "purple",
+  "station-6": "orange",
+  "station-7": "teal",
+  "station-8": "pink",
+};
 
-// For now, LiveSession-launched tasks are assumed to use "Classroom"
-const DEFAULT_LOCATION = "Classroom";
+// Reverse map colour → station id hint (for text only)
+const COLOUR_TO_LABEL = {
+  red: "Red",
+  blue: "Blue",
+  green: "Green",
+  yellow: "Yellow",
+  purple: "Purple",
+  orange: "Orange",
+  teal: "Teal",
+  pink: "Pink",
+};
 
-// Normalize a human-readable location into a slug like "room-12"
-function normalizeLocationSlug(raw) {
-  if (!raw) return "";
-  return String(raw)
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-}
-
+// Normalize station id so we can safely compare / display
 function normalizeStationId(raw) {
-  if (!raw) {
-    return { id: null, color: null, label: "Not assigned yet" };
+  if (!raw || typeof raw !== "string") {
+    return { id: null, color: null };
+  }
+  const trimmed = raw.trim();
+
+  // Already a short id (station-1, etc.)
+  if (trimmed.startsWith("station-")) {
+    const color = STATION_COLOURS[trimmed] || null;
+    return { id: trimmed, color };
   }
 
-  const s = String(raw).trim();
-  let lower = s.toLowerCase();
+  // QR may contain location + colour, or numeric, etc.
+  const parts = trimmed.split("/");
+  const last = parts[parts.length - 1] || "";
+  const maybeColour = last.toLowerCase();
 
-  // Case 1: full numeric id: "station-1", "station-2", ...
-  let m = /^station-(\d+)$/.exec(lower);
-  if (m) {
-    const idx = parseInt(m[1], 10) - 1;
-    const color = COLOR_NAMES[idx] || null;
-    return {
-      id: `station-${m[1]}`,
-      color,
-      label: color
-        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
-        : `Station-${m[1]}`,
-    };
+  if (COLOUR_TO_LABEL[maybeColour]) {
+    // Map colour to a canonical station id if possible
+    const candidate = Object.entries(STATION_COLOURS).find(
+      ([, c]) => c === maybeColour
+    );
+    if (candidate) {
+      return { id: candidate[0], color: maybeColour };
+    }
+    return { id: trimmed, color: maybeColour };
   }
 
-  // Case 2: numeric only: "1", "2", ...
-  m = /^(\d+)$/.exec(lower);
-  if (m) {
-    const idx = parseInt(m[1], 10) - 1;
-    const color = COLOR_NAMES[idx] || null;
-    return {
-      id: `station-${m[1]}`,
-      color,
-      label: color
-        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
-        : `Station-${m[1]}`,
-    };
-  }
-
-  // Case 3: colour name: "red", "blue", ...
-  const colourIdx = COLOR_NAMES.indexOf(lower);
-  if (colourIdx >= 0) {
-    return {
-      id: `station-${colourIdx + 1}`,
-      color: lower,
-      label: `Station-${lower[0].toUpperCase()}${lower.slice(1)}`,
-    };
-  }
-
-  // Case 4: "station-red", "station-blue", ...
-  m = /^station-(\w+)$/.exec(lower);
-  if (m && COLOR_NAMES.includes(m[1])) {
-    const colourIdx2 = COLOR_NAMES.indexOf(m[1]) + 1;
-    return {
-      id: `station-${colourIdx2}`,
-      color: m[1],
-      label: `Station-${m[1][0].toUpperCase()}${m[1].slice(1)}`,
-    };
-  }
-
-  // Default fallback
-  return { id: s, color: null, label: s.toUpperCase() };
+  // Fallback: treat as opaque id, try to infer colour from lookup
+  const color = STATION_COLOURS[trimmed] || null;
+  return { id: trimmed, color };
 }
 
-function getStationBubbleStyles(colorName) {
-  // Default pale yellow & dark text when no station colour yet
-  if (!colorName) {
-    return {
-      background: "#fef9c3",
-      color: "#111827",
-    };
-  }
+// Normalize location slug
+const DEFAULT_LOCATION = "classroom";
 
-  const COLOR_MAP = {
-    red: "#ef4444",
-    blue: "#3b82f6",
-    green: "#22c55e",
-    yellow: "#eab308",
-    purple: "#a855f7",
-    orange: "#f97316",
-    teal: "#14b8a6",
-    pink: "#ec4899",
-  };
-
-  const bg = COLOR_MAP[colorName] || "#fef9c3";
-
-  // Light-ish colours → dark text; dark colours → white text
-  const lightColours = ["yellow", "orange", "teal", "pink"];
-  const isLight = lightColours.includes(colorName);
-
-  return {
-    background: bg,
-    color: isLight ? "#111827" : "#ffffff",
-  };
+function normalizeLocationSlug(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  return raw.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
-// ---------------------------------------------------------------------
 // Shared socket instance – same host as backend
 // ---------------------------------------------------------------------
 const socket = io(API_BASE_URL, {
@@ -144,84 +94,81 @@ const socket = io(API_BASE_URL, {
 // Utility helpers
 // ---------------------------------------------------------------------
 
-function getThemeShell(uiTheme) {
-  switch (uiTheme) {
-    case "bold":
-      return {
-        pageBg: "radial-gradient(circle at top, #0f172a, #020617)",
-        cardBg: "rgba(15,23,42,0.95)",
-        cardBorder: "1px solid rgba(148,163,184,0.5)",
-        text: "#e5e7eb",
-      };
-    case "minimal":
-      return {
-        pageBg: "#f3f4f6",
-        cardBg: "#ffffff",
-        cardBorder: "1px solid #e5e7eb",
-        text: "#111827",
-      };
-    default: // "modern" / Theme 1
-      return {
-        pageBg: "linear-gradient(135deg, #0ea5e9, #6366f1)",
-        cardBg: "#ffffff",
-        cardBorder: "1px solid rgba(148,163,184,0.6)",
-        text: "#0f172a",
-      };
-  }
-}
-
-function formatRemainingMs(ms) {
-  if (!ms || ms <= 0) return "00:00";
+function formatMs(ms) {
+  if (ms == null) return "";
+  if (ms <= 0) return "0:00";
   const totalSeconds = Math.ceil(ms / 1000);
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function buildAnswerReview(task) {
+  if (!task || !task.type) return null;
+
+  if (task.type === TASK_TYPES.MULTIPLE_CHOICE && task.options) {
+    const correctIndex = task.correctIndex;
+    if (
+      typeof correctIndex === "number" &&
+      task.options[correctIndex] != null
+    ) {
+      return {
+        label: "Correct answer",
+        value: task.options[correctIndex],
+      };
+    }
+  }
+
+  if (task.type === TASK_TYPES.TRUE_FALSE) {
+    if (typeof task.correct === "boolean") {
+      return {
+        label: "Correct answer",
+        value: task.correct ? "True" : "False",
+      };
+    }
+  }
+
+  if (task.type === TASK_TYPES.SHORT_ANSWER && task.rubric) {
+    return {
+      label: "Sample high-quality answer",
+      value: task.rubric,
+    };
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------
-// Main component
+// Main Student App
 // ---------------------------------------------------------------------
-
-function StudentApp() {
-  console.log("STUDENTAPP COMPONENT RENDERED — CLEAN VERSION");
-
-  // Theme selector (must be inside component)
-  const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
-  const themeShell = getThemeShell(uiTheme);
-
+export default function StudentApp() {
+  // Connection + room status
   const [connected, setConnected] = useState(false);
+  const [roomCode, setRoomCode] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [members, setMembers] = useState(["", "", ""]);
+  const [teamId, setTeamId] = useState(null);
+  const [teamSessionId, setTeamSessionId] = useState(null);
   const [joined, setJoined] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const [roomCode, setRoomCode] = useState("");
-  const [teamName, setTeamName] = useState("");
-  const [members, setMembers] = useState(["", "", ""]);
+  // UI theme – "modern" | "bold" | "minimal"
+  const [uiTheme, setUiTheme] = useState("modern");
 
-  // Collaboration
-  const [partnerAnswer, setPartnerAnswer] = useState(null);
-  const [showPartnerReply, setShowPartnerReply] = useState(false);
-
-  // Persistent identifiers
-  const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
-  const [teamSessionId, setTeamSessionId] = useState(null);
-  const lastStationIdRef = useRef(null);
-
-  // Station + scanner state
+  // Station + scanning state
   const [assignedStationId, setAssignedStationId] = useState(null);
   const [assignedColor, setAssignedColor] = useState(null);
   const [scannedStationId, setScannedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
 
-  // Task + timer state
+  // Task + timer
   const [currentTask, setCurrentTask] = useState(null);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
   const [tasksetTotalTasks, setTasksetTotalTasks] = useState(null);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(null);
-  const [remainingMs, setRemainingMs] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-  const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
+  const [remainingMs, setRemainingMs] = useState(null);
 
   // Noise + treats
   const [noiseState, setNoiseState] = useState({
@@ -252,479 +199,154 @@ function StudentApp() {
   const [roomLocation, setRoomLocation] = useState(DEFAULT_LOCATION);
   const roomLocationFromStateRef = useRef(DEFAULT_LOCATION);
 
+  // For station-change detection
+  const lastStationIdRef = useRef(null);
+
+  // Student's current answer draft
+  const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
+
+  // Collaboration overlays
+  const [partnerAnswer, setPartnerAnswer] = useState(null);
+  const [showPartnerReply, setShowPartnerReply] = useState(false);
+
+  // Timers
+  const countdownTimerRef = useRef(null);
+  const postSubmitTimerRef = useRef(null);
+
   // Audio
   const [audioContext, setAudioContext] = useState(null);
   const sndAlert = useRef(null);
   const sndTreat = useRef(null);
 
-  // Timer refs
-  const countdownTimerRef = useRef(null);
-  const postSubmitTimerRef = useRef(null);
+  // Collab overlay dismissal
+  const [showCorrectAnswerOverlay, setShowCorrectAnswerOverlay] =
+    useState(false);
+
+  // Join button gating
+  const canJoin =
+    roomCode.trim().length >= 2 &&
+    teamName.trim().length >= 1 &&
+    members.some((m) => m.trim().length > 0);
 
   // ─────────────────────────────────────────────
-  // Socket connect / disconnect + auto-resume
+  // EFFECT: socket connection lifecycle
   // ─────────────────────────────────────────────
-
   useEffect(() => {
+    console.log("STUDENT: Mounting StudentApp, connecting socket…");
+
     const handleConnect = () => {
-      console.log("SOCKET: Connected", socket.id);
+      console.log("STUDENT: socket connected", socket.id);
       setConnected(true);
 
-      // Try to resume from sessionStorage
+      // Try to resume existing team session if present
       try {
-        const stored = sessionStorage.getItem("teamSession");
-        if (!stored) return;
-
-        const parsed = JSON.parse(stored);
-        if (!parsed.roomCode || !parsed.teamSessionId) return;
-
-        console.log("Attempting resume-team-session with", parsed);
-        socket.emit(
-          "resume-team-session",
-          {
-            roomCode: parsed.roomCode.toUpperCase(),
-            teamSessionId: parsed.teamSessionId,
-          },
-          (ack) => {
-            console.log("resume-team-session ack:", ack);
-            if (!ack?.success) {
-              console.warn("Resume failed:", ack?.error);
-              sessionStorage.removeItem("teamSession");
-              return;
-            }
-
-            // Fixed-station / multi-room + location from room state
-            setEnforceLocation(!!ack.roomState?.enforceLocation);
-            if (ack.roomState?.locationCode) {
-              setRoomLocation(ack.roomState.locationCode);
-              roomLocationFromStateRef.current =
-                ack.roomState.locationCode;
-            }
-
+        const saved = sessionStorage.getItem("teamSession");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.roomCode && parsed.teamId) {
+            console.log("STUDENT: Resuming previous teamSession:", parsed);
+            setRoomCode(parsed.roomCode);
+            setTeamId(parsed.teamId);
+            setTeamSessionId(parsed.teamSessionId || null);
+            setTeamName(parsed.teamName || "");
             setJoined(true);
-            setRoomCode(parsed.roomCode.toUpperCase());
-            setTeamId(ack.teamId);
-            setTeamSessionId(parsed.teamSessionId);
-
-            const myTeam = ack.roomState?.teams?.[ack.teamId] || null;
-
-            if (myTeam?.currentStationId) {
-              const norm = normalizeStationId(myTeam.currentStationId);
-              setAssignedStationId(myTeam.currentStationId);
-              setAssignedColor(norm.color || null);
-              setScannedStationId(null);
-              setScannerActive(true);
-
-              // Seed lastStationId so next room:state doesn't force a fake "new" station
-              lastStationIdRef.current = myTeam.currentStationId;
-
-              const colourLabel = norm.color
-                ? ` ${norm.color.toUpperCase()}`
-                : "";
-              setStatusMessage(
-                `Scan your${colourLabel} station to get started.`
-              );
-            } else {
-              lastStationIdRef.current = null;
-              setStatusMessage(
-                "Waiting for your teacher to assign your station."
-              );
-              setScannerActive(false);
-            }
           }
-        );
+        }
       } catch (err) {
-        console.warn(
-          "Error reading teamSession from sessionStorage:",
-          err
-        );
+        console.warn("STUDENT: Unable to parse stored teamSession:", err);
       }
     };
 
-    const handleDisconnect = () => {
-      console.log("SOCKET: Disconnected");
+    const handleDisconnect = (reason) => {
+      console.log("STUDENT: socket disconnected", reason);
       setConnected(false);
     };
 
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
 
-    socket.on("connect_error", (err) =>
-      console.log("SOCKET: Connect error:", err.message)
-    );
-
     return () => {
+      console.log("STUDENT: Unmounting StudentApp, disconnecting socket…");
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
-      socket.off("connect_error");
+      socket.disconnect();
     };
   }, []);
 
   // ─────────────────────────────────────────────
-  // Server event listeners – room, tasks, noise, treats, scoring
+  // Clean up timers on unmount
   // ─────────────────────────────────────────────
-
   useEffect(() => {
-    if (!teamId) return;
-
-    // Room / station state updates
-    const handleRoomState = (state) => {
-      if (!state || !teamId) return;
-      const myTeam = state.teams?.[teamId];
-      if (!myTeam) return;
-
-      // 🔢 Update running total score from room-wide scores map
-      if (state.scores && typeof state.scores[teamId] === "number") {
-        setScoreTotal(state.scores[teamId]);
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
       }
-
-      const newStationId = myTeam.currentStationId || null;
-      if (!newStationId) return;
-
-      const isNewStation = lastStationIdRef.current !== newStationId;
-      const norm = normalizeStationId(newStationId);
-
-      // Keep these in sync for UI
-      setAssignedStationId(newStationId);
-      setAssignedColor(norm.color ? norm.color : null);
-
-      // Only force a re-scan when the station actually CHANGES
-      if (isNewStation) {
-        lastStationIdRef.current = newStationId;
-
-        setScannedStationId(null);
-        setScannerActive(true);
-
-        const colourLabel = norm.color
-          ? norm.color.charAt(0).toUpperCase() + norm.color.slice(1)
-          : "your";
-        setStatusMessage(`Scan your ${colourLabel} station.`);
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
       }
     };
+  }, []);
 
-    // Last-task result for this team (score + correctness)
-    const handleTaskSubmission = (submission) => {
-      if (!submission || !teamId) return;
+  // ─────────────────────────────────────────────
+  // Audio setup (alert + treat sounds)
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    const alertAudio = new Audio(
+      "https://cdn.pixabay.com/download/audio/2021/08/04/audio_6e735e9f37.mp3?filename=ding-36029.mp3"
+    );
+    const treatAudio = new Audio(
+      "https://cdn.pixabay.com/download/audio/2021/08/09/audio_e6ff0edb82.mp3?filename=correct-2-46134.mp3"
+    );
+    sndAlert.current = alertAudio;
+    sndTreat.current = treatAudio;
+  }, []);
 
-      // Ignore other rooms
-      if (
-        submission.roomCode &&
-        roomCode &&
-        submission.roomCode.toUpperCase() !==
-          roomCode.trim().toUpperCase()
-      ) {
+  function unlockAudioForBrowser() {
+    try {
+      if (!audioContext) {
+        const AC =
+          window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        const ctx = new AC();
+        setAudioContext(ctx);
+        if (ctx.state === "suspended") {
+          ctx.resume();
+        }
         return;
       }
 
-      // Only care about this team
-      if (submission.teamId !== teamId) return;
+      if (audioContext.state === "suspended") {
+        audioContext.resume();
+      }
+    } catch (err) {
+      console.warn("Could not unlock audio context:", err);
+    }
+  }
 
-      setLastTaskResult({
-        points:
-          typeof submission.points === "number" ? submission.points : 0,
-        correct: submission.correct,
-        answerText: submission.answerText || "",
-        submittedAt: submission.submittedAt || Date.now(),
-        aiScore: submission.aiScore || null,
-      });
-    };
-
-    socket.on("room:state", handleRoomState);
-    socket.on("roomState", handleRoomState);
-    socket.on("taskSubmission", handleTaskSubmission);
-
-    // Task launches from teacher / engine
-    socket.on(
-      "task:launch",
-      ({ index, task, timeLimitSeconds, totalTasks, tasksetSize, taskCount }) => {
-        console.log("SOCKET: task:launch", {
-          index,
-          task,
-          timeLimitSeconds,
-          totalTasks,
-        });
-
-        // Cancel any post-submit countdown from the previous task
-        if (postSubmitTimerRef.current) {
-          clearInterval(postSubmitTimerRef.current);
-          postSubmitTimerRef.current = null;
-        }
-        setTaskLocked(false);
-        setPostSubmitSecondsLeft(null);
-
-        // Reset collaboration state for the new task
-        setPartnerAnswer(null);
-        setShowPartnerReply(false);
-
-        setCurrentAnswerDraft("");
-        setScanError(null);
-
-        // Just set the task – do NOT touch scan state here.
-        setCurrentTask(task || null);
-        setCurrentTaskIndex(
-          typeof index === "number" && index >= 0 ? index : null
+  const tryPlayAlertSound = () => {
+    if (sndAlert.current) {
+      sndAlert.current.volume = 0.9;
+      sndAlert.current
+        .play()
+        .catch((err) =>
+          console.warn("Failed to play alert sound:", err)
         );
-
-        // Try to capture total tasks in the taskset
-        const explicitTotal =
-          typeof totalTasks === "number" && totalTasks > 0
-            ? totalTasks
-            : typeof tasksetSize === "number" && tasksetSize > 0
-            ? tasksetSize
-            : typeof taskCount === "number" && taskCount > 0
-            ? taskCount
-            : null;
-
-        if (explicitTotal) {
-          setTasksetTotalTasks(explicitTotal);
-        }
-
-        // Teacher-controlled review pause (if provided on the task)
-        if (
-          task &&
-          typeof task.reviewPauseSeconds === "number" &&
-          task.reviewPauseSeconds >= 5 &&
-          task.reviewPauseSeconds <= 60
-        ) {
-          setReviewPauseSeconds(task.reviewPauseSeconds);
-        } else {
-          setReviewPauseSeconds(15);
-        }
-
-        if (sndAlert.current) {
-          sndAlert.current.play().catch(() => {});
-        }
-
-        if (
-          typeof timeLimitSeconds === "number" &&
-          timeLimitSeconds > 0
-        ) {
-          setTimeLimitSeconds(timeLimitSeconds);
-        } else {
-          setTimeLimitSeconds(null);
-          setRemainingMs(0);
-        }
-      }
-    );
-
-    // Session complete from server
-    socket.on("session:complete", () => {
-      console.log("SOCKET: session:complete");
-      setCurrentTask(null);
-      setCurrentTaskIndex(null);
-      setTasksetTotalTasks(null);
-      setScannerActive(false);
-      setStatusMessage("Session complete! Please wait for your teacher.");
-      try {
-        sessionStorage.removeItem("teamSession");
-      } catch {
-        // ignore
-      }
-    });
-
-    // Session ended via REST / teacher
-    socket.on("session-ended", () => {
-      console.log("SOCKET: session-ended");
-      setCurrentTask(null);
-      setCurrentTaskIndex(null);
-      setTasksetTotalTasks(null);
-      setJoined(false);
-      setScannerActive(false);
-      setAssignedStationId(null);
-      setAssignedColor(null);
-      setStatusMessage("This session has ended. Thanks for playing!");
-      try {
-        sessionStorage.removeItem("teamSession");
-      } catch {
-        // ignore
-      }
-      alert("This session has ended. Thanks for playing!");
-    });
-
-    // Noise state from backend
-    socket.on("session:noiseLevel", (payload) => {
-      if (!payload) return;
-      setNoiseState({
-        enabled: !!payload.enabled,
-        threshold: payload.threshold ?? 0,
-        level: payload.level ?? 0,
-        brightness: payload.brightness ?? 1,
-      });
-    });
-
-    // Random treat assigned to this team
-    socket.on("student:treatAssigned", (payload) => {
-      console.log("SOCKET: student:treatAssigned", payload);
-      setTreatMessage(
-        payload?.message || "See your teacher for a treat!"
-      );
-      if (sndTreat.current) {
-        sndTreat.current.play().catch(() => {});
-      }
-    });
-
-    return () => {
-      socket.off("room:state", handleRoomState);
-      socket.off("roomState", handleRoomState);
-      socket.off("taskSubmission", handleTaskSubmission);
-      socket.off("task:launch");
-      socket.off("session:complete");
-      socket.off("session-ended");
-      socket.off("session:noiseLevel");
-      socket.off("student:treatAssigned");
-    };
-  }, [teamId, roomCode]);
-
-  // ─────────────────────────────────────────────
-  // Timer effect for task time limits
-  // ─────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!timeLimitSeconds || timeLimitSeconds <= 0) {
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-      setRemainingMs(0);
-      return;
     }
+  };
 
-    const totalMs = timeLimitSeconds * 1000;
-    const start = Date.now();
-    setRemainingMs(totalMs);
-
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
+  const tryPlayTreatSound = () => {
+    if (sndTreat.current) {
+      sndTreat.current.volume = 0.9;
+      sndTreat.current
+        .play()
+        .catch((err) =>
+          console.warn("Failed to play treat sound:", err)
+        );
     }
-
-    countdownTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - start;
-      const remaining = totalMs - elapsed;
-      setRemainingMs(remaining > 0 ? remaining : 0);
-      if (remaining <= 0) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-    }, 250);
-
-    return () => {
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-    };
-  }, [timeLimitSeconds]);
-
-  // ─────────────────────────────────────────────
-  // Toast for positive-point submissions
-  // ─────────────────────────────────────────────
-
-  useEffect(() => {
-    if (
-      !lastTaskResult ||
-      typeof lastTaskResult.points !== "number" ||
-      lastTaskResult.points <= 0
-    ) {
-      return;
-    }
-
-    const id = lastTaskResult.submittedAt || Date.now();
-    const toast = { id, points: lastTaskResult.points };
-    setPointToast(toast);
-
-    const timer = setTimeout(() => {
-      setPointToast((current) =>
-        current && current.id === id ? null : current
-      );
-    }, 1800);
-
-    return () => clearTimeout(timer);
-  }, [lastTaskResult]);
-
-  // Confetti burst on "perfect score"
-  useEffect(() => {
-    if (!lastTaskResult) return;
-
-    const { points, correct, aiScore } = lastTaskResult;
-
-    let isPerfect = false;
-
-    // Prefer rich aiScore when available (multi-item, etc.)
-    if (
-      aiScore &&
-      typeof aiScore.totalScore === "number" &&
-      typeof aiScore.maxPoints === "number" &&
-      aiScore.maxPoints > 0
-    ) {
-      isPerfect = aiScore.totalScore >= aiScore.maxPoints;
-    } else if (correct === true && typeof points === "number" && points > 0) {
-      // Fallback: single objective question (full credit or nothing)
-      isPerfect = true;
-    }
-
-    if (!isPerfect) return;
-
-    setShowConfetti(true);
-    const timer = setTimeout(() => setShowConfetti(false), 2000);
-
-    return () => clearTimeout(timer);
-  }, [lastTaskResult]);
-
-  // Auto-hide the short-answer correct-answer overlay after 10 seconds
-  useEffect(() => {
-    if (!shortAnswerReveal) return;
-    const timer = setTimeout(() => {
-      setShortAnswerReveal(null);
-    }, 10000);
-    return () => clearTimeout(timer);
-  }, [shortAnswerReveal]);
-
-  // Collaboration partner answer listener
-  useEffect(() => {
-    if (!socket) return;
-
-    const handlePartnerAnswer = (payload) => {
-      setPartnerAnswer(payload.partnerAnswer);
-      setShowPartnerReply(true);
-    };
-
-    socket.on("collab:partner-answer", handlePartnerAnswer);
-
-    return () => {
-      socket.off("collab:partner-answer", handlePartnerAnswer);
-    };
-  }, []);
-
-  // Cleanup for post-submit countdown timer
-  useEffect(() => {
-    return () => {
-      if (postSubmitTimerRef.current) {
-        clearInterval(postSubmitTimerRef.current);
-        postSubmitTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  // ─────────────────────────────────────────────
-  // Utility – unlock browser audio
-  // ─────────────────────────────────────────────
-
-  const unlockAudioForBrowser = () => {
-    if (audioContext) return;
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const newContext = new Ctx();
-    newContext
-      .resume()
-      .then(() => {
-        console.log("AudioContext unlocked");
-        setAudioContext(newContext);
-      })
-      .catch((err) => console.warn("AudioContext unlock failed:", err));
   };
 
   // ─────────────────────────────────────────────
-  // Join room (persistent student:join-room)
+  // Join room + submit handlers
   // ─────────────────────────────────────────────
 
   const handleJoin = () => {
@@ -798,12 +420,13 @@ function StudentApp() {
             "teamSession",
             JSON.stringify({
               roomCode: finalRoom,
+              teamId: ack.teamId,
               teamSessionId: teamSession,
+              teamName: teamName.trim(),
             })
           );
-          console.log("STUDENT: teamSession persisted to sessionStorage");
         } catch (err) {
-          console.warn("Unable to persist teamSession:", err);
+          console.warn("STUDENT: Unable to persist teamSession:", err);
         }
 
         // Fixed-station / multi-room is signaled from the room state
@@ -835,7 +458,6 @@ function StudentApp() {
             `Scan your${colourLabel} station to get started.`
           );
         } else {
-          // No station assigned yet – do not enable scanner yet
           lastStationIdRef.current = null;
           setStatusMessage(
             "Waiting for your teacher to assign your station."
@@ -843,31 +465,87 @@ function StudentApp() {
           setScannerActive(false);
           setScannedStationId(null);
         }
+
+        console.log("STUDENT: socket.emit('student:join-room') called");
       }
     );
+  };
 
-    console.log("STUDENT: socket.emit('student:join-room') called");
+  // Leave current room and allow joining a new one
+  const handleLeaveRoom = () => {
+    if (!joined) return;
+
+    const ok = window.confirm(
+      "Leave this room and join a different one?"
+    );
+    if (!ok) return;
+
+    try {
+      socket.emit("student:leave-room", {
+        roomCode,
+        teamId,
+        teamSessionId,
+      });
+    } catch (err) {
+      console.warn("Error emitting student:leave-room:", err);
+    }
+
+    try {
+      sessionStorage.removeItem("teamSession");
+    } catch (err) {
+      console.warn("Unable to clear teamSession:", err);
+    }
+
+    setJoined(false);
+    setTeamId(null);
+    setTeamSessionId(null);
+
+    setAssignedStationId(null);
+    setAssignedColor(null);
+    setScannedStationId(null);
+    setScannerActive(false);
+    setScanError(null);
+
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setTasksetTotalTasks(null);
+    setPostSubmitSecondsLeft(null);
+    setLastTaskResult(null);
+    setShortAnswerReveal(null);
+
+    setTreatMessage(null);
+    setNoiseState({
+      enabled: false,
+      threshold: 0,
+      level: 0,
+      brightness: 1,
+    });
+
+    lastStationIdRef.current = null;
+    roomLocationFromStateRef.current = DEFAULT_LOCATION;
+
+    setStatusMessage("Enter your new room code to get started.");
   };
 
   // ─────────────────────────────────────────────
-  // QR Scan handler – checks colour + room
+  // QR SCAN HANDLER – enforce colour + station:scan
   // ─────────────────────────────────────────────
-
   const handleScannedCode = (code) => {
     if (!joined || !teamId) {
       setScanError("Join a room first, then scan a station.");
-      return;
+      return false;
     }
 
     if (!assignedStationId) {
-      setScanError("Wait until your teacher assigns a station, then scan.");
-      return;
+      setScanError(
+        "Wait until your teacher assigns a station, then scan."
+      );
+      return false;
     }
 
     const normAssigned = normalizeStationId(assignedStationId);
     const expectedColour = normAssigned.color;
 
-    // Parse QR payload – expected pattern: ".../<location>/<colour>"
     let scannedColour = null;
     let scannedLocationRaw = null;
 
@@ -882,7 +560,6 @@ function StudentApp() {
         scannedColour = (segments[0] || "").toLowerCase();
       }
     } catch {
-      // Non-URL payload → treat entire string as the colour
       scannedColour = (code || "").toLowerCase().trim();
     }
 
@@ -899,7 +576,7 @@ function StudentApp() {
       setScanError(
         "That code didn’t look like a station. Try another or ask your teacher."
       );
-      return;
+      return false;
     }
 
     if (!expectedColour || scannedColour !== expectedColour) {
@@ -912,15 +589,13 @@ function StudentApp() {
         }, but your team needs the ${expectedLabel} station.`
       );
 
-      // Re-arm the scanner so they can try again
       setScannedStationId(null);
       setScannerActive(false);
       setTimeout(() => setScannerActive(true), 100);
 
-      return;
+      return false;
     }
 
-    // ✅ Colour matches – we *ignore* location for now.
     setScanError(null);
     setScannerActive(false);
     setScannedStationId(assignedStationId);
@@ -931,6 +606,7 @@ function StudentApp() {
         roomCode: roomCode.trim().toUpperCase(),
         teamId,
         stationId: normAssigned.id,
+        locationSlug: scannedLocationSlug,
       },
       (ack) => {
         if (!ack || !ack.ok) {
@@ -938,155 +614,51 @@ function StudentApp() {
             ack?.error || "We couldn't read that station. Try again."
           );
 
-          // Reset scanner so the student can try again
           setScannedStationId(null);
           setScannerActive(false);
           setTimeout(() => setScannerActive(true), 100);
-          return;
+          return false;
         }
 
-        // Success
         setScanError(null);
         setScannerActive(false);
         setScannedStationId(normAssigned.id);
+        return true;
       }
     );
 
     setStatusMessage(
       `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`
     );
+
+    return true;
+  };
+
+  // Bridge from QrScanner → handleScannedCode
+  const handleScannerCode = (rawValue) => {
+    if (!rawValue) return false;
+    handleScannedCode(rawValue);
+    return false;
   };
 
   // ─────────────────────────────────────────────
-  // Submit answer
+  // Location enforcement & station gating
   // ─────────────────────────────────────────────
-
-  const handleSubmitAnswer = async (answerPayload) => {
-    if (!roomCode || !joined || !currentTask || teamId == null) return;
-    if (submitting) return;
-
-    setSubmitting(true);
-    try {
-      // Send answer to server and wait for ack
-      await new Promise((resolve, reject) => {
-        socket
-          .timeout(8000)
-          .emit(
-            "student:submitAnswer",
-            {
-              roomCode: roomCode.trim().toUpperCase(),
-              teamId,
-              taskIndex:
-                typeof currentTaskIndex === "number" &&
-                currentTaskIndex >= 0
-                  ? currentTaskIndex
-                  : null,
-              answer: answerPayload,
-            },
-            (err, ack) => {
-              if (err) {
-                console.error(
-                  "Submit timeout / transport error:",
-                  err
-                );
-                return reject(err);
-              }
-              if (!ack || !ack.ok) {
-                console.error("Submit failed:", ack?.error);
-                return reject(
-                  new Error(
-                    ack?.error ||
-                      "Submission failed — please tell your teacher."
-                  )
-                );
-              }
-              resolve();
-            }
-          );
-      });
-
-      // Decide whether to show a "correct answer" overlay for SHORT_ANSWER
-      if (
-        currentTask &&
-        currentTask.taskType === TASK_TYPES.SHORT_ANSWER &&
-        typeof currentTask.correctAnswer === "string" &&
-        currentTask.correctAnswer.trim() !== ""
-      ) {
-        setShortAnswerReveal({
-          prompt: currentTask.prompt || "",
-          correctAnswer: currentTask.correctAnswer.trim(),
-        });
-      } else {
-        setShortAnswerReveal(null);
-      }
-
-      // Clear timer
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-      setTimeLimitSeconds(null);
-      setRemainingMs(0);
-
-      // 🔒 Lock the task for review and start a countdown
-      const pause =
-        typeof reviewPauseSeconds === "number" &&
-        reviewPauseSeconds >= 5 &&
-        reviewPauseSeconds <= 60
-          ? reviewPauseSeconds
-          : 15;
-
-      setTaskLocked(true);
-      setPostSubmitSecondsLeft(pause);
-      setScannerActive(false);
-      setStatusMessage(
-        "Review your answers. Next round is starting soon…"
-      );
-
-      // Clear any existing post-submit timer
-      if (postSubmitTimerRef.current) {
-        clearInterval(postSubmitTimerRef.current);
-        postSubmitTimerRef.current = null;
-      }
-
-      // Start countdown before returning to scan mode
-      postSubmitTimerRef.current = setInterval(() => {
-        setPostSubmitSecondsLeft((current) => {
-          if (current == null) return null;
-          if (current <= 1) {
-            clearInterval(postSubmitTimerRef.current);
-            postSubmitTimerRef.current = null;
-
-            // ✅ Now hide task and move to next station
-            setCurrentTask(null);
-            setCurrentTaskIndex(null);
-            setScannedStationId(null);
-            setScannerActive(true);
-            setStatusMessage(
-              "Answer submitted! Find your next station colour and scan it."
-            );
-            setTaskLocked(false);
-            return 0;
-          }
-          return current - 1;
-        });
-      }, 1000);
-    } catch (err) {
-      console.error("Submit error:", err);
-      alert(
-        "We couldn't submit your answer. Check your connection and tell your teacher."
-      );
-    } finally {
-      setSubmitting(false);
+  useEffect(() => {
+    if (!currentTask) {
+      setEnforceLocation(false);
+      return;
     }
-  };
 
-  // ─────────────────────────────────────────────
-  // Derived display values
-  // ─────────────────────────────────────────────
+    const cfg = currentTask.config || {};
+    const enforce = !!cfg.requireScan && !!cfg.stationBased;
+    setEnforceLocation(enforce);
+  }, [currentTask]);
 
   const assignedNorm = normalizeStationId(assignedStationId);
   const scannedNorm = normalizeStationId(scannedStationId);
+
+  const assignedColour = assignedNorm.color;
 
   const mustScan =
     joined &&
@@ -1094,608 +666,1147 @@ function StudentApp() {
     !!assignedStationId &&
     scannedStationId !== assignedStationId;
 
-  const assignedColour = assignedNorm.color;
+  // ─────────────────────────────────────────────
+  // Socket listeners for room / task / noise / treats / collab
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!teamId) return;
 
-  // Normalized display location for prompt
-  const displayLocation =
-    (roomLocationFromStateRef.current || DEFAULT_LOCATION).toUpperCase();
+    // Room / station state updates
+    const handleRoomState = (state) => {
+      if (!state || !teamId) return;
+      const myTeam = state.teams?.[teamId];
+      if (!myTeam) return;
 
-  let scanPrompt = "";
-  if (assignedColour) {
-    const colorLabel = assignedColour.toUpperCase();
-
-    if (enforceLocation) {
-      scanPrompt = `Scan your ${displayLocation} ${colorLabel} station.`;
-    } else {
-      scanPrompt = `Scan your ${colorLabel} station.`;
-    }
-  } else {
-    scanPrompt = "Scan your station.";
-  }
-
-  // Font scaling for younger grades
-  let responseFontSize = "1rem";
-  let responseHeadingFontSize = "1rem";
-  const gradeRaw =
-    currentTask?.gradeLevel ?? currentTask?.meta?.gradeLevel ?? null;
-  const parsedGrade =
-    gradeRaw != null ? parseInt(String(gradeRaw), 10) : null;
-
-  if (!Number.isNaN(parsedGrade) && parsedGrade > 0) {
-    if (parsedGrade <= 4) {
-      responseFontSize = "1.15rem";
-      responseHeadingFontSize = "1.2rem";
-    } else if (parsedGrade <= 6) {
-      responseFontSize = "1.08rem";
-      responseHeadingFontSize = "1.15rem";
-    } else if (parsedGrade <= 8) {
-      responseFontSize = "1.02rem";
-      responseHeadingFontSize = "1.1rem";
-    } else {
-      responseFontSize = "0.98rem";
-      responseHeadingFontSize = "1.05rem";
-    }
-  }
-
-  // JEOPARDY / Draw-Mime / FlashcardsRace flags for header + styling
-  const isJeopardy =
-  currentTask?.taskType === TASK_TYPES.JEOPARDY;
-
-  const isDrawMime =
-    currentTask?.taskType === TASK_TYPES.DRAW ||
-    currentTask?.taskType === TASK_TYPES.MIME ||
-    currentTask?.taskType === TASK_TYPES.DRAW_MIME;
-
-  const isFlashcardsRace =
-    currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
-
-  const isLiveDebate =
-    currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
-
-  const isMadDash =
-    currentTask?.taskType === TASK_TYPES.MAD_DASH ||
-    currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE;
-
-  const isMakeAndSnap =
-    currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
-
-  const isMindMapper =
-    currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
-  
-  const isMotionMission =
-    currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
-
-  const isMultipleChoice =
-    currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
-
-  const isMusicalChairs =
-    currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
-
-  const musicalChairsHeaderStyle = isMusicalChairs
-    ? {
-        animation: "mc-header-pulse 1.4s ease-in-out infinite",
+      // 🔢 Update running total score from room-wide scores map
+      if (state.scores && typeof state.scores[teamId] === "number") {
+        setScoreTotal(state.scores[teamId]);
       }
-    : {};
 
-  // Theme-enriched task object
-  const themedTask =
-    currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
+      const newStationId = myTeam.currentStationId || myTeam.stationId;
+      if (newStationId && newStationId !== lastStationIdRef.current) {
+        lastStationIdRef.current = newStationId;
 
-  // Base card styles + background variant for Draw/Mime & Race rounds
-  const baseTaskCardStyle = {
-    marginBottom: 12,
-    padding: 14,
-    borderRadius: 20,
-    boxShadow: "0 10px 25px rgba(15,23,42,0.18)",
-    border: "1px solid rgba(129,140,248,0.35)",
+        const norm = normalizeStationId(newStationId);
+        setAssignedStationId(norm.id);
+        setAssignedColor(norm.color || null);
+
+        // Reset scanning on station change
+        setScannedStationId(null);
+        setScanError(null);
+        setScannerActive(true);
+
+        const colourLabel = norm.color
+          ? norm.color.toUpperCase()
+          : "your";
+        setStatusMessage(
+          `New station! Scan your ${colourLabel} station QR code.`
+        );
+      }
+
+      // Derived location
+      const loc =
+        myTeam.locationSlug ||
+        state.locationSlug ||
+        roomLocationFromStateRef.current ||
+        DEFAULT_LOCATION;
+      setRoomLocation(loc);
+      roomLocationFromStateRef.current = loc;
+
+      const noiseCfg = state.noiseConfig || {};
+      setNoiseState((prev) => ({
+        ...prev,
+        enabled: !!noiseCfg.enabled,
+        threshold:
+          typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
+      }));
+    };
+
+    const handleTaskAssigned = (payload) => {
+      if (!payload) return;
+      setCurrentTask(payload.task || null);
+      setCurrentTaskIndex(
+        typeof payload.taskIndex === "number" ? payload.taskIndex : null
+      );
+      setTasksetTotalTasks(
+        typeof payload.totalTasks === "number" ? payload.totalTasks : null
+      );
+
+      const limit = payload.timeLimitSeconds || null;
+      setTimeLimitSeconds(limit);
+
+      if (limit && limit > 0) {
+        const endTime = Date.now() + limit * 1000;
+        setRemainingMs(endTime - Date.now());
+        if (countdownTimerRef.current) {
+          clearInterval(countdownTimerRef.current);
+        }
+        countdownTimerRef.current = setInterval(() => {
+          setRemainingMs((prev) => {
+            if (!prev || prev <= 1000) {
+              clearInterval(countdownTimerRef.current);
+              return 0;
+            }
+            return prev - 1000;
+          });
+        }, 1000);
+      } else {
+        setRemainingMs(0);
+        if (countdownTimerRef.current) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
+        }
+      }
+
+      setCurrentAnswerDraft("");
+      setTaskLocked(false);
+      setPostSubmitSecondsLeft(null);
+      setLastTaskResult(null);
+      setPointToast(null);
+      setShortAnswerReveal(null);
+    };
+
+    // AI scoring + feedback
+    const handleTaskScored = (payload) => {
+      if (!payload || typeof payload !== "object") return;
+
+      const {
+        teamId: scoredTeamId,
+        taskId,
+        taskIndex,
+        scoreDelta,
+        totalScore,
+        maxPoints,
+        aiFeedback,
+        correctAnswer,
+        shortAnswerReveal: reveal,
+        method,
+      } = payload;
+
+      if (!teamId || scoredTeamId !== teamId) return;
+
+      if (typeof totalScore === "number") {
+        setScoreTotal(totalScore);
+      } else if (typeof scoreDelta === "number") {
+        setScoreTotal((prev) => prev + scoreDelta);
+      }
+
+      setLastTaskResult({
+        scoreDelta: typeof scoreDelta === "number" ? scoreDelta : null,
+        maxPoints: typeof maxPoints === "number" ? maxPoints : null,
+        aiFeedback: aiFeedback || null,
+        taskId: taskId || null,
+        taskIndex:
+          typeof taskIndex === "number" && taskIndex >= 0 ? taskIndex : null,
+        method: method || null,
+        correctAnswer: correctAnswer ?? null,
+      });
+
+      const review = buildAnswerReview(currentTask);
+      if (review) setShortAnswerReveal(review);
+
+      if (reveal) {
+        setShortAnswerReveal(reveal);
+      }
+
+      if (typeof scoreDelta === "number") {
+        setPointToast({
+          message:
+            scoreDelta > 0
+              ? `+${scoreDelta} point${scoreDelta === 1 ? "" : "s"}`
+              : scoreDelta < 0
+              ? `${scoreDelta} points`
+              : "No points this time",
+          positive: scoreDelta > 0,
+        });
+
+        if (scoreDelta > 0 && maxPoints && scoreDelta >= maxPoints) {
+          setShowConfetti(true);
+          setTimeout(() => setShowConfetti(false), 2200);
+        }
+
+        setTimeout(() => {
+          setPointToast(null);
+        }, 2500);
+      }
+
+      if (typeof reviewPauseSeconds === "number" && reviewPauseSeconds > 0) {
+        setTaskLocked(true);
+        setPostSubmitSecondsLeft(reviewPauseSeconds);
+
+        if (postSubmitTimerRef.current) {
+          clearInterval(postSubmitTimerRef.current);
+        }
+
+        postSubmitTimerRef.current = setInterval(() => {
+          setPostSubmitSecondsLeft((prev) => {
+            if (prev == null || prev <= 1) {
+              clearInterval(postSubmitTimerRef.current);
+              postSubmitTimerRef.current = null;
+              setTaskLocked(false);
+              return null;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    };
+
+    const handleNoiseUpdate = (payload) => {
+      if (!payload) return;
+      setNoiseState((prev) => ({
+        ...prev,
+        level:
+          typeof payload.level === "number" ? payload.level : prev.level,
+        brightness:
+          typeof payload.brightness === "number"
+            ? payload.brightness
+            : prev.brightness,
+      }));
+    };
+
+    const handleTreat = (payload) => {
+      if (!payload) return;
+      if (payload.type === "point-bonus") {
+        setTreatMessage(
+          payload.message || "Surprise point bonus for your team!"
+        );
+        tryPlayTreatSound();
+        setTimeout(() => setTreatMessage(null), 4000);
+      } else if (payload.type === "fun-message") {
+        setTreatMessage(payload.message || "Random treat for being awesome!");
+        tryPlayTreatSound();
+        setTimeout(() => setTreatMessage(null), 4000);
+      }
+    };
+
+    const handleArrivalBonus = (payload) => {
+      if (!payload || payload.teamId !== teamId) return;
+      const bonus =
+        typeof payload.bonus === "number" ? payload.bonus : null;
+      if (!bonus) return;
+
+      setPointToast({
+        message: `Speed bonus! +${bonus} point${bonus === 1 ? "" : "s"}`,
+        positive: true,
+      });
+
+      tryPlayTreatSound();
+
+      setTimeout(() => {
+        setPointToast(null);
+      }, 2500);
+    };
+
+    const handleCollabPartner = (payload) => {
+      if (!payload || payload.teamId !== teamId) return;
+      setPartnerAnswer(payload.answer ?? null);
+    };
+
+    const handleCollabReply = (payload) => {
+      if (!payload || payload.teamId !== teamId) return;
+      setShowPartnerReply(true);
+      setTimeout(() => setShowPartnerReply(false), 4000);
+    };
+
+    socket.on("room:state", handleRoomState);
+    socket.on("task:assigned", handleTaskAssigned);
+    socket.on("task:scored", handleTaskScored);
+    socket.on("noise:update", handleNoiseUpdate);
+    socket.on("treat:event", handleTreat);
+    socket.on("station:arrival-bonus", handleArrivalBonus);
+    socket.on("collab:partner-answer", handleCollabPartner);
+    socket.on("collab:reply", handleCollabReply);
+
+    socket.emit("room:request-state", { teamId });
+
+    return () => {
+      socket.off("room:state", handleRoomState);
+      socket.off("task:assigned", handleTaskAssigned);
+      socket.off("task:scored", handleTaskScored);
+      socket.off("noise:update", handleNoiseUpdate);
+      socket.off("treat:event", handleTreat);
+      socket.off("station:arrival-bonus", handleArrivalBonus);
+      socket.off("collab:partner-answer", handleCollabPartner);
+      socket.off("collab:reply", handleCollabReply);
+    };
+  }, [teamId, reviewPauseSeconds, currentTask]);
+
+  // ─────────────────────────────────────────────
+  // THEME + STYLING HELPERS
+  // ─────────────────────────────────────────────
+  const themeShell =
+    uiTheme === "bold"
+      ? {
+          // Darker card / high contrast
+          bg: "radial-gradient(circle at top, #020617, #020617)",
+          cardBg: "rgba(15,23,42,0.96)",
+          cardBorder: "1px solid rgba(148,163,184,0.8)",
+          text: "#e5e7eb",
+          accent: "#f97316",
+        }
+      : uiTheme === "minimal"
+      ? {
+          bg: "radial-gradient(circle at top, #e5e7eb, #f9fafb)",
+          cardBg: "rgba(248,250,252,0.98)",
+          cardBorder: "1px solid rgba(209,213,219,0.9)",
+          text: "#111827",
+          accent: "#2563eb",
+        }
+      : {
+          // modern (eager) default
+          bg: "radial-gradient(circle at top, #020617, #0b1120)",
+          cardBg: "rgba(15,23,42,0.96)",
+          cardBorder: "1px solid rgba(51,65,85,0.9)",
+          text: "#e5e7eb",
+          accent: "#22c55e",
+        };
+
+  const getStationBubbleStyles = (color) => {
+    if (!color) {
+      return {
+        background:
+          uiTheme === "minimal"
+            ? "rgba(248,250,252,0.96)"
+            : "rgba(15,23,42,0.92)",
+        border:
+          uiTheme === "minimal"
+            ? "1px solid rgba(209,213,219,0.9)"
+            : "1px solid rgba(51,65,85,0.9)",
+        color: themeShell.text,
+      };
+    }
+
+    const base = {
+      marginBottom: 8,
+      padding: 12,
+      borderRadius: 12,
+    };
+
+    if (color === "red") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(239,68,68,0.12), rgba(127,29,29,0.96))",
+        border: "1px solid rgba(252,165,165,0.8)",
+        color: "#fee2e2",
+      };
+    }
+    if (color === "blue") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(30,64,175,0.96))",
+        border: "1px solid rgba(191,219,254,0.8)",
+        color: "#dbeafe",
+      };
+    }
+    if (color === "green") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(34,197,94,0.12), rgba(22,101,52,0.96))",
+        border: "1px solid rgba(187,247,208,0.8)",
+        color: "#dcfce7",
+      };
+    }
+    if (color === "yellow") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(250,204,21,0.12), rgba(133,77,14,0.96))",
+        border: "1px solid rgba(254,240,138,0.8)",
+        color: "#fef9c3",
+      };
+    }
+    if (color === "purple") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(168,85,247,0.12), rgba(88,28,135,0.96))",
+        border: "1px solid rgba(233,213,255,0.8)",
+        color: "#f3e8ff",
+      };
+    }
+    if (color === "orange") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(249,115,22,0.12), rgba(124,45,18,0.96))",
+        border: "1px solid rgba(254,215,170,0.8)",
+        color: "#ffedd5",
+      };
+    }
+    if (color === "teal") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(45,212,191,0.12), rgba(15,118,110,0.96))",
+        border: "1px solid rgba(204,251,241,0.8)",
+        color: "#ccfbf1",
+      };
+    }
+    if (color === "pink") {
+      return {
+        ...base,
+        background:
+          "linear-gradient(135deg, rgba(244,114,182,0.12), rgba(131,24,67,0.96))",
+        border: "1px solid rgba(251,207,232,0.8)",
+        color: "#fce7f3",
+      };
+    }
+
+    return {
+      background:
+        uiTheme === "minimal"
+          ? "rgba(248,250,252,0.96)"
+          : "rgba(15,23,42,0.92)",
+      border:
+        uiTheme === "minimal"
+          ? "1px solid rgba(209,213,219,0.9)"
+          : "1px solid rgba(51,65,85,0.9)",
+      color: themeShell.text,
+    };
   };
 
-    const taskCardBackground = isFlashcardsRace
-      ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
-      : isMadDash
-      ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
-      : isMakeAndSnap
-      ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
-      : isMultipleChoice
-      ? "linear-gradient(135deg, #22c55e 0%, #0ea5e9 40%, #eef2ff 100%)"
-      : isDrawMime
-      ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
-      : isLiveDebate
-      ? "linear-gradient(135deg, #0f172a 0%, #fb7185 35%, #f97316 70%, #facc15 100%)"
-      : isMindMapper
-      ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
-      : isMusicalChairs
-      ? "linear-gradient(135deg, #f97316 0%, #ec4899 35%, #8b5cf6 70%, #fef3c7 100%)"
-      : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
+  const justSubmitted =
+    lastTaskResult &&
+    typeof lastTaskResult.scoreDelta === "number" &&
+    !taskLocked &&
+    postSubmitSecondsLeft != null;
 
-  // Taskset progress
-  const currentTaskNumber =
-    typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-      ? currentTaskIndex + 1
-      : null;
+  // Derived text for header connection line
+  const headerConnectionText = joined
+    ? roomCode
+      ? `Connected · Room ${roomCode.toUpperCase()}`
+      : "Connected"
+    : joiningRoom
+    ? roomCode
+      ? `Joining Room ${roomCode.toUpperCase()}…`
+      : "Joining Room…"
+    : connected
+    ? "Connected to server"
+    : "Connecting…";
 
-  const totalTasks =
-    typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0
-      ? tasksetTotalTasks
-      : null;
-
-  const progressPercent =
-    currentTaskNumber && totalTasks
-      ? Math.min((currentTaskNumber / totalTasks) * 100, 100)
-      : null;
-
-  // ─────────────────────────────────────────────
+  // -------------------------------------------------------------------
   // Render
-  // ─────────────────────────────────────────────
-
+  // -------------------------------------------------------------------
   return (
     <div
+      className="student-app-shell"
       style={{
         minHeight: "100vh",
-        padding: 16,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "stretch",
-        justifyContent: "flex-start",
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        background: isFlashcardsRace
-          ? "radial-gradient(circle at top, #1e293b 0%, #0f172a 25%, #4f46e5 60%, #f97316 100%)"
-          : isMadDash
-          ? "radial-gradient(circle at top, #b91c1c 0%, #f97316 40%, #facc15 75%, #fee2e2 100%)"
-          : isMindMapper
-          ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
-          : isMusicalChairs
-          ? "radial-gradient(circle at top, #7c3aed 0%, #fb7185 40%, #facc15 75%, #fef9c3 100%)"
-          : themeShell.pageBg,
-
+        margin: 0,
+        padding: 0,
+        fontFamily: '"Inter", system-ui, -apple-system, BlinkMacSystemFont',
         color: themeShell.text,
-        opacity: noiseState.enabled ? noiseState.brightness : 1,
-        transition: "opacity 120ms ease-out",
+        backgroundImage: themeShell.bg,
+        backgroundAttachment: "fixed",
+        backgroundSize: "cover",
       }}
     >
-      {/* Scoped styles for task presentation & submission */}
-      <style>{`
-        .task-card input[type="text"],
-        .task-card input[type="number"],
-        .task-card input[type="email"],
-        .task-card textarea {
-          width: 100%;
-          padding: 10px 12px;
-          border-radius: 10px;
-          border: 1px solid #d1d5db;
-          font-size: 1rem;
-          outline: none;
-          background: #ffffff;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease,
-            background-color 0.15s ease;
+      <style>
+        {`
+        :root {
+          color-scheme: dark;
         }
 
-        .task-card input:focus,
-        .task-card textarea:focus {
-          border-color: #6366f1;
-          box-shadow: 0 0 0 2px rgba(129,140,248,0.3);
-          background-color: #f9fafb;
+        body {
+          margin: 0;
+          padding: 0;
         }
 
-        /* General button polish inside the task card */
-        .task-card button {
+        .pill-muted {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
           border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 0.75rem;
+          border: 1px solid rgba(148,163,184,0.5);
+          color: #e5e7eb;
+          background: rgba(15,23,42,0.8);
+        }
+
+        .pill-location {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          border-radius: 999px;
+          padding: 2px 10px;
+          font-size: 0.75rem;
+          background: rgba(15,23,42,0.8);
+          color: #d1fae5;
+          border: 1px solid rgba(34,197,94,0.7);
+        }
+
+        .pill-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border-radius: 999px;
+          padding: 2px 10px;
+          font-size: 0.75rem;
+          border: 1px solid rgba(148,163,184,0.5);
+          background: rgba(15,23,42,0.9);
+        }
+
+        .treat-banner {
+          position: fixed;
+          bottom: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          max-width: min(480px, 90vw);
+          padding: 10px 14px;
+          border-radius: 999px;
+          background: radial-gradient(
+            circle at top,
+            rgba(14,116,144,0.95),
+            rgba(8,47,73,0.98)
+          );
+          color: #f9fafb;
+          font-size: 0.85rem;
+          box-shadow: 0 18px 40px rgba(15,23,42,0.8);
+          text-align: center;
+          z-index: 900;
+        }
+
+        .toast {
+          position: fixed;
+          bottom: 68px;
+          right: 16px;
           padding: 8px 12px;
-          font-size: 0.95rem;
+          border-radius: 999px;
+          background: radial-gradient(
+            circle at top,
+            rgba(34,197,94,0.95),
+            rgba(22,101,52,0.98)
+          );
+          color: #f0fdf4;
+          font-size: 0.8rem;
           font-weight: 600;
-          border: none;
-          cursor: pointer;
-          transition: transform 0.1s ease, box-shadow 0.1s ease,
-            opacity 0.1s ease;
-          box-shadow: 0 4px 12px rgba(15,23,42,0.15);
+          box-shadow: 0 18px 40px rgba(22,163,74,0.8);
+          z-index: 900;
         }
 
-        .task-card button:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 6px 16px rgba(15,23,42,0.25);
+        .toast.negative {
+          background: radial-gradient(
+            circle at top,
+            rgba(248,113,113,0.95),
+            rgba(127,29,29,0.98)
+          );
+          color: #fef2f2;
         }
 
-        .task-card button:active:not(:disabled) {
-          transform: translateY(0);
-          box-shadow: 0 3px 8px rgba(15,23,42,0.3);
-        }
-
-        .task-card button:disabled {
-          opacity: 0.6;
-          cursor: default;
-          box-shadow: none;
-        }
-
-        /* FLASHCARDS — realistic card appearance */
-        .flashcard-container {
-          perspective: 1200px;
-          width: 100%;
-          display: flex;
-          justify-content: center;
-          margin: 12px 0;
-        }
-
-        .flashcard {
-          width: 90%;
-          max-width: 360px;
-          min-height: 200px;
-          padding: 20px;
-          border-radius: 16px;
-          background: #ffffff;
-          border: 1px solid #e5e7eb;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-          transform-style: preserve-3d;
-          transition: transform 0.6s ease;
-          cursor: pointer;
-          backface-visibility: hidden;
-          font-size: 1.1rem;
-          line-height: 1.5;
-        }
-
-        /* When flipped */
-        .flashcard.flipped {
-          transform: rotateY(180deg);
-        }
-
-        .flashcard-back {
+        .noise-strip {
           position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          bottom: 8px;
+          width: min(480px, 90vw);
+        }
+
+        .point-pill {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          border-radius: 999px;
+          padding: 4px 10px;
+          font-size: 0.8rem;
+          background: rgba(15,23,42,0.9);
+          border: 1px solid rgba(148,163,184,0.7);
+          color: #f9fafb;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .point-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #22c55e;
+        }
+
+        .station-colour-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 2px 8px;
+          border-radius: 999px;
+          font-size: 0.75rem;
+          background: rgba(15,23,42,0.7);
+          border: 1px solid rgba(148,163,184,0.6);
+        }
+
+        .station-dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 999px;
+          box-shadow: 0 0 0 1px rgba(15,23,42,0.9);
+        }
+
+        .scanner-shell {
+          margin-bottom: 8px;
+          padding: 8px;
+          border-radius: 12px;
+          background: rgba(15,23,42,0.95);
+          border: 1px solid rgba(51,65,85,0.9);
+        }
+
+        .scan-error {
+          margin-top: 6px;
+          font-size: 0.8rem;
+          color: #fecaca;
+        }
+
+        .correct-answer-overlay {
+          position: fixed;
           inset: 0;
-          backface-visibility: hidden;
-          transform: rotateY(180deg);
-          padding: 20px;
-          border-radius: 16px;
-          background: #f1f5f9;
-          border: 1px solid #d1d5db;
+          background: radial-gradient(
+            circle at top,
+            rgba(15,23,42,0.8),
+            rgba(15,23,42,0.98)
+          );
           display: flex;
           align-items: center;
           justify-content: center;
-          font-weight: 600;
+          z-index: 950;
         }
 
-        /* ───────────────────────────────────────────
-           CONFETTI LAYER FOR PERFECT SCORE
-        ─────────────────────────────────────────── */
+        .correct-answer-card {
+          max-width: 420px;
+          width: 90vw;
+          background: rgba(15,23,42,0.98);
+          border-radius: 16px;
+          padding: 16px;
+          border: 1px solid rgba(148,163,184,0.7);
+          color: #e5e7eb;
+        }
+
+        .correct-answer-card h3 {
+          margin: 0 0 8px 0;
+          font-size: 1rem;
+        }
+
+        .correct-answer-card pre {
+          margin: 0;
+          padding: 8px 10px;
+          border-radius: 8px;
+          background: rgba(15,23,42,0.95);
+          border: 1px solid rgba(55,65,81,0.9);
+          font-size: 0.85rem;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
         .confetti-layer {
+          pointer-events: none;
           position: fixed;
           inset: 0;
           overflow: hidden;
-          pointer-events: none;
-          z-index: 9999;
+          z-index: 940;
         }
 
         .confetti-piece {
           position: absolute;
-          top: -10%;
           width: 8px;
-          height: 14px;
+          height: 12px;
           border-radius: 2px;
-          opacity: 0;
-          animation-name: confettiFall;
-          animation-duration: 1.6s;
-          animation-timing-function: linear;
-          animation-fill-mode: forwards;
         }
 
-        .confetti-piece:nth-child(4n) {
-          background-color: #f97316;
-        }
-        .confetti-piece:nth-child(4n + 1) {
-          background-color: #22c55e;
-        }
-        .confetti-piece:nth-child(4n + 2) {
-          background-color: #3b82f6;
-        }
-        .confetti-piece:nth-child(4n + 3) {
-          background-color: #e11d48;
+        .confetti-piece:nth-child(odd) {
+          background: #f97316;
         }
 
-        @keyframes confettiFall {
+        .confetti-piece:nth-child(even) {
+          background: #22c55e;
+        }
+
+        @keyframes confetti-fall {
           0% {
-            transform: translate3d(0, 0, 0) rotateZ(0deg);
-            opacity: 0;
-          }
-          10% {
-            opacity: 1;
+            transform: translateY(-10vh) rotate(0deg);
           }
           100% {
-            transform: translate3d(0, 120vh, 0) rotateZ(360deg);
-            opacity: 0;
-          }
-        }
-        @keyframes mc-header-pulse {
-          0% {
-            transform: translateY(0) scale(1);
-            text-shadow: 0 0 0 rgba(251, 113, 133, 0);
-          }
-          50% {
-            transform: translateY(-2px) scale(1.03);
-            text-shadow: 0 0 10px rgba(251, 113, 133, 0.9);
-          }
-          100% {
-            transform: translateY(0) scale(1);
-            text-shadow: 0 0 0 rgba(251, 113, 133, 0);
+            transform: translateY(110vh) rotate(540deg);
           }
         }
 
-      `}</style>
+        .confetti-piece {
+          animation: confetti-fall 2.2s linear forwards;
+        }
 
-      {/* Hidden audio elements for task / scan sounds */}
-      <audio
-        ref={sndAlert}
-        src="/sounds/scan-alert.mp3"
-        preload="auto"
-        style={{ display: "none" }}
-      />
-      <audio
-        ref={sndTreat}
-        src="/sounds/treat-chime.mp3"
-        preload="auto"
-        style={{ display: "none" }}
-      />
+        /* TASK-LOCKED OVERLAY */
+        .task-locked-overlay {
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          background: radial-gradient(
+            circle at top,
+            rgba(15,23,42,0.3),
+            rgba(15,23,42,0.9)
+          );
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+          padding: 12px;
+        }
+        `}
+      </style>
 
-      {/* Main content column */}
-      <div
+      <main
         style={{
-          flex: 1,
-          width: "100%",
-          maxWidth: 520,
+          maxWidth: 860,
           margin: "0 auto",
+          padding: "12px 10px 72px",
+          minHeight: "100vh",
           display: "flex",
           flexDirection: "column",
-          gap: 16,
+          position: "relative",
         }}
       >
-        <header style={{ marginBottom: 4 }}>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "1.4rem",
-            }}
-          >
-            Curriculate – Team Station
-          </h1>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.85rem",
-              color: "#4b5563",
-            }}
-          >
-            {joined
-              ? roomCode
-                ? `Connected · Room ${roomCode.toUpperCase()}`
-                : "Connected"
-              : joiningRoom
-              ? roomCode
-                ? `Joining Room ${roomCode.toUpperCase()}…`
-                : "Joining Room…"
-              : connected
-              ? "Connected to server"
-              : "Connecting…"}
-          </p>
-        </header>
-
-        {treatMessage && (
+        {/* HEADER */}
+        <header
+          style={{
+            marginBottom: 12,
+          }}
+        >
+          {/* Title row */}
           <div
             style={{
-              padding: 10,
-              borderRadius: 10,
-              background: "#f97316",
-              color: "#ffffff",
-              fontSize: "0.9rem",
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
+              justifyContent: "center",
+              marginBottom: 4,
             }}
           >
-            <div>
-              <strong style={{ marginRight: 4 }}>Treat time!</strong>
-              {treatMessage}
-            </div>
-            <button
-              type="button"
-              onClick={() => setTreatMessage(null)}
+            <h1
               style={{
-                border: "none",
-                background: "rgba(255,255,255,0.15)",
+                margin: 0,
+                fontSize: "1.6rem",
                 color: "#ffffff",
-                padding: "4px 8px",
-                borderRadius: 999,
-                fontSize: "0.8rem",
-                cursor: "pointer",
+                textAlign: "center",
+                flex: 1,
               }}
             >
-              Got it
-            </button>
+              Curriculate – Team Station
+            </h1>
           </div>
-        )}
 
-        {/* JOIN PANEL */}
-        {!joined && (
-          <section
+          {/* Subheader: left info + right controls */}
+          <div
             style={{
-              maxWidth: 480,
-              width: "100%",
-              background: themeShell.cardBg,
-              borderRadius: 16,
-              padding: 16,
-              border: themeShell.cardBorder,
-              color: themeShell.text,
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
             }}
           >
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 8,
-                fontSize: "1.1rem",
-              }}
-            >
-              Join your room
-            </h2>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <label style={{ fontSize: "0.85rem" }}>
-                Room code
-                <input
-                  type="text"
-                  value={roomCode}
-                  onChange={(e) =>
-                    setRoomCode(e.target.value.toUpperCase())
-                  }
-                  style={{
-                    width: "100%",
-                    padding: "4px 6px",
-                    marginTop: 2,
-                    borderRadius: 6,
-                    border: "1px solid #d1d5db",
-                    fontSize: "1rem",
-                  }}
-                />
-              </label>
+            {/* Left: join instructions + pills */}
+            <div style={{ minWidth: 0 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.85rem",
+                  color: "#e5e7eb",
+                }}
+              >
+                Join your teacher&apos;s room, then scan stations as you move.
+              </p>
 
-              <label style={{ fontSize: "0.85rem" }}>
-                Team name
-                <input
-                  type="text"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "4px 6px",
-                    marginTop: 2,
-                    borderRadius: 6,
-                    border: "1px solid #d1d5db",
-                    fontSize: "1rem",
-                  }}
-                />
-              </label>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 4,
+                }}
+              >
+                {joined && (
+                  <span className="pill-muted">
+                    Team: <strong>{teamName || "…"}</strong>
+                  </span>
+                )}
+                {joined && (
+                  <span className="pill-muted">
+                    Room: <strong>{roomCode.toUpperCase()}</strong>
+                  </span>
+                )}
 
-              <div>
-                <div
-                  style={{
-                    fontSize: "0.85rem",
-                    marginBottom: 4,
-                  }}
-                >
-                  Team members (optional)
-                </div>
+                {assignedNorm.id && (
+                  <span className="station-colour-tag">
+                    <span>Station</span>
+                    <span
+                      className="station-dot"
+                      style={{
+                        background:
+                          assignedColour === "red"
+                            ? "#ef4444"
+                            : assignedColour === "blue"
+                            ? "#3b82f6"
+                            : assignedColour === "green"
+                            ? "#22c55e"
+                            : assignedColour === "yellow"
+                            ? "#eab308"
+                            : assignedColour === "purple"
+                            ? "#a855f7"
+                            : assignedColour === "orange"
+                            ? "#f97316"
+                            : assignedColour === "teal"
+                            ? "#14b8a6"
+                            : assignedColour === "pink"
+                            ? "#ec4899"
+                            : "#e5e7eb",
+                      }}
+                    />
+                    <span>
+                      {assignedColour
+                        ? COLOUR_TO_LABEL[assignedColour] ||
+                          assignedColour.toUpperCase()
+                        : "Assigned"}
+                    </span>
+                  </span>
+                )}
+
+                <span className="pill-location">
+                  <span>Location:</span>
+                  <strong>
+                    {roomLocation
+                      ? roomLocation.charAt(0).toUpperCase() +
+                        roomLocation.slice(1).replace(/-/g, " ")
+                      : "Classroom"}
+                  </strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Right: theme buttons + join-different-room */}
+            <div style={{ textAlign: "right", minWidth: 140 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 4,
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* Theme buttons group */}
                 <div
                   style={{
                     display: "flex",
-                    flexDirection: "column",
                     gap: 4,
                   }}
                 >
-                  {members.map((m, idx) => (
-                    <input
-                      key={idx}
-                      type="text"
-                      value={m}
-                      onChange={(e) =>
-                        setMembers((prev) => {
-                          const next = [...prev];
-                          next[idx] = e.target.value;
-                          return next;
-                        })
-                      }
-                      placeholder={`Member ${idx + 1}`}
-                      style={{
-                        width: "100%",
-                        padding: "4px 6px",
-                        borderRadius: 6,
-                        border: "1px solid #e5e7eb",
-                        fontSize: "0.95rem",
-                      }}
-                    />
-                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme("modern")}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border:
+                        uiTheme === "modern"
+                          ? "2px solid rgba(59,130,246,0.9)"
+                          : "1px solid rgba(148,163,184,0.7)",
+                      background:
+                        uiTheme === "modern"
+                          ? "rgba(191,219,254,0.35)"
+                          : "rgba(15,23,42,0.15)",
+                      color: "#e5e7eb",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Eager
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme("bold")}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border:
+                        uiTheme === "bold"
+                          ? "2px solid rgba(248,250,252,0.9)"
+                          : "1px solid rgba(148,163,184,0.6)",
+                      background:
+                        uiTheme === "bold"
+                          ? "rgba(15,23,42,0.9)"
+                          : "rgba(15,23,42,0.25)",
+                      color: "#e5e7eb",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Bold
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme("minimal")}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border:
+                        uiTheme === "minimal"
+                          ? "2px solid rgba(15,23,42,0.85)"
+                          : "1px solid rgba(148,163,184,0.6)",
+                      background:
+                        uiTheme === "minimal"
+                          ? "#e5e7eb"
+                          : "rgba(249,250,251,0.85)",
+                      color: "#111827",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Dyno
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMembers((prev) => [...prev, ""])
-                  }
-                  style={{
-                    marginTop: 4,
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border: "none",
-                    background: "#e5e7eb",
-                    fontSize: "0.8rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  + Add member field
-                </button>
+
+                {/* Join a different room */}
+                {joined && (
+                  <button
+                    type="button"
+                    onClick={handleLeaveRoom}
+                    style={{
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      border: "1px solid rgba(148,163,184,0.9)",
+                      background: "rgba(248,250,252,0.95)",
+                      color: "#0f172a",
+                      cursor: "pointer",
+                      marginLeft: 4,
+                    }}
+                  >
+                    Join a different room
+                  </button>
+                )}
               </div>
 
-              <div style={{ marginTop: 8 }}>
-                <div
-                  style={{
-                    fontSize: "0.85rem",
-                    marginBottom: 4,
-                  }}
-                >
-                  Choose a theme
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {["modern", "bold", "minimal"].map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setUiTheme(t)}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 999,
-                        border: "1px solid #d1d5db",
-                        background:
-                          uiTheme === t ? "#0ea5e9" : "#f9fafb",
-                        color:
-                          uiTheme === t ? "#ffffff" : "#111827",
-                        fontSize: "0.8rem",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {t === "modern"
-                        ? "Theme 1"
-                        : t === "bold"
-                        ? "Bold"
-                        : "Minimal"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleJoin}
+              {/* Connection + status under the buttons */}
+              <div
                 style={{
-                  marginTop: 8,
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: "#16a34a",
-                  color: "#ffffff",
-                  fontSize: "0.95rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
+                  fontSize: "0.75rem",
+                  color: connected ? "#bbf7d0" : "#fecaca",
                 }}
               >
-                Ready for action
-              </button>
+                {headerConnectionText}
+              </div>
+              {statusMessage && (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: "0.75rem",
+                    color: "#fee2e2",
+                  }}
+                >
+                  {statusMessage}
+                </div>
+              )}
             </div>
+          </div>
+        </header>
+
+        {/* MAIN BODY */}
+        {!joined && (
+          <main
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "flex-start",
+            }}
+          >
+            <div
+              className="join-card"
+              style={{
+                background: themeShell.cardBg,
+                border: themeShell.cardBorder,
+                color: themeShell.text,
+                borderRadius: 16,
+                padding: 12,
+                width: "100%",
+                boxShadow:
+                  uiTheme === "minimal"
+                    ? "0 10px 30px rgba(15,23,42,0.10)"
+                    : "0 18px 40px rgba(15,23,42,0.75)",
+              }}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                  marginBottom: 6,
+                  fontSize: "1.1rem",
+                }}
+              >
+                Join a room
+              </h2>
+              <p
+                style={{
+                  marginTop: 0,
+                  marginBottom: 12,
+                  fontSize: "0.85rem",
+                  color:
+                    uiTheme === "minimal" ? "#4b5563" : "#9ca3af",
+                }}
+              >
+                Enter the code your presenter shows on the board, pick a
+                team name, and list your team members.
+              </p>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleJoin();
+                }}
+              >
+                <div style={{ marginBottom: 10 }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.8rem",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Room Code
+                  </label>
+                  <input
+                    value={roomCode}
+                    onChange={(e) => setRoomCode(e.target.value)}
+                    placeholder="e.g. ABC123"
+                    style={{
+                      width: "100%",
+                      padding: "6px 8px",
+                      borderRadius: 8,
+                      border: "1px solid #d1d5db",
+                      fontSize: "1rem",
+                      textTransform: "uppercase",
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "0.8rem",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Team name
+                  </label>
+                  <input
+                    type="text"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "6px 8px",
+                      borderRadius: 8,
+                      border: "1px solid #d1d5db",
+                      fontSize: "1rem",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Team members (optional)
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    {members.map((m, idx) => (
+                      <input
+                        key={idx}
+                        type="text"
+                        value={m}
+                        onChange={(e) =>
+                          setMembers((prev) => {
+                            const next = [...prev];
+                            next[idx] = e.target.value;
+                            return next;
+                          })
+                        }
+                        placeholder={`Member ${idx + 1}`}
+                        style={{
+                          width: "100%",
+                          padding: "4px 6px",
+                          borderRadius: 6,
+                          border: "1px solid #e5e7eb",
+                          fontSize: "0.95rem",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMembers((prev) => [...prev, ""])}
+                    style={{
+                      marginTop: 4,
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border: "none",
+                      background: "#e5e7eb",
+                      fontSize: "0.8rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Add member field
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={!canJoin || joiningRoom}
+                  style={{
+                    marginTop: 8,
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: "#16a34a",
+                    color: "#ffffff",
+                    fontSize: "0.95rem",
+                    cursor:
+                      !canJoin || joiningRoom
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity: !canJoin || joiningRoom ? 0.6 : 1,
+                    fontWeight: 600,
+                  }}
+                >
+                  {joiningRoom ? "Joining…" : "Ready for action"}
+                </button>
+              </form>
+            </div>
+          </main>
+        )}
+
+        {/* QR SCANNER */}
+        {joined && scannerActive && (
+          <section className="scanner-shell">
+            <QrScanner
+              active={scannerActive}
+              onCode={handleScannerCode}
+              onError={setScanError}
+            />
+            {scanError && (
+              <div className="scan-error">
+                ⚠ {scanError}
+              </div>
+            )}
           </section>
         )}
 
@@ -1707,570 +1818,237 @@ function StudentApp() {
               padding: 12,
               borderRadius: 12,
               ...getStationBubbleStyles(assignedColor),
+              position: "relative",
+              overflow: "hidden",
             }}
           >
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 4,
-                fontSize: "1rem",
-              }}
-            >
-              Team {teamName || "?"}
-            </h2>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "0.85rem",
-                color: "inherit",
-              }}
-            >
-              {statusMessage}
-            </p>
-
             <div
               style={{
-                marginTop: 8,
-                paddingTop: 8,
-                borderTop: "1px solid #e5e7eb",
-                fontSize: "0.85rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 8,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    marginBottom: 2,
+                  }}
+                >
+                  {mustScan
+                    ? "Scan your station to unlock the next task"
+                    : currentTask
+                    ? `Task ${
+                        typeof currentTaskIndex === "number"
+                          ? currentTaskIndex + 1
+                          : "?"
+                      } of ${
+                        typeof tasksetTotalTasks === "number"
+                          ? tasksetTotalTasks
+                          : "?"
+                      }`
+                    : "Waiting for your teacher’s next task…"}
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    opacity: 0.9,
+                  }}
+                >
+                  {mustScan
+                    ? assignedColour
+                      ? `Hold your device steady and scan the ${assignedColour.toUpperCase()} station QR code.`
+                      : "Hold your device steady and scan the station QR code your teacher assigned."
+                    : currentTask
+                    ? "Read carefully, work with your team, then submit before time runs out."
+                    : "Stay at your current station. Your teacher will launch the next activity."}
+                </div>
+              </div>
+
+              {/* Score pill */}
+              <div className="point-pill">
+                <span className="point-dot" />
+                <span>
+                  {scoreTotal}{" "}
+                  <span style={{ opacity: 0.8, fontWeight: 400 }}>
+                    points
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            {/* Timer and scan notice row */}
+            <div
+              style={{
+                marginTop: 6,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 8,
+                fontSize: "0.8rem",
               }}
             >
               <div>
-                <strong>Current station: </strong>
-                {assignedNorm.label}
+                {timeLimitSeconds && timeLimitSeconds > 0 ? (
+                  <span>
+                    Time left:{" "}
+                    <strong>{formatMs(remainingMs)}</strong>
+                  </span>
+                ) : currentTask ? (
+                  <span>Take the time you need, but stay focused.</span>
+                ) : (
+                  <span>Timer: waiting for next task.</span>
+                )}
               </div>
-              {/* Score info */}
-              <div style={{ marginTop: 2 }}>
-                <strong>Score:</strong> {scoreTotal} pts
-              </div>
-              {lastTaskResult && (
+              {mustScan && (
                 <div
                   style={{
-                    marginTop: 2,
-                    fontSize: "0.8rem",
-                    color:
-                      lastTaskResult.correct === true
-                        ? "#166534"
-                        : lastTaskResult.correct === false
-                        ? "#b91c1c"
-                        : "#111827",
+                    fontSize: "0.75rem",
+                    fontStyle: "italic",
+                    opacity: 0.9,
                   }}
                 >
-                  Last task:{" "}
-                  {lastTaskResult.correct === true
-                    ? "✅ Correct"
-                    : lastTaskResult.correct === false
-                    ? "❌ Incorrect"
-                    : "☑️ Submitted"}
-                  {typeof lastTaskResult.points === "number" && (
-                    <> ({lastTaskResult.points} pts)</>
-                  )}
-                </div>
-              )}
-              {mustScan ? (
-                <div
-                  style={{
-                    marginTop: 2,
-                    fontWeight: 600,
-                    color: "inherit",
-                  }}
-                >
-                  {scanPrompt}
-                </div>
-              ) : scannedStationId ? (
-                <div
-                  style={{
-                    marginTop: 2,
-                    color: "inherit",
-                  }}
-                >
-                  Station confirmed ({scannedNorm.label}).
-                </div>
-              ) : (
-                <div
-                  style={{
-                    marginTop: 2,
-                    color: "inherit",
-                  }}
-                >
-                  Waiting for a task…
-                </div>
-              )}
-              {scanError && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    color: "#b91c1c",
-                    fontSize: "0.8rem",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {scanError}
+                  Scanner is active — aim at the QR code.
                 </div>
               )}
             </div>
-          </section>
-        )}
-
-        {/* SCANNER CARD */}
-        {joined && scannerActive && (
-          <section
-            style={{
-              marginBottom: 8,
-              padding: 12,
-              borderRadius: 12,
-              background: assignedColor
-                ? `var(--${assignedColor}-500, #eff6ff)`
-                : "#eff6ff",
-              boxShadow:
-                scannerActive && assignedColor
-                  ? "0 0 0 0 rgba(255,255,255,0.9)"
-                  : "0 1px 3px rgba(15,23,42,0.12)",
-              transition:
-                "background 0.2s ease, box-shadow 0.2s ease",
-            }}
-          >
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 8,
-                fontSize: "1rem",
-                color: assignedColor ? "#ffffff" : "#111827",
-              }}
-            >
-              {scanPrompt}
-            </h2>
-            <QrScanner
-              active={scannerActive}
-              onCode={handleScannedCode}
-              onError={setScanError}
-            />
           </section>
         )}
 
         {/* TASK CARD */}
-        {joined && currentTask && !mustScan && (
+        {joined && currentTask && (
           <section
-            className="task-card"
             style={{
-              ...baseTaskCardStyle,
-              ...(isMotionMission
-                ? {
-                    // Let MotionMissionTask own the look
-                    background: "transparent",
-                    padding: 0,
-                    border: "none",
-                    boxShadow: "none",
-                  }
-                : {
-                    background: taskCardBackground,
-                  }),
+              marginTop: 4,
+              borderRadius: 16,
+              position: "relative",
+              overflow: "hidden",
+              background:
+                uiTheme === "minimal"
+                  ? "#f9fafb"
+                  : "linear-gradient(135deg,#020617,#020617)",
+              border:
+                uiTheme === "minimal"
+                  ? "1px solid #e5e7eb"
+                  : "1px solid rgba(30,64,175,0.75)",
+              boxShadow:
+                uiTheme === "minimal"
+                  ? "0 10px 25px rgba(15,23,42,0.15)"
+                  : "0 18px 40px rgba(15,23,42,0.98)",
+              padding: 12,
             }}
           >
-            <h2
-              style={{
-                marginTop: 0,
-                marginBottom: 6,
-                fontSize: responseHeadingFontSize,
-                letterSpacing: 0.2,
-                ...musicalChairsHeaderStyle,
-              }}
-            >
-              {currentTaskNumber && (
-                <div
-                  style={{
-                    marginBottom: 8,
-                    fontSize: "0.8rem",
-                    color: "#4b5563",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span>
-                      Task{" "}
-                      <strong>{currentTaskNumber}</strong>
-                      {totalTasks ? ` of ${totalTasks}` : ""}
-                    </span>
-                    {progressPercent != null && (
-                      <span>{Math.round(progressPercent)}%</span>
-                    )}
-                  </div>
-                  {progressPercent != null && (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: 6,
-                        borderRadius: 999,
-                        background: "rgba(209,213,219,0.8)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${progressPercent}%`,
-                          height: "100%",
-                          borderRadius: 999,
-                          background:
-                            "linear-gradient(90deg,#22c55e,#0ea5e9)",
-                          transition: "width 0.25s ease-out",
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            {isFlashcardsRace
-              ? "Flashcards Race!"
-              : isJeopardy
-              ? "Jeopardy clue"
-              : isMadDash
-              ? "Mad Dash!"
-              : isMakeAndSnap
-              ? "Make it & Snap it!"
-              : isDrawMime
-              ? "Draw or Mime!"
-              : isLiveDebate
-              ? "Live debate!"
-              : isMindMapper
-              ? "Mind Mapper!"
-              : isMotionMission
-              ? "Motion Mission!"
-              : isMusicalChairs
-              ? "Musical Chairs!"
-              : isMultipleChoice
-              ? "Multiple choice!"
-              : "Your task"}
-
-            </h2>
-
-            {isMakeAndSnap && (
-              <p
-                style={{
-                  margin: "0 0 6px",
-                  fontSize: "0.85rem",
-                  color: "#0369a1",
-                  fontWeight: 500,
-                }}
-              >
-                Build, draw, or act it out — then snap a clear photo of what you made!
-              </p>
-            )}
-
-            {currentTask?.taskType === TASK_TYPES.JEOPARDY &&
-              currentTask?.jeopardyConfig?.boardTitle && (
-                <p
-                  style={{
-                    margin: "0 0 6px",
-                    fontSize: "0.88rem",
-                    color: "#4b5563",
-                  }}
-                >
-                  Game:{" "}
-                  <strong>
-                    {currentTask.jeopardyConfig.boardTitle}
-                  </strong>
-                </p>
-              )}
-
-            {timeLimitSeconds && timeLimitSeconds > 0 && (
-              <p
-                style={{
-                  margin: "0 0 10px",
-                  fontSize: "0.9rem",
-                  color: "#b91c1c",
-                  fontWeight: 500,
-                }}
-              >
-                Time left: {formatRemainingMs(remainingMs)}
-              </p>
-            )}
-
-            <div
-              style={{
-                marginTop: isMotionMission ? 0 : 6,
-                padding: isMotionMission ? 0 : 12,
-                borderRadius: isMotionMission ? 0 : 16,
-                background: isMotionMission
-                  ? "transparent"
-                  : "rgba(255,255,255,0.98)",
-                border: isMotionMission
-                  ? "none"
-                  : "1px solid rgba(209,213,219,0.9)",
-                fontSize: responseFontSize,
-                lineHeight: 1.5,
-                // Let the MotionMissionTask stretch
-                minHeight: isMotionMission ? "60vh" : undefined,
-              }}
-            >
-              <TaskRunner
-                key={
-                  currentTask?.id ??
-                  currentTask?._id ??
-                  currentTaskIndex ??
-                  currentTask?.prompt ??
-                  "task"
-                }
-                task={themedTask}
-                taskTypes={TASK_TYPES}
-                onSubmit={handleSubmitAnswer}
-                submitting={submitting}
-                onAnswerChange={setCurrentAnswerDraft}
-                answerDraft={currentAnswerDraft}
-                disabled={taskLocked || submitting}
-                socket={socket}
-                roomCode={roomCode}
-                playerTeam={teamName}
-                // Collaboration wiring
-                partnerAnswer={partnerAnswer}
-                showPartnerReply={showPartnerReply}
-                onPartnerReply={(replyText) => {
-                  if (
-                    !roomCode ||
-                    !joined ||
-                    !currentTask ||
-                    teamId == null
-                  )
-                    return;
-
-                  socket.emit("collab:reply", {
-                    roomCode: roomCode.trim().toUpperCase(),
-                    teamId,
-                    taskIndex:
-                      typeof currentTaskIndex === "number" &&
-                      currentTaskIndex >= 0
-                        ? currentTaskIndex
-                        : null,
-                    reply: replyText,
-                  });
-                }}
-              />
-            </div>
-
             {taskLocked && (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: 10,
-                  borderRadius: 12,
-                  background: "rgba(45,212,191,0.08)",
-                  border: "1px solid rgba(45,212,191,0.5)",
-                  fontSize: "0.85rem",
-                  color: "#0f172a",
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight: 600,
-                    marginBottom: 4,
-                  }}
-                >
-                  Round summary
+              <div className="task-locked-overlay">
+                <div>
+                  <div style={{ fontSize: "0.9rem", marginBottom: 4 }}>
+                    Task locked for review
+                  </div>
+                  <div style={{ fontSize: "0.8rem" }}>
+                    {postSubmitSecondsLeft != null
+                      ? `Your teacher is reviewing answers. ${
+                          postSubmitSecondsLeft > 0
+                            ? `About ${postSubmitSecondsLeft}s…`
+                            : "Almost done…"
+                        }`
+                      : "Your teacher is reviewing answers. Watch the board."}
+                  </div>
                 </div>
-
-                {lastTaskResult?.aiScore &&
-                typeof lastTaskResult.aiScore.totalItems === "number" ? (
-                  <div>
-                    You answered{" "}
-                    <strong>
-                      {lastTaskResult.aiScore.correctCount ??
-                        lastTaskResult.aiScore.totalScore ??
-                        "?"}
-                    </strong>{" "}
-                    of{" "}
-                    <strong>
-                      {lastTaskResult.aiScore.totalItems}
-                    </strong>{" "}
-                    correctly
-                    {typeof lastTaskResult.points === "number" && (
-                      <>
-                        {" "}
-                        and earned{" "}
-                        <strong>{lastTaskResult.points} pts</strong>.
-                      </>
-                    )}
-                  </div>
-                ) : lastTaskResult ? (
-                  <div>
-                    Your answer was{" "}
-                    {lastTaskResult.correct === true
-                      ? "correct 🎉"
-                      : lastTaskResult.correct === false
-                      ? "not correct"
-                      : "submitted"}
-                    {typeof lastTaskResult.points === "number" && (
-                      <> ({lastTaskResult.points} pts)</>
-                    )}
-                    .
-                  </div>
-                ) : (
-                  <div>Waiting for scoring from your teacher…</div>
-                )}
-
-                {postSubmitSecondsLeft != null &&
-                  postSubmitSecondsLeft > 0 && (
-                    <div style={{ marginTop: 4 }}>
-                      Next round starting in{" "}
-                      <strong>{postSubmitSecondsLeft}</strong>{" "}
-                      second
-                      {postSubmitSecondsLeft === 1 ? "" : "s"}
-                      …
-                    </div>
-                  )}
               </div>
             )}
-          </section>
-        )}
-      </div>
 
-      {joined && (
-        <NoiseSensor
-          active={noiseState.enabled}
-          roomCode={roomCode}
-          socket={socket}
-          ignoreNoise={!!currentTask?.ignoreNoise}
-        />
-      )}
-
-      {showConfetti && (
-        <div className="confetti-layer">
-          {Array.from({ length: 40 }).map((_, i) => (
-            <div
-              key={i}
-              className="confetti-piece"
-              style={{
-                left: `${(i * 2.5) % 100}%`,
-                animationDelay: `${(i % 10) * 0.08}s`,
+            <TaskRunner
+              task={currentTask}
+              taskIndex={currentTaskIndex}
+              totalTasks={tasksetTotalTasks}
+              teamId={teamId}
+              teamName={teamName}
+              roomCode={roomCode}
+              mustScan={mustScan}
+              enforceLocation={enforceLocation}
+              assignedStationId={assignedStationId}
+              scannedStationId={scannedStationId}
+              currentAnswerDraft={currentAnswerDraft}
+              setCurrentAnswerDraft={setCurrentAnswerDraft}
+              onSubmitStart={() => {
+                setLastTaskResult(null);
+                setPointToast(null);
+                setShortAnswerReveal(null);
+              }}
+              onSubmitComplete={() => {
+                // handled via task:scored + reviewPauseSeconds
               }}
             />
-          ))}
-        </div>
-      )}
+          </section>
+        )}
 
-      {/* Correct-answer overlay for SHORT_ANSWER tasks */}
-      {shortAnswerReveal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(15,23,42,0.55)",
-            zIndex: 130,
-          }}
-          onClick={() => setShortAnswerReveal(null)}
-        >
-          <div
-            style={{
-              maxWidth: 420,
-              width: "90%",
-              background: "#f9fafb",
-              borderRadius: 18,
-              padding: 16,
-              boxShadow: "0 18px 45px rgba(15,23,42,0.5)",
-              textAlign: "center",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: "1rem",
-                marginBottom: 6,
-                color: "#0f172a",
-              }}
-            >
-              Correct answer
-            </div>
-
-            {shortAnswerReveal.prompt && (
-              <div
+        {/* CORRECT ANSWER OVERLAY */}
+        {showCorrectAnswerOverlay && shortAnswerReveal && (
+          <div className="correct-answer-overlay">
+            <div className="correct-answer-card">
+              <h3>{shortAnswerReveal.label}</h3>
+              <pre>{shortAnswerReveal.value}</pre>
+              <button
+                type="button"
+                onClick={() => setShowCorrectAnswerOverlay(false)}
                 style={{
-                  fontSize: "0.8rem",
-                  color: "#6b7280",
-                  marginBottom: 8,
+                  marginTop: 8,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "none",
+                  fontSize: "0.9rem",
+                  background:
+                    "linear-gradient(90deg,#4f46e5,#6366f1,#a855f7)",
+                  color: "#f9fafb",
+                  cursor: "pointer",
+                  marginTop: 4,
                 }}
               >
-                {shortAnswerReveal.prompt}
-              </div>
-            )}
-
-            <div
-              style={{
-                fontSize: "1.1rem",
-                fontWeight: 700,
-                marginBottom: 12,
-                color: "#111827",
-              }}
-            >
-              {shortAnswerReveal.correctAnswer}
+                Got it
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setShortAnswerReveal(null)}
-              style={{
-                border: "none",
-                borderRadius: 999,
-                padding: "6px 16px",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                background: "#22c55e",
-                color: "#f9fafb",
-                cursor: "pointer",
-              }}
-            >
-              Got it
-            </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* +points toast */}
-      {pointToast && (
-        <div
-          style={{
-            position: "fixed",
-            left: "50%",
-            bottom: "20vh",
-            transform: "translateX(-50%)",
-            padding: "8px 16px",
-            borderRadius: 999,
-            background: "rgba(22,163,74,0.96)",
-            color: "#f9fafb",
-            fontWeight: 700,
-            fontSize: "0.95rem",
-            boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
-            zIndex: 120,
-          }}
-        >
-          +{pointToast.points} points!
-        </div>
-      )}
+        {/* TREAT BANNER */}
+        {treatMessage && <div className="treat-banner">{treatMessage}</div>}
 
-      {/* Persistent colour band at the bottom */}
-      <div
-        style={{
-          marginTop: 16,
-          width: "100%",
-          height: "50vh",
-          borderTopLeftRadius: 32,
-          borderTopRightRadius: 32,
-          backgroundColor: assignedColor
-            ? `var(--${assignedColor}-500, #e5e7eb)`
-            : "#e5e7eb",
-          boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
-        }}
-      />
+        {/* POINT TOAST (scoring + speed bonus) */}
+        {pointToast && (
+          <div className={`toast ${pointToast.positive ? "" : "negative"}`}>
+            {pointToast.message}
+          </div>
+        )}
+
+        {/* CONFETTI LAYER */}
+        {showConfetti && (
+          <div className="confetti-layer">
+            {Array.from({ length: 40 }).map((_, i) => (
+              <div
+                key={i}
+                className="confetti-piece"
+                style={{
+                  left: `${(i / 40) * 100}%`,
+                  animationDelay: `${(i % 5) * 0.1}s`,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* NOISE STRIP */}
+        <div className="noise-strip">
+          <NoiseSensor
+            enabled={noiseState.enabled}
+            level={noiseState.level}
+            threshold={noiseState.threshold}
+            brightness={noiseState.brightness}
+          />
+        </div>
+      </main>
     </div>
   );
 }
-
-export default StudentApp;
