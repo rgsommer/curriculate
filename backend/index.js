@@ -27,21 +27,10 @@ import {
 import authRoutes from "./routes/auth.js";
 import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
+import { COLORS } from "../shared/colors.js";
 
 const app = express();
 const server = http.createServer(app);
-
-// Station colours
-const COLORS = [
-  "red",
-  "blue",
-  "green",
-  "yellow",
-  "purple",
-  "orange",
-  "teal",
-  "pink",
-];
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 

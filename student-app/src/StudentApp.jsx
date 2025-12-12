@@ -6,6 +6,7 @@ import QrScanner from "./components/QrScanner.jsx";
 import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
+import { COLORS } from "@shared/colors";
 
 // Build marker so you can confirm the deployed bundle
 console.log("STUDENT BUILD MARKER v2025-12-12-AB, API_BASE_URL:", API_BASE_URL);
@@ -13,17 +14,6 @@ console.log("STUDENT BUILD MARKER v2025-12-12-AB, API_BASE_URL:", API_BASE_URL);
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
 // ---------------------------------------------------------------------
-
-const COLOR_NAMES = [
-  "red",
-  "blue",
-  "green",
-  "yellow",
-  "purple",
-  "orange",
-  "teal",
-  "pink",
-];
 
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
