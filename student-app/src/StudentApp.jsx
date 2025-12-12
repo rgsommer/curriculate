@@ -691,6 +691,7 @@ export default function StudentApp() {
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
 
+      // The actual task object
       setCurrentTask(payload.task || null);
 
       // Accept both `taskIndex` (old) and `index` (new `task:launch` payload)
@@ -702,10 +703,12 @@ export default function StudentApp() {
           : null;
       setCurrentTaskIndex(idx);
 
+      // Total tasks in the set (if provided)
       setTasksetTotalTasks(
         typeof payload.totalTasks === "number" ? payload.totalTasks : null
       );
 
+      // Time limit
       const limit =
         typeof payload.timeLimitSeconds === "number"
           ? payload.timeLimitSeconds
@@ -735,6 +738,7 @@ export default function StudentApp() {
         }
       }
 
+      // Reset answer UI
       setCurrentAnswerDraft("");
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
