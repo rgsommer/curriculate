@@ -655,10 +655,11 @@ function sendTaskToTeam(room, teamId, index) {
       : null;
 
   io.to(teamId).emit("task:launch", {
-    index,
+    taskIndex: index,
+    index, // legacy field for older clients
     task,
     timeLimitSeconds,
-    totalTasks: tasks.length,   // NEW
+    totalTasks: tasks.length,
   });
 }
 
@@ -1071,6 +1072,77 @@ io.on("connection", (socket) => {
     }
 
     team.lastScannedStationId = expectedStation || stationId || null;
+
+    // ─────────────────────────────────────────────
+    // Arrival race bonus – first 25% / next 25%
+    // ─────────────────────────────────────────────
+    // We treat each upcoming taskIndex as a "wave".
+    // After a submission, handleStudentSubmit sets team.nextTaskIndex.
+    // When the team scans at their new station (before the next task),
+    // we look at that queued index and award a one-time bonus based
+    // on arrival order for that wave.
+    if (room.taskset && Array.isArray(room.taskset.tasks)) {
+      const waveIndex =
+        typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0
+          ? team.nextTaskIndex
+          : null;
+
+      if (waveIndex != null) {
+        if (!room.stationArrivalRace) {
+          room.stationArrivalRace = {};
+        }
+
+        const waveKey = String(waveIndex);
+        if (!room.stationArrivalRace[waveKey]) {
+          room.stationArrivalRace[waveKey] = { order: [] };
+        }
+
+        const race = room.stationArrivalRace[waveKey];
+
+        // Only count the *first* successful scan per team for this wave
+        if (!race.order.includes(teamId)) {
+          race.order.push(teamId);
+          const position = race.order.length; // 1-based
+
+          // Use number of active teams as the denominator
+          const allTeams = Object.values(room.teams || {}).filter(
+            (t) => t && t.status !== "offline"
+          );
+          const totalTeams =
+            allTeams.length || Object.keys(room.teams || {}).length || 1;
+
+          const firstCut = Math.max(1, Math.floor(totalTeams * 0.25));
+          const secondCut = Math.max(firstCut, Math.floor(totalTeams * 0.5));
+
+          let bonus = 0;
+          if (position <= firstCut) {
+            bonus = 10; // first 25%
+          } else if (position <= secondCut) {
+            bonus = 5; // next 25%
+          }
+
+          if (bonus > 0) {
+            updateTeamScore(room, teamId, bonus);
+
+            // Optional: broadcast a small event so LiveSession or StudentApp
+            // can show a "speed bonus" toast later if you want.
+            io.to(code).emit("station:arrival-bonus", {
+              roomCode: code,
+              teamId,
+              teamName: team.teamName,
+              taskIndex: waveIndex,
+              bonus,
+              position,
+            });
+
+            // Refresh room state so the leaderboard reflects the bonus
+            const state = buildRoomState(room);
+            io.to(code).emit("room:state", state);
+            io.to(code).emit("roomState", state);
+          }
+        }
+      }
+    }
 
     // If this team has a "nextTaskIndex" queued (normal taskset flow),
     // deliver that task now.
@@ -1823,9 +1895,11 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
 
     io.to(code).emit("task:launch", {
-      index,
+      taskIndex: index,
+      index, // legacy
       task,
       timeLimitSeconds: task.timeLimitSeconds ?? 0,
+      totalTasks: room.taskset.tasks.length,
     });
   }
 
@@ -1982,9 +2056,11 @@ io.on("connection", (socket) => {
         room.taskIndex = -1;
 
         io.to(code).emit("task:launch", {
-          index: 0,
+          taskIndex: 0,
+          index: 0, // legacy
           task: quickTask,
           timeLimitSeconds: quickTask.timeLimitSeconds || 0,
+          totalTasks: 1,
         });
       } catch (err) {
         console.error("Error in teacherLaunchTask:", err);

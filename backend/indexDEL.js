@@ -1072,77 +1072,6 @@ io.on("connection", (socket) => {
 
     team.lastScannedStationId = expectedStation || stationId || null;
 
-    // ─────────────────────────────────────────────
-    // Arrival race bonus – first 25% / next 25%
-    // ─────────────────────────────────────────────
-    // We treat each upcoming taskIndex as a "wave".
-    // After a submission, handleStudentSubmit sets team.nextTaskIndex.
-    // When the team scans at their new station (before the next task),
-    // we look at that queued index and award a one-time bonus based
-    // on arrival order for that wave.
-    if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const waveIndex =
-        typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0
-          ? team.nextTaskIndex
-          : null;
-
-      if (waveIndex != null) {
-        if (!room.stationArrivalRace) {
-          room.stationArrivalRace = {};
-        }
-
-        const waveKey = String(waveIndex);
-        if (!room.stationArrivalRace[waveKey]) {
-          room.stationArrivalRace[waveKey] = { order: [] };
-        }
-
-        const race = room.stationArrivalRace[waveKey];
-
-        // Only count the *first* successful scan per team for this wave
-        if (!race.order.includes(teamId)) {
-          race.order.push(teamId);
-          const position = race.order.length; // 1-based
-
-          // Use number of active teams as the denominator
-          const allTeams = Object.values(room.teams || {}).filter(
-            (t) => t && t.status !== "offline"
-          );
-          const totalTeams =
-            allTeams.length || Object.keys(room.teams || {}).length || 1;
-
-          const firstCut = Math.max(1, Math.floor(totalTeams * 0.25));
-          const secondCut = Math.max(firstCut, Math.floor(totalTeams * 0.5));
-
-          let bonus = 0;
-          if (position <= firstCut) {
-            bonus = 10; // first 25%
-          } else if (position <= secondCut) {
-            bonus = 5; // next 25%
-          }
-
-          if (bonus > 0) {
-            updateTeamScore(room, teamId, bonus);
-
-            // Optional: broadcast a small event so LiveSession or StudentApp
-            // can show a "speed bonus" toast later if you want.
-            io.to(code).emit("station:arrival-bonus", {
-              roomCode: code,
-              teamId,
-              teamName: team.teamName,
-              taskIndex: waveIndex,
-              bonus,
-              position,
-            });
-
-            // Refresh room state so the leaderboard reflects the bonus
-            const state = buildRoomState(room);
-            io.to(code).emit("room:state", state);
-            io.to(code).emit("roomState", state);
-          }
-        }
-      }
-    }
-
     // If this team has a "nextTaskIndex" queued (normal taskset flow),
     // deliver that task now.
     if (room.taskset && Array.isArray(room.taskset.tasks)) {
@@ -1972,35 +1901,8 @@ io.on("connection", (socket) => {
 
   // Used by the new LiveSession green "Launch from taskset" button
   socket.on("teacher:launchNextTask", ({ roomCode }) => {
-  const code = (roomCode || "").toUpperCase();
-  const room = rooms[code];
-  if (!room || !room.taskset) {
-    console.warn("Cannot launch: no room or taskset");
-    return;
-  }
-
-  console.log("Launching taskset for room:", code);
-
-  // Reset room session
-  room.startedAt = Date.now();
-  room.isActive = true;
-
-  // Reset all teams
-  Object.values(room.teams || {}).forEach(team => {
-    team.taskIndex = -1;
-    delete team.nextTaskIndex;
-    team.lastScannedStationId = null;
+    startTasksetForRoom(roomCode);
   });
-
-  // 🚀 Deliver task 0 to every team immediately
-  Object.keys(room.teams || {}).forEach(teamId => {
-    sendTaskToTeam(room, teamId, 0);
-  });
-
-  const state = buildRoomState(room);
-  io.to(code).emit("room:state", state);
-  io.to(code).emit("roomState", state);
-});
 
   // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
   // so that handleStudentSubmit + scoring logic work.
