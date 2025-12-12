@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-R, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-S, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -525,10 +525,6 @@ function StudentApp() {
   // -------------------------------------------------------------------
   // Auto-open scanner when a scan is required
   // -------------------------------------------------------------------
-  const isMultiRoom =
-    Array.isArray(roomState?.selectedRooms) &&
-    roomState.selectedRooms.length > 1;
-
   const mustScan =
     enforceLocation &&
     assignedStationId &&
