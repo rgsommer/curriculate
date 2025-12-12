@@ -2302,8 +2302,15 @@ const handleScannedCode = (code) => {
       </header>
       
       {/* JOIN CARD */}
+            {/* JOIN CARD */}
       {!joined && (
-        <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
+        <main
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "flex-start",
+          }}
+        >
           <div
             className="join-card"
             style={{
@@ -2329,11 +2336,16 @@ const handleScannedCode = (code) => {
                 color: "#9ca3af",
               }}
             >
-              Enter the code your presenter shows on the board, pick a team name,
-              and list your team members.
+              Enter the code your presenter shows on the board, pick a team
+              name, and list your team members.
             </p>
 
-            <form onSubmit={handleJoin}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleJoin();
+              }}
+            >
               <div style={{ marginBottom: 10 }}>
                 <label
                   style={{
@@ -2354,21 +2366,22 @@ const handleScannedCode = (code) => {
 
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: "0.85rem" }}>
-                Team name
-                <input
-                  type="text"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "4px 6px",
-                    marginTop: 2,
-                    borderRadius: 6,
-                    border: "1px solid #d1d5db",
-                    fontSize: "1rem",
-                  }}
-                />
-              </label>
+                  Team name
+                  <input
+                    type="text"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "4px 6px",
+                      marginTop: 2,
+                      borderRadius: 6,
+                      border: "1px solid #d1d5db",
+                      fontSize: "1rem",
+                    }}
+                  />
+                </label>
+              </div>
 
               <div>
                 <div
@@ -2411,9 +2424,7 @@ const handleScannedCode = (code) => {
                 </div>
                 <button
                   type="button"
-                  onClick={() =>
-                    setMembers((prev) => [...prev, ""])
-                  }
+                  onClick={() => setMembers((prev) => [...prev, ""])}
                   style={{
                     marginTop: 4,
                     padding: "4px 8px",
@@ -2472,8 +2483,8 @@ const handleScannedCode = (code) => {
               </div>
 
               <button
-                type="button"
-                onClick={handleJoin}
+                type="submit"
+                disabled={!canJoin || joiningRoom}
                 style={{
                   marginTop: 8,
                   padding: "8px 12px",
@@ -2486,11 +2497,12 @@ const handleScannedCode = (code) => {
                   fontWeight: 600,
                 }}
               >
-                Ready for action
+                {joiningRoom ? "Joining…" : "Ready for action"}
               </button>
-            </div>
-          </section>
-        )}
+            </form>
+          </div>
+        </main>
+      )}
 
         {/* QR SCANNER */}
         {joined && scannerActive && (
