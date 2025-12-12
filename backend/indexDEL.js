@@ -655,11 +655,10 @@ function sendTaskToTeam(room, teamId, index) {
       : null;
 
   io.to(teamId).emit("task:launch", {
-    taskIndex: index,
-    index, // legacy field for older clients
+    index,
     task,
     timeLimitSeconds,
-    totalTasks: tasks.length,
+    totalTasks: tasks.length,   // NEW
   });
 }
 
@@ -1895,11 +1894,9 @@ io.on("connection", (socket) => {
     io.to(code).emit("roomState", state);
 
     io.to(code).emit("task:launch", {
-      taskIndex: index,
-      index, // legacy
+      index,
       task,
       timeLimitSeconds: task.timeLimitSeconds ?? 0,
-      totalTasks: room.taskset.tasks.length,
     });
   }
 
@@ -1975,8 +1972,35 @@ io.on("connection", (socket) => {
 
   // Used by the new LiveSession green "Launch from taskset" button
   socket.on("teacher:launchNextTask", ({ roomCode }) => {
-    startTasksetForRoom(roomCode);
+  const code = (roomCode || "").toUpperCase();
+  const room = rooms[code];
+  if (!room || !room.taskset) {
+    console.warn("Cannot launch: no room or taskset");
+    return;
+  }
+
+  console.log("Launching taskset for room:", code);
+
+  // Reset room session
+  room.startedAt = Date.now();
+  room.isActive = true;
+
+  // Reset all teams
+  Object.values(room.teams || {}).forEach(team => {
+    team.taskIndex = -1;
+    delete team.nextTaskIndex;
+    team.lastScannedStationId = null;
   });
+
+  // 🚀 Deliver task 0 to every team immediately
+  Object.keys(room.teams || {}).forEach(teamId => {
+    sendTaskToTeam(room, teamId, 0);
+  });
+
+  const state = buildRoomState(room);
+  io.to(code).emit("room:state", state);
+  io.to(code).emit("roomState", state);
+});
 
   // Quick ad-hoc task – one-off, BUT still uses an ephemeral taskset
   // so that handleStudentSubmit + scoring logic work.
@@ -2056,11 +2080,9 @@ io.on("connection", (socket) => {
         room.taskIndex = -1;
 
         io.to(code).emit("task:launch", {
-          taskIndex: 0,
-          index: 0, // legacy
+          index: 0,
           task: quickTask,
           timeLimitSeconds: quickTask.timeLimitSeconds || 0,
-          totalTasks: 1,
         });
       } catch (err) {
         console.error("Error in teacherLaunchTask:", err);
