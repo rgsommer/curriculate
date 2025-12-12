@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-M, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-N, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -782,7 +782,7 @@ function StudentApp() {
         roomCode: roomCode.trim().toUpperCase(),
         teamId,
         stationId: norm.id,       // ✅ send canonical id, not raw QR
-        locationSlug,             // ✅ classroom forces "classroom"
+        ...(locationSlug ? { locationSlug } : {}), // only include when not classroom
       },
       (response) => {
         if (!response || response.error) {
