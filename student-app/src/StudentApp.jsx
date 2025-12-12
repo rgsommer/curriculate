@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-L, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-M, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -771,10 +771,10 @@ function StudentApp() {
     if (!roomCode || !joined || !teamId) return;
 
     // ✅ If LiveSession location is Classroom, ignore any location embedded in the QR
-    const locationSlug =
-      normalizeLocationSlug(roomLocation) === "classroom"
-        ? "classroom"
-        : normalizeLocationSlug(roomLocation);
+    const loc = normalizeLocationSlug(roomLocation);
+
+    // If classroom, omit locationSlug so backend can ignore location checks
+    const locationSlug = loc === "classroom" ? undefined : loc;
 
     socket.emit(
       "station:scan",
