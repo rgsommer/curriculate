@@ -690,15 +690,26 @@ export default function StudentApp() {
 
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
+
       setCurrentTask(payload.task || null);
-      setCurrentTaskIndex(
-        typeof payload.taskIndex === "number" ? payload.taskIndex : null
-      );
+
+      // Accept both `taskIndex` (old) and `index` (new `task:launch` payload)
+      const idx =
+        typeof payload.taskIndex === "number"
+          ? payload.taskIndex
+          : typeof payload.index === "number"
+          ? payload.index
+          : null;
+      setCurrentTaskIndex(idx);
+
       setTasksetTotalTasks(
         typeof payload.totalTasks === "number" ? payload.totalTasks : null
       );
 
-      const limit = payload.timeLimitSeconds || null;
+      const limit =
+        typeof payload.timeLimitSeconds === "number"
+          ? payload.timeLimitSeconds
+          : null;
       setTimeLimitSeconds(limit);
 
       if (limit && limit > 0) {
@@ -857,7 +868,8 @@ export default function StudentApp() {
     };
 
     socket.on("room:state", handleRoomState);
-    socket.on("task:assigned", handleTaskAssigned);
+    socket.on("task:assigned", handleTaskAssigned); // legacy / per-team flows
+    socket.on("task:launch", handleTaskAssigned);   // new launch event
     socket.on("task:scored", handleTaskScored);
     socket.on("noise:update", handleNoiseUpdate);
     socket.on("treat:event", handleTreat);
@@ -869,12 +881,14 @@ export default function StudentApp() {
     return () => {
       socket.off("room:state", handleRoomState);
       socket.off("task:assigned", handleTaskAssigned);
+      socket.off("task:launch", handleTaskAssigned);
       socket.off("task:scored", handleTaskScored);
       socket.off("noise:update", handleNoiseUpdate);
       socket.off("treat:event", handleTreat);
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
+
   }, [teamId, reviewPauseSeconds, currentTask]);
 
   // ─────────────────────────────────────────────
