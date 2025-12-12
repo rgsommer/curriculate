@@ -775,6 +775,13 @@ function StudentApp() {
   // Location enforcement & station gating
   // ─────────────────────────────────────────────
 
+  const mustScan =
+      enforceLocation &&
+      normalizeLocationSlug(roomLocation) !== "classroom" &&
+      assignedStationId &&
+      scannedStationId &&
+      assignedStationId !== scannedStationId;
+
   useEffect(() => {
     if (!currentTask) {
       setEnforceLocation(false);
@@ -784,13 +791,6 @@ function StudentApp() {
     const enforce = !!cfg.requireScan && !!cfg.stationBased;
     setEnforceLocation(enforce);
   }, [currentTask]);
-
-  const mustScan =
-    enforceLocation &&
-    normalizeLocationSlug(roomLocation) !== "classroom" &&
-    assignedStationId &&
-    scannedStationId &&
-    assignedStationId !== scannedStationId;
 
   // ─────────────────────────────────────────────
   // Derived values for UI
