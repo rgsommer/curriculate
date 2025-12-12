@@ -754,53 +754,46 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   const handleScan = (data) => {
-    if (!data) return;
+    if (!data || !joined || !teamId) return;
 
     setScanError(null);
 
-    // ✅ Normalize QR -> canonical station id (e.g., "station-1")
+    // ✅ Always normalize QR → canonical station id
     const norm = normalizeStationId(data);
     if (!norm?.id) {
-      setScanError("Unrecognized QR code.");
+      setScanError("Unrecognized station QR code.");
       return;
     }
 
-    // Store canonical id, not raw QR string
     setScannedStationId(norm.id);
 
-    if (!roomCode || !joined || !teamId) return;
+    // 🔑 Only include locationSlug IF multi-room activity
+    const isMultiRoom = Array.isArray(roomState?.selectedRooms)
+      ? roomState.selectedRooms.length > 1
+      : false;
 
-    // ✅ If LiveSession location is Classroom, ignore any location embedded in the QR
-    const loc = normalizeLocationSlug(roomLocation);
+    const payload = {
+      roomCode: roomCode.trim().toUpperCase(),
+      teamId,
+      stationId: norm.id,
+      ...(isMultiRoom ? { locationSlug: normalizeLocationSlug(roomLocation) } : {})
+    };
 
-    // If classroom, omit locationSlug so backend can ignore location checks
-    const locationSlug = loc === "classroom" ? undefined : loc;
-
-    socket.emit(
-      "station:scan",
-      {
-        roomCode: roomCode.trim().toUpperCase(),
-        teamId,
-        stationId: norm.id,       // ✅ send canonical id, not raw QR
-        ...(locationSlug ? { locationSlug } : {}), // only include when not classroom
-      },
-      (response) => {
-        if (!response || response.error) {
-          setScanError(response?.error || "Scan was not accepted.");
-          return;
-        }
-
-        // If server sends back a stationId, normalize & adopt it
-        if (response.stationId) {
-          const stationInfo = normalizeStationId(response.stationId);
-          setAssignedStationId(stationInfo.id);
-          setAssignedColor(stationInfo.color || null);
-          lastStationIdRef.current = stationInfo.id;
-        }
-
-        setScannerActive(false);
+    socket.emit("station:scan", payload, (response) => {
+      if (!response || response.error) {
+        setScanError(response?.error || "Scan was not accepted.");
+        return;
       }
-    );
+
+      if (response.stationId) {
+        const info = normalizeStationId(response.stationId);
+        setAssignedStationId(info.id);
+        setAssignedColor(info.color || null);
+        lastStationIdRef.current = info.id;
+      }
+
+      setScannerActive(false);
+    });
   };
 
   // ─────────────────────────────────────────────
