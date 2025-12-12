@@ -1177,34 +1177,6 @@ function StudentApp() {
       }
     : {};
 
-  const isMysteryClues =
-    currentTask?.taskType === TASK_TYPES.MYSTERY_CLUES;
-
-  const mysteryHeaderStyle = isMysteryClues
-    ? {
-        animation: "mystery-glow 1.6s ease-in-out infinite",
-      }
-    : {};
-
-  const isOpenText =
-    currentTask?.taskType === TASK_TYPES.OPEN_TEXT;
-
-  const isPetFeeding =
-    currentTask?.taskType === TASK_TYPES.PET_FEEDING;
-
-  const isPhoto =
-    currentTask?.taskType === TASK_TYPES.PHOTO ||
-    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL;
-
-  const isPhotoJournal =
-    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL;
-
-  const isRecordAudio =
-    currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
-
-  const isBrainSparkNotes =
-    currentTask?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES;
-
   // Theme-enriched task object
   const themedTask =
     currentTask && uiTheme ? { ...currentTask, uiTheme } : currentTask;
@@ -1218,31 +1190,23 @@ function StudentApp() {
     border: "1px solid rgba(129,140,248,0.35)",
   };
 
-  const taskCardBackground = isFlashcardsRace
-    ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
-    : isMadDash
-    ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
-    : isMakeAndSnap
-    ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
-    : isMultipleChoice
-    ? "linear-gradient(135deg, #22c55e 0%, #0ea5e9 40%, #eef2ff 100%)"
-    : isDrawMime
-    ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
-    : isLiveDebate
-    ? "linear-gradient(135deg, #0f172a 0%, #fb7185 35%, #f97316 70%, #facc15 100%)"
-    : isMindMapper
-    ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
-    : isMusicalChairs
-    ? "linear-gradient(135deg, #f97316 0%, #ec4899 35%, #8b5cf6 70%, #fef3c7 100%)"
-    : isMysteryClues
-    ? "linear-gradient(135deg, #020617 0%, #1e293b 30%, #4f46e5 65%, #22c55e 100%)"
-    : isOpenText
-    ? "linear-gradient(135deg, #e0f2fe 0%, #f5f3ff 40%, #f9fafb 100%)"
-    : isPhoto
-    ? "linear-gradient(135deg, #0f172a 0%, #38bdf8 40%, #e0f2fe 100%)"
-    : isBrainSparkNotes
-    ? "linear-gradient(135deg, #fef9c3 0%, #fee2e2 40%, #f9fafb 100%)"
-    : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
+    const taskCardBackground = isFlashcardsRace
+      ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
+      : isMadDash
+      ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
+      : isMakeAndSnap
+      ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
+      : isMultipleChoice
+      ? "linear-gradient(135deg, #22c55e 0%, #0ea5e9 40%, #eef2ff 100%)"
+      : isDrawMime
+      ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
+      : isLiveDebate
+      ? "linear-gradient(135deg, #0f172a 0%, #fb7185 35%, #f97316 70%, #facc15 100%)"
+      : isMindMapper
+      ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
+      : isMusicalChairs
+      ? "linear-gradient(135deg, #f97316 0%, #ec4899 35%, #8b5cf6 70%, #fef3c7 100%)"
+      : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
   const currentTaskNumber =
@@ -1283,14 +1247,8 @@ function StudentApp() {
           ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
           : isMusicalChairs
           ? "radial-gradient(circle at top, #7c3aed 0%, #fb7185 40%, #facc15 75%, #fef9c3 100%)"
-          : isMysteryClues
-          ? "radial-gradient(circle at top, #020617 0%, #1e293b 30%, #4f46e5 60%, #22c55e 100%)"
-          : isPetFeeding
-          ? "radial-gradient(circle at top, #0f172a 0%, #22c55e 35%, #0ea5e9 70%, #fef9c3 100%)"
-          : isJeopardy
-          ? "radial-gradient(circle at top, #312e81 0%, #4c1d95 35%, #7e22ce 70%, #f97316 100%)"
           : themeShell.pageBg,
-  
+
         color: themeShell.text,
         opacity: noiseState.enabled ? noiseState.brightness : 1,
         transition: "opacity 120ms ease-out",
@@ -1457,20 +1415,6 @@ function StudentApp() {
           100% {
             transform: translateY(0) scale(1);
             text-shadow: 0 0 0 rgba(251, 113, 133, 0);
-          }
-        }
-        @keyframes mystery-glow {
-          0% {
-            transform: scale(1);
-            text-shadow: 0 0 0 rgba(56,189,248,0);
-          }
-          50% {
-            transform: scale(1.03);
-            text-shadow: 0 0 16px rgba(56,189,248,0.9);
-          }
-          100% {
-            transform: scale(1);
-            text-shadow: 0 0 0 rgba(56,189,248,0);
           }
         }
 
@@ -1911,9 +1855,9 @@ function StudentApp() {
             className="task-card"
             style={{
               ...baseTaskCardStyle,
-              ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
+              ...(isMotionMission
                 ? {
-                    // Let MotionMissionTask / PetFeeding / RecordAudio own the look
+                    // Let MotionMissionTask own the look
                     background: "transparent",
                     padding: 0,
                     border: "none",
@@ -1931,7 +1875,6 @@ function StudentApp() {
                 fontSize: responseHeadingFontSize,
                 letterSpacing: 0.2,
                 ...musicalChairsHeaderStyle,
-                ...mysteryHeaderStyle,
               }}
             >
               {currentTaskNumber && (
@@ -1986,15 +1929,11 @@ function StudentApp() {
             {isFlashcardsRace
               ? "Flashcards Race!"
               : isJeopardy
-              ? "Brain Blitz!"
+              ? "Jeopardy clue"
               : isMadDash
               ? "Mad Dash!"
               : isMakeAndSnap
               ? "Make it & Snap it!"
-              : isPhotoJournal
-              ? "Photo journal!"
-              : isPhoto
-              ? "Photo evidence!"
               : isDrawMime
               ? "Draw or Mime!"
               : isLiveDebate
@@ -2005,19 +1944,10 @@ function StudentApp() {
               ? "Motion Mission!"
               : isMusicalChairs
               ? "Musical Chairs!"
-              : isMysteryClues
-              ? "Mystery Clues!"
               : isMultipleChoice
               ? "Multiple choice!"
-              : isPetFeeding
-              ? "Feed the pet!"
-              : isRecordAudio
-              ? "Record your voice!"
-              : isOpenText
-              ? "Open response!"
-              : isBrainSparkNotes
-              ? "Spark Notes!"
               : "Your task"}
+
             </h2>
 
             {isMakeAndSnap && (
@@ -2030,32 +1960,6 @@ function StudentApp() {
                 }}
               >
                 Build, draw, or act it out — then snap a clear photo of what you made!
-              </p>
-            )}
-
-            {isPhoto && !isPhotoJournal && (
-              <p
-                style={{
-                  margin: "0 0 6px",
-                  fontSize: "0.85rem",
-                  color: "#0369a1",
-                  fontWeight: 500,
-                }}
-              >
-                Take a clear photo that matches the prompt. Make sure your whole idea is visible!
-              </p>
-            )}
-
-            {isPhotoJournal && (
-              <p
-                style={{
-                  margin: "0 0 6px",
-                  fontSize: "0.85rem",
-                  color: "#0369a1",
-                  fontWeight: 500,
-                }}
-              >
-                Snap a clear photo, then write a short explanation of what it shows and why it matters.
               </p>
             )}
 
@@ -2090,20 +1994,19 @@ function StudentApp() {
 
             <div
               style={{
-                marginTop: isMotionMission || isPetFeeding ? 0 : 6,
-                padding: isMotionMission || isPetFeeding ? 0 : 12,
-                borderRadius: isMotionMission || isPetFeeding ? 0 : 16,
-                background: isMotionMission || isPetFeeding
+                marginTop: isMotionMission ? 0 : 6,
+                padding: isMotionMission ? 0 : 12,
+                borderRadius: isMotionMission ? 0 : 16,
+                background: isMotionMission
                   ? "transparent"
                   : "rgba(255,255,255,0.98)",
-                border: isMotionMission || isPetFeeding
+                border: isMotionMission
                   ? "none"
                   : "1px solid rgba(209,213,219,0.9)",
                 fontSize: responseFontSize,
                 lineHeight: 1.5,
-                // Let the MotionMissionTask / PetFeedingTask stretch
-                minHeight:
-                  isMotionMission || isPetFeeding ? "60vh" : undefined,
+                // Let the MotionMissionTask stretch
+                minHeight: isMotionMission ? "60vh" : undefined,
               }}
             >
               <TaskRunner
@@ -2368,6 +2271,6 @@ function StudentApp() {
       />
     </div>
   );
-} 
+}
 
 export default StudentApp;
