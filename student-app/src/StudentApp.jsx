@@ -1995,7 +1995,6 @@ export default function StudentApp() {
                 type="button"
                 onClick={() => setShowCorrectAnswerOverlay(false)}
                 style={{
-                  marginTop: 8,
                   padding: "6px 10px",
                   borderRadius: 999,
                   border: "none",
