@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-K, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-L, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -682,6 +682,14 @@ function StudentApp() {
       }));
     });
   };
+
+  // Auto-open scanner immediately after joining a room
+  useEffect(() => {
+    if (joined) {
+      setScannerActive(true);
+    }
+  }, [joined]);
+
 
   const handleSubmitAnswer = (answerPayload) => {
     if (!roomCode || !joined || !currentTask || submitting || taskLocked) {
