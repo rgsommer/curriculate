@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-Q, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-R, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -688,11 +688,8 @@ function StudentApp() {
 
   // Auto-open scanner immediately after joining a room
   useEffect(() => {
-    if (joined) {
-      setScannerActive(true);
-    }
+    if (joined) setScannerActive(true);
   }, [joined]);
-
 
   const handleSubmitAnswer = (answerPayload) => {
     if (!roomCode || !joined || !currentTask || submitting || taskLocked) {
@@ -757,54 +754,43 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   const handleScan = (data) => {
-    if (!data || !joined || !teamId) return;
+  if (!data || !joined || !teamId) return;
 
-    setScanError(null);
+  setScanError(null);
 
-    // ✅ Always normalize QR → canonical station id
-    const norm = normalizeStationId(data);
-    if (!norm?.id) {
-      setScanError("Unrecognized station QR code.");
-      return;
-    }
+  const norm = normalizeStationId(data);
+  if (!norm?.id) {
+    setScanError("Unrecognized station QR code.");
+    return;
+  }
 
-    setScannedStationId(norm.id);
+  setScannedStationId(norm.id);
 
-    // 🔑 Only include locationSlug IF multi-room activity
-    const isMultiRoom = Array.isArray(roomState?.selectedRooms)
-      ? roomState.selectedRooms.length > 1
-      : false;
-
-    const payload = {
+  socket.emit(
+    "station:scan",
+    {
       roomCode: roomCode.trim().toUpperCase(),
       teamId,
       stationId: norm.id,
-      ...(isMultiRoom ? { locationSlug: normalizeLocationSlug(roomLocation) } : {})
-    };
+    },
+    (response) => {
+      if (!response || response.error) {
+        setScanError(response?.error || "Scan was not accepted.");
+        return;
+      }
 
-    socket.emit(
-      "station:scan",
-      {
-        roomCode: roomCode.trim().toUpperCase(),
-        teamId,
-        stationId: norm.id,   // ✅ ONLY THIS
-      },
-      (response) => {
-        if (!response || response.error) {
-          setScanError(response?.error || "Scan was not accepted.");
-          return;
-        }
+      if (response.stationId) {
+        const info = normalizeStationId(response.stationId);
+        setAssignedStationId(info.id);
+        setAssignedColor(info.color || null);
+        lastStationIdRef.current = info.id;
+      }
 
-        if (response.stationId) {
-          const info = normalizeStationId(response.stationId);
-          setAssignedStationId(info.id);
-          setAssignedColor(info.color || null);
-          lastStationIdRef.current = info.id;
-        }
+      setScannerActive(false);
+    }
+  );
+};
 
-        setScannerActive(false);
-    });
-  };
 
   // ─────────────────────────────────────────────
   // Location enforcement & station gating
