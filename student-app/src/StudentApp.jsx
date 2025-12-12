@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD v2025-12-12-C, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD v2025-12-12-D, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -910,7 +910,7 @@ export default function StudentApp() {
     };
 
     socket.on("room:state", handleRoomState);
-    socket.on("task:assigned", handleTaskAssigned);
+    socket.on("task:launched", handleTaskAssigned);
     socket.on("task:scored", handleTaskScored);
     socket.on("noise:update", handleNoiseUpdate);
     socket.on("treat:event", handleTreat);
@@ -922,7 +922,7 @@ export default function StudentApp() {
 
     return () => {
       socket.off("room:state", handleRoomState);
-      socket.off("task:assigned", handleTaskAssigned);
+      socket.off("task:launched", handleTaskAssigned);
       socket.off("task:scored", handleTaskScored);
       socket.off("noise:update", handleNoiseUpdate);
       socket.off("treat:event", handleTreat);
