@@ -526,16 +526,14 @@ function StudentApp() {
   // Auto-open scanner when a scan is required
   // -------------------------------------------------------------------
   const mustScan =
-      enforceLocation &&
-      normalizeLocationSlug(roomLocation) !== "classroom" &&
-      assignedStationId &&
-      scannedStationId &&
-      assignedStationId !== scannedStationId;
+    enforceLocation &&
+    normalizeLocationSlug(roomLocation) !== "classroom" &&
+    assignedStationId &&
+    scannedStationId &&
+    assignedStationId !== scannedStationId;
 
   useEffect(() => {
-    if (mustScan) {
-      setScannerActive(true);
-    }
+    if (mustScan) setScannerActive(true);
   }, [mustScan]);
 
   // Clean up timers on unmount
@@ -750,29 +748,49 @@ function StudentApp() {
 
   const handleScan = (data) => {
     if (!data) return;
+
     setScanError(null);
-    setScannedStationId(data);
+
+    // ✅ Normalize QR -> canonical station id (e.g., "station-1")
+    const norm = normalizeStationId(data);
+    if (!norm?.id) {
+      setScanError("Unrecognized QR code.");
+      return;
+    }
+
+    // Store canonical id, not raw QR string
+    setScannedStationId(norm.id);
 
     if (!roomCode || !joined || !teamId) return;
+
+    // ✅ If LiveSession location is Classroom, ignore any location embedded in the QR
+    const locationSlug =
+      normalizeLocationSlug(roomLocation) === "classroom"
+        ? "classroom"
+        : normalizeLocationSlug(roomLocation);
 
     socket.emit(
       "station:scan",
       {
         roomCode: roomCode.trim().toUpperCase(),
         teamId,
-        stationId: data,
+        stationId: norm.id,       // ✅ send canonical id, not raw QR
+        locationSlug,             // ✅ classroom forces "classroom"
       },
       (response) => {
         if (!response || response.error) {
           setScanError(response?.error || "Scan was not accepted.");
           return;
         }
+
+        // If server sends back a stationId, normalize & adopt it
         if (response.stationId) {
           const stationInfo = normalizeStationId(response.stationId);
           setAssignedStationId(stationInfo.id);
           setAssignedColor(stationInfo.color || null);
           lastStationIdRef.current = stationInfo.id;
         }
+
         setScannerActive(false);
       }
     );
@@ -1846,41 +1864,6 @@ function StudentApp() {
               />
             </div>
           </section>
-
-          {/* QR SCANNER TOGGLE */}
-          <section
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              marginTop: 4,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setScannerActive((prev) => !prev)}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "none",
-                background: scannerActive
-                  ? "linear-gradient(135deg, #22c55e, #0ea5e9)"
-                  : "rgba(15,23,42,0.8)",
-                color: "#f9fafb",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <span role="img" aria-label="qr">
-                📷
-              </span>
-              {scannerActive ? "Hide Scanner" : "Scan Station"}
-            </button>
 
             {progressLabel && (
               <div style={{ textAlign: "right", fontSize: "0.8rem" }}>
