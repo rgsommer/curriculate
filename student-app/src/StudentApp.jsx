@@ -14,57 +14,67 @@ console.log("STUDENT BUILD MARKER v2025-12-02-A, API_BASE_URL:", API_BASE_URL);
 // Station colour helpers – numeric ids (station-1, station-2…)
 // ---------------------------------------------------------------------
 
-const COLOR_NAMES = [
-  "red",
-  "blue",
-  "green",
-  "yellow",
-  "purple",
-  "orange",
-  "teal",
-  "pink",
-];
+// Map station id → colour name
+const STATION_COLOURS = {
+  "station-1": "red",
+  "station-2": "blue",
+  "station-3": "green",
+  "station-4": "yellow",
+  "station-5": "purple",
+  "station-6": "orange",
+  "station-7": "teal",
+  "station-8": "pink",
+};
 
-// For now, LiveSession-launched tasks are assumed to use "Classroom"
-const DEFAULT_LOCATION = "Classroom";
+// Reverse map colour → station id hint (for text only)
+const COLOUR_TO_LABEL = {
+  red: "Red",
+  blue: "Blue",
+  green: "Green",
+  yellow: "Yellow",
+  purple: "Purple",
+  orange: "Orange",
+  teal: "Teal",
+  pink: "Pink",
+};
 
-// Normalize a human-readable station id like "Red" or "station-1" into a consistent shape
+// Normalize station id so we can safely compare / display
 function normalizeStationId(raw) {
   if (!raw || typeof raw !== "string") {
-    return { id: null, color: null, label: "Unassigned" };
+    return { id: null, color: null };
   }
   const trimmed = raw.trim();
 
+  // Already a short id (station-1, etc.)
   if (trimmed.startsWith("station-")) {
-    const parts = trimmed.split("-");
-    const idx = parseInt(parts[1], 10);
-    const colorName = COLOR_NAMES[idx - 1] || null;
-    return {
-      id: trimmed,
-      color: colorName,
-      label: colorName
-        ? `${colorName.charAt(0).toUpperCase()}${colorName.slice(1)}`
-        : trimmed,
-    };
+    const color = STATION_COLOURS[trimmed] || null;
+    return { id: trimmed, color };
   }
 
-  const maybeColour = trimmed.toLowerCase();
-  if (COLOR_NAMES.includes(maybeColour)) {
-    return {
-      id: `station-${COLOR_NAMES.indexOf(maybeColour) + 1}`,
-      color: maybeColour,
-      label: trimmed,
-    };
+  // QR may contain location + colour, or numeric, etc.
+  const parts = trimmed.split("/");
+  const last = parts[parts.length - 1] || "";
+  const maybeColour = last.toLowerCase();
+
+  if (COLOUR_TO_LABEL[maybeColour]) {
+    // Map colour to a canonical station id if possible
+    const candidate = Object.entries(STATION_COLOURS).find(
+      ([, c]) => c === maybeColour
+    );
+    if (candidate) {
+      return { id: candidate[0], color: maybeColour };
+    }
+    return { id: trimmed, color: maybeColour };
   }
 
-  return {
-    id: trimmed,
-    color: null,
-    label: trimmed,
-  };
+  // Fallback: treat as opaque id, try to infer colour from lookup
+  const color = STATION_COLOURS[trimmed] || null;
+  return { id: trimmed, color };
 }
 
 // Normalize location slug
+const DEFAULT_LOCATION = "classroom";
+
 function normalizeLocationSlug(raw) {
   if (!raw || typeof raw !== "string") return null;
   return raw.trim().toLowerCase().replace(/\s+/g, "-");
@@ -222,9 +232,11 @@ export default function StudentApp() {
   // EFFECT: socket connection lifecycle
   // ─────────────────────────────────────────────
   useEffect(() => {
+    console.log("STUDENT: Mounting StudentApp, connecting socket…");
+
     const handleConnect = () => {
+      console.log("STUDENT: socket connected", socket.id);
       setConnected(true);
-      setStatusMessage("");
 
       // Try to resume existing team session if present
       try {
@@ -232,6 +244,7 @@ export default function StudentApp() {
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.roomCode && parsed.teamId) {
+            console.log("STUDENT: Resuming previous teamSession:", parsed);
             setRoomCode(parsed.roomCode);
             setTeamId(parsed.teamId);
             setTeamSessionId(parsed.teamSessionId || null);
@@ -244,24 +257,19 @@ export default function StudentApp() {
       }
     };
 
-    const handleDisconnect = () => {
+    const handleDisconnect = (reason) => {
+      console.log("STUDENT: socket disconnected", reason);
       setConnected(false);
-      setStatusMessage(
-        "Disconnected from server. Trying to reconnect…"
-      );
     };
 
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", (err) => {
-      console.error("Socket connection error:", err);
-      setStatusMessage("Unable to connect. Check your internet?");
-    });
 
     return () => {
+      console.log("STUDENT: Unmounting StudentApp, disconnecting socket…");
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
-      socket.off("connect_error");
+      socket.disconnect();
     };
   }, []);
 
@@ -283,18 +291,14 @@ export default function StudentApp() {
   // Audio setup (alert + treat sounds)
   // ─────────────────────────────────────────────
   useEffect(() => {
-    try {
-      const alertAudio = new Audio(
-        "https://cdn.pixabay.com/download/audio/2021/08/04/audio_6e735e9f37.mp3?filename=ding-36029.mp3"
-      );
-      const treatAudio = new Audio(
-        "https://cdn.pixabay.com/download/audio/2021/08/09/audio_e6ff0edb82.mp3?filename=correct-2-46134.mp3"
-      );
-      sndAlert.current = alertAudio;
-      sndTreat.current = treatAudio;
-    } catch (err) {
-      console.warn("Could not preload audio:", err);
-    }
+    const alertAudio = new Audio(
+      "https://cdn.pixabay.com/download/audio/2021/08/04/audio_6e735e9f37.mp3?filename=ding-36029.mp3"
+    );
+    const treatAudio = new Audio(
+      "https://cdn.pixabay.com/download/audio/2021/08/09/audio_e6ff0edb82.mp3?filename=correct-2-46134.mp3"
+    );
+    sndAlert.current = alertAudio;
+    sndTreat.current = treatAudio;
   }, []);
 
   function unlockAudioForBrowser() {
@@ -364,10 +368,21 @@ export default function StudentApp() {
       .map((m) => m.trim())
       .filter((m) => m.length > 0);
 
+    console.log("STUDENT: Attempting to join room:", {
+      finalRoom,
+      teamName: teamName.trim(),
+      members: filteredMembers,
+      socketId: socket.id,
+    });
+
     setJoiningRoom(true);
     setStatusMessage(`Joining Room ${finalRoom}…`);
 
+    // TIMEOUT SAFETY — if no ack in 8 seconds, fail
     const timeoutId = setTimeout(() => {
+      console.error(
+        "STUDENT: JOIN TIMEOUT — no response from server after 8s"
+      );
       setJoiningRoom(false);
       setStatusMessage("Join failed — timeout");
       alert("Join timed out. Is the teacher in the room?");
@@ -382,6 +397,7 @@ export default function StudentApp() {
       },
       (ack) => {
         clearTimeout(timeoutId);
+        console.log("STUDENT: ACK FROM SERVER:", ack);
 
         if (!ack || !ack.ok) {
           setJoiningRoom(false);
@@ -398,6 +414,7 @@ export default function StudentApp() {
         setTeamId(ack.teamId || teamSession);
         setTeamSessionId(teamSession);
 
+        // Persist for resume-team-session
         try {
           sessionStorage.setItem(
             "teamSession",
@@ -412,6 +429,7 @@ export default function StudentApp() {
           console.warn("STUDENT: Unable to persist teamSession:", err);
         }
 
+        // Fixed-station / multi-room is signaled from the room state
         setEnforceLocation(!!ack.roomState?.enforceLocation);
         if (ack.roomState?.locationCode) {
           setRoomLocation(ack.roomState.locationCode);
@@ -429,6 +447,7 @@ export default function StudentApp() {
           setScannedStationId(null);
           setScannerActive(true);
 
+          // Seed lastStationId so later room:state updates
           lastStationIdRef.current = myTeam.currentStationId;
 
           const colourLabel = norm.color
@@ -446,10 +465,13 @@ export default function StudentApp() {
           setScannerActive(false);
           setScannedStationId(null);
         }
+
+        console.log("STUDENT: socket.emit('student:join-room') called");
       }
     );
   };
 
+  // Leave current room and allow joining a new one
   const handleLeaveRoom = () => {
     if (!joined) return;
 
@@ -511,14 +533,14 @@ export default function StudentApp() {
   const handleScannedCode = (code) => {
     if (!joined || !teamId) {
       setScanError("Join a room first, then scan a station.");
-      return;
+      return false;
     }
 
     if (!assignedStationId) {
       setScanError(
         "Wait until your teacher assigns a station, then scan."
       );
-      return;
+      return false;
     }
 
     const normAssigned = normalizeStationId(assignedStationId);
@@ -554,7 +576,7 @@ export default function StudentApp() {
       setScanError(
         "That code didn’t look like a station. Try another or ask your teacher."
       );
-      return;
+      return false;
     }
 
     if (!expectedColour || scannedColour !== expectedColour) {
@@ -571,7 +593,7 @@ export default function StudentApp() {
       setScannerActive(false);
       setTimeout(() => setScannerActive(true), 100);
 
-      return;
+      return false;
     }
 
     setScanError(null);
@@ -595,20 +617,24 @@ export default function StudentApp() {
           setScannedStationId(null);
           setScannerActive(false);
           setTimeout(() => setScannerActive(true), 100);
-          return;
+          return false;
         }
 
         setScanError(null);
         setScannerActive(false);
         setScannedStationId(normAssigned.id);
+        return true;
       }
     );
 
     setStatusMessage(
       `Great! Stay at your ${expectedColour.toUpperCase()} station for the task.`
     );
+
+    return true;
   };
 
+  // Bridge from QrScanner → handleScannedCode
   const handleScannerCode = (rawValue) => {
     if (!rawValue) return false;
     handleScannedCode(rawValue);
@@ -623,18 +649,22 @@ export default function StudentApp() {
       setEnforceLocation(false);
       return;
     }
+
     const cfg = currentTask.config || {};
     const enforce = !!cfg.requireScan && !!cfg.stationBased;
     setEnforceLocation(enforce);
   }, [currentTask]);
 
-  const stationInfo = normalizeStationId(assignedStationId);
+  const assignedNorm = normalizeStationId(assignedStationId);
+  const scannedNorm = normalizeStationId(scannedStationId);
+
+  const assignedColour = assignedNorm.color;
 
   const mustScan =
-    enforceLocation &&
-    assignedStationId &&
-    scannedStationId &&
-    assignedStationId !== scannedStationId;
+    joined &&
+    scannerActive &&
+    !!assignedStationId &&
+    scannedStationId !== assignedStationId;
 
   // ─────────────────────────────────────────────
   // Socket listeners for room / task / noise / treats / collab
@@ -642,11 +672,13 @@ export default function StudentApp() {
   useEffect(() => {
     if (!teamId) return;
 
+    // Room / station state updates
     const handleRoomState = (state) => {
       if (!state || !teamId) return;
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
 
+      // 🔢 Update running total score from room-wide scores map
       if (state.scores && typeof state.scores[teamId] === "number") {
         setScoreTotal(state.scores[teamId]);
       }
@@ -659,6 +691,7 @@ export default function StudentApp() {
         setAssignedStationId(norm.id);
         setAssignedColor(norm.color || null);
 
+        // Reset scanning on station change
         setScannedStationId(null);
         setScanError(null);
         setScannerActive(true);
@@ -671,6 +704,7 @@ export default function StudentApp() {
         );
       }
 
+      // Derived location
       const loc =
         myTeam.locationSlug ||
         state.locationSlug ||
@@ -732,6 +766,7 @@ export default function StudentApp() {
       setShortAnswerReveal(null);
     };
 
+    // AI scoring + feedback
     const handleTaskScored = (payload) => {
       if (!payload || typeof payload !== "object") return;
 
@@ -845,6 +880,24 @@ export default function StudentApp() {
       }
     };
 
+    const handleArrivalBonus = (payload) => {
+      if (!payload || payload.teamId !== teamId) return;
+      const bonus =
+        typeof payload.bonus === "number" ? payload.bonus : null;
+      if (!bonus) return;
+
+      setPointToast({
+        message: `Speed bonus! +${bonus} point${bonus === 1 ? "" : "s"}`,
+        positive: true,
+      });
+
+      tryPlayTreatSound();
+
+      setTimeout(() => {
+        setPointToast(null);
+      }, 2500);
+    };
+
     const handleCollabPartner = (payload) => {
       if (!payload || payload.teamId !== teamId) return;
       setPartnerAnswer(payload.answer ?? null);
@@ -861,6 +914,7 @@ export default function StudentApp() {
     socket.on("task:scored", handleTaskScored);
     socket.on("noise:update", handleNoiseUpdate);
     socket.on("treat:event", handleTreat);
+    socket.on("station:arrival-bonus", handleArrivalBonus);
     socket.on("collab:partner-answer", handleCollabPartner);
     socket.on("collab:reply", handleCollabReply);
 
@@ -872,6 +926,7 @@ export default function StudentApp() {
       socket.off("task:scored", handleTaskScored);
       socket.off("noise:update", handleNoiseUpdate);
       socket.off("treat:event", handleTreat);
+      socket.off("station:arrival-bonus", handleArrivalBonus);
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
@@ -883,6 +938,7 @@ export default function StudentApp() {
   const themeShell =
     uiTheme === "bold"
       ? {
+          // Darker card / high contrast
           bg: "radial-gradient(circle at top, #020617, #020617)",
           cardBg: "rgba(15,23,42,0.96)",
           cardBorder: "1px solid rgba(148,163,184,0.8)",
@@ -898,6 +954,7 @@ export default function StudentApp() {
           accent: "#2563eb",
         }
       : {
+          // modern (eager) default
           bg: "radial-gradient(circle at top, #020617, #0b1120)",
           cardBg: "rgba(15,23,42,0.96)",
           cardBorder: "1px solid rgba(51,65,85,0.9)",
@@ -1018,6 +1075,7 @@ export default function StudentApp() {
     !taskLocked &&
     postSubmitSecondsLeft != null;
 
+  // Derived text for header connection line
   const headerConnectionText = joined
     ? roomCode
       ? `Connected · Room ${roomCode.toUpperCase()}`
@@ -1170,7 +1228,7 @@ export default function StudentApp() {
           background: #22c55e;
         }
 
-        .station-pill {
+        .station-colour-tag {
           display: inline-flex;
           align-items: center;
           gap: 6px;
@@ -1278,6 +1336,7 @@ export default function StudentApp() {
           animation: confetti-fall 2.2s linear forwards;
         }
 
+        /* TASK-LOCKED OVERLAY */
         .task-locked-overlay {
           position: absolute;
           inset: 0;
@@ -1307,217 +1366,252 @@ export default function StudentApp() {
           position: "relative",
         }}
       >
-        <section
+        {/* HEADER */}
+        <header
           style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
             marginBottom: 12,
-            gap: 10,
           }}
         >
-          <div>
-            <header style={{ marginBottom: 4 }}>
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: "1.4rem",
-                  color: "#ffffff",
-                }}
-              >
-                Curriculate – Team Station
-              </h1>
+          {/* Title row */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: 4,
+            }}
+          >
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "1.6rem",
+                color: "#ffffff",
+                textAlign: "center",
+                flex: 1,
+              }}
+            >
+              Curriculate – Team Station
+            </h1>
+          </div>
+
+          {/* Subheader: left info + right controls */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Left: join instructions + pills */}
+            <div style={{ minWidth: 0 }}>
               <p
                 style={{
                   margin: 0,
                   fontSize: "0.85rem",
-                  color: "#4b5563",
+                  color: "#e5e7eb",
                 }}
               >
                 Join your teacher&apos;s room, then scan stations as you move.
               </p>
-            </header>
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {joined && (
-                <span className="pill-muted">
-                  Team: <strong>{teamName || "…"}</strong>
-                </span>
-              )}
-              {joined && (
-                <span className="pill-muted">
-                  Room: <strong>{roomCode.toUpperCase()}</strong>
-                </span>
-              )}
-
-              {stationInfo.id && (
-                <span className="station-pill">
-                  <span
-                    className="station-dot"
-                    style={{
-                      background:
-                        assignedColor === "red"
-                          ? "#ef4444"
-                          : assignedColor === "blue"
-                          ? "#3b82f6"
-                          : assignedColor === "green"
-                          ? "#22c55e"
-                          : assignedColor === "yellow"
-                          ? "#eab308"
-                          : assignedColor === "purple"
-                          ? "#a855f7"
-                          : assignedColor === "orange"
-                          ? "#f97316"
-                          : assignedColor === "teal"
-                          ? "#14b8a6"
-                          : assignedColor === "pink"
-                          ? "#ec4899"
-                          : "#e5e7eb",
-                    }}
-                  />
-                  <span>
-                    {stationInfo.label || "Station"}
-                  </span>
-                </span>
-              )}
-
-              <span className="pill-location">
-                <span>Location:</span>
-                <strong>
-                  {roomLocation
-                    ? roomLocation.charAt(0).toUpperCase() +
-                      roomLocation.slice(1).replace(/-/g, " ")
-                    : "Classroom"}
-                </strong>
-              </span>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 4,
-                flexWrap: "wrap",
-              }}
-            >
               <div
                 style={{
                   display: "flex",
-                  gap: 4,
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 4,
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => setUiTheme("modern")}
-                  style={{
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border:
-                      uiTheme === "modern"
-                        ? "2px solid rgba(59,130,246,0.9)"
-                        : "1px solid rgba(148,163,184,0.7)",
-                    background:
-                      uiTheme === "modern"
-                        ? "rgba(191,219,254,0.35)"
-                        : "rgba(15,23,42,0.15)",
-                    color: "#e5e7eb",
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Theme 1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUiTheme("bold")}
-                  style={{
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border:
-                      uiTheme === "bold"
-                        ? "2px solid rgba(248,250,252,0.9)"
-                        : "1px solid rgba(148,163,184,0.6)",
-                    background:
-                      uiTheme === "bold"
-                        ? "rgba(15,23,42,0.9)"
-                        : "rgba(15,23,42,0.25)",
-                    color: "#e5e7eb",
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Bold
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUiTheme("minimal")}
-                  style={{
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border:
-                      uiTheme === "minimal"
-                        ? "2px solid rgba(15,23,42,0.85)"
-                        : "1px solid rgba(148,163,184,0.6)",
-                    background:
-                      uiTheme === "minimal"
-                        ? "#e5e7eb"
-                        : "rgba(249,250,251,0.85)",
-                    color: "#111827",
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Minimal
-                </button>
+                {joined && (
+                  <span className="pill-muted">
+                    Team: <strong>{teamName || "…"}</strong>
+                  </span>
+                )}
+                {joined && (
+                  <span className="pill-muted">
+                    Room: <strong>{roomCode.toUpperCase()}</strong>
+                  </span>
+                )}
+
+                {assignedNorm.id && (
+                  <span className="station-colour-tag">
+                    <span>Station</span>
+                    <span
+                      className="station-dot"
+                      style={{
+                        background:
+                          assignedColour === "red"
+                            ? "#ef4444"
+                            : assignedColour === "blue"
+                            ? "#3b82f6"
+                            : assignedColour === "green"
+                            ? "#22c55e"
+                            : assignedColour === "yellow"
+                            ? "#eab308"
+                            : assignedColour === "purple"
+                            ? "#a855f7"
+                            : assignedColour === "orange"
+                            ? "#f97316"
+                            : assignedColour === "teal"
+                            ? "#14b8a6"
+                            : assignedColour === "pink"
+                            ? "#ec4899"
+                            : "#e5e7eb",
+                      }}
+                    />
+                    <span>
+                      {assignedColour
+                        ? COLOUR_TO_LABEL[assignedColour] ||
+                          assignedColour.toUpperCase()
+                        : "Assigned"}
+                    </span>
+                  </span>
+                )}
+
+                <span className="pill-location">
+                  <span>Location:</span>
+                  <strong>
+                    {roomLocation
+                      ? roomLocation.charAt(0).toUpperCase() +
+                        roomLocation.slice(1).replace(/-/g, " ")
+                      : "Classroom"}
+                  </strong>
+                </span>
               </div>
-
-              {joined && (
-                <button
-                  type="button"
-                  onClick={handleLeaveRoom}
-                  style={{
-                    marginTop: 4,
-                    borderRadius: 999,
-                    padding: "4px 8px",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    background: "rgba(15,23,42,0.14)",
-                    color: "inherit",
-                    cursor: "pointer",
-                  }}
-                >
-                  Join a different room
-                </button>
-              )}
             </div>
 
-            <div
-              style={{
-                fontSize: "0.75rem",
-                color: connected ? "#bbf7d0" : "#fecaca",
-              }}
-            >
-              {headerConnectionText}
-            </div>
-            {statusMessage && (
+            {/* Right: theme buttons + join-different-room */}
+            <div style={{ textAlign: "right", minWidth: 140 }}>
               <div
                 style={{
-                  marginTop: 2,
-                  fontSize: "0.75rem",
-                  color: "#fee2e2",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 4,
+                  flexWrap: "wrap",
                 }}
               >
-                {statusMessage}
-              </div>
-            )}
-          </div>
-        </section>
+                {/* Theme buttons group */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 4,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme("modern")}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border:
+                        uiTheme === "modern"
+                          ? "2px solid rgba(59,130,246,0.9)"
+                          : "1px solid rgba(148,163,184,0.7)",
+                      background:
+                        uiTheme === "modern"
+                          ? "rgba(191,219,254,0.35)"
+                          : "rgba(15,23,42,0.15)",
+                      color: "#e5e7eb",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Eager
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme("bold")}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border:
+                        uiTheme === "bold"
+                          ? "2px solid rgba(248,250,252,0.9)"
+                          : "1px solid rgba(148,163,184,0.6)",
+                      background:
+                        uiTheme === "bold"
+                          ? "rgba(15,23,42,0.9)"
+                          : "rgba(15,23,42,0.25)",
+                      color: "#e5e7eb",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Bold
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUiTheme("minimal")}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      border:
+                        uiTheme === "minimal"
+                          ? "2px solid rgba(15,23,42,0.85)"
+                          : "1px solid rgba(148,163,184,0.6)",
+                      background:
+                        uiTheme === "minimal"
+                          ? "#e5e7eb"
+                          : "rgba(249,250,251,0.85)",
+                      color: "#111827",
+                      fontSize: "0.75rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Dyno
+                  </button>
+                </div>
 
-        {/* JOIN CARD */}
+                {/* Join a different room */}
+                {joined && (
+                  <button
+                    type="button"
+                    onClick={handleLeaveRoom}
+                    style={{
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      border: "1px solid rgba(148,163,184,0.9)",
+                      background: "rgba(248,250,252,0.95)",
+                      color: "#0f172a",
+                      cursor: "pointer",
+                      marginLeft: 4,
+                    }}
+                  >
+                    Join a different room
+                  </button>
+                )}
+              </div>
+
+              {/* Connection + status under the buttons */}
+              <div
+                style={{
+                  fontSize: "0.75rem",
+                  color: connected ? "#bbf7d0" : "#fecaca",
+                }}
+              >
+                {headerConnectionText}
+              </div>
+              {statusMessage && (
+                <div
+                  style={{
+                    marginTop: 2,
+                    fontSize: "0.75rem",
+                    color: "#fee2e2",
+                  }}
+                >
+                  {statusMessage}
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* MAIN BODY */}
         {!joined && (
           <main
             style={{
@@ -1765,8 +1859,8 @@ export default function StudentApp() {
                   }}
                 >
                   {mustScan
-                    ? stationInfo.label
-                      ? `Hold your device steady and scan the ${stationInfo.label} station QR code.`
+                    ? assignedColour
+                      ? `Hold your device steady and scan the ${assignedColour.toUpperCase()} station QR code.`
                       : "Hold your device steady and scan the station QR code your teacher assigned."
                     : currentTask
                     ? "Read carefully, work with your team, then submit before time runs out."
@@ -1774,22 +1868,19 @@ export default function StudentApp() {
                 </div>
               </div>
 
+              {/* Score pill */}
               <div className="point-pill">
                 <span className="point-dot" />
                 <span>
                   {scoreTotal}{" "}
-                  <span
-                    style={{
-                      opacity: 0.8,
-                      fontWeight: 400,
-                    }}
-                  >
+                  <span style={{ opacity: 0.8, fontWeight: 400 }}>
                     points
                   </span>
                 </span>
               </div>
             </div>
 
+            {/* Timer and scan notice row */}
             <div
               style={{
                 marginTop: 6,
@@ -1828,9 +1919,8 @@ export default function StudentApp() {
         )}
 
         {/* TASK CARD */}
-        {joined && currentTask && !mustScan && (
+        {joined && currentTask && (
           <section
-            className="task-card"
             style={{
               marginTop: 4,
               borderRadius: 16,
@@ -1854,19 +1944,10 @@ export default function StudentApp() {
             {taskLocked && (
               <div className="task-locked-overlay">
                 <div>
-                  <div
-                    style={{
-                      fontSize: "0.9rem",
-                      marginBottom: 4,
-                    }}
-                  >
+                  <div style={{ fontSize: "0.9rem", marginBottom: 4 }}>
                     Task locked for review
                   </div>
-                  <div
-                    style={{
-                      fontSize: "0.8rem",
-                    }}
-                  >
+                  <div style={{ fontSize: "0.8rem" }}>
                     {postSubmitSecondsLeft != null
                       ? `Your teacher is reviewing answers. ${
                           postSubmitSecondsLeft > 0
@@ -1897,11 +1978,14 @@ export default function StudentApp() {
                 setPointToast(null);
                 setShortAnswerReveal(null);
               }}
-              onSubmitComplete={() => {}}
+              onSubmitComplete={() => {
+                // handled via task:scored + reviewPauseSeconds
+              }}
             />
           </section>
         )}
 
+        {/* CORRECT ANSWER OVERLAY */}
         {showCorrectAnswerOverlay && shortAnswerReveal && (
           <div className="correct-answer-overlay">
             <div className="correct-answer-card">
@@ -1920,6 +2004,7 @@ export default function StudentApp() {
                     "linear-gradient(90deg,#4f46e5,#6366f1,#a855f7)",
                   color: "#f9fafb",
                   cursor: "pointer",
+                  marginTop: 4,
                 }}
               >
                 Got it
@@ -1928,14 +2013,17 @@ export default function StudentApp() {
           </div>
         )}
 
+        {/* TREAT BANNER */}
         {treatMessage && <div className="treat-banner">{treatMessage}</div>}
 
+        {/* POINT TOAST (scoring + speed bonus) */}
         {pointToast && (
           <div className={`toast ${pointToast.positive ? "" : "negative"}`}>
             {pointToast.message}
           </div>
         )}
 
+        {/* CONFETTI LAYER */}
         {showConfetti && (
           <div className="confetti-layer">
             {Array.from({ length: 40 }).map((_, i) => (
@@ -1951,6 +2039,7 @@ export default function StudentApp() {
           </div>
         )}
 
+        {/* NOISE STRIP */}
         <div className="noise-strip">
           <NoiseSensor
             enabled={noiseState.enabled}
