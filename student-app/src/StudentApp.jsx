@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-H, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-I, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -525,6 +525,13 @@ function StudentApp() {
   // -------------------------------------------------------------------
   // Auto-open scanner when a scan is required
   // -------------------------------------------------------------------
+  const mustScan =
+      enforceLocation &&
+      normalizeLocationSlug(roomLocation) !== "classroom" &&
+      assignedStationId &&
+      scannedStationId &&
+      assignedStationId !== scannedStationId;
+
   useEffect(() => {
     if (mustScan) {
       setScannerActive(true);
@@ -774,13 +781,6 @@ function StudentApp() {
   // ─────────────────────────────────────────────
   // Location enforcement & station gating
   // ─────────────────────────────────────────────
-
-  const mustScan =
-      enforceLocation &&
-      normalizeLocationSlug(roomLocation) !== "classroom" &&
-      assignedStationId &&
-      scannedStationId &&
-      assignedStationId !== scannedStationId;
 
   useEffect(() => {
     if (!currentTask) {
