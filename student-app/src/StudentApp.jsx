@@ -8,7 +8,7 @@ import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-I, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-J, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -1884,7 +1884,6 @@ function StudentApp() {
                 )}
               </div>
             )}
-          </section>
 
           {/* QR SCANNER */}
           {scannerActive && (
@@ -2056,23 +2055,6 @@ function StudentApp() {
                 Your teacher has locked this task to a specific station. Scan
                 the station&apos;s QR code to unlock it.
               </p>
-              <button
-                type="button"
-                onClick={() => setScannerActive(true)}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: 999,
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg, #22c55e, #0ea5e9)",
-                  color: "#f9fafb",
-                  fontSize: "0.9rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Scan Station QR
-              </button>
             </section>
           )}
         </main>
