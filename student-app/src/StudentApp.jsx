@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AB, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AC, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -1842,15 +1842,21 @@ function StudentApp() {
               {noiseState.enabled && (
                 <div style={{ fontSize: "0.75rem", color: "#e5e7eb" }}>
                   Target:{" "}
-                  <span style={{ fontWeight: 600 }}>{noiseState.threshold}</span>
+                  <span style={{ fontWeight: 600 }}>
+                    {noiseState.threshold}
+                  </span>
                 </div>
               )}
             </div>
+
             <div className="noise-bar-track noise-fade">
               <div
                 className="noise-bar-inner"
                 style={{
-                  width: `${Math.min(Math.max(noiseState.level * 100, 0), 100)}%`,
+                  width: `${Math.min(
+                    Math.max(noiseState.level * 100, 0),
+                    100
+                  )}%`,
                   opacity: noiseBarOpacity,
                 }}
               />
@@ -1878,8 +1884,8 @@ function StudentApp() {
             </div>
           )}
 
-          {/* Must scan gate (Style 2) OR Task card */}
-          {joined && currentTask && mustScan ? (
+          {/* MUST-SCAN GATE */}
+          {currentTask && mustScan && (
             <section
               style={{
                 marginTop: 10,
@@ -1892,18 +1898,10 @@ function StudentApp() {
                 boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
               }}
             >
-              <div
-                style={{
-                  fontSize: "1.4rem",
-                  fontWeight: 900,
-                  letterSpacing: 0.5,
-                }}
-              >
+              <div style={{ fontSize: "1.4rem", fontWeight: 900 }}>
                 {isMultiRoom && expectedLocationLabel
-                  ? `Scan at ${expectedLocationLabel.toUpperCase()} ${(
-                      expectedColor || ""
-                    ).toUpperCase()}`
-                  : `Scan at ${(expectedColor || "").toUpperCase()}`}
+                  ? `Scan at ${expectedLocationLabel.toUpperCase()} ${expectedColor?.toUpperCase()}`
+                  : `Scan at ${expectedColor?.toUpperCase()}`}
               </div>
 
               <p
@@ -1914,20 +1912,19 @@ function StudentApp() {
                   opacity: 0.95,
                 }}
               >
-                This task is locked to a station. Scan the station QR code to unlock
-                it.
+                This task is locked to a station. Scan the station QR code to unlock it.
               </p>
 
-              <div
-                style={{
-                  background: "rgba(0,0,0,0.25)",
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  border: "2px solid rgba(255,255,255,0.55)",
-                }}
-              >
-                {/* QR SCANNER */}
-                {scannerActive && (
+              {/* SCANNER — THIS IS THE PART THAT MUST NOT DISAPPEAR */}
+              {scannerActive && (
+                <div
+                  style={{
+                    background: "rgba(0,0,0,0.25)",
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    border: "2px solid rgba(255,255,255,0.55)",
+                  }}
+                >
                   <section className="scanner-shell">
                     <QrScanner onScan={handleScan} onError={setScanError} />
                     {scanError && (
@@ -1936,137 +1933,87 @@ function StudentApp() {
                       </div>
                     )}
                   </section>
-                )}
-              </div>
+                </div>
+              )}
             </section>
-          ) : (
-            /* TASK CARD */
-            joined &&
-            currentTask && (
-              <section
-                className="task-card"
+          )}
+
+          {/* TASK CARD (ONLY WHEN NOT SCANNING) */}
+          {currentTask && !mustScan && (
+            <section
+              className="task-card"
+              style={{
+                ...baseTaskCardStyle,
+                ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
+                  ? {
+                      background: "transparent",
+                      padding: 0,
+                      border: "none",
+                      boxShadow: "none",
+                    }
+                  : {
+                      background: taskCardBackground,
+                    }),
+              }}
+            >
+              <h2
                 style={{
-                  ...baseTaskCardStyle,
-                  ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
-                    ? {
-                        // Let MotionMissionTask / PetFeeding / RecordAudio own the look
-                        background: "transparent",
-                        padding: 0,
-                        border: "none",
-                        boxShadow: "none",
-                      }
-                    : {
-                        background: taskCardBackground,
-                      }),
+                  marginTop: 0,
+                  marginBottom: 6,
+                  fontSize: responseHeadingFontSize,
+                  color: "#0f172a",
+                  ...musicalChairsHeaderStyle,
+                  ...mysteryHeaderStyle,
                 }}
               >
-                <h2
-                  style={{
-                    marginTop: 0,
-                    marginBottom: 6,
-                    fontSize: responseHeadingFontSize,
-                    letterSpacing: 0.2,
-                    color: "#0f172a",
-                    ...musicalChairsHeaderStyle,
-                    ...mysteryHeaderStyle,
-                  }}
-                >
-                  {currentTaskNumber && (
-                    <div
-                      style={{
-                        marginBottom: 8,
-                        fontSize: "0.8rem",
-                        color: "#4b5563",
-                      }}
-                    >
-                      {progressLabel}
+                {currentTask.title || currentTask.name || "Task"}
+              </h2>
+
+              <div
+                className="task-content-inner"
+                style={{
+                  position: "relative",
+                  fontSize: responseFontSize,
+                  lineHeight: 1.5,
+                  minHeight:
+                    isMotionMission || isPetFeeding ? "60vh" : undefined,
+                }}
+              >
+                <TaskRunner
+                  key={
+                    currentTask?.id ??
+                    currentTask?._id ??
+                    currentTaskIndex ??
+                    "task"
+                  }
+                  task={themedTask}
+                  taskTypes={TASK_TYPES}
+                  onSubmit={handleSubmitAnswer}
+                  submitting={submitting}
+                  onAnswerChange={setCurrentAnswerDraft}
+                  answerDraft={currentAnswerDraft}
+                  disabled={taskLocked || submitting}
+                  socket={socket}
+                  roomCode={roomCode}
+                  playerTeam={teamName}
+                />
+              </div>
+
+              {taskLocked && (
+                <div className="task-locked-overlay">
+                  {postSubmitSecondsLeft != null ? (
+                    <div>
+                      Locked while your teacher reviews… <br />
+                      <span style={{ fontSize: "1.1rem" }}>
+                        {postSubmitSecondsLeft}s
+                      </span>
                     </div>
+                  ) : (
+                    <div>Waiting for your teacher to unlock the next task…</div>
                   )}
-                  {currentTask.title || currentTask.name || "Task"}
-                </h2>
-
-                <div
-                  className="task-content-inner"
-                  style={{
-                    position: "relative",
-                    fontSize: responseFontSize,
-                    lineHeight: 1.5,
-                    minHeight:
-                      isMotionMission || isPetFeeding ? "60vh" : undefined,
-                  }}
-                >
-                  <TaskRunner
-                    key={
-                      currentTask?.id ??
-                      currentTask?._id ??
-                      currentTaskIndex ??
-                      currentTask?.prompt ??
-                      "task"
-                    }
-                    task={themedTask}
-                    taskTypes={TASK_TYPES}
-                    onSubmit={handleSubmitAnswer}
-                    submitting={submitting}
-                    onAnswerChange={setCurrentAnswerDraft}
-                    answerDraft={currentAnswerDraft}
-                    disabled={taskLocked || submitting}
-                    socket={socket}
-                    roomCode={roomCode}
-                    playerTeam={teamName}
-                    // Collaboration wiring
-                    partnerAnswer={partnerAnswer}
-                    showPartnerReply={showPartnerReply}
-                    onPartnerReply={(replyText) => {
-                      if (!roomCode || !joined || !currentTask || teamId == null)
-                        return;
-
-                      socket.emit("collab:reply", {
-                        roomCode: roomCode.trim().toUpperCase(),
-                        teamId,
-                        taskIndex:
-                          typeof currentTaskIndex === "number" &&
-                          currentTaskIndex >= 0
-                            ? currentTaskIndex
-                            : null,
-                        reply: replyText,
-                      });
-                    }}
-                  />
                 </div>
-
-                {taskLocked && (
-                  <div className="task-locked-overlay">
-                    {postSubmitSecondsLeft != null ? (
-                      <div>
-                        Locked while your teacher reviews… <br />
-                        <span
-                          style={{
-                            fontVariantNumeric: "tabular-nums",
-                            fontSize: "1.1rem",
-                          }}
-                        >
-                          {postSubmitSecondsLeft}s
-                        </span>
-                      </div>
-                    ) : (
-                      <div>Waiting for your teacher to unlock the next task…</div>
-                    )}
-                  </div>
-                )}
-
-                {lastTaskResult && lastTaskResult.aiFeedback && (
-                  <div className="ai-feedback">
-                    <strong>AI Feedback</strong>
-                    <div>{lastTaskResult.aiFeedback}</div>
-                    {shortAnswerReveal && (
-                      <div style={{ marginTop: 6, fontSize: "0.8rem" }}>
-                        <strong>Sample correct answer:</strong> {shortAnswerReveal}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
-            )
+              )}
+            </section>
           )}
         </main>
       )}
