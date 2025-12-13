@@ -440,9 +440,9 @@ function StudentApp() {
           : DEFAULT_POST_SUBMIT_SECONDS;
 
       setTaskLocked(true);
-      setPostSubmitSecondsLeft(fallbackSeconds);
+      setPostSubmitSecondsLeft(lockSeconds);
       if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
-      let t = fallbackSeconds;
+      let t = lockSeconds;
       const timer = setInterval(() => {
         t -= 1;
         setPostSubmitSecondsLeft(t);
@@ -774,13 +774,12 @@ function StudentApp() {
             : DEFAULT_POST_SUBMIT_SECONDS;
 
         setTaskLocked(true);
-        setPostSubmitSecondsLeft(lockSeconds);
+        setPostSubmitSecondsLeft(fallbackSeconds);
 
         if (postSubmitTimerRef.current) {
           clearInterval(postSubmitTimerRef.current);
         }
-
-        let t = lockSeconds;
+        let t = fallbackSeconds;
         const timer = setInterval(() => {
           t -= 1;
           setPostSubmitSecondsLeft(t);
@@ -1998,9 +1997,22 @@ function StudentApp() {
                 border: "2px solid rgba(255,255,255,0.55)",
               }}
             >
-              <section className="scanner-shell">
-                <QrScanner onScan={handleScan} onError={setScanError} />
-                {scanError && <div className="scan-error">⚠ {scanError}</div>}
+              <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
+                <div style={{
+                  backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
+                  borderRadius: 16,
+                  padding: 16,
+                  display: "inline-block",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+                  maxWidth: "90vw",
+                }}>
+                  <QrScanner onScan={handleScan} onError={setScanError} />
+                  {scanError && (
+                    <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
+                      ⚠ {scanError}
+                    </div>
+                  )}
+                </div>
               </section>
             </div>
 
@@ -2145,7 +2157,7 @@ function StudentApp() {
                 </div>
               )}
               </section>
-
+            )}
           {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
           {joined && currentTask && mustScan && (
             <section
