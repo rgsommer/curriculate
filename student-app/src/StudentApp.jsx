@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AI, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AJ, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -217,6 +217,8 @@ function StudentApp() {
 
   // Persistent identifiers
   const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
+  const teamIdRef = useRef(null);
+  useEffect(() => { teamIdRef.current = teamId; }, [teamId]);
   const [teamSessionId, setTeamSessionId] = useState(null);
   const lastStationIdRef = useRef(null);
 
@@ -309,12 +311,11 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   useEffect(() => {
-    if (!teamId) return;
-
     // Room / station state updates
     const handleRoomState = (state) => {
-      if (!state || !teamId) return;
-      const myTeam = state?.teams?.[teamId];
+      const tid = teamIdRef.current;
+      if (!state || !tid) return;
+      const myTeam = state?.teams?.[tid];
       if (!myTeam) return;
 
       // ✅ Single source of truth for assignment (server must set currentStationId)
@@ -329,8 +330,8 @@ function StudentApp() {
       }
 
       // 🔢 Update running total score from room-wide scores map
-      if (state.scores && typeof state.scores[teamId] === "number") {
-        setScoreTotal(state.scores[teamId]);
+      if (state.scores && typeof state.scores[tid] === "number") {
+        setScoreTotal(state.scores[tid]);
       }
 
       if (Array.isArray(state.selectedRooms)) {
@@ -728,11 +729,12 @@ function StudentApp() {
         }
       }
 
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
-        lastStationIdRef.current = stationInfo.id;
+      const joinStationId = response.currentStationId || response.stationId || null;
+      if (joinStationId) {
+        const info = normalizeStationId(joinStationId);
+        setAssignedStationId(info.id);
+        setAssignedColor(info.color || null);
+        lastStationIdRef.current = joinStationId;
       }
 
       const locSlug =
