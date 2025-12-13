@@ -239,7 +239,7 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     room.teams[teamId] = {
       teamId,
       teamName: t.teamName,
-      members: t.playerNames,
+      members: t.members ?? t.playerNames ?? [],
       score: 0,
       stationColor: null,
       currentStationId: null,
@@ -518,12 +518,39 @@ function buildRoomState(room) {
   return {
     code: room.code,
     locationCode: room.locationCode || "Classroom",
-    teams: room.teams || {},
+    teams: (() => {
+      const out = {};
+      for (const [teamId, t] of Object.entries(room.teams || {})) {
+        if (!t || typeof t !== "object") continue;
+
+        out[teamId] = {
+          id: t.id || teamId,
+          teamName: t.teamName || t.name || null,
+          members: Array.isArray(t.members) ? t.members : [],
+          // station assignment
+          station: t.station || null,
+          currentStationId: t.currentStationId || null,
+          lastScannedStationId: t.lastScannedStationId || null,
+          locationSlug: t.locationSlug || null,
+
+          // task progression
+          taskIndex: typeof t.taskIndex === "number" ? t.taskIndex : -1,
+          nextTaskIndex: typeof t.nextTaskIndex === "number" ? t.nextTaskIndex : null,
+
+          // connectivity + misc
+          connected: !!t.connected,
+          joinedAt: t.joinedAt || null,
+        };
+      }
+      return out;
+    })(),
+
     stations: stationsArray,
     scores,
     taskIndex: overallTaskIndex,
     startedAt: room.startedAt || null,
     isActive: !!room.isActive,
+    selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],
 
     // Random treats (for LiveSession UI)
     treatsConfig: {
@@ -2330,8 +2357,8 @@ socket.on("station:scan", handleStationScan);
 
   socket.on("collaboration-reply", async ({ roomCode, taskId, reply }) => {
     const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams || [];
-    const team = teams.find((t) => t.socketId === socket.id);
+    const teams = Object.values(session?.teams || {});
+    const team = teams.find(t => t.socketId === socket.id);
     if (!team) return;
 
     const bonus = await generateAIScore({
@@ -2402,7 +2429,11 @@ socket.on("station:scan", handleStationScan);
     );
 
     if (isPerfect) {
-      updateTeamScore(socket.teamId, 10);
+      const code = (roomCode || socket.data?.roomCode || "").toUpperCase();
+      if (!code || !socket.teamId) return;
+
+      updateTeamScore(code, socket.teamId, 10);
+
       socket.emit("bonus-awarded", {
         points: 10,
         reason: "Perfect Memory!",
@@ -2415,7 +2446,9 @@ socket.on("station:scan", handleStationScan);
   // True/False Tic-Tac-Toe (experimental)
   socket.on("start-true-false-tictactoe", ({ roomCode, task }) => {
     const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams?.filter((t) => t.active) || [];
+    const teams = Object.values(session?.teams || {});
+    const team = teams.find(t => t.socketId === socket.id);
+
     if (teams.length < 2) return;
 
     const [teamA, teamB] = teams.sort(() => Math.random() - 0.5).slice(0, 2);

@@ -320,9 +320,8 @@ export default function SortTask({
     { points: 0, total: items.length || 1 },
   );
 
-  const finalScore = Math.round(
-    (scoring.points / scoring.total) * 100,
-  );
+  const denom = rubricTotal || scoring.total;
+  const finalScore = Math.round((scoring.points / denom) * 100);
 
   const bucketScores = buckets.map((bucket) => {
     const itemsInBucket = (assignments[bucket.id] || [])
@@ -353,6 +352,11 @@ export default function SortTask({
       partial: partial > 0,
     };
   });
+
+  const rubricTotal = bucketScores.reduce(
+    (sum, b) => sum + (Number(b.max) || 0),
+    0
+  );
 
   // Push live draft up to parent (for autosave / resume)
   useEffect(() => {
@@ -565,8 +569,10 @@ export default function SortTask({
                 : "#ef4444",
           }}
         >
-          Final Score: {finalScore}% (
-          {scoring.points.toFixed(1)} / {scoring.total} points)
+          Final Score: {Math.round(
+            (scoring.points / (rubricTotal || scoring.total)) * 100
+          )}% (
+          {scoring.points.toFixed(1)} / {rubricTotal || scoring.total} points)
         </div>
       )}
 
