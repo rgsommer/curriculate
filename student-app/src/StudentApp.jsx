@@ -2184,7 +2184,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
               }}
             >
               <div style={{ fontSize: "0.8rem", color: "#e5e7eb" }}>
-                Classroom Noise
+                Classroom Noise Level
               </div>
               {noiseState.enabled && (
                 <div style={{ fontSize: "0.75rem", color: "#e5e7eb" }}>
@@ -2295,7 +2295,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
         {hasScannedCorrectly && (
               <div
                 className={scanSuccessPulse ? "scan-success-pulse" : ""}
-                style={{ marginTop: 10, fontWeight: 900 }}
+                style={{ marginTop: 10, color: "#e5e7eb", fontWeight: 800 }}
               >
                 Waiting for your next task…Get ready to Curriculate!
               </div>
