@@ -239,7 +239,9 @@ function StudentApp() {
   const [scannedStationId, setScannedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
-  const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
+  const [scanStatus, setScanStatus] = useState(null);
+  const [hasScannedCorrectly, setHasScannedCorrectly] = useState(false);
+
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
