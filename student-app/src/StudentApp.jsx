@@ -636,14 +636,12 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // if station not known yet, request it first (prevents black panel)
-    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
-      socket.emit("room:request-state", { teamId });
-      return;
-    }
-
+    // Always show scanner UI after join
     setScannerActive(true);
-  }, [joined, assignedColor, assignedStationId, teamId]);
+
+    // Also request state (helps assignment arrive fast)
+    if (teamId) socket.emit("room:request-state", { teamId });
+  }, [joined, teamId]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -2111,6 +2109,11 @@ function StudentApp() {
           </section>
         )}
         
+        {joined && (
+          <div style={{ marginTop: 10, fontWeight: 800 }}>
+            ✅ Joined! Wait for your task to arrive… Get ready to Curriculate!
+          </div>
+        )}
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
             <section
