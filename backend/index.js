@@ -1041,153 +1041,139 @@ io.on("connection", (socket) => {
   // Student scans station – unified handler for legacy + new flow
   const normalizeRoomCode = (c) => (c || "").trim().toUpperCase();
 
+  // If you already have these elsewhere, delete these two helpers here.
+  const normalizeLocationSlug = (s) =>
+    (s || "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-");
+
+  function normalizeStationId(input) {
+    const raw = (input || "").toString().trim();
+
+    // Accept "station-3"
+    const m = raw.match(/station-(\d+)/i);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      const color = COLORS[(n - 1) % COLORS.length];
+      return { id: `station-${n}`, number: n, color };
+    }
+
+    // Accept plain color like "red"
+    const lc = raw.toLowerCase();
+    if (COLORS.includes(lc)) {
+      return { id: null, number: null, color: lc };
+    }
+
+    return { id: null, number: null, color: null };
+  }
+
   const handleStationScan = (payload = {}, ack) => {
-    console.log("station:scan received:", payload);
-    console.log("[scan recv]", { code, teamId, stationId, locationSlug, hasRoom: !!rooms[code], hasTeam: !!rooms?.[code]?.teams?.[teamId] });
+    try {
+      const { roomCode, teamId, stationId, locationSlug } = payload || {};
+      const code = normalizeRoomCode(roomCode);
 
-    const { roomCode, teamId, stationId, locationSlug } = payload || {};
-    const code = normalizeRoomCode(roomCode);
+      // Log AFTER variables exist
+      console.log("[scan recv]", {
+        rawRoomCode: roomCode,
+        code,
+        teamId,
+        stationId,
+        locationSlug,
+        hasRoom: !!rooms[code],
+        hasTeam: !!rooms?.[code]?.teams?.[teamId],
+      });
 
-    if (!code || !teamId) {
-      console.error("Invalid scan (missing code/teamId):", { code, teamId });
-      if (typeof ack === "function") ack({ ok: false, error: "Invalid session" });
-      return;
-    }
+      // 1) Session validity
+      const room = rooms[code];
+      const team = room?.teams?.[teamId];
+      if (!code || !teamId || !room || !team) {
+        console.error("Invalid scan (room/team missing):", { code, teamId });
+        if (typeof ack === "function") ack({ ok: false, error: "Invalid session" });
+        return;
+      }
 
-    const room = rooms[code];
-    if (!room || !room.teams?.[teamId]) {
-      console.error("Invalid scan (no room or team):", { code, teamId });
-      if (typeof ack === "function") ack({ ok: false, error: "Invalid session" });
-      return;
-    }
+      // 2) Station correctness
+      const expectedStation = team.currentStationId;
+      const expected = normalizeStationId(expectedStation);
+      const scanned = normalizeStationId(stationId);
 
-    const team = room.teams[teamId];
+      const stationMatches =
+        (expected.id && scanned.id && expected.id === scanned.id) ||
+        (expected.color && scanned.color && expected.color === scanned.color);
 
-    // Helper: normalize a location slug (QR codes may include raw "214", "Classroom", etc.)
-    const normLoc = (v) =>
-      typeof v === "string" ? v.trim().toLowerCase().replace(/\s+/g, "-") : null;
-
-    // Determine the "current task" (used to decide whether scans are enforced)
-    let activeTask = room.currentTask || null;
-    if (!activeTask && room.taskset && Array.isArray(room.taskset.tasks)) {
-      const idx =
-        typeof team.taskIndex === "number" && team.taskIndex >= 0
-          ? team.taskIndex
-          : typeof room.taskIndex === "number" && room.taskIndex >= 0
-          ? room.taskIndex
-          : -1;
-      activeTask = idx >= 0 ? room.taskset.tasks[idx] || null : null;
-    }
-
-    const cfg = activeTask?.config || {};
-    const requireScan = cfg.stationBased === true && cfg.requireScan === true;
-
-    // Only enforce location when this is a MULTI-ROOM activity
-    const isMultiRoom =
-      Array.isArray(room.selectedRooms) && room.selectedRooms.length > 1;
-
-    // Determine expected station from either legacy `team.station` or new `team.currentStationId`
-    const expectedStation = team.station || team.currentStationId;
-
-    // Always enforce correct station colour when we have an expectedStation
-    if (expectedStation) {
-      const stationColourMap = {
-        "station-1": "red",
-        "station-2": "blue",
-        "station-3": "green",
-        "station-4": "yellow",
-        "station-5": "purple",
-        "station-6": "orange",
-        "station-7": "teal",
-        "station-8": "pink",
-      };
-
-      const parts = String(stationId || "").split("-");
-      const scannedStation = parts.slice(0, 2).join("-");
-      const scannedColour = stationColourMap[scannedStation] || null;
-
-      const expectedRaw = String(expectedStation || "").toLowerCase().trim();
-      const expectsStationId = expectedRaw.startsWith("station-");
-      const expectsColour = Object.values(stationColourMap).includes(expectedRaw);
-
-      const stationOk = expectsStationId
-        ? scannedStation === expectedRaw
-        : expectsColour
-        ? scannedColour === expectedRaw
-        : scannedStation === expectedRaw;
-
-      if (!stationOk) {
+      if (!stationMatches) {
+        console.error("Wrong station:", {
+          expectedStation,
+          expected,
+          scannedStation: stationId,
+          scanned,
+        });
         if (typeof ack === "function") ack({ ok: false, error: "Wrong station colour." });
         return;
       }
-    }
 
-    // Enforce location ONLY for multi-room + scan-locked tasks
-    if (requireScan && isMultiRoom) {
-      const scannedLoc = normLoc(locationSlug);
-      const expectedLoc = normLoc(team.locationSlug || room.locationCode);
+      // 3) Location correctness (multi-room only)
+      const isMultiRoom =
+        Array.isArray(room.selectedRooms) && room.selectedRooms.length > 1;
 
-      if (expectedLoc && scannedLoc && expectedLoc !== scannedLoc) {
-        // If the colour is correct but location is wrong, guide them clearly.
-        const colourLabel = (() => {
-          const map = {
-            "station-1": "RED",
-            "station-2": "BLUE",
-            "station-3": "GREEN",
-            "station-4": "YELLOW",
-            "station-5": "PURPLE",
-            "station-6": "ORANGE",
-            "station-7": "TEAL",
-            "station-8": "PINK",
-          };
-          return map[String(expectedStation)] || "your station";
-        })();
+      if (isMultiRoom) {
+        const expectedLoc = normalizeLocationSlug(team.locationSlug || room.locationCode);
+        const scannedLoc = normalizeLocationSlug(locationSlug);
 
-        const locLabel = String(team.locationSlug || room.locationCode || expectedLoc);
-
-        if (typeof ack === "function") {
-          ack({ ok: false, error: `Wrong location. Go to ${locLabel} ${colourLabel}.` });
+        if (expectedLoc && scannedLoc && expectedLoc !== scannedLoc) {
+          if (typeof ack === "function") {
+            ack({
+              ok: false,
+              error: `Go to ${expectedLoc.toUpperCase()} ${String(expected.color || "").toUpperCase()}`.trim(),
+            });
+          }
+          return;
         }
-        return;
       }
-    }
 
-    team.lastScannedStationId = expectedStation || stationId || null;
+      // ✅ Mark scan accepted
+      team.lastScannedStationId = expectedStation || stationId || null;
 
-    // If this team has a "nextTaskIndex" queued (normal taskset flow), deliver that task now.
-    if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const queuedIndex =
-        typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0
-          ? team.nextTaskIndex
-          : -1;
+      // If this team has a queued task, deliver it now
+      if (room.taskset && Array.isArray(room.taskset.tasks)) {
+        const queuedIndex =
+          typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0
+            ? team.nextTaskIndex
+            : -1;
 
-      if (queuedIndex >= 0) {
-        sendTaskToTeam(room, teamId, queuedIndex);
-        delete team.nextTaskIndex;
+        if (queuedIndex >= 0) {
+          sendTaskToTeam(room, teamId, queuedIndex);
+          delete team.nextTaskIndex;
+        }
       }
-    }
 
-    // Optional: scan-and-confirm awards points just for correct scan
-    let currentTask = {};
-    if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const idx =
-        typeof team.taskIndex === "number" && team.taskIndex >= 0
-          ? team.taskIndex
-          : typeof room.taskIndex === "number" && room.taskIndex >= 0
-          ? room.taskIndex
-          : -1;
-      currentTask = idx >= 0 ? room.taskset.tasks[idx] || {} : {};
-    }
+      // Optional: Scan-and-confirm bonus points
+      let currentTask = {};
+      if (room.taskset && Array.isArray(room.taskset.tasks)) {
+        const idx =
+          typeof team.taskIndex === "number" && team.taskIndex >= 0
+            ? team.taskIndex
+            : typeof room.taskIndex === "number" && room.taskIndex >= 0
+            ? room.taskIndex
+            : -1;
+        currentTask = idx >= 0 ? room.taskset.tasks[idx] || {} : {};
+      }
 
-    if (currentTask.taskType === "scan-and-confirm") {
-      updateTeamScore(room, teamId, currentTask.points || 10);
-    }
+      if (currentTask.taskType === "scan-and-confirm") {
+        updateTeamScore(room, teamId, currentTask.points || 10);
+      }
 
-    if (typeof ack === "function") ack({ ok: true, message: "Correct station!" });
+      if (typeof ack === "function") ack({ ok: true, message: "Correct station!" });
+    } catch (err) {
+      console.error("handleStationScan error:", err);
+      if (typeof ack === "function") ack({ ok: false, error: "Server scan error" });
+    }
   };
 
-  socket.on("station:scan", handleStationScan);
-  
+socket.on("station:scan", handleStationScan);
+
   // ==== BRAINSTORM BATTLE SOCKET EVENTS ====
   // Simple, durable model:
   //  - each brainstorm task has a taskKey
