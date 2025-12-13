@@ -963,20 +963,6 @@ io.on("connection", (socket) => {
       socket.data.teamId = teamId;
       socket.data.teamName = cleanName;
 
-
-      // ✅ Ensure this team has an assigned station (so StudentApp knows the color before scanning)
-      try {
-        const stationIds = Object.keys(room.stations || {});
-        if (stationIds.length > 0) {
-          const t = room.teams?.[teamId];
-          if (t && !t.currentStationId) {
-            reassignStationForTeam(room, teamId);
-          }
-        }
-      } catch (e) {
-        console.warn("Station assignment on join/resume failed:", e);
-      }
-
       const state = buildRoomState(room);
       io.to(code).emit("room:state", state);
       io.to(code).emit("roomState", state);
@@ -1079,20 +1065,6 @@ io.on("connection", (socket) => {
       socket.data.roomCode = code;
       socket.data.teamId = teamId;
       socket.data.teamName = team.teamName;
-
-
-      // ✅ Ensure this team has an assigned station (so StudentApp knows the color before scanning)
-      try {
-        const stationIds = Object.keys(room.stations || {});
-        if (stationIds.length > 0) {
-          const t = room.teams?.[teamId];
-          if (t && !t.currentStationId) {
-            reassignStationForTeam(room, teamId);
-          }
-        }
-      } catch (e) {
-        console.warn("Station assignment on join/resume failed:", e);
-      }
 
       const state = buildRoomState(room);
 

@@ -261,27 +261,12 @@ export default function LiveSession({ roomCode }) {
     if (!roomCode) return;
 
     const code = roomCode.toUpperCase();
+    setStatus("Connecting…");
 
-    const joinAsTeacher = () => {
-      setStatus("Connecting…");
-      socket.emit("teacher:createRoom", { roomCode: code }, (res) => {
-        if (res?.ok) setStatus("Connected.");
-        else setStatus(res?.error || "Connection error.");
-      });
-    };
+    socket.emit("teacher:createRoom", { roomCode: code });
 
-    // Initial join
-    joinAsTeacher();
-
-    // Re-join on reconnect so teachers stay in the Socket.IO room
-    const handleConnect = () => {
-      joinAsTeacher();
-    };
-
-    socket.on("connect", handleConnect);
-    return () => {
-      socket.off("connect", handleConnect);
-    };
+    // We do NOT need to join as a student/team here.
+    setStatus("Connected.");
   }, [roomCode]);
 
   // Clear any old "launch immediately" flag – we now require
