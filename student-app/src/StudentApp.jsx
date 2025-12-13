@@ -1881,8 +1881,7 @@ function StudentApp() {
                 marginTop: 6,
                 padding: 16,
                 borderRadius: 18,
-                background: assignedColor || "black",
-                  color: "#fff",
+                background: assignedColor || "black", // ✅ colour to be scanned
                 border: "2px solid rgba(255,255,255,0.55)",
                 color: "#fff",
                 textAlign: "center",
@@ -1891,15 +1890,18 @@ function StudentApp() {
             >
               <div style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: 0.4 }}>
                 {(() => {
-                  const c = (assignedColor || stationInfo?.color || "").toString().toUpperCase();
-                  const loc = (roomLocation || "").toString().toUpperCase();
-                  // If you later add a real multi-room label, you can swap this logic.
-                  {isMultiRoom && expectedLocationLabel
-                    ? `Scan at ${expectedLocationLabel.toUpperCase()} ${String(assignedColor || "").toUpperCase()}`
-                    : `Scan at ${String(assignedColor || "").toUpperCase()}`}
-                  //if (loc && loc !== "CLASSROOM" && c) return `Scan at ${loc} ${c}`;
-                  //if (c) return `Scan at ${c}`;
-                  //return "Scan the station QR";
+                  const color = String(assignedColor || stationInfo?.color || "").toUpperCase();
+                  const loc = String(roomLocation || "").toUpperCase();
+
+                  // If teacher is running multi-room + location matters, show "HALLWAY RED"
+                  if (enforceLocation && loc && loc !== "CLASSROOM" && color) {
+                    return `Scan at ${loc} ${color}`;
+                  }
+
+                  // Normal case: "Scan at RED"
+                  if (color) return `Scan at ${color}`;
+
+                  return "Scan the station QR";
                 })()}
               </div>
 
