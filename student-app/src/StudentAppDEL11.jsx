@@ -241,6 +241,11 @@ function StudentApp() {
   const [scanError, setScanError] = useState(null);
   const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
 
+  // Scan/task pulses + scan-success gate
+  const [hasScannedCorrectly, setHasScannedCorrectly] = useState(false);
+  const [scanSuccessPulse, setScanSuccessPulse] = useState(false);
+  const [taskArrivedPulse, setTaskArrivedPulse] = useState(false);
+
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
@@ -575,6 +580,9 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           // ✅ Prepare for next scan-task cycle
           setScannedStationId(null);      // important: forces gate logic to re-evaluate
           setScanStatus(null);
+    setHasScannedCorrectly(false);
+    setScanSuccessPulse(false);
+    setTaskArrivedPulse(false);
           setScanError(null);
 
           // ✅ Pull latest station assignment BEFORE/AS we show scanner
@@ -777,6 +785,10 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
     setStatusMessage("");
     setTeamId(null);
     setTeamSessionId(null);
+      try {
+        localStorage.setItem("curriculate_roomCode", String(code).toUpperCase());
+        localStorage.setItem("curriculate_teamSessionId", String(tid));
+      } catch (e) {}
 
     // station + scan
     setAssignedStationId(null);
@@ -821,8 +833,17 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
   };
 
   const handleJoinAnotherRoom = () => {
-    // Optional: let server forget current team socket bindings, if implemented later
-    // socket.emit("student:leave-room", { teamId, roomCode });
+    // Immediately free this team's station/color on the server (prevents 'no colors left')
+    try {
+      const code = (roomCode || localStorage.getItem("curriculate_roomCode") || "").toUpperCase();
+      const tid = teamId || localStorage.getItem("curriculate_teamSessionId") || null;
+      if (code && tid) {
+        socket.emit("student:abandon-team", { roomCode: code, teamId: tid });
+      }
+    } catch (e) {
+      // ignore
+    }
+
     resetForNewJoin();
   };
 
@@ -849,6 +870,16 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
       members: members.filter((m) => m.trim().length > 0),
     };
 
+    // If a previous team session exists for this room, explicitly abandon it first
+    try {
+      const prevRoom = (localStorage.getItem("curriculate_roomCode") || "").toUpperCase();
+      const prevTeam = localStorage.getItem("curriculate_teamSessionId");
+      const nextRoom = payload.roomCode;
+      if (prevRoom && prevTeam && prevRoom === nextRoom) {
+        socket.emit("student:abandon-team", { roomCode: nextRoom, teamId: prevTeam });
+      }
+    } catch (e) {}
+
     socket.emit("student:join-room", payload, (response) => {
       setJoiningRoom(false);
       const ok = response && (response.ok === true || response.success === true);
@@ -866,6 +897,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
       setScanError("");
+      setHasScannedCorrectly(false);
       // NOTE: do not set scanStatus ok on join; only after a successful scan
 
       if (response.currentTask) {
@@ -2175,7 +2207,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
               }}
             >
               <div style={{ fontSize: "0.8rem", color: "#e5e7eb" }}>
-                Classroom Noise
+                Classroom Noise Level
               </div>
               {noiseState.enabled && (
                 <div style={{ fontSize: "0.75rem", color: "#e5e7eb" }}>
@@ -2280,18 +2312,17 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                 </div>
               </section>
             </div>
-
-            {hasScannedCorrectly && (
-              <div
-                className={scanSuccessPulse ? "scan-success-pulse" : ""}
-                style={{ marginTop: 10, fontWeight: 900 }}
-              >
-                ✅ Correct station — waiting for your next task…
-              </div>
-            )}
           </section>
         )}
         
+        {hasScannedCorrectly && (
+              <div
+                className={scanSuccessPulse ? "scan-success-pulse" : ""}
+                style={{ marginTop: 10, color: "#e5e7eb", fontWeight: 800 }}
+              >
+                Waiting for your next task…Get ready to Curriculate!
+              </div>
+            )}
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
             <section
@@ -2420,7 +2451,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                       </div>
                     </div>
                   ) : (
-                    <div>Waiting for your next task to unlock…</div>
+                    <div>…</div>
                   )}
                 </div>
               )}
@@ -2459,6 +2490,18 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
       {pointToast && (
         <div className={`toast ${pointToast.positive ? "" : "negative"}`}>
           {pointToast.message}
+        </div>
+      )}
+
+      {/* Waiting message – ONLY show when no task and no overlay */}
+      {!currentTask && !submissionFeedback && (
+        <div style={{ textAlign: "center", padding: "40px 20px" }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: 16 }}>
+            Waiting for your next task…
+          </h2>
+          <p style={{ fontSize: "1.2rem", color: "#4b5563" }}>
+            Get ready to Curriculate!
+          </p>
         </div>
       )}
 
