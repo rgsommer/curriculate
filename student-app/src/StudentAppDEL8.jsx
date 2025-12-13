@@ -786,8 +786,8 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
     setTeamId(null);
     setTeamSessionId(null);
       try {
-        localStorage.setItem("curriculate_roomCode", String(code).toUpperCase());
-        localStorage.setItem("curriculate_teamSessionId", String(tid));
+        localStorage.setItem(\"curriculate_roomCode\", String(code).toUpperCase());
+        localStorage.setItem(\"curriculate_teamSessionId\", String(tid));
       } catch (e) {}
 
     // station + scan

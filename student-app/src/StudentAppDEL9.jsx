@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AJ, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AK, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -786,8 +786,8 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
     setTeamId(null);
     setTeamSessionId(null);
       try {
-        localStorage.setItem("curriculate_roomCode", String(code).toUpperCase());
-        localStorage.setItem("curriculate_teamSessionId", String(tid));
+        localStorage.setItem(\"curriculate_roomCode\", String(code).toUpperCase());
+        localStorage.setItem(\"curriculate_teamSessionId\", String(tid));
       } catch (e) {}
 
     // station + scan
