@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AI, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AJ, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -217,6 +217,8 @@ function StudentApp() {
 
   // Persistent identifiers
   const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
+  const teamIdRef = useRef(null);
+  useEffect(() => { teamIdRef.current = teamId; }, [teamId]);
   const [teamSessionId, setTeamSessionId] = useState(null);
   const lastStationIdRef = useRef(null);
 
@@ -309,34 +311,31 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   useEffect(() => {
-    if (!teamId) return;
-
     // Room / station state updates
     const handleRoomState = (state) => {
-      if (!state || !teamId) return;
-      const myTeam = state.teams?.[teamId];
-      const sid = myTeam?.currentStationId || myTeam?.station || state?.teams?.[teamId]?.currentStationId;
-        if (sid) {
-          const info = normalizeStationId(sid);
-          setAssignedStationId(info.id);
-          setAssignedColor(info.color || null);
-        }
+      const tid = teamIdRef.current;
+      if (!state || !tid) return;
+      const myTeam = state?.teams?.[tid];
       if (!myTeam) return;
 
+      // ✅ Single source of truth for assignment (server must set currentStationId)
+      const newStationId =
+        myTeam.currentStationId || myTeam.stationId || myTeam.station || null;
+
+      if (newStationId && newStationId !== lastStationIdRef.current) {
+        lastStationIdRef.current = newStationId;
+        const info = normalizeStationId(newStationId);
+        setAssignedStationId(info.id);
+        setAssignedColor(info.color || null);
+      }
+
       // 🔢 Update running total score from room-wide scores map
-      if (state.scores && typeof state.scores[teamId] === "number") {
-        setScoreTotal(state.scores[teamId]);
+      if (state.scores && typeof state.scores[tid] === "number") {
+        setScoreTotal(state.scores[tid]);
       }
 
       if (Array.isArray(state.selectedRooms)) {
         setSelectedRooms(state.selectedRooms);
-      }
-      const newStationId = myTeam.currentStationId || myTeam.stationId;
-      if (newStationId && newStationId !== lastStationIdRef.current) {
-        lastStationIdRef.current = newStationId;
-        const stationInfo = normalizeStationId(newStationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
       }
 
       const loc =
@@ -578,14 +577,23 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // if station not known yet, request it first (prevents black panel)
-    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
-      socket.emit("room:request-state", { teamId });
-      return;
-    }
-
+    // Always show scanner UI after join
     setScannerActive(true);
-  }, [joined, assignedColor, assignedStationId, teamId]);
+
+    // Also request latest state so station/location can populate when available
+    if (teamId) socket.emit("room:request-state", { teamId });
+  }, [joined, teamId]);
+
+  // If scanner is visible but assignment hasn't arrived yet (common after refresh), request state again
+  useEffect(() => {
+    if (!joined || !teamId) return;
+    if (!scannerActive) return;
+
+    if (!assignedStationId || !assignedColor) {
+      socket.emit("room:request-state", { teamId });
+    }
+  }, [joined, teamId, scannerActive, assignedStationId, assignedColor]);
+
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -675,6 +683,16 @@ function StudentApp() {
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
 
+      // ✅ Immediately pull state so we get station assignment ASAP (and keep teacher/student in sync)
+      socket.emit("room:request-state", { teamId: tid });
+
+      // ✅ If join response didn't include stationId/currentStationId yet, poll briefly
+      if (!response.stationId && !response.currentStationId) {
+        setTimeout(() => socket.emit("room:request-state", { teamId: tid }), 250);
+        setTimeout(() => socket.emit("room:request-state", { teamId: tid }), 750);
+        setTimeout(() => socket.emit("room:request-state", { teamId: tid }), 1500);
+      }
+
       if (response.currentTask) {
         setCurrentTask(response.currentTask.task || null);
         setCurrentTaskIndex(
@@ -711,31 +729,12 @@ function StudentApp() {
         }
       }
 
-      // ✅ Prefer explicit assignment from server (fast, reliable), then fall back to roomState
-      const ackStationId =
-        response.assignedStationId ||
-        response.currentStationId ||
-        response.stationId ||
-        null;
-
-      const stateStationId =
-        response.roomState?.teams?.[tid]?.currentStationId ||
-        response.roomState?.teams?.[tid]?.stationId ||
-        response.roomState?.teams?.[tid]?.station ||
-        null;
-
-      const stationToApply = ackStationId || stateStationId;
-
-      if (stationToApply) {
-        const stationInfo = normalizeStationId(stationToApply);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(
-          stationInfo.color ||
-            (response.assignedColor ? String(response.assignedColor).toLowerCase() : null)
-        );
-        lastStationIdRef.current = stationInfo.id;
-      } else if (response.assignedColor) {
-        setAssignedColor(String(response.assignedColor).toLowerCase());
+      const joinStationId = response.currentStationId || response.stationId || null;
+      if (joinStationId) {
+        const info = normalizeStationId(joinStationId);
+        setAssignedStationId(info.id);
+        setAssignedColor(info.color || null);
+        lastStationIdRef.current = joinStationId;
       }
 
       const locSlug =
@@ -834,6 +833,14 @@ function StudentApp() {
 
   const handleScan = (data) => {
   if (!data || !joined || !teamId) return;
+
+  // ✅ Guarantee: don't process a scan until we know the assigned station/color (prevents wrong-colour race after refresh)
+  if (enforceLocation && (!assignedStationId || !assignedColor)) {
+    setScanStatus("error");
+    setScanError("Loading your assigned station… try again in a moment.");
+    socket.emit("room:request-state", { teamId });
+    return;
+  }
 
   setScanError(null);
 
@@ -1974,75 +1981,73 @@ function StudentApp() {
             </div>
           )}
           {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-          {scannerActive && (
-          <section
-            style={{
-              marginTop: 6,
-              padding: 16,
-              borderRadius: 18,
-              background: (assignedColor || stationInfo?.color || "black"),
-              color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
-              border: "2px solid rgba(255,255,255,0.55)",
-              textAlign: "center",
-              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
-              {(() => {
-                const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
-                const locationUpper = String(roomLocation || "").toUpperCase();
+          {scannerActive && (() => {
+            const colorNameRaw = assignedColor || stationInfo?.color || "";
+            const colorName = String(colorNameRaw).trim().toLowerCase();
+            const hasColor = !!colorName;
 
-                if (!colorUpper) return "Scan station QR code";
+            const ui = getStationBubbleStyles(colorName); // uses your internal color→hex mapping
 
-                // Multi-room only: show location + colour
-                if (isMultiRoom && enforceLocation && locationUpper) {
-                  return `Scan QR Code at ${locationUpper} ${colorUpper}`;
-                }
+            const colorUpper = hasColor ? colorName.toUpperCase() : "";
+            const locationUpper = String(roomLocation || "").trim().toUpperCase();
 
-                // Single-room: colour only
-                return `Scan QR Code at ${colorUpper}`;
-              })()}
-            </div>
+            const label =
+              hasColor
+                ? (isMultiRoom && enforceLocation && locationUpper
+                    ? `${locationUpper} ${colorUpper}`
+                    : colorUpper)
+                : null;
 
-            <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-              Get ready to Curriculate!
-            </div>
-
-            <div
-              style={{
-                marginTop: 12,
-                background: "rgba(0,0,0,0.25)",
-                borderRadius: 14,
-                overflow: "hidden",
-                border: "2px solid rgba(255,255,255,0.55)",
-              }}
-            >
-              <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
-                <div style={{
-                  backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
-                  borderRadius: 16,
+            return (
+              <section
+                style={{
+                  marginTop: 6,
                   padding: 16,
-                  display: "inline-block",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-                  maxWidth: "90vw",
-                }}>
+                  borderRadius: 18,
+                  background: ui.background,      // ✅ real background color
+                  color: ui.color,                // ✅ readable text color
+                  border: "2px solid rgba(255,255,255,0.55)",
+                  textAlign: "center",
+                  boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+                }}
+              >
+                <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
+                  {label ? `Scan QR Code at ${label}` : "Scan QR Code"}
+                </div>
+
+                <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
+                  Get ready to Curriculate!
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    background: "rgba(0,0,0,0.18)",
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    border: "2px solid rgba(255,255,255,0.55)",
+                    padding: 14,
+                    display: "inline-block",
+                    maxWidth: "92vw",
+                  }}
+                >
                   <QrScanner onScan={handleScan} onError={setScanError} />
+
                   {scanError && (
-                    <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
+                    <div style={{ marginTop: 12, color: "#ef4444", fontWeight: 700 }}>
                       ⚠ {scanError}
                     </div>
                   )}
                 </div>
-              </section>
-            </div>
 
-            {scanStatus === "ok" && (
-              <div style={{ marginTop: 10, fontWeight: 800 }}>
-                ✅ Correct station — waiting for your next task…
-              </div>
-            )}
-          </section>
-        )}
+                {scanStatus === "ok" && (
+                  <div style={{ marginTop: 10, fontWeight: 900 }}>
+                    ✅ Correct station — waiting for your next task…
+                  </div>
+                )}
+              </section>
+            );
+          })()}
         
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
@@ -2235,7 +2240,7 @@ function StudentApp() {
       <div
         style={{
           marginTop: 16,
-          height: "50vh",
+          height: joined ? "18vh" : "50vh",
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
           backgroundColor: assignedColor

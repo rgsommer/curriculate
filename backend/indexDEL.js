@@ -239,7 +239,7 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     room.teams[teamId] = {
       teamId,
       teamName: t.teamName,
-      members: t.playerNames,
+      members: t.members ?? t.playerNames ?? [],
       score: 0,
       stationColor: null,
       currentStationId: null,
@@ -963,6 +963,20 @@ io.on("connection", (socket) => {
       socket.data.teamId = teamId;
       socket.data.teamName = cleanName;
 
+
+      // ✅ Ensure this team has an assigned station (so StudentApp knows the color before scanning)
+      try {
+        const stationIds = Object.keys(room.stations || {});
+        if (stationIds.length > 0) {
+          const t = room.teams?.[teamId];
+          if (t && !t.currentStationId) {
+            reassignStationForTeam(room, teamId);
+          }
+        }
+      } catch (e) {
+        console.warn("Station assignment on join/resume failed:", e);
+      }
+
       const state = buildRoomState(room);
       io.to(code).emit("room:state", state);
       io.to(code).emit("roomState", state);
@@ -979,8 +993,6 @@ io.on("connection", (socket) => {
           ok: true,
           teamId,
           teamSessionId: teamId,
-          assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
-          assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
           roomState: state,
         });
       }
@@ -1068,14 +1080,26 @@ io.on("connection", (socket) => {
       socket.data.teamId = teamId;
       socket.data.teamName = team.teamName;
 
+
+      // ✅ Ensure this team has an assigned station (so StudentApp knows the color before scanning)
+      try {
+        const stationIds = Object.keys(room.stations || {});
+        if (stationIds.length > 0) {
+          const t = room.teams?.[teamId];
+          if (t && !t.currentStationId) {
+            reassignStationForTeam(room, teamId);
+          }
+        }
+      } catch (e) {
+        console.warn("Station assignment on join/resume failed:", e);
+      }
+
       const state = buildRoomState(room);
 
       if (typeof ack === "function") {
         ack({
           success: true,
           teamId,
-          assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
-          assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
           roomState: state,
         });
       }
@@ -2361,8 +2385,8 @@ socket.on("station:scan", handleStationScan);
 
   socket.on("collaboration-reply", async ({ roomCode, taskId, reply }) => {
     const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams || [];
-    const team = teams.find((t) => t.socketId === socket.id);
+    const teams = Object.values(session?.teams || {});
+    const team = teams.find(t => t.socketId === socket.id);
     if (!team) return;
 
     const bonus = await generateAIScore({
@@ -2433,7 +2457,11 @@ socket.on("station:scan", handleStationScan);
     );
 
     if (isPerfect) {
-      updateTeamScore(socket.teamId, 10);
+      const code = (roomCode || socket.data?.roomCode || "").toUpperCase();
+      if (!code || !socket.teamId) return;
+
+      updateTeamScore(code, socket.teamId, 10);
+
       socket.emit("bonus-awarded", {
         points: 10,
         reason: "Perfect Memory!",
@@ -2446,7 +2474,9 @@ socket.on("station:scan", handleStationScan);
   // True/False Tic-Tac-Toe (experimental)
   socket.on("start-true-false-tictactoe", ({ roomCode, task }) => {
     const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams?.filter((t) => t.active) || [];
+    const teams = Object.values(session?.teams || {});
+    const team = teams.find(t => t.socketId === socket.id);
+
     if (teams.length < 2) return;
 
     const [teamA, teamB] = teams.sort(() => Math.random() - 0.5).slice(0, 2);
