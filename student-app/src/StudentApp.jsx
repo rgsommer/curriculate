@@ -582,14 +582,11 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // if station not known yet, request it first (prevents black panel)
-    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
-      socket.emit("room:request-state", { teamId });
-      return;
+    // If no task is showing, scanner should be available
+    if (!currentTask) {
+      setScannerActive(true);
     }
-
-    setScannerActive(true);
-  }, [joined, assignedColor, assignedStationId, teamId]);
+  }, [joined, currentTask]);
 
   // Clean up timers on unmount
   useEffect(() => {
