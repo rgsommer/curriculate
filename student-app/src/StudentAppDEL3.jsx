@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AJ, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AI, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -275,63 +275,6 @@ function StudentApp() {
   const countdownTimerRef = useRef(null);
   const postSubmitTimerRef = useRef(null);
 
-
-  // ───────────────────────────────
-  // 🔔 Task arrival sound (Web Audio)
-  // ───────────────────────────────
-  const audioCtxRef = useRef(null);
-  const audioUnlockedRef = useRef(false);
-
-  const unlockAudio = async () => {
-    try {
-      if (audioUnlockedRef.current) return;
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      const ctx = audioCtxRef.current || new Ctx();
-      audioCtxRef.current = ctx;
-      if (ctx.state === "suspended") await ctx.resume();
-
-      // Tiny silent blip to fully unlock on iOS/Safari
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      g.gain.value = 0;
-      o.connect(g).connect(ctx.destination);
-      o.start();
-      o.stop(ctx.currentTime + 0.01);
-
-      audioUnlockedRef.current = true;
-    } catch (err) {
-      // ignore (browser autoplay policies)
-    }
-  };
-
-  const playTaskChime = () => {
-    try {
-      if (!audioUnlockedRef.current) return;
-      const ctx = audioCtxRef.current;
-      if (!ctx) return;
-
-      const now = ctx.currentTime;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-
-      const o = ctx.createOscillator();
-      o.type = "sine";
-      o.frequency.setValueAtTime(880, now);
-      o.frequency.setValueAtTime(660, now + 0.12);
-      o.frequency.setValueAtTime(990, now + 0.24);
-
-      o.connect(g).connect(ctx.destination);
-      o.start(now);
-      o.stop(now + 0.36);
-    } catch (err) {
-      // ignore
-    }
-  };
-
-
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
@@ -418,7 +361,6 @@ function StudentApp() {
       setCurrentTask(payload.task || payload || null);
       const idx = (typeof payload.taskIndex === "number") ? payload.taskIndex : (typeof payload.index === "number" ? payload.index : null);
       setCurrentTaskIndex(idx);
-      playTaskChime();
       const total = (typeof payload.totalTasks === "number") ? payload.totalTasks : (typeof payload.total === "number" ? payload.total : null);
       setTasksetTotalTasks(total);
 
@@ -705,7 +647,6 @@ function StudentApp() {
 
   const handleJoin = (e) => {
     e.preventDefault();
-    unlockAudio();
     if (!canJoin || joiningRoom) return;
 
     setJoiningRoom(true);
@@ -2294,7 +2235,7 @@ function StudentApp() {
       <div
         style={{
           marginTop: 16,
-          height: "10vh",
+          height: "50vh",
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
           backgroundColor: assignedColor
