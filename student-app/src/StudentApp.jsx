@@ -315,6 +315,12 @@ function StudentApp() {
     const handleRoomState = (state) => {
       if (!state || !teamId) return;
       const myTeam = state.teams?.[teamId];
+      const sid = myTeam?.currentStationId || myTeam?.station || state?.teams?.[teamId]?.currentStationId;
+        if (sid) {
+          const info = normalizeStationId(sid);
+          setAssignedStationId(info.id);
+          setAssignedColor(info.color || null);
+        }
       if (!myTeam) return;
 
       // 🔢 Update running total score from room-wide scores map
@@ -444,19 +450,20 @@ function StudentApp() {
         if (t <= 0) {
           clearInterval(timer);
 
-          // ✅ advance to next scan-task cycle
+          // ✅ End review lock
           setTaskLocked(false);
           setPostSubmitSecondsLeft(null);
 
-          // show scan gate + scanner
-          setScannerActive(true);
+          // ✅ Prepare for next scan-task cycle
+          setScannedStationId(null);      // important: forces gate logic to re-evaluate
           setScanStatus(null);
           setScanError(null);
 
-          // IMPORTANT: mustScan should become true
-          // If you already compute mustScan from server/room state, do nothing here.
-          // If mustScan is local state, set it here:
-          // setMustScan(true);
+          // ✅ Pull latest station assignment BEFORE/AS we show scanner
+          socket.emit("room:request-state", { teamId });
+
+          // ✅ Show scanner
+          setScannerActive(true);
         }
       }, 1000);
 
@@ -567,7 +574,14 @@ function StudentApp() {
     scannedStationId !== assignedStationId;
 
   useEffect(() => {
-    if (mustScan) setScannerActive(true);
+    if (mustScan) {
+      // If we don't yet know the assigned colour, request state and wait a tick
+      if (!assignedColor && !stationInfo?.color) {
+        socket.emit("room:request-state", { teamId });
+        return;
+      }
+      setScannerActive(true);
+    }
   }, [mustScan]);
 
   // Clean up timers on unmount
@@ -832,11 +846,10 @@ function StudentApp() {
         setScannerActive(false);
       }
 
-      if (resp.stationId) {
+      if (resp?.stationId) {
         const info = normalizeStationId(resp.stationId);
         setAssignedStationId(info.id);
         setAssignedColor(info.color || null);
-        lastStationIdRef.current = info.id;
       }
     }
   );
@@ -2076,59 +2089,47 @@ function StudentApp() {
               {taskLocked && (
                 <div className="task-locked-overlay">
                   {postSubmitSecondsLeft != null ? (
-                    <div>
-                      Locked while your teacher reviews… <br />
-                      <span
-                        style={{
-                          fontVariantNumeric: "tabular-nums",
-                          fontSize: "1.1rem",
-                        }}
-                      >
-                        {postSubmitSecondsLeft}s
-                      </span>
+                    <div style={{ width: "100%" }}>
+                      <div>
+                        Locked while your teacher reviews… <br />
+                        <span
+                          style={{
+                            fontVariantNumeric: "tabular-nums",
+                            fontSize: "1.1rem",
+                          }}
+                        >
+                          {postSubmitSecondsLeft}s
+                        </span>
+                      </div>
+
+                      {/* ✅ Countdown bar (VISIBLE because it's inside the overlay) */}
+                      <div style={{ marginTop: 12 }}>
+                        <div
+                          style={{
+                            height: 8,
+                            borderRadius: 999,
+                            background: "rgba(255,255,255,0.25)",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: "100%",
+                              width: `${Math.round(
+                                (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
+                              )}%`,
+                              background: "rgba(255,255,255,0.85)",
+                              transition: "width 200ms linear",
+                            }}
+                          />
+                        </div>
+                      </div>
                     </div>
                   ) : (
-                    <div>Waiting for your teacher to unlock the next task…</div>
+                    <div>Waiting for your next task to unlock…</div>
                   )}
                 </div>
               )}
-
-              {postSubmitSecondsLeft != null && (
-                <div style={{ marginTop: 10 }}>
-                  <div
-                    style={{
-                      height: 8,
-                      borderRadius: 999,
-                      background: "rgba(255,255,255,0.25)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${Math.round(
-                          (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
-                        )}%`,
-                        background: "rgba(255,255,255,0.85)",
-                        transition: "width 200ms linear",
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-              {lastTaskResult && lastTaskResult.aiFeedback && (
-                <div className="ai-feedback">
-                  <strong>AI Feedback</strong>
-                  <div>{lastTaskResult.aiFeedback}</div>
-                  {shortAnswerReveal && (
-                    <div style={{ marginTop: 6, fontSize: "0.8rem" }}>
-                      <strong>Sample correct answer:</strong> {shortAnswerReveal}
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-          )}
 
           {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
           {joined && currentTask && mustScan && (
