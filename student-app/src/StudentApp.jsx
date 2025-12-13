@@ -1952,91 +1952,73 @@ function StudentApp() {
             </div>
           )}
           {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-          {scannerActive && (
-            <section
-              style={{
-                marginTop: 6,
-                padding: 16,
-                borderRadius: 18,
-                backgroundColor: assignedColor
-                  ? assignedColor
-                  : stationInfo?.color
-                  ? stationInfo.color
-                  : "#e5e7eb",
-                color:
-                  String(
-                    assignedColor
-                      ? assignedColor
-                      : stationInfo?.color
-                      ? stationInfo.color
-                      : ""
-                  ).toLowerCase() === "yellow"
-                    ? "#0f172a"
-                    : "#fff",
-                border: "2px solid rgba(255,255,255,0.55)",
-                textAlign: "center",
-                boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-              }}
-            >
-              {(() => {
-                const displayColor = assignedColor || stationInfo?.color || "";
-                const locationUpper = String(roomLocation || "").toUpperCase();
+          {scannerActive && (() => {
+            const colorNameRaw = assignedColor || stationInfo?.color || "";
+            const colorName = String(colorNameRaw).trim().toLowerCase();
+            const hasColor = !!colorName;
 
-                // If your backend ever sends "station-red", normalize just for the LABEL (not CSS)
-                const labelColor = String(displayColor)
-                  .toUpperCase()
-                  .replace(/^STATION-/, "")
-                  .trim();
+            const ui = getStationBubbleStyles(colorName); // uses your internal color→hex mapping
 
-                const label =
-                  labelColor && isMultiRoom && enforceLocation && locationUpper
-                    ? `${locationUpper} ${labelColor}`
-                    : labelColor;
+            const colorUpper = hasColor ? colorName.toUpperCase() : "";
+            const locationUpper = String(roomLocation || "").trim().toUpperCase();
 
-                return (
-                  <>
-                    <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
-                      {label ? `Scan QR Code at ${label}` : "Scan QR Code"}
+            const label =
+              hasColor
+                ? (isMultiRoom && enforceLocation && locationUpper
+                    ? `${locationUpper} ${colorUpper}`
+                    : colorUpper)
+                : null;
+
+            return (
+              <section
+                style={{
+                  marginTop: 6,
+                  padding: 16,
+                  borderRadius: 18,
+                  background: ui.background,      // ✅ real background color
+                  color: ui.color,                // ✅ readable text color
+                  border: "2px solid rgba(255,255,255,0.55)",
+                  textAlign: "center",
+                  boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+                }}
+              >
+                <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
+                  {label ? `Scan QR Code at ${label}` : "Scan QR Code"}
+                </div>
+
+                <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
+                  Get ready to Curriculate!
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 12,
+                    background: "rgba(0,0,0,0.18)",
+                    borderRadius: 14,
+                    overflow: "hidden",
+                    border: "2px solid rgba(255,255,255,0.55)",
+                    padding: 14,
+                    display: "inline-block",
+                    maxWidth: "92vw",
+                  }}
+                >
+                  <QrScanner onScan={handleScan} onError={setScanError} />
+
+                  {scanError && (
+                    <div style={{ marginTop: 12, color: "#ef4444", fontWeight: 700 }}>
+                      ⚠ {scanError}
                     </div>
+                  )}
+                </div>
 
-                    <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-                      Get ready to Curriculate!
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 12,
-                        background: "rgba(255,255,255,0.14)", // lets the station color show through
-                        borderRadius: 14,
-                        overflow: "hidden",
-                        border: "2px solid rgba(255,255,255,0.55)",
-                        backdropFilter: "blur(2px)",
-                        display: "inline-block",
-                        maxWidth: "90vw",
-                      }}
-                    >
-                      <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
-                        <div style={{ padding: "0 16px" }}>
-                          <QrScanner onScan={handleScan} onError={setScanError} />
-                          {scanError && (
-                            <div style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
-                              ⚠ {scanError}
-                            </div>
-                          )}
-                        </div>
-                      </section>
-                    </div>
-
-                    {scanStatus === "ok" && (
-                      <div style={{ marginTop: 10, fontWeight: 800 }}>
-                        ✅ Correct station — waiting for your next task…
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </section>
-          )}
+                {scanStatus === "ok" && (
+                  <div style={{ marginTop: 10, fontWeight: 900 }}>
+                    ✅ Correct station — waiting for your next task…
+                  </div>
+                )}
+              </section>
+            );
+          })()}
         
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
