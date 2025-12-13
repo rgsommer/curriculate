@@ -515,10 +515,20 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
 
       setCurrentAnswerDraft("");
       setTaskLocked(false);
-      setPostSubmitSecondsLeft(null);
+          setPostSubmitSecondsLeft(null);
+
+          // Hide the completed task UI while we wait for the next task
+          setCurrentTask(null);
+          setCurrentTaskIndex(null);
+
+          // Hide the completed task UI while we wait for the next task
+          setCurrentTask(null);
+          setCurrentTaskIndex(null);
       setLastTaskResult(null);
       setPointToast(null);
       setShortAnswerReveal(null);
+          setHasScannedCorrectly(false);
+      setScannerActive(false);
     };
 
     // AI scoring + feedback
@@ -576,6 +586,10 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           // ✅ End review lock
           setTaskLocked(false);
           setPostSubmitSecondsLeft(null);
+
+          // Hide the completed task UI while we wait for the next task
+          setCurrentTask(null);
+          setCurrentTaskIndex(null);
 
           // ✅ Prepare for next scan-task cycle
           setScannedStationId(null);      // important: forces gate logic to re-evaluate
@@ -785,10 +799,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
     setStatusMessage("");
     setTeamId(null);
     setTeamSessionId(null);
-      try {
-        localStorage.setItem(\"curriculate_roomCode\", String(code).toUpperCase());
-        localStorage.setItem(\"curriculate_teamSessionId\", String(tid));
-      } catch (e) {}
 
     // station + scan
     setAssignedStationId(null);
@@ -833,17 +843,8 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
   };
 
   const handleJoinAnotherRoom = () => {
-    // Immediately free this team's station/color on the server (prevents 'no colors left')
-    try {
-      const code = (roomCode || localStorage.getItem("curriculate_roomCode") || "").toUpperCase();
-      const tid = teamId || localStorage.getItem("curriculate_teamSessionId") || null;
-      if (code && tid) {
-        socket.emit("student:abandon-team", { roomCode: code, teamId: tid });
-      }
-    } catch (e) {
-      // ignore
-    }
-
+    // Optional: let server forget current team socket bindings, if implemented later
+    // socket.emit("student:leave-room", { teamId, roomCode });
     resetForNewJoin();
   };
 
@@ -869,16 +870,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
       teamName: teamName.trim(),
       members: members.filter((m) => m.trim().length > 0),
     };
-
-    // If a previous team session exists for this room, explicitly abandon it first
-    try {
-      const prevRoom = (localStorage.getItem("curriculate_roomCode") || "").toUpperCase();
-      const prevTeam = localStorage.getItem("curriculate_teamSessionId");
-      const nextRoom = payload.roomCode;
-      if (prevRoom && prevTeam && prevRoom === nextRoom) {
-        socket.emit("student:abandon-team", { roomCode: nextRoom, teamId: prevTeam });
-      }
-    } catch (e) {}
 
     socket.emit("student:join-room", payload, (response) => {
       setJoiningRoom(false);
@@ -2315,7 +2306,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           </section>
         )}
         
-        {hasScannedCorrectly && (
+        {hasScannedCorrectly && !currentTask && (
               <div
                 className={scanSuccessPulse ? "scan-success-pulse" : ""}
                 style={{ marginTop: 10, color: "#e5e7eb", fontWeight: 800 }}
@@ -2441,7 +2432,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                             style={{
                               height: "100%",
                               width: `${Math.round(
-                                (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
+                                (postSubmitSecondsLeft / (reviewPauseSeconds || DEFAULT_POST_SUBMIT_SECONDS)) * 100
                               )}%`,
                               background: "rgba(255,255,255,0.85)",
                               transition: "width 200ms linear",
