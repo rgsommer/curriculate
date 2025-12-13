@@ -305,7 +305,9 @@ export default function SortTask({
         ([bucketId, ids]) =>
           bucketId !== UNSORTED_BUCKET_ID && ids.includes(item.id),
       )?.[0];
+
       const isCorrect = placedIn === item.correctBucket;
+
       const score =
         isCorrect
           ? 1
@@ -320,9 +322,6 @@ export default function SortTask({
     { points: 0, total: items.length || 1 },
   );
 
-  const denom = rubricTotal || scoring.total;
-  const finalScore = Math.round((scoring.points / denom) * 100);
-
   const bucketScores = buckets.map((bucket) => {
     const itemsInBucket = (assignments[bucket.id] || [])
       .map((id) => items.find((i) => i.id === id))
@@ -331,13 +330,16 @@ export default function SortTask({
     const correct = itemsInBucket.filter(
       (i) => i.correctBucket === bucket.id,
     ).length;
+
     const total = itemsInBucket.length;
+
     const maxPossible = items.filter(
       (i) => i.correctBucket === bucket.id,
     ).length;
+
     const partial =
-      itemsInBucket.filter((i) => i.correctBucket === null)
-        .length * 0.5;
+      itemsInBucket.filter((i) => i.correctBucket === null).length * 0.5;
+
     const points = correct + partial;
 
     return {
@@ -357,6 +359,9 @@ export default function SortTask({
     (sum, b) => sum + (Number(b.max) || 0),
     0
   );
+
+  const denom = rubricTotal || scoring.total || 1;
+  const finalScore = Math.round((scoring.points / denom) * 100);
 
   // Push live draft up to parent (for autosave / resume)
   useEffect(() => {
