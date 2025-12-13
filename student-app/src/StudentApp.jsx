@@ -441,6 +441,8 @@ function StudentApp() {
 
       setTaskLocked(true);
       setPostSubmitSecondsLeft(lockSeconds);
+      if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
+      postSubmitTimerRef.current = timer;
 
       let t = lockSeconds;
       const timer = setInterval(() => {
@@ -574,15 +576,16 @@ function StudentApp() {
     scannedStationId !== assignedStationId;
 
   useEffect(() => {
-    if (mustScan) {
-      // If we don't yet know the assigned colour, request state and wait a tick
-      if (!assignedColor && !stationInfo?.color) {
-        socket.emit("room:request-state", { teamId });
-        return;
-      }
-      setScannerActive(true);
+    if (!joined) return;
+
+    // if station not known yet, request it first (prevents black panel)
+    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
+      socket.emit("room:request-state", { teamId });
+      return;
     }
-  }, [mustScan]);
+
+    setScannerActive(true);
+  }, [joined, assignedColor, assignedStationId, teamId]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -769,24 +772,33 @@ function StudentApp() {
       setTaskLocked(true);
 
       if (!response.aiScoring && !response.objectiveScoring) {
-        if (typeof reviewPauseSeconds === "number" && reviewPauseSeconds > 0) {
-          setPostSubmitSecondsLeft(reviewPauseSeconds);
+        // ✅ Fallback: show the 15s review countdown even if task:scored never arrives
+        const fallbackSeconds =
+          Number(response?.postSubmitSeconds) > 0
+            ? Number(response.postSubmitSeconds)
+            : DEFAULT_POST_SUBMIT_SECONDS;
 
-          if (postSubmitTimerRef.current) {
-            clearInterval(postSubmitTimerRef.current);
-          }
-          postSubmitTimerRef.current = setInterval(() => {
-            setPostSubmitSecondsLeft((prev) => {
-              if (prev == null || prev <= 1) {
-                clearInterval(postSubmitTimerRef.current);
-                postSubmitTimerRef.current = null;
-                setTaskLocked(false);
-                return null;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-        }
+        setPostSubmitSecondsLeft(fallbackSeconds);
+
+        if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = setInterval(() => {
+          setPostSubmitSecondsLeft((prev) => {
+            if (prev == null || prev <= 1) {
+              clearInterval(postSubmitTimerRef.current);
+              postSubmitTimerRef.current = null;
+
+              // Auto-advance into next scan cycle
+              setTaskLocked(false);
+              setScannedStationId(null);
+              setScanStatus(null);
+              setScanError(null);
+              socket.emit("room:request-state", { teamId });
+              setScannerActive(true);
+              return null;
+            }
+            return prev - 1;
+          });
+        }, 1000);
       }
 
       if (response.alertSound) {
@@ -1948,31 +1960,31 @@ function StudentApp() {
               padding: 16,
               borderRadius: 18,
               background: (assignedColor || stationInfo?.color || "black"),
-              border: "2px solid rgba(255,255,255,0.55)",
               color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
+              border: "2px solid rgba(255,255,255,0.55)",
               textAlign: "center",
               boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
             }}
           >
-            <div style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: 0.4 }}>
+            <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
               {(() => {
                 const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
-                const locationLabel = String(roomLocation || "").toUpperCase();
+                const locationUpper = String(roomLocation || "").toUpperCase();
 
-                if (isMultiRoom && enforceLocation && locationLabel && colorUpper) {
-                  return `Scan at ${locationLabel} ${colorUpper}`;
+                if (!colorUpper) return "Scan station QR code";
+
+                // Multi-room only: show location + colour
+                if (isMultiRoom && enforceLocation && locationUpper) {
+                  return `Scan QR Code at ${locationUpper} ${colorUpper}`;
                 }
 
-                if (colorUpper) {
-                  return `Scan at ${colorUpper}`;
-                }
-
-                return "Scan the station QR";
+                // Single-room: colour only
+                return `Scan QR Code at ${colorUpper}`;
               })()}
             </div>
 
             <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-              Hold the QR code inside the frame
+              Get ready to Curriculate!
             </div>
 
             <div
