@@ -440,11 +440,9 @@ function StudentApp() {
           : DEFAULT_POST_SUBMIT_SECONDS;
 
       setTaskLocked(true);
-      setPostSubmitSecondsLeft(lockSeconds);
+      setPostSubmitSecondsLeft(fallbackSeconds);
       if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
-      postSubmitTimerRef.current = timer;
-
-      let t = lockSeconds;
+      let t = fallbackSeconds;
       const timer = setInterval(() => {
         t -= 1;
         setPostSubmitSecondsLeft(t);
@@ -468,6 +466,8 @@ function StudentApp() {
           setScannerActive(true);
         }
       }, 1000);
+
+      postSubmitTimerRef.current = timer;
 
       if (reveal) {
         setShortAnswerReveal(reveal);
@@ -735,11 +735,6 @@ function StudentApp() {
     });
   };
 
-  // Auto-open scanner immediately after joining a room
-  useEffect(() => {
-    if (joined) setScannerActive(true);
-  }, [joined]);
-
   const handleSubmitAnswer = (answerPayload) => {
     if (!roomCode || !joined || !currentTask || submitting || taskLocked) {
       return;
@@ -778,27 +773,34 @@ function StudentApp() {
             ? Number(response.postSubmitSeconds)
             : DEFAULT_POST_SUBMIT_SECONDS;
 
-        setPostSubmitSecondsLeft(fallbackSeconds);
+        setTaskLocked(true);
+        setPostSubmitSecondsLeft(lockSeconds);
 
-        if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
-        postSubmitTimerRef.current = setInterval(() => {
-          setPostSubmitSecondsLeft((prev) => {
-            if (prev == null || prev <= 1) {
-              clearInterval(postSubmitTimerRef.current);
-              postSubmitTimerRef.current = null;
+        if (postSubmitTimerRef.current) {
+          clearInterval(postSubmitTimerRef.current);
+        }
 
-              // Auto-advance into next scan cycle
-              setTaskLocked(false);
-              setScannedStationId(null);
-              setScanStatus(null);
-              setScanError(null);
-              socket.emit("room:request-state", { teamId });
-              setScannerActive(true);
-              return null;
-            }
-            return prev - 1;
-          });
+        let t = lockSeconds;
+        const timer = setInterval(() => {
+          t -= 1;
+          setPostSubmitSecondsLeft(t);
+
+          if (t <= 0) {
+            clearInterval(timer);
+
+            setTaskLocked(false);
+            setPostSubmitSecondsLeft(null);
+
+            setScannedStationId(null);
+            setScanStatus(null);
+            setScanError(null);
+
+            socket.emit("room:request-state", { teamId });
+            setScannerActive(true);
+          }
         }, 1000);
+
+        postSubmitTimerRef.current = timer;
       }
 
       if (response.alertSound) {
@@ -2142,6 +2144,7 @@ function StudentApp() {
                   )}
                 </div>
               )}
+              </section>
 
           {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
           {joined && currentTask && mustScan && (
@@ -2204,7 +2207,9 @@ function StudentApp() {
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
           backgroundColor: assignedColor
-            ? `var(--${assignedColor}-500, #e5e7eb)`
+            ? assignedColor
+            : stationInfo?.color
+            ? stationInfo.color
             : "#e5e7eb",
           boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
         }}
