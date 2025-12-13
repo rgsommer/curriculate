@@ -1051,19 +1051,27 @@ io.on("connection", (socket) => {
 
   function normalizeStationId(input) {
     const raw = (input || "").toString().trim();
+    const lower = raw.toLowerCase();
 
-    // Accept "station-3"
-    const m = raw.match(/station-(\d+)/i);
+    // 1) station-<number> anywhere in the string
+    const m = lower.match(/station-(\d+)/);
     if (m) {
       const n = parseInt(m[1], 10);
-      const color = COLORS[(n - 1) % COLORS.length];
+      const color = Number.isFinite(n) && n >= 1 ? COLORS[n - 1] || null : null;
       return { id: `station-${n}`, number: n, color };
     }
 
-    // Accept plain color like "red"
-    const lc = raw.toLowerCase();
-    if (COLORS.includes(lc)) {
-      return { id: null, number: null, color: lc };
+    // 2) color anywhere in the string (including URLs like .../red or .../202/red)
+    // Match whole word colors separated by /, ?, #, &, =, or end of string
+    const colorRegex = new RegExp(`(?:^|[\\/\\?#&=])(${COLORS.join("|")})(?:$|[\\/\\?#&=])`, "i");
+    const cm = lower.match(colorRegex);
+    if (cm) {
+      return { id: null, number: null, color: cm[1].toLowerCase() };
+    }
+
+    // 3) plain color string (fallback)
+    if (COLORS.includes(lower)) {
+      return { id: null, number: null, color: lower };
     }
 
     return { id: null, number: null, color: null };
