@@ -1072,6 +1072,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
         playScanSuccessChime();
         setScanSuccessPulse(true);
         setTimeout(() => setScanSuccessPulse(false), 520);
+        setScannerActive(false);
       } else {
         setScanStatus("error");
         setScanError(resp?.message || "Wrong station.");
@@ -2263,7 +2264,14 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                   boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
                   maxWidth: "90vw",
                 }}>
-                  <QrScanner onScan={handleScan} onError={setScanError} />
+                  {!hasScannedCorrectly ? (
+                    <QrScanner onScan={handleScan} onError={setScanError} />
+                  ) : (
+                    <div style={{ padding: "22px 10px", fontWeight: 800, opacity: 0.95 }}>
+                      Camera released ✅
+                    </div>
+                  )}
+
                   {scanError && (
                     <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
                       ⚠ {scanError}
