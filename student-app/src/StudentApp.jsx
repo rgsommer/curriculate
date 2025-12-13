@@ -25,12 +25,6 @@ function getReadableTextColor(bg) {
   return "#fff";
 }
 
-function formatScanLabel({ isMultiRoom, locationLabel, color }) {
-  const colorUpper = (color || "").toUpperCase();
-  if (isMultiRoom && locationLabel) return `Scan at ${locationLabel.toUpperCase()} ${colorUpper}`;
-  return `Scan at ${colorUpper}`;
-}
-
 // Normalize a human-readable location into a slug like "room-12"
 function normalizeLocationSlug(raw) {
   if (!raw) return "";
@@ -694,9 +688,6 @@ function StudentApp() {
         lastStationIdRef.current = stationInfo.id;
       }
 
-      const isMultiRoom =
-      Array.isArray(selectedRooms) && selectedRooms.length > 1;
-
       const locSlug =
         response.locationSlug ||
         roomLocationFromStateRef.current ||
@@ -861,6 +852,8 @@ function StudentApp() {
     : null;
 
   const stationInfo = normalizeStationId(assignedStationId);
+  const isMultiRoom =
+        Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
   const noiseBarOpacity = noiseState.enabled ? noiseState.brightness : 0.08;
 
@@ -1934,13 +1927,17 @@ function StudentApp() {
           >
             <div style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: 0.4 }}>
               {(() => {
-                const color = String(assignedColor || stationInfo?.color || "").toUpperCase();
-                const loc = String(roomLocation || "").toUpperCase();
+                const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
+                const locationLabel = String(roomLocation || "").toUpperCase();
 
-                if (enforceLocation && loc && loc !== "CLASSROOM" && color) {
-                  return `Scan at ${loc} ${color}`;
+                if (isMultiRoom && enforceLocation && locationLabel && colorUpper) {
+                  return `Scan at ${locationLabel} ${colorUpper}`;
                 }
-                if (color) return `Scan at ${color}`;
+
+                if (colorUpper) {
+                  return `Scan at ${colorUpper}`;
+                }
+
                 return "Scan the station QR";
               })()}
             </div>
