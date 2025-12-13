@@ -467,8 +467,13 @@ function StudentApp() {
       setCurrentTask(payload.task || payload || null);
       const idx = (typeof payload.taskIndex === "number") ? payload.taskIndex : (typeof payload.index === "number" ? payload.index : null);
       setCurrentTaskIndex(idx);
-      const taskKey = String(payload?.task?.id || payload?.taskId || payload?.task?._id || idx ?? "");
-      if (taskKey && taskKey !== lastTaskKeyRef.current) {
+      const taskKey = String(
+        (payload?.task?.id ||
+          payload?.taskId ||
+          payload?.task?._id ||
+          idx) ?? ""
+      );
+if (taskKey && taskKey !== lastTaskKeyRef.current) {
         lastTaskKeyRef.current = taskKey;
         playTaskChime();
         setTaskArrivedPulse(true);
