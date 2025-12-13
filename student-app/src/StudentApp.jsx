@@ -241,7 +241,7 @@ function StudentApp() {
   const [scanError, setScanError] = useState(null);
   const [scanStatus, setScanStatus] = useState(null);
   const [hasScannedCorrectly, setHasScannedCorrectly] = useState(false);
-
+  const [scanSuccessPulse, setScanSuccessPulse] = useState(false);
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
