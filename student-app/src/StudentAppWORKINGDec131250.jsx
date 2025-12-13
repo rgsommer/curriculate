@@ -314,19 +314,14 @@ function StudentApp() {
     // Room / station state updates
     const handleRoomState = (state) => {
       if (!state || !teamId) return;
-      const myTeam = state?.teams?.[teamId];
+      const myTeam = state.teams?.[teamId];
+      const sid = myTeam?.currentStationId || myTeam?.station || state?.teams?.[teamId]?.currentStationId;
+        if (sid) {
+          const info = normalizeStationId(sid);
+          setAssignedStationId(info.id);
+          setAssignedColor(info.color || null);
+        }
       if (!myTeam) return;
-
-      // ✅ Single source of truth for assignment (server must set currentStationId)
-      const newStationId =
-        myTeam.currentStationId || myTeam.stationId || myTeam.station || null;
-
-      if (newStationId && newStationId !== lastStationIdRef.current) {
-        lastStationIdRef.current = newStationId;
-        const info = normalizeStationId(newStationId);
-        setAssignedStationId(info.id);
-        setAssignedColor(info.color || null);
-      }
 
       // 🔢 Update running total score from room-wide scores map
       if (state.scores && typeof state.scores[teamId] === "number") {
@@ -590,17 +585,6 @@ function StudentApp() {
     if (teamId) socket.emit("room:request-state", { teamId });
   }, [joined, teamId]);
 
-  // If scanner is visible but assignment hasn't arrived yet (common after refresh), request state again
-  useEffect(() => {
-    if (!joined || !teamId) return;
-    if (!scannerActive) return;
-
-    if (!assignedStationId || !assignedColor) {
-      socket.emit("room:request-state", { teamId });
-    }
-  }, [joined, teamId, scannerActive, assignedStationId, assignedColor]);
-
-
   // Clean up timers on unmount
   useEffect(() => {
     return () => {
@@ -688,16 +672,6 @@ function StudentApp() {
       const tid = response.teamId || response.teamSessionId;
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
-
-      // ✅ Immediately pull state so we get station assignment ASAP (and keep teacher/student in sync)
-      socket.emit("room:request-state", { teamId: tid });
-
-      // ✅ If join response didn't include stationId/currentStationId yet, poll briefly
-      if (!response.stationId && !response.currentStationId) {
-        setTimeout(() => socket.emit("room:request-state", { teamId: tid }), 250);
-        setTimeout(() => socket.emit("room:request-state", { teamId: tid }), 750);
-        setTimeout(() => socket.emit("room:request-state", { teamId: tid }), 1500);
-      }
 
       if (response.currentTask) {
         setCurrentTask(response.currentTask.task || null);
@@ -838,14 +812,6 @@ function StudentApp() {
 
   const handleScan = (data) => {
   if (!data || !joined || !teamId) return;
-
-  // ✅ Guarantee: don't process a scan until we know the assigned station/color (prevents wrong-colour race after refresh)
-  if (enforceLocation && (!assignedStationId || !assignedColor)) {
-    setScanStatus("error");
-    setScanError("Loading your assigned station… try again in a moment.");
-    socket.emit("room:request-state", { teamId });
-    return;
-  }
 
   setScanError(null);
 
