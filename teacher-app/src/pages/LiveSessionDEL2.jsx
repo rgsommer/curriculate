@@ -158,6 +158,10 @@ export default function LiveSession({ roomCode }) {
   const joinSoundRef = useRef(null);
   const treatSoundRef = useRef(null);
 
+  // Offline-team fadeout tracking
+  const offlineSinceRef = useRef({});
+  const [offlineTick, setOfflineTick] = useState(0);
+
   // Noise-control local UI state
   const [noiseLevel, setNoiseLevel] = useState(0);
   const [noiseThreshold, setNoiseThreshold] = useState(0);
@@ -261,27 +265,12 @@ export default function LiveSession({ roomCode }) {
     if (!roomCode) return;
 
     const code = roomCode.toUpperCase();
+    setStatus("Connecting…");
 
-    const joinAsTeacher = () => {
-      setStatus("Connecting…");
-      socket.emit("teacher:createRoom", { roomCode: code }, (res) => {
-        if (res?.ok) setStatus("Connected.");
-        else setStatus(res?.error || "Connection error.");
-      });
-    };
+    socket.emit("teacher:createRoom", { roomCode: code });
 
-    // Initial join
-    joinAsTeacher();
-
-    // Re-join on reconnect so teachers stay in the Socket.IO room
-    const handleConnect = () => {
-      joinAsTeacher();
-    };
-
-    socket.on("connect", handleConnect);
-    return () => {
-      socket.off("connect", handleConnect);
-    };
+    // We do NOT need to join as a student/team here.
+    setStatus("Connected.");
   }, [roomCode]);
 
   // Clear any old "launch immediately" flag – we now require
@@ -1025,6 +1014,50 @@ export default function LiveSession({ roomCode }) {
   // Derived helpers + button state
   // ----------------------------------------------------
   const teams = roomState.teams || {};
+
+  // ----------------------------------------------------
+  // Offline teams: fade out over 5s, then hide (UI-only)
+  // ----------------------------------------------------
+  useEffect(() => {
+    const now = Date.now();
+    const next = { ...offlineSinceRef.current };
+    const currentTeams = roomState.teams || {};
+
+    // Clean ids that no longer exist
+    for (const id of Object.keys(next)) {
+      if (!currentTeams[id]) delete next[id];
+    }
+
+    // Mark newly-offline / clear online
+    for (const [id, t] of Object.entries(currentTeams)) {
+      const isOffline =
+        t?.status === "offline" ||
+        t?.isOnline === false ||
+        t?.connected === false ||
+        t?.online === false;
+
+      if (isOffline) {
+        if (!next[id]) next[id] = now;
+      } else {
+        if (next[id]) delete next[id];
+      }
+    }
+
+    offlineSinceRef.current = next;
+    // Force a re-render so opacity updates immediately when status changes
+    setOfflineTick((x) => x + 1);
+  }, [roomState.teams]);
+
+  useEffect(() => {
+    const hasOffline = Object.keys(offlineSinceRef.current || {}).length > 0;
+    if (!hasOffline) return;
+
+    const interval = setInterval(() => {
+      setOfflineTick((x) => x + 1);
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [offlineTick]);
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
@@ -1107,6 +1140,20 @@ export default function LiveSession({ roomCode }) {
     const team = teams[teamId];
     if (!team) return null;
 
+    const isOffline =
+      team?.status === "offline" ||
+      team?.isOnline === false ||
+      team?.connected === false ||
+      team?.online === false;
+
+    const offlineSince = offlineSinceRef.current?.[teamId] || null;
+    const elapsed = offlineSince ? (Date.now() - offlineSince) : 0;
+
+    // After 5s offline, hide completely (UI-only; backend may still keep it briefly)
+    if (isOffline && elapsed >= 5000) return null;
+
+    const opacity = isOffline ? Math.max(0, 1 - (elapsed / 5000)) : 1;
+
     const score = roomState.scores?.[teamId] ?? 0;
     const currentStationId = team.currentStationId || null;
     const color = stationIdToColor(currentStationId);
@@ -1119,6 +1166,10 @@ export default function LiveSession({ roomCode }) {
         key={teamId}
         style={{
           borderRadius: 12,
+          opacity,
+          transition: "opacity 250ms linear",
+          pointerEvents: isOffline ? "none" : "auto",
+          filter: isOffline ? "grayscale(0.25)" : "none",
           border: "1px solid #e5e7eb",
           padding: 12,
           background: "#ffffff",
