@@ -336,6 +336,13 @@ function StudentApp() {
       if (Array.isArray(state.selectedRooms)) {
         setSelectedRooms(state.selectedRooms);
       }
+      const newStationId = myTeam.currentStationId || myTeam.stationId;
+      if (newStationId && newStationId !== lastStationIdRef.current) {
+        lastStationIdRef.current = newStationId;
+        const stationInfo = normalizeStationId(newStationId);
+        setAssignedStationId(stationInfo.id);
+        setAssignedColor(stationInfo.color || null);
+      }
 
       const loc =
         myTeam.locationSlug ||
