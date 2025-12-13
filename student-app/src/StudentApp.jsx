@@ -764,19 +764,19 @@ function StudentApp() {
   }
 
   setScannedStationId(norm.id);
-  const roomCode = (roomState?.roomCode || "").trim().toUpperCase();
+  const code = (roomCode || "").trim().toUpperCase();
 
   socket.emit(
     "station:scan",
     {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId: roomState?.teamId,            // if you track it
-      stationColor: payload.stationColor,   // from QR
-      location: payload.location,           // from QR if present
+      roomCode: code,
+      teamId,
+      stationId: norm.id,
+      locationSlug: (roomLocation || "").trim().toLowerCase().replace(/\s+/g, "-"),
     },
     (response) => {
-      if (!response || response.error) {
-        setScanError(response?.error || "Scan was not accepted.");
+      if (!response || response.ok === false) {
+        setScanError(response?.error || "Scan not accepted.");
         return;
       }
 
@@ -1881,7 +1881,8 @@ function StudentApp() {
                 marginTop: 6,
                 padding: 16,
                 borderRadius: 18,
-                background: assignedColor || stationInfo?.color || "rgba(15,23,42,0.9)",
+                background: assignedColor || "black",
+                  color: "#fff",
                 border: "2px solid rgba(255,255,255,0.55)",
                 color: "#fff",
                 textAlign: "center",
@@ -1893,9 +1894,12 @@ function StudentApp() {
                   const c = (assignedColor || stationInfo?.color || "").toString().toUpperCase();
                   const loc = (roomLocation || "").toString().toUpperCase();
                   // If you later add a real multi-room label, you can swap this logic.
-                  if (loc && loc !== "CLASSROOM" && c) return `Scan at ${loc} ${c}`;
-                  if (c) return `Scan at ${c}`;
-                  return "Scan the station QR";
+                  {isMultiRoom && expectedLocationLabel
+                    ? `Scan at ${expectedLocationLabel.toUpperCase()} ${String(assignedColor || "").toUpperCase()}`
+                    : `Scan at ${String(assignedColor || "").toUpperCase()}`}
+                  //if (loc && loc !== "CLASSROOM" && c) return `Scan at ${loc} ${c}`;
+                  //if (c) return `Scan at ${c}`;
+                  //return "Scan the station QR";
                 })()}
               </div>
 
