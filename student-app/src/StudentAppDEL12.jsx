@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AJ, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AI, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -158,16 +158,6 @@ const socket = io(API_BASE_URL, {
 
 function getThemeShell(uiTheme) {
   switch (uiTheme) {
-    // Eager: bright, energetic
-    case "eager":
-      return {
-        pageBg: "linear-gradient(135deg, #0ea5e9, #6366f1)",
-        cardBg: "#ffffff",
-        cardBorder: "1px solid rgba(148,163,184,0.6)",
-        text: "#0f172a",
-      };
-
-    // Bold: dark, high contrast
     case "bold":
       return {
         pageBg: "radial-gradient(circle at top, #0f172a, #020617)",
@@ -175,17 +165,14 @@ function getThemeShell(uiTheme) {
         cardBorder: "1px solid rgba(148,163,184,0.5)",
         text: "#e5e7eb",
       };
-
-    // Dyno: playful, warm + punchy
-    case "dyno":
+    case "minimal":
       return {
-        pageBg: "linear-gradient(135deg, #f97316, #ec4899)",
-        cardBg: "rgba(255,255,255,0.94)",
-        cardBorder: "1px solid rgba(255,255,255,0.55)",
-        text: "#0f172a",
+        pageBg: "#f3f4f6",
+        cardBg: "#ffffff",
+        cardBorder: "1px solid #e5e7eb",
+        text: "#111827",
       };
-
-    default:
+    default: // "modern" / Theme 1
       return {
         pageBg: "linear-gradient(135deg, #0ea5e9, #6366f1)",
         cardBg: "#ffffff",
@@ -211,7 +198,7 @@ function StudentApp() {
   console.log("Curriculate StudentApp");
 
   // Theme selector (must be inside component)
-  const [uiTheme, setUiTheme] = useState("eager"); // "eager" | "bold" | "dyno"
+  const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
   const themeShell = getThemeShell(uiTheme);
 
   const [connected, setConnected] = useState(false);
@@ -283,103 +270,10 @@ function StudentApp() {
   const [audioContext, setAudioContext] = useState(null);
   const sndAlert = useRef(null);
   const sndTreat = useRef(null);
-  const lastTaskKeyRef = useRef(null);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
   const postSubmitTimerRef = useRef(null);
-
-
-  // ───────────────────────────────
-  // 🔔 Task arrival sound (Web Audio)
-  // ───────────────────────────────
-  const audioCtxRef = useRef(null);
-  const audioUnlockedRef = useRef(false);
-
-  const unlockAudio = async () => {
-    try {
-      if (audioUnlockedRef.current) return;
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      const ctx = audioCtxRef.current || new Ctx();
-      audioCtxRef.current = ctx;
-      if (ctx.state === "suspended") await ctx.resume();
-
-      // Tiny silent blip to fully unlock on iOS/Safari
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      g.gain.value = 0;
-      o.connect(g).connect(ctx.destination);
-      o.start();
-      o.stop(ctx.currentTime + 0.01);
-
-      audioUnlockedRef.current = true;
-    } catch (err) {
-      // ignore (browser autoplay policies)
-    }
-  };
-
-  const playTaskChime = () => {
-    try {
-      if (!audioUnlockedRef.current) return;
-      const ctx = audioCtxRef.current;
-      if (!ctx) return;
-
-      const now = ctx.currentTime;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-
-      const o = ctx.createOscillator();
-      o.type = "sine";
-      o.frequency.setValueAtTime(880, now);
-      o.frequency.setValueAtTime(660, now + 0.12);
-      o.frequency.setValueAtTime(990, now + 0.24);
-
-      o.connect(g).connect(ctx.destination);
-      o.start(now);
-      o.stop(now + 0.36);
-    } catch (err) {
-      // ignore
-    }
-  };
-
-  const playScanSuccessChime = () => {
-    try {
-      if (!audioUnlockedRef.current) return;
-      const ctx = audioCtxRef.current;
-      if (!ctx) return;
-
-      const now = ctx.currentTime;
-
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.30, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-
-      const o1 = ctx.createOscillator();
-      o1.type = "triangle";
-      o1.frequency.setValueAtTime(880, now);
-
-      const o2 = ctx.createOscillator();
-      o2.type = "sine";
-      o2.frequency.setValueAtTime(1320, now);
-
-      o1.connect(g);
-      o2.connect(g);
-      g.connect(ctx.destination);
-
-      o1.start(now);
-      o2.start(now);
-      o1.stop(now + 0.24);
-      o2.stop(now + 0.18);
-    } catch (err) {
-      // ignore
-    }
-  };
-
-
 
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
@@ -467,18 +361,6 @@ function StudentApp() {
       setCurrentTask(payload.task || payload || null);
       const idx = (typeof payload.taskIndex === "number") ? payload.taskIndex : (typeof payload.index === "number" ? payload.index : null);
       setCurrentTaskIndex(idx);
-      const taskKey = String(
-        (payload?.task?.id ||
-          payload?.taskId ||
-          payload?.task?._id ||
-          idx) ?? ""
-      );
-if (taskKey && taskKey !== lastTaskKeyRef.current) {
-        lastTaskKeyRef.current = taskKey;
-        playTaskChime();
-        setTaskArrivedPulse(true);
-        setTimeout(() => setTaskArrivedPulse(false), 520);
-      }
       const total = (typeof payload.totalTasks === "number") ? payload.totalTasks : (typeof payload.total === "number" ? payload.total : null);
       setTasksetTotalTasks(total);
 
@@ -570,19 +452,13 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
 
           // ✅ End review lock
           setTaskLocked(false);
-
-          // ✅ Hide the completed task so the scanner can be used for the next task
-          setCurrentTask(null);
-          setCurrentTaskIndex(null);
-          setShortAnswerReveal(null);
-
-          // ✅ Hide the completed task so the scanner can be used for the next task
-          setCurrentTask(null);
-          setCurrentTaskIndex(null);
-          setShortAnswerReveal(null);
           setPostSubmitSecondsLeft(null);
 
           // ✅ Prepare for next scan-task cycle
+          // ✅ Hide the completed task UI so scanner is visible
+          setCurrentTask(null);
+          setCurrentTaskIndex(null);
+
           setScannedStationId(null);      // important: forces gate logic to re-evaluate
           setScanStatus(null);
           setScanError(null);
@@ -591,7 +467,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           socket.emit("room:request-state", { teamId });
 
           // ✅ Show scanner
-          setHasScannedCorrectly(false);
           setScannerActive(true);
         }
       }, 1000);
@@ -707,14 +582,11 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
   useEffect(() => {
     if (!joined) return;
 
-    // if station not known yet, request it first (prevents black panel)
-    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
-      socket.emit("room:request-state", { teamId });
-      return;
+    // If no task is showing, scanner should be available
+    if (!currentTask) {
+      setScannerActive(true);
     }
-
-    setScannerActive(true);
-  }, [joined, assignedColor, assignedStationId, teamId]);
+  }, [joined, currentTask]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -766,77 +638,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
   }
 
   // ─────────────────────────────────────────────
-  // Join another room (reset local session state)
-  // ─────────────────────────────────────────────
-  const resetForNewJoin = () => {
-    // timers
-    try {
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-      }
-      if (postSubmitTimerRef.current) {
-        clearInterval(postSubmitTimerRef.current);
-        postSubmitTimerRef.current = null;
-      }
-    } catch {}
-
-    // room/team identity
-    setJoined(false);
-    setJoiningRoom(false);
-    setStatusMessage("");
-    setTeamId(null);
-    setTeamSessionId(null);
-
-    // station + scan
-    setAssignedStationId(null);
-    setAssignedColor(null);
-    setScannedStationId(null);
-    setScannerActive(false);
-    setScanError(null);
-    setScanStatus(null);
-
-    // tasks + timers
-    setCurrentTask(null);
-    setCurrentTaskIndex(null);
-    setTasksetTotalTasks(null);
-    setTimeLimitSeconds(null);
-    setRemainingMs(0);
-    setSubmitting(false);
-    setCurrentAnswerDraft("");
-    setTaskLocked(false);
-
-    // misc UI
-    setTreatMessage(null);
-    setLastTaskResult(null);
-    setPointToast(null);
-    setShowConfetti(false);
-    setShortAnswerReveal(null);
-    setPostSubmitSecondsLeft(null);
-
-    // keep connection, but clear join form fields
-    setRoomCode("");
-    setTeamName("");
-    setMembers(["", "", ""]);
-    setSelectedRooms([]);
-    setPartnerAnswer(null);
-    setShowPartnerReply(false);
-
-    // reset location to default until new room state arrives
-    setRoomLocation(DEFAULT_LOCATION);
-    roomLocationFromStateRef.current = DEFAULT_LOCATION;
-
-    // ensure station tracking ref reset
-    lastStationIdRef.current = null;
-  };
-
-  const handleJoinAnotherRoom = () => {
-    // Optional: let server forget current team socket bindings, if implemented later
-    // socket.emit("student:leave-room", { teamId, roomCode });
-    resetForNewJoin();
-  };
-
-// ─────────────────────────────────────────────
   // Join room + submit handlers
   // ─────────────────────────────────────────────
 
@@ -847,7 +648,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
 
   const handleJoin = (e) => {
     e.preventDefault();
-    unlockAudio();
     if (!canJoin || joiningRoom) return;
 
     setJoiningRoom(true);
@@ -875,8 +675,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
       const tid = response.teamId || response.teamSessionId;
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
-      setScanError("");
-      // NOTE: do not set scanStatus ok on join; only after a successful scan
 
       if (response.currentTask) {
         setCurrentTask(response.currentTask.task || null);
@@ -914,31 +712,11 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
         }
       }
 
-      // ✅ Prefer explicit assignment from server (fast, reliable), then fall back to roomState
-      const ackStationId =
-        response.assignedStationId ||
-        response.currentStationId ||
-        response.stationId ||
-        null;
-
-      const stateStationId =
-        response.roomState?.teams?.[tid]?.currentStationId ||
-        response.roomState?.teams?.[tid]?.stationId ||
-        response.roomState?.teams?.[tid]?.station ||
-        null;
-
-      const stationToApply = ackStationId || stateStationId;
-
-      if (stationToApply) {
-        const stationInfo = normalizeStationId(stationToApply);
+      if (response.stationId) {
+        const stationInfo = normalizeStationId(response.stationId);
         setAssignedStationId(stationInfo.id);
-        setAssignedColor(
-          stationInfo.color ||
-            (response.assignedColor ? String(response.assignedColor).toLowerCase() : null)
-        );
+        setAssignedColor(stationInfo.color || null);
         lastStationIdRef.current = stationInfo.id;
-      } else if (response.assignedColor) {
-        setAssignedColor(String(response.assignedColor).toLowerCase());
       }
 
       const locSlug =
@@ -1074,19 +852,8 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
         return;
       }
 
+      setScanStatus("ok");
       setScanError(null);
-      if (resp?.ok) {
-        setScanStatus("ok");
-        setHasScannedCorrectly(true);
-        setScanError("");
-        playScanSuccessChime();
-        setScanSuccessPulse(true);
-        setTimeout(() => setScanSuccessPulse(false), 520);
-        setScannerActive(false);
-      } else {
-        setScanStatus("error");
-        setScanError(resp?.message || "Wrong station.");
-      }
   
       // Only close the scanner if scanning is no longer required
       if (!mustScan) {
@@ -1264,20 +1031,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
         transition: "background 0.35s ease, color 0.25s ease",
       }}
     >
-      <style>{`
-        @keyframes scanPulse {
-          0% { transform: scale(1); filter: brightness(1); }
-          35% { transform: scale(1.03); filter: brightness(1.15); }
-          100% { transform: scale(1); filter: brightness(1); }
-        }
-        .scan-success-pulse { animation: scanPulse 520ms ease-out; }
-        @keyframes taskFlash {
-          0% { transform: translateY(0); box-shadow: 0 0 0 rgba(0,0,0,0); }
-          35% { transform: translateY(-2px); box-shadow: 0 18px 42px rgba(0,0,0,0.28); }
-          100% { transform: translateY(0); box-shadow: 0 16px 40px rgba(0,0,0,0.22); }
-        }
-        .task-arrived-pulse { animation: taskFlash 520ms ease-out; }
-      `}</style>
       <style>
         {`
         * {
@@ -1959,16 +1712,16 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           >
             <button
               type="button"
-              onClick={() => setUiTheme("eager")}
+              onClick={() => setUiTheme("modern")}
               style={{
-                padding: "4px 10px",
+                padding: "4px 8px",
                 borderRadius: 999,
                 border:
-                  uiTheme === "eager"
-                    ? "2px solid rgba(14,165,233,0.95)"
-                    : "1px solid rgba(148,163,184,0.55)",
+                  uiTheme === "modern"
+                    ? "2px solid rgba(59,130,246,0.9)"
+                    : "1px solid rgba(148,163,184,0.7)",
                 background:
-                  uiTheme === "eager"
+                  uiTheme === "modern"
                     ? "rgba(191,219,254,0.35)"
                     : "rgba(15,23,42,0.15)",
                 color: "#e5e7eb",
@@ -1976,70 +1729,50 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                 cursor: "pointer",
               }}
             >
-              Eager
+              Theme 1
             </button>
             <button
               type="button"
               onClick={() => setUiTheme("bold")}
               style={{
-                padding: "4px 10px",
+                padding: "4px 8px",
                 borderRadius: 999,
                 border:
                   uiTheme === "bold"
-                    ? "2px solid rgba(248,250,252,0.95)"
-                    : "1px solid rgba(148,163,184,0.55)",
+                    ? "2px solid rgba(248,250,252,0.9)"
+                    : "1px solid rgba(148,163,184,0.6)",
                 background:
                   uiTheme === "bold"
-                    ? "rgba(15,23,42,0.92)"
-                    : "rgba(15,23,42,0.15)",
+                    ? "rgba(15,23,42,0.9)"
+                    : "rgba(15,23,42,0.25)",
                 color: "#e5e7eb",
                 fontSize: "0.75rem",
                 cursor: "pointer",
               }}
             >
-              Bold
+              Theme 2
             </button>
             <button
               type="button"
-              onClick={() => setUiTheme("dyno")}
+              onClick={() => setUiTheme("minimal")}
               style={{
-                padding: "4px 10px",
+                padding: "4px 8px",
                 borderRadius: 999,
                 border:
-                  uiTheme === "dyno"
-                    ? "2px solid rgba(249,115,22,0.95)"
-                    : "1px solid rgba(148,163,184,0.55)",
+                  uiTheme === "minimal"
+                    ? "2px solid rgba(15,23,42,0.85)"
+                    : "1px solid rgba(148,163,184,0.6)",
                 background:
-                  uiTheme === "dyno"
-                    ? "rgba(249,115,22,0.22)"
-                    : "rgba(15,23,42,0.15)",
-                color: "#e5e7eb",
+                  uiTheme === "minimal"
+                    ? "#e5e7eb"
+                    : "rgba(249,250,251,0.85)",
+                color: "#111827",
                 fontSize: "0.75rem",
                 cursor: "pointer",
               }}
             >
-              Dyno
+              Theme 3
             </button>
-
-            {joined && (
-              <button
-                type="button"
-                onClick={handleJoinAnotherRoom}
-                style={{
-                  marginLeft: 8,
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(254,202,202,0.75)",
-                  background: "rgba(239,68,68,0.12)",
-                  color: "#fee2e2",
-                  fontSize: "0.75rem",
-                  cursor: "pointer",
-                }}
-                title="Leave this room and join a different room"
-              >
-                Join another room
-              </button>
-            )}
           </div>
 
           <div
@@ -2274,14 +2007,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                   boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
                   maxWidth: "90vw",
                 }}>
-                  {!hasScannedCorrectly ? (
-                    <QrScanner onScan={handleScan} onError={setScanError} />
-                  ) : (
-                    <div style={{ padding: "22px 10px", fontWeight: 800, opacity: 0.95 }}>
-                      Camera released ✅
-                    </div>
-                  )}
-
+                  <QrScanner onScan={handleScan} onError={setScanError} />
                   {scanError && (
                     <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
                       ⚠ {scanError}
@@ -2291,11 +2017,8 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
               </section>
             </div>
 
-            {hasScannedCorrectly && (
-              <div
-                className={scanSuccessPulse ? "scan-success-pulse" : ""}
-                style={{ marginTop: 10, fontWeight: 900 }}
-              >
+            {scanStatus === "ok" && (
+              <div style={{ marginTop: 10, fontWeight: 800 }}>
                 ✅ Correct station — waiting for your next task…
               </div>
             )}
@@ -2305,7 +2028,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
             <section
-              className={`task-card ${taskArrivedPulse ? "task-arrived-pulse" : ""}`}
+              className="task-card"
               style={{
                 ...baseTaskCardStyle,
                 ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
@@ -2437,7 +2160,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
               </section>
             )}
           {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
-          {joined && currentTask && mustScan && (
+          {joined && !currentTask && scannerActive && (
             <section
               style={{
                 marginTop: 10,
@@ -2493,7 +2216,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
       <div
         style={{
           marginTop: 16,
-          height: "10vh",
+          height: "50vh",
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
           backgroundColor: assignedColor
