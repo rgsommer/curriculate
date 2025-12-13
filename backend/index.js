@@ -1043,6 +1043,7 @@ io.on("connection", (socket) => {
 
   const handleStationScan = (payload = {}, ack) => {
     console.log("station:scan received:", payload);
+    console.log("[scan recv]", { code, teamId, stationId, locationSlug, hasRoom: !!rooms[code], hasTeam: !!rooms?.[code]?.teams?.[teamId] });
 
     const { roomCode, teamId, stationId, locationSlug } = payload || {};
     const code = normalizeRoomCode(roomCode);
@@ -1186,9 +1187,8 @@ io.on("connection", (socket) => {
   };
 
   socket.on("station:scan", handleStationScan);
-  socket.on("station-scan", handleStationScan);
-
-// ==== BRAINSTORM BATTLE SOCKET EVENTS ====
+  
+  // ==== BRAINSTORM BATTLE SOCKET EVENTS ====
   // Simple, durable model:
   //  - each brainstorm task has a taskKey
   //  - we collect ideas per team

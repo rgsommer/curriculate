@@ -766,6 +766,13 @@ function StudentApp() {
   setScannedStationId(norm.id);
   const code = (roomCode || "").trim().toUpperCase();
 
+  console.log("[scan emit]", {
+    roomCode: code,
+    teamId,
+    stationId: norm.id,
+    locationSlug: (roomLocation || "").trim().toLowerCase().replace(/\s+/g, "-"),
+});
+
   socket.emit(
     "station:scan",
     {
@@ -1899,10 +1906,11 @@ function StudentApp() {
 
                   // Normal case: "Scan at RED"
                   if (color) {
-                    console.log(assignedColor, stationInfo?.color, roomLocation, enforceLocation);
+                    if (mustScan) {
+                      console.log(assignedColor, stationInfo?.color, roomLocation, enforceLocation);
+                    }
                     return `Scan at ${color}`;
                   }
-                  return "Scan the station QR";
                 })()}
               </div>
 
