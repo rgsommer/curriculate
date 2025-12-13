@@ -733,6 +733,8 @@ function StudentApp() {
       const tid = response.teamId || response.teamSessionId;
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
+      setScanStatus("ok");
+      setScanError("");
 
       if (response.currentTask) {
         setCurrentTask(response.currentTask.task || null);
@@ -930,8 +932,14 @@ function StudentApp() {
         return;
       }
 
-      setScanStatus("ok");
       setScanError(null);
+      if (resp?.ok) {
+        setScanStatus("ok");
+        setScanError("");
+      } else {
+        setScanStatus("error");
+        setScanError(resp?.message || "Wrong station.");
+      }
   
       // Only close the scanner if scanning is no longer required
       if (!mustScan) {
