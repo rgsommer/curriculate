@@ -634,9 +634,6 @@ function StudentApp() {
       members: members.filter((m) => m.trim().length > 0),
     };
 
-    const isMultiRoom =
-      Array.isArray(selectedRooms) && selectedRooms.length > 1;
-
     socket.emit("student:join-room", payload, (response) => {
       setJoiningRoom(false);
       const ok = response && (response.ok === true || response.success === true);
@@ -696,6 +693,9 @@ function StudentApp() {
         setAssignedColor(stationInfo.color || null);
         lastStationIdRef.current = stationInfo.id;
       }
+
+      const isMultiRoom =
+      Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
       const locSlug =
         response.locationSlug ||
