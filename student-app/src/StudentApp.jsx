@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AH, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AI, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -18,6 +18,8 @@ const COLOR_NAMES = COLORS;
 
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
+
+const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
 function getReadableTextColor(bg) {
   // Simple safe default: white for your station palette
@@ -128,8 +130,6 @@ function getStationBubbleStyles(colorName) {
   };
 
   const bg = COLOR_MAP[colorName] || "#fef9c3";
-
-  const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
   // Light-ish colours → dark text; dark colours → white text
   const lightColours = ["yellow", "orange", "teal", "pink"];
@@ -429,8 +429,8 @@ function StudentApp() {
       });
 
       const lockSeconds =
-        Number(result?.postSubmitSeconds) > 0
-          ? Number(result.postSubmitSeconds)
+        Number(payload?.postSubmitSeconds) > 0
+          ? Number(payload.postSubmitSeconds)
           : DEFAULT_POST_SUBMIT_SECONDS;
 
       setTaskLocked(true);
@@ -483,27 +483,6 @@ function StudentApp() {
         setTimeout(() => {
           setPointToast(null);
         }, 2500);
-      }
-
-      if (typeof reviewPauseSeconds === "number" && reviewPauseSeconds > 0) {
-        setTaskLocked(true);
-        setPostSubmitSecondsLeft(reviewPauseSeconds);
-
-        if (postSubmitTimerRef.current) {
-          clearInterval(postSubmitTimerRef.current);
-        }
-
-        postSubmitTimerRef.current = setInterval(() => {
-          setPostSubmitSecondsLeft((prev) => {
-            if (prev == null || prev <= 1) {
-              clearInterval(postSubmitTimerRef.current);
-              postSubmitTimerRef.current = null;
-              setTaskLocked(false);
-              return null;
-            }
-            return prev - 1;
-          });
-        }, 1000);
       }
     };
 
@@ -859,8 +838,6 @@ function StudentApp() {
         setAssignedColor(info.color || null);
         lastStationIdRef.current = info.id;
       }
-
-      setScannerActive(false);
     }
   );
 };
