@@ -129,6 +129,8 @@ function getStationBubbleStyles(colorName) {
 
   const bg = COLOR_MAP[colorName] || "#fef9c3";
 
+  const DEFAULT_POST_SUBMIT_SECONDS = 15;
+
   // Light-ish colours → dark text; dark colours → white text
   const lightColours = ["yellow", "orange", "teal", "pink"];
   const isLight = lightColours.includes(colorName);
@@ -425,6 +427,38 @@ function StudentApp() {
         method: method || null,
         correctAnswer: correctAnswer ?? null,
       });
+
+      const lockSeconds =
+        Number(result?.postSubmitSeconds) > 0
+          ? Number(result.postSubmitSeconds)
+          : DEFAULT_POST_SUBMIT_SECONDS;
+
+      setTaskLocked(true);
+      setPostSubmitSecondsLeft(lockSeconds);
+
+      let t = lockSeconds;
+      const timer = setInterval(() => {
+        t -= 1;
+        setPostSubmitSecondsLeft(t);
+
+        if (t <= 0) {
+          clearInterval(timer);
+
+          // ✅ advance to next scan-task cycle
+          setTaskLocked(false);
+          setPostSubmitSecondsLeft(null);
+
+          // show scan gate + scanner
+          setScannerActive(true);
+          setScanStatus(null);
+          setScanError(null);
+
+          // IMPORTANT: mustScan should become true
+          // If you already compute mustScan from server/room state, do nothing here.
+          // If mustScan is local state, set it here:
+          // setMustScan(true);
+        }
+      }, 1000);
 
       if (reveal) {
         setShortAnswerReveal(reveal);
@@ -813,6 +847,11 @@ function StudentApp() {
 
       setScanStatus("ok");
       setScanError(null);
+  
+      // Only close the scanner if scanning is no longer required
+      if (!mustScan) {
+        setScannerActive(false);
+      }
 
       if (resp.stationId) {
         const info = normalizeStationId(resp.stationId);
@@ -2077,6 +2116,29 @@ function StudentApp() {
                 </div>
               )}
 
+              {postSubmitSecondsLeft != null && (
+                <div style={{ marginTop: 10 }}>
+                  <div
+                    style={{
+                      height: 8,
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.25)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${Math.round(
+                          (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
+                        )}%`,
+                        background: "rgba(255,255,255,0.85)",
+                        transition: "width 200ms linear",
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
               {lastTaskResult && lastTaskResult.aiFeedback && (
                 <div className="ai-feedback">
                   <strong>AI Feedback</strong>
