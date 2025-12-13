@@ -515,20 +515,10 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
 
       setCurrentAnswerDraft("");
       setTaskLocked(false);
-          setPostSubmitSecondsLeft(null);
-
-          // Hide the completed task UI while we wait for the next task
-          setCurrentTask(null);
-          setCurrentTaskIndex(null);
-
-          // Hide the completed task UI while we wait for the next task
-          setCurrentTask(null);
-          setCurrentTaskIndex(null);
+      setPostSubmitSecondsLeft(null);
       setLastTaskResult(null);
       setPointToast(null);
       setShortAnswerReveal(null);
-          setHasScannedCorrectly(false);
-      setScannerActive(false);
     };
 
     // AI scoring + feedback
@@ -586,10 +576,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           // ✅ End review lock
           setTaskLocked(false);
           setPostSubmitSecondsLeft(null);
-
-          // Hide the completed task UI while we wait for the next task
-          setCurrentTask(null);
-          setCurrentTaskIndex(null);
 
           // ✅ Prepare for next scan-task cycle
           setScannedStationId(null);      // important: forces gate logic to re-evaluate
@@ -2306,7 +2292,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           </section>
         )}
         
-        {hasScannedCorrectly && !currentTask && (
+        {hasScannedCorrectly && (
               <div
                 className={scanSuccessPulse ? "scan-success-pulse" : ""}
                 style={{ marginTop: 10, color: "#e5e7eb", fontWeight: 800 }}
@@ -2432,7 +2418,7 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                             style={{
                               height: "100%",
                               width: `${Math.round(
-                                (postSubmitSecondsLeft / (reviewPauseSeconds || DEFAULT_POST_SUBMIT_SECONDS)) * 100
+                                (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
                               )}%`,
                               background: "rgba(255,255,255,0.85)",
                               transition: "width 200ms linear",
