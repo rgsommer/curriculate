@@ -1952,105 +1952,71 @@ function StudentApp() {
             </div>
           )}
           {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-          {scannerActive &&
-            (() => {
-              const COLOR_HEX = {
-                red: "#ef4444",
-                blue: "#3b82f6",
-                green: "#22c55e",
-                yellow: "#eab308",
-                purple: "#a855f7",
-                orange: "#f97316",
-                pink: "#ec4899",
-                teal: "#14b8a6",
-                cyan: "#06b6d4",
-                lime: "#84cc16",
-                amber: "#f59e0b",
-                indigo: "#6366f1",
-              };
-
-              const rawColor = String(assignedColor || stationInfo?.color || "");
-              const normalizedAssigned = rawColor
-                .toLowerCase()
-                .replace(/^station-/, "")
-                .trim();
-
-              const assignedHex = COLOR_HEX[normalizedAssigned] || "#111827"; // slate fallback
-
-              const titleText = (() => {
-                const colorUpper = normalizedAssigned.toUpperCase();
+          {scannerActive && (
+            <section
+              style={{
+                marginTop: 6,
+                padding: 16,
+                borderRadius: 18,
+                backgroundColor: assignedColor
+                  ? assignedColor
+                  : stationInfo?.color
+                  ? stationInfo.color
+                  : "#e5e7eb",
+                color:
+                  String(
+                    assignedColor
+                      ? assignedColor
+                      : stationInfo?.color
+                      ? stationInfo.color
+                      : ""
+                  ).toLowerCase() === "yellow"
+                    ? "#0f172a"
+                    : "#fff",
+                border: "2px solid rgba(255,255,255,0.55)",
+                textAlign: "center",
+                boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+              }}
+            >
+              {(() => {
+                const displayColor = assignedColor || stationInfo?.color || "";
                 const locationUpper = String(roomLocation || "").toUpperCase();
 
-                if (!colorUpper) return "Scan station QR code";
+                // If your backend ever sends "station-red", normalize just for the LABEL (not CSS)
+                const labelColor = String(displayColor)
+                  .toUpperCase()
+                  .replace(/^STATION-/, "")
+                  .trim();
 
-                // Multi-room only: show location + colour
-                if (isMultiRoom && enforceLocation && locationUpper) {
-                  return `Scan QR Code at ${locationUpper} ${colorUpper}`;
-                }
+                const label =
+                  labelColor && isMultiRoom && enforceLocation && locationUpper
+                    ? `${locationUpper} ${labelColor}`
+                    : labelColor;
 
-                // Single-room: colour only
-                return `Scan QR Code at ${colorUpper}`;
-              })();
+                return (
+                  <>
+                    <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
+                      {label ? `Scan QR Code at ${label}` : "Scan QR Code"}
+                    </div>
 
-              return (
-                <section
-                  style={{
-                    marginTop: 6,
-                    padding: 16,
-                    borderRadius: 18,
-                    background: assignedHex,
-                    color: normalizedAssigned === "yellow" ? "#0f172a" : "#fff",
-                    border: "2px solid rgba(255,255,255,0.55)",
-                    textAlign: "center",
-                    boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-                  }}
-                >
-                  <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
-                    {titleText}
-                  </div>
+                    <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
+                      Get ready to Curriculate!
+                    </div>
 
-                  <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-                    Get ready to Curriculate!
-                  </div>
-
-                  <div
-                    style={{
-                      marginTop: 12,
-                      background: "rgba(0,0,0,0.25)",
-                      borderRadius: 14,
-                      overflow: "hidden",
-                      border: "2px solid rgba(255,255,255,0.55)",
-                    }}
-                  >
-                    <div className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
-                      <div style={{ textAlign: "center", marginBottom: 16 }}>
-                        <p style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: 12 }}>
-                          Scan at the{" "}
-                          <strong
-                            style={{
-                              color: normalizedAssigned === "yellow" ? "#0f172a" : "#fff",
-                              textDecoration: "underline",
-                              textUnderlineOffset: 3,
-                            }}
-                          >
-                            {normalizedAssigned ? normalizedAssigned.toUpperCase() : "YOUR ASSIGNED"}
-                          </strong>{" "}
-                          station
-                        </p>
-
-                        <div
-                          style={{
-                            backgroundColor: assignedHex,
-                            borderRadius: 16,
-                            padding: 16,
-                            display: "inline-block",
-                            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-                            maxWidth: "90vw",
-                            border: normalizedAssigned === "yellow"
-                              ? "2px solid rgba(15, 23, 42, 0.35)"
-                              : "2px solid rgba(255,255,255,0.55)",
-                          }}
-                        >
+                    <div
+                      style={{
+                        marginTop: 12,
+                        background: "rgba(255,255,255,0.14)", // lets the station color show through
+                        borderRadius: 14,
+                        overflow: "hidden",
+                        border: "2px solid rgba(255,255,255,0.55)",
+                        backdropFilter: "blur(2px)",
+                        display: "inline-block",
+                        maxWidth: "90vw",
+                      }}
+                    >
+                      <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
+                        <div style={{ padding: "0 16px" }}>
                           <QrScanner onScan={handleScan} onError={setScanError} />
                           {scanError && (
                             <div style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
@@ -2058,18 +2024,19 @@ function StudentApp() {
                             </div>
                           )}
                         </div>
-                      </div>
+                      </section>
                     </div>
-                  </div>
 
-                  {scanStatus === "ok" && (
-                    <div style={{ marginTop: 10, fontWeight: 800 }}>
-                      ✅ Correct station — waiting for your next task…
-                    </div>
-                  )}
-                </section>
-              );
-            })()}
+                    {scanStatus === "ok" && (
+                      <div style={{ marginTop: 10, fontWeight: 800 }}>
+                        ✅ Correct station — waiting for your next task…
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </section>
+          )}
         
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
