@@ -186,7 +186,7 @@ function formatRemainingMs(ms) {
 // ---------------------------------------------------------------------
 
 function StudentApp() {
-  console.log("STUDENTAPP COMPONENT RENDERED — CLEAN VERSION");
+  console.log("Curriculate StudentApp");
 
   // Theme selector (must be inside component)
   const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
@@ -1873,7 +1873,6 @@ function StudentApp() {
               )}
             </div>
           )}
-
           {/* SCANNER PANEL (shows whenever scannerActive is true) */}
           {scannerActive && (
             <section
@@ -1881,7 +1880,7 @@ function StudentApp() {
                 marginTop: 6,
                 padding: 16,
                 borderRadius: 18,
-                background: assignedColor || "black", // ✅ colour to be scanned
+                background: assignedColor || stationInfo?.color || "black",
                 border: "2px solid rgba(255,255,255,0.55)",
                 color: "#fff",
                 textAlign: "center",
@@ -1899,8 +1898,10 @@ function StudentApp() {
                   }
 
                   // Normal case: "Scan at RED"
-                  if (color) return `Scan at ${color}`;
-
+                  if (color) {
+                    console.log(assignedColor, stationInfo?.color, roomLocation, enforceLocation);
+                    return `Scan at ${color}`;
+                  }
                   return "Scan the station QR";
                 })()}
               </div>
