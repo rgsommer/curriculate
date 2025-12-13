@@ -269,35 +269,6 @@ export default function LiveSession({ roomCode }) {
     setStatus("Connected.");
   }, [roomCode]);
 
-
-// ----------------------------------------------------
-// NEW: Re-create the room after any socket reconnect
-// (Fixes: students joining later get "room not available" if the server
-//  restarted and the teacher socket silently reconnected without changing roomCode.)
-// ----------------------------------------------------
-useEffect(() => {
-  if (!roomCode) return;
-
-  const code = roomCode.toUpperCase();
-
-  const ensureRoom = () => {
-    try {
-      socket.emit("teacher:createRoom", { roomCode: code });
-      setStatus("Connected.");
-    } catch (err) {
-      // no-op
-    }
-  };
-
-  // Run once (covers initial mount if already connected) + on every reconnect
-  if (socket.connected) ensureRoom();
-  socket.on("connect", ensureRoom);
-
-  return () => {
-    socket.off("connect", ensureRoom);
-  };
-}, [roomCode]);
-
   // Clear any old "launch immediately" flag – we now require
   // an explicit click on "Launch from taskset" in LiveSession.
   useEffect(() => {
