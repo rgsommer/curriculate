@@ -822,6 +822,9 @@ function StudentApp() {
     setEnforceLocation(enforce);
   }, [currentTask]);
 
+  setScanStatus("error");
+  setScanError(resp?.error || "Scan not accepted.");
+
   // ─────────────────────────────────────────────
   // Derived values for UI
   // ─────────────────────────────────────────────
@@ -939,10 +942,13 @@ function StudentApp() {
       ? `Task ${currentTaskNumber}`
       : null;
 
+  const [scanStatus, setScanStatus] = useState(null); 
+  // null | "ok" | "error"
+
   // ─────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────
-
+          
   return (
     <div
       style={{
@@ -1742,7 +1748,7 @@ function StudentApp() {
                 fontSize: "1.1rem",
               }}
             >
-              Join your teacher’s room
+              Join the room
             </h2>
             <p
               style={{
@@ -1752,7 +1758,7 @@ function StudentApp() {
                 color: "#9ca3af",
               }}
             >
-              Enter the code your teacher shows on the board, pick a team name,
+              Enter the code shown on the board, pick a team name,
               and list your team members.
             </p>
 
@@ -1890,58 +1896,57 @@ function StudentApp() {
           )}
           {/* SCANNER PANEL (shows whenever scannerActive is true) */}
           {scannerActive && (
-            <section
+          <section
+            style={{
+              marginTop: 6,
+              padding: 16,
+              borderRadius: 18,
+              background: assignedColor || "black",
+              border: "2px solid rgba(255,255,255,0.55)",
+              color: assignedColor === "yellow" ? "#0f172a" : "#fff",
+              textAlign: "center",
+              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: 0.4 }}>
+              {assignedColor
+                ? (enforceLocation && roomLocation
+                    ? `Scan at ${String(roomLocation).toUpperCase()} ${assignedColor.toUpperCase()}`
+                    : `Scan at ${assignedColor.toUpperCase()}`)
+                : "Scan the station QR"}
+            </div>
+
+            <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
+              Hold the QR code inside the frame
+            </div>
+
+            <div
               style={{
-                marginTop: 6,
-                padding: 16,
-                borderRadius: 18,
-                background: assignedColor || stationInfo?.color || "black",
+                marginTop: 12,
+                background: "rgba(0,0,0,0.25)",
+                borderRadius: 14,
+                overflow: "hidden",
                 border: "2px solid rgba(255,255,255,0.55)",
-                color: "#fff",
-                textAlign: "center",
-                boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
               }}
             >
-              <div style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: 0.4 }}>
-                {(() => {
-                  const color = String(assignedColor || stationInfo?.color || "").toUpperCase();
-                  const loc = String(roomLocation || "").toUpperCase();
+              <section className="scanner-shell">
+                <QrScanner onScan={handleScan} onError={setScanError} />
+                {scanError && <div className="scan-error">⚠ {scanError}</div>}
+              </section>
+            </div>
 
-                  // If teacher is running multi-room + location matters, show "HALLWAY RED"
-                  if (enforceLocation && loc && loc !== "CLASSROOM" && color) {
-                    return `Scan at ${loc} ${color}`;
-                  }
-
-                  // Normal case: "Scan at RED"
-                  if (color) {
-                    if (mustScan) {
-                      console.log(assignedColor, stationInfo?.color, roomLocation, enforceLocation);
-                    }
-                    return `Scan at ${color}`;
-                  }
-                })()}
+            {scanStatus === "ok" && (
+              <div style={{ marginTop: 10, fontWeight: 800 }}>
+                ✅ Correct station — waiting for your teacher’s task…
               </div>
-
-              <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-                Hold the QR code inside the frame
-              </div>
-
-              <div
-                style={{
-                  marginTop: 12,
-                  background: "rgba(0,0,0,0.25)",
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  border: "2px solid rgba(255,255,255,0.55)",
-                }}
-              >
-                <section className="scanner-shell">
-                  <QrScanner onScan={handleScan} onError={setScanError} />
-                  {scanError && <div className="scan-error">⚠ {scanError}</div>}
-                </section>
-              </div>
-            </section>
-          )}
+            )}
+          </section>
+        )}
+        {scanStatus === "ok" && (
+          <div style={{ marginTop: 10, fontWeight: 800 }}>
+            ✅ Correct station — waiting for your next task…
+          </div>
+        )}
 
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
