@@ -1032,9 +1032,9 @@ export default function LiveSession({ roomCode }) {
     for (const [id, t] of Object.entries(currentTeams)) {
       const isOffline =
         t?.status === "offline" ||
-        t?.isOnline === false ||
-        t?.connected === false ||
-        t?.online === false;
+        (Object.prototype.hasOwnProperty.call(t || {}, "isOnline") && t?.isOnline === false) ||
+        (Object.prototype.hasOwnProperty.call(t || {}, "connected") && t?.connected === false) ||
+        (Object.prototype.hasOwnProperty.call(t || {}, "online") && t?.online === false);
 
       if (isOffline) {
         if (!next[id]) next[id] = now;
@@ -1142,17 +1142,15 @@ export default function LiveSession({ roomCode }) {
 
     const isOffline =
       team?.status === "offline" ||
-      team?.isOnline === false ||
-      team?.connected === false ||
-      team?.online === false;
+      (Object.prototype.hasOwnProperty.call(team || {}, "isOnline") && team?.isOnline === false) ||
+      (Object.prototype.hasOwnProperty.call(team || {}, "connected") && team?.connected === false) ||
+      (Object.prototype.hasOwnProperty.call(team || {}, "online") && team?.online === false);
 
     const offlineSince = offlineSinceRef.current?.[teamId] || null;
     const elapsed = offlineSince ? (Date.now() - offlineSince) : 0;
 
-    // After 5s offline, hide completely (UI-only; backend may still keep it briefly)
-    if (isOffline && elapsed >= 5000) return null;
-
-    const opacity = isOffline ? Math.max(0, 1 - (elapsed / 5000)) : 1;
+    // Fade over 5s down to a minimum opacity (do not auto-hide active teams)
+    const opacity = isOffline ? Math.max(0.25, 1 - (elapsed / 5000)) : 1;
 
     const score = roomState.scores?.[teamId] ?? 0;
     const currentStationId = team.currentStationId || null;
