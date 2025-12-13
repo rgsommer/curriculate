@@ -2289,18 +2289,17 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
                 </div>
               </section>
             </div>
-
-            {hasScannedCorrectly && (
+          </section>
+        )}
+        
+        {hasScannedCorrectly && (
               <div
                 className={scanSuccessPulse ? "scan-success-pulse" : ""}
                 style={{ marginTop: 10, fontWeight: 900 }}
               >
-                ✅ Correct station — waiting for your next task…
+                Waiting for your next task…Get ready to Curriculate!
               </div>
             )}
-          </section>
-        )}
-        
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
             <section
