@@ -503,7 +503,15 @@ function StudentApp() {
     socket.on("room:state", handleRoomState);
     socket.on("task:assigned", handleTaskAssigned);
     socket.on("task:launch", handleTaskAssigned);
-    socket.on("new-task", (payload) => handleTaskAssigned({ task: payload, index: payload?.taskIndex ?? payload?.index ?? 0 }));
+    socket.on("new-task", (payload) =>
+      handleTaskAssigned({
+        task: payload?.task || payload,
+        index: payload?.taskIndex ?? payload?.index ?? 0,
+        taskIndex: payload?.taskIndex ?? payload?.index ?? 0,
+        totalTasks: payload?.totalTasks,
+        timeLimitSeconds: payload?.timeLimitSeconds,
+      })
+    );
     socket.on("task:scored", handleTaskScored);
     socket.on("noise:update", handleNoiseUpdate);
     socket.on("treat:event", handleTreat);

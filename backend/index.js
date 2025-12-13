@@ -920,6 +920,18 @@ io.on("connection", (socket) => {
       // Join socket rooms + tag socket
       socket.join(code);
       socket.join(teamId);
+      // ✅ If a taskset is already running, send the current task to this (re)joining team
+      if (room.taskset && Array.isArray(room.taskset.tasks) && room.taskset.tasks.length > 0) {
+        const idx =
+          typeof room.taskIndex === "number" && room.taskIndex >= 0
+            ? room.taskIndex
+            : typeof room.teams?.[teamId]?.taskIndex === "number"
+            ? room.teams[teamId].taskIndex
+            : 0;
+
+        sendTaskToTeam(room, teamId, idx);
+      }
+
       socket.data.roomCode = code;
       socket.data.teamId = teamId;
       socket.data.teamName = cleanName;
@@ -1011,6 +1023,18 @@ io.on("connection", (socket) => {
       // Re-join socket rooms + tag socket
       socket.join(code);
       socket.join(teamId);
+      // ✅ If a taskset is already running, send the current task to this (re)joining team
+      if (room.taskset && Array.isArray(room.taskset.tasks) && room.taskset.tasks.length > 0) {
+        const idx =
+          typeof room.taskIndex === "number" && room.taskIndex >= 0
+            ? room.taskIndex
+            : typeof room.teams?.[teamId]?.taskIndex === "number"
+            ? room.teams[teamId].taskIndex
+            : 0;
+
+        sendTaskToTeam(room, teamId, idx);
+      }
+
       socket.data.roomCode = code;
       socket.data.teamId = teamId;
       socket.data.teamName = team.teamName;
