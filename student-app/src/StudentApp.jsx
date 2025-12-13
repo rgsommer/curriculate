@@ -9,7 +9,7 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2025-12-12-AG, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2025-12-12-AH, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -213,6 +213,7 @@ function StudentApp() {
   const [roomCode, setRoomCode] = useState("");
   const [teamName, setTeamName] = useState("");
   const [members, setMembers] = useState(["", "", ""]);
+  const [selectedRooms, setSelectedRooms] = useState([]);
 
   // Collaboration
   const [partnerAnswer, setPartnerAnswer] = useState(null);
@@ -229,6 +230,7 @@ function StudentApp() {
   const [scannedStationId, setScannedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
+  const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
@@ -324,6 +326,9 @@ function StudentApp() {
         setScoreTotal(state.scores[teamId]);
       }
 
+      if (Array.isArray(state.selectedRooms)) {
+        setSelectedRooms(state.selectedRooms);
+      }
       const newStationId = myTeam.currentStationId || myTeam.stationId;
       if (newStationId && newStationId !== lastStationIdRef.current) {
         lastStationIdRef.current = newStationId;
@@ -629,6 +634,9 @@ function StudentApp() {
       members: members.filter((m) => m.trim().length > 0),
     };
 
+    const isMultiRoom =
+      Array.isArray(selectedRooms) && selectedRooms.length > 1;
+
     socket.emit("student:join-room", payload, (response) => {
       setJoiningRoom(false);
       const ok = response && (response.ok === true || response.success === true);
@@ -800,16 +808,23 @@ function StudentApp() {
       roomCode: code,
       teamId,
       stationId: norm.id,
-      locationSlug: (roomLocation || "").trim().toLowerCase().replace(/\s+/g, "-"),
+      locationSlug: (roomLocation || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "-"),
     },
-    (response) => {
-      if (!response || response.ok === false) {
-        setScanError(response?.error || "Scan not accepted.");
+    (resp) => {
+      if (!resp || resp.ok === false) {
+        setScanStatus("error");
+        setScanError(resp?.error || "Scan not accepted.");
         return;
       }
 
-      if (response.stationId) {
-        const info = normalizeStationId(response.stationId);
+      setScanStatus("ok");
+      setScanError(null);
+
+      if (resp.stationId) {
+        const info = normalizeStationId(resp.stationId);
         setAssignedStationId(info.id);
         setAssignedColor(info.color || null);
         lastStationIdRef.current = info.id;
@@ -819,7 +834,6 @@ function StudentApp() {
     }
   );
 };
-
 
   // ─────────────────────────────────────────────
   // Location enforcement & station gating
@@ -834,9 +848,6 @@ function StudentApp() {
     const enforce = !!cfg.requireScan && !!cfg.stationBased;
     setEnforceLocation(enforce);
   }, [currentTask]);
-
-  const [scanStatus, setScanStatus] = useState(null); 
-  // null | "ok" | "error"
 
   // ─────────────────────────────────────────────
   // Derived values for UI
@@ -897,6 +908,9 @@ function StudentApp() {
         animation: "mystery-glow 1.6s ease-in-out infinite",
       }
     : {};
+
+  const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+  const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
 
   const isOpenText = currentTask?.taskType === TASK_TYPES.OPEN_TEXT;
   const isPhoto = currentTask?.taskType === TASK_TYPES.PHOTO;
@@ -1911,19 +1925,24 @@ function StudentApp() {
               marginTop: 6,
               padding: 16,
               borderRadius: 18,
-              background: assignedColor || stationInfo?.color || "black",
-              color: (assignedColor === "yellow" || stationInfo?.color === "yellow") ? "#0f172a" : "#fff",
+              background: (assignedColor || stationInfo?.color || "black"),
               border: "2px solid rgba(255,255,255,0.55)",
+              color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
               textAlign: "center",
               boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
             }}
           >
             <div style={{ fontSize: "1.25rem", fontWeight: 900, letterSpacing: 0.4 }}>
-              {assignedColor
-                ? (enforceLocation && roomLocation
-                    ? `Scan at ${String(roomLocation).toUpperCase()} ${assignedColor.toUpperCase()}`
-                    : `Scan at ${assignedColor.toUpperCase()}`)
-                : "Scan the station QR"}
+              {(() => {
+                const color = String(assignedColor || stationInfo?.color || "").toUpperCase();
+                const loc = String(roomLocation || "").toUpperCase();
+
+                if (enforceLocation && loc && loc !== "CLASSROOM" && color) {
+                  return `Scan at ${loc} ${color}`;
+                }
+                if (color) return `Scan at ${color}`;
+                return "Scan the station QR";
+              })()}
             </div>
 
             <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
@@ -1947,7 +1966,7 @@ function StudentApp() {
 
             {scanStatus === "ok" && (
               <div style={{ marginTop: 10, fontWeight: 800 }}>
-                ✅ Correct station — waiting for your teacher’s task…
+                ✅ Correct station — waiting for your next task…
               </div>
             )}
           </section>
