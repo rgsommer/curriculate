@@ -2100,16 +2100,10 @@ function StudentApp() {
                 </div>
               </section>
             </div>
-
-            {scanStatus === "ok" && (
-              <div style={{ marginTop: 10, fontWeight: 800 }}>
-                ✅ Correct station — waiting for your next task…
-              </div>
-            )}
           </section>
         )}
         
-        {joined && (
+        {joined && !mustScan && (
           <div style={{ marginTop: 10, fontWeight: 800 }}>
             ✅ Joined! Wait for your task to arrive… Get ready to Curriculate!
           </div>
