@@ -241,11 +241,6 @@ function StudentApp() {
   const [scanError, setScanError] = useState(null);
   const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
 
-  // Scan/task pulses + scan-success gate
-  const [hasScannedCorrectly, setHasScannedCorrectly] = useState(false);
-  const [scanSuccessPulse, setScanSuccessPulse] = useState(false);
-  const [taskArrivedPulse, setTaskArrivedPulse] = useState(false);
-
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
   const [currentTaskIndex, setCurrentTaskIndex] = useState(null);
@@ -580,9 +575,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
           // ✅ Prepare for next scan-task cycle
           setScannedStationId(null);      // important: forces gate logic to re-evaluate
           setScanStatus(null);
-    setHasScannedCorrectly(false);
-    setScanSuccessPulse(false);
-    setTaskArrivedPulse(false);
           setScanError(null);
 
           // ✅ Pull latest station assignment BEFORE/AS we show scanner
@@ -874,7 +866,6 @@ if (taskKey && taskKey !== lastTaskKeyRef.current) {
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
       setScanError("");
-      setHasScannedCorrectly(false);
       // NOTE: do not set scanStatus ok on join; only after a successful scan
 
       if (response.currentTask) {
