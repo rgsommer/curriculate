@@ -578,12 +578,11 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // Always show scanner UI after join
-    setScannerActive(true);
-
-    // Also request latest state so station/location can populate when available
-    if (teamId) socket.emit("room:request-state", { teamId });
-  }, [joined, teamId]);
+    // If no task is showing, scanner should be available
+    if (!currentTask) {
+      setScannerActive(true);
+    }
+  }, [joined, currentTask]);
 
   // Clean up timers on unmount
   useEffect(() => {
