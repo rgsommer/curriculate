@@ -578,14 +578,12 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // if station not known yet, request it first (prevents black panel)
-    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
-      socket.emit("room:request-state", { teamId });
-      return;
-    }
-
+    // Always show scanner UI after join
     setScannerActive(true);
-  }, [joined, assignedColor, assignedStationId, teamId]);
+
+    // Also request latest state so station/location can populate when available
+    if (teamId) socket.emit("room:request-state", { teamId });
+  }, [joined, teamId]);
 
   // Clean up timers on unmount
   useEffect(() => {
