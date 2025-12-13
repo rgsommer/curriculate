@@ -96,6 +96,19 @@ function normalizeStationId(raw) {
     };
   }
 
+  // Case 5: URL that contains a color segment like ".../red"
+  const colorRegex = new RegExp(`(?:^|[\\/\\?#&=])(${COLOR_NAMES.join("|")})(?:$|[\\/\\?#&=])`, "i");
+  const cm = lower.match(colorRegex);
+  if (cm) {
+    const c = cm[1].toLowerCase();
+    const idx = COLOR_NAMES.indexOf(c);
+    return {
+      id: `station-${idx + 1}`,
+      color: c,
+      label: `Station-${c[0].toUpperCase()}${c.slice(1)}`,
+    };
+  }
+
   // Default fallback
   return { id: s, color: null, label: s.toUpperCase() };
 }
@@ -822,8 +835,8 @@ function StudentApp() {
     setEnforceLocation(enforce);
   }, [currentTask]);
 
-  setScanStatus("error");
-  setScanError(resp?.error || "Scan not accepted.");
+  const [scanStatus, setScanStatus] = useState(null); 
+  // null | "ok" | "error"
 
   // ─────────────────────────────────────────────
   // Derived values for UI
@@ -941,9 +954,6 @@ function StudentApp() {
       : currentTaskNumber
       ? `Task ${currentTaskNumber}`
       : null;
-
-  const [scanStatus, setScanStatus] = useState(null); 
-  // null | "ok" | "error"
 
   // ─────────────────────────────────────────────
   // Render
@@ -1901,9 +1911,9 @@ function StudentApp() {
               marginTop: 6,
               padding: 16,
               borderRadius: 18,
-              background: assignedColor || "black",
+              background: assignedColor || stationInfo?.color || "black",
+              color: (assignedColor === "yellow" || stationInfo?.color === "yellow") ? "#0f172a" : "#fff",
               border: "2px solid rgba(255,255,255,0.55)",
-              color: assignedColor === "yellow" ? "#0f172a" : "#fff",
               textAlign: "center",
               boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
             }}
@@ -1942,12 +1952,7 @@ function StudentApp() {
             )}
           </section>
         )}
-        {scanStatus === "ok" && (
-          <div style={{ marginTop: 10, fontWeight: 800 }}>
-            ✅ Correct station — waiting for your next task…
-          </div>
-        )}
-
+        
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
             <section
