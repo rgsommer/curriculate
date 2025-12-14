@@ -399,7 +399,44 @@ function StudentApp() {
     };
 
     // AI scoring + feedback
-    const handleTaskScored = (payload) => {
+    
+  // ----------------------------------------------------
+  // Finish the post-submit overlay/lock and return to scan state (manual "Next")
+  // ----------------------------------------------------
+  const finishPostSubmitAndReturnToScan = () => {
+    try {
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
+    } catch {}
+
+    // End review lock / overlay
+    setTaskLocked(false);
+    setPostSubmitSecondsLeft(null);
+
+    // Hide completed task UI
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setShortAnswerReveal(null);
+
+    // Reset scan-success state so camera remounts
+    try {
+      setHasScannedCorrectly(false);
+      setScanSuccessPulse(false);
+    } catch {}
+
+    // Reset scan gate/error state
+    setScannedStationId(null);
+    setScanStatus(null);
+    setScanError(null);
+
+    // Pull latest station assignment and show scanner
+    socket.emit("room:request-state", { teamId });
+    setScannerActive(true);
+  };
+
+const handleTaskScored = (payload) => {
       if (!payload || typeof payload !== "object") return;
 
       const {
@@ -449,7 +486,21 @@ function StudentApp() {
 
         if (t <= 0) {
           clearInterval(timer);
-          endReviewAndReturnToScan();
+
+          // ✅ End review lock
+          setTaskLocked(false);
+          setPostSubmitSecondsLeft(null);
+
+          // ✅ Prepare for next scan-task cycle
+          setScannedStationId(null);      // important: forces gate logic to re-evaluate
+          setScanStatus(null);
+          setScanError(null);
+
+          // ✅ Pull latest station assignment BEFORE/AS we show scanner
+          socket.emit("room:request-state", { teamId });
+
+          // ✅ Show scanner
+          setScannerActive(true);
         }
       }, 1000);
 
@@ -564,14 +615,11 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // if station not known yet, request it first (prevents black panel)
-    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
-      socket.emit("room:request-state", { teamId });
-      return;
+    // If no task is showing, scanner should be available
+    if (!currentTask) {
+      setScannerActive(true);
     }
-
-    setScannerActive(true);
-  }, [joined, assignedColor, assignedStationId, teamId]);
+  }, [joined, currentTask]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -719,38 +767,6 @@ function StudentApp() {
           typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
       }));
     });
-
-
-  // ----------------------------------------------------
-  // End the 15s review lock and return to scan state
-  // (Used by BOTH the server-scored path and the fallback timer)
-  // ----------------------------------------------------
-  const endReviewAndReturnToScan = () => {
-    // stop lock + countdown
-    setTaskLocked(false);
-    setPostSubmitSecondsLeft(null);
-
-    // hide task UI so scanner is visible
-    setCurrentTask(null);
-    setCurrentTaskIndex(null);
-    setShortAnswerReveal(null);
-
-    // reset scan success / animation state so camera remounts
-    try {
-      setHasScannedCorrectly(false);
-      setScanSuccessPulse(false);
-    } catch (e) {}
-
-    // reset scan gate/error state
-    setScannedStationId(null);
-    setScanStatus(null);
-    setScanError(null);
-
-    // refresh assignment + show scanner
-    socket.emit("room:request-state", { teamId });
-    setScannerActive(true);
-  };
-
   };
 
   const handleSubmitAnswer = (answerPayload) => {
@@ -803,9 +819,18 @@ function StudentApp() {
           setPostSubmitSecondsLeft(t);
 
           if (t <= 0) {
-          clearInterval(timer);
-          endReviewAndReturnToScan();
-        }
+            clearInterval(timer);
+
+            setTaskLocked(false);
+            setPostSubmitSecondsLeft(null);
+
+            setScannedStationId(null);
+            setScanStatus(null);
+            setScanError(null);
+
+            socket.emit("room:request-state", { teamId });
+            setScannerActive(true);
+          }
         }, 1000);
 
         postSubmitTimerRef.current = timer;
@@ -1023,6 +1048,7 @@ function StudentApp() {
         minHeight: "100vh",
         padding: 16,
         display: "flex",
+        zIndex: 9999,
         flexDirection: "column",
         alignItems: "stretch",
         justifyContent: "flex-start",
@@ -1380,9 +1406,10 @@ function StudentApp() {
 
         /* TASK-LOCKED OVERLAY */
         .task-locked-overlay {
-          position: absolute;
+          position: fixed;
           inset: 0;
-          border-radius: inherit;
+          z-index: 9999;
+          border-radius: 0;
           background: radial-gradient(
             circle at top,
             rgba(15,23,42,0.3),
@@ -1394,7 +1421,6 @@ function StudentApp() {
           color: #f9fafb;
           font-weight: 600;
           font-size: 0.95rem;
-          z-index: 20;
           text-align: center;
           padding: 14px;
         }
@@ -1737,7 +1763,7 @@ function StudentApp() {
                 cursor: "pointer",
               }}
             >
-              Theme 1
+              Eager
             </button>
             <button
               type="button"
@@ -1758,7 +1784,7 @@ function StudentApp() {
                 cursor: "pointer",
               }}
             >
-              Theme 2
+              Hero
             </button>
             <button
               type="button"
@@ -1779,7 +1805,7 @@ function StudentApp() {
                 cursor: "pointer",
               }}
             >
-              Theme 3
+              Dyno
             </button>
           </div>
 
@@ -2085,6 +2111,7 @@ function StudentApp() {
                   minHeight: isMotionMission || isPetFeeding ? "60vh" : undefined,
                 }}
               >
+               {!taskLocked && (
                 <TaskRunner
                   key={
                     currentTask?.id ??
@@ -2119,14 +2146,16 @@ function StudentApp() {
                     });
                   }}
                 />
+                )}
               </div>
 
               {taskLocked && (
                 <div className="task-locked-overlay">
                   {postSubmitSecondsLeft != null ? (
+                    <>
                     <div style={{ width: "100%" }}>
                       <div>
-                        Locked while your teacher reviews… <br />
+                        Submitted — you can continue anytime… <br />
                         <span
                           style={{
                             fontVariantNumeric: "tabular-nums",
@@ -2136,7 +2165,39 @@ function StudentApp() {
                           {postSubmitSecondsLeft}s
                         </span>
                       </div>
-
+<div
+    style={{
+      position: "fixed",
+      bottom: "100px", // Above the footer strip
+      left: "50%",
+      transform: "translateX(-50%)",
+      zIndex: 1000,
+    }}
+  >
+    <button
+      onClick={() => {
+        setTaskLocked(false);
+        setPostSubmitSecondsLeft(null);
+        setCurrentTask(null);
+        setShowQrScanner(true); // Re-show scanner for next task
+        setAssignedStation(null);
+        socket.current.emit("room:request-state", { teamId });
+      }}
+      style={{
+        padding: "16px 32px",
+        fontSize: "1.2rem",
+        fontWeight: 800,
+        background: "#22c55e",
+        color: "#fff",
+        border: "none",
+        borderRadius: 999,
+        boxShadow: "0 12px 30px rgba(0,0,0,0.4)",
+        cursor: "pointer",
+      }}
+    >
+      Next Task →
+    </button>
+  </div>
                       {/* ✅ Countdown bar (VISIBLE because it's inside the overlay) */}
                       <div style={{ marginTop: 12 }}>
                         <div
@@ -2160,6 +2221,27 @@ function StudentApp() {
                         </div>
                       </div>
                     </div>
+                      <div style={{ marginTop: 16 }}>
+                        <button
+                          onClick={finishPostSubmitAndReturnToScan}
+                          style={{
+                            marginTop: 18,
+                            padding: "14px 18px",
+                            borderRadius: 999,
+                            fontWeight: 900,
+                            fontSize: 16,
+                            background: "#22c55e",
+                            color: "#fff",
+                            border: "none",
+                            boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
+                            cursor: "pointer",
+                            zIndex: 10000,
+                          }}
+                        >
+                          Curriculate! Go to the next task →
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <div>Waiting for your next task to unlock…</div>
                   )}
@@ -2227,6 +2309,7 @@ function StudentApp() {
           height: "50vh",
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
+          foregroundColor: "#0f172a",
           backgroundColor: assignedColor
             ? assignedColor
             : stationInfo?.color
@@ -2235,6 +2318,57 @@ function StudentApp() {
           boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
         }}
       />
+      {taskLocked && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      zIndex: 999999,
+      background: "rgba(0,0,0,0.82)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      textAlign: "center",
+      color: "#fff",
+    }}
+  >
+    <div style={{ fontSize: 34, fontWeight: 900, marginBottom: 12 }}>
+      {submissionFeedback?.message || "Submitted!"}
+    </div>
+
+    {typeof submissionFeedback?.points === "number" && (
+      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
+        +{submissionFeedback.points} points
+      </div>
+    )}
+
+    {postSubmitSecondsLeft != null && (
+      <div style={{ fontSize: 18, opacity: 0.95, marginBottom: 18 }}>
+        Next task in {postSubmitSecondsLeft}s…
+      </div>
+    )}
+
+    <button
+      onClick={finishPostSubmitAndReturnToScan}
+      style={{
+        marginTop: 6,
+        padding: "14px 18px",
+        borderRadius: 999,
+        fontWeight: 900,
+        fontSize: 16,
+        background: "#22c55e",
+        color: "#fff",
+        border: "none",
+        boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
+        cursor: "pointer",
+      }}
+    >
+      Curriculate! Go to the next task →
+    </button>
+  </div>
+)}
     </div>
   );
 }
