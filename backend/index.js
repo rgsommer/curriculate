@@ -1009,10 +1009,6 @@ io.on("connection", (socket) => {
         return;
       }
 
-      if (!room.teams) {
-        room.teams = {};
-      }
-
       // Try to re-use an existing TeamSession for this room + team name,
       // so refreshes don't create duplicates.
       let teamDoc = await TeamSession.findOne({
@@ -1060,6 +1056,14 @@ io.on("connection", (socket) => {
         room.teams[teamId].connected = true;
         room.teams[teamId].stale = false;
         room.teams[teamId].lastSeenAt = new Date();
+      }
+
+      // Ensure published team assignment is always in currentStationId
+      if (!room.teams[teamId].currentStationId) {
+        room.teams[teamId].currentStationId =
+        room.teams[teamId].stationId ||
+        room.teams[teamId].station ||   // <-- if your published teams use this
+        null;
       }
 
       // Cancel any offline cleanup timeout if it exists
@@ -1290,9 +1294,34 @@ io.on("connection", (socket) => {
       }
 
       // 2) Station correctness
-      const expectedStation = team.currentStationId;
+      const expectedStation =
+        team.currentStationId || team.stationId || team.station || null;
       const expected = normalizeStationId(expectedStation);
       const scanned = normalizeStationId(stationId);
+
+      // If the team has no expected station yet, accept the scan as the initial assignment
+      if (!expectedStation) {
+        // persist on team object (wherever your team state lives)
+        team.currentStationId = stationId;
+        team.lastScannedStationId = stationId;
+
+        // (optional) also store color for convenience
+        team.assignedColor = scanned?.color || null;
+
+        if (typeof ack === "function") {
+          ack({
+            ok: true,
+            initialAssignment: true,
+            stationId,
+            assignedStationId: stationId,
+            assignedColor: scanned?.color || null,
+          });
+        }
+
+        // Also push state so StudentApp gets assignedColor immediately
+        io.to(code).emit("room:state", buildRoomState(room)); // or whatever you already use
+        return;
+      }
 
       const stationMatches =
         (expected.id && scanned.id && expected.id === scanned.id) ||
@@ -1331,30 +1360,6 @@ io.on("connection", (socket) => {
             expectedColor: expected?.color || null,
           });
         }
-        return;
-      }
-
-      // If the team has no expected station yet, accept the scan as the initial assignment
-      if (!expectedStation) {
-        // persist on team object (wherever your team state lives)
-        team.currentStationId = stationId;
-        team.lastScannedStationId = stationId;
-
-        // (optional) also store color for convenience
-        team.assignedColor = scanned?.color || null;
-
-        if (typeof ack === "function") {
-          ack({
-            ok: true,
-            initialAssignment: true,
-            stationId,
-            assignedStationId: stationId,
-            assignedColor: scanned?.color || null,
-          });
-        }
-
-        // Also push state so StudentApp gets assignedColor immediately
-        io.to(code).emit("room:state", buildRoomState(room)); // or whatever you already use
         return;
       }
 
