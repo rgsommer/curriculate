@@ -1406,9 +1406,10 @@ const handleTaskScored = (payload) => {
 
         /* TASK-LOCKED OVERLAY */
         .task-locked-overlay {
-          position: absolute;
+          position: fixed;
           inset: 0;
-          border-radius: inherit;
+          z-index: 9999;
+          border-radius: 0;
           background: radial-gradient(
             circle at top,
             rgba(15,23,42,0.3),
@@ -1420,7 +1421,6 @@ const handleTaskScored = (payload) => {
           color: #f9fafb;
           font-weight: 600;
           font-size: 0.95rem;
-          z-index: 20;
           text-align: center;
           padding: 14px;
         }
@@ -2060,8 +2060,7 @@ const handleTaskScored = (payload) => {
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {/*{joined && currentTask && !mustScan && (*/}
-          {joined && currentTask && !taskLocked && (
+          {joined && currentTask && !mustScan && (
             <section
               className="task-card"
               style={{
@@ -2112,6 +2111,7 @@ const handleTaskScored = (payload) => {
                   minHeight: isMotionMission || isPetFeeding ? "60vh" : undefined,
                 }}
               >
+               {!taskLocked && (
                 <TaskRunner
                   key={
                     currentTask?.id ??
@@ -2146,6 +2146,7 @@ const handleTaskScored = (payload) => {
                     });
                   }}
                 />
+                )}
               </div>
 
               {taskLocked && (
@@ -2190,7 +2191,7 @@ const handleTaskScored = (payload) => {
                     </div>
                       <div style={{ marginTop: 16 }}>
                         <button
-                          onClick={finishOverlayAndReturnToScan}
+                          onClick={finishPostSubmitAndReturnToScan}
                           style={{
                             marginTop: 18,
                             padding: "14px 18px",
