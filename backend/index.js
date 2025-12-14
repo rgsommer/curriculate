@@ -1305,7 +1305,32 @@ io.on("connection", (socket) => {
           scannedStation: stationId,
           scanned,
         });
-        if (typeof ack === "function") ack({ ok: false, error: "Wrong station colour." });
+
+        const scannedLabel =
+          (scanned?.color ? String(scanned.color).toUpperCase() : null) ||
+          (scanned?.id ? String(scanned.id).toUpperCase() : null) ||
+          (stationId ? String(stationId).toUpperCase() : "UNKNOWN");
+
+        const expectedLabel =
+          (expected?.color ? String(expected.color).toUpperCase() : null) ||
+          (expected?.id ? String(expected.id).toUpperCase() : null) ||
+          (expectedStation ? String(expectedStation).toUpperCase() : "YOUR STATION");
+
+        if (typeof ack === "function") {
+          ack({
+            ok: false,
+            // Option A (more helpful)
+            error: `You scanned ${scannedLabel}. Go to ${expectedLabel}.`,
+
+            // Option B (less revealing) — swap the error line above for this one:
+            // error: `You scanned ${scannedLabel}.`,
+
+            scannedStationId: scanned?.id || stationId || null,
+            scannedColor: scanned?.color || null,
+            expectedStationId: expected?.id || expectedStation || null,
+            expectedColor: expected?.color || null,
+          });
+        }
         return;
       }
 
