@@ -692,11 +692,21 @@ function StudentApp() {
         }
       }
 
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
+      // ✅ accept BOTH legacy and new server field names
+      const joinStationId =
+        response.stationId ||
+        response.assignedStationId ||
+        response.assignedStation ||
+        null;
+
+      if (joinStationId) {
+        const stationInfo = normalizeStationId(joinStationId);
         setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
+        setAssignedColor(response.assignedColor || stationInfo.color || null);
         lastStationIdRef.current = stationInfo.id;
+      } else if (teamId) {
+        // belt + suspenders: fetch the room state if station wasn't included
+        socket.emit("room:request-state", { teamId });
       }
 
       const locSlug =
