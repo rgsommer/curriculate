@@ -275,9 +275,6 @@ function StudentApp() {
   const countdownTimerRef = useRef(null);
   const postSubmitTimerRef = useRef(null);
 
-  // Play task-arrival sound once per new task
-  const lastTaskKeyRef = useRef(null);
-
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
@@ -399,22 +396,47 @@ function StudentApp() {
       setLastTaskResult(null);
       setPointToast(null);
       setShortAnswerReveal(null);
-
-      // 🔔 Task arrival sound (once per task)
-      try {
-        const idxKey =
-          (typeof idx === "number" && idx >= 0) ? String(idx) : "";
-        const idKey = String(payload?.task?._id || payload?.task?.id || payload?.taskId || payload?.task?._id || "");
-        const taskKey = idKey || idxKey || JSON.stringify(payload?.task || payload || {});
-        if (taskKey && taskKey !== lastTaskKeyRef.current) {
-          lastTaskKeyRef.current = taskKey;
-          tryPlayAlertSound();
-        }
-      } catch (e) {}
     };
 
     // AI scoring + feedback
-    const handleTaskScored = (payload) => {
+    
+  // ----------------------------------------------------
+  // Finish the post-submit overlay/lock and return to scan state (manual "Next")
+  // ----------------------------------------------------
+  const finishPostSubmitAndReturnToScan = () => {
+    try {
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+        postSubmitTimerRef.current = null;
+      }
+    } catch {}
+
+    // End review lock / overlay
+    setTaskLocked(false);
+    setPostSubmitSecondsLeft(null);
+
+    // Hide completed task UI
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setShortAnswerReveal(null);
+
+    // Reset scan-success state so camera remounts
+    try {
+      setHasScannedCorrectly(false);
+      setScanSuccessPulse(false);
+    } catch {}
+
+    // Reset scan gate/error state
+    setScannedStationId(null);
+    setScanStatus(null);
+    setScanError(null);
+
+    // Pull latest station assignment and show scanner
+    socket.emit("room:request-state", { teamId });
+    setScannerActive(true);
+  };
+
+const handleTaskScored = (payload) => {
       if (!payload || typeof payload !== "object") return;
 
       const {
@@ -464,7 +486,6 @@ function StudentApp() {
 
         if (t <= 0) {
           clearInterval(timer);
-          postSubmitTimerRef.current = null;
 
           // ✅ End review lock
           setTaskLocked(false);
@@ -480,12 +501,6 @@ function StudentApp() {
 
           // ✅ Show scanner
           setScannerActive(true);
-
-          // ✅ Hide the completed task so the scan screen is actually visible
-          setCurrentTask(null);
-          setCurrentTaskIndex(null);
-          setShortAnswerReveal(null);
-
         }
       }, 1000);
 
@@ -600,11 +615,14 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // If no task is showing, scanner should be available
-    if (!currentTask) {
-      setScannerActive(true);
+    // if station not known yet, request it first (prevents black panel)
+    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
+      socket.emit("room:request-state", { teamId });
+      return;
     }
-  }, [joined, currentTask]);
+
+    setScannerActive(true);
+  }, [joined, assignedColor, assignedStationId, teamId]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -815,11 +833,6 @@ function StudentApp() {
 
             socket.emit("room:request-state", { teamId });
             setScannerActive(true);
-
-            // ✅ Hide completed task so the scan screen is visible
-            setCurrentTask(null);
-            setCurrentTaskIndex(null);
-            setShortAnswerReveal(null);
           }
         }, 1000);
 
@@ -2023,7 +2036,7 @@ function StudentApp() {
             >
               <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
                 <div style={{
-                  backgroundColor: (getStationBubbleStyles(assignedColor || stationInfo?.color || null).background),
+                  backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
                   borderRadius: 16,
                   padding: 16,
                   display: "inline-block",
@@ -2141,7 +2154,7 @@ function StudentApp() {
                   {postSubmitSecondsLeft != null ? (
                     <div style={{ width: "100%" }}>
                       <div>
-                        Locked while your teacher reviews… <br />
+                        Submitted — you can continue anytime… <br />
                         <span
                           style={{
                             fontVariantNumeric: "tabular-nums",
@@ -2175,6 +2188,24 @@ function StudentApp() {
                         </div>
                       </div>
                     </div>
+                      <div style={{ marginTop: 16 }}>
+                        <button
+                          onClick={finishPostSubmitAndReturnToScan}
+                          style={{
+                            width: "100%",
+                            padding: "12px 14px",
+                            borderRadius: 14,
+                            border: "2px solid rgba(255,255,255,0.55)",
+                            background: "rgba(255,255,255,0.18)",
+                            color: "#fff",
+                            fontWeight: 900,
+                            fontSize: "1rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Curriculate! Go to the next task →
+                        </button>
+                      </div>
                   ) : (
                     <div>Waiting for your next task to unlock…</div>
                   )}
