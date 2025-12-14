@@ -275,6 +275,9 @@ function StudentApp() {
   const countdownTimerRef = useRef(null);
   const postSubmitTimerRef = useRef(null);
 
+  // Play task-arrival sound once per new task
+  const lastTaskKeyRef = useRef(null);
+
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
@@ -396,6 +399,18 @@ function StudentApp() {
       setLastTaskResult(null);
       setPointToast(null);
       setShortAnswerReveal(null);
+
+      // 🔔 Task arrival sound (once per task)
+      try {
+        const idxKey =
+          (typeof idx === "number" && idx >= 0) ? String(idx) : "";
+        const idKey = String(payload?.task?._id || payload?.task?.id || payload?.taskId || payload?.task?._id || "");
+        const taskKey = idKey || idxKey || JSON.stringify(payload?.task || payload || {});
+        if (taskKey && taskKey !== lastTaskKeyRef.current) {
+          lastTaskKeyRef.current = taskKey;
+          tryPlayAlertSound();
+        }
+      } catch (e) {}
     };
 
     // AI scoring + feedback
@@ -449,31 +464,28 @@ function StudentApp() {
 
         if (t <= 0) {
           clearInterval(timer);
+          postSubmitTimerRef.current = null;
 
           // ✅ End review lock
           setTaskLocked(false);
           setPostSubmitSecondsLeft(null);
 
           // ✅ Prepare for next scan-task cycle
-          // 1) Hide the completed task UI
+          setScannedStationId(null);      // important: forces gate logic to re-evaluate
+          setScanStatus(null);
+          setScanError(null);
+
+          // ✅ Pull latest station assignment BEFORE/AS we show scanner
+          socket.emit("room:request-state", { teamId });
+
+          // ✅ Show scanner
+          setScannerActive(true);
+
+          // ✅ Hide the completed task so the scan screen is actually visible
           setCurrentTask(null);
           setCurrentTaskIndex(null);
           setShortAnswerReveal(null);
 
-          // 2) Reset scan-success state so the camera remounts
-          setHasScannedCorrectly(false);
-          setScanSuccessPulse(false);
-
-          // 3) Reset scan gate/error state
-          setScannedStationId(null); // forces gate logic to re-evaluate
-          setScanStatus(null);
-          setScanError(null);
-
-          // 4) Pull latest station assignment BEFORE/AS we show scanner
-          socket.emit("room:request-state", { teamId });
-
-          // 5) Show scanner (QrScanner remounts because hasScannedCorrectly=false)
-          setScannerActive(true);
         }
       }, 1000);
 
@@ -588,14 +600,11 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // if station not known yet, request it first (prevents black panel)
-    if (!assignedColor && !normalizeStationId(assignedStationId)?.color) {
-      socket.emit("room:request-state", { teamId });
-      return;
+    // If no task is showing, scanner should be available
+    if (!currentTask) {
+      setScannerActive(true);
     }
-
-    setScannerActive(true);
-  }, [joined, assignedColor, assignedStationId, teamId]);
+  }, [joined, currentTask]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -806,6 +815,11 @@ function StudentApp() {
 
             socket.emit("room:request-state", { teamId });
             setScannerActive(true);
+
+            // ✅ Hide completed task so the scan screen is visible
+            setCurrentTask(null);
+            setCurrentTaskIndex(null);
+            setShortAnswerReveal(null);
           }
         }, 1000);
 
@@ -2009,7 +2023,7 @@ function StudentApp() {
             >
               <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
                 <div style={{
-                  backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
+                  backgroundColor: (getStationBubbleStyles(assignedColor || stationInfo?.color || null).background),
                   borderRadius: 16,
                   padding: 16,
                   display: "inline-block",
