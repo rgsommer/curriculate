@@ -564,11 +564,19 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    // If no task is showing, scanner should be available
-    if (!currentTask) {
-      setScannerActive(true);
+    // Only care about scanner when you're between tasks
+    if (currentTask) return;
+
+    // Make sure we have assignment info before showing scanner
+    const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
+    if (!inferredColor) {
+      socket.emit("room:request-state", { teamId });
+      return;
     }
-  }, [joined, currentTask]);
+
+    setScannerActive(true);
+  }, [joined, currentTask, assignedColor, assignedStationId, teamId]);
+
 
   // Clean up timers on unmount
   useEffect(() => {
