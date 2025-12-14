@@ -1048,6 +1048,7 @@ const handleTaskScored = (payload) => {
         minHeight: "100vh",
         padding: 16,
         display: "flex",
+        zIndex: 9999,
         flexDirection: "column",
         alignItems: "stretch",
         justifyContent: "flex-start",
@@ -1065,27 +1066,6 @@ const handleTaskScored = (payload) => {
       }}
     >
       <style>
-        <button
-              type="button"
-              onClick={finishPostSubmitAndReturnToScan}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "minimal"
-                    ? "2px solid rgba(15,23,42,0.85)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "minimal"
-                    ? "#e5e7eb"
-                    : "rgba(249,250,251,0.85)",
-                color: "#111827",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Next
-            </button>
         {`
         * {
           box-sizing: border-box;
@@ -2080,7 +2060,8 @@ const handleTaskScored = (payload) => {
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && currentTask && !mustScan && (
+          {/*{joined && currentTask && !mustScan && (*/}
+          {joined && currentTask && !taskLocked && (
             <section
               className="task-card"
               style={{
@@ -2209,17 +2190,19 @@ const handleTaskScored = (payload) => {
                     </div>
                       <div style={{ marginTop: 16 }}>
                         <button
-                          onClick={finishPostSubmitAndReturnToScan}
+                          onClick={finishOverlayAndReturnToScan}
                           style={{
-                            width: "100%",
-                            padding: "12px 14px",
-                            borderRadius: 14,
-                            border: "2px solid rgba(255,255,255,0.55)",
-                            background: "rgba(255,255,255,0.18)",
-                            color: "#fff",
+                            marginTop: 18,
+                            padding: "14px 18px",
+                            borderRadius: 999,
                             fontWeight: 900,
-                            fontSize: "1rem",
+                            fontSize: 16,
+                            background: "#22c55e",
+                            color: "#fff",
+                            border: "none",
+                            boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
                             cursor: "pointer",
+                            zIndex: 10000,
                           }}
                         >
                           Curriculate! Go to the next task →
