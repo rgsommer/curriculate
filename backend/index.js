@@ -115,19 +115,6 @@ app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: "3mb" }));
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/auth", authRoutes);
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-  next();
-});
 
 // ====================================================================
 //  SOCKET.IO
@@ -239,7 +226,7 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     room.teams[teamId] = {
       teamId,
       teamName: t.teamName,
-      members: t.playerNames,
+      members: Array.isArray(t.members) ? t.members : [],
       score: 0,
       stationColor: null,
       currentStationId: null,
@@ -428,19 +415,23 @@ function buildRoomState(room) {
       taskIndex: -1,
       startedAt: null,
       isActive: false,
+
       treatsConfig: {
         enabled: true,
         total: 4,
         given: 0,
       },
       pendingTreatTeams: [],
+
       noise: {
         enabled: false,
         threshold: 0,
         level: 0,
         brightness: 1,
       },
+
       brainstorm: null,
+      selectedRooms: [],
     };
   }
 
@@ -540,6 +531,9 @@ function buildRoomState(room) {
           // connectivity + misc
           connected: !!t.connected,
           joinedAt: t.joinedAt || null,
+          status: t.status || null,
+          stale: !!t.stale,
+          lastSeenAt: t.lastSeenAt || null,
         };
       }
       return out;
@@ -803,6 +797,116 @@ function updateNoiseDerivedState(code, room) {
   io.to(code).emit("roomState", state);
 }
 
+// ================================
+// Task advancement (server-authoritative)
+// ================================
+
+const NEXT_TASK_DELAY_MS = 15000;
+
+/**
+ * Ensures only ONE pending next-task timer exists per session.
+ * Stores timer handles on the session object (in-memory).
+ */
+function scheduleNextTask({
+    io,
+    session,
+    roomCode,
+    delayMs = NEXT_TASK_DELAY_MS,
+    reason = "auto",
+    baseTaskIndex = null,
+  }) {
+    if (!session) return;
+
+    // If already scheduled, do nothing (prevents duplicates from multiple submissions)
+    if (session._nextTaskTimeout) return;
+
+    const startAt = Date.now();
+    session._nextTaskDueAt = startAt + delayMs;
+
+    io.to(roomCode).emit("task:advance-scheduled", {
+      dueAt: session._nextTaskDueAt,
+      delayMs,
+      reason,
+    });
+
+    session._nextTaskTimeout = setTimeout(() => {
+      session._nextTaskTimeout = null;
+      session._nextTaskDueAt = null;
+
+      advanceTaskNow({
+        io,
+        session,
+        roomCode,
+        reason: reason === "auto" ? "auto-delay" : reason,
+        baseTaskIndex,
+      });
+    }, delayMs);
+  }
+
+function cancelScheduledNextTask(session) {
+  if (!session) return;
+  if (session._nextTaskTimeout) {
+    clearTimeout(session._nextTaskTimeout);
+    session._nextTaskTimeout = null;
+  }
+  session._nextTaskDueAt = null;
+}
+
+/**
+ * Scan-gated "advance": unlock the next task for ALL teams by setting nextTaskIndex.
+ * Does NOT push the task directly (students still must scan).
+ */
+function advanceTaskNow({ io, session, roomCode, reason = "manual", baseTaskIndex = null }) {
+  if (!session) return;
+
+  const tasks = session.taskset?.tasks || session.tasks || session.roomState?.tasks;
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    io.to(roomCode).emit("task:advance-error", { reason: "No tasks found on session." });
+    return;
+  }
+
+  const teams = session.teams || {};
+  const teamIds = Object.keys(teams);
+
+  // Determine which task we're advancing FROM.
+  // If caller provides baseTaskIndex, trust it (best for "all teams submitted idx").
+  // Otherwise infer from max team.taskIndex.
+  const inferredCurrent =
+    teamIds.length > 0
+      ? Math.max(
+          ...teamIds.map((id) =>
+            typeof teams[id]?.taskIndex === "number" ? teams[id].taskIndex : -1
+          )
+        )
+      : -1;
+
+  const currentIndex =
+    typeof baseTaskIndex === "number" && baseTaskIndex >= 0 ? baseTaskIndex : inferredCurrent;
+
+  const nextIndex = currentIndex + 1;
+
+  if (nextIndex >= tasks.length) {
+    // End of taskset
+    io.to(roomCode).emit("taskset:ended", { reason });
+    io.to(roomCode).emit("session:complete"); // backward compat with older flows
+    return;
+  }
+
+  // Unlock next task for every team
+  for (const id of teamIds) {
+    if (!teams[id]) continue;
+    teams[id].nextTaskIndex = nextIndex;
+  }
+
+  // Broadcast state so TeacherApp + StudentApp see that next is unlocked
+  const state = buildRoomState(session);
+  io.to(roomCode).emit("room:state", state);
+  io.to(roomCode).emit("roomState", state);
+
+  // Optional UI event for teacher dashboards
+  io.to(roomCode).emit("task:advance", { taskIndex: nextIndex, reason });
+}
+
 // ====================================================================
 //  SOCKET.IO – EVENT HANDLERS
 // ====================================================================
@@ -816,7 +920,16 @@ io.on("connection", (socket) => {
     socket.handshake.headers.referer
   );
 
-  // LOG EVERY EVENT THIS SOCKET EMITS
+  socket.on("task:force-advance", ({ roomCode }) => {
+  const session = getSessionByRoomCode(roomCode); // <-- use YOUR existing getter
+  if (!session) return;
+
+  // If a 15s timer is pending, cancel it and advance immediately
+  cancelScheduledNextTask(session);
+  advanceTaskNow({ io, session, roomCode, reason: "teacher-force" });
+});
+
+// LOG EVERY EVENT THIS SOCKET EMITS
   socket.onAny((event, ...args) => {
     console.log(
       `[SOCKET ${socket.id}] event:`,
@@ -829,18 +942,25 @@ io.on("connection", (socket) => {
   });
 
   // Teacher creates room
-  socket.on("teacher:createRoom", async ({ roomCode }) => {
+  socket.on("teacher:createRoom", async ({ roomCode }, callback) => {
     const code = roomCode?.toUpperCase();
     if (!code) return;
 
     if (rooms[code]) {
-      // Room already exists — just attach teacher
       rooms[code].teacherSocketId = socket.id;
       socket.join(code);
-      console.log(`Teacher re-joined existing room ${code}`);
-      return;
-    }
 
+      const state = buildRoomState(rooms[code]);
+
+      // Emit both event names for compatibility
+      socket.emit("room:state", state);
+      socket.emit("roomState", state);
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
+
+      if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
+        return;
+      }
     console.log(`Teacher created room ${code}`);
     const room = await createRoom(code, socket.id);
     rooms[code] = room;
@@ -851,6 +971,9 @@ io.on("connection", (socket) => {
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
+  
+    if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
+
   });
 
   // ----------------------------------------------------
@@ -927,10 +1050,16 @@ io.on("connection", (socket) => {
           lastScannedStationId: null,
           taskIndex: -1,
         };
+        room.teams[teamId].connected = true;
+        room.teams[teamId].stale = false;
+        room.teams[teamId].lastSeenAt = new Date();
       } else {
         room.teams[teamId].teamName = cleanName;
         room.teams[teamId].members = memberList;
         room.teams[teamId].status = "online";
+        room.teams[teamId].connected = true;
+        room.teams[teamId].stale = false;
+        room.teams[teamId].lastSeenAt = new Date();
       }
 
       // Cancel any offline cleanup timeout if it exists
@@ -1031,7 +1160,10 @@ io.on("connection", (socket) => {
 
       // Mark as online + cancel any pending offline timeout
       team.status = "online";
+      team.connected = true;
+      team.stale = false;
       team.lastSeenAt = new Date();
+      
       if (team.offlineTimeout) {
         clearTimeout(team.offlineTimeout);
         delete team.offlineTimeout;
@@ -1806,6 +1938,36 @@ socket.on("station:scan", handleStationScan);
     if (typeof ack === "function") {
       ack({ ok: true });
     }
+
+    // =======================================================
+    // AUTO-ADVANCE: when ALL teams have submitted this task
+    // =======================================================
+
+    try {
+      const totalTeams = Object.keys(room.teams || {}).length;
+
+      const submittedTeams = new Set(
+        room.submissions
+          .filter(s => s.taskIndex === idx)
+          .map(s => s.teamId)
+      );
+
+      const allSubmitted =
+        totalTeams > 0 && submittedTeams.size >= totalTeams;
+
+      if (allSubmitted) {
+        scheduleNextTask({
+          io,
+          session: room,
+          roomCode: code,
+          reason: "all-teams-submitted",
+          baseTaskIndex: idx,
+        });
+      }
+    } catch (err) {
+      console.error("Auto-advance scheduling failed:", err);
+    }
+
   };
 
   socket.on("student:submitAnswer", (payload, ack) => {
@@ -1820,9 +1982,8 @@ socket.on("station:scan", handleStationScan);
     const team = room.teams[teamId];
     if (!team) return;
 
-    const nextIndex = team.taskIndex;
+    sendTaskToTeam(room, teamId, (team.taskIndex ?? -1) + 1);
 
-    sendTaskToTeam(room, teamId, nextIndex);
   });
 
   socket.on("task:submit", (payload) => {
@@ -1954,9 +2115,9 @@ socket.on("station:scan", handleStationScan);
     });
   }
 
-  socket.on("teacher:nextTask", (payload) => {
-    handleTeacherNextTask(payload || {});
-  });
+  //socket.on("teacher:nextTask", (payload) => {
+  //  handleTeacherNextTask(payload || {});
+  //});
 
   // 🚨 IMPORTANT: shared helper to start a taskset for all teams
   function startTasksetForRoom(roomCode) {
@@ -2195,16 +2356,17 @@ socket.on("station:scan", handleStationScan);
 
   // Speed-draw race game
   socket.on("start-speed-draw", ({ roomCode, task }) => {
+    raceWinner[roomCode] = null;
     io.to(roomCode).emit("speed-draw-question", task);
   });
 
   socket.on("speed-draw-answer", ({ roomCode, index, correct }) => {
     if (correct && !raceWinner[roomCode]) {
-      raceWinner[roomCode] = socket.teamName;
+      raceWinner[roomCode] = socket.data.teamName;
       io.to(roomCode).emit("speed-draw-winner", {
-        winner: socket.teamName,
+        winner: socket.data.teamName,
       });
-      updateTeamScore(roomCode, socket.teamName, 25);
+      updateTeamScore(roomCode, socket.data.teamId, 25);
     }
   });
 
@@ -2222,30 +2384,6 @@ socket.on("station:scan", handleStationScan);
     });
 
     console.log(`Task launched in ${roomCode}:`, taskType);
-  });
-
-  // Teacher skips task
-  socket.on("teacher:skipNextTask", ({ roomCode }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room || !room.taskset) return;
-
-    const tasks = room.taskset.tasks || [];
-
-    // For each team, jump ahead by one task index
-    Object.entries(room.teams || {}).forEach(([teamId, team]) => {
-      const currentIndex =
-        typeof team.taskIndex === "number" && team.taskIndex >= 0
-          ? team.taskIndex
-          : -1;
-      const nextIndex = currentIndex + 1;
-      // sendTaskToTeam already handles ">= length" by emitting session:complete
-      sendTaskToTeam(room, teamId, nextIndex);
-    });
-
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
   });
 
   // Teacher ends session + email reports
@@ -2304,88 +2442,141 @@ socket.on("station:scan", handleStationScan);
 
   // ──────────────────────────────────────────────────────────────
   // Collaboration task: Random pairing + bonus for quality replies
+  // Current team model: room.teams = { [teamId]: { teamName, members, ... } }
+  // Uses teamId socket rooms (socket.join(teamId) already happens on join)
   // ──────────────────────────────────────────────────────────────
 
+  // In-room pairing store keyed by taskId (or "default")
+  function getOrCreateCollabState(room, taskId = "default") {
+    if (!room._collab) room._collab = {};
+    if (!room._collab[taskId]) {
+      room._collab[taskId] = {
+        // teamId -> partnerTeamId
+        partnerByTeamId: {},
+        // teamId -> mainAnswer
+        mainByTeamId: {},
+        createdAt: Date.now(),
+      };
+    }
+    return room._collab[taskId];
+  }
+
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
   socket.on("start-collaboration-task", ({ roomCode, taskId }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams || [];
-    if (teams.length < 2) {
-      socket.emit("error", {
-        message: "Need at least 2 teams for collaboration",
-      });
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const teamIds = Object.keys(room.teams || {});
+    if (teamIds.length < 2) {
+      socket.emit("error", { message: "Need at least 2 teams for collaboration" });
       return;
     }
 
-    // Random pairing (shuffle and group into pairs)
-    const shuffled = [...teams].sort(() => Math.random() - 0.5);
-    const pairs = [];
+    const state = getOrCreateCollabState(room, taskId || "default");
+    state.partnerByTeamId = {};
+    state.mainByTeamId = {};
+
+    const shuffled = shuffle(teamIds);
+
+    // Pair adjacent; if odd, last pairs with first
     for (let i = 0; i < shuffled.length; i += 2) {
-      pairs.push([shuffled[i], shuffled[i + 1] || shuffled[0]]);
+      const a = shuffled[i];
+      const b = shuffled[i + 1] || shuffled[0];
+      state.partnerByTeamId[a] = b;
+      state.partnerByTeamId[b] = a;
     }
 
-    // Notify each team of their partner
-    for (const [teamA, teamB] of pairs) {
-      io.to(teamA.socketId).emit("collaboration-paired", {
-        partnerTeam: teamB.name,
+    // Notify each team of partner (emit to teamId room)
+    for (const teamId of teamIds) {
+      const partnerId = state.partnerByTeamId[teamId];
+      const partnerName =
+        room.teams?.[partnerId]?.teamName || `Team-${String(partnerId).slice(-4)}`;
+
+      io.to(teamId).emit("collaboration-paired", {
         taskId,
-      });
-      io.to(teamB.socketId).emit("collaboration-paired", {
-        partnerTeam: teamA.name,
-        taskId,
+        partnerTeamId: partnerId,
+        partnerTeam: partnerName,
       });
     }
+
+    // Refresh teacher state view (optional)
+    const rs = buildRoomState(room);
+    io.to(code).emit("room:state", rs);
+    io.to(code).emit("roomState", rs);
   });
 
-  socket.on(
-    "collaboration-main-submit",
-    ({ roomCode, taskId, mainAnswer }) => {
-      const session = getSessionByRoomCode(roomCode);
-      const teams = session?.teams || [];
-      const team = teams.find((t) => t.socketId === socket.id);
-      if (!team) return;
+  socket.on("collaboration-main-submit", ({ roomCode, taskId, teamId, mainAnswer }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
 
-      // TODO: implement findPartnerForTeam
-      const partner = null;
+    const myTeamId = teamId || socket.data?.teamId;
+    if (!myTeamId || !room.teams?.[myTeamId]) return;
 
-      if (partner) {
-        io.to(partner.socketId).emit("collaboration-partner-answer", {
-          partnerName: team.name,
-          partnerAnswer: mainAnswer,
-        });
-      }
+    const state = getOrCreateCollabState(room, taskId || "default");
+    const partnerId = state.partnerByTeamId?.[myTeamId] || null;
 
-      // Save main answer (adjust to your model)
-      // saveTeamSubmission(session, team.id, taskId, { main: mainAnswer });
+    state.mainByTeamId[myTeamId] = typeof mainAnswer === "string" ? mainAnswer : "";
+
+    // Send main answer to partner (if paired)
+    if (partnerId && room.teams?.[partnerId]) {
+      const myName = room.teams?.[myTeamId]?.teamName || `Team-${String(myTeamId).slice(-4)}`;
+      io.to(partnerId).emit("collaboration-partner-answer", {
+        taskId,
+        partnerTeamId: myTeamId,
+        partnerName: myName,
+        partnerAnswer: mainAnswer,
+      });
     }
-  );
 
-  socket.on("collaboration-reply", async ({ roomCode, taskId, reply }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams || [];
-    const team = teams.find((t) => t.socketId === socket.id);
-    if (!team) return;
+    // If you later want to store these as submissions, do it here.
+  });
 
-    const bonus = await generateAIScore({
-      task: {
-        taskType: "collaboration-bonus",
-        prompt:
-          "Score this peer reply 0-5: thoughtful, specific, kind, and helpful.",
-        points: 5,
-      },
-      rubric: {
-        totalPoints: 5,
-        criteria: [
-          {
-            id: "quality",
-            label: "Reply quality",
-            maxPoints: 5,
-            description:
-              "Reward replies that are thoughtful, specific, kind, and helpful to their partner.",
-          },
-        ],
-      },
-      submission: { answerText: reply },
-    });
+  socket.on("collaboration-reply", async ({ roomCode, taskId, teamId, reply }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const myTeamId = teamId || socket.data?.teamId;
+    if (!myTeamId || !room.teams?.[myTeamId]) return;
+
+    const text = typeof reply === "string" ? reply.trim() : "";
+    if (!text) return;
+
+    // AI score 0–5 for reply quality
+    let bonus = null;
+    try {
+      bonus = await generateAIScore({
+        task: {
+          taskType: "collaboration-bonus",
+          prompt: "Score this peer reply 0-5: thoughtful, specific, kind, and helpful.",
+          points: 5,
+        },
+        rubric: {
+          totalPoints: 5,
+          criteria: [
+            {
+              id: "quality",
+              label: "Reply quality",
+              maxPoints: 5,
+              description: "Reward replies that are thoughtful, specific, kind, and helpful to their partner.",
+            },
+          ],
+        },
+        submission: { answerText: text },
+      });
+    } catch (e) {
+      console.warn("collaboration-reply AI scoring failed:", e);
+    }
 
     const bonusPoints =
       (bonus && typeof bonus.score === "number"
@@ -2394,22 +2585,40 @@ socket.on("station:scan", handleStationScan);
         ? bonus.totalScore
         : 0) || 0;
 
-    updateTeamScore(session, team.id, bonusPoints);
-    // saveTeamSubmission(session, team.id, taskId, { reply });
+    // Award the AI-derived bonus points (0–5)
+    if (bonusPoints > 0) updateTeamScore(room, myTeamId, bonusPoints);
 
-    socket.emit("collaboration-bonus", { bonus: bonusPoints });
+    // Tell the replying team their bonus
+    io.to(myTeamId).emit("collaboration-bonus", {
+      taskId,
+      bonus: bonusPoints,
+    });
+
+    // Optional: refresh room state for teacher dashboards
+    const rs = buildRoomState(room);
+    io.to(code).emit("room:state", rs);
+    io.to(code).emit("roomState", rs);
   });
 
-  // Mystery Clue Cards — Memory Bonus
+  // ─────────────────────────────────────────────
+  // Mystery Clue Cards — Memory Bonus (teamId-based)
+  // ─────────────────────────────────────────────
   socket.on("mystery-clues-start", ({ roomCode, taskId, teamId }) => {
-    if (taskId && !taskId.includes("final")) {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const tid = teamId || socket.data?.teamId;
+    if (!tid) return;
+
+    if (taskId && !String(taskId).includes("final")) {
       const clues = ["Apple", "Cat", "Rocket", "Pizza", "Ghost", "Lightning"]
         .sort(() => Math.random() - 0.5)
         .slice(0, 2 + Math.floor(Math.random() * 2)); // 2–3 clues
 
-      teamClues.set(teamId, clues);
+      teamClues.set(tid, clues);
 
-      socket.emit("mystery-clues-reveal", {
+      io.to(tid).emit("mystery-clues-reveal", {
         taskId,
         clues,
         duration: 8000,
@@ -2417,331 +2626,297 @@ socket.on("station:scan", handleStationScan);
     }
   });
 
-  socket.on("start-final-mystery-challenge", ({ roomCode }) => {
-    io.to(roomCode).emit("mystery-clues-final", {
-      type: "mystery-clues",
-      isFinal: true,
-      clueCount: teamClues.get(socket.teamId)?.length || 3,
-    });
+  socket.on("start-final-mystery-challenge", ({ roomCode, teamId }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    // If teacher triggers this, broadcast to everyone with per-team clueCount
+    const teamIds = Object.keys(room.teams || {});
+    for (const tid of teamIds) {
+      const clueCount = teamClues.get(tid)?.length || 3;
+      io.to(tid).emit("mystery-clues-final", {
+        type: "mystery-clues",
+        isFinal: true,
+        clueCount,
+      });
+    }
   });
 
-  socket.on("mystery-clues-submit", ({ roomCode, selected }) => {
-    const correctClues = teamClues.get(socket.teamId) || [];
+  socket.on("mystery-clues-submit", ({ roomCode, teamId, selected }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const tid = teamId || socket.data?.teamId;
+    if (!tid) return;
+
+    const correctClues = teamClues.get(tid) || [];
     const isPerfect = arraysDeepEqual(
-      [...selected].sort(),
+      [...(selected || [])].sort(),
       [...correctClues].sort()
     );
 
     if (isPerfect) {
-      updateTeamScore(socket.teamId, 10);
-      socket.emit("bonus-awarded", {
+      updateTeamScore(room, tid, 10);
+      io.to(tid).emit("bonus-awarded", {
         points: 10,
         reason: "Perfect Memory!",
       });
     }
 
-    socket.emit("mystery-clues-result", { correct: isPerfect });
+    io.to(tid).emit("mystery-clues-result", { correct: isPerfect });
+
+    const rs = buildRoomState(room);
+    io.to(code).emit("room:state", rs);
+    io.to(code).emit("roomState", rs);
   });
 
-  // True/False Tic-Tac-Toe (experimental)
-  socket.on("start-true-false-tictactoe", ({ roomCode, task }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams?.filter((t) => t.active) || [];
-    if (teams.length < 2) return;
-
-    const [teamA, teamB] = teams.sort(() => Math.random() - 0.5).slice(0, 2);
-    const statements = task.statements || []; // assume prepared
-
-    io.to(teamA.socketId).emit("tictactoe-start", {
-      type: "true-false-tictactoe",
-      teamRole: "X",
-      opponent: teamB.name,
-      statements,
-      board: Array(9).fill(null),
-    });
-
-    io.to(teamB.socketId).emit("tictactoe-start", {
-      type: "true-false-tictactoe",
-      teamRole: "O",
-      opponent: teamA.name,
-      statements,
-      board: Array(9).fill(null),
-    });
-  });
-
-  socket.on("tictactoe-move", ({ roomCode, index, teamRole }) => {
-    io.to(roomCode).emit("tictactoe-update", { index, symbol: teamRole });
-  });
-
-  socket.on("tictactoe-winner", ({ roomCode, winnerRole }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const winnerTeam = session?.teams?.find((t) => t.role === winnerRole);
-    if (winnerTeam) {
-      updateTeamScore(session, winnerTeam.id, 10);
-      io.to(roomCode).emit("bonus-awarded", {
-        team: winnerTeam.name,
-        points: 10,
-      });
+  // ─────────────────────────────────────────────
+  // True/False Tic-Tac-Toe (teamId-based game state)
+  // ─────────────────────────────────────────────
+  function getOrCreateTicTacToe(room, key = "default") {
+    if (!room._tictactoe) room._tictactoe = {};
+    if (!room._tictactoe[key]) {
+      room._tictactoe[key] = {
+        board: Array(9).fill(null),
+        roles: { X: null, O: null }, // role -> teamId
+        createdAt: Date.now(),
+        key,
+      };
     }
-  });
+    return room._tictactoe[key];
+  }
 
-  // ─────────────────────────────────────────────
-  // Mad Dash Sequence – with countdown + winner
-  // ─────────────────────────────────────────────
-  socket.on("start-mad-dash-sequence", ({ roomCode, length = 4 } = {}) => {
+  socket.on("start-true-false-tictactoe", ({ roomCode, task, taskId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
 
-    const sequence = [];
-    const safeLength = Math.max(3, Math.min(8, length));
-    for (let i = 0; i < safeLength; i++) {
-      sequence.push(COLORS[i % COLORS.length]);
-    }
+    const teamIds = Object.keys(room.teams || {});
+    if (teamIds.length < 2) return;
 
-    room.madDashSequence = {
-      active: true,
-      sequence,
-      startedAt: null,
-      completedTeams: new Set(),
-    };
+    const [a, b] = shuffle(teamIds).slice(0, 2);
+    const statements = task?.statements || [];
 
-    const COUNTDOWN_DURATION_MS = 4000;
+    const key = taskId || "default";
+    const state = getOrCreateTicTacToe(room, key);
+    state.board = Array(9).fill(null);
+    state.roles = { X: a, O: b };
 
-    // 1) Tell students to show the "On your marks… 3, 2, 1, GO!" overlay
-    io.to(code).emit("mad-dash-countdown", {
-      mode: "mad-dash",
-      durationMs: COUNTDOWN_DURATION_MS,
-      sequenceLength: sequence.length,
+    const aName = room.teams[a]?.teamName || `Team-${String(a).slice(-4)}`;
+    const bName = room.teams[b]?.teamName || `Team-${String(b).slice(-4)}`;
+
+    io.to(a).emit("tictactoe-start", {
+      type: "true-false-tictactoe",
+      taskId: key,
+      teamRole: "X",
+      opponent: bName,
+      statements,
+      board: state.board,
     });
 
-    // 2) After countdown, actually start the race + send the sequence
-    setTimeout(() => {
-      const currentRoom = rooms[code];
-      if (!currentRoom || !currentRoom.madDashSequence?.active) return;
-
-      const now = Date.now();
-      currentRoom.madDashSequence.startedAt = now;
-
-      io.to(code).emit("mad-dash-sequence-start", {
-        type: "mad-dash-sequence",
-        sequence,
-        startedAt: now,
-      });
-    }, COUNTDOWN_DURATION_MS);
-  });
-
-  socket.on("mad-dash-complete", (payload = {}) => {
-    const code = (payload.roomCode || socket.data?.roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room || !room.madDashSequence || !room.madDashSequence.active) return;
-
-    const teamId = payload.teamId || socket.data?.teamId;
-    if (!teamId || !room.teams?.[teamId]) return;
-
-    const state = room.madDashSequence;
-    if (!state.completedTeams) {
-      state.completedTeams = new Set();
-    }
-
-    if (state.completedTeams.has(teamId)) {
-      return; // already finished
-    }
-
-    state.completedTeams.add(teamId);
-
-    const team = room.teams[teamId];
-    const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-    const timeMs =
-      typeof state.startedAt === "number" ? Date.now() - state.startedAt : null;
-
-    // First finisher earns bonus + winner banner
-    if (state.completedTeams.size === 1) {
-      const basePoints = 10;
-      updateTeamScore(room, teamId, basePoints);
-
-      io.to(code).emit("mad-dash-winner", {
-        roomCode: code,
-        teamId,
-        teamName,
-        timeMs,
-        points: basePoints,
-      });
-    }
-
-    // Notify that this team has finished (even if not first)
-    io.to(code).emit("mad-dash-finish", {
-      roomCode: code,
-      teamId,
-      teamName,
-      timeMs,
-      rank: state.completedTeams.size,
+    io.to(b).emit("tictactoe-start", {
+      type: "true-false-tictactoe",
+      taskId: key,
+      teamRole: "O",
+      opponent: aName,
+      statements,
+      board: state.board,
     });
   });
 
-  // ─────────────────────────────────────────────
-  // Flashcards Race – multi-round shout-to-answer game
-  // ─────────────────────────────────────────────
-
-  // Teacher moves to the next card in the deck
-  socket.on("teacher:flashcards-race-next", (payload = {}) => {
-    const code = (payload.roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room || !room.flashcardsRace || !room.flashcardsRace.active) return;
-
-    const state = room.flashcardsRace;
-    const deck = Array.isArray(state.deck) ? state.deck : [];
-    if (deck.length === 0) return;
-
-    const nextIndex = (state.currentIndex || 0) + 1;
-
-    // Reached the end of the deck → broadcast end event
-    if (nextIndex >= deck.length) {
-      state.active = false;
-      io.to(code).emit("flashcards-race:end", {
-        totalCards: deck.length,
-      });
-      return;
-    }
-
-    state.currentIndex = nextIndex;
-
-    io.to(code).emit("flashcards-race:next", {
-      card: deck[nextIndex],
-      cardIndex: nextIndex,
-      totalCards: deck.length,
-    });
-  });
-
-  // Teacher awards a point (or N points) to the team that won that card
-  socket.on("teacher:flashcards-race-award", (payload = {}) => {
-    const code = (payload.roomCode || "").toUpperCase();
+  socket.on("tictactoe-move", ({ roomCode, taskId, index, teamRole }) => {
+    const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
 
-    const { teamId, teamName, points } = payload;
-    const safePoints =
-      typeof points === "number" && !Number.isNaN(points) ? points : 1;
+    const key = taskId || "default";
+    const state = getOrCreateTicTacToe(room, key);
 
-    if (teamId && room.teams?.[teamId]) {
-      // This updates room.teams[teamId].score (used by some game UIs)
-      updateTeamScore(room, teamId, safePoints);
-    }
+    const idx = typeof index === "number" ? index : -1;
+    if (idx < 0 || idx >= 9) return;
 
-    let label = teamName;
-    if (!label && teamId && room.teams?.[teamId]) {
-      label =
-        room.teams[teamId].teamName ||
-        `Team-${String(teamId).slice(-4)}`;
-    }
+    // Update board server-side (prevents weird overwrites)
+    if (state.board[idx] == null) state.board[idx] = teamRole;
 
-    // Notify all students so FlashcardsRaceTask can bump local scoreboard
-    io.to(code).emit("flashcards-race:winner", {
-      teamId: teamId || null,
-      teamName: label || "Unknown team",
-      points: safePoints,
+    io.to(code).emit("tictactoe-update", {
+      taskId: key,
+      index: idx,
+      symbol: teamRole,
+      board: state.board,
     });
-
-    // Refresh LiveSession scores (these still come from submissions;
-    // if you later want race points reflected there, you can optionally
-    // push pseudo-submissions too)
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
   });
 
-  // Teacher ends the race early (or after last card)
-  socket.on("teacher:flashcards-race-end", (payload = {}) => {
-    const code = (payload.roomCode || "").toUpperCase();
+  socket.on("tictactoe-winner", ({ roomCode, taskId, winnerRole }) => {
+    const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
-    if (!room || !room.flashcardsRace) return;
+    if (!room) return;
 
-    const deck = Array.isArray(room.flashcardsRace.deck)
-      ? room.flashcardsRace.deck
-      : [];
+    const key = taskId || "default";
+    const state = getOrCreateTicTacToe(room, key);
 
-    room.flashcardsRace = null;
+    const winnerTeamId = state.roles?.[winnerRole] || null;
+    if (winnerTeamId && room.teams?.[winnerTeamId]) {
+      updateTeamScore(room, winnerTeamId, 10);
+      const winnerName =
+        room.teams[winnerTeamId]?.teamName || `Team-${String(winnerTeamId).slice(-4)}`;
 
-    io.to(code).emit("flashcards-race:end", {
-      totalCards: deck.length,
-    });
+      io.to(code).emit("bonus-awarded", {
+        teamId: winnerTeamId,
+        team: winnerName,
+        points: 10,
+        reason: "Tic-Tac-Toe Win!",
+      });
+
+      const rs = buildRoomState(room);
+      io.to(code).emit("room:state", rs);
+      io.to(code).emit("roomState", rs);
+    }
   });
 
-  // Live debate (experimental – unchanged here)
-  socket.on("start-live-debate", ({ roomCode, postulate }) => {
-    const session = getSessionByRoomCode(roomCode);
-    const teams = session?.teams || [];
-    const half = Math.ceil(teams.length / 2);
-    teams.forEach((t, i) => {
+  // ─────────────────────────────────────────────
+  // Live debate (teamId-based)
+  // ─────────────────────────────────────────────
+  socket.on("start-live-debate", ({ roomCode, postulate, taskId }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+
+    const teamIds = Object.keys(room.teams || {});
+    if (teamIds.length === 0) return;
+
+    const half = Math.ceil(teamIds.length / 2);
+    const ordered = shuffle(teamIds);
+
+    ordered.forEach((teamId, i) => {
       const side = i < half ? "for" : "against";
-      io.to(t.socketId).emit("debate-start", {
+      const team = room.teams[teamId];
+      io.to(teamId).emit("debate-start", {
         type: "live-debate",
+        taskId: taskId || "default",
         postulate,
         mySide: side,
-        myTeamName: t.name,
-        teamMembers: t.members || ["Member 1", "Member 2", "Member 3"],
+        myTeamId: teamId,
+        myTeamName: team?.teamName || `Team-${String(teamId).slice(-4)}`,
+        teamMembers: Array.isArray(team?.members) && team.members.length > 0
+          ? team.members
+          : ["Member 1", "Member 2", "Member 3"],
         responses: [],
       });
     });
   });
 
-  socket.on("debate-response", async (data) => {
-    io.to(data.roomCode).emit("debate-new-response", data);
+  socket.on("debate-response", async (data = {}) => {
+    const code = (data.roomCode || "").toUpperCase();
+    if (!code) return;
+
+    // broadcast to whole room; clients can filter by taskId if needed
+    io.to(code).emit("debate-new-response", data);
     // Future: when all teams have 3 responses → judge via AI
   });
+  // ─────────────────────────────────────────────
+  // Disconnect / offline cleanup (team sockets)
+  // Add this AFTER debate-response (or near the bottom of connection handler)
+  // ─────────────────────────────────────────────
+  socket.on("disconnect", async (reason) => {
+    try {
+      const code = (socket.data?.roomCode || "").toUpperCase();
+      const teamId = socket.data?.teamId;
 
-  // Disconnect handling for persistent TeamSession
-  socket.on("disconnect", async () => {
-    const code = socket.data?.roomCode;
-    const teamId = socket.data?.teamId;
-    if (!code || !teamId) return;
+      // If this socket wasn't a team, ignore
+      if (!code || !teamId) return;
 
-    const room = rooms[code];
-    if (!room || !room.teams[teamId]) return;
+      const room = rooms[code];
+      if (!room || !room.teams?.[teamId]) return;
 
-    room.teams[teamId].status = "offline";
-    room.teams[teamId].lastSeenAt = new Date();
+      const team = room.teams[teamId];
 
-    // Save to DB
-    const dbTeam = await TeamSession.findById(teamId);
-    if (dbTeam) {
-      dbTeam.status = "offline";
-      dbTeam.lastSeenAt = new Date();
-      await dbTeam.save();
-    }
+      // Mark offline (soft) immediately
+      team.status = "offline";
+      team.lastSeenAt = new Date();
+      team.connected = false;
 
-    // Notify teacher
-    io.to(code).emit("team-status-updated", {
-      teamSessionId: teamId,
-      status: "offline",
-    });
-
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
-
-    // Schedule auto-removal after timeout
-    const timeoutId = setTimeout(async () => {
+      // Persist offline state (best effort)
       try {
-        const stillOffline = await TeamSession.findById(teamId);
-        if (stillOffline && stillOffline.status === "offline") {
-          await TeamSession.deleteOne({ _id: teamId });
-          if (room.teams[teamId]) {
-            delete room.teams[teamId];
-          }
-          io.to(code).emit("team-removed", { teamSessionId: teamId });
-
-          const updatedState = buildRoomState(room);
-          io.to(code).emit("room:state", updatedState);
-          io.to(code).emit("roomState", updatedState);
+        const dbTeam = await TeamSession.findById(teamId);
+        if (dbTeam) {
+          dbTeam.status = "offline";
+          dbTeam.lastSeenAt = new Date();
+          await dbTeam.save();
         }
-      } catch (err) {
-        console.error("TTL cleanup error:", err);
+      } catch (e) {
+        console.warn("disconnect: DB update failed:", e);
       }
-    }, OFFLINE_TIMEOUT_MS);
 
-    // Store timeout for possible cancel on reconnect
-    room.teams[teamId].offlineTimeout = timeoutId;
+      // Notify teacher + room UIs right away
+      io.to(code).emit("team:offline", {
+        teamId,
+        teamName: team.teamName || `Team-${String(teamId).slice(-4)}`,
+        reason,
+      });
+
+      const stateNow = buildRoomState(room);
+      io.to(code).emit("room:state", stateNow);
+      io.to(code).emit("roomState", stateNow);
+
+      // If already scheduled, don't double-schedule
+      if (team.offlineTimeout) clearTimeout(team.offlineTimeout);
+
+      // Schedule hard cleanup (remove team) after OFFLINE_TIMEOUT_MS
+      team.offlineTimeout = setTimeout(async () => {
+        try {
+          const r = rooms[code];
+          if (!r?.teams?.[teamId]) return;
+
+          const t = r.teams[teamId];
+
+          // If they came back online, skip cleanup
+          if (t.status === "online" || t.connected === true) return;
+
+          // GOLD STANDARD: keep identity + DB record. Just mark stale/offline.
+          t.status = "offline";
+          t.connected = false;
+          t.lastSeenAt = new Date();
+          t.stale = true; // optional flag for UI/teacher
+
+          // Optional: free station so the room doesn’t get “blocked” by offline teams
+          const stationId = t.currentStationId;
+          if (stationId && r.stations?.[stationId]?.assignedTeamId === teamId) {
+            r.stations[stationId].assignedTeamId = null;
+            // you may keep t.currentStationId as-is for continuity,
+            // or clear it if you prefer forcing a fresh assignment on return:
+            // t.currentStationId = null;
+          }
+
+          // Persist offline status (DO NOT DELETE)
+          try {
+            const dbTeam = await TeamSession.findById(teamId);
+            if (dbTeam) {
+              dbTeam.status = "offline";
+              dbTeam.lastSeenAt = new Date();
+              await dbTeam.save();
+            }
+          } catch (e) {
+            console.warn("offline timeout: DB update failed:", e);
+          }
+
+          // Broadcast updated state
+          const state = buildRoomState(r);
+          io.to(code).emit("room:state", state);
+          io.to(code).emit("roomState", state);
+
+          io.to(code).emit("team:offline-timeout", {
+            teamId,
+            reason: "offline-timeout",
+          });
+        } catch (e) {
+          console.error("offline timeout handler failed:", e);
+        }
+      }, OFFLINE_TIMEOUT_MS);
+    } catch (err) {
+      console.error("disconnect handler error:", err);
+    }
   });
 });
 

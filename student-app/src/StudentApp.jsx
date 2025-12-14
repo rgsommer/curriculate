@@ -21,12 +21,6 @@ const DEFAULT_LOCATION = "Classroom";
 
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
-function getReadableTextColor(bg) {
-  // Simple safe default: white for your station palette
-  // If you ever add very light colors, we can switch to dynamic contrast.
-  return "#fff";
-}
-
 // Normalize a human-readable location into a slug like "room-12"
 function normalizeLocationSlug(raw) {
   if (!raw) return "";
@@ -315,12 +309,6 @@ function StudentApp() {
     const handleRoomState = (state) => {
       if (!state || !teamId) return;
       const myTeam = state.teams?.[teamId];
-      const sid = myTeam?.currentStationId || myTeam?.station || state?.teams?.[teamId]?.currentStationId;
-        if (sid) {
-          const info = normalizeStationId(sid);
-          setAssignedStationId(info.id);
-          setAssignedColor(info.color || null);
-        }
       if (!myTeam) return;
 
       // 🔢 Update running total score from room-wide scores map
@@ -533,6 +521,7 @@ function StudentApp() {
       })
     );
     socket.on("task:scored", handleTaskScored);
+    socket.on("task:advance", handleTaskAssigned);
     socket.on("noise:update", handleNoiseUpdate);
     socket.on("treat:event", handleTreat);
     socket.on("collab:partner-answer", handleCollabPartner);
@@ -546,6 +535,7 @@ function StudentApp() {
       socket.off("task:launch", handleTaskAssigned);
       socket.off("new-task");
       socket.off("task:scored", handleTaskScored);
+      socket.off("task:advance", handleTaskAssigned);
       socket.off("noise:update", handleNoiseUpdate);
       socket.off("treat:event", handleTreat);
       socket.off("collab:partner-answer", handleCollabPartner);
@@ -724,8 +714,7 @@ function StudentApp() {
           typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
       }));
     });
-
-
+  };
   // ----------------------------------------------------
   // End the 15s review lock and return to scan state
   // (Used by BOTH the server-scored path and the fallback timer)
@@ -740,12 +729,6 @@ function StudentApp() {
     setCurrentTaskIndex(null);
     setShortAnswerReveal(null);
 
-    // reset scan success / animation state so camera remounts
-    try {
-      setHasScannedCorrectly(false);
-      setScanSuccessPulse(false);
-    } catch (e) {}
-
     // reset scan gate/error state
     setScannedStationId(null);
     setScanStatus(null);
@@ -754,8 +737,6 @@ function StudentApp() {
     // refresh assignment + show scanner
     socket.emit("room:request-state", { teamId });
     setScannerActive(true);
-  };
-
   };
 
   const handleSubmitAnswer = (answerPayload) => {
@@ -827,70 +808,70 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   const handleScan = (data) => {
-  if (!data || !joined || !teamId) return;
+    if (!data || !joined || !teamId) return;
 
-  setScanError(null);
+    setScanError(null);
 
-  const norm = normalizeStationId(data);
-  if (!norm?.id) {
-    setScanError("Unrecognized station QR code.");
-    return;
-  }
+    const norm = normalizeStationId(data);
+    if (!norm?.id) {
+      setScanError("Unrecognized station QR code.");
+      return;
+    }
 
-  setScannedStationId(norm.id);
-  const code = (roomCode || "").trim().toUpperCase();
+    // Record scan for mustScan gating + UI
+    setScannedStationId(norm.id);
 
-  console.log("[scan emit]", {
-    roomCode: code,
-    teamId,
-    stationId: norm.id,
-    locationSlug: (roomLocation || "").trim().toLowerCase().replace(/\s+/g, "-"),
-});
+    const code = (roomCode || "").trim().toUpperCase();
 
-  socket.emit(
-    "station:scan",
-    {
+    // Avoid TDZ: do NOT reference isMultiRoom here (it's declared later)
+    const multi = Array.isArray(selectedRooms) && selectedRooms.length > 1;
+
+    const scanPayload = {
       roomCode: code,
       teamId,
       stationId: norm.id,
-      locationSlug: (roomLocation || "")
+    };
+
+    // Only include locationSlug when it should be enforced (multi-room hunts)
+    if (enforceLocation && multi) {
+      scanPayload.locationSlug = (roomLocation || "")
         .trim()
         .toLowerCase()
-        .replace(/\s+/g, "-"),
-    },
-    (resp) => {
+        .replace(/\s+/g, "-");
+    }
+
+    socket.emit("station:scan", scanPayload, (resp) => {
       if (!resp || resp.ok === false) {
         setScanStatus("error");
         setScanError(resp?.error || "Scan not accepted.");
+        setScannerActive(true); // keep camera open if rejected
         return;
       }
 
       setScanStatus("ok");
       setScanError(null);
-  
-      // Only close the scanner if scanning is no longer required
-      if (!mustScan) {
-        setScannerActive(false);
-      }
 
+      // Update assignment if server returns it
       if (resp?.stationId) {
         const info = normalizeStationId(resp.stationId);
         setAssignedStationId(info.id);
         setAssignedColor(info.color || null);
       }
-    }
-  );
-};
+
+      // Close only after server accepts AND if it matches expected station
+      const expectedId = resp?.stationId
+        ? normalizeStationId(resp.stationId).id
+        : assignedStationId;
+      setScannerActive(norm.id === expectedId ? false : true);
+    });
+  };
 
   // ─────────────────────────────────────────────
   // Location enforcement & station gating
   // ─────────────────────────────────────────────
 
   useEffect(() => {
-    if (!currentTask) {
-      setEnforceLocation(false);
-      return;
-    }
+    if (!currentTask) return;
     const cfg = currentTask.config || {};
     const enforce = !!cfg.requireScan && !!cfg.stationBased;
     setEnforceLocation(enforce);

@@ -554,10 +554,15 @@ useEffect(() => {
   // ----------------------------------------------------
   // Actions
   // ----------------------------------------------------
-  const handleSkipTask = () => {
+  const handleForceNextTask = () => {
     if (!roomCode) return;
     const code = roomCode.toUpperCase();
-    socket.emit("teacher:skipNextTask", { roomCode: code });
+
+    socket.emit("task:force-advance", { roomCode: code });
+  };
+
+  const handleSkipTask = () => {
+    handleForceNextTask();
   };
 
   const handleOpenQrSheets = () => {
@@ -1852,20 +1857,9 @@ Precipitation — rain, snow, hail`}
                 <button
                   type="button"
                   onClick={handleSkipTask}
-                  style={{
-                    flex: 1,
-                    padding: "6px 8px",
-                    borderRadius: 6,
-                    border: "none",
-                    background: "#6b7280",
-                    color: "#ffffff",
-                    fontSize: "0.8rem",
-                    cursor: taskFlowActive ? "pointer" : "not-allowed",
-                    opacity: taskFlowActive ? 1 : 0.4,
-                  }}
                   disabled={!taskFlowActive}
                 >
-                  Skip current task
+                  End task → unlock next
                 </button>
               </div>
             </div>
