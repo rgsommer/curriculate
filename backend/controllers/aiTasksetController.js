@@ -624,245 +624,49 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           options = ["Option A", "Option B"];
         }
       } else if (taskType === TASK_TYPES.SEQUENCE) {
-        // Normalise sequence/timeline tasks into config.items
-        const aiConfig =
-          t.config && typeof t.config === "object" ? t.config : {};
+      // Normalise sequence/timeline tasks into config.items
+      const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
 
-        const rawItems = Array.isArray(aiConfig.items)
-          ? aiConfig.items
-          : Array.isArray(t.items)
-          ? t.items
-          : Array.isArray(t.options)
-          ? t.options
-          : [];
+      const rawItems =
+        Array.isArray(aiConfig.items) ? aiConfig.items
+        : Array.isArray(aiConfig.steps) ? aiConfig.steps
+        : Array.isArray(aiConfig.events) ? aiConfig.events
+        : Array.isArray(aiConfig.sequence) ? aiConfig.sequence
+        : Array.isArray(t.items) ? t.items
+        : Array.isArray(t.steps) ? t.steps
+        : Array.isArray(t.events) ? t.events
+        : Array.isArray(t.options) ? t.options
+        : [];
 
-        const seqItems = rawItems.map((it, idx) => {
-          if (typeof it === "string") {
-            return { text: it };
-          }
-
+      const seqItems = rawItems
+        .map((it, idx) => {
+          if (typeof it === "string") return { text: it.trim() };
           if (it && typeof it === "object") {
             const text =
-              it.text ||
-              it.label ||
-              it.name ||
-              it.prompt ||
-              `Step ${idx + 1}`;
-            return { text };
+              it.text || it.label || it.name || it.prompt || `Step ${idx + 1}`;
+            return { text: String(text).trim() };
           }
+          return { text: String(it || `Step ${idx + 1}`).trim() };
+        })
+        .filter((x) => x.text); // drop empty
 
-          return { text: String(it) };
-        });
-
-        config = {
-          ...aiConfig,
-          items: seqItems,
-        };
-
-        // We don't need flat options for sequence; items live in config.items
+      // If the AI failed to provide sequence items, downgrade the task
+      if (seqItems.length < 3) {
+        taskType = TASK_TYPES.SHORT_ANSWER;
+        config = null;
         options = [];
-      } else if (taskType === TASK_TYPES.SORT) {
-        // Normalise sort/categorize into config.buckets + config.items
-        const aiConfig =
-          t.config && typeof t.config === "object" ? t.config : {};
+        items = [];
 
-        // Buckets / categories: accept a few common field names
-        const rawBuckets = Array.isArray(aiConfig.buckets)
-          ? aiConfig.buckets
-          : Array.isArray(aiConfig.categories)
-          ? aiConfig.categories
-          : Array.isArray(t.buckets)
-          ? t.buckets
-          : Array.isArray(t.categories)
-          ? t.categories
-          : [];
-
-        const buckets = rawBuckets.map((b, i) => {
-          if (typeof b === "string") return b;
-          if (b && typeof b === "object") {
-            return (
-              b.label ||
-              b.name ||
-              b.title ||
-              b.category ||
-              `Category ${i + 1}`
-            );
-          }
-          return `Category ${i + 1}`;
-        });
-
-        // Items / events to sort: accept a few field names
-        const rawItems = Array.isArray(aiConfig.items)
-          ? aiConfig.items
-          : Array.isArray(aiConfig.sortItems)
-          ? aiConfig.sortItems
-          : Array.isArray(aiConfig.events)
-          ? aiConfig.events
-          : Array.isArray(t.items)
-          ? t.items
-          : Array.isArray(t.sortItems)
-          ? t.sortItems
-          : Array.isArray(t.events)
-          ? t.events
-          : [];
-
-        const sortItems = rawItems.map((it, idx) => {
-          if (typeof it === "string") {
-            return { text: it, bucketIndex: null };
-          }
-
-          if (it && typeof it === "object") {
-            const text =
-              it.text ||
-              it.label ||
-              it.name ||
-              it.prompt ||
-              `Item ${idx + 1}`;
-
-            let bucketIndex = null;
-            if (typeof it.bucketIndex === "number") {
-              bucketIndex = it.bucketIndex;
-            } else if (typeof it.bucket === "number") {
-              bucketIndex = it.bucket;
-            } else if (typeof it.categoryIndex === "number") {
-              bucketIndex = it.categoryIndex;
-            }
-
-            // Clamp out-of-range indices
-            if (
-              typeof bucketIndex === "number" &&
-              (bucketIndex < 0 || bucketIndex >= buckets.length)
-            ) {
-              bucketIndex = null;
-            }
-
-            return { text, bucketIndex };
-          }
-
-          return { text: String(it), bucketIndex: null };
-        });
-
-        config = {
-          ...aiConfig,
-          buckets,
-          items: sortItems,
-        };
-
-        // No flat options / correctAnswer for SORT; scoring uses config
-        options = [];
-      } else if (taskType === TASK_TYPES.MIND_MAPPER) {
-        // Normalize MindMapper into config.items with { text, correctIndex }
-        const aiConfig =
-          t.config && typeof t.config === "object" ? t.config : {};
-
-        const rawItems = Array.isArray(aiConfig.items)
-          ? aiConfig.items
-          : Array.isArray(t.items)
-          ? t.items
-          : Array.isArray(t.options)
-          ? t.options
-          : [];
-
-        const mappedItems = rawItems.map((it, idx) => {
-          if (typeof it === "string") {
-            return { text: it, correctIndex: idx };
-          }
-          if (it && typeof it === "object") {
-            const text =
-              it.text ||
-              it.label ||
-              it.name ||
-              it.prompt ||
-              `Idea ${idx + 1}`;
-
-            let correctIndex = it.correctIndex;
-            if (typeof correctIndex !== "number") {
-              correctIndex = idx;
-            }
-
-            return { text, correctIndex };
-          }
-          return { text: String(it), correctIndex: idx };
-        });
-
-        config = {
-          ...aiConfig,
-          items: mappedItems,
-        };
-
-        // StudentApp MindMapperTask expects no "options" for this type
-        options = [];
-      } else if (taskType === TASK_TYPES.JEOPARDY) {
-        // Normalise BrainBlitz / Jeopardy tasks: preserve a structured "clues" array
-        const rawClues =
-          (Array.isArray(t.clues) && t.clues.length && t.clues) ||
-          (Array.isArray(t.items) && t.items.length && t.items) ||
-          [];
-
-        const clues = rawClues.map((cl, idx) => {
-          if (!cl || (typeof cl !== "object" && typeof cl !== "string")) {
-            const text = typeof cl === "string" ? cl : `Clue ${idx + 1}`;
-            return { clue: text, answer: "" };
-          }
-
-          if (typeof cl === "string") {
-            return { clue: cl, answer: "" };
-          }
-
-          const clueText =
-            cl.clue ||
-            cl.prompt ||
-            cl.text ||
-            cl.question ||
-            `Clue ${idx + 1}`;
-
-          let answer = cl.answer ?? "";
-          if (typeof answer !== "string") {
-            answer = String(answer || "");
-          }
-
-          return {
-            clue: String(clueText),
-            answer: answer.trim(),
-          };
-        });
-
-        t.clues = clues;
-        // BrainBlitz doesn’t use top-level options
-        options = [];
-      } else if (taskType === TASK_TYPES.BRAIN_SPARK_NOTES) {
-        // Normalize Brain Spark Notes into a bullets array of strings
-        const rawBullets =
-          (Array.isArray(t.bullets) && t.bullets.length && t.bullets) ||
-          (Array.isArray(t.items) && t.items.length && t.items) ||
-          [];
-
-        const bullets = rawBullets
-          .map((b, idx) => {
-            if (typeof b === "string") {
-              return b.trim();
-            }
-            if (b && typeof b === "object") {
-              const text =
-                b.text ||
-                b.prompt ||
-                b.title ||
-                b.note ||
-                b.description ||
-                `Note ${idx + 1}`;
-              return String(text).trim();
-            }
-            return String(b || `Note ${idx + 1}`).trim();
-          })
-          .filter((line) => !!line);
-
-        t.bullets = bullets;
-        // No options for Brain Spark Notes
-        options = [];
+        // Make prompt usable
+        const fallback =
+          "Explain the correct order of these events/steps in 2–4 sentences.";
+        t.prompt = (t.prompt && String(t.prompt).trim()) || fallback;
       } else {
-        // Other types – assume no options by default
-        options = Array.isArray(t.options) ? t.options : [];
+        config = { ...aiConfig, items: seqItems };
+        options = [];
+        items = [];
       }
+    }
 
       // For SHORT_ANSWER, we may also receive an "items" array
       if (taskType === TASK_TYPES.SHORT_ANSWER && multiItemCapable) {
