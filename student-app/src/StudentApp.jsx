@@ -750,9 +750,7 @@ function StudentApp() {
   };
 
   const handleSubmitAnswer = (answerPayload) => {
-    if (!roomCode || !joined || !currentTask || submitting || taskLocked) {
-      return;
-    }
+    if (!roomCode || !joined || !currentTask || submitting || taskLocked) return;
 
     setSubmitting(true);
 
@@ -765,11 +763,13 @@ function StudentApp() {
           ? currentTaskIndex
           : null,
       answer: answerPayload,
+      timeMs: null, // optional; backend supports it
     };
 
-    socket.emit("submit-answer", payload, (response) => {
+    const onAck = (response) => {
       setSubmitting(false);
-      if (!response || response.error) {
+
+      if (!response || response.ok === false || response.error) {
         console.warn("Submit error:", response?.error || "Unknown error");
         setStatusMessage(
           response?.error || "There was a problem submitting. Try again."
@@ -780,37 +780,38 @@ function StudentApp() {
       setStatusMessage("");
       setTaskLocked(true);
 
-      if (!response.aiScoring && !response.objectiveScoring) {
-        // ✅ Fallback: show the 15s review countdown even if task:scored never arrives
-        const fallbackSeconds =
-          Number(response?.postSubmitSeconds) > 0
-            ? Number(response.postSubmitSeconds)
-            : DEFAULT_POST_SUBMIT_SECONDS;
+      // ✅ Always start the review countdown so the task clears and scanner returns
+      const lockSeconds =
+        Number(response?.postSubmitSeconds) > 0
+          ? Number(response.postSubmitSeconds)
+          : DEFAULT_POST_SUBMIT_SECONDS;
 
-        setTaskLocked(true);
-        setPostSubmitSecondsLeft(fallbackSeconds);
+      setPostSubmitSecondsLeft(lockSeconds);
+      if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
 
-        if (postSubmitTimerRef.current) {
-          clearInterval(postSubmitTimerRef.current);
-        }
-        let t = fallbackSeconds;
-        const timer = setInterval(() => {
-          t -= 1;
-          setPostSubmitSecondsLeft(t);
+      let t = lockSeconds;
+      const timer = setInterval(() => {
+        t -= 1;
+        setPostSubmitSecondsLeft(t);
 
-          if (t <= 0) {
+        if (t <= 0) {
           clearInterval(timer);
           endReviewAndReturnToScan();
         }
-        }, 1000);
+      }, 1000);
 
-        postSubmitTimerRef.current = timer;
-      }
+      postSubmitTimerRef.current = timer;
 
       if (response.alertSound) {
         tryPlayAlertSound();
       }
-    });
+    };
+
+    // ✅ Use the event name your backend actually listens to
+    socket.emit("student:submitAnswer", payload, onAck);
+
+    // (Optional backward-compat if you still have older servers somewhere)
+    // socket.emit("submit-answer", payload, onAck);
   };
 
   // ─────────────────────────────────────────────
