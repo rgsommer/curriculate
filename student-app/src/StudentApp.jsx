@@ -563,7 +563,7 @@ function StudentApp() {
 
   useEffect(() => {
     if (!joined) return;
-    if (!currentTask) return; // only manage scanner between tasks
+    if (currentTask) return; // only manage scanner between tasks
 
     // Separately, ensure assignment info is fetched so colour can display
     const inferredColor =
