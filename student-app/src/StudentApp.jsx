@@ -565,12 +565,12 @@ function StudentApp() {
     if (!joined) return;
     if (currentTask) return; // only manage scanner between tasks
 
+    // Turn scanner ON so the camera prompt appears
+    setScannerActive(true);
+
     // Separately, ensure assignment info is fetched so colour can display
     const inferredColor =
       assignedColor || normalizeStationId(assignedStationId)?.color;
-
-    // Turn scanner ON so the camera prompt appears
-    setScannerActive(true);
 
     if (!inferredColor && teamId) {
       socket.emit("room:request-state", { teamId });
