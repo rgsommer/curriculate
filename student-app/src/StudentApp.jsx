@@ -2285,6 +2285,57 @@ const handleTaskScored = (payload) => {
           boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
         }}
       />
+      {taskLocked && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      zIndex: 999999,
+      background: "rgba(0,0,0,0.82)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      textAlign: "center",
+      color: "#fff",
+    }}
+  >
+    <div style={{ fontSize: 34, fontWeight: 900, marginBottom: 12 }}>
+      {submissionFeedback?.message || "Submitted!"}
+    </div>
+
+    {typeof submissionFeedback?.points === "number" && (
+      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
+        +{submissionFeedback.points} points
+      </div>
+    )}
+
+    {postSubmitSecondsLeft != null && (
+      <div style={{ fontSize: 18, opacity: 0.95, marginBottom: 18 }}>
+        Next task in {postSubmitSecondsLeft}s…
+      </div>
+    )}
+
+    <button
+      onClick={finishPostSubmitAndReturnToScan}
+      style={{
+        marginTop: 6,
+        padding: "14px 18px",
+        borderRadius: 999,
+        fontWeight: 900,
+        fontSize: 16,
+        background: "#22c55e",
+        color: "#fff",
+        border: "none",
+        boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
+        cursor: "pointer",
+      }}
+    >
+      Curriculate! Go to the next task →
+    </button>
+  </div>
+)}
     </div>
   );
 }
