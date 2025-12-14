@@ -1334,6 +1334,30 @@ io.on("connection", (socket) => {
         return;
       }
 
+      // If the team has no expected station yet, accept the scan as the initial assignment
+      if (!expectedStation) {
+        // persist on team object (wherever your team state lives)
+        team.currentStationId = stationId;
+        team.lastScannedStationId = stationId;
+
+        // (optional) also store color for convenience
+        team.assignedColor = scanned?.color || null;
+
+        if (typeof ack === "function") {
+          ack({
+            ok: true,
+            initialAssignment: true,
+            stationId,
+            assignedStationId: stationId,
+            assignedColor: scanned?.color || null,
+          });
+        }
+
+        // Also push state so StudentApp gets assignedColor immediately
+        io.to(code).emit("room:state", buildRoomState(room)); // or whatever you already use
+        return;
+      }
+
       // 3) Location correctness (multi-room only)
       const isMultiRoom =
         Array.isArray(room.selectedRooms) && room.selectedRooms.length > 1;
