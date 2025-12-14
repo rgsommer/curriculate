@@ -1,0 +1,8 @@
+useEffect(() => {
+  if (!joined) return;
+
+  // If no task is showing, scanner should be available
+  if (!currentTask) {
+    setScannerActive(true);
+  }
+}, [joined, currentTask]);
