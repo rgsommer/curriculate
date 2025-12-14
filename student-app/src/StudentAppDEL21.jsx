@@ -2152,7 +2152,6 @@ const handleTaskScored = (payload) => {
               {taskLocked && (
                 <div className="task-locked-overlay">
                   {postSubmitSecondsLeft != null ? (
-                    <>
                     <div style={{ width: "100%" }}>
                       <div>
                         Submitted — you can continue anytime… <br />
@@ -2207,7 +2206,6 @@ const handleTaskScored = (payload) => {
                           Curriculate! Go to the next task →
                         </button>
                       </div>
-                    </>
                   ) : (
                     <div>Waiting for your next task to unlock…</div>
                   )}
