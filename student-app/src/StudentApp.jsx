@@ -563,18 +563,18 @@ function StudentApp() {
 
   useEffect(() => {
     if (!joined) return;
+    if (currentTask) return; // only manage scanner between tasks
 
-    // Only care about scanner when you're between tasks
-    if (currentTask) return;
-
-    // Make sure we have assignment info before showing scanner
-    const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
-    if (!inferredColor) {
-      socket.emit("room:request-state", { teamId });
-      return;
-    }
-
+    // Turn scanner ON so the camera prompt appears
     setScannerActive(true);
+
+    // Separately, ensure assignment info is fetched so colour can display
+    const inferredColor =
+      assignedColor || normalizeStationId(assignedStationId)?.color;
+
+    if (!inferredColor && teamId) {
+      socket.emit("room:request-state", { teamId });
+    }
   }, [joined, currentTask, assignedColor, assignedStationId, teamId]);
 
 
