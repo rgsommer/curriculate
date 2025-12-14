@@ -399,44 +399,7 @@ function StudentApp() {
     };
 
     // AI scoring + feedback
-    
-  // ----------------------------------------------------
-  // Finish the post-submit overlay/lock and return to scan state (manual "Next")
-  // ----------------------------------------------------
-  const finishPostSubmitAndReturnToScan = () => {
-    try {
-      if (postSubmitTimerRef.current) {
-        clearInterval(postSubmitTimerRef.current);
-        postSubmitTimerRef.current = null;
-      }
-    } catch {}
-
-    // End review lock / overlay
-    setTaskLocked(false);
-    setPostSubmitSecondsLeft(null);
-
-    // Hide completed task UI
-    setCurrentTask(null);
-    setCurrentTaskIndex(null);
-    setShortAnswerReveal(null);
-
-    // Reset scan-success state so camera remounts
-    try {
-      setHasScannedCorrectly(false);
-      setScanSuccessPulse(false);
-    } catch {}
-
-    // Reset scan gate/error state
-    setScannedStationId(null);
-    setScanStatus(null);
-    setScanError(null);
-
-    // Pull latest station assignment and show scanner
-    socket.emit("room:request-state", { teamId });
-    setScannerActive(true);
-  };
-
-const handleTaskScored = (payload) => {
+    const handleTaskScored = (payload) => {
       if (!payload || typeof payload !== "object") return;
 
       const {
@@ -492,14 +455,24 @@ const handleTaskScored = (payload) => {
           setPostSubmitSecondsLeft(null);
 
           // ✅ Prepare for next scan-task cycle
-          setScannedStationId(null);      // important: forces gate logic to re-evaluate
+          // 1) Hide the completed task UI
+          setCurrentTask(null);
+          setCurrentTaskIndex(null);
+          setShortAnswerReveal(null);
+
+          // 2) Reset scan-success state so the camera remounts
+          setHasScannedCorrectly(false);
+          setScanSuccessPulse(false);
+
+          // 3) Reset scan gate/error state
+          setScannedStationId(null); // forces gate logic to re-evaluate
           setScanStatus(null);
           setScanError(null);
 
-          // ✅ Pull latest station assignment BEFORE/AS we show scanner
+          // 4) Pull latest station assignment BEFORE/AS we show scanner
           socket.emit("room:request-state", { teamId });
 
-          // ✅ Show scanner
+          // 5) Show scanner (QrScanner remounts because hasScannedCorrectly=false)
           setScannerActive(true);
         }
       }, 1000);
@@ -2154,7 +2127,7 @@ const handleTaskScored = (payload) => {
                   {postSubmitSecondsLeft != null ? (
                     <div style={{ width: "100%" }}>
                       <div>
-                        Submitted — you can continue anytime… <br />
+                        Locked while your teacher reviews… <br />
                         <span
                           style={{
                             fontVariantNumeric: "tabular-nums",
@@ -2188,24 +2161,6 @@ const handleTaskScored = (payload) => {
                         </div>
                       </div>
                     </div>
-                      <div style={{ marginTop: 16 }}>
-                        <button
-                          onClick={finishPostSubmitAndReturnToScan}
-                          style={{
-                            width: "100%",
-                            padding: "12px 14px",
-                            borderRadius: 14,
-                            border: "2px solid rgba(255,255,255,0.55)",
-                            background: "rgba(255,255,255,0.18)",
-                            color: "#fff",
-                            fontWeight: 900,
-                            fontSize: "1rem",
-                            cursor: "pointer",
-                          }}
-                        >
-                          Curriculate! Go to the next task →
-                        </button>
-                      </div>
                   ) : (
                     <div>Waiting for your next task to unlock…</div>
                   )}
