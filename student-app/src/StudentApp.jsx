@@ -1806,27 +1806,6 @@ const handleTaskScored = (payload) => {
             >
               Dyno
             </button>
-            <button
-              type="button"
-              onClick={finishPostSubmitAndReturnToScan}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "minimal"
-                    ? "2px solid rgba(15,23,42,0.85)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "minimal"
-                    ? "#e5e7eb"
-                    : "rgba(249,250,251,0.85)",
-                color: "#111827",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Next
-            </button>
           </div>
 
           <div
@@ -2287,6 +2266,27 @@ const handleTaskScored = (payload) => {
       )}
 
       {/* FOOTER STRIP */}
+      <button
+              type="button"
+              onClick={finishPostSubmitAndReturnToScan}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                border:
+                  uiTheme === "minimal"
+                    ? "2px solid rgba(15,23,42,0.85)"
+                    : "1px solid rgba(148,163,184,0.6)",
+                background:
+                  uiTheme === "minimal"
+                    ? "#e5e7eb"
+                    : "rgba(249,250,251,0.85)",
+                color: "#111827",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+              }}
+            >
+              Next
+            </button>
       <div
         style={{
           marginTop: 16,
