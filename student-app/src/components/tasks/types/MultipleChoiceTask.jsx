@@ -1,17 +1,16 @@
 import React from "react";
 
 /**
- * Multiple choice task (multi-question aware, per-team randomization).
+ * Multiple choice task (multi-question aware).
  *
  * Modes:
- *  - Single question (legacy): uses task.prompt + task.options.
- *  - Multi-question: if task.items is an array of { prompt, options }.
+ *  - Single question (legacy): task.prompt + task.options
+ *  - Multi-question: task.items[] of { prompt, options } (or inherits task.options)
  *
- * In multi-question mode:
- *  - Question order is shuffled per team.
- *  - Options within each question are shuffled per team.
- *  - Before submission, answers are mapped back to canonical order (B1).
- *  - Submission payload is a JSON string so backend can evolve scoring later.
+ * Key behavior:
+ *  - Randomization is DETERMINISTIC per task (+ team if available) so it NEVER flips during interaction.
+ *  - Multi-question submissions are mapped back to canonical order.
+ *  - Single-question submits the chosen option string (legacy compatibility).
  */
 export default function MultipleChoiceTask({
   task,
@@ -21,57 +20,105 @@ export default function MultipleChoiceTask({
   answerDraft,
 }) {
   const theme = task?.uiTheme || "modern";
+  const hasItems = Array.isArray(task?.items) && task.items.length > 0;
 
-  const hasItems = Array.isArray(task.items) && task.items.length > 0;
+  // ---------- Stable seeded shuffle ----------
+  function getTeamSalt() {
+    // Optional: if you store teamId somewhere, this makes randomization per-team.
+    // Safe fallbacks: if nothing exists, we still get stable per-task shuffles.
+    try {
+      return (
+        localStorage.getItem("teamId") ||
+        localStorage.getItem("curriculateTeamId") ||
+        localStorage.getItem("activeclass_teamId") ||
+        ""
+      );
+    } catch {
+      return "";
+    }
+  }
 
-  // For single-question mode
+  function seededShuffle(arr, seedStr) {
+    const a = [...arr];
+
+    let seed = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    }
+
+    const rand = () => {
+      // xorshift32
+      seed ^= seed << 13;
+      seed >>>= 0;
+      seed ^= seed >> 17;
+      seed >>>= 0;
+      seed ^= seed << 5;
+      seed >>>= 0;
+      return (seed >>> 0) / 4294967296;
+    };
+
+    for (let i = a.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+
+    return a;
+  }
+
+  const taskKey = React.useMemo(() => {
+    const id = task?._id || task?.id || task?.taskId || "task";
+    const teamSalt = getTeamSalt();
+    return `${String(id)}:${teamSalt}`;
+  }, [task?._id, task?.id, task?.taskId]);
+
+  // ---------- State ----------
+  // Single-question mode
   const [singleOptionOrder, setSingleOptionOrder] = React.useState([]);
   const [singleSelectedDisplayIdx, setSingleSelectedDisplayIdx] =
     React.useState(null);
 
-  // For multi-question mode
+  // Multi-question mode
   const [presentedItems, setPresentedItems] = React.useState([]);
   const [multiSelectedByDisplayIdx, setMultiSelectedByDisplayIdx] =
     React.useState([]);
 
-  // Helper – Fisher-Yates shuffle (in-place)
-  function shuffleArray(arr) {
-    for (let i = arr.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-  }
-
-  // Rebuild shuffle state whenever the task changes
+  // ---------- Build stable presentation once per task ----------
   React.useEffect(() => {
     if (!task) return;
 
     if (hasItems) {
       const canonicalItems = Array.isArray(task.items) ? task.items : [];
       const count = canonicalItems.length;
-      const order = Array.from({ length: count }, (_, i) => i);
-      shuffleArray(order);
 
-      const built = order.map((canonicalIndex) => {
+      const questionOrder = seededShuffle(
+        Array.from({ length: count }, (_, i) => i),
+        `${taskKey}:questions`
+      );
+
+      const built = questionOrder.map((canonicalIndex) => {
         const item = canonicalItems[canonicalIndex] || {};
         const baseOptions =
-          Array.isArray(item.options) && item.options.length
+          (Array.isArray(item.options) && item.options.length
             ? item.options
             : Array.isArray(task.options) && task.options.length
             ? task.options
-            : [];
+            : []) || [];
 
-        const optionOrder = Array.from(
-          { length: baseOptions.length },
-          (_, i) => i
+        const optionOrder = seededShuffle(
+          Array.from({ length: baseOptions.length }, (_, i) => i),
+          `${taskKey}:q${canonicalIndex}:opts`
         );
-        shuffleArray(optionOrder);
+
         const displayOptions = optionOrder.map((i) => baseOptions[i]);
 
         return {
           canonicalIndex,
           prompt:
-            item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
+            (typeof item.prompt === "string" && item.prompt.trim()
+              ? item.prompt.trim()
+              : typeof task.prompt === "string" && task.prompt.trim()
+              ? task.prompt.trim()
+              : `Question ${canonicalIndex + 1}`),
           baseOptions,
           optionOrder,
           displayOptions,
@@ -81,14 +128,63 @@ export default function MultipleChoiceTask({
       setPresentedItems(built);
       setMultiSelectedByDisplayIdx(new Array(built.length).fill(null));
     } else {
-      const baseOptions = Array.isArray(task.options) ? task.options.slice() : [];
-      const order = Array.from({ length: baseOptions.length }, (_, i) => i);
-      shuffleArray(order);
+      const baseOptions = Array.isArray(task.options) ? task.options : [];
+      const order = seededShuffle(
+        Array.from({ length: baseOptions.length }, (_, i) => i),
+        `${taskKey}:single:opts`
+      );
       setSingleOptionOrder(order);
       setSingleSelectedDisplayIdx(null);
     }
-  }, [task, hasItems]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskKey, hasItems]);
 
+  // ---------- Optional: rehydrate selection from answerDraft ----------
+  React.useEffect(() => {
+    if (!task || disabled) return;
+
+    if (hasItems) {
+      // Expect JSON string: { kind:"multi-mc", answers:[canonicalOptionIdx...] }
+      if (typeof answerDraft !== "string" || !answerDraft.trim()) return;
+      let parsed = null;
+      try {
+        parsed = JSON.parse(answerDraft);
+      } catch {
+        return;
+      }
+      if (!parsed || parsed.kind !== "multi-mc" || !Array.isArray(parsed.answers))
+        return;
+
+      const canonicalAnswers = parsed.answers;
+
+      // Map canonical answers -> displayed indices
+      const next = presentedItems.map((pItem) => {
+        const canonicalOptIdx = canonicalAnswers[pItem.canonicalIndex];
+        if (canonicalOptIdx == null) return null;
+        const displayIdx = (pItem.optionOrder || []).findIndex(
+          (x) => x === canonicalOptIdx
+        );
+        return displayIdx >= 0 ? displayIdx : null;
+      });
+
+      if (next.length) setMultiSelectedByDisplayIdx(next);
+    } else {
+      // Single mode uses option string
+      if (typeof answerDraft !== "string" || !answerDraft.trim()) return;
+
+      const baseOptions = Array.isArray(task.options) ? task.options : [];
+      const canonicalIdx = baseOptions.findIndex(
+        (o) => String(o) === String(answerDraft)
+      );
+      if (canonicalIdx < 0) return;
+
+      const displayIdx = singleOptionOrder.findIndex((i) => i === canonicalIdx);
+      if (displayIdx >= 0) setSingleSelectedDisplayIdx(displayIdx);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskKey, hasItems, presentedItems.length, singleOptionOrder.length]);
+
+  // ---------- Handlers ----------
   const handleSubmitClick = () => {
     if (disabled) return;
     if (!task) return;
@@ -108,42 +204,36 @@ export default function MultipleChoiceTask({
         canonicalAnswers[pItem.canonicalIndex] = canonicalOptionIdx;
       });
 
-      const payload = {
-        kind: "multi-mc",
-        answers: canonicalAnswers,
-      };
-
+      const payload = { kind: "multi-mc", answers: canonicalAnswers };
       const payloadString = JSON.stringify(payload);
-      if (onAnswerChange) {
-        onAnswerChange(payloadString);
-      }
+
+      if (onAnswerChange) onAnswerChange(payloadString);
       onSubmit(payloadString);
-    } else {
-      const baseOptions = Array.isArray(task.options) ? task.options : [];
-      if (!baseOptions.length) {
-        if (onAnswerChange) onAnswerChange("");
-        onSubmit("");
-        return;
-      }
-
-      if (singleSelectedDisplayIdx == null) {
-        // No selection – treat as blank
-        if (onAnswerChange) onAnswerChange("");
-        onSubmit("");
-        return;
-      }
-
-      const canonicalIdx = singleOptionOrder[singleSelectedDisplayIdx];
-      const value =
-        canonicalIdx != null && baseOptions[canonicalIdx] != null
-          ? String(baseOptions[canonicalIdx])
-          : "";
-
-      if (onAnswerChange) {
-        onAnswerChange(value);
-      }
-      onSubmit(value);
+      return;
     }
+
+    // Single-question mode (legacy)
+    const baseOptions = Array.isArray(task.options) ? task.options : [];
+    if (!baseOptions.length) {
+      if (onAnswerChange) onAnswerChange("");
+      onSubmit("");
+      return;
+    }
+
+    if (singleSelectedDisplayIdx == null) {
+      if (onAnswerChange) onAnswerChange("");
+      onSubmit("");
+      return;
+    }
+
+    const canonicalIdx = singleOptionOrder[singleSelectedDisplayIdx];
+    const value =
+      canonicalIdx != null && baseOptions[canonicalIdx] != null
+        ? String(baseOptions[canonicalIdx])
+        : "";
+
+    if (onAnswerChange) onAnswerChange(value);
+    onSubmit(value);
   };
 
   const handleSingleSelect = (displayIdx) => {
@@ -159,9 +249,7 @@ export default function MultipleChoiceTask({
         ? String(baseOptions[canonicalIdx])
         : "";
 
-    if (onAnswerChange) {
-      onAnswerChange(value);
-    }
+    if (onAnswerChange) onAnswerChange(value);
   };
 
   const handleMultiSelect = (displayIdx, optionDisplayIdx) => {
@@ -172,6 +260,8 @@ export default function MultipleChoiceTask({
       next[displayIdx] = optionDisplayIdx;
       return next;
     });
+
+    // Optional: you can emit draft here, but it can get noisy. Submit handles it.
   };
 
   const {
@@ -182,9 +272,7 @@ export default function MultipleChoiceTask({
     optionSelectedBg,
   } = getThemeColors(theme);
 
-  // -------------------------
-  // Render multi-question mode
-  // -------------------------
+  // ---------- Render (multi-question) ----------
   if (hasItems && presentedItems.length > 0) {
     return (
       <div className="flex flex-col h-full p-3 gap-3">
@@ -299,10 +387,8 @@ export default function MultipleChoiceTask({
     );
   }
 
-  // -------------------------
-  // Legacy single-question mode (with visible randomized options)
-  // -------------------------
-  const baseOptions = Array.isArray(task.options) ? task.options : [];
+  // ---------- Render (single-question) ----------
+  const baseOptions = Array.isArray(task?.options) ? task.options : [];
   const displayOptions =
     singleOptionOrder.length && baseOptions.length
       ? singleOptionOrder.map((canonicalIdx) => baseOptions[canonicalIdx])
@@ -329,17 +415,17 @@ export default function MultipleChoiceTask({
             marginBottom: 10,
           }}
         >
-          <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>
-            Multiple Choice
-          </div>
+          <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>Multiple Choice</div>
           <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>
-            {task.title || "Quick Check"}
+            {task?.title || "Quick Check"}
           </div>
         </header>
 
         <div className="flex-1 flex flex-col gap-3 overflow-y-auto">
           <div className="font-semibold text-base max-h-40 overflow-y-auto">
-            {task.prompt}
+            {typeof task?.prompt === "string" && task.prompt.trim()
+              ? task.prompt.trim()
+              : "Choose the best answer."}
           </div>
 
           <div className="flex-1 flex flex-col gap-2">
@@ -358,8 +444,7 @@ export default function MultipleChoiceTask({
                     color: selected ? "#ffffff" : "#111827",
                     opacity: disabled ? 0.6 : 1,
                     borderColor: "rgba(15,23,42,0.12)",
-                    transition:
-                      "background 0.15s ease, transform 0.05s ease",
+                    transition: "background 0.15s ease, transform 0.05s ease",
                     transform: selected ? "scale(1.01)" : "scale(1)",
                   }}
                 >

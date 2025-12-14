@@ -203,20 +203,23 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
 
   // Per-item shuffled options; base options always reconstructed in submit.
   const itemOptions = useMemo(() => {
-    if (!isChoice) return null;
-    return items.map((item) => {
+    const taskKey = String(task?._id || task?.id || "task");
+
+    return items.map((item, idx) => {
       const base =
         (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
         (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-        (task.taskType === TASK_TYPES.TRUE_FALSE ||
-        task.type === TASK_TYPES.TRUE_FALSE
+        (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
           ? ["True", "False"]
           : []);
+
       if (!base || base.length === 0) return [];
-      return shuffleArray(base);
+
+      const itemKey = String(item?.id || item?._id || `i${idx}`);
+      // ✅ shuffled, but stable for this task+item
+      return seededShuffle(base, `${taskKey}:${itemKey}`);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isChoice, task.taskType, task.type]);
+  }, [task?._id, task?.id, items]);
 
   const [answers, setAnswers] = useState(() =>
     items.map(() => ({
@@ -247,7 +250,15 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
     if (submitting || disabled || !allAnswered) return;
 
     const payload = items.map((item, idx) => {
-      const answerVal = answers[idx]?.value ?? null;
+      let answerVal = answers[idx]?.value ?? null;
+
+      const isTF =
+        task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE;
+
+      if (isTF && typeof answerVal === "string") {
+        const v = answerVal.trim().toLowerCase();
+        if (v === "true" || v === "false") answerVal = v;
+      }
 
       // For choice-based items, compute index in ORIGINAL base options,
       // not in the shuffled order.
@@ -302,14 +313,20 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {items.map((item, idx) => {
+          const labelRaw =
+            item?.label ??
+            item?.question ??
+            item?.prompt ??
+            item?.stem ??
+            item?.text ??
+            item?.title ??
+            item?.description ??
+            "";
+
           const label =
-            item.label ||
-            item.question ||
-            item.prompt ||
-            item.stem ||
-            item.text ||
-            item.title ||
-            item.description;
+            typeof labelRaw === "string" && labelRaw.trim()
+              ? labelRaw.trim()
+              : `Question ${idx + 1}`;
           const opts = isChoice ? itemOptions[idx] || [] : [];
           const answerVal = answers[idx]?.value ?? "";
 
@@ -434,6 +451,28 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
       </div>
     </form>
   );
+}
+
+function seededShuffle(arr, seedStr) {
+  const a = [...arr];
+
+  // tiny deterministic RNG from a string seed
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+
+  const rand = () => {
+    // xorshift32
+    seed ^= seed << 13; seed >>>= 0;
+    seed ^= seed >> 17; seed >>>= 0;
+    seed ^= seed << 5;  seed >>>= 0;
+    return (seed >>> 0) / 4294967296;
+  };
+
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 /* ─────────────────────────────────────────────
