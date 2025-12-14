@@ -237,6 +237,14 @@ function StudentApp() {
   const [submitting, setSubmitting] = useState(false);
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
 
+  // NEW: Post-submission overlay state
+  const [submissionFeedback, setSubmissionFeedback] = useState(null); // { message, positive, points }
+  const [overlayTimer, setOverlayTimer] = useState(0);
+  const overlayTimerRef = useRef(null);
+
+  // NEW: Sound for task arrival
+  const [playTaskSound] = useSound('/sounds/task-arrival.mp3'); // Assume you have this sound file in public/sounds
+
   // Noise + treats
   const [noiseState, setNoiseState] = useState({
     enabled: false,
@@ -274,9 +282,6 @@ function StudentApp() {
   // Timer refs
   const countdownTimerRef = useRef(null);
   const postSubmitTimerRef = useRef(null);
-
-  // Play task-arrival sound once per new task
-  const lastTaskKeyRef = useRef(null);
 
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
@@ -399,18 +404,6 @@ function StudentApp() {
       setLastTaskResult(null);
       setPointToast(null);
       setShortAnswerReveal(null);
-
-      // 🔔 Task arrival sound (once per task)
-      try {
-        const idxKey =
-          (typeof idx === "number" && idx >= 0) ? String(idx) : "";
-        const idKey = String(payload?.task?._id || payload?.task?.id || payload?.taskId || payload?.task?._id || "");
-        const taskKey = idKey || idxKey || JSON.stringify(payload?.task || payload || {});
-        if (taskKey && taskKey !== lastTaskKeyRef.current) {
-          lastTaskKeyRef.current = taskKey;
-          tryPlayAlertSound();
-        }
-      } catch (e) {}
     };
 
     // AI scoring + feedback
@@ -815,11 +808,6 @@ function StudentApp() {
 
             socket.emit("room:request-state", { teamId });
             setScannerActive(true);
-
-            // ✅ Hide completed task so the scan screen is visible
-            setCurrentTask(null);
-            setCurrentTaskIndex(null);
-            setShortAnswerReveal(null);
           }
         }, 1000);
 
@@ -1978,75 +1966,53 @@ function StudentApp() {
             </div>
           )}
           {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-          {scannerActive && (
-          <section
-            style={{
-              marginTop: 6,
-              padding: 16,
-              borderRadius: 18,
-              background: (assignedColor || stationInfo?.color || "black"),
-              color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
-              border: "2px solid rgba(255,255,255,0.55)",
-              textAlign: "center",
-              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
-              {(() => {
-                const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
-                const locationUpper = String(roomLocation || "").toUpperCase();
+          {showQrScanner && (
+  <section style={{ textAlign: "center", margin: "24px 0" }}>
+    {/* Clear instruction with color highlight */}
+    <p style={{ fontSize: "1.35rem", fontWeight: 900, marginBottom: 16 }}>
+      Go to the{" "}
+      <strong style={{ color: assignedColor ? `var(--${assignedColor}-500)` : "#000" }}>
+        {assignedColor || "your assigned"}
+      </strong>{" "}
+      station to scan
+    </p>
 
-                if (!colorUpper) return "Scan station QR code";
+    {/* Optional secondary label from formatScanLabel */}
+    <p style={{ fontSize: "0.95rem", color: "#475569", marginBottom: 20 }}>
+      {formatScanLabel({
+        isMultiRoom: roomState.isMultiRoom,
+        locationLabel: roomState.locationLabel,
+        color: assignedColor,
+      })}
+    </p>
 
-                // Multi-room only: show location + colour
-                if (isMultiRoom && enforceLocation && locationUpper) {
-                  return `Scan QR Code at ${locationUpper} ${colorUpper}`;
-                }
+    {/* Colored scanner wrapper */}
+    <div
+      style={{
+        backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
+        borderRadius: 16,
+        padding: 16,
+        display: "inline-block",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+        maxWidth: "90vw",
+      }}
+    >
+      <QrScanner onScan={handleScan} onError={setScanError} />
+      {scanError && (
+        <div style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
+          ⚠ {scanError}
+        </div>
+      )}
+    </div>
 
-                // Single-room: colour only
-                return `Scan QR Code at ${colorUpper}`;
-              })()}
-            </div>
-
-            <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-              Get ready to Curriculate!
-            </div>
-
-            <div
-              style={{
-                marginTop: 12,
-                background: "rgba(0,0,0,0.25)",
-                borderRadius: 14,
-                overflow: "hidden",
-                border: "2px solid rgba(255,255,255,0.55)",
-              }}
-            >
-              <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
-                <div style={{
-                  backgroundColor: (getStationBubbleStyles(assignedColor || stationInfo?.color || null).background),
-                  borderRadius: 16,
-                  padding: 16,
-                  display: "inline-block",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-                  maxWidth: "90vw",
-                }}>
-                  <QrScanner onScan={handleScan} onError={setScanError} />
-                  {scanError && (
-                    <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
-                      ⚠ {scanError}
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-
-            {scanStatus === "ok" && (
-              <div style={{ marginTop: 10, fontWeight: 800 }}>
-                ✅ Correct station — waiting for your next task…
-              </div>
-            )}
-          </section>
-        )}
+    {/* Success message when scan is correct */}
+    {scanStatus === "ok" && (
+      <div style={{ marginTop: 20, fontSize: "1.1rem", fontWeight: 800, color: "#22c55e" }}>
+        ✅ Correct station — waiting for your next task…
+      </div>
+    )}
+  </section>
+)}
         
           {/* TASK CARD (only when not gated) */}
           {joined && currentTask && !mustScan && (
