@@ -209,5 +209,3 @@ export default function StudentApp() {
     </div>
   );
 }
-
-export default StudentApp;
