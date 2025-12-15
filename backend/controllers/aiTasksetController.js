@@ -124,6 +124,22 @@ function tfItemsAreValid(items) {
   return Array.isArray(items) && items.length >= 3 && items.every((it) => isNonEmptyString(it?.prompt));
 }
 
+function mcItemsAreValid(items) {
+  return (
+    Array.isArray(items) &&
+    items.length >= 3 &&
+    items.every(
+      (it) =>
+        isNonEmptyString(it?.prompt) &&
+        Array.isArray(it?.options) &&
+        it.options.length >= 2 &&
+        Number.isInteger(it?.correctAnswer) &&
+        it.correctAnswer >= 0 &&
+        it.correctAnswer < it.options.length
+    )
+  );
+}
+
 function cluesAreValid(clues) {
   return Array.isArray(clues) && clues.length >= 3 && clues.every((c) => isNonEmptyString(c?.clue));
 }
@@ -171,6 +187,7 @@ Hard requirements:
 - SORT must include config: { buckets: [...], items: [{ text, bucketIndex|null }] }
 - SEQUENCE must include config: { items: [{ text }] }
 - JEOPARDY (BrainBlitz) must include clues: [{ clue, answer }]
+- MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
 
 Return the task in this normalized shape:
 {
@@ -354,10 +371,11 @@ ${lensesSection}
 Rules:
 - Mix of the allowed taskTypes only: ${taskTypeList}.
 - Each task has a short clear title and a prompt that students will see.
-- TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
 - For SORT tasks: include config.buckets (>=2) and config.items (>=3) with {text, bucketIndex|null}
 - For SEQUENCE tasks: include config.items (>=3) with {text}
 - For JEOPARDY/BrainBlitz tasks: include clues (>=3) with {clue, answer}
+- MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
+- TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
@@ -456,11 +474,41 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             return { id, prompt, options: ioptions, correctAnswer };
           });
 
-          options = [];
-        } else {
-          // single MC
-          if (options.length < 2) options = ["Option A", "Option B"];
+        // If AI gave too few questions, retry (no downgrade) and ship safe placeholders
+        if (!mcItemsAreValid(items)) {
+          t.__needsRetry = true;
+          t.__retryType = TASK_TYPES.MULTIPLE_CHOICE;
+
+          // pad to minimum 3 so editor/student isn't blank even before retry succeeds
+          const padded = Array.isArray(items) ? [...items] : [];
+          while (padded.length < 3) {
+            const i = padded.length + 1;
+            padded.push({
+              id: `q${i}`,
+              prompt: `Question ${i}`,
+              options: ["Option A", "Option B"],
+              correctAnswer: 0,
+            });
+          }
+          items = padded.slice(0, 5);
         }
+
+          options = [];
+       } else {
+        // AI returned a single MC (no items[]) — force retry to get 3–5 multi-items
+        t.__needsRetry = true;
+        t.__retryType = TASK_TYPES.MULTIPLE_CHOICE;
+
+        // ship safe placeholders immediately so editor/student isn't stuck
+        items = [
+          { id: "q1", prompt: "Question 1", options: ["Option A", "Option B"], correctAnswer: 0 },
+          { id: "q2", prompt: "Question 2", options: ["Option A", "Option B"], correctAnswer: 0 },
+          { id: "q3", prompt: "Question 3", options: ["Option A", "Option B"], correctAnswer: 0 },
+        ];
+
+        options = [];
+        correctAnswer = null;
+      }
       }
 
       // -------- TRUE/FALSE normalization (single vs multi) --------
@@ -868,18 +916,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       return out;
     });
 
-    // --- Targeted retry pass (no downgrades): SORT, SEQUENCE, TRUE_FALSE, JEOPARDY ---
-    const retryMustHave = {
-      [TASK_TYPES.SORT]:
-        "SORT must include config.buckets (at least 2) and config.items (at least 3), each item as { text, bucketIndex: number|null }.",
-      [TASK_TYPES.SEQUENCE]:
-        "SEQUENCE must include config.items (at least 3), each item as { text }.",
-      [TASK_TYPES.TRUE_FALSE]:
-        "TRUE_FALSE must be multi-item with items (at least 3), each as { id, prompt, correctAnswer (0 for True, 1 for False) }.",
-      [TASK_TYPES.JEOPARDY]:
-        "JEOPARDY / BrainBlitz must include clues (at least 3), each as { clue, answer }.",
-    };
-
     for (let i = 0; i < tasks.length; i++) {
       const t = tasks[i];
       if (!t.__needsRetry) continue;
@@ -1045,6 +1081,57 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
               break;
             }
           }
+          if (allowedType === TASK_TYPES.MULTIPLE_CHOICE) {
+            const rawItems = Array.isArray(regenerated?.items) ? regenerated.items : [];
+
+            const fixedItems = rawItems
+              .map((it, idx) => {
+                const id = it?.id || `q${idx + 1}`;
+                const prompt = String(
+                  it?.prompt || it?.question || it?.text || `Question ${idx + 1}`
+                ).trim();
+
+                let options = Array.isArray(it?.options)
+                  ? it.options.map((o) => String(o).trim()).filter(Boolean)
+                  : [];
+
+                if (options.length < 2) options = ["Option A", "Option B"];
+
+                let ca = it?.correctAnswer ?? 0;
+                if (typeof ca === "string") {
+                  const k = options.findIndex((o) => o === ca.trim());
+                  ca = k >= 0 ? k : 0;
+                } else if (!Number.isInteger(ca) || ca < 0 || ca >= options.length) {
+                  ca = 0;
+                }
+
+                return { id, prompt, options, correctAnswer: ca };
+              })
+              .filter((it) => isNonEmptyString(it.prompt))
+              .slice(0, 5);
+
+            if (mcItemsAreValid(fixedItems)) {
+              replaced = {
+                ...t,
+                title: isNonEmptyString(regenerated?.title)
+                  ? String(regenerated.title).trim().slice(0, 120)
+                  : t.title,
+                prompt: isNonEmptyString(regenerated?.prompt)
+                  ? String(regenerated.prompt).trim()
+                  : t.prompt,
+                taskType: TASK_TYPES.MULTIPLE_CHOICE,
+                options: [],
+                correctAnswer: null,
+                aiScoringRequired: false,
+                timeLimitSeconds: t.timeLimitSeconds,
+                points: t.points,
+                config: {},
+                items: fixedItems,
+              };
+              break;
+            }
+          }
+
         } catch (e) {
           console.error("Task retry failed", {
             index: i,
