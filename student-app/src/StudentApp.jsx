@@ -962,6 +962,8 @@ function StudentApp() {
         tryPlayAlertSound();
       }
     };
+    const normalizedAnswer =
+      typeof answer === "string" ? answer : JSON.stringify(answer ?? {});
 
     // ✅ Use the event name your backend actually listens to
     socket.emit("student:submitAnswer", payload, onAck);

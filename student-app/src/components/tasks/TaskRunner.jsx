@@ -302,11 +302,12 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
       };
     });
 
-    onSubmit &&
-      onSubmit({
-        type: isChoice ? "multi-choice" : "multi-short",
-        answers: payload,
-      });
+    const payloadString = JSON.stringify({
+      kind: mode === "choice" ? "multi-mc" : "multi-short",
+      answers: payload,
+    });
+    onSubmit && onSubmit(payloadString);
+
   };
 
   return (

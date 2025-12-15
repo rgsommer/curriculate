@@ -1083,50 +1083,30 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           }
           if (allowedType === TASK_TYPES.MULTIPLE_CHOICE) {
             const rawItems = Array.isArray(regenerated?.items) ? regenerated.items : [];
-
             const fixedItems = rawItems
               .map((it, idx) => {
-                const id = it?.id || `q${idx + 1}`;
-                const prompt = String(
-                  it?.prompt || it?.question || it?.text || `Question ${idx + 1}`
-                ).trim();
+                const id = it?.id || `mc${idx + 1}`;
+                const prompt = String(it?.prompt || it?.question || it?.text || "").trim();
+                const options = Array.isArray(it?.options) ? it.options.map((o) => String(o).trim()).filter(Boolean) : [];
+                let correctAnswer = Number.isInteger(it?.correctAnswer) ? it.correctAnswer : 0;
 
-                let options = Array.isArray(it?.options)
-                  ? it.options.map((o) => String(o).trim()).filter(Boolean)
-                  : [];
+                if (correctAnswer < 0) correctAnswer = 0;
+                if (correctAnswer >= options.length) correctAnswer = 0;
 
-                if (options.length < 2) options = ["Option A", "Option B"];
-
-                let ca = it?.correctAnswer ?? 0;
-                if (typeof ca === "string") {
-                  const k = options.findIndex((o) => o === ca.trim());
-                  ca = k >= 0 ? k : 0;
-                } else if (!Number.isInteger(ca) || ca < 0 || ca >= options.length) {
-                  ca = 0;
-                }
-
-                return { id, prompt, options, correctAnswer: ca };
+                return { id, prompt, options, correctAnswer };
               })
-              .filter((it) => isNonEmptyString(it.prompt))
-              .slice(0, 5);
+              .filter((it) => it.prompt && it.options.length >= 2);
 
             if (mcItemsAreValid(fixedItems)) {
               replaced = {
                 ...t,
-                title: isNonEmptyString(regenerated?.title)
-                  ? String(regenerated.title).trim().slice(0, 120)
-                  : t.title,
-                prompt: isNonEmptyString(regenerated?.prompt)
-                  ? String(regenerated.prompt).trim()
-                  : t.prompt,
+                title: isNonEmptyString(regenerated?.title) ? String(regenerated.title).trim().slice(0, 120) : t.title,
+                prompt: isNonEmptyString(regenerated?.prompt) ? String(regenerated.prompt).trim() : t.prompt,
                 taskType: TASK_TYPES.MULTIPLE_CHOICE,
+                items: fixedItems.slice(0, 5), // enforce 3–5 from regen prompt
                 options: [],
                 correctAnswer: null,
-                aiScoringRequired: false,
-                timeLimitSeconds: t.timeLimitSeconds,
-                points: t.points,
                 config: {},
-                items: fixedItems,
               };
               break;
             }
