@@ -448,6 +448,8 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       // -------- MULTIPLE CHOICE normalization (single vs multi) --------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
         if (Array.isArray(t.items) && t.items.length) {
+          t.__needsRetry = true;
+          t.__retryType = TASK_TYPES.MULTIPLE_CHOICE;
           items = t.items.map((it, idx) => {
             const id = it.id || `q${idx + 1}`;
             const prompt =
