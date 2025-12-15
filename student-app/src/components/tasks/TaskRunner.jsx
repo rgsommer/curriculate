@@ -40,8 +40,6 @@ const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
 const CONTRAST_ACCENT = "#0ea5e9";
 
-  return copy;
-}
 
 function seededShuffle(array, seedStr) {
   const copy = [...array];
