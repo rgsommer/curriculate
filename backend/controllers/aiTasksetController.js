@@ -23,10 +23,6 @@ const CORE_TYPES =
     ? AI_ELIGIBLE_TYPES
     : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
 
-const MULTI_ITEM_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.multiItemCapable)
-  .map(([type]) => type);
-
 function validateGeneratePayload(payload = {}) {
   const errors = [];
 
@@ -49,9 +45,23 @@ function validateGeneratePayload(payload = {}) {
   return { errors, difficulty, learningGoal };
 }
 
+/**
+ * IMPORTANT: robust normalization:
+ * - lower
+ * - underscores -> hyphen
+ * - whitespace -> hyphen
+ * - strip punctuation
+ * Example: "Brain Blitz!" => "brain-blitz"
+ */
 function normalizeSelectedType(raw) {
   if (!raw) return null;
-  const v = String(raw).trim().toLowerCase().replace(/_/g, "-");
+
+  const v = String(raw)
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, ""); // strip punctuation like !, ?, etc.
 
   if (v === "multiple-choice" || v === "multiplechoice" || v === "mcq" || v === "mc")
     return TASK_TYPES.MULTIPLE_CHOICE;
@@ -59,33 +69,33 @@ function normalizeSelectedType(raw) {
     return TASK_TYPES.TRUE_FALSE;
   if (v === "short-answer" || v === "shortanswer" || v === "sa")
     return TASK_TYPES.SHORT_ANSWER;
-  if (v === "open-text" || v === "open_text" || v === "open")
+  if (v === "open-text" || v === "opentext" || v === "open")
     return TASK_TYPES.OPEN_TEXT;
+
   if (v === "sort" || v === "categorize" || v === "sort-task")
     return TASK_TYPES.SORT;
+
   if (v === "sequence" || v === "timeline" || v === "order")
     return TASK_TYPES.SEQUENCE;
-  if (v === "photo" || v === "photo-evidence" || v === "photo_description")
-    return TASK_TYPES.PHOTO;
-  if (
-    v === "make-and-snap" ||
-    v === "make_and_snap" ||
-    v === "makeandsnap"
-  )
-    return TASK_TYPES.MAKE_AND_SNAP;
-  if (v === "body-break" || v === "body_break") return TASK_TYPES.BODY_BREAK;
-  if (v === "brain-blitz" || v === "jeopardy" || v === "jeopardy_game")
+
+  if (v === "brain-blitz" || v === "brainblitz" || v === "jeopardy" || v === "jeopardy-game" || v === "jeopardy_game")
     return TASK_TYPES.JEOPARDY;
-  if (v === "collaboration" || v === "collab" || v === "pair-discussion")
-    return TASK_TYPES.COLLABORATION;
-  if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
-    return TASK_TYPES.DIFF_DETECTIVE;
-  if (v === "mind-mapper" || v === "mind_mapper") return TASK_TYPES.MIND_MAPPER;
-  if (v === "flashcards") return TASK_TYPES.FLASHCARDS;
-  if (v === "brain-spark-notes" || v === "brain_spark_notes")
+
+  if (v === "brain-spark-notes" || v === "brainsparknotes" || v === "brain_spark_notes")
     return TASK_TYPES.BRAIN_SPARK_NOTES;
 
-  if (Object.values(TASK_TYPES).includes(v)) return v;
+  if (v === "mind-mapper" || v === "mindmapper" || v === "mind_mapper")
+    return TASK_TYPES.MIND_MAPPER;
+
+  if (v === "flashcards") return TASK_TYPES.FLASHCARDS;
+  if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
+    return TASK_TYPES.DIFF_DETECTIVE;
+
+  if (v === "photo") return TASK_TYPES.PHOTO;
+  if (v === "photo-journal" || v === "photojournal") return TASK_TYPES.PHOTO_JOURNAL;
+  if (v === "draw-or-mime" || v === "drawormime") return TASK_TYPES.DRAW_OR_MIME;
+  if (v === "body-break" || v === "bodybreak") return TASK_TYPES.BODY_BREAK;
+
   return null;
 }
 
@@ -108,6 +118,14 @@ function sortConfigIsValid(cfg) {
 function sequenceConfigIsValid(cfg) {
   const items = Array.isArray(cfg?.items) ? cfg.items : [];
   return items.length >= 3;
+}
+
+function tfItemsAreValid(items) {
+  return Array.isArray(items) && items.length >= 3 && items.every((it) => isNonEmptyString(it?.prompt));
+}
+
+function cluesAreValid(clues) {
+  return Array.isArray(clues) && clues.length >= 3 && clues.every((c) => isNonEmptyString(c?.clue));
 }
 
 // Targeted regeneration for one broken task (same type, more content)
@@ -149,8 +167,10 @@ ${specialConsiderations || "none"}
 Hard requirements:
 - ${mustHave}
 - Provide a short title and a clear student prompt.
-- For SORT: put buckets/items under config: { buckets: [...], items: [{ text, bucketIndex|null }] }
-- For SEQUENCE: put items under config: { items: [{ text }] }
+- TRUE_FALSE multi-item must include "items": [{ "id": "...", "prompt": "...", "correctAnswer": 0|1 }]
+- SORT must include config: { buckets: [...], items: [{ text, bucketIndex|null }] }
+- SEQUENCE must include config: { items: [{ text }] }
+- JEOPARDY (BrainBlitz) must include clues: [{ clue, answer }]
 
 Return the task in this normalized shape:
 {
@@ -160,6 +180,7 @@ Return the task in this normalized shape:
   "options": [],
   "correctAnswer": null,
   "items": [],
+  "clues": [],
   "config": {}
 }
 
@@ -279,6 +300,7 @@ export const generateAiTaskset = async (req, res) => {
     const specialConsiderations = (topicDescription || "").trim();
     const customNotes = (customInstructions || "").trim();
 
+    // ---- Allowed types summary for the model ----
     const typeGuidelines = typePool
       .map((t) => {
         const meta = TASK_TYPE_META[t] || {};
@@ -332,20 +354,23 @@ ${lensesSection}
 Rules:
 - Mix of the allowed taskTypes only: ${taskTypeList}.
 - Each task has a short clear title and a prompt that students will see.
+- TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
 - For SORT tasks: include config.buckets (>=2) and config.items (>=3) with {text, bucketIndex|null}
 - For SEQUENCE tasks: include config.items (>=3) with {text}
+- For JEOPARDY/BrainBlitz tasks: include clues (>=3) with {clue, answer}
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
   {
     "title": "Short title",
-    "prompt": "Student-facing instructions / question or mini-quiz heading.",
+    "prompt": "Student-facing instructions",
     "taskType": "multiple-choice",
     "options": ["Option A", "Option B"],
     "correctAnswer": 0,
     "timeLimitSeconds": 60,
     "points": 10,
     "items": [],
+    "clues": [],
     "config": {}
   }
 ]
@@ -383,6 +408,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       const normalizedFromAi = normalizeSelectedType(rawTypeToken);
 
       let taskType = TASK_TYPES.SHORT_ANSWER;
+
       if (normalizedFromAi && typePool.includes(normalizedFromAi)) {
         taskType = normalizedFromAi;
       } else if (typeof rawTypeToken === "string") {
@@ -392,19 +418,19 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       }
 
       const meta = TASK_TYPE_META[taskType] || {};
-      const multiItemCapable = !!meta.multiItemCapable;
+      const objective = meta.objectiveScoring === true;
 
       let options = Array.isArray(t.options) ? t.options : [];
-      let config = null;
-      let items = [];
-      let correctAnswer = t.correctAnswer ?? null;
+      let config = t.config && typeof t.config === "object" ? t.config : {};
+      let items = Array.isArray(t.items) ? t.items : [];
+      let clues = Array.isArray(t.clues) ? t.clues : [];
 
-      // MULTIPLE CHOICE (multi-item capable)
+      // -------- MULTIPLE CHOICE normalization (single vs multi) --------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
-        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
+        if (Array.isArray(t.items) && t.items.length) {
           items = t.items.map((it, idx) => {
             const id = it.id || `q${idx + 1}`;
-            const iprompt =
+            const prompt =
               (it.prompt && String(it.prompt).trim()) ||
               (it.question && String(it.question).trim()) ||
               (it.text && String(it.text).trim()) ||
@@ -413,97 +439,84 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             let ioptions = Array.isArray(it.options) ? it.options : [];
             if (ioptions.length < 2) ioptions = ["Option A", "Option B"];
 
-            let icorrect = it.correctAnswer ?? null;
-            if (typeof icorrect === "string") {
+            let correctAnswer = it.correctAnswer ?? 0;
+            if (typeof correctAnswer === "string") {
               const idxMatch = ioptions.findIndex(
-                (opt) => String(opt).trim() === icorrect.trim()
+                (opt) => String(opt).trim() === correctAnswer.trim()
               );
-              icorrect = idxMatch >= 0 ? idxMatch : 0;
-            } else if (Number.isInteger(icorrect)) {
-              if (icorrect < 0 || icorrect >= ioptions.length) icorrect = 0;
-            } else {
-              icorrect = 0;
+              correctAnswer = idxMatch >= 0 ? idxMatch : 0;
+            } else if (!Number.isInteger(correctAnswer)) {
+              correctAnswer = 0;
+            } else if (correctAnswer < 0 || correctAnswer >= ioptions.length) {
+              correctAnswer = 0;
             }
 
-            return { id, prompt: iprompt, options: ioptions, correctAnswer: icorrect };
+            return { id, prompt, options: ioptions, correctAnswer };
           });
 
           options = [];
-          correctAnswer = null;
         } else {
+          // single MC
           if (options.length < 2) options = ["Option A", "Option B"];
-          // normalize correctAnswer to index
-          if (typeof correctAnswer === "string") {
-            const idx = options.findIndex(
-              (opt) => String(opt).trim() === correctAnswer.trim()
-            );
-            correctAnswer = idx >= 0 ? idx : 0;
-          } else if (Number.isInteger(correctAnswer)) {
-            if (correctAnswer < 0 || correctAnswer >= options.length) correctAnswer = 0;
-          } else {
-            correctAnswer = 0;
-          }
         }
       }
 
-      // TRUE / FALSE (single or multi-item)
+      // -------- TRUE/FALSE normalization (single vs multi) --------
       else if (taskType === TASK_TYPES.TRUE_FALSE) {
-        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
-
-        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
+        // If AI gave items, normalize them (multi TF)
+        if (Array.isArray(t.items) && t.items.length) {
           items = t.items.map((it, idx) => {
             const id = it.id || `tf${idx + 1}`;
-            const iprompt =
+            const prompt =
               (it.prompt && String(it.prompt).trim()) ||
               (it.question && String(it.question).trim()) ||
               (it.text && String(it.text).trim()) ||
               `Statement ${idx + 1}`;
 
-            const ioptions = ["True", "False"];
-
-            let icorrect = it.correctAnswer ?? it.answer ?? it.correct ?? null;
-            if (typeof icorrect === "string") {
-              const lower = icorrect.trim().toLowerCase();
-              icorrect = lower === "false" ? 1 : 0;
-            } else if (Number.isInteger(icorrect)) {
-              icorrect = icorrect === 1 ? 1 : 0;
+            let ca = it.correctAnswer ?? it.answer ?? it.correct ?? 0;
+            if (typeof ca === "string") {
+              const lower = ca.trim().toLowerCase();
+              ca = lower === "false" ? 1 : 0;
+            } else if (Number.isInteger(ca)) {
+              ca = ca === 1 ? 1 : 0;
             } else {
-              // if AI omitted, still default (objective scoring needs a value)
-              icorrect = 0;
+              ca = 0;
             }
 
-            return { id, prompt: iprompt, options: ioptions, correctAnswer: icorrect };
+            return { id, prompt, options: ["True", "False"], correctAnswer: ca };
           });
 
           options = [];
-          correctAnswer = null;
-          config = aiConfig && Object.keys(aiConfig).length ? aiConfig : null;
         } else {
+          // single TF
           options = ["True", "False"];
-
+          // Ensure prompt exists
           if (!isNonEmptyString(t.prompt)) {
-            // ensure something displays
-            t.prompt = isNonEmptyString(t.title)
-              ? `${t.title} — True or False?`
-              : "Decide whether the statement is True or False.";
+            t.prompt =
+              isNonEmptyString(t.title)
+                ? `${t.title} — True or False?`
+                : "Decide whether the statement is True or False.";
           }
+        }
 
-          // normalize correctAnswer
-          if (typeof correctAnswer === "string") {
-            const lower = correctAnswer.trim().toLowerCase();
-            correctAnswer = lower === "false" ? 1 : 0;
-          } else if (Number.isInteger(correctAnswer)) {
-            correctAnswer = correctAnswer === 1 ? 1 : 0;
-          } else if (correctAnswer == null) {
-            // set a safe default so objective scoring works
-            correctAnswer = 0;
-          }
+        // If multi TF ended up too small, mark for retry (no downgrade)
+        if (!tfItemsAreValid(items)) {
+          t.__needsRetry = true;
+          t.__retryType = TASK_TYPES.TRUE_FALSE;
 
-          config = aiConfig && Object.keys(aiConfig).length ? aiConfig : null;
+          // safe placeholder (still TRUE_FALSE)
+          const safe = rawWordBank.slice(0, 3).map((w, i) => ({
+            id: `tf${i + 1}`,
+            prompt: String(w || `Statement ${i + 1}`),
+            options: ["True", "False"],
+            correctAnswer: 0,
+          }));
+          items = safe;
+          options = [];
         }
       }
 
-      // SORT (retry instead of downgrade)
+      // -------- SORT normalization --------
       else if (taskType === TASK_TYPES.SORT) {
         const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
 
@@ -570,21 +583,19 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
             return { text: String(it || `Item ${idx + 1}`).trim(), bucketIndex: null };
           })
-          .filter((x) => x.text);
+          .filter((x) => isNonEmptyString(x.text));
 
         const candidateCfg = { ...aiConfig, buckets, items: sortItems };
 
-        // If invalid, mark for retry and ship a minimal valid placeholder (still SORT).
         if (!sortConfigIsValid(candidateCfg)) {
           t.__needsRetry = true;
           t.__retryType = TASK_TYPES.SORT;
 
-          const safeBuckets =
-            buckets.length >= 2 ? buckets.slice(0, 2) : ["Group A", "Group B"];
-
-          // Use word bank terms for placeholder items when possible
-          const safeItems = (sortItems.length ? sortItems : rawWordBank.slice(0, 3).map((w) => ({ text: String(w), bucketIndex: null })))
-            .slice(0, 3);
+          const safeBuckets = buckets.length >= 2 ? buckets.slice(0, 2) : ["Group A", "Group B"];
+          const safeItems =
+            sortItems.length >= 3
+              ? sortItems.slice(0, 3)
+              : rawWordBank.slice(0, 3).map((w) => ({ text: String(w), bucketIndex: null }));
 
           config = { ...aiConfig, buckets: safeBuckets, items: safeItems };
         } else {
@@ -593,14 +604,13 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
         options = [];
         items = [];
-        correctAnswer = null;
       }
 
-      // SEQUENCE (retry instead of downgrade)
+      // -------- SEQUENCE normalization --------
       else if (taskType === TASK_TYPES.SEQUENCE) {
         const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
 
-        const rawItems =
+        const rawSeq =
           Array.isArray(aiConfig.items) ? aiConfig.items
           : Array.isArray(aiConfig.steps) ? aiConfig.steps
           : Array.isArray(aiConfig.events) ? aiConfig.events
@@ -608,10 +618,9 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           : Array.isArray(t.items) ? t.items
           : Array.isArray(t.steps) ? t.steps
           : Array.isArray(t.events) ? t.events
-          : Array.isArray(t.options) ? t.options
           : [];
 
-        const seqItems = rawItems
+        const seqItems = rawSeq
           .map((it, idx) => {
             if (typeof it === "string") return { text: it.trim() };
             if (it && typeof it === "object") {
@@ -620,7 +629,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             }
             return { text: String(it || `Step ${idx + 1}`).trim() };
           })
-          .filter((x) => x.text);
+          .filter((x) => isNonEmptyString(x.text));
 
         const candidateCfg = { ...aiConfig, items: seqItems };
 
@@ -628,45 +637,23 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           t.__needsRetry = true;
           t.__retryType = TASK_TYPES.SEQUENCE;
 
-          // placeholder (still SEQUENCE) with at least 3 items
           const safeItems =
             seqItems.length >= 3
               ? seqItems.slice(0, 3)
-              : rawWordBank.slice(0, 3).map((w, i) => ({ text: String(w || `Step ${i + 1}`).trim() })) ||
-                [{ text: "Step 1" }, { text: "Step 2" }, { text: "Step 3" }];
+              : rawWordBank.slice(0, 3).map((w, i) => ({
+                  text: String(w || `Step ${i + 1}`).trim(),
+                }));
 
-          config = { ...aiConfig, items: safeItems.slice(0, 3) };
+          config = { ...aiConfig, items: safeItems };
         } else {
           config = candidateCfg;
         }
 
         options = [];
         items = [];
-        correctAnswer = null;
       }
 
-      // SHORT ANSWER (multi-item capable)
-      else if (taskType === TASK_TYPES.SHORT_ANSWER) {
-        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
-          items = t.items.map((it, idx) => {
-            const id = it.id || `sa${idx + 1}`;
-            const iprompt =
-              (it.prompt && String(it.prompt).trim()) ||
-              (it.question && String(it.question).trim()) ||
-              `Prompt ${idx + 1}`;
-
-            let icorrect = it.correctAnswer ?? null;
-            icorrect = typeof icorrect === "string" ? icorrect.trim() : null;
-
-            return { id, prompt: iprompt, correctAnswer: icorrect };
-          });
-        }
-
-        if (typeof correctAnswer !== "string") correctAnswer = null;
-        else correctAnswer = correctAnswer.trim() || null;
-      }
-
-      // JEOPARDY / BRAIN BLITZ (robust clue normalization)
+      // -------- JEOPARDY / BRAIN BLITZ normalization --------
       else if (taskType === TASK_TYPES.JEOPARDY) {
         const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
 
@@ -678,50 +665,45 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           (Array.isArray(t.prompts) && t.prompts.length && t.prompts) ||
           [];
 
-        let clues = rawClues.map((cl, idx) => {
-          // string → clue text only
-          if (typeof cl === "string") {
-            return { clue: cl.trim(), answer: "" };
-          }
+        let normalized = rawClues
+          .map((cl, idx) => {
+            if (typeof cl === "string") return { clue: cl.trim(), answer: "" };
+            if (cl && typeof cl === "object") {
+              const clueText =
+                cl.clue || cl.prompt || cl.question || cl.text || cl.title || `Clue ${idx + 1}`;
+              let answer = cl.answer ?? cl.correctAnswer ?? "";
+              if (Array.isArray(answer)) answer = answer[0] ?? "";
+              if (typeof answer !== "string") answer = String(answer || "");
+              return { clue: String(clueText).trim(), answer: answer.trim() };
+            }
+            return { clue: `Clue ${idx + 1}`, answer: "" };
+          })
+          .filter((c) => isNonEmptyString(c.clue));
 
-          if (cl && typeof cl === "object") {
-            const clueText =
-              cl.clue ||
-              cl.prompt ||
-              cl.question ||
-              cl.text ||
-              cl.title ||
-              `Clue ${idx + 1}`;
+        if (!cluesAreValid(normalized)) {
+          t.__needsRetry = true;
+          t.__retryType = TASK_TYPES.JEOPARDY;
 
-            let answer = cl.answer ?? cl.correctAnswer ?? "";
-            if (Array.isArray(answer)) answer = answer[0] ?? "";
-            if (typeof answer !== "string") answer = String(answer || "");
-
-            return {
-              clue: String(clueText).trim(),
-              answer: answer.trim(),
-            };
-          }
-
-          return { clue: `Clue ${idx + 1}`, answer: "" };
-        });
-
-        // 🔒 FINAL SAFETY NET: ensure at least 3 clues
-        if (clues.length < 3) {
-          clues = [
-            { clue: "Review the key idea from the lesson.", answer: "" },
-            { clue: "Recall an important term or concept.", answer: "" },
-            { clue: "Explain one fact related to this topic.", answer: "" },
-          ];
+          // safe placeholder (still JEOPARDY)
+          normalized =
+            rawWordBank.slice(0, 3).map((w, i) => ({
+              clue: String(w || `Clue ${i + 1}`),
+              answer: "",
+            })) || [
+              { clue: "Review the key idea from the lesson.", answer: "" },
+              { clue: "Recall an important term or concept.", answer: "" },
+              { clue: "Explain one fact related to this topic.", answer: "" },
+            ];
         }
 
-        t.clues = clues;
+        clues = normalized;
+        t.clues = normalized;
+
         options = [];
         items = [];
-        correctAnswer = null;
       }
 
-      // BRAIN SPARK NOTES (bullets)
+      // -------- BRAIN SPARK NOTES normalization --------
       else if (taskType === TASK_TYPES.BRAIN_SPARK_NOTES) {
         const rawBullets =
           (Array.isArray(t.bullets) && t.bullets.length && t.bullets) ||
@@ -742,10 +724,10 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
         t.bullets = bullets;
         options = [];
-        correctAnswer = null;
+        items = [];
       }
 
-      // MIND MAPPER normalize into config.items
+      // -------- Mind Mapper normalization (keeps config.items) --------
       else if (taskType === TASK_TYPES.MIND_MAPPER) {
         const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
         const rawItems = Array.isArray(aiConfig.items)
@@ -756,11 +738,10 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           ? t.options
           : [];
 
-        const mappedItems = rawItems.map((it, idx) => {
+        const mapped = rawItems.map((it, idx) => {
           if (typeof it === "string") return { text: it, correctIndex: idx };
           if (it && typeof it === "object") {
-            const text =
-              it.text || it.label || it.name || it.prompt || `Idea ${idx + 1}`;
+            const text = it.text || it.label || it.name || it.prompt || `Idea ${idx + 1}`;
             let correctIndex = it.correctIndex;
             if (typeof correctIndex !== "number") correctIndex = idx;
             return { text: String(text), correctIndex };
@@ -768,71 +749,18 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           return { text: String(it), correctIndex: idx };
         });
 
-        config = { ...aiConfig, items: mappedItems };
+        config = { ...aiConfig, items: mapped };
         options = [];
-        correctAnswer = null;
-      }
-
-      // FLASHCARDS
-      let cards = null;
-      if (taskType === TASK_TYPES.FLASHCARDS) {
-        const rawCards =
-          (Array.isArray(t.cards) && t.cards.length ? t.cards
-          : Array.isArray(t.items) && t.items.length ? t.items
-          : []) || [];
-
-        cards = rawCards.map((c, idx) => {
-          if (!c || (typeof c !== "object" && typeof c !== "string")) {
-            return { question: `Card ${idx + 1}`, answer: "" };
-          }
-          if (typeof c === "string") return { question: c, answer: "" };
-
-          const question = c.question || c.prompt || c.clue || `Card ${idx + 1}`;
-          let answer = c.answer ?? c.correctAnswer ?? "";
-          if (Array.isArray(answer)) answer = answer[0] ?? "";
-          if (typeof answer !== "string") answer = String(answer || "");
-
-          return { question: String(question), answer: answer.trim() };
-        });
-
-        options = [];
-        correctAnswer = null;
-      }
-
-      // Diff Detective
-      let originalText = null;
-      let modifiedText = null;
-      let differences = null;
-
-      if (taskType === TASK_TYPES.DIFF_DETECTIVE) {
-        originalText = t.original ? String(t.original) : "";
-        modifiedText = t.modified ? String(t.modified) : "";
-
-        const rawDiffs = Array.isArray(t.differences) ? t.differences : [];
-        differences = rawDiffs.map((d) => {
-          if (!d || typeof d !== "object")
-            return { expected: String(d || ""), hint: null };
-          return {
-            expected: d.expected ? String(d.expected) : "",
-            hint:
-              typeof d.hint === "string" && d.hint.trim() ? d.hint.trim() : null,
-          };
-        });
-
-        options = [];
-        correctAnswer = null;
-        config = null;
         items = [];
       }
 
+      // ---- Titles / prompts / timers / points ----
       const title =
         isNonEmptyString(t.title) ? String(t.title).trim().slice(0, 120) : `Task ${index + 1}`;
 
-      let prompt =
+      const prompt =
         isNonEmptyString(t.prompt)
           ? String(t.prompt).trim()
-          : multiItemCapable && Array.isArray(items) && items.length
-          ? "Answer each of the questions below."
           : "Follow the instructions given by your teacher.";
 
       const timeLimitSeconds = Number.isFinite(t.timeLimitSeconds)
@@ -841,8 +769,33 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
       const points = Number.isFinite(t.points) ? clampInt(t.points, 1, 50, 10) : 10;
 
-      // AI scoring requirement
-      const objective = meta.objectiveScoring === true;
+      // --- correctAnswer normalization for single MC/TF objective types ---
+      let correctAnswer = t.correctAnswer ?? null;
+      if (
+        (taskType === TASK_TYPES.MULTIPLE_CHOICE || taskType === TASK_TYPES.TRUE_FALSE) &&
+        options.length > 0
+      ) {
+        if (typeof correctAnswer === "string") {
+          const idx = options.findIndex(
+            (opt) => String(opt).trim() === correctAnswer.trim()
+          );
+          correctAnswer = idx >= 0 ? idx : 0;
+        } else if (Number.isInteger(correctAnswer)) {
+          if (correctAnswer < 0 || correctAnswer >= options.length) correctAnswer = 0;
+        } else if (correctAnswer == null) {
+          correctAnswer = 0;
+        }
+      } else if (
+        taskType === TASK_TYPES.SORT ||
+        taskType === TASK_TYPES.SEQUENCE ||
+        taskType === TASK_TYPES.MIND_MAPPER ||
+        taskType === TASK_TYPES.JEOPARDY ||
+        taskType === TASK_TYPES.BRAIN_SPARK_NOTES
+      ) {
+        correctAnswer = null;
+      }
+
+      // --- aiScoringRequired: objective types default false ---
       let aiScoringRequired;
       if (typeof t.aiScoringRequired === "boolean") aiScoringRequired = t.aiScoringRequired;
       else if (objective) aiScoringRequired = false;
@@ -860,17 +813,11 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         aiScoringRequired,
         timeLimitSeconds,
         points,
-        config,
+        config: config && Object.keys(config).length ? config : {},
         items,
-        ...(taskType === TASK_TYPES.FLASHCARDS && { cards }),
-        ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
-          original: originalText,
-          modified: modifiedText,
-          differences,
-        }),
-        ...(taskType === TASK_TYPES.JEOPARDY && { clues: Array.isArray(t.clues) ? t.clues : [] }),
-        ...(taskType === TASK_TYPES.BRAIN_SPARK_NOTES && { bullets: Array.isArray(t.bullets) ? t.bullets : [] }),
       };
+
+      if (taskType === TASK_TYPES.JEOPARDY) out.clues = clues;
 
       // carry retry flags (temporary; removed before save)
       if (t.__needsRetry) {
@@ -881,12 +828,16 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       return out;
     });
 
-    // --- Targeted retry pass for SORT/SEQUENCE (no downgrades) ---
+    // --- Targeted retry pass (no downgrades): SORT, SEQUENCE, TRUE_FALSE, JEOPARDY ---
     const retryMustHave = {
       [TASK_TYPES.SORT]:
         "SORT must include config.buckets (at least 2) and config.items (at least 3), each item as { text, bucketIndex: number|null }.",
       [TASK_TYPES.SEQUENCE]:
         "SEQUENCE must include config.items (at least 3), each item as { text }.",
+      [TASK_TYPES.TRUE_FALSE]:
+        "TRUE_FALSE must be multi-item with items (at least 3), each as { id, prompt, correctAnswer (0 for True, 1 for False) }.",
+      [TASK_TYPES.JEOPARDY]:
+        "JEOPARDY / BrainBlitz must include clues (at least 3), each as { clue, answer }.",
     };
 
     for (let i = 0; i < tasks.length; i++) {
@@ -894,9 +845,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       if (!t.__needsRetry) continue;
 
       const allowedType = t.__retryType;
-      if (allowedType !== TASK_TYPES.SORT && allowedType !== TASK_TYPES.SEQUENCE) continue;
-
-      const mustHave = retryMustHave[allowedType] || "Produce a valid task for this type.";
+      const mustHave = retryMustHave[allowedType] || "Produce a valid task.";
 
       let replaced = null;
 
@@ -915,25 +864,25 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             previousTask: t,
           });
 
-          // sanitize & accept only if valid
-          const regenCfg =
-            regenerated?.config && typeof regenerated.config === "object"
-              ? regenerated.config
-              : {};
+          const regenType = normalizeSelectedType(regenerated?.taskType || allowedType) || allowedType;
 
+          // Accept only if it returns same intended type
+          if (regenType !== allowedType) continue;
+
+          // Normalize minimal pieces for validity checks
           if (allowedType === TASK_TYPES.SORT) {
-            const buckets = Array.isArray(regenCfg.buckets) ? regenCfg.buckets : [];
-            const items = Array.isArray(regenCfg.items) ? regenCfg.items : [];
-            const fixedCfg = {
-              buckets: buckets.map((b) => String(b || "").trim()).filter(Boolean),
-              items: items
-                .map((it) => ({
-                  text: String(it?.text || "").trim(),
-                  bucketIndex:
-                    typeof it?.bucketIndex === "number" ? it.bucketIndex : null,
-                }))
-                .filter((it) => it.text),
-            };
+            const cfg = regenerated?.config && typeof regenerated.config === "object" ? regenerated.config : {};
+            const buckets = Array.isArray(cfg.buckets) ? cfg.buckets.map((b) => String(b || "").trim()).filter(Boolean) : [];
+            const items = Array.isArray(cfg.items)
+              ? cfg.items
+                  .map((it) => ({
+                    text: String(it?.text || "").trim(),
+                    bucketIndex: typeof it?.bucketIndex === "number" ? it.bucketIndex : null,
+                  }))
+                  .filter((it) => it.text)
+              : [];
+
+            const fixedCfg = { ...cfg, buckets, items };
 
             if (sortConfigIsValid(fixedCfg)) {
               replaced = {
@@ -941,17 +890,21 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
                 title: isNonEmptyString(regenerated?.title) ? String(regenerated.title).trim().slice(0, 120) : t.title,
                 prompt: isNonEmptyString(regenerated?.prompt) ? String(regenerated.prompt).trim() : t.prompt,
                 taskType: TASK_TYPES.SORT,
-                config: { ...(regenCfg || {}), ...fixedCfg },
                 options: [],
-                items: [],
                 correctAnswer: null,
+                aiScoringRequired: t.aiScoringRequired,
+                timeLimitSeconds: t.timeLimitSeconds,
+                points: t.points,
+                config: fixedCfg,
+                items: [],
               };
               break;
             }
           }
 
           if (allowedType === TASK_TYPES.SEQUENCE) {
-            const rawItems = Array.isArray(regenCfg.items) ? regenCfg.items : [];
+            const cfg = regenerated?.config && typeof regenerated.config === "object" ? regenerated.config : {};
+            const rawItems = Array.isArray(cfg.items) ? cfg.items : [];
             const fixedItems = rawItems
               .map((it, idx) => {
                 if (typeof it === "string") return { text: it.trim() };
@@ -961,9 +914,9 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
                 }
                 return { text: String(it || `Step ${idx + 1}`).trim() };
               })
-              .filter((x) => x.text);
+              .filter((x) => isNonEmptyString(x.text));
 
-            const fixedCfg = { items: fixedItems };
+            const fixedCfg = { ...cfg, items: fixedItems };
 
             if (sequenceConfigIsValid(fixedCfg)) {
               replaced = {
@@ -971,10 +924,83 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
                 title: isNonEmptyString(regenerated?.title) ? String(regenerated.title).trim().slice(0, 120) : t.title,
                 prompt: isNonEmptyString(regenerated?.prompt) ? String(regenerated.prompt).trim() : t.prompt,
                 taskType: TASK_TYPES.SEQUENCE,
-                config: { ...(regenCfg || {}), items: fixedItems },
                 options: [],
-                items: [],
                 correctAnswer: null,
+                aiScoringRequired: t.aiScoringRequired,
+                timeLimitSeconds: t.timeLimitSeconds,
+                points: t.points,
+                config: fixedCfg,
+                items: [],
+              };
+              break;
+            }
+          }
+
+          if (allowedType === TASK_TYPES.TRUE_FALSE) {
+            const rawItems = Array.isArray(regenerated?.items) ? regenerated.items : [];
+            const fixedItems = rawItems.map((it, idx) => {
+              const id = it?.id || `tf${idx + 1}`;
+              const prompt = String(it?.prompt || it?.question || it?.text || `Statement ${idx + 1}`).trim();
+              let ca = it?.correctAnswer ?? it?.answer ?? 0;
+              if (typeof ca === "string") ca = ca.trim().toLowerCase() === "false" ? 1 : 0;
+              else if (Number.isInteger(ca)) ca = ca === 1 ? 1 : 0;
+              else ca = 0;
+              return { id, prompt, options: ["True", "False"], correctAnswer: ca };
+            }).filter((it) => isNonEmptyString(it.prompt));
+
+            if (tfItemsAreValid(fixedItems)) {
+              replaced = {
+                ...t,
+                title: isNonEmptyString(regenerated?.title) ? String(regenerated.title).trim().slice(0, 120) : t.title,
+                prompt: isNonEmptyString(regenerated?.prompt) ? String(regenerated.prompt).trim() : t.prompt,
+                taskType: TASK_TYPES.TRUE_FALSE,
+                options: [],
+                correctAnswer: null,
+                aiScoringRequired: false, // objective
+                timeLimitSeconds: t.timeLimitSeconds,
+                points: t.points,
+                config: {},
+                items: fixedItems,
+              };
+              break;
+            }
+          }
+
+          if (allowedType === TASK_TYPES.JEOPARDY) {
+            const rawClues =
+              (Array.isArray(regenerated?.clues) && regenerated.clues) ||
+              (Array.isArray(regenerated?.config?.clues) && regenerated.config.clues) ||
+              (Array.isArray(regenerated?.items) && regenerated.items) ||
+              [];
+
+            const fixedClues = rawClues
+              .map((cl, idx) => {
+                if (typeof cl === "string") return { clue: cl.trim(), answer: "" };
+                if (cl && typeof cl === "object") {
+                  const clueText = cl.clue || cl.prompt || cl.question || cl.text || `Clue ${idx + 1}`;
+                  let answer = cl.answer ?? cl.correctAnswer ?? "";
+                  if (Array.isArray(answer)) answer = answer[0] ?? "";
+                  if (typeof answer !== "string") answer = String(answer || "");
+                  return { clue: String(clueText).trim(), answer: answer.trim() };
+                }
+                return { clue: `Clue ${idx + 1}`, answer: "" };
+              })
+              .filter((c) => isNonEmptyString(c.clue));
+
+            if (cluesAreValid(fixedClues)) {
+              replaced = {
+                ...t,
+                title: isNonEmptyString(regenerated?.title) ? String(regenerated.title).trim().slice(0, 120) : t.title,
+                prompt: isNonEmptyString(regenerated?.prompt) ? String(regenerated.prompt).trim() : t.prompt,
+                taskType: TASK_TYPES.JEOPARDY,
+                options: [],
+                correctAnswer: null,
+                aiScoringRequired: true,
+                timeLimitSeconds: t.timeLimitSeconds,
+                points: t.points,
+                config: {},
+                items: [],
+                clues: fixedClues,
               };
               break;
             }
@@ -996,24 +1022,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       delete tasks[i].__retryType;
     }
 
-    // Word-bank usage analysis
-    let aiWordsUsed = [];
-    let aiWordsUnused = [];
-
-    if (rawWordBank.length && Array.isArray(tasks)) {
-      const allText = tasks
-        .map((t) => `${t.title || ""} ${t.prompt || ""}`)
-        .join(" ")
-        .toLowerCase();
-
-      aiWordsUsed = rawWordBank.filter((w) =>
-        allText.includes(String(w).toLowerCase())
-      );
-      aiWordsUnused = rawWordBank.filter(
-        (w) => !allText.includes(String(w).toLowerCase())
-      );
-    }
-
     const now = new Date();
     const finalName = explicitName || topicLabel;
 
@@ -1030,8 +1038,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         source: "ai",
         sourceConfig: {
           aiWordBank: rawWordBank,
-          aiWordsUsed,
-          aiWordsUnused,
           topicTitle,
           notes: customNotes || "",
         },
