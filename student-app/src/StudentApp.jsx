@@ -146,6 +146,162 @@ const socket = io(API_BASE_URL, {
   reconnectionDelay: 1000,
 });
 
+// -----------------------------
+// Objective answer-key helpers
+// -----------------------------
+const isObjectiveTask = (task) => {
+  if (!task) return false;
+  if (task.objectiveScoring === true) return true;
+  if (task.config && task.config.objectiveScoring === true) return true;
+  if (task.scoringMode && String(task.scoringMode).toLowerCase().includes("objective")) return true;
+  // fallback: some tasks may ship objectiveScoringRequired
+  if (task.objectiveScoringRequired === true) return true;
+  return false;
+};
+
+const getItemPrompt = (item, idx) => {
+  const raw =
+    item?.prompt ??
+    item?.question ??
+    item?.label ??
+    item?.stem ??
+    item?.text ??
+    item?.title ??
+    item?.description ??
+    "";
+  const s = typeof raw === "string" ? raw.trim() : String(raw || "").trim();
+  return s || `Question ${idx + 1}`;
+};
+
+const buildObjectiveAnswerKey = (task) => {
+  if (!task) return null;
+
+  const taskType = task.taskType || task.type;
+
+  // Multi-part (MC / TF / SA) commonly store items on task.items
+  const items = Array.isArray(task.items) ? task.items : [];
+
+  // --- TRUE/FALSE ---
+  if (taskType === TASK_TYPES.TRUE_FALSE) {
+    if (items.length) {
+      return {
+        title: "Answer key",
+        rows: items.map((it, idx) => {
+          const correct =
+            typeof it.correctAnswer === "boolean"
+              ? it.correctAnswer
+              : String(it.correctAnswer).toLowerCase() === "true";
+          return { q: getItemPrompt(it, idx), a: correct ? "True" : "False" };
+        }),
+      };
+    }
+    // single TF fallback
+    if (typeof task.correctAnswer === "boolean") {
+      return {
+        title: "Answer key",
+        rows: [{ q: task.prompt || "True/False", a: task.correctAnswer ? "True" : "False" }],
+      };
+    }
+  }
+
+  // --- MULTIPLE CHOICE ---
+  if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
+    // multi-part MC
+    if (items.length) {
+      return {
+        title: "Answer key",
+        rows: items.map((it, idx) => {
+          const opts = Array.isArray(it.options) ? it.options : [];
+          const c = it.correctAnswer;
+          const correctText =
+            typeof c === "number"
+              ? (opts[c] ?? "")
+              : typeof c === "string"
+              ? c
+              : "";
+          return { q: getItemPrompt(it, idx), a: String(correctText || "").trim() || "(missing correct answer)" };
+        }),
+      };
+    }
+
+    // single MC fallback
+    const opts = Array.isArray(task.options) ? task.options : [];
+    const c = task.correctAnswer;
+    const correctText =
+      typeof c === "number" ? (opts[c] ?? "") : typeof c === "string" ? c : "";
+    if (correctText) {
+      return {
+        title: "Answer key",
+        rows: [{ q: task.prompt || "Multiple choice", a: String(correctText).trim() }],
+      };
+    }
+  }
+
+  // --- SHORT ANSWER (reference answers) ---
+  if (taskType === TASK_TYPES.SHORT_ANSWER) {
+    if (items.length) {
+      return {
+        title: "Suggested answers",
+        rows: items.map((it, idx) => ({
+          q: getItemPrompt(it, idx),
+          a: String(it.referenceAnswer ?? it.answer ?? it.expected ?? "").trim() || "(no reference answer)",
+        })),
+      };
+    }
+
+    // single SA fallback
+    const ref = String(task.referenceAnswer ?? "").trim();
+    if (ref) {
+      return { title: "Suggested answer", rows: [{ q: task.prompt || "Short answer", a: ref }] };
+    }
+  }
+
+  // --- SORT / CATEGORIZE ---
+  if (taskType === TASK_TYPES.SORT) {
+    const cfg = task.config && typeof task.config === "object" ? task.config : {};
+    const buckets = Array.isArray(cfg.buckets) ? cfg.buckets : [];
+    const sortItems = Array.isArray(cfg.items) ? cfg.items : [];
+
+    if (buckets.length && sortItems.length) {
+      // group items by bucketIndex (only if provided)
+      const grouped = buckets.map((b) => ({ bucket: String(b || "").trim(), items: [] }));
+      const unassigned = [];
+
+      sortItems.forEach((it) => {
+        const text = String(it?.text ?? it ?? "").trim();
+        if (!text) return;
+        const bi = it?.bucketIndex;
+        if (typeof bi === "number" && bi >= 0 && bi < grouped.length) grouped[bi].items.push(text);
+        else unassigned.push(text);
+      });
+
+      return {
+        title: "Correct categories",
+        buckets: grouped.filter((g) => g.bucket),
+        unassigned,
+      };
+    }
+  }
+
+  // --- SEQUENCE / TIMELINE ---
+  if (taskType === TASK_TYPES.SEQUENCE || taskType === TASK_TYPES.TIMELINE) {
+    const cfg = task.config && typeof task.config === "object" ? task.config : {};
+    const seq = Array.isArray(cfg.items) ? cfg.items : [];
+
+    if (seq.length) {
+      return {
+        title: "Correct order",
+        ordered: seq.map((it, idx) => ({
+          n: idx + 1,
+          text: String(it?.text ?? it ?? "").trim() || `Step ${idx + 1}`,
+        })),
+      };
+    }
+  }
+
+  return null;
+};
+
 // ---------------------------------------------------------------------
 // Utility helpers
 // ---------------------------------------------------------------------
@@ -2164,6 +2320,76 @@ function StudentApp() {
                           )}
                       </div>
                     )}
+
+                    {/* ✅ Always show the objective answer key during the lock */}
+                    {isObjectiveTask(currentTask) && (() => {
+                      const key = buildObjectiveAnswerKey(currentTask);
+                      if (!key) return null;
+
+                      // Render variants
+                      if (key.rows) {
+                        return (
+                          <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12 }}>
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {key.rows.map((r, i) => (
+                                <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                                  <div style={{ fontWeight: 700 }}>{r.q}</div>
+                                  <div style={{ marginTop: 4, opacity: 0.95 }}>
+                                    Correct: <strong>{r.a}</strong>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (key.ordered) {
+                        return (
+                          <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12 }}>
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
+                            <ol style={{ margin: 0, paddingLeft: 20 }}>
+                              {key.ordered.map((it) => (
+                                <li key={it.n} style={{ marginBottom: 6 }}>
+                                  {it.text}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        );
+                      }
+
+                      if (key.buckets) {
+                        return (
+                          <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12 }}>
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {key.buckets.map((b, idx) => (
+                                <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                                  <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                    {(b.items || []).map((txt, j) => (
+                                      <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
+                                        {txt}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                              {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
+                                <div style={{ marginTop: 6, opacity: 0.9 }}>
+                                  Unassigned: <strong>{key.unassigned.join(", ")}</strong>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return null;
+})()}
+
 
                     <div>
                       Locked while your teacher reviews… <br />

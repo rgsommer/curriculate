@@ -463,98 +463,60 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
       // -------- TRUE/FALSE normalization (single vs multi) --------
       else if (taskType === TASK_TYPES.TRUE_FALSE) {
-        // We want AI-generated TRUE/FALSE to be multi-item (3–5 statements).
-        // Accept a few common shapes, then normalize into items[] = [{id,prompt,options,correctAnswer}]
-        const rawItems =
-          (Array.isArray(t.items) && t.items.length && t.items) ||
-          (Array.isArray(t.statements) && t.statements.length && t.statements) ||
-          (Array.isArray(t.questions) && t.questions.length && t.questions) ||
-          (Array.isArray(t.prompts) && t.prompts.length && t.prompts) ||
-          [];
+        // If AI gave items, normalize them (multi TF)
+        if (Array.isArray(t.items) && t.items.length) {
+          items = t.items.map((it, idx) => {
+            const id = it.id || `tf${idx + 1}`;
+            const prompt =
+              (it.prompt && String(it.prompt).trim()) ||
+              (it.question && String(it.question).trim()) ||
+              (it.text && String(it.text).trim()) ||
+              `Statement ${idx + 1}`;
 
-        if (rawItems.length) {
-          items = rawItems
-            .map((it, idx) => {
-              const id = it?.id || `tf${idx + 1}`;
-              const prompt =
-                (it?.prompt && String(it.prompt).trim()) ||
-                (it?.statement && String(it.statement).trim()) ||
-                (it?.question && String(it.question).trim()) ||
-                (it?.text && String(it.text).trim()) ||
-                `Statement ${idx + 1}`;
+            let ca = it.correctAnswer ?? it.answer ?? it.correct ?? 0;
+            if (typeof ca === "string") {
+              const lower = ca.trim().toLowerCase();
+              ca = lower === "false" ? 1 : 0;
+            } else if (Number.isInteger(ca)) {
+              ca = ca === 1 ? 1 : 0;
+            } else {
+              ca = 0;
+            }
 
-              let ca = it?.correctAnswer ?? it?.answer ?? it?.correct ?? it?.isTrue ?? 0;
-
-              // Normalize correctAnswer:
-              // - index: 0=True, 1=False
-              // - string: "true"/"false"
-              // - boolean: true/false
-              if (typeof ca === "boolean") {
-                ca = ca ? 0 : 1;
-              } else if (typeof ca === "string") {
-                const lower = ca.trim().toLowerCase();
-                ca = lower === "false" ? 1 : 0;
-              } else if (Number.isInteger(ca)) {
-                ca = ca === 1 ? 1 : 0;
-              } else {
-                ca = 0;
-              }
-
-              return { id, prompt, options: ["True", "False"], correctAnswer: ca };
-            })
-            .filter((it) => isNonEmptyString(it.prompt))
-            .slice(0, 5);
+            return { id, prompt, options: ["True", "False"], correctAnswer: ca };
+          });
 
           options = [];
         } else {
-          // No items returned → force retry. (But still ship safe placeholders so editor/student UI isn't empty.)
-          t.__needsRetry = true;
-          t.__retryType = TASK_TYPES.TRUE_FALSE;
-
-          const safe = rawWordBank.slice(0, 5).map((w, i) => ({
-            id: `tf${i + 1}`,
-            prompt: `True or False: ${String(w || `Statement ${i + 1}`)}`,
-            options: ["True", "False"],
-            correctAnswer: 0,
-          }));
-
-          items = safe.length
-            ? safe
-            : [
-                { id: "tf1", prompt: "True or False: Review the key idea from the lesson.", options: ["True", "False"], correctAnswer: 0 },
-                { id: "tf2", prompt: "True or False: Recall an important term from the unit.", options: ["True", "False"], correctAnswer: 0 },
-                { id: "tf3", prompt: "True or False: Identify one fact related to today's topic.", options: ["True", "False"], correctAnswer: 0 },
-              ];
-
-          options = [];
+          // single TF
+          options = ["True", "False"];
+          // Ensure prompt exists
+          if (!isNonEmptyString(t.prompt)) {
+            t.prompt =
+              isNonEmptyString(t.title)
+                ? `${t.title} — True or False?`
+                : "Decide whether the statement is True or False.";
+          }
         }
 
-        // If items are still not valid (e.g., <3), mark for retry (no downgrade) and pad.
+        // If multi TF ended up too small, mark for retry (no downgrade)
         if (!tfItemsAreValid(items)) {
           t.__needsRetry = true;
           t.__retryType = TASK_TYPES.TRUE_FALSE;
 
-          const padded = Array.isArray(items) ? [...items] : [];
-          while (padded.length < 3) {
-            const i = padded.length + 1;
-            padded.push({
-              id: `tf${i}`,
-              prompt: `True or False: Statement ${i}`,
-              options: ["True", "False"],
-              correctAnswer: 0,
-            });
-          }
-          items = padded.slice(0, 5);
+          // safe placeholder (still TRUE_FALSE)
+          const safe = rawWordBank.slice(0, 3).map((w, i) => ({
+            id: `tf${i + 1}`,
+            prompt: String(w || `Statement ${i + 1}`),
+            options: ["True", "False"],
+            correctAnswer: 0,
+          }));
+          items = safe;
           options = [];
         }
-
-        // TRUE/FALSE should not use top-level options/correctAnswer when multi-item
-        config = {};
-        correctAnswer = null;
       }
 
       // -------- SORT normalization --------
-
       else if (taskType === TASK_TYPES.SORT) {
         const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
 
