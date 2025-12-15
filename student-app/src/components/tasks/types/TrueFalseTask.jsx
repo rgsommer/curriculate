@@ -2,18 +2,8 @@
 import React from "react";
 
 /**
- * True/False task (multi-question aware, per-team randomization).
- *
- * Modes:
- *  - Single question: one prompt, True/False buttons.
- *  - Multi-question: task.items as an array of { prompt }.
- *
- * We randomize:
- *  - Question order (items).
- *  - The side on which "True" vs "False" appears.
- *
- * Before submission, answers are mapped back to canonical order (B1) and
- * sent as a JSON string payload.
+ * True/False task (multi-question aware).
+ * Deterministic randomization per task (+ team salt) to prevent flipping.
  */
 export default function TrueFalseTask({
   task,
@@ -23,16 +13,71 @@ export default function TrueFalseTask({
   answerDraft,
 }) {
   const theme = task?.uiTheme || "modern";
-  const hasItems = Array.isArray(task.items) && task.items.length > 0;
+  const hasItems = Array.isArray(task?.items) && task.items.length > 0;
 
-  // Multi-mode
   const [presentedItems, setPresentedItems] = React.useState([]);
   const [multiSelectedValues, setMultiSelectedValues] = React.useState([]); // "true" | "false" | null
 
-  // Single-mode
   const [singleSelected, setSingleSelected] = React.useState(null); // "true" | "false"
   const [singleFirstLabel, setSingleFirstLabel] = React.useState("True");
   const [singleSecondLabel, setSingleSecondLabel] = React.useState("False");
+
+  function getTeamSalt() {
+    try {
+      return (
+        localStorage.getItem("teamId") ||
+        localStorage.getItem("curriculateTeamId") ||
+        localStorage.getItem("activeclass_teamId") ||
+        ""
+      );
+    } catch {
+      return "";
+    }
+  }
+
+  function seededShuffle(arr, seedStr) {
+    const a = [...arr];
+    let seed = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    }
+
+    const rand = () => {
+      seed ^= seed << 13;
+      seed >>>= 0;
+      seed ^= seed >> 17;
+      seed >>>= 0;
+      seed ^= seed << 5;
+      seed >>>= 0;
+      return (seed >>> 0) / 4294967296;
+    };
+
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function seededBool(seedStr) {
+    let seed = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    }
+    seed ^= seed << 13;
+    seed >>>= 0;
+    seed ^= seed >> 17;
+    seed >>>= 0;
+    seed ^= seed << 5;
+    seed >>>= 0;
+    return (seed >>> 0) % 2 === 0;
+  }
+
+  const taskKey = React.useMemo(() => {
+    const id = task?._id || task?.id || task?.taskId || "task";
+    const teamSalt = getTeamSalt();
+    return `${String(id)}:${teamSalt}`;
+  }, [task?._id, task?.id, task?.taskId]);
 
   React.useEffect(() => {
     if (!task) return;
@@ -40,15 +85,28 @@ export default function TrueFalseTask({
     if (hasItems) {
       const canonicalItems = Array.isArray(task.items) ? task.items : [];
       const count = canonicalItems.length;
-      const order = Array.from({ length: count }, (_, i) => i);
-      shuffleArray(order);
+
+      const order = seededShuffle(
+        Array.from({ length: count }, (_, i) => i),
+        `${taskKey}:tf:questions`
+      );
 
       const built = order.map((canonicalIndex) => {
         const item = canonicalItems[canonicalIndex] || {};
-        const flip = Math.random() < 0.5;
+        const flip = seededBool(`${taskKey}:tf:q${canonicalIndex}:flip`);
+
+        const prompt =
+          (typeof item.prompt === "string" && item.prompt.trim()
+            ? item.prompt.trim()
+            : typeof item.text === "string" && item.text.trim()
+            ? item.text.trim()
+            : typeof task.prompt === "string" && task.prompt.trim()
+            ? task.prompt.trim()
+            : `Question ${canonicalIndex + 1}`);
+
         return {
           canonicalIndex,
-          prompt: item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
+          prompt,
           firstLabel: flip ? "False" : "True",
           secondLabel: flip ? "True" : "False",
         };
@@ -58,19 +116,12 @@ export default function TrueFalseTask({
       setMultiSelectedValues(new Array(built.length).fill(null));
       setSingleSelected(null);
     } else {
-      const flip = Math.random() < 0.5;
+      const flip = seededBool(`${taskKey}:tf:single:flip`);
       setSingleFirstLabel(flip ? "False" : "True");
       setSingleSecondLabel(flip ? "True" : "False");
       setSingleSelected(null);
     }
-  }, [task, hasItems]);
-
-  function shuffleArray(arr) {
-    for (let i = arr.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-  }
+  }, [taskKey, hasItems]);
 
   const handleSubmitClick = () => {
     if (disabled) return;
@@ -86,12 +137,9 @@ export default function TrueFalseTask({
         canonicalAnswers[pItem.canonicalIndex] = val;
       });
 
-      const payload = {
-        kind: "multi-true-false",
-        answers: canonicalAnswers, // "true"/"false" per canonical index
-      };
-
+      const payload = { kind: "multi-true-false", answers: canonicalAnswers };
       const payloadString = JSON.stringify(payload);
+
       if (onAnswerChange) onAnswerChange(payloadString);
       onSubmit(payloadString);
     } else {
@@ -121,7 +169,6 @@ export default function TrueFalseTask({
   const { cardBg, cardHeaderBg, cardHeaderText, optionBaseBg, optionSelectedBg } =
     getThemeColors(theme);
 
-  // Multi-question mode
   if (hasItems && presentedItems.length > 0) {
     return (
       <div className="flex flex-col h-full p-3 gap-3">
@@ -150,10 +197,7 @@ export default function TrueFalseTask({
             </div>
           </header>
 
-          <div
-            className="flex-1 flex flex-col gap-3 overflow-y-auto"
-            style={{ paddingRight: 4 }}
-          >
+          <div className="flex-1 flex flex-col gap-3 overflow-y-auto" style={{ paddingRight: 4 }}>
             {presentedItems.map((pItem, displayIdx) => {
               const selected = multiSelectedValues[displayIdx];
               return (
@@ -166,21 +210,8 @@ export default function TrueFalseTask({
                     background: "rgba(255,255,255,0.9)",
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: "0.95rem",
-                      fontWeight: 600,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: "inline-block",
-                        minWidth: 20,
-                        fontWeight: 700,
-                        opacity: 0.7,
-                      }}
-                    >
+                  <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 8 }}>
+                    <span style={{ display: "inline-block", minWidth: 20, fontWeight: 700, opacity: 0.7 }}>
                       {displayIdx + 1}.
                     </span>{" "}
                     {pItem.prompt}
@@ -189,18 +220,13 @@ export default function TrueFalseTask({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        handleMultiSelect(displayIdx, pItem.firstLabel)
-                      }
+                      onClick={() => handleMultiSelect(displayIdx, pItem.firstLabel)}
                       disabled={disabled}
                       className="flex-1 border rounded-lg px-3 py-2"
                       style={{
                         background:
                           selected &&
-                          selected ===
-                            (pItem.firstLabel.toLowerCase() === "true"
-                              ? "true"
-                              : "false")
+                          selected === (pItem.firstLabel.toLowerCase() === "true" ? "true" : "false")
                             ? optionSelectedBg
                             : optionBaseBg,
                         color: selected ? "#fff" : "#111827",
@@ -212,18 +238,13 @@ export default function TrueFalseTask({
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        handleMultiSelect(displayIdx, pItem.secondLabel)
-                      }
+                      onClick={() => handleMultiSelect(displayIdx, pItem.secondLabel)}
                       disabled={disabled}
                       className="flex-1 border rounded-lg px-3 py-2"
                       style={{
                         background:
                           selected &&
-                          selected ===
-                            (pItem.secondLabel.toLowerCase() === "true"
-                              ? "true"
-                              : "false")
+                          selected === (pItem.secondLabel.toLowerCase() === "true" ? "true" : "false")
                             ? optionSelectedBg
                             : optionBaseBg,
                         color: selected ? "#fff" : "#111827",
@@ -258,7 +279,6 @@ export default function TrueFalseTask({
     );
   }
 
-  // Single-question mode
   return (
     <div className="flex flex-col h-full p-3 gap-3">
       <div
@@ -299,10 +319,7 @@ export default function TrueFalseTask({
               className="flex-1 border rounded-lg px-3 py-2"
               style={{
                 background:
-                  singleSelected ===
-                  (singleFirstLabel.toLowerCase() === "true"
-                    ? "true"
-                    : "false")
+                  singleSelected === (singleFirstLabel.toLowerCase() === "true" ? "true" : "false")
                     ? optionSelectedBg
                     : optionBaseBg,
                 color: singleSelected ? "#fff" : "#111827",
@@ -319,10 +336,7 @@ export default function TrueFalseTask({
               className="flex-1 border rounded-lg px-3 py-2"
               style={{
                 background:
-                  singleSelected ===
-                  (singleSecondLabel.toLowerCase() === "true"
-                    ? "true"
-                    : "false")
+                  singleSelected === (singleSecondLabel.toLowerCase() === "true" ? "true" : "false")
                     ? optionSelectedBg
                     : optionBaseBg,
                 color: singleSelected ? "#fff" : "#111827",
@@ -382,3 +396,4 @@ function getThemeColors(theme) {
       };
   }
 }
+

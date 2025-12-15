@@ -2119,50 +2119,94 @@ function StudentApp() {
               </div>
 
               {taskLocked && (
-                <div className="task-locked-overlay">
-                  {postSubmitSecondsLeft != null ? (
-                    <div style={{ width: "100%" }}>
-                      <div>
-                        Locked while your teacher reviews… <br />
-                        <span
-                          style={{
-                            fontVariantNumeric: "tabular-nums",
-                            fontSize: "1.1rem",
-                          }}
-                        >
-                          {postSubmitSecondsLeft}s
-                        </span>
-                      </div>
+              <div className="task-locked-overlay">
+                {postSubmitSecondsLeft != null ? (
+                  <div style={{ width: "100%" }}>
+                    {/* ✅ Answer feedback overlay (objective + AI) */}
+                    {lastTaskResult && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: "1.1rem", fontWeight: 800 }}>
+                          {typeof lastTaskResult.scoreDelta === "number" ? (
+                            lastTaskResult.scoreDelta > 0 ? (
+                              <>✅ Correct</>
+                            ) : (
+                              <>❌ Not quite</>
+                            )
+                          ) : (
+                            <>✅ Submitted</>
+                          )}
+                        </div>
 
-                      {/* ✅ Countdown bar (VISIBLE because it's inside the overlay) */}
-                      <div style={{ marginTop: 12 }}>
+                        {typeof lastTaskResult.scoreDelta === "number" && (
+                          <div style={{ marginTop: 4, fontSize: "0.95rem", opacity: 0.95 }}>
+                            Score change:{" "}
+                            <strong>
+                              {lastTaskResult.scoreDelta > 0 ? `+${lastTaskResult.scoreDelta}` : `${lastTaskResult.scoreDelta}`}
+                            </strong>
+                            {typeof lastTaskResult.maxPoints === "number" ? (
+                              <> / {lastTaskResult.maxPoints} pts</>
+                            ) : null}
+                          </div>
+                        )}
+
+                        {lastTaskResult.aiFeedback && (
+                          <div style={{ marginTop: 8, fontSize: "0.95rem", opacity: 0.95 }}>
+                            {String(lastTaskResult.aiFeedback)}
+                          </div>
+                        )}
+
+                        {lastTaskResult.correctAnswer != null &&
+                          (typeof lastTaskResult.correctAnswer === "string" ||
+                            typeof lastTaskResult.correctAnswer === "number") && (
+                            <div style={{ marginTop: 8, fontSize: "0.95rem", opacity: 0.95 }}>
+                              Correct answer: <strong>{String(lastTaskResult.correctAnswer)}</strong>
+                            </div>
+                          )}
+                      </div>
+                    )}
+
+                    <div>
+                      Locked while your teacher reviews… <br />
+                      <span
+                        style={{
+                          fontVariantNumeric: "tabular-nums",
+                          fontSize: "1.05rem",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {postSubmitSecondsLeft}s
+                      </span>
+                    </div>
+
+                    {/* ✅ Thinner countdown bar (line), just under the lock text */}
+                    <div style={{ marginTop: 8 }}>
+                      <div
+                        style={{
+                          height: 4,
+                          borderRadius: 999,
+                          background: "rgba(255,255,255,0.25)",
+                          overflow: "hidden",
+                        }}
+                      >
                         <div
                           style={{
-                            height: 8,
-                            borderRadius: 999,
-                            background: "rgba(255,255,255,0.25)",
-                            overflow: "hidden",
+                            height: "100%",
+                            width: `${Math.round(
+                              (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
+                            )}%`,
+                            background: "rgba(255,255,255,0.85)",
+                            transition: "width 200ms linear",
                           }}
-                        >
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${Math.round(
-                                (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
-                              )}%`,
-                              background: "rgba(255,255,255,0.85)",
-                              transition: "width 200ms linear",
-                            }}
-                          />
-                        </div>
+                        />
                       </div>
                     </div>
-                  ) : (
-                    <div>Waiting for your next task to unlock…</div>
-                  )}
-                </div>
-              )}
-              </section>
+                  </div>
+                ) : (
+                  <div>Waiting for your next task to unlock…</div>
+                )}
+              </div>
+            )}
+            </section>
             )}
           {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
           {joined && currentTask && mustScan && (
