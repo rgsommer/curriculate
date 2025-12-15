@@ -1124,7 +1124,7 @@ export default function TaskSetEditor() {
 
                 {/* Multi-part items editor (MC / TF / Short Answer) */}
                 {[TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(task.taskType) && (
-                  <div style={{ marginBottom: 6, border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10, padding: 10 }}>
+                  <div style={{ marginBottom: 6 }}>
                     <label
                       style={{
                         display: "block",
