@@ -123,86 +123,24 @@ export default function TaskSetEditor() {
         setDescription(data.description || "");
         setDisplays(data.displays || []);
         setTasks(
-          (data.tasks || []).map((t, idx) => {
-            const taskType = normalizeTaskType(t.taskType || t.task_type);
-
-            // Base shape
-            const out = {
-              ...t,
-              taskType,
-              timeLimitSeconds: t.timeLimitSeconds ?? t.time_limit ?? null,
-              displayKey: t.displayKey || "",
-              correctAnswer: t.correctAnswer ?? null,
-              aiScoringRequired:
-                typeof t.aiScoringRequired === "boolean"
-                  ? t.aiScoringRequired
-                  : !(t.correctAnswer !== undefined && t.correctAnswer !== null),
-              config: t.config && typeof t.config === "object" ? t.config : {},
-              items: Array.isArray(t.items) ? t.items : [],
-              _tempId: Math.random().toString(36).slice(2),
-              orderIndex: t.orderIndex ?? idx,
-            };
-
-            // ---- Type-specific display normalization (editor-only) ----
-
-            // BrainBlitz / Jeopardy: accept clues from several legacy shapes
-            if (out.taskType === TASK_TYPES.JEOPARDY) {
-              const cfgClues = Array.isArray(out.config?.clues) ? out.config.clues : [];
-              const itemClues = Array.isArray(out.items) ? out.items : [];
-              const raw = Array.isArray(out.clues) ? out.clues : (cfgClues.length ? cfgClues : itemClues);
-
-              out.clues = (Array.isArray(raw) ? raw : [])
-                .map((cl, i) => {
-                  if (typeof cl === "string") return { clue: cl, answer: "" };
-                  if (cl && typeof cl === "object") {
-                    return {
-                      clue: String(cl.clue ?? cl.prompt ?? cl.question ?? cl.text ?? `Clue ${i + 1}`),
-                      answer: String(cl.answer ?? cl.correctAnswer ?? ""),
-                    };
-                  }
-                  return { clue: `Clue ${i + 1}`, answer: "" };
-                });
-            }
-
-            // Sort: accept categories/items legacy keys
-            if (out.taskType === TASK_TYPES.SORT) {
-              const buckets =
-                (Array.isArray(out.config?.buckets) && out.config.buckets) ||
-                (Array.isArray(out.config?.categories) && out.config.categories) ||
-                (Array.isArray(out.buckets) && out.buckets) ||
-                (Array.isArray(out.categories) && out.categories) ||
-                [];
-              const items =
-                (Array.isArray(out.config?.items) && out.config.items) ||
-                (Array.isArray(out.config?.sortItems) && out.config.sortItems) ||
-                (Array.isArray(out.sortItems) && out.sortItems) ||
-                [];
-              out.config = { ...out.config, buckets, items };
-            }
-
-            // Sequence / Timeline: accept steps/events/sequence/items legacy keys
-            if (out.taskType === TASK_TYPES.SEQUENCE) {
-              const seq =
-                (Array.isArray(out.config?.items) && out.config.items) ||
-                (Array.isArray(out.config?.steps) && out.config.steps) ||
-                (Array.isArray(out.config?.events) && out.config.events) ||
-                (Array.isArray(out.config?.sequence) && out.config.sequence) ||
-                (Array.isArray(out.items) && out.items) ||
-                (Array.isArray(out.steps) && out.steps) ||
-                (Array.isArray(out.events) && out.events) ||
-                (Array.isArray(out.options) && out.options) ||
-                [];
-              out.config = { ...out.config, items: seq };
-            }
-
-            // True/False: ensure options exist for single-item edit
-            if (out.taskType === TASK_TYPES.TRUE_FALSE) {
-              out.options = Array.isArray(out.options) && out.options.length ? out.options : ["True", "False"];
-              if (out.correctAnswer === null || out.correctAnswer === undefined) out.correctAnswer = 0;
-            }
-
-            return out;
-          })
+          (data.tasks || []).map((t, idx) => ({
+            ...t,
+            taskType: normalizeTaskType(t.taskType || t.task_type),
+            timeLimitSeconds: t.timeLimitSeconds ?? t.time_limit ?? null,
+            displayKey: t.displayKey || "",
+            correctAnswer: t.correctAnswer ?? null,
+            aiScoringRequired:
+              typeof t.aiScoringRequired === "boolean"
+                ? t.aiScoringRequired
+                : !(
+                    t.correctAnswer !== undefined && t.correctAnswer !== null
+                  ),
+            // ✅ make sure config exists
+            config:
+              t.config && typeof t.config === "object" ? t.config : {},
+            _tempId: Math.random().toString(36).slice(2),
+            orderIndex: t.orderIndex ?? idx,
+          }))
         );
 
         const meta = data.meta || {};
@@ -312,18 +250,6 @@ export default function TaskSetEditor() {
   };
 
   const updateSortConfig = (tempId, updater) => {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t._tempId !== tempId) return t;
-        const prevConfig =
-          t.config && typeof t.config === "object" ? t.config : {};
-        const nextConfig = updater(prevConfig);
-        return { ...t, config: nextConfig };
-      })
-    );
-  };
-
-  const updateSequenceConfig = (tempId, updater) => {
     setTasks((prev) =>
       prev.map((t) => {
         if (t._tempId !== tempId) return t;
@@ -986,42 +912,6 @@ export default function TaskSetEditor() {
                   />
                 </div>
 
-                {/* TRUE/FALSE: correct answer (single-question) */}
-                {task.taskType === TASK_TYPES.TRUE_FALSE &&
-                  (!Array.isArray(task.items) || task.items.length === 0) && (
-                    <div style={{ marginBottom: 6 }}>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.8rem",
-                          marginBottom: 2,
-                        }}
-                      >
-                        Correct answer
-                      </label>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: "0.85rem" }}>
-                          <input
-                            type="radio"
-                            name={`tf-correct-${task._tempId}`}
-                            checked={task.correctAnswer === 0}
-                            onChange={() => updateTask(task._tempId, "correctAnswer", 0)}
-                          />
-                          True
-                        </label>
-                        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: "0.85rem" }}>
-                          <input
-                            type="radio"
-                            name={`tf-correct-${task._tempId}`}
-                            checked={task.correctAnswer === 1}
-                            onChange={() => updateTask(task._tempId, "correctAnswer", 1)}
-                          />
-                          False
-                        </label>
-                      </div>
-                    </div>
-                  )}
-
                 {/* JEOPARDY / BRAIN BLITZ: Clues editor */}
                 {task.taskType === TASK_TYPES.JEOPARDY && (
                   <div style={{ marginBottom: 6 }}>
@@ -1036,7 +926,7 @@ export default function TaskSetEditor() {
                     </label>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {(Array.isArray(task.clues) ? task.clues : (Array.isArray(task.config?.clues) ? task.config.clues : [])).map((cl, i) => (
+                      {(Array.isArray(task.clues) ? task.clues : []).map((cl, i) => (
                         <div
                           key={i}
                           style={{
@@ -1464,104 +1354,7 @@ export default function TaskSetEditor() {
                   </div>
                 )}
 
-                {/* SEQUENCE / TIMELINE: Items (steps) */}
-                {task.taskType === TASK_TYPES.SEQUENCE && (
-                  <div style={{ marginBottom: 6 }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "0.8rem",
-                        marginBottom: 2,
-                      }}
-                    >
-                      Steps / events (drag order happens in StudentApp)
-                    </label>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      {(Array.isArray(task.config?.items) ? task.config.items : []).map((it, i) => {
-                        const text =
-                          typeof it === "string"
-                            ? it
-                            : it && typeof it === "object"
-                            ? it.text || it.label || it.name || it.prompt || ""
-                            : "";
-                        return (
-                          <div
-                            key={i}
-                            style={{ display: "flex", alignItems: "center", gap: 6 }}
-                          >
-                            <input
-                              type="text"
-                              value={text}
-                              onChange={(e) =>
-                                updateSequenceConfig(task._tempId, (cfg) => {
-                                  const items = Array.isArray(cfg.items) ? [...cfg.items] : [];
-                                  const prev = items[i];
-                                  if (typeof prev === "string") items[i] = e.target.value;
-                                  else items[i] = { ...(prev && typeof prev === "object" ? prev : {}), text: e.target.value };
-                                  return { ...cfg, items };
-                                })
-                              }
-                              placeholder={`Step ${i + 1}`}
-                              style={{
-                                flex: 1,
-                                borderRadius: 6,
-                                border: "1px solid #d1d5db",
-                                padding: 6,
-                                fontSize: "0.8rem",
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateSequenceConfig(task._tempId, (cfg) => {
-                                  const items = Array.isArray(cfg.items) ? [...cfg.items] : [];
-                                  items.splice(i, 1);
-                                  return { ...cfg, items };
-                                })
-                              }
-                              style={{
-                                borderRadius: 6,
-                                border: "1px solid #d1d5db",
-                                padding: "6px 10px",
-                                fontSize: "0.8rem",
-                                cursor: "pointer",
-                                background: "white",
-                              }}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div style={{ marginTop: 6 }}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateSequenceConfig(task._tempId, (cfg) => {
-                            const items = Array.isArray(cfg.items) ? [...cfg.items] : [];
-                            items.push({ text: "" });
-                            return { ...cfg, items };
-                          })
-                        }
-                        style={{
-                          borderRadius: 8,
-                          border: "1px solid #d1d5db",
-                          padding: "6px 10px",
-                          fontSize: "0.8rem",
-                          cursor: "pointer",
-                          background: "white",
-                        }}
-                      >
-                        + Add step
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-{/* SORT: Categories / buckets */}
+                {/* SORT: Categories / buckets */}
                 {task.taskType === TASK_TYPES.SORT && (
                   <div style={{ marginBottom: 6 }}>
                     <label
