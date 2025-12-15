@@ -424,8 +424,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       let config = t.config && typeof t.config === "object" ? t.config : {};
       let items = Array.isArray(t.items) ? t.items : [];
       let clues = Array.isArray(t.clues) ? t.clues : [];
-      // Initialize correctAnswer early (some branches set it before the final normalization step)
-      let correctAnswer = t.correctAnswer ?? null;
 
       // -------- MULTIPLE CHOICE normalization (single vs multi) --------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
@@ -810,7 +808,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       const points = Number.isFinite(t.points) ? clampInt(t.points, 1, 50, 10) : 10;
 
       // --- correctAnswer normalization for single MC/TF objective types ---
-      // correctAnswer already initialized above
+      let correctAnswer = t.correctAnswer ?? null;
       if (
         (taskType === TASK_TYPES.MULTIPLE_CHOICE || taskType === TASK_TYPES.TRUE_FALSE) &&
         options.length > 0

@@ -50,6 +50,8 @@ function getSessionByRoomCode(code) {
   return rooms[code.toUpperCase()];
 }
 
+const POST_SUBMIT_SECONDS = Number(process.env.POST_SUBMIT_SECONDS || 10);
+
 function updateTeamScore(room, teamId, points) {
   // room may be a room object or (in some legacy calls) a roomCode string
   let targetRoom = room;
