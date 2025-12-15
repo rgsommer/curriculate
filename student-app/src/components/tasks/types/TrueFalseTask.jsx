@@ -38,21 +38,16 @@ export default function TrueFalseTask({
   function seededShuffle(arr, seedStr) {
     const a = [...arr];
     let seed = 0;
-    for (let i = 0; i < seedStr.length; i++) {
-      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
-    }
+    for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
 
     const rand = () => {
-      seed ^= seed << 13;
-      seed >>>= 0;
-      seed ^= seed >> 17;
-      seed >>>= 0;
-      seed ^= seed << 5;
-      seed >>>= 0;
+      seed ^= seed << 13; seed >>>= 0;
+      seed ^= seed >> 17; seed >>>= 0;
+      seed ^= seed << 5;  seed >>>= 0;
       return (seed >>> 0) / 4294967296;
     };
 
-    for (let i = a.length - 1; i > 0; i--) {
+    for (let i = a.length - 1; i > 0; i -= 1) {
       const j = Math.floor(rand() * (i + 1));
       [a[i], a[j]] = [a[j], a[i]];
     }
@@ -61,15 +56,10 @@ export default function TrueFalseTask({
 
   function seededBool(seedStr) {
     let seed = 0;
-    for (let i = 0; i < seedStr.length; i++) {
-      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
-    }
-    seed ^= seed << 13;
-    seed >>>= 0;
-    seed ^= seed >> 17;
-    seed >>>= 0;
-    seed ^= seed << 5;
-    seed >>>= 0;
+    for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    seed ^= seed << 13; seed >>>= 0;
+    seed ^= seed >> 17; seed >>>= 0;
+    seed ^= seed << 5;  seed >>>= 0;
     return (seed >>> 0) % 2 === 0;
   }
 

@@ -19,7 +19,7 @@ const COLOR_NAMES = COLORS;
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
-const DEFAULT_POST_SUBMIT_SECONDS = 15;
+const DEFAULT_POST_SUBMIT_SECONDS = 10;
 
 // Normalize a human-readable location into a slug like "room-12"
 function normalizeLocationSlug(raw) {

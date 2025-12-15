@@ -261,6 +261,39 @@ export default function TaskSetEditor() {
     );
   };
 
+  const updateTaskConfig = (tempId, updater) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t._tempId !== tempId) return t;
+        const prevConfig = t.config && typeof t.config === "object" ? t.config : {};
+        const nextConfig = updater(prevConfig);
+        return { ...t, config: nextConfig };
+      })
+    );
+  };
+
+  const updateTaskItems = (tempId, updater) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t._tempId !== tempId) return t;
+        const prevItems = Array.isArray(t.items) ? t.items : [];
+        const nextItems = updater(prevItems);
+        return { ...t, items: nextItems };
+      })
+    );
+  };
+
+  const updateJeopardyClues = (tempId, updater) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t._tempId !== tempId) return t;
+        const prevClues = Array.isArray(t.clues) ? t.clues : [];
+        const nextClues = updater(prevClues);
+        return { ...t, clues: nextClues };
+      })
+    );
+  };
+
   const addOption = (tempId) => {
     setTasks((prev) =>
       prev.map((t) => {
@@ -967,6 +1000,301 @@ export default function TaskSetEditor() {
                       compare student explanations to your model answer.
                     </div>
                   </div>
+                )}
+
+                {/* JEOPARDY / BRAIN BLITZ: Clues editor */}
+                {task.taskType === TASK_TYPES.JEOPARDY && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                      BrainBlitz / Jeopardy clues
+                    </label>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {(Array.isArray(task.clues) ? task.clues : []).map((cl, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "2fr 1fr auto",
+                            gap: 6,
+                            alignItems: "center",
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={cl?.clue || ""}
+                            onChange={(e) =>
+                              updateJeopardyClues(task._tempId, (prev) => {
+                                const copy = [...prev];
+                                copy[i] = { ...(copy[i] || {}), clue: e.target.value };
+                                return copy;
+                              })
+                            }
+                            placeholder={`Clue ${i + 1}`}
+                            style={{
+                              width: "100%",
+                              borderRadius: 6,
+                              border: "1px solid #d1d5db",
+                              padding: 6,
+                              fontSize: "0.8rem",
+                            }}
+                          />
+
+                          <input
+                            type="text"
+                            value={cl?.answer || ""}
+                            onChange={(e) =>
+                              updateJeopardyClues(task._tempId, (prev) => {
+                                const copy = [...prev];
+                                copy[i] = { ...(copy[i] || {}), answer: e.target.value };
+                                return copy;
+                              })
+                            }
+                            placeholder="Answer (optional)"
+                            style={{
+                              width: "100%",
+                              borderRadius: 6,
+                              border: "1px solid #d1d5db",
+                              padding: 6,
+                              fontSize: "0.8rem",
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateJeopardyClues(task._tempId, (prev) => {
+                                const copy = [...prev];
+                                copy.splice(i, 1);
+                                return copy;
+                              })
+                            }
+                            style={redTextButton}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateJeopardyClues(task._tempId, (prev) => [
+                            ...prev,
+                            { clue: "", answer: "" },
+                          ])
+                        }
+                        style={grayButton}
+                      >
+                        + Add clue
+                      </button>
+
+                      <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>
+                        Student BrainBlitz uses <code>task.clues</code>. If this is empty, it will look like “no questions.”
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Multi-part items editor (MC / TF / Short Answer) */}
+                {Array.isArray(task.items) && task.items.length > 0 &&
+                  [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(task.taskType) && (
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                        Multi-part questions
+                      </label>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {task.items.map((it, itemIdx) => {
+                          const itemOptions =
+                            task.taskType === TASK_TYPES.TRUE_FALSE
+                              ? ["True", "False"]
+                              : Array.isArray(it?.options)
+                              ? it.options
+                              : [];
+
+                          return (
+                            <div
+                              key={it?.id || itemIdx}
+                              style={{
+                                border: "1px solid #e5e7eb",
+                                background: "#ffffff",
+                                borderRadius: 8,
+                                padding: 8,
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                                <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>
+                                  Item {itemIdx + 1}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateTaskItems(task._tempId, (prev) => {
+                                      const copy = [...prev];
+                                      copy.splice(itemIdx, 1);
+                                      return copy;
+                                    })
+                                  }
+                                  style={redTextButton}
+                                >
+                                  Remove item
+                                </button>
+                              </div>
+
+                              {/* Item prompt */}
+                              <div style={{ marginBottom: 6 }}>
+                                <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                                  Prompt
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  value={it?.prompt || ""}
+                                  onChange={(e) =>
+                                    updateTaskItems(task._tempId, (prev) => {
+                                      const copy = [...prev];
+                                      copy[itemIdx] = { ...(copy[itemIdx] || {}), prompt: e.target.value };
+                                      return copy;
+                                    })
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    borderRadius: 6,
+                                    border: "1px solid #d1d5db",
+                                    padding: 6,
+                                    fontSize: "0.8rem",
+                                    resize: "vertical",
+                                  }}
+                                />
+                              </div>
+
+                              {/* MC/TF options + correct */}
+                              {(task.taskType === TASK_TYPES.MULTIPLE_CHOICE || task.taskType === TASK_TYPES.TRUE_FALSE) && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                                    Options
+                                  </label>
+
+                                  {itemOptions.map((opt, optIdx) => (
+                                    <div key={optIdx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <input
+                                        type="text"
+                                        value={opt}
+                                        disabled={task.taskType === TASK_TYPES.TRUE_FALSE}
+                                        onChange={(e) => {
+                                          if (task.taskType !== TASK_TYPES.MULTIPLE_CHOICE) return;
+                                          updateTaskItems(task._tempId, (prev) => {
+                                            const copy = [...prev];
+                                            const item = { ...(copy[itemIdx] || {}) };
+                                            const nextOpts = Array.isArray(item.options) ? [...item.options] : [];
+                                            nextOpts[optIdx] = e.target.value;
+                                            item.options = nextOpts;
+                                            copy[itemIdx] = item;
+                                            return copy;
+                                          });
+                                        }}
+                                        style={{
+                                          flex: 1,
+                                          borderRadius: 6,
+                                          border: "1px solid #d1d5db",
+                                          padding: 6,
+                                          fontSize: "0.8rem",
+                                          opacity: task.taskType === TASK_TYPES.TRUE_FALSE ? 0.8 : 1,
+                                        }}
+                                      />
+
+                                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.7rem" }}>
+                                        <input
+                                          type="radio"
+                                          name={`correct-item-${task._tempId}-${itemIdx}`}
+                                          checked={it?.correctAnswer === optIdx}
+                                          onChange={() =>
+                                            updateTaskItems(task._tempId, (prev) => {
+                                              const copy = [...prev];
+                                              copy[itemIdx] = { ...(copy[itemIdx] || {}), correctAnswer: optIdx };
+                                              return copy;
+                                            })
+                                          }
+                                        />
+                                        Correct
+                                      </label>
+                                    </div>
+                                  ))}
+
+                                  {task.taskType === TASK_TYPES.MULTIPLE_CHOICE && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateTaskItems(task._tempId, (prev) => {
+                                          const copy = [...prev];
+                                          const item = { ...(copy[itemIdx] || {}) };
+                                          const nextOpts = Array.isArray(item.options) ? [...item.options] : [];
+                                          nextOpts.push("");
+                                          item.options = nextOpts;
+                                          copy[itemIdx] = item;
+                                          return copy;
+                                        })
+                                      }
+                                      style={grayButton}
+                                    >
+                                      + Add option
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Short answer reference answer per item (optional) */}
+                              {task.taskType === TASK_TYPES.SHORT_ANSWER && (
+                                <div style={{ marginTop: 6 }}>
+                                  <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                                    Reference answer (optional)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={it?.correctAnswer || ""}
+                                    onChange={(e) =>
+                                      updateTaskItems(task._tempId, (prev) => {
+                                        const copy = [...prev];
+                                        copy[itemIdx] = { ...(copy[itemIdx] || {}), correctAnswer: e.target.value };
+                                        return copy;
+                                      })
+                                    }
+                                    placeholder="Optional: model answer for auto-scoring"
+                                    style={{
+                                      width: "100%",
+                                      borderRadius: 6,
+                                      border: "1px solid #d1d5db",
+                                      padding: 6,
+                                      fontSize: "0.8rem",
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateTaskItems(task._tempId, (prev) => {
+                              const next = [...prev];
+                              if (task.taskType === TASK_TYPES.TRUE_FALSE) {
+                                next.push({ id: `tf${next.length + 1}`, prompt: "", options: ["True", "False"], correctAnswer: 0 });
+                              } else if (task.taskType === TASK_TYPES.MULTIPLE_CHOICE) {
+                                next.push({ id: `q${next.length + 1}`, prompt: "", options: ["Option A", "Option B"], correctAnswer: 0 });
+                              } else {
+                                next.push({ id: `sa${next.length + 1}`, prompt: "", correctAnswer: "" });
+                              }
+                              return next;
+                            })
+                          }
+                          style={grayButton}
+                        >
+                          + Add item
+                        </button>
+                      </div>
+                    </div>
                 )}
 
                 {/* SORT: Categories / buckets */}

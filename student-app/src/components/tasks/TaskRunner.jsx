@@ -49,6 +49,28 @@ function shuffleArray(array) {
   return copy;
 }
 
+function seededShuffle(array, seedStr) {
+  const copy = [...array];
+
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+  }
+
+  const rand = () => {
+    seed ^= seed << 13; seed >>>= 0;
+    seed ^= seed >> 17; seed >>>= 0;
+    seed ^= seed << 5;  seed >>>= 0;
+    return (seed >>> 0) / 4294967296;
+  };
+
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 // Convert "quick_response" → "Quick Response"
 function toTitleCase(str) {
   if (!str) return "";
@@ -693,18 +715,24 @@ export default function TaskRunner({
           task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
         />
       );
       break;
+
     case TASK_TYPES.SORT:
       content = (
         <SortTask
           task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
         />
       );
       break;
+  
     case TASK_TYPES.SEQUENCE:
       content = (
         <SequenceTask

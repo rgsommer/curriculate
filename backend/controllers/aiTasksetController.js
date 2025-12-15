@@ -1,5 +1,4 @@
 // backend/controllers/aiTasksetController.js
-
 import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
@@ -14,18 +13,16 @@ const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
     ([type, meta]) =>
       meta.implemented !== false &&
       meta.aiEligible !== false &&
-      meta.generatorEligible !== false && // NEW: exclude non-generator types (Pronunciation, AI Debate Judge, etc.)
-      type !== TASK_TYPES.HIDENSEEK // allow AI scoring but never auto-generate HideNSeek
+      meta.generatorEligible !== false &&
+      type !== TASK_TYPES.HIDENSEEK
   )
   .map(([type]) => type);
 
-// Fallback core types if metadata is missing / empty
 const CORE_TYPES =
   AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
     ? AI_ELIGIBLE_TYPES
     : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
 
-// Types that can sensibly hold multiple sub-questions ("items") in one task
 const MULTI_ITEM_TYPES = Object.entries(TASK_TYPE_META)
   .filter(([, meta]) => meta.multiItemCapable)
   .map(([type]) => type);
@@ -40,14 +37,11 @@ function validateGeneratePayload(payload = {}) {
   const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
   const difficulty = (payload.difficulty || "MEDIUM").toString().toUpperCase();
-  const learningGoal = (payload.learningGoal || "REVIEW")
-    .toString()
-    .toUpperCase();
+  const learningGoal = (payload.learningGoal || "REVIEW").toString().toUpperCase();
 
   if (!difficultiesAllowed.includes(difficulty)) {
     errors.push("difficulty must be one of " + difficultiesAllowed.join(", "));
   }
-
   if (!goalsAllowed.includes(learningGoal)) {
     errors.push("learningGoal must be one of " + goalsAllowed.join(", "));
   }
@@ -55,71 +49,136 @@ function validateGeneratePayload(payload = {}) {
   return { errors, difficulty, learningGoal };
 }
 
-/**
- * Normalize a user-facing type token to a canonical TASK_TYPES value.
- * This lets the UI send legacy values like "multiple_choice".
- */
 function normalizeSelectedType(raw) {
   if (!raw) return null;
   const v = String(raw).trim().toLowerCase().replace(/_/g, "-");
 
-  if (v === "multiple-choice" || v === "multiplechoice" || v === "mcq") {
+  if (v === "multiple-choice" || v === "multiplechoice" || v === "mcq" || v === "mc")
     return TASK_TYPES.MULTIPLE_CHOICE;
-  }
-  if (v === "true-false" || v === "truefalse" || v === "tf") {
+  if (v === "true-false" || v === "truefalse" || v === "tf")
     return TASK_TYPES.TRUE_FALSE;
-  }
-  if (v === "short-answer" || v === "shortanswer" || v === "sa") {
+  if (v === "short-answer" || v === "shortanswer" || v === "sa")
     return TASK_TYPES.SHORT_ANSWER;
-  }
-  if (v === "open-text" || v === "open_text" || v === "open") {
+  if (v === "open-text" || v === "open_text" || v === "open")
     return TASK_TYPES.OPEN_TEXT;
-  }
-  if (v === "sort" || v === "categorize" || v === "sort-task") {
+  if (v === "sort" || v === "categorize" || v === "sort-task")
     return TASK_TYPES.SORT;
-  }
-  if (v === "sequence" || v === "timeline" || v === "order") {
+  if (v === "sequence" || v === "timeline" || v === "order")
     return TASK_TYPES.SEQUENCE;
-  }
-  if (v === "photo" || v === "photo-evidence" || v === "photo_description") {
+  if (v === "photo" || v === "photo-evidence" || v === "photo_description")
     return TASK_TYPES.PHOTO;
-  }
   if (
-    v === "photo-journal" ||
-    v === "photo_journal" ||
-    v === "photojournal" ||
-    v === "photo-journal-task"
-  ) {
-    return TASK_TYPES.PHOTO_JOURNAL;
-  }
-  if (v === "make-and-snap" || v === "make_and_snap") {
+    v === "make-and-snap" ||
+    v === "make_and_snap" ||
+    v === "makeandsnap"
+  )
     return TASK_TYPES.MAKE_AND_SNAP;
-  }
-  if (v === "body-break" || v === "body_break") {
-    return TASK_TYPES.BODY_BREAK;
-  }
-  if (v === "brain-blitz" || v === "jeopardy" || v === "jeopardy_game") {
+  if (v === "body-break" || v === "body_break") return TASK_TYPES.BODY_BREAK;
+  if (v === "brain-blitz" || v === "jeopardy" || v === "jeopardy_game")
     return TASK_TYPES.JEOPARDY;
-  }
-  if (v === "collaboration" || v === "collab" || v === "pair-discussion") {
+  if (v === "collaboration" || v === "collab" || v === "pair-discussion")
     return TASK_TYPES.COLLABORATION;
-  }
-  if (
-    v === "diff-detective" ||
-    v === "spot-the-difference" ||
-    v === "diff" ||
-    v === "find-differences"
-  ) {
+  if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
     return TASK_TYPES.DIFF_DETECTIVE;
-  }
-  if (v === "draw-mime" || v === "drawmime" || v === "draw-or-mime") {
-    return TASK_TYPES.DRAW_MIME;
-  }
+  if (v === "mind-mapper" || v === "mind_mapper") return TASK_TYPES.MIND_MAPPER;
+  if (v === "flashcards") return TASK_TYPES.FLASHCARDS;
+  if (v === "brain-spark-notes" || v === "brain_spark_notes")
+    return TASK_TYPES.BRAIN_SPARK_NOTES;
 
-  // Fallback: if already a canonical value, keep it
   if (Object.values(TASK_TYPES).includes(v)) return v;
-
   return null;
+}
+
+function isNonEmptyString(x) {
+  return typeof x === "string" && x.trim().length > 0;
+}
+
+function clampInt(n, min, max, fallback) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(v)));
+}
+
+function sortConfigIsValid(cfg) {
+  const buckets = Array.isArray(cfg?.buckets) ? cfg.buckets : [];
+  const items = Array.isArray(cfg?.items) ? cfg.items : [];
+  return buckets.length >= 2 && items.length >= 3;
+}
+
+function sequenceConfigIsValid(cfg) {
+  const items = Array.isArray(cfg?.items) ? cfg.items : [];
+  return items.length >= 3;
+}
+
+// Targeted regeneration for one broken task (same type, more content)
+async function regenerateSingleTask({
+  allowedType,
+  mustHave,
+  subject,
+  gradeLevel,
+  difficulty,
+  learningGoal,
+  topicLabel,
+  vocabularyLines,
+  specialConsiderations,
+  previousTask,
+}) {
+  const sys = `
+You generate exactly ONE classroom task for Curriculate.
+Return ONLY valid JSON for a single task object (no markdown, no backticks, no extra text).
+`.trim();
+
+  const prev = JSON.stringify(previousTask || {}, null, 2);
+
+  const user = `
+Create ONE task of type "${allowedType}" ONLY.
+
+Class:
+- Subject: ${subject}
+- Grade: ${gradeLevel}
+- Difficulty: ${difficulty}
+- Learning goal: ${learningGoal}
+- Topic/unit: ${topicLabel}
+
+Vocabulary / key terms (stay within these):
+${vocabularyLines}
+
+Special considerations (if any):
+${specialConsiderations || "none"}
+
+Hard requirements:
+- ${mustHave}
+- Provide a short title and a clear student prompt.
+- For SORT: put buckets/items under config: { buckets: [...], items: [{ text, bucketIndex|null }] }
+- For SEQUENCE: put items under config: { items: [{ text }] }
+
+Return the task in this normalized shape:
+{
+  "title": "Short title",
+  "prompt": "Student-facing instructions",
+  "taskType": "${allowedType}",
+  "options": [],
+  "correctAnswer": null,
+  "items": [],
+  "config": {}
+}
+
+Previous FAILED attempt (for reference only; do not repeat its mistakes):
+${prev}
+`.trim();
+
+  const completion = await client.chat.completions.create({
+    model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
+    temperature: 0.4,
+    max_tokens: 900,
+    messages: [
+      { role: "system", content: sys },
+      { role: "user", content: user },
+    ],
+  });
+
+  const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
+  return JSON.parse(raw);
 }
 
 /**
@@ -136,11 +195,11 @@ export const generateAiTaskset = async (req, res) => {
       selectedTypes,
       customInstructions = "",
 
-      // New / current shape from AiTasksetGenerator
+      // New / current shape
       difficulty,
       learningGoal,
-      topicDescription = "", // "Special considerations" from UI
-      topicTitle = "", // Task set title: main topic
+      topicDescription = "",
+      topicTitle = "",
       totalDurationMinutes,
       durationMinutes,
       numberOfTasks,
@@ -156,16 +215,10 @@ export const generateAiTaskset = async (req, res) => {
     } = req.body || {};
 
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
-    const duration =
-      Number(totalDurationMinutes) || Number(durationMinutes) || 45;
+    const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
-      validateGeneratePayload({
-        subject,
-        gradeLevel,
-        difficulty,
-        learningGoal,
-      });
+      validateGeneratePayload({ subject, gradeLevel, difficulty, learningGoal });
 
     if (errors.length) {
       return res
@@ -173,17 +226,15 @@ export const generateAiTaskset = async (req, res) => {
         .json({ error: "Invalid payload: " + errors.join(", ") });
     }
 
-    const safeCount = Math.max(4, Math.min(20, requestedCount || 8));
+    const safeCount = clampInt(requestedCount, 4, 20, 8);
 
-    // ------------- Resolve allowed task types -------------
+    // Resolve allowed task types
     const rawSelected =
       (Array.isArray(selectedTypes) && selectedTypes) ||
-      (Array.isArray(req.body.requiredTaskTypes) &&
-        req.body.requiredTaskTypes) ||
+      (Array.isArray(req.body.requiredTaskTypes) && req.body.requiredTaskTypes) ||
       [];
 
     let typePool;
-
     if (rawSelected.length > 0) {
       const normalized = rawSelected
         .map(normalizeSelectedType)
@@ -194,35 +245,24 @@ export const generateAiTaskset = async (req, res) => {
       typePool = CORE_TYPES;
     }
 
-    // ------------- Presenter lenses / perspectives -------------
+    // Presenter lenses / perspectives
     let lenses = [];
-    if (
-      presenterProfile &&
-      Array.isArray(presenterProfile.curriculumLenses) &&
-      presenterProfile.curriculumLenses.length
-    ) {
+    if (presenterProfile?.curriculumLenses?.length)
       lenses = presenterProfile.curriculumLenses;
-    } else if (
-      presenterProfile &&
-      Array.isArray(presenterProfile.perspectives) &&
-      presenterProfile.perspectives.length
-    ) {
+    else if (presenterProfile?.perspectives?.length)
       lenses = presenterProfile.perspectives;
-    }
     const lensesText = lenses.length ? lenses.join(", ") : "none specified";
 
-    // ------------- Vocabulary / word bank -------------
+    // Vocabulary / word bank
     let rawWordBank = [];
-    if (Array.isArray(aiWordBank)) {
-      rawWordBank = aiWordBank;
-    } else if (typeof aiWordBank === "string") {
+    if (Array.isArray(aiWordBank)) rawWordBank = aiWordBank;
+    else if (typeof aiWordBank === "string") {
       rawWordBank = aiWordBank
         .split(/[\n,;]+/)
         .map((w) => w.trim())
         .filter(Boolean);
     }
 
-    // If the UI somehow sent nothing, still guard here
     if (!rawWordBank.length) {
       return res.status(400).json({
         error:
@@ -230,32 +270,15 @@ export const generateAiTaskset = async (req, res) => {
       });
     }
 
-    const vocabularyText = rawWordBank.map((w) => `- ${w}`).join("\n");
+    const vocabularyLines = rawWordBank.map((w) => `- ${w}`).join("\n");
 
-    // ------------- Topic & subject discipline -------------
     const titleTrimmed = (topicTitle || explicitName || "").trim();
     const topicLabel =
-      titleTrimmed ||
-      `${subject || "Lesson"} – Grade ${gradeLevel || "?"} review`;
+      titleTrimmed || `${subject || "Lesson"} – Grade ${gradeLevel || "?"} review`;
 
     const specialConsiderations = (topicDescription || "").trim();
     const customNotes = (customInstructions || "").trim();
 
-    const normalizedSubject = (subject || "").toString().toLowerCase();
-
-    // Allow religious content ONLY if the subject actually is Bible / Religion, etc.
-    const subjectIsReligious = /bible|religion|religious|christian|faith/.test(
-      normalizedSubject
-    );
-
-    const religiousGuardrail = subjectIsReligious
-      ? ""
-      : `
-You MUST NOT introduce religious, Bible, theological, or spiritual content,
-and you MUST NOT write about unrelated subjects. Stay strictly within the
-given subject and topic.`.trim();
-
-    // ------------- Build per-type guidelines from TASK_TYPE_META -------------
     const typeGuidelines = typePool
       .map((t) => {
         const meta = TASK_TYPE_META[t] || {};
@@ -265,7 +288,6 @@ given subject and topic.`.trim();
       })
       .join("\n");
 
-    // ------------- System & user prompts -------------
     const systemPrompt = `
 You are an expert classroom teacher using Curriculate, a station-based task system.
 
@@ -275,43 +297,21 @@ Your job:
 - Obey all constraints and special considerations from the teacher.
 - Use the vocabulary list as the core of the topic—do not drift.
 
-${religiousGuardrail}
-
 For each allowed taskType, follow these guidelines:
 ${typeGuidelines}
 `.trim();
 
-    const vocabSection = `
-Vocabulary / key terms for this task set.
-These define the boundaries of the topic. Do NOT generate tasks unrelated
-to these terms.
-
-${vocabularyText}
-`.trim();
-
-    const considerationsSection = specialConsiderations
-      ? `
-Special considerations from the teacher (these constrain style or emphasis,
-but do NOT change the core topic):
-
-${specialConsiderations}
-`.trim()
-      : "";
-
     const lensesSection =
       lensesText && lensesText !== "none specified"
-        ? `
-Curricular lenses / perspectives to emphasize (when natural):
+        ? `\nCurricular lenses / perspectives to emphasize (when natural):\n${lensesText}\n`
+        : "";
 
-${lensesText}
-`.trim()
+    const considerationsSection =
+      specialConsiderations || customNotes
+        ? `\nSpecial considerations:\n${specialConsiderations || ""}\n${customNotes || ""}\n`
         : "";
 
     const taskTypeList = typePool.join(", ");
-
-    const multiItemTypesList = MULTI_ITEM_TYPES.filter((t) =>
-      typePool.includes(t)
-    );
 
     const userPrompt = `
 Create ${safeCount} tasks for the following class:
@@ -323,163 +323,17 @@ Create ${safeCount} tasks for the following class:
 - Topic / unit: ${topicLabel}
 - Approx lesson duration (minutes): ${duration}
 
-${vocabSection}
+Vocabulary / key terms (stay within these):
+${vocabularyLines}
 
 ${considerationsSection}
-
 ${lensesSection}
 
 Rules:
 - Mix of the allowed taskTypes only: ${taskTypeList}.
 - Each task has a short clear title and a prompt that students will see.
-- Tasks should, whenever possible, reflect the listed curricular lenses
-  (for example, by connecting content or examples to that perspective).
-
-For "${TASK_TYPES.MULTIPLE_CHOICE}":
-  - Each task may be a SINGLE question or a SHORT SET (mini-quiz) of 3–5 multiple-choice questions.
-  - If it is a short set, use an "items" array where each item is:
-    {
-      "id": "q1",
-      "prompt": "Question text",
-      "options": ["A", "B", "C"],
-      "correctAnswer": 0
-    }
-  - The top-level "prompt" should still be a brief instruction like
-    "Answer each of the following multiple-choice questions."
-  - For each question, provide 3–5 options (short strings).
-  - For each question, correctAnswer is the ZERO-BASED index of the correct option.
-
-For "${TASK_TYPES.TRUE_FALSE}":
-  - Each task may be a SINGLE statement or a SHORT SET of 3–5 True/False statements.
-  - If it is a short set, use an "items" array where each item is:
-    {
-      "id": "s1",
-      "prompt": "Statement text",
-      "options": ["True", "False"],
-      "correctAnswer": 0
-    }
-  - The top-level "prompt" should be a brief instruction like
-    "Decide if each statement is True or False."
-  - For each question, options must be ["True", "False"].
-  - For each question, correctAnswer is the ZERO-BASED index (0 or 1).
-
-For "${TASK_TYPES.SHORT_ANSWER}":
-  - Each task may be a SINGLE prompt or a SHORT SET of 3–5 short-answer prompts.
-  - If it is a short set, use an "items" array where each item is:
-    {
-      "id": "sa1",
-      "prompt": "Prompt text",
-      "correctAnswer": "reference answer"
-    }
-  - The top-level "prompt" should be a brief instruction like
-    "Answer each question with a word or short phrase."
-  - For short-answer tasks, top-level "options" should be an empty array.
-  - For each question, correctAnswer is a short reference answer string (or null).
-
-For "${TASK_TYPES.OPEN_TEXT}":
-  - Use a SINGLE open-ended prompt that calls for a paragraph-length written response.
-  - Do NOT include an "options" array; students will type their own answer.
-  - "correctAnswer" should be null (these are evaluated with a rubric / AI scoring).
-  - Good uses: short reflections, explanations, or justifications about the topic.
-
-For "${TASK_TYPES.SORT}":
-  - Use a "config" object with:
-    - "buckets": an array of 2–4 category labels (short strings).
-    - "items": an array of 6–10 objects of the form
-      { "text": "Item text", "bucketIndex": 0 }
-      where bucketIndex is the ZERO-BASED index into "buckets" for the correct category.
-  - "options" must be an empty array.
-  - "correctAnswer" should be null (sorting is scored from config.items.bucketIndex).
-
-For "${TASK_TYPES.SEQUENCE}":
-  - Use a "config" object with:
-    - "items": an array of 4–8 objects of the form
-      { "text": "Step or event in the correct order" }.
-  - The array MUST list the items in the correct logical / chronological order.
-  - Students will be given these items in random order and will re-order them.
-  - "options" should normally be an empty array.
-  - "correctAnswer" should be null (ordering is scored from the full sequence, not a single index).
-
-For "${TASK_TYPES.COLLABORATION}":
-  - Use a single open-ended prompt that invites opinion, prediction, explanation,
-    or reflection related to the topic.
-  - Do NOT include an "options" array; students will type their own answer.
-  - "correctAnswer" should be null (these are scored by rubric / AI, not by a single key).
-  - Good examples: "Do you agree with this statement? Why or why not?",
-    "Predict what might happen next and explain your reasoning.",
-    "Explain how this idea would affect people living in X situation."
-
-For "${TASK_TYPES.DIFF_DETECTIVE}":
-  - Create a task where students must spot specific differences between two texts
-    (or two lists, code snippets, etc.).
-  - Provide these fields at the top level:
-    - "original": the original passage or list (string).
-    - "modified": the changed passage or list (string).
-    - "differences": an array of objects, each:
-      {
-        "expected": "original fragment → changed fragment",
-        "hint": "short optional hint for this difference (or null)"
-      }
-  - "options" should be an empty array.
-  - "correctAnswer" should be an array of short strings, one per difference,
-    describing each difference succinctly (e.g., "jumps → jumped", "206 → 208").
-  - Time limit should be 60–120 seconds depending on difficulty.
-
-For "${TASK_TYPES.FLASHCARDS}":
-  - Create a deck of 8–12 flashcards focused on the vocabulary terms.
-  - Use a "cards" array where each card is:
-    {
-      "question": "Short cue or question",
-      "answer": "Short word or phrase"
-    }
-  - Questions should be concise prompts tied directly to the vocabulary.
-  - Answers must be short words/phrases, not full paragraphs.
-  - Top-level "options" should be an empty array.
-  - Top-level "correctAnswer" should be null (each card has its own answer).
-
-For "${TASK_TYPES.JEOPARDY}":
-  - Create a Brain Blitz / Jeopardy-style round made of several fast clues.
-  - Provide a "clues" array where each clue is:
-    {
-      "clue": "Text shown to students",
-      "answer": "Expected student question in 'What is...?' or 'Who was...?' form"
-    }
-  - Aim for 4–8 clues per task; all clues must be tightly tied to the vocabulary list.
-  - Top-level "options" should be an empty array and "correctAnswer" must be null.
-  - The title or prompt can describe the overall round (e.g., "Brain Blitz: Early Explorers").
-
-For "${TASK_TYPES.DRAW_MIME}":
-  - Create a single, vivid prompt that invites students to respond with a drawing
-    (or act it out, if the teacher chooses).
-  - Do NOT include options; students respond with a drawing only.
-  - "correctAnswer" must be null.
-  - Example: "Draw the water cycle with arrows to show how water moves from
-    evaporation to condensation to precipitation."
-
-For "${TASK_TYPES.MIND_MAPPER}":
-  - Create a concept-mapping puzzle with 6–10 idea nodes.
-  - Provide a "config" object with:
-      "items": [
-        { "text": "Idea text", "correctIndex": 0 },
-        { "text": "Another idea", "correctIndex": 1 },
-        ...
-      ]
-  - The array MUST be in the correct conceptual order.
-  - Do NOT shuffle; the StudentApp will handle the randomization.
-  - "options" should be an empty array.
-  - "correctAnswer" must be null (scoring is based on matching correctIndex).
-
-For "${TASK_TYPES.BRAIN_SPARK_NOTES}":
-  - Create a single clear prompt that tells students what key idea or question
-    their notes should cover.
-  - Provide a "bullets" array of 3–7 short bullet points that students should
-    copy into their notebook.
-  - Each bullet must be a short, student-friendly sentence or phrase
-    (not a full paragraph).
-  - Do NOT include an "options" array.
-  - "correctAnswer" must be null (these are participation/AI-scored, not right/wrong).
-  - Example bullets:
-    ["Definition of erosion", "Two real-world examples", "Why it matters"].
+- For SORT tasks: include config.buckets (>=2) and config.items (>=3) with {text, bucketIndex|null}
+- For SEQUENCE tasks: include config.items (>=3) with {text}
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
@@ -491,110 +345,73 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     "correctAnswer": 0,
     "timeLimitSeconds": 60,
     "points": 10,
-
-    // OPTIONAL for multi-question tasks (MC / TF / Short Answer):
-    "items": [
-      {
-        "id": "q1",
-        "prompt": "First question",
-        "options": ["A", "B", "C"],
-        "correctAnswer": 0
-      }
-    ],
-
-    // OPTIONAL for sort tasks:
-    "config": {
-      "buckets": ["Category 1", "Category 2"],
-      "items": [
-        { "text": "Item 1", "bucketIndex": 0 }
-      ]
-    },
-
-    // OPTIONAL for flashcards:
-    // "cards": [
-    //   { "question": "Q1", "answer": "A1" }
-    // ]
-
-    // OPTIONAL for Brain Spark Notes:
-    // "bullets": ["Key idea 1", "Key idea 2"]
-  },
-  ...
+    "items": [],
+    "config": {}
+  }
 ]
 `.trim();
 
     const completion = await client.chat.completions.create({
       model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
       temperature: 0.6,
-      max_tokens: 2000,
+      max_tokens: 2200,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content?.trim() || "[]";
+    const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
 
     let aiTasks;
     try {
       aiTasks = JSON.parse(raw);
     } catch (err) {
-      console.error("AI taskset JSON parse error:", err, raw.slice(0, 500));
-      return res.status(500).json({
-        error: "AI returned invalid JSON for taskset",
-      });
+      console.error("AI taskset JSON parse error:", err, raw.slice(0, 800));
+      return res
+        .status(500)
+        .json({ error: "AI returned invalid JSON for taskset" });
     }
 
     if (!Array.isArray(aiTasks) || aiTasks.length === 0) {
-      return res
-        .status(500)
-        .json({ error: "AI returned no tasks for this request" });
+      return res.status(500).json({ error: "AI returned no tasks" });
     }
-
-    console.log("AI RAW TASKS (debug)", JSON.stringify(aiTasks, null, 2));
 
     // ---------- Normalize AI tasks into TaskSet schema ----------
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
-      // Try to interpret the AI's taskType using the same normalizer we use for UI input
       const rawTypeToken = t.taskType || t.type || "";
       const normalizedFromAi = normalizeSelectedType(rawTypeToken);
 
       let taskType = TASK_TYPES.SHORT_ANSWER;
-
       if (normalizedFromAi && typePool.includes(normalizedFromAi)) {
         taskType = normalizedFromAi;
       } else if (typeof rawTypeToken === "string") {
-        // Fallback: use the literal lowercased token if it matches typePool
         const lowered = rawTypeToken.toString().trim().toLowerCase();
-        if (typePool.includes(lowered)) {
-          taskType = lowered;
-        } else if (typePool.length === 1) {
-          // As a last resort, if only one type was allowed, trust that.
-          taskType = typePool[0];
-        }
+        if (typePool.includes(lowered)) taskType = lowered;
+        else if (typePool.length === 1) taskType = typePool[0];
       }
 
       const meta = TASK_TYPE_META[taskType] || {};
       const multiItemCapable = !!meta.multiItemCapable;
 
-      // Base options, config, items
       let options = Array.isArray(t.options) ? t.options : [];
       let config = null;
       let items = [];
+      let correctAnswer = t.correctAnswer ?? null;
 
-      // ---------- Options / config / items by type ----------
+      // MULTIPLE CHOICE (multi-item capable)
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
-        // Normalise multi-item MC, if present
         if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
           items = t.items.map((it, idx) => {
             const id = it.id || `q${idx + 1}`;
             const iprompt =
-              it.prompt && String(it.prompt).trim()
-                ? String(it.prompt).trim()
-                : `Question ${idx + 1}`;
+              (it.prompt && String(it.prompt).trim()) ||
+              (it.question && String(it.question).trim()) ||
+              (it.text && String(it.text).trim()) ||
+              `Question ${idx + 1}`;
+
             let ioptions = Array.isArray(it.options) ? it.options : [];
-            if (ioptions.length < 2) {
-              ioptions = ["Option A", "Option B"];
-            }
+            if (ioptions.length < 2) ioptions = ["Option A", "Option B"];
 
             let icorrect = it.correctAnswer ?? null;
             if (typeof icorrect === "string") {
@@ -603,269 +420,437 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
               );
               icorrect = idxMatch >= 0 ? idxMatch : 0;
             } else if (Number.isInteger(icorrect)) {
-              let idxNum = icorrect;
-              if (idxNum < 0 || idxNum >= ioptions.length) idxNum = 0;
-              icorrect = idxNum;
+              if (icorrect < 0 || icorrect >= ioptions.length) icorrect = 0;
             } else {
               icorrect = 0;
             }
 
-            return {
-              id,
-              prompt: iprompt,
-              options: ioptions,
-              correctAnswer: icorrect,
-            };
+            return { id, prompt: iprompt, options: ioptions, correctAnswer: icorrect };
           });
-        }
 
-        // Legacy / single-question MC at top-level
-        if (options.length < 2) {
-          options = ["Option A", "Option B"];
-        }
-      } else if (taskType === TASK_TYPES.SEQUENCE) {
-      // Normalise sequence/timeline tasks into config.items
-      const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
-
-      const rawItems =
-        Array.isArray(aiConfig.items) ? aiConfig.items
-        : Array.isArray(aiConfig.steps) ? aiConfig.steps
-        : Array.isArray(aiConfig.events) ? aiConfig.events
-        : Array.isArray(aiConfig.sequence) ? aiConfig.sequence
-        : Array.isArray(t.items) ? t.items
-        : Array.isArray(t.steps) ? t.steps
-        : Array.isArray(t.events) ? t.events
-        : Array.isArray(t.options) ? t.options
-        : [];
-
-      const seqItems = rawItems
-        .map((it, idx) => {
-          if (typeof it === "string") return { text: it.trim() };
-          if (it && typeof it === "object") {
-            const text =
-              it.text || it.label || it.name || it.prompt || `Step ${idx + 1}`;
-            return { text: String(text).trim() };
-          }
-          return { text: String(it || `Step ${idx + 1}`).trim() };
-        })
-        .filter((x) => x.text); // drop empty
-
-      // If the AI failed to provide sequence items, downgrade the task
-      if (seqItems.length < 3) {
-        taskType = TASK_TYPES.SHORT_ANSWER;
-        config = null;
-        options = [];
-        items = [];
-
-        // Make prompt usable
-        const fallback =
-          "Explain the correct order of these events/steps in 2–4 sentences.";
-        t.prompt = (t.prompt && String(t.prompt).trim()) || fallback;
-      } else {
-        config = { ...aiConfig, items: seqItems };
-        options = [];
-        items = [];
-      }
-    }
-
-      // For SHORT_ANSWER, we may also receive an "items" array
-      if (taskType === TASK_TYPES.SHORT_ANSWER && multiItemCapable) {
-        if (Array.isArray(t.items) && t.items.length) {
-          items = t.items.map((it, idx) => {
-            const id = it.id || `sa${idx + 1}`;
-            const iprompt =
-              it.prompt && String(it.prompt).trim()
-                ? String(it.prompt).trim()
-                : `Prompt ${idx + 1}`;
-            let icorrect = it.correctAnswer ?? null;
-            if (typeof icorrect === "string") {
-              icorrect = icorrect.trim();
-            } else {
-              icorrect = null;
-            }
-            return {
-              id,
-              prompt: iprompt,
-              correctAnswer: icorrect,
-            };
-          });
-        }
-      }
-
-      // ---------- correctAnswer + aiScoringRequired ----------
-      let correctAnswer = t.correctAnswer ?? null;
-
-      if (
-        (taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-          taskType === TASK_TYPES.TRUE_FALSE) &&
-        options.length > 0
-      ) {
-        // normalise to a valid index
-        if (typeof correctAnswer === "string") {
-          const idx = options.findIndex(
-            (opt) => String(opt).trim() === correctAnswer.trim()
-          );
-          correctAnswer = idx >= 0 ? idx : 0;
-        } else if (Number.isInteger(correctAnswer)) {
-          let idx = correctAnswer;
-          if (idx < 0 || idx >= options.length) idx = 0;
-          correctAnswer = idx;
-        } else {
-          correctAnswer = 0;
-        }
-      } else if (taskType === TASK_TYPES.SHORT_ANSWER) {
-        if (typeof correctAnswer !== "string") {
+          options = [];
           correctAnswer = null;
         } else {
-          const trimmed = correctAnswer.trim();
-          const lower = trimmed.toLowerCase();
-
-          // If the AI tried to make a “short answer” that’s just True/False,
-          // auto-convert it into a proper TRUE_FALSE item instead.
-          if (lower === "true" || lower === "false") {
-            taskType = TASK_TYPES.TRUE_FALSE;
-            options = ["True", "False"];
-            correctAnswer = lower === "true" ? 0 : 1;
+          if (options.length < 2) options = ["Option A", "Option B"];
+          // normalize correctAnswer to index
+          if (typeof correctAnswer === "string") {
+            const idx = options.findIndex(
+              (opt) => String(opt).trim() === correctAnswer.trim()
+            );
+            correctAnswer = idx >= 0 ? idx : 0;
+          } else if (Number.isInteger(correctAnswer)) {
+            if (correctAnswer < 0 || correctAnswer >= options.length) correctAnswer = 0;
           } else {
-            correctAnswer = trimmed;
+            correctAnswer = 0;
           }
         }
-      } else if (
-        taskType === TASK_TYPES.SORT ||
-        taskType === TASK_TYPES.SEQUENCE ||
-        taskType === TASK_TYPES.MIND_MAPPER ||
-        taskType === TASK_TYPES.JEOPARDY ||
-        taskType === TASK_TYPES.BRAIN_SPARK_NOTES
-      ) {
-        // These rely on richer structures, not a flat correctAnswer
+      }
+
+      // TRUE / FALSE (single or multi-item)
+      else if (taskType === TASK_TYPES.TRUE_FALSE) {
+        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
+
+        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
+          items = t.items.map((it, idx) => {
+            const id = it.id || `tf${idx + 1}`;
+            const iprompt =
+              (it.prompt && String(it.prompt).trim()) ||
+              (it.question && String(it.question).trim()) ||
+              (it.text && String(it.text).trim()) ||
+              `Statement ${idx + 1}`;
+
+            const ioptions = ["True", "False"];
+
+            let icorrect = it.correctAnswer ?? it.answer ?? it.correct ?? null;
+            if (typeof icorrect === "string") {
+              const lower = icorrect.trim().toLowerCase();
+              icorrect = lower === "false" ? 1 : 0;
+            } else if (Number.isInteger(icorrect)) {
+              icorrect = icorrect === 1 ? 1 : 0;
+            } else {
+              // if AI omitted, still default (objective scoring needs a value)
+              icorrect = 0;
+            }
+
+            return { id, prompt: iprompt, options: ioptions, correctAnswer: icorrect };
+          });
+
+          options = [];
+          correctAnswer = null;
+          config = aiConfig && Object.keys(aiConfig).length ? aiConfig : null;
+        } else {
+          options = ["True", "False"];
+
+          if (!isNonEmptyString(t.prompt)) {
+            // ensure something displays
+            t.prompt = isNonEmptyString(t.title)
+              ? `${t.title} — True or False?`
+              : "Decide whether the statement is True or False.";
+          }
+
+          // normalize correctAnswer
+          if (typeof correctAnswer === "string") {
+            const lower = correctAnswer.trim().toLowerCase();
+            correctAnswer = lower === "false" ? 1 : 0;
+          } else if (Number.isInteger(correctAnswer)) {
+            correctAnswer = correctAnswer === 1 ? 1 : 0;
+          } else if (correctAnswer == null) {
+            // set a safe default so objective scoring works
+            correctAnswer = 0;
+          }
+
+          config = aiConfig && Object.keys(aiConfig).length ? aiConfig : null;
+        }
+      }
+
+      // SORT (retry instead of downgrade)
+      else if (taskType === TASK_TYPES.SORT) {
+        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
+
+        const rawBuckets = Array.isArray(aiConfig.buckets)
+          ? aiConfig.buckets
+          : Array.isArray(aiConfig.categories)
+          ? aiConfig.categories
+          : Array.isArray(t.buckets)
+          ? t.buckets
+          : Array.isArray(t.categories)
+          ? t.categories
+          : [];
+
+        const buckets = rawBuckets
+          .map((b, i) => {
+            if (typeof b === "string") return b.trim();
+            if (b && typeof b === "object")
+              return String(b.label || b.name || b.title || `Category ${i + 1}`).trim();
+            return `Category ${i + 1}`;
+          })
+          .filter(Boolean);
+
+        const rawItems = Array.isArray(aiConfig.items)
+          ? aiConfig.items
+          : Array.isArray(aiConfig.sortItems)
+          ? aiConfig.sortItems
+          : Array.isArray(aiConfig.events)
+          ? aiConfig.events
+          : Array.isArray(t.items)
+          ? t.items
+          : Array.isArray(t.sortItems)
+          ? t.sortItems
+          : Array.isArray(t.events)
+          ? t.events
+          : [];
+
+        const sortItems = rawItems
+          .map((it, idx) => {
+            if (typeof it === "string") return { text: it.trim(), bucketIndex: null };
+
+            if (it && typeof it === "object") {
+              const text = String(
+                it.text || it.label || it.name || it.prompt || `Item ${idx + 1}`
+              ).trim();
+
+              let bucketIndex =
+                typeof it.bucketIndex === "number"
+                  ? it.bucketIndex
+                  : typeof it.bucket === "number"
+                  ? it.bucket
+                  : typeof it.categoryIndex === "number"
+                  ? it.categoryIndex
+                  : null;
+
+              if (
+                typeof bucketIndex === "number" &&
+                (bucketIndex < 0 || bucketIndex >= buckets.length)
+              ) {
+                bucketIndex = null;
+              }
+
+              return { text, bucketIndex };
+            }
+
+            return { text: String(it || `Item ${idx + 1}`).trim(), bucketIndex: null };
+          })
+          .filter((x) => x.text);
+
+        const candidateCfg = { ...aiConfig, buckets, items: sortItems };
+
+        // If invalid, mark for retry and ship a minimal valid placeholder (still SORT).
+        if (!sortConfigIsValid(candidateCfg)) {
+          t.__needsRetry = true;
+          t.__retryType = TASK_TYPES.SORT;
+
+          const safeBuckets =
+            buckets.length >= 2 ? buckets.slice(0, 2) : ["Group A", "Group B"];
+
+          // Use word bank terms for placeholder items when possible
+          const safeItems = (sortItems.length ? sortItems : rawWordBank.slice(0, 3).map((w) => ({ text: String(w), bucketIndex: null })))
+            .slice(0, 3);
+
+          config = { ...aiConfig, buckets: safeBuckets, items: safeItems };
+        } else {
+          config = candidateCfg;
+        }
+
+        options = [];
+        items = [];
         correctAnswer = null;
       }
 
-      // For objective types, we can score directly; others need AI/rubric.
-      const objective = meta.objectiveScoring === true;
-      let aiScoringRequired;
-      if (typeof t.aiScoringRequired === "boolean") {
-        // If AI or UI explicitly set it, respect that.
-        aiScoringRequired = t.aiScoringRequired;
-      } else if (objective) {
-        // Objective types can be auto-scored without AI.
-        aiScoringRequired = false;
-      } else if (typeof meta.defaultAiScoringRequired === "boolean") {
-        // Fall back to the metadata default.
-        aiScoringRequired = meta.defaultAiScoringRequired;
-      } else {
-        // Safe default: non-objective types need AI/rubric.
-        aiScoringRequired = true;
+      // SEQUENCE (retry instead of downgrade)
+      else if (taskType === TASK_TYPES.SEQUENCE) {
+        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
+
+        const rawItems =
+          Array.isArray(aiConfig.items) ? aiConfig.items
+          : Array.isArray(aiConfig.steps) ? aiConfig.steps
+          : Array.isArray(aiConfig.events) ? aiConfig.events
+          : Array.isArray(aiConfig.sequence) ? aiConfig.sequence
+          : Array.isArray(t.items) ? t.items
+          : Array.isArray(t.steps) ? t.steps
+          : Array.isArray(t.events) ? t.events
+          : Array.isArray(t.options) ? t.options
+          : [];
+
+        const seqItems = rawItems
+          .map((it, idx) => {
+            if (typeof it === "string") return { text: it.trim() };
+            if (it && typeof it === "object") {
+              const text = it.text || it.label || it.name || it.prompt || `Step ${idx + 1}`;
+              return { text: String(text).trim() };
+            }
+            return { text: String(it || `Step ${idx + 1}`).trim() };
+          })
+          .filter((x) => x.text);
+
+        const candidateCfg = { ...aiConfig, items: seqItems };
+
+        if (!sequenceConfigIsValid(candidateCfg)) {
+          t.__needsRetry = true;
+          t.__retryType = TASK_TYPES.SEQUENCE;
+
+          // placeholder (still SEQUENCE) with at least 3 items
+          const safeItems =
+            seqItems.length >= 3
+              ? seqItems.slice(0, 3)
+              : rawWordBank.slice(0, 3).map((w, i) => ({ text: String(w || `Step ${i + 1}`).trim() })) ||
+                [{ text: "Step 1" }, { text: "Step 2" }, { text: "Step 3" }];
+
+          config = { ...aiConfig, items: safeItems.slice(0, 3) };
+        } else {
+          config = candidateCfg;
+        }
+
+        options = [];
+        items = [];
+        correctAnswer = null;
       }
 
-      // ---------- Flashcards deck (cards) ----------
+      // SHORT ANSWER (multi-item capable)
+      else if (taskType === TASK_TYPES.SHORT_ANSWER) {
+        if (multiItemCapable && Array.isArray(t.items) && t.items.length) {
+          items = t.items.map((it, idx) => {
+            const id = it.id || `sa${idx + 1}`;
+            const iprompt =
+              (it.prompt && String(it.prompt).trim()) ||
+              (it.question && String(it.question).trim()) ||
+              `Prompt ${idx + 1}`;
+
+            let icorrect = it.correctAnswer ?? null;
+            icorrect = typeof icorrect === "string" ? icorrect.trim() : null;
+
+            return { id, prompt: iprompt, correctAnswer: icorrect };
+          });
+        }
+
+        if (typeof correctAnswer !== "string") correctAnswer = null;
+        else correctAnswer = correctAnswer.trim() || null;
+      }
+
+      // JEOPARDY / BRAIN BLITZ (robust clue normalization)
+      else if (taskType === TASK_TYPES.JEOPARDY) {
+        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
+
+        const rawClues =
+          (Array.isArray(t.clues) && t.clues.length && t.clues) ||
+          (Array.isArray(aiConfig.clues) && aiConfig.clues.length && aiConfig.clues) ||
+          (Array.isArray(t.items) && t.items.length && t.items) ||
+          (Array.isArray(t.questions) && t.questions.length && t.questions) ||
+          (Array.isArray(t.prompts) && t.prompts.length && t.prompts) ||
+          [];
+
+        let clues = rawClues.map((cl, idx) => {
+          // string → clue text only
+          if (typeof cl === "string") {
+            return { clue: cl.trim(), answer: "" };
+          }
+
+          if (cl && typeof cl === "object") {
+            const clueText =
+              cl.clue ||
+              cl.prompt ||
+              cl.question ||
+              cl.text ||
+              cl.title ||
+              `Clue ${idx + 1}`;
+
+            let answer = cl.answer ?? cl.correctAnswer ?? "";
+            if (Array.isArray(answer)) answer = answer[0] ?? "";
+            if (typeof answer !== "string") answer = String(answer || "");
+
+            return {
+              clue: String(clueText).trim(),
+              answer: answer.trim(),
+            };
+          }
+
+          return { clue: `Clue ${idx + 1}`, answer: "" };
+        });
+
+        // 🔒 FINAL SAFETY NET: ensure at least 3 clues
+        if (clues.length < 3) {
+          clues = [
+            { clue: "Review the key idea from the lesson.", answer: "" },
+            { clue: "Recall an important term or concept.", answer: "" },
+            { clue: "Explain one fact related to this topic.", answer: "" },
+          ];
+        }
+
+        t.clues = clues;
+        options = [];
+        items = [];
+        correctAnswer = null;
+      }
+
+      // BRAIN SPARK NOTES (bullets)
+      else if (taskType === TASK_TYPES.BRAIN_SPARK_NOTES) {
+        const rawBullets =
+          (Array.isArray(t.bullets) && t.bullets.length && t.bullets) ||
+          (Array.isArray(t.items) && t.items.length && t.items) ||
+          [];
+
+        const bullets = rawBullets
+          .map((b, idx) => {
+            if (typeof b === "string") return b.trim();
+            if (b && typeof b === "object") {
+              const text =
+                b.text || b.prompt || b.title || b.note || b.description || `Note ${idx + 1}`;
+              return String(text).trim();
+            }
+            return String(b || `Note ${idx + 1}`).trim();
+          })
+          .filter(Boolean);
+
+        t.bullets = bullets;
+        options = [];
+        correctAnswer = null;
+      }
+
+      // MIND MAPPER normalize into config.items
+      else if (taskType === TASK_TYPES.MIND_MAPPER) {
+        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
+        const rawItems = Array.isArray(aiConfig.items)
+          ? aiConfig.items
+          : Array.isArray(t.items)
+          ? t.items
+          : Array.isArray(t.options)
+          ? t.options
+          : [];
+
+        const mappedItems = rawItems.map((it, idx) => {
+          if (typeof it === "string") return { text: it, correctIndex: idx };
+          if (it && typeof it === "object") {
+            const text =
+              it.text || it.label || it.name || it.prompt || `Idea ${idx + 1}`;
+            let correctIndex = it.correctIndex;
+            if (typeof correctIndex !== "number") correctIndex = idx;
+            return { text: String(text), correctIndex };
+          }
+          return { text: String(it), correctIndex: idx };
+        });
+
+        config = { ...aiConfig, items: mappedItems };
+        options = [];
+        correctAnswer = null;
+      }
+
+      // FLASHCARDS
       let cards = null;
       if (taskType === TASK_TYPES.FLASHCARDS) {
         const rawCards =
-          (Array.isArray(t.cards) && t.cards.length
-            ? t.cards
-            : Array.isArray(t.items) && t.items.length
-            ? t.items
-            : []) || [];
+          (Array.isArray(t.cards) && t.cards.length ? t.cards
+          : Array.isArray(t.items) && t.items.length ? t.items
+          : []) || [];
 
         cards = rawCards.map((c, idx) => {
           if (!c || (typeof c !== "object" && typeof c !== "string")) {
             return { question: `Card ${idx + 1}`, answer: "" };
           }
-
-          if (typeof c === "string") {
-            return { question: c, answer: "" };
-          }
+          if (typeof c === "string") return { question: c, answer: "" };
 
           const question = c.question || c.prompt || c.clue || `Card ${idx + 1}`;
-
           let answer = c.answer ?? c.correctAnswer ?? "";
+          if (Array.isArray(answer)) answer = answer[0] ?? "";
+          if (typeof answer !== "string") answer = String(answer || "");
 
-          if (Array.isArray(answer)) {
-            answer = answer[0] ?? "";
-          }
-
-          if (typeof answer !== "string") {
-            answer = String(answer || "");
-          }
-
-          return {
-            question: String(question),
-            answer: answer.trim(),
-          };
+          return { question: String(question), answer: answer.trim() };
         });
 
-        // Flashcards rely on per-card answers, not top-level options/correctAnswer
         options = [];
         correctAnswer = null;
       }
 
-      // ---------- Common fields ----------
-      const title =
-        t.title && String(t.title).trim()
-          ? String(t.title).trim().slice(0, 120)
-          : `Task ${index + 1}`;
-
-      // If this is a multi-item task and the prompt is missing, fall back to a generic heading.
-      let prompt =
-        t.prompt && String(t.prompt).trim()
-          ? String(t.prompt).trim()
-          : multiItemCapable && items.length
-          ? "Answer each of the questions below."
-          : "Follow the instructions given by your teacher.";
-
-      const timeLimitSeconds = Number.isFinite(t.timeLimitSeconds)
-        ? Math.max(10, Math.min(600, Math.round(t.timeLimitSeconds)))
-        : null;
-
-      const points = Number.isFinite(t.points)
-        ? Math.max(1, Math.min(50, Math.round(t.points)))
-        : 10;
-
-      // Diff Detective specific normalization
-      let original = null;
-      let modified = null;
+      // Diff Detective
+      let originalText = null;
+      let modifiedText = null;
       let differences = null;
 
       if (taskType === TASK_TYPES.DIFF_DETECTIVE) {
-        original = t.original ? String(t.original) : "";
-        modified = t.modified ? String(t.modified) : "";
+        originalText = t.original ? String(t.original) : "";
+        modifiedText = t.modified ? String(t.modified) : "";
 
         const rawDiffs = Array.isArray(t.differences) ? t.differences : [];
-        differences = rawDiffs.map((d, i) => {
-          if (!d || typeof d !== "object") {
+        differences = rawDiffs.map((d) => {
+          if (!d || typeof d !== "object")
             return { expected: String(d || ""), hint: null };
-          }
           return {
             expected: d.expected ? String(d.expected) : "",
             hint:
-              typeof d.hint === "string" && d.hint.trim()
-                ? d.hint.trim()
-                : null,
+              typeof d.hint === "string" && d.hint.trim() ? d.hint.trim() : null,
           };
         });
 
-        // DiffDetective doesn't need options/config/items
         options = [];
+        correctAnswer = null;
         config = null;
         items = [];
       }
 
-      // ---------- MindMapper: attach shuffledItems for StudentApp ----------
-      if (
-        taskType === TASK_TYPES.MIND_MAPPER &&
-        config &&
-        Array.isArray(config.items)
-      ) {
-        const uiItems = config.items.map((it, idx) => ({
-          id: `item-${idx}`,
-          text: it.text,
-          correctIndex: it.correctIndex,
-        }));
-        t.shuffledItems = uiItems;
-      }
+      const title =
+        isNonEmptyString(t.title) ? String(t.title).trim().slice(0, 120) : `Task ${index + 1}`;
 
-      return {
+      let prompt =
+        isNonEmptyString(t.prompt)
+          ? String(t.prompt).trim()
+          : multiItemCapable && Array.isArray(items) && items.length
+          ? "Answer each of the questions below."
+          : "Follow the instructions given by your teacher.";
+
+      const timeLimitSeconds = Number.isFinite(t.timeLimitSeconds)
+        ? clampInt(t.timeLimitSeconds, 10, 600, null)
+        : null;
+
+      const points = Number.isFinite(t.points) ? clampInt(t.points, 1, 50, 10) : 10;
+
+      // AI scoring requirement
+      const objective = meta.objectiveScoring === true;
+      let aiScoringRequired;
+      if (typeof t.aiScoringRequired === "boolean") aiScoringRequired = t.aiScoringRequired;
+      else if (objective) aiScoringRequired = false;
+      else if (typeof meta.defaultAiScoringRequired === "boolean")
+        aiScoringRequired = meta.defaultAiScoringRequired;
+      else aiScoringRequired = true;
+
+      const out = {
         index,
         title,
         prompt,
@@ -879,26 +864,139 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         items,
         ...(taskType === TASK_TYPES.FLASHCARDS && { cards }),
         ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
-          original,
-          modified,
+          original: originalText,
+          modified: modifiedText,
           differences,
         }),
-        // MindMapper data for Student UI
-        ...(taskType === TASK_TYPES.MIND_MAPPER && {
-          shuffledItems: t.shuffledItems,
-        }),
-        // BrainBlitz / Jeopardy clues
-        ...(taskType === TASK_TYPES.JEOPARDY && {
-          clues: Array.isArray(t.clues) ? t.clues : [],
-        }),
-        // Brain Spark Notes bullets
-        ...(taskType === TASK_TYPES.BRAIN_SPARK_NOTES && {
-          bullets: Array.isArray(t.bullets) ? t.bullets : [],
-        }),
+        ...(taskType === TASK_TYPES.JEOPARDY && { clues: Array.isArray(t.clues) ? t.clues : [] }),
+        ...(taskType === TASK_TYPES.BRAIN_SPARK_NOTES && { bullets: Array.isArray(t.bullets) ? t.bullets : [] }),
       };
+
+      // carry retry flags (temporary; removed before save)
+      if (t.__needsRetry) {
+        out.__needsRetry = true;
+        out.__retryType = t.__retryType;
+      }
+
+      return out;
     });
 
-    // ---------- Word-bank usage analysis ----------
+    // --- Targeted retry pass for SORT/SEQUENCE (no downgrades) ---
+    const retryMustHave = {
+      [TASK_TYPES.SORT]:
+        "SORT must include config.buckets (at least 2) and config.items (at least 3), each item as { text, bucketIndex: number|null }.",
+      [TASK_TYPES.SEQUENCE]:
+        "SEQUENCE must include config.items (at least 3), each item as { text }.",
+    };
+
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i];
+      if (!t.__needsRetry) continue;
+
+      const allowedType = t.__retryType;
+      if (allowedType !== TASK_TYPES.SORT && allowedType !== TASK_TYPES.SEQUENCE) continue;
+
+      const mustHave = retryMustHave[allowedType] || "Produce a valid task for this type.";
+
+      let replaced = null;
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const regenerated = await regenerateSingleTask({
+            allowedType,
+            mustHave,
+            subject,
+            gradeLevel,
+            difficulty: normDifficulty,
+            learningGoal: normGoal,
+            topicLabel,
+            vocabularyLines,
+            specialConsiderations: specialConsiderations || customNotes || "",
+            previousTask: t,
+          });
+
+          // sanitize & accept only if valid
+          const regenCfg =
+            regenerated?.config && typeof regenerated.config === "object"
+              ? regenerated.config
+              : {};
+
+          if (allowedType === TASK_TYPES.SORT) {
+            const buckets = Array.isArray(regenCfg.buckets) ? regenCfg.buckets : [];
+            const items = Array.isArray(regenCfg.items) ? regenCfg.items : [];
+            const fixedCfg = {
+              buckets: buckets.map((b) => String(b || "").trim()).filter(Boolean),
+              items: items
+                .map((it) => ({
+                  text: String(it?.text || "").trim(),
+                  bucketIndex:
+                    typeof it?.bucketIndex === "number" ? it.bucketIndex : null,
+                }))
+                .filter((it) => it.text),
+            };
+
+            if (sortConfigIsValid(fixedCfg)) {
+              replaced = {
+                ...t,
+                title: isNonEmptyString(regenerated?.title) ? String(regenerated.title).trim().slice(0, 120) : t.title,
+                prompt: isNonEmptyString(regenerated?.prompt) ? String(regenerated.prompt).trim() : t.prompt,
+                taskType: TASK_TYPES.SORT,
+                config: { ...(regenCfg || {}), ...fixedCfg },
+                options: [],
+                items: [],
+                correctAnswer: null,
+              };
+              break;
+            }
+          }
+
+          if (allowedType === TASK_TYPES.SEQUENCE) {
+            const rawItems = Array.isArray(regenCfg.items) ? regenCfg.items : [];
+            const fixedItems = rawItems
+              .map((it, idx) => {
+                if (typeof it === "string") return { text: it.trim() };
+                if (it && typeof it === "object") {
+                  const text = it.text || it.label || it.name || it.prompt || `Step ${idx + 1}`;
+                  return { text: String(text).trim() };
+                }
+                return { text: String(it || `Step ${idx + 1}`).trim() };
+              })
+              .filter((x) => x.text);
+
+            const fixedCfg = { items: fixedItems };
+
+            if (sequenceConfigIsValid(fixedCfg)) {
+              replaced = {
+                ...t,
+                title: isNonEmptyString(regenerated?.title) ? String(regenerated.title).trim().slice(0, 120) : t.title,
+                prompt: isNonEmptyString(regenerated?.prompt) ? String(regenerated.prompt).trim() : t.prompt,
+                taskType: TASK_TYPES.SEQUENCE,
+                config: { ...(regenCfg || {}), items: fixedItems },
+                options: [],
+                items: [],
+                correctAnswer: null,
+              };
+              break;
+            }
+          }
+        } catch (e) {
+          console.error("Task retry failed", {
+            index: i,
+            attempt,
+            type: allowedType,
+            error: e?.message || String(e),
+          });
+        }
+      }
+
+      if (replaced) tasks[i] = replaced;
+
+      // always strip internal flags
+      delete tasks[i].__needsRetry;
+      delete tasks[i].__retryType;
+    }
+
+    // Word-bank usage analysis
     let aiWordsUsed = [];
     let aiWordsUnused = [];
 
@@ -917,7 +1015,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     }
 
     const now = new Date();
-
     const finalName = explicitName || topicLabel;
 
     const tasksetDoc = new TaskSet({
@@ -945,8 +1042,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       updatedAt: now,
       roomLocation: roomLocation || locationCode || "Classroom",
       isFixedStationTaskset:
-        !!isFixedStationTaskset ||
-        (Array.isArray(displays) && displays.length > 0),
+        !!isFixedStationTaskset || (Array.isArray(displays) && displays.length > 0),
     });
 
     await tasksetDoc.save();
