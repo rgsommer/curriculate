@@ -40,6 +40,12 @@ const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
 const CONTRAST_ACCENT = "#0ea5e9";
 
+function shuffleArray(array) {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
   return copy;
 }
 
@@ -469,6 +475,27 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
   );
 }
 
+function seededShuffle(arr, seedStr) {
+  const a = [...arr];
+
+  // tiny deterministic RNG from a string seed
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+
+  const rand = () => {
+    // xorshift32
+    seed ^= seed << 13; seed >>>= 0;
+    seed ^= seed >> 17; seed >>>= 0;
+    seed ^= seed << 5;  seed >>>= 0;
+    return (seed >>> 0) / 4294967296;
+  };
+
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 /* ─────────────────────────────────────────────
    Main TaskRunner

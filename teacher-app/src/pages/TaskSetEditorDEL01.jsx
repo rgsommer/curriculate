@@ -261,6 +261,17 @@ export default function TaskSetEditor() {
     );
   };
 
+  const updateTaskConfig = (tempId, updater) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t._tempId !== tempId) return t;
+        const prevConfig = t.config && typeof t.config === "object" ? t.config : {};
+        const nextConfig = updater(prevConfig);
+        return { ...t, config: nextConfig };
+      })
+    );
+  };
+
   const updateTaskItems = (tempId, updater) => {
     setTasks((prev) =>
       prev.map((t) => {
@@ -912,8 +923,8 @@ export default function TaskSetEditor() {
                   />
                 </div>
 
-                {/* JEOPARDY / BRAIN BLITZ: Clues editor */}
-                {task.taskType === TASK_TYPES.JEOPARDY && (
+                {/* Hide & Seek specific config */}
+                {task.taskType === TASK_TYPES.HIDENSEEK && (
                   <div style={{ marginBottom: 6 }}>
                     <label
                       style={{
@@ -922,6 +933,79 @@ export default function TaskSetEditor() {
                         marginBottom: 2,
                       }}
                     >
+                      Page / location students must find
+                    </label>
+                    <input
+                      type="text"
+                      value={task.config?.pageReference || ""}
+                      onChange={(e) =>
+                        updateTask(task._tempId, "config", {
+                          ...(task.config && typeof task.config === "object"
+                            ? task.config
+                            : {}),
+                          pageReference: e.target.value,
+                        })
+                      }
+                      placeholder="e.g., Textbook p. 142, paragraph 3"
+                      style={{
+                        width: "100%",
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                        padding: 6,
+                        fontSize: "0.8rem",
+                      }}
+                    />
+                  </div>
+                )}
+                {task.taskType === TASK_TYPES.HIDENSEEK && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "0.8rem",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Teacher reference answer – why is this important?
+                    </label>
+                    <textarea
+                      value={task.config?.referenceAnswer || ""}
+                      onChange={(e) =>
+                        updateTask(task._tempId, "config", {
+                          ...(task.config && typeof task.config === "object"
+                            ? task.config
+                            : {}),
+                          referenceAnswer: e.target.value,
+                        })
+                      }
+                      rows={3}
+                      placeholder="Write the model explanation you’d like AI to compare student answers to."
+                      style={{
+                        width: "100%",
+                        borderRadius: 6,
+                        border: "1px solid #d1d5db",
+                        padding: 6,
+                        fontSize: "0.8rem",
+                        resize: "vertical",
+                      }}
+                    />
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: "0.7rem",
+                        color: "#6b7280",
+                      }}
+                    >
+                      If you leave this blank, you can still review answers manually. When filled in, AI can help
+                      compare student explanations to your model answer.
+                    </div>
+                  </div>
+                )}
+
+                {/* JEOPARDY / BRAIN BLITZ: Clues editor */}
+                {task.taskType === TASK_TYPES.JEOPARDY && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
                       BrainBlitz / Jeopardy clues
                     </label>
 
@@ -1005,353 +1089,212 @@ export default function TaskSetEditor() {
                         + Add clue
                       </button>
 
-                      <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                        Student BrainBlitz uses <code>task.clues</code>.
+                      <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>
+                        Student BrainBlitz uses <code>task.clues</code>. If this is empty, it will look like “no questions.”
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* Multi-part items editor (MC / TF / Short Answer) */}
-                {[TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(task.taskType) && (
-                  <div style={{ marginBottom: 6 }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "0.8rem",
-                        marginBottom: 2,
-                      }}
-                    >
-                      Multi-part questions
-                    </label>
+                {Array.isArray(task.items) && task.items.length > 0 &&
+                  [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(task.taskType) && (
+                    <div style={{ marginBottom: 6 }}>
+                      <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                        Multi-part questions
+                      </label>
 
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {(Array.isArray(task.items) ? task.items : []).map((it, itemIdx) => {
-                        const itemOptions =
-                          task.taskType === TASK_TYPES.TRUE_FALSE
-                            ? ["True", "False"]
-                            : Array.isArray(it?.options)
-                            ? it.options
-                            : [];
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {task.items.map((it, itemIdx) => {
+                          const itemOptions =
+                            task.taskType === TASK_TYPES.TRUE_FALSE
+                              ? ["True", "False"]
+                              : Array.isArray(it?.options)
+                              ? it.options
+                              : [];
 
-                        return (
-                          <div
-                            key={it?.id || itemIdx}
-                            style={{
-                              border: "1px solid #e5e7eb",
-                              background: "#ffffff",
-                              borderRadius: 8,
-                              padding: 8,
-                            }}
-                          >
+                          return (
                             <div
+                              key={it?.id || itemIdx}
                               style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                gap: 8,
-                                marginBottom: 6,
+                                border: "1px solid #e5e7eb",
+                                background: "#ffffff",
+                                borderRadius: 8,
+                                padding: 8,
                               }}
                             >
-                              <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>
-                                Item {itemIdx + 1}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateTaskItems(task._tempId, (prev) => {
-                                    const copy = [...prev];
-                                    copy.splice(itemIdx, 1);
-                                    return copy;
-                                  })
-                                }
-                                style={redTextButton}
-                              >
-                                Remove item
-                              </button>
-                            </div>
-
-                            <div style={{ marginBottom: 6 }}>
-                              <label
-                                style={{
-                                  display: "block",
-                                  fontSize: "0.75rem",
-                                  marginBottom: 2,
-                                }}
-                              >
-                                Prompt
-                              </label>
-                              <textarea
-                                rows={2}
-                                value={it?.prompt || ""}
-                                onChange={(e) =>
-                                  updateTaskItems(task._tempId, (prev) => {
-                                    const copy = [...prev];
-                                    copy[itemIdx] = { ...(copy[itemIdx] || {}), prompt: e.target.value };
-                                    return copy;
-                                  })
-                                }
-                                style={{
-                                  width: "100%",
-                                  borderRadius: 6,
-                                  border: "1px solid #d1d5db",
-                                  padding: 6,
-                                  fontSize: "0.8rem",
-                                  resize: "vertical",
-                                }}
-                              />
-                            </div>
-
-                            {(task.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-                              task.taskType === TASK_TYPES.TRUE_FALSE) && (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                <label
-                                  style={{
-                                    display: "block",
-                                    fontSize: "0.75rem",
-                                    marginBottom: 2,
-                                  }}
-                                >
-                                  Options
-                                </label>
-
-                                {itemOptions.map((opt, optIdx) => (
-                                  <div
-                                    key={optIdx}
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 6,
-                                    }}
-                                  >
-                                    <input
-                                      type="text"
-                                      value={opt}
-                                      disabled={task.taskType === TASK_TYPES.TRUE_FALSE}
-                                      onChange={(e) => {
-                                        if (task.taskType !== TASK_TYPES.MULTIPLE_CHOICE) return;
-                                        updateTaskItems(task._tempId, (prev) => {
-                                          const copy = [...prev];
-                                          const item = { ...(copy[itemIdx] || {}) };
-                                          const nextOpts = Array.isArray(item.options) ? [...item.options] : [];
-                                          nextOpts[optIdx] = e.target.value;
-                                          item.options = nextOpts;
-                                          copy[itemIdx] = item;
-                                          return copy;
-                                        });
-                                      }}
-                                      style={{
-                                        flex: 1,
-                                        borderRadius: 6,
-                                        border: "1px solid #d1d5db",
-                                        padding: 6,
-                                        fontSize: "0.8rem",
-                                        opacity: task.taskType === TASK_TYPES.TRUE_FALSE ? 0.8 : 1,
-                                      }}
-                                    />
-
-                                    <label
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 4,
-                                        fontSize: "0.75rem",
-                                      }}
-                                    >
-                                      <input
-                                        type="radio"
-                                        name={`correct-item-${task._tempId}-${itemIdx}`}
-                                        checked={it?.correctAnswer === optIdx}
-                                        onChange={() =>
-                                          updateTaskItems(task._tempId, (prev) => {
-                                            const copy = [...prev];
-                                            copy[itemIdx] = {
-                                              ...(copy[itemIdx] || {}),
-                                              correctAnswer: optIdx,
-                                            };
-                                            return copy;
-                                          })
-                                        }
-                                      />
-                                      Correct
-                                    </label>
-                                  </div>
-                                ))}
-
-                                {task.taskType === TASK_TYPES.MULTIPLE_CHOICE && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateTaskItems(task._tempId, (prev) => {
-                                        const copy = [...prev];
-                                        const item = { ...(copy[itemIdx] || {}) };
-                                        const nextOpts = Array.isArray(item.options) ? [...item.options] : [];
-                                        nextOpts.push("");
-                                        item.options = nextOpts;
-                                        copy[itemIdx] = item;
-                                        return copy;
-                                      })
-                                    }
-                                    style={grayButton}
-                                  >
-                                    + Add option
-                                  </button>
-                                )}
-                              </div>
-                            )}
-
-                            {task.taskType === TASK_TYPES.SHORT_ANSWER && (
-                              <div style={{ marginTop: 6 }}>
-                                <label
-                                  style={{
-                                    display: "block",
-                                    fontSize: "0.75rem",
-                                    marginBottom: 2,
-                                  }}
-                                >
-                                  Reference answer (optional)
-                                </label>
-                                <input
-                                  type="text"
-                                  value={it?.correctAnswer || ""}
-                                  onChange={(e) =>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                                <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>
+                                  Item {itemIdx + 1}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
                                     updateTaskItems(task._tempId, (prev) => {
                                       const copy = [...prev];
-                                      copy[itemIdx] = {
-                                        ...(copy[itemIdx] || {}),
-                                        correctAnswer: e.target.value,
-                                      };
+                                      copy.splice(itemIdx, 1);
                                       return copy;
                                     })
                                   }
-                                  placeholder="Optional model answer"
+                                  style={redTextButton}
+                                >
+                                  Remove item
+                                </button>
+                              </div>
+
+                              {/* Item prompt */}
+                              <div style={{ marginBottom: 6 }}>
+                                <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                                  Prompt
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  value={it?.prompt || ""}
+                                  onChange={(e) =>
+                                    updateTaskItems(task._tempId, (prev) => {
+                                      const copy = [...prev];
+                                      copy[itemIdx] = { ...(copy[itemIdx] || {}), prompt: e.target.value };
+                                      return copy;
+                                    })
+                                  }
                                   style={{
                                     width: "100%",
                                     borderRadius: 6,
                                     border: "1px solid #d1d5db",
                                     padding: 6,
                                     fontSize: "0.8rem",
+                                    resize: "vertical",
                                   }}
                                 />
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateTaskItems(task._tempId, (prev) => {
-                            const next = Array.isArray(prev) ? [...prev] : [];
-                            if (task.taskType === TASK_TYPES.TRUE_FALSE) {
-                              next.push({
-                                id: `tf${next.length + 1}`,
-                                prompt: "",
-                                options: ["True", "False"],
-                                correctAnswer: 0,
-                              });
-                            } else if (task.taskType === TASK_TYPES.MULTIPLE_CHOICE) {
-                              next.push({
-                                id: `q${next.length + 1}`,
-                                prompt: "",
-                                options: ["Option A", "Option B"],
-                                correctAnswer: 0,
-                              });
-                            } else {
-                              next.push({
-                                id: `sa${next.length + 1}`,
-                                prompt: "",
-                                correctAnswer: "",
-                              });
-                            }
-                            return next;
-                          })
-                        }
-                        style={grayButton}
-                      >
-                        + Add item
-                      </button>
-                    </div>
-                  </div>
-                )}
+                              {/* MC/TF options + correct */}
+                              {(task.taskType === TASK_TYPES.MULTIPLE_CHOICE || task.taskType === TASK_TYPES.TRUE_FALSE) && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                                    Options
+                                  </label>
 
-                {/* Hide & Seek specific config */}
-                {task.taskType === TASK_TYPES.HIDENSEEK && (
-                  <div style={{ marginBottom: 6 }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "0.8rem",
-                        marginBottom: 2,
-                      }}
-                    >
-                      Page / location students must find
-                    </label>
-                    <input
-                      type="text"
-                      value={task.config?.pageReference || ""}
-                      onChange={(e) =>
-                        updateTask(task._tempId, "config", {
-                          ...(task.config && typeof task.config === "object"
-                            ? task.config
-                            : {}),
-                          pageReference: e.target.value,
-                        })
-                      }
-                      placeholder="e.g., Textbook p. 142, paragraph 3"
-                      style={{
-                        width: "100%",
-                        borderRadius: 6,
-                        border: "1px solid #d1d5db",
-                        padding: 6,
-                        fontSize: "0.8rem",
-                      }}
-                    />
-                  </div>
-                )}
-                {task.taskType === TASK_TYPES.HIDENSEEK && (
-                  <div style={{ marginBottom: 6 }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "0.8rem",
-                        marginBottom: 2,
-                      }}
-                    >
-                      Teacher reference answer – why is this important?
-                    </label>
-                    <textarea
-                      value={task.config?.referenceAnswer || ""}
-                      onChange={(e) =>
-                        updateTask(task._tempId, "config", {
-                          ...(task.config && typeof task.config === "object"
-                            ? task.config
-                            : {}),
-                          referenceAnswer: e.target.value,
-                        })
-                      }
-                      rows={3}
-                      placeholder="Write the model explanation you’d like AI to compare student answers to."
-                      style={{
-                        width: "100%",
-                        borderRadius: 6,
-                        border: "1px solid #d1d5db",
-                        padding: 6,
-                        fontSize: "0.8rem",
-                        resize: "vertical",
-                      }}
-                    />
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: "0.7rem",
-                        color: "#6b7280",
-                      }}
-                    >
-                      If you leave this blank, you can still review answers manually. When filled in, AI can help
-                      compare student explanations to your model answer.
+                                  {itemOptions.map((opt, optIdx) => (
+                                    <div key={optIdx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <input
+                                        type="text"
+                                        value={opt}
+                                        disabled={task.taskType === TASK_TYPES.TRUE_FALSE}
+                                        onChange={(e) => {
+                                          if (task.taskType !== TASK_TYPES.MULTIPLE_CHOICE) return;
+                                          updateTaskItems(task._tempId, (prev) => {
+                                            const copy = [...prev];
+                                            const item = { ...(copy[itemIdx] || {}) };
+                                            const nextOpts = Array.isArray(item.options) ? [...item.options] : [];
+                                            nextOpts[optIdx] = e.target.value;
+                                            item.options = nextOpts;
+                                            copy[itemIdx] = item;
+                                            return copy;
+                                          });
+                                        }}
+                                        style={{
+                                          flex: 1,
+                                          borderRadius: 6,
+                                          border: "1px solid #d1d5db",
+                                          padding: 6,
+                                          fontSize: "0.8rem",
+                                          opacity: task.taskType === TASK_TYPES.TRUE_FALSE ? 0.8 : 1,
+                                        }}
+                                      />
+
+                                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.7rem" }}>
+                                        <input
+                                          type="radio"
+                                          name={`correct-item-${task._tempId}-${itemIdx}`}
+                                          checked={it?.correctAnswer === optIdx}
+                                          onChange={() =>
+                                            updateTaskItems(task._tempId, (prev) => {
+                                              const copy = [...prev];
+                                              copy[itemIdx] = { ...(copy[itemIdx] || {}), correctAnswer: optIdx };
+                                              return copy;
+                                            })
+                                          }
+                                        />
+                                        Correct
+                                      </label>
+                                    </div>
+                                  ))}
+
+                                  {task.taskType === TASK_TYPES.MULTIPLE_CHOICE && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateTaskItems(task._tempId, (prev) => {
+                                          const copy = [...prev];
+                                          const item = { ...(copy[itemIdx] || {}) };
+                                          const nextOpts = Array.isArray(item.options) ? [...item.options] : [];
+                                          nextOpts.push("");
+                                          item.options = nextOpts;
+                                          copy[itemIdx] = item;
+                                          return copy;
+                                        })
+                                      }
+                                      style={grayButton}
+                                    >
+                                      + Add option
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Short answer reference answer per item (optional) */}
+                              {task.taskType === TASK_TYPES.SHORT_ANSWER && (
+                                <div style={{ marginTop: 6 }}>
+                                  <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                                    Reference answer (optional)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={it?.correctAnswer || ""}
+                                    onChange={(e) =>
+                                      updateTaskItems(task._tempId, (prev) => {
+                                        const copy = [...prev];
+                                        copy[itemIdx] = { ...(copy[itemIdx] || {}), correctAnswer: e.target.value };
+                                        return copy;
+                                      })
+                                    }
+                                    placeholder="Optional: model answer for auto-scoring"
+                                    style={{
+                                      width: "100%",
+                                      borderRadius: 6,
+                                      border: "1px solid #d1d5db",
+                                      padding: 6,
+                                      fontSize: "0.8rem",
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateTaskItems(task._tempId, (prev) => {
+                              const next = [...prev];
+                              if (task.taskType === TASK_TYPES.TRUE_FALSE) {
+                                next.push({ id: `tf${next.length + 1}`, prompt: "", options: ["True", "False"], correctAnswer: 0 });
+                              } else if (task.taskType === TASK_TYPES.MULTIPLE_CHOICE) {
+                                next.push({ id: `q${next.length + 1}`, prompt: "", options: ["Option A", "Option B"], correctAnswer: 0 });
+                              } else {
+                                next.push({ id: `sa${next.length + 1}`, prompt: "", correctAnswer: "" });
+                              }
+                              return next;
+                            })
+                          }
+                          style={grayButton}
+                        >
+                          + Add item
+                        </button>
+                      </div>
                     </div>
-                  </div>
                 )}
 
                 {/* SORT: Categories / buckets */}
@@ -1615,6 +1558,7 @@ export default function TaskSetEditor() {
                 {/* Options area for MC / sort / sequence */}
                 {[
                   TASK_TYPES.MULTIPLE_CHOICE,
+                  TASK_TYPES.SEQUENCE,
                 ].includes(task.taskType) && (
                   <div style={{ marginBottom: 6 }}>
                     <label
