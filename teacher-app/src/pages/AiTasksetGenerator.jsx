@@ -264,13 +264,26 @@ export default function AiTasksetGenerator() {
 
       if (!resp.ok) {
         let msg = `AI generation failed (status ${resp.status})`;
+
         try {
-          const body = await resp.json();
-          if (body?.error) msg = body.error;
-          if (body?.message) msg = body.message;
+          const bodyText = await resp.text();
+
+          // Try JSON first
+          try {
+            const body = bodyText ? JSON.parse(bodyText) : null;
+            if (body?.error) msg = body.error;
+            if (body?.message) msg = body.message;
+
+            // ✅ this is the key: your backend uses "details"
+            if (body?.details) msg = `${msg}\n\nDetails: ${body.details}`;
+          } catch {
+            // Not JSON
+            if (bodyText) msg = `${msg}\n\nResponse: ${bodyText.slice(0, 2000)}`;
+          }
         } catch {
           // ignore
         }
+
         throw new Error(msg);
       }
 
