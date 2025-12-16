@@ -1017,6 +1017,7 @@ function StudentApp() {
           typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
       }));
     });
+  };
 
   // Explicit user action: drop current room and show the join form.
   // This is the ONLY time we clear saved join keys.
