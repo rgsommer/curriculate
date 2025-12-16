@@ -178,7 +178,7 @@ setInterval(() => {
     }));
 
   io.emit("rooms:available", available);
-}, 8000);
+}, 20000);
 
 async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
   const stations = {};
@@ -939,7 +939,11 @@ io.on("connection", (socket) => {
     socket.handshake.headers.referer
   );
 
-  socket.on("task:force-advance", ({ roomCode }) => {
+socket.on("submit:answer", (payload, ack) => {
+  handleStudentSubmit(payload, ack);
+});
+
+socket.on("task:force-advance", ({ roomCode }) => {
   const session = getSessionByRoomCode(roomCode); // <-- use YOUR existing getter
   if (!session) return;
 

@@ -1065,6 +1065,9 @@ function StudentApp() {
         : assignedStationId;
       setScannerActive(norm.id === expectedId ? false : true);
     });
+
+    socket.emit("task:requestNext", { roomCode: code, teamId });
+
   };
 
   // ─────────────────────────────────────────────
