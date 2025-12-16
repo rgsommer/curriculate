@@ -616,10 +616,17 @@ function buildRoomState(room) {
 }
 
 function sendTaskToTeam(room, teamId, index) {
+  index = typeof index === "number" ? index : 0;
+  if (index < 0) index = 0;
+
   if (!room || !room.taskset) return;
   if (!room.teams || !room.teams[teamId]) return;
 
   const tasks = room.taskset.tasks || [];
+    if (!task) {
+    // nothing to send
+    return;
+  }
 
   // If they've finished all tasks, mark complete for this team only
   if (index >= tasks.length) {
@@ -1149,13 +1156,15 @@ socket.on("task:force-advance", ({ roomCode }) => {
       socket.join(teamId);
       // ✅ If a taskset is already running, send the current task to this (re)joining team
       if (room.taskset && Array.isArray(room.taskset.tasks) && room.taskset.tasks.length > 0) {
-        const idx =
+        const idxRaw =
           typeof room.taskIndex === "number" && room.taskIndex >= 0
             ? room.taskIndex
-            : typeof room.teams?.[teamId]?.taskIndex === "number"
+            : typeof room.teams?.[teamId]?.taskIndex === "number" &&
+              room.teams[teamId].taskIndex >= 0
             ? room.teams[teamId].taskIndex
             : 0;
 
+        const idx = Math.max(0, idxRaw);
         sendTaskToTeam(room, teamId, idx);
       }
 
