@@ -437,6 +437,7 @@ function StudentApp() {
   const [reviewPauseSeconds, setReviewPauseSeconds] = useState(15);
   const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
   const [taskLocked, setTaskLocked] = useState(false);
+  const [reviewState, setReviewState] = useState(null);
 
   // Whether to enforce location (fixed-station / multi-room hunts)
   const [enforceLocation, setEnforceLocation] = useState(false);
@@ -923,6 +924,9 @@ function StudentApp() {
     // refresh assignment + show scanner
     socket.emit("room:request-state", { teamId });
     setScannerActive(true);
+
+    setReviewState(null);
+
   };
 
   const handleSubmitAnswer = (answerPayload) => {
@@ -963,11 +967,15 @@ function StudentApp() {
         return;
       }
 
-      const [reviewState, setReviewState] = useState(null);
-      // { taskId, taskType, studentAnswer, correctAnswer, itemsCorrectAnswers, pointsEarned, ... }
-
       setStatusMessage("");
       setTaskLocked(true);
+
+      setReviewState({
+        studentAnswer: normalizedAnswer,
+        taskId: payload.taskId,
+        taskIndex: payload.taskIndex,
+        secondsLeft: fallbackSeconds,
+      });
 
       // Always start a review countdown so the task will clear even if task:scored never arrives
       const fallbackSeconds =
@@ -2279,6 +2287,8 @@ function StudentApp() {
                   onAnswerChange={setCurrentAnswerDraft}
                   answerDraft={currentAnswerDraft}
                   disabled={taskLocked || submitting}
+                  mode={taskLocked ? "review" : "play"}
+                  review={reviewState}
                   socket={socket}
                   roomCode={roomCode}
                   playerTeam={teamName}
