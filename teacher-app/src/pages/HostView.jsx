@@ -1,9 +1,12 @@
 // teacher-app/src/pages/HostView.jsx
-// Drop-in projector/host view: Teams list + Leaderboard only (no side column UI).
-// NOTE: Layout/sidebar suppression is done at the router/layout level. This file is intentionally full-bleed.
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../socket";
+import { motion, AnimatePresence } from "framer-motion";
+import Confetti from "react-confetti";
+
+const trophyEmojis = ["🥇", "🥈", "🥉"];
+const podiumHeights = ["h-32", "h-48", "h-24"]; // 2nd, 1st, 3rd
+const podiumColors = ["bg-gray-400", "bg-yellow-500", "bg-orange-600"];
 
 export default function HostView({ roomCode }) {
   const [roomState, setRoomState] = useState({
@@ -13,65 +16,80 @@ export default function HostView({ roomCode }) {
     locationCode: "Classroom",
   });
 
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [prevLeaderboard, setPrevLeaderboard] = useState([]);
   const joinSoundRef = useRef(null);
+  const fanfareRef = useRef(null);
+  const cheerRef = useRef(null);
 
+  // Sound preloading
   useEffect(() => {
-    const audio = new Audio("/sounds/join.mp3");
-    audio.load();
-    joinSoundRef.current = audio;
+    joinSoundRef.current = new Audio("/sounds/join.mp3");
+    fanfareRef.current = new Audio("/sounds/fanfare.mp3");
+    cheerRef.current = new Audio("/sounds/cheer.mp3");
+
+    [joinSoundRef, fanfareRef, cheerRef].forEach((ref) => {
+      if (ref.current) ref.current.volume = 0.7;
+    });
   }, []);
 
-  // Best-effort unlock on first click so join sounds can play
+  // Autoplay unlock
   useEffect(() => {
     const unlock = () => {
-      const a = joinSoundRef.current;
-      if (!a) return;
-      a.muted = true;
-      a.play()
-        .then(() => {
-          a.pause();
-          a.currentTime = 0;
-          a.muted = false;
-        })
-        .catch(() => {});
+      [joinSoundRef, fanfareRef, cheerRef].forEach((ref) => {
+        if (ref.current) {
+          ref.current.muted = true;
+          ref.current.play().then(() => {
+            ref.current.pause();
+            ref.current.currentTime = 0;
+            ref.current.muted = false;
+          }).catch(() => {});
+        }
+      });
       window.removeEventListener("click", unlock);
     };
     window.addEventListener("click", unlock);
     return () => window.removeEventListener("click", unlock);
   }, []);
 
-  // Join as host
+  // Socket logic
   useEffect(() => {
     if (!roomCode) return;
     const code = String(roomCode).toUpperCase().trim();
-    if (!code) return;
-
     socket.emit("joinRoom", { roomCode: code, role: "host", name: "Host" });
-  }, [roomCode]);
 
-  useEffect(() => {
     const handleRoom = (state) => {
       const safe = state || {};
-      setRoomState((prev) => ({
-        ...prev,
-        teams: safe.teams || {},
-        scores: safe.scores || {},
-        locationCode: safe.locationCode || safe.locationCode === "" ? safe.locationCode : (prev.locationCode || "Classroom"),
-        taskIndex: typeof safe.taskIndex === "number" ? safe.taskIndex : prev.taskIndex,
-      }));
+      setRoomState((prev) => {
+        const newLeaderboard = Object.entries(safe.scores || {})
+          .map(([id, pts]) => ({ teamId: id, pts: pts || 0, name: safe.teams[id]?.teamName || id }))
+          .sort((a, b) => b.pts - a.pts);
+
+        if (prevLeaderboard.length > 0) {
+          const oldLeader = prevLeaderboard[0]?.teamId;
+          const newLeader = newLeaderboard[0]?.teamId;
+          if (newLeader && newLeader !== oldLeader) {
+            cheerRef.current?.play().catch(() => {});
+            setShowConfetti(true);
+            setTimeout(() => setShowConfetti(false), 6000);
+          } else if (newLeaderboard.some((row, i) => row.pts > (prevLeaderboard[i]?.pts || 0))) {
+            fanfareRef.current?.play().catch(() => {});
+          }
+        }
+        setPrevLeaderboard(newLeaderboard);
+
+        return { ...prev, teams: safe.teams || {}, scores: safe.scores || {} };
+      });
     };
 
     const handleTeamJoined = () => {
-      const a = joinSoundRef.current;
-      if (!a) return;
-      a.currentTime = 0;
-      a.play().catch(() => {});
+      joinSoundRef.current?.play().catch(() => {});
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
     };
 
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
-
-    // Back-compat events
     socket.on("teamJoined", handleTeamJoined);
     socket.on("team:joined", handleTeamJoined);
 
@@ -81,165 +99,139 @@ export default function HostView({ roomCode }) {
       socket.off("teamJoined", handleTeamJoined);
       socket.off("team:joined", handleTeamJoined);
     };
-  }, []);
+  }, [roomCode, prevLeaderboard]);
 
-  const teamsObj = roomState.teams || {};
-  const scoresObj = roomState.scores || {};
-
-  const teams = useMemo(() => Object.values(teamsObj || {}), [teamsObj]);
+  // Memoized data
+  const teams = useMemo(() => {
+    return Object.entries(roomState.teams || {}).map(([id, t]) => ({
+      teamId: id,
+      teamName: t.teamName || t.name || id,
+      members: Array.isArray(t.members) ? t.members : [],
+      station: t.currentStationId || t.station || "—",
+    }));
+  }, [roomState.teams]);
 
   const leaderboard = useMemo(() => {
-    const rows = Object.entries(scoresObj || {}).map(([teamId, pts]) => ({
-      teamId,
-      pts: typeof pts === "number" ? pts : 0,
-      name: teamsObj?.[teamId]?.teamName || teamsObj?.[teamId]?.name || teamId,
-    }));
-    rows.sort((a, b) => b.pts - a.pts);
-    return rows;
-  }, [scoresObj, teamsObj]);
+    return Object.entries(roomState.scores || {})
+      .map(([id, pts]) => ({ teamId: id, pts: pts || 0, name: roomState.teams[id]?.teamName || id }))
+      .sort((a, b) => b.pts - a.pts);
+  }, [roomState.scores, roomState.teams]);
 
-  const code = (roomCode || "").toString().toUpperCase();
+  const topThree = leaderboard.slice(0, 3);
+  const displayOrder = [1, 0, 2]; // 2nd left, 1st center, 3rd right
 
-  const styles = {
-    page: {
-      minHeight: "100vh",
-      background: "linear-gradient(135deg, #0b1220, #0a2a3a)",
-      color: "#f8fafc",
-      padding: 24,
-      fontFamily:
-        'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    },
-    shell: { maxWidth: 1400, margin: "0 auto" },
-    header: {
-      display: "flex",
-      alignItems: "flex-end",
-      justifyContent: "space-between",
-      gap: 16,
-      marginBottom: 16,
-      padding: "14px 16px",
-      borderRadius: 16,
-      background: "rgba(255,255,255,0.06)",
-      border: "1px solid rgba(255,255,255,0.10)",
-      backdropFilter: "blur(6px)",
-    },
-    title: { fontSize: 28, fontWeight: 900, letterSpacing: 0.2, margin: 0 },
-    subtitle: { fontSize: 13, opacity: 0.85, marginTop: 4 },
-    pills: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
-    pill: {
-      fontSize: 13,
-      padding: "6px 10px",
-      borderRadius: 999,
-      background: "rgba(255,255,255,0.10)",
-      border: "1px solid rgba(255,255,255,0.14)",
-    },
-    grid: {
-      display: "grid",
-      gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
-      gap: 14,
-      alignItems: "start",
-    },
-    card: {
-      borderRadius: 16,
-      padding: 14,
-      background: "rgba(255,255,255,0.06)",
-      border: "1px solid rgba(255,255,255,0.10)",
-      backdropFilter: "blur(6px)",
-    },
-    cardTitle: { margin: 0, marginBottom: 10, fontSize: 16, fontWeight: 900 },
-    muted: { opacity: 0.8, fontSize: 13 },
-    teamTile: {
-      borderRadius: 14,
-      padding: 12,
-      background: "rgba(255,255,255,0.08)",
-      border: "1px solid rgba(255,255,255,0.10)",
-    },
-    teamName: { fontSize: 16, fontWeight: 900, marginBottom: 4 },
-    teamMeta: { fontSize: 13, opacity: 0.86, lineHeight: 1.25 },
-    mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
-    ol: { margin: 0, paddingLeft: 22 },
-    li: { marginBottom: 10, fontSize: 16 },
-  };
+  const playFanfare = () => fanfareRef.current?.play().catch(() => {});
+  const playBigCheer = () => cheerRef.current?.play().catch(() => {});
 
   return (
-    <div style={styles.page}>
-      <div style={styles.shell}>
-        <div style={styles.header}>
-          <div>
-            <h1 style={styles.title}>Curriculate Host View</h1>
-            <div style={styles.subtitle}>
-              Room <span style={styles.mono}>{code || "—"}</span>
-              {" • "}
-              {roomState.locationCode || "Classroom"}
-              {" • "}
-              Task{" "}
-              <span style={styles.mono}>
-                {typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0
-                  ? roomState.taskIndex + 1
-                  : "—"}
-              </span>
-            </div>
-          </div>
+    <div className="h-screen w-screen bg-gradient-to-br from-purple-600 to-blue-800 flex flex-col overflow-hidden relative">
+      {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={300} gravity={0.15} />}
 
-          <div style={styles.pills}>
-            <div style={styles.pill}>
-              Teams: <strong>{teams.length}</strong>
-            </div>
-            <div style={styles.pill}>
-              Leaderboard: <strong>{leaderboard.length}</strong>
-            </div>
-          </div>
+      {/* Podium Section */}
+      {topThree.length > 0 && (
+        <div className="flex-1 flex items-end justify-center pb-8 gap-12 md:gap-20">
+          {displayOrder.map((idx, pos) => {
+            const team = topThree[idx] || { name: "—", pts: 0 };
+            return (
+              <motion.div
+                key={team.teamId || idx}
+                initial={{ y: 600, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: pos * 1.5, type: "spring", stiffness: 60, damping: 18 }}
+                className="flex flex-col items-center"
+              >
+                <motion.div
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ delay: pos * 1.5 + 0.5, type: "spring", stiffness: 100 }}
+                  className="text-8xl md:text-9xl mb-8"
+                >
+                  {trophyEmojis[idx] || "🏅"}
+                </motion.div>
+
+                <motion.div
+                  initial={{ scaleY: 0 }}
+                  animate={{ scaleY: 1 }}
+                  transition={{ delay: pos * 1.5 + 0.8, duration: 0.4 }}
+                  className={`origin-bottom w-64 md:w-80 rounded-t-3xl px-8 py-12 text-center text-white font-bold shadow-2xl ${podiumColors[idx]}`}
+                >
+                  <div className="text-5xl md:text-6xl mb-4">
+                    {idx + 1}{idx === 0 ? "st" : idx === 1 ? "nd" : "rd"}
+                  </div>
+                  <div className="text-3xl md:text-4xl truncate px-4">{team.name}</div>
+                  <div className="text-6xl md:text-7xl mt-8">{team.pts} pts</div>
+                </motion.div>
+
+                <motion.div
+                  initial={{ height: 0 }}
+                  animate={{ height: "100%" }}
+                  transition={{ delay: pos * 1.5, duration: 1.2, ease: "easeOut" }}
+                  className={`w-full ${podiumHeights[idx]} ${podiumColors[idx]} rounded-b-3xl shadow-2xl origin-bottom`}
+                />
+              </motion.div>
+            );
+          })}
         </div>
+      )}
 
-        <div style={styles.grid}>
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Teams</h2>
+      {/* Integrated Teams + Full Leaderboard Section */}
+      <div className="w-full bg-white/95 backdrop-blur shadow-2xl">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 p-12">
+          {/* Teams List */}
+          <div>
+            <h2 className="text-5xl font-bold text-center mb-10 text-indigo-700">Teams</h2>
             {teams.length === 0 ? (
-              <div style={styles.muted}>No teams joined yet.</div>
+              <div className="text-center text-3xl text-gray-600">No teams joined yet.</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="space-y-6">
                 {teams
                   .slice()
-                  .sort((a, b) =>
-                    String(a.teamName || a.name || "").localeCompare(String(b.teamName || b.name || ""))
-                  )
-                  .map((t) => {
-                    const id = t.teamId || t.id || t._id || "";
-                    const name = t.teamName || t.name || id || "Team";
-                    const members = Array.isArray(t.members) ? t.members : [];
-                    return (
-                      <div key={id || name} style={styles.teamTile}>
-                        <div style={styles.teamName}>{name}</div>
-                        {members.length > 0 && (
-                          <div style={styles.teamMeta}>{members.join(", ")}</div>
-                        )}
-                        <div style={styles.teamMeta}>
-                          Station:{" "}
-                          <span style={styles.mono}>
-                            {t.currentStationId || t.station || "—"}
-                          </span>
-                        </div>
+                  .sort((a, b) => a.teamName.localeCompare(b.teamName))
+                  .map((t) => (
+                    <motion.div
+                      key={t.teamId}
+                      initial={{ opacity: 0, x: -50 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.4 }}
+                      className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-8 shadow-lg"
+                    >
+                      <div className="text-4xl font-bold text-indigo-800">{t.teamName}</div>
+                      {t.members.length > 0 && (
+                        <div className="text-2xl text-gray-700 mt-2">{t.members.join(", ")}</div>
+                      )}
+                      <div className="text-2xl text-gray-600 mt-4">
+                        Station: <span className="font-mono bg-gray-200 px-4 py-2 rounded-lg">{t.station}</span>
                       </div>
-                    );
-                  })}
+                    </motion.div>
+                  ))}
               </div>
             )}
           </div>
 
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Leaderboard</h2>
+          {/* Full Leaderboard */}
+          <div>
+            <h2 className="text-5xl font-bold text-center mb-10 text-indigo-700">Full Leaderboard</h2>
             {leaderboard.length === 0 ? (
-              <div style={styles.muted}>No scores yet.</div>
+              <div className="text-center text-3xl text-gray-600">No scores yet.</div>
             ) : (
-              <ol style={styles.ol}>
-                {leaderboard.map((row, i) => (
-                  <li key={row.teamId} style={styles.li}>
-                    <span style={{ fontWeight: 900 }}>{i + 1}.</span>{" "}
-                    <span style={{ fontWeight: 800 }}>{row.name}</span>{" "}
-                    <span style={{ opacity: 0.8 }}>—</span>{" "}
-                    <span style={{ fontWeight: 900 }}>{row.pts}</span>{" "}
-                    <span style={{ opacity: 0.8 }}>pts</span>
-                  </li>
-                ))}
+              <ol className="space-y-8 text-3xl md:text-4xl">
+                <AnimatePresence>
+                  {leaderboard.map((row, i) => (
+                    <motion.li
+                      key={row.teamId}
+                      layout
+                      initial={{ opacity: 0, x: 100 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -100 }}
+                      transition={{ delay: i * 0.05, duration: 0.5 }}
+                      className="bg-gradient-to-r from-gray-100 to-gray-50 rounded-2xl px-10 py-8 flex justify-between items-center shadow-lg"
+                    >
+                      <span className="font-black text-5xl text-indigo-600">{i + 1}.</span>
+                      <span className="font-bold flex-1 text-left ml-12">{row.name}</span>
+                      <span className="font-black text-6xl text-indigo-700">{row.pts} pts</span>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
               </ol>
             )}
           </div>

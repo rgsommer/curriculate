@@ -1,4 +1,3 @@
-// student-app/src/components/QrScanner.jsx
 import React, { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 
@@ -11,31 +10,31 @@ import jsQR from "jsqr";
  *        • If handler returns false, we keep scanning
  *   - onError?: (msg: string) => void
  */
-export default function QrScanner({
-  active = true,
-  onCode,
-  onScan,
-  onError,
-}) {
+export default function QrScanner({ active = true, onCode, onScan, onError }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+
+  // ✅ Keep latest handler without re-starting camera
+  const handlerRef = useRef(null);
+  useEffect(() => {
+    handlerRef.current = onCode || onScan || null;
+  }, [onCode, onScan]);
 
   const [cameraError, setCameraError] = useState(null);
   const [manualValue, setManualValue] = useState("");
 
+  // Hold IDs separately so stop() truly cancels everything
+  const rafIdRef = useRef(null);
+  const timeoutIdRef = useRef(null);
+
   useEffect(() => {
     let stream = null;
-    let animationId = null;
     let stopped = false;
     let isMounted = true;
 
-    const handler = onCode || onScan;
-
     async function start() {
       if (!active || !isMounted) return;
-      if (typeof window === "undefined" || typeof navigator === "undefined") {
-        return;
-      }
+      if (typeof window === "undefined" || typeof navigator === "undefined") return;
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         if (!isMounted) return;
@@ -60,22 +59,16 @@ export default function QrScanner({
       }
 
       if (!isMounted || !active) {
-        if (stream) {
-          stream.getTracks().forEach((t) => t.stop());
-          stream = null;
-        }
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        stream = null;
         return;
       }
 
       const video = videoRef.current;
       if (!video) {
-        console.warn(
-          "[QrScanner] videoRef missing after getUserMedia (component changed)"
-        );
-        if (stream) {
-          stream.getTracks().forEach((t) => t.stop());
-          stream = null;
-        }
+        console.warn("[QrScanner] videoRef missing after getUserMedia (component changed)");
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        stream = null;
         return;
       }
 
@@ -83,42 +76,30 @@ export default function QrScanner({
       video.muted = true;
       video.setAttribute("playsInline", "true");
 
+      // Wait for metadata so videoWidth/Height exist
       await new Promise((resolve) => {
         const handleLoaded = () => {
           video.removeEventListener("loadedmetadata", handleLoaded);
           resolve();
         };
-        if (video.readyState >= 1) {
-          resolve();
-        } else {
-          video.addEventListener("loadedmetadata", handleLoaded);
-        }
+        if (video.readyState >= 1) resolve();
+        else video.addEventListener("loadedmetadata", handleLoaded);
       });
 
       try {
-        const playPromise = video.play();
-        if (playPromise && typeof playPromise.then === "function") {
-          await playPromise;
-        }
+        const p = video.play();
+        if (p && typeof p.then === "function") await p;
       } catch (err) {
         console.warn("[QrScanner] video.play() failed:", err);
       }
 
-      console.log(
-        "[QrScanner] video started",
-        "videoWidth=",
-        video.videoWidth,
-        "videoHeight=",
-        video.videoHeight
-      );
-
-      const loop = async () => {
+      const loop = () => {
         if (stopped || !isMounted) return;
 
         const v = videoRef.current;
         const c = canvasRef.current;
         if (!v || !c) {
-          animationId = requestAnimationFrame(loop);
+          rafIdRef.current = requestAnimationFrame(loop);
           return;
         }
 
@@ -127,7 +108,7 @@ export default function QrScanner({
         const vh = v.videoHeight || 0;
 
         if (!vw || !vh) {
-          animationId = requestAnimationFrame(loop);
+          rafIdRef.current = requestAnimationFrame(loop);
           return;
         }
 
@@ -141,13 +122,12 @@ export default function QrScanner({
 
           if (qr && qr.data) {
             const rawValue = qr.data;
-            console.log("[QrScanner] jsQR detected:", rawValue);
 
             let accepted = true;
-            if (handler) {
-              accepted = handler(rawValue);
-            }
+            const handler = handlerRef.current;
+            if (handler) accepted = handler(rawValue);
 
+            // ✅ Only stop if handler didn't explicitly return false
             if (accepted !== false) {
               stop();
               return;
@@ -155,51 +135,45 @@ export default function QrScanner({
           }
         } catch (err) {
           console.warn("[QrScanner] jsQR detect error:", err);
-          onError &&
-            onError(
-              "There was a problem reading that code. Try holding it steady and closer."
-            );
+          onError?.("There was a problem reading that code. Try holding it steady and closer.");
         }
 
-        // To avoid pegging the CPU, run at ~10 fps instead of every repaint
-        animationId = window.setTimeout(() => {
-          requestAnimationFrame(loop);
+        // ~10fps to keep CPU sane
+        timeoutIdRef.current = window.setTimeout(() => {
+          rafIdRef.current = requestAnimationFrame(loop);
         }, 100);
       };
 
-      animationId = requestAnimationFrame(loop);
+      rafIdRef.current = requestAnimationFrame(loop);
     }
 
     function stop() {
       stopped = true;
-      if (animationId) {
-        try {
-          cancelAnimationFrame(animationId);
-        } catch (e) {
-          clearTimeout(animationId);
-        }
-        animationId = null;
+
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
       }
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
         stream = null;
       }
     }
 
-    if (active) {
-      start();
-    }
+    if (active) start();
 
     return () => {
       isMounted = false;
       stop();
     };
-  }, [active, onCode, onScan, onError]);
+  }, [active, onError]); // ✅ IMPORTANT: do NOT depend on onScan/onCode
 
-  // If not active, render nothing
-  if (!active) {
-    return null;
-  }
+  if (!active) return null;
 
   const handler = onCode || onScan;
   const showManualOnly = !!cameraError;
@@ -209,22 +183,14 @@ export default function QrScanner({
     if (!trimmed) return;
     if (handler) {
       const accepted = handler(trimmed);
-      if (accepted !== false) {
-        setManualValue("");
-      }
+      if (accepted !== false) setManualValue("");
     } else {
       setManualValue("");
     }
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {!showManualOnly && (
         <>
           <video
@@ -241,15 +207,8 @@ export default function QrScanner({
             playsInline
           />
           <canvas ref={canvasRef} style={{ display: "none" }} />
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.8rem",
-              color: "#4b5563",
-            }}
-          >
-            Hold the QR code steady in front of the camera. It will snap
-            automatically when it can read it.
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "#4b5563" }}>
+            Hold the QR code steady in front of the camera. It will snap automatically when it can read it.
           </p>
         </>
       )}
@@ -257,13 +216,7 @@ export default function QrScanner({
       {showManualOnly && (
         <>
           {cameraError && (
-            <p
-              style={{
-                margin: 0,
-                fontSize: "0.85rem",
-                color: "#b91c1c",
-              }}
-            >
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "#b91c1c" }}>
               {cameraError}
             </p>
           )}

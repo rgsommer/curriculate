@@ -16,7 +16,19 @@ export default function BrainBlitzTask({
 
   const recognitionRef = useRef(null);
 
-  const clues = Array.isArray(task.clues) ? task.clues : [];
+  const raw =
+    (Array.isArray(task.clues) && task.clues) ||
+    (Array.isArray(task.questions) && task.questions) ||
+    (Array.isArray(task.items) && task.items) ||
+    [];
+
+  const clues = raw
+    .map((x) => ({
+      clue: x.clue ?? x.prompt ?? x.question ?? x.text ?? "",
+      answer: x.answer ?? x.correctAnswer ?? x.correct ?? "",
+    }))
+    .filter((x) => String(x.clue).trim().length > 0);
+
   const currentClue =
     currentClueIndex >= 0 && currentClueIndex < clues.length
       ? clues[currentClueIndex]

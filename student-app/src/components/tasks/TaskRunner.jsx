@@ -34,6 +34,7 @@ import SpeechRecognitionTask from "./types/SpeechRecognitionTask"; // NEW
 import PronunciationTask from "./types/PronunciationTask"; // NEW
 import AIDebateJudgeTask from "./types/AIDebateJudgeTask"; // NEW
 import BrainBlitzTask from "./types/BrainBlitzTask";
+import PhotoJournalTask from "./types/PhotoJournalTask";
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -115,6 +116,12 @@ function normalizeTaskType(raw) {
     case "make-and-snap":
     case "make_and_snap":
       return TASK_TYPES.MAKE_AND_SNAP;
+
+    // Photo Journal
+    case "photo-journal":
+    case "photo_journal":
+    case "photojournal":
+      return TASK_TYPES.PHOTO_JOURNAL || "photo-journal";
 
     case "record-audio":
     case "record_audio":
@@ -761,7 +768,18 @@ export default function TaskRunner({
         />
       );
       break;
-    case TASK_TYPES.MAKE_AND_SNAP:
+    case (TASK_TYPES.PHOTO_JOURNAL || "photo-journal"):
+      content = (
+        <PhotoJournalTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+        />
+      );
+      break;
+      case TASK_TYPES.MAKE_AND_SNAP:
       content = (
         <MakeAndSnapTask
           task={t}

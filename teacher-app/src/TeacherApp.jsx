@@ -457,7 +457,7 @@ function EntryGateServer({ onPass, onLogout }) {
 
     const trimmed = code.trim();
     if (!/^[a-z0-9]+$/i.test(trimmed)) {
-      setErr("Use letters and numbers only.");
+      setErr("Letters and numbers only.");
       return;
     }
 
@@ -469,40 +469,50 @@ function EntryGateServer({ onPass, onLogout }) {
         credentials: "include",
         body: JSON.stringify({ code: trimmed }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok) {
-        setErr(data?.error || "Incorrect code.");
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setErr(data?.error || "Incorrect code");
         return;
       }
-      onPass?.();
+
+      onPass();
     } catch {
-      setErr("Network error.");
+      setErr("Network error");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#111827", color: "#f9fafb" }}>
-      <form onSubmit={submit} style={{ width: 360, maxWidth: "90vw", background: "#0b1220", padding: 18, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)" }}>
-        <div style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 6 }}>Curriculate Presenter</div>
-        <div style={{ color: "rgba(249,250,251,0.75)", marginBottom: 12 }}>Enter your access code</div>
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0f172a", color: "#f9fafb" }}>
+      <form
+        onSubmit={submit}
+        style={{
+          width: "100%",
+          maxWidth: 360,
+          padding: 20,
+          borderRadius: 14,
+          background: "#020617",
+          boxSizing: "border-box",
+        }}
+      >
+        <h2 style={{ marginBottom: 8 }}>Teacher Access</h2>
+        <p style={{ opacity: 0.75, marginBottom: 12 }}>
+          Enter your Curriculate access code
+        </p>
 
         <input
+          autoFocus
           value={code}
           onChange={(e) => { setCode(e.target.value); setErr(""); }}
-          autoFocus
           placeholder="Access code"
-          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.06)", color: "#f9fafb" }}
+          style={{ width: "100%", padding: 10, borderRadius: 8 }}
         />
 
-        {err && <div style={{ color: "#fca5a5", marginTop: 10, fontSize: "0.9rem" }}>{err}</div>}
+        {err && <div style={{ color: "#fca5a5", marginTop: 8 }}>{err}</div>}
 
-        <button
-          type="submit"
-          disabled={busy}
-          style={{ width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "#0ea5e9", color: "#fff", fontWeight: 800, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}
-        >
+        <button disabled={busy} style={{ width: "100%", marginTop: 12 }}>
           {busy ? "Checking…" : "Enter"}
         </button>
 
@@ -510,9 +520,9 @@ function EntryGateServer({ onPass, onLogout }) {
           type="button"
           onClick={() => {
             try { localStorage.removeItem(ENTRY_KEY); } catch {}
-            onLogout?.();
+            onLogout();
           }}
-          style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "transparent", color: "#e5e7eb", fontWeight: 700, cursor: "pointer" }}
+          style={{ width: "100%", marginTop: 10 }}
         >
           Logout
         </button>
