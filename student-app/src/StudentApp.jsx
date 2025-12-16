@@ -943,7 +943,7 @@ function StudentApp() {
       answer: answerPayload,
     };
 
-    socket.emit("submit-answer", payload, (response) => {
+    socket.emit("submit:answer", payload, (response) => {
       setSubmitting(false);
       if (!response || response.error) {
         console.warn("Submit error:", response?.error || "Unknown error");
