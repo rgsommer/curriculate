@@ -265,9 +265,7 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
 
     const payload = items.map((item, idx) => {
       let answerVal = answers[idx]?.value ?? null;
-      const isCorrect = isReview && optBaseIndex === correctIndex;
-      const isChosen  = isReview && optBaseIndex === studentIndex;
-
+      
       const isTF =
         task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE;
 
@@ -308,7 +306,8 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
       type: mode === "choice" ? "multi-choice" : "multi-short",
       answers: payload,
     };
-    onSubmit && onSubmit(payloadObj); 
+    
+    onSubmit?.(payloadObj);
     };
 
   return (
@@ -347,9 +346,7 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
           const answerVal = answers[idx]?.value ?? "";
           const correctIndex = item?.correctAnswer ?? null;
           const studentIndex = review?.answers?.[idx]?.baseIndex ?? null;
-          const isCorrect = isReview && optBaseIndex === correctIndex;
-          const isChosen  = isReview && optBaseIndex === studentIndex;
-
+          
           return (
             <div
               key={item.id ?? idx}
@@ -396,6 +393,8 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
                     );
 
                     const isSelected = answerVal === opt;
+                    const isCorrect = isReview && optBaseIndex === correctIndex;
+                    const isChosen  = isReview && optBaseIndex === studentIndex;
 
                     // Visual rules in review:
                     // - correct option gets a green border
