@@ -2108,6 +2108,11 @@ const code = (roomCode || "").toUpperCase();
     handleStudentSubmit(payload, ack);
   });
 
+  socket.on("task:submit", (payload) => {
+    handleStudentSubmit(payload);
+  });
+
+  
   socket.on("task:requestNext", ({ roomCode, teamId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -2118,10 +2123,6 @@ const code = (roomCode || "").toUpperCase();
 
     sendTaskToTeam(room, teamId, (team.taskIndex ?? -1) + 1);
 
-  });
-
-  socket.on("task:submit", (payload) => {
-    handleStudentSubmit(payload);
   });
 
   // ------------------------------
