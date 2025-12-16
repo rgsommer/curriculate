@@ -877,12 +877,13 @@ function StudentApp() {
         }
       }
 
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
-        setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
-        lastStationIdRef.current = stationInfo.id;
-      }
+      const joinStationId = response?.stationId || response?.assignedStationId;
+        if (joinStationId) {
+          const stationInfo = normalizeStationId(joinStationId);
+          setAssignedStationId(stationInfo.id);
+          setAssignedColor(stationInfo.color || response?.assignedColor || null);
+          lastStationIdRef.current = stationInfo.id;
+        }
 
       const locSlug =
         response.locationSlug ||
@@ -1040,7 +1041,7 @@ function StudentApp() {
       if (resp?.stationId) {
         const info = normalizeStationId(resp.stationId);
         setAssignedStationId(info.id);
-        setAssignedColor(info.color || null);
+        setAssignedColor(info.color || resp?.assignedColor || null);
       }
 
       // Close only after server accepts AND if it matches expected station
