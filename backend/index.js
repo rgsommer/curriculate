@@ -616,17 +616,14 @@ function buildRoomState(room) {
 }
 
 function sendTaskToTeam(room, teamId, index) {
-  index = typeof index === "number" ? index : 0;
-  if (index < 0) index = 0;
+  index = Number.isFinite(index) ? index : 0;
+  index = Math.max(0, Math.floor(index));
 
-  if (!room || !room.taskset) return;
-  if (!room.teams || !room.teams[teamId]) return;
+  if (!room?.taskset) return;
+  if (!room?.teams?.[teamId]) return;
 
-  const tasks = room.taskset.tasks || [];
-    if (!task) {
-    // nothing to send
-    return;
-  }
+  const tasks = Array.isArray(room.taskset.tasks) ? room.taskset.tasks : [];
+  if (tasks.length === 0) return;
 
   // If they've finished all tasks, mark complete for this team only
   if (index >= tasks.length) {
@@ -636,6 +633,7 @@ function sendTaskToTeam(room, teamId, index) {
   }
 
   const task = tasks[index];
+  if (!task) return;
 
   // If this is a Diff Detective task, initialise / reset race state
   // the first time any team is sent this particular index.
@@ -708,7 +706,6 @@ function sendTaskToTeam(room, teamId, index) {
     totalTasks: tasks.length,
   };
 
-  // Emit both event names for backward compatibility
   io.to(teamId).emit("task:launch", payload);
   io.to(teamId).emit("task:assigned", payload);
 }
@@ -1147,25 +1144,26 @@ socket.on("task:force-advance", ({ roomCode }) => {
       }
 
       // 🔹 NEW: give this team a starting station so scanning is the first step
-      if (room.stations && Object.keys(room.stations).length > 0) {
+      // If the team already has a station, KEEP IT (refresh/rejoin). Only assign if missing.
+      if (!room.teams[teamId].currentStationId && room.stations && Object.keys(room.stations).length > 0) {
         reassignStationForTeam(room, teamId);
       }
 
-      // Join socket rooms + tag socket
-      socket.join(code);
-      socket.join(teamId);
-      // ✅ If a taskset is already running, send the current task to this (re)joining team
+      // If taskset running, DO NOT push task immediately.
+      // Instead, queue it so the NEXT SCAN delivers it.
       if (room.taskset && Array.isArray(room.taskset.tasks) && room.taskset.tasks.length > 0) {
         const idxRaw =
           typeof room.taskIndex === "number" && room.taskIndex >= 0
             ? room.taskIndex
-            : typeof room.teams?.[teamId]?.taskIndex === "number" &&
-              room.teams[teamId].taskIndex >= 0
+            : (typeof room.teams?.[teamId]?.taskIndex === "number" && room.teams[teamId].taskIndex >= 0)
             ? room.teams[teamId].taskIndex
             : 0;
 
         const idx = Math.max(0, idxRaw);
-        sendTaskToTeam(room, teamId, idx);
+
+        // queue current task for delivery on scan
+        room.teams[teamId].nextTaskIndex = idx;
+        // optionally clear any currently shown task client-side by emitting state only
       }
 
       socket.data.roomCode = code;
