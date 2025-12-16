@@ -65,6 +65,9 @@ const TaskSchema = new Schema(
     requiresDrawing: { type: Boolean, default: false },  // drawing/mime tasks
     notesForTeacher: String,            // AI teacher notes, not shown to students
 
+    isPublic: { type: Boolean, default: false },
+    shareCode: { type: String, unique: true, sparse: true }, // Optional, generated when teacher enables sharing
+    
     // Optional AI metadata for future use
     aiMetadata: {
       type: Schema.Types.Mixed,

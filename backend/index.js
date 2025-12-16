@@ -1575,8 +1575,41 @@ socket.on("station:scan", handleStationScan);
   });
 
   const handleStudentSubmit = async (payload, ack) => {
-    const { roomCode, teamId, taskIndex, answer, timeMs } = payload || {};
-    const code = (roomCode || "").toUpperCase();
+    const { roomCode, teamId, taskIndex, timeMs } = payload || {};
+    let { answer } = payload || {};
+
+    // ✅ Normalize multi-pack answers sent as JSON strings from StudentApp/TaskRunner
+    if (typeof answer === "string") {
+      const s = answer.trim();
+      if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
+        try {
+          const parsed = JSON.parse(s);
+
+          // TaskRunner sends: { kind: "multi-mc" | "multi-short", answers: [...] }
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            Array.isArray(parsed.answers) &&
+            parsed.answers.length > 0
+          ) {
+            const kind = parsed.kind || parsed.type;
+
+            // Convert to the server’s expected shape
+            if (kind === "multi-mc" || kind === "multi-choice") {
+              answer = { type: "multi-choice", answers: parsed.answers };
+            } else if (kind === "multi-short" || kind === "multi-sa") {
+              answer = { type: "multi-short", answers: parsed.answers };
+            } else if (parsed.type === "multi-choice" || parsed.type === "multi-short") {
+              answer = parsed; // already in expected shape
+            }
+          }
+        } catch {
+          // Not JSON; keep as plain string answer
+        }
+      }
+    }
+
+const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room || !room.taskset) {
       if (typeof ack === "function") {
