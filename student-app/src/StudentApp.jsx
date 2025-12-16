@@ -146,7 +146,6 @@ const socket = io(API_BASE_URL, {
   reconnectionDelay: 1000,
 });
 
-
 // ---------------------------------------------------------------------
 // Local session persistence (room + team session)
 // - Refresh/reconnect should auto-resume the same room + team.
@@ -434,6 +433,7 @@ function StudentApp() {
     }
   });
   const [selectedRooms, setSelectedRooms] = useState([]);
+  const [roomIsActive, setRoomIsActive] = useState(false);
 
   // Collaboration
   const [partnerAnswer, setPartnerAnswer] = useState(null);
@@ -627,6 +627,8 @@ function StudentApp() {
         DEFAULT_LOCATION;
       setRoomLocation(loc);
       roomLocationFromStateRef.current = loc;
+
+      setRoomIsActive(!!state.isActive);
 
       const noiseCfg = state.noiseConfig || {};
       setNoiseState((prev) => ({
@@ -1221,7 +1223,25 @@ function StudentApp() {
       const expectedId = resp?.stationId
         ? normalizeStationId(resp.stationId).id
         : assignedStationId;
-      setScannerActive(norm.id === expectedId ? false : true);
+
+      const accepted = norm.id === expectedId;
+      setScannerActive(accepted ? false : true);
+
+      // ✅ UX: show “Wait…” ONLY for the first scan when the taskset is not launched
+      if (accepted) {
+        const isInitial = !!resp?.initialAssignment; // your server sets this on first-ever scan
+        const waitingForLaunch = !!resp?.waitingForLaunch || !roomIsActive;
+
+        if (isInitial && waitingForLaunch) {
+          setStatusMessage("✅ Scan accepted. Wait for your next task…");
+        } else {
+          // Clear any stale wait message once tasks are live
+          setStatusMessage("");
+        }
+
+        // Optional: tiny debug log to confirm whether scan actually delivered a task
+        // console.log("scan ok", { deliveredTask: resp?.deliveredTask, waitingForLaunch });
+      }
     });
 
     socket.emit("task:requestNext", { roomCode: code, teamId });

@@ -1170,6 +1170,9 @@ socket.on("task:force-advance", ({ roomCode }) => {
       socket.data.teamId = teamId;
       socket.data.teamName = cleanName;
 
+      socket.join(code);
+      socket.join(teamId);
+
       const state = buildRoomState(room);
       io.to(code).emit("room:state", state);
       io.to(code).emit("roomState", state);
@@ -1460,6 +1463,9 @@ socket.on("task:force-advance", ({ roomCode }) => {
       team.lastScannedStationId = expectedStation || stationId || null;
 
       // If this team has a queued task, deliver it now
+      let deliveredTask = false;
+
+      // If this team has a queued task, deliver it now
       if (room.taskset && Array.isArray(room.taskset.tasks)) {
         const queuedIndex =
           typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0
@@ -1469,7 +1475,19 @@ socket.on("task:force-advance", ({ roomCode }) => {
         if (queuedIndex >= 0) {
           sendTaskToTeam(room, teamId, queuedIndex);
           delete team.nextTaskIndex;
+          deliveredTask = true;
         }
+      }
+
+      const waitingForLaunch = !room.isActive; // taskset not launched yet
+
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          message: "Correct station!",
+          deliveredTask,
+          waitingForLaunch,
+        });
       }
 
       // Optional: Scan-and-confirm bonus points
@@ -1488,7 +1506,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
         updateTeamScore(room, teamId, currentTask.points || 10);
       }
 
-      if (typeof ack === "function") ack({ ok: true, message: "Correct station!" });
     } catch (err) {
       console.error("handleStationScan error:", err);
       if (typeof ack === "function") ack({ ok: false, error: "Server scan error" });
