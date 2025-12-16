@@ -8,7 +8,7 @@ export default function OpenTextTask({
   onAnswerChange,
   answerDraft,
 }) {
-  const [value, setValue] = useState(answerDraft ?? "");
+  const [value, setValue] = useState(answerDraft?.response ?? "");
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
@@ -16,7 +16,7 @@ export default function OpenTextTask({
 
   // reset when a new task comes in or answerDraft changes
   useEffect(() => {
-    setValue(answerDraft ?? "");
+    setValue(answerDraft?.response ?? "");
   }, [task?.prompt, task?.id, answerDraft]);
 
   const emitDraft = (textValue) => {
