@@ -40,7 +40,6 @@ const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
 const CONTRAST_ACCENT = "#0ea5e9";
 
-
 function seededShuffle(array, seedStr) {
   const copy = [...array];
 
@@ -186,10 +185,11 @@ function normalizeTaskType(raw) {
    Multi-part renderer for MC / TF / Short Answer
    ───────────────────────────────────────────── */
 
-function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
+function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
   const isChoice = mode === "choice";
   const isShort = mode === "short";
-
+  const isReview = mode === "review";
+  
   // Prefer AI "items" array; fall back to older shapes;
   // if none exist, treat as a single-question pack.
   const rawItems =
@@ -265,6 +265,8 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
 
     const payload = items.map((item, idx) => {
       let answerVal = answers[idx]?.value ?? null;
+      const isCorrect = isReview && optBaseIndex === correctIndex;
+      const isChosen  = isReview && optBaseIndex === studentIndex;
 
       const isTF =
         task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE;
@@ -306,8 +308,8 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
       type: mode === "choice" ? "multi-choice" : "multi-short",
       answers: payload,
     };
-    onSubmit && onSubmit(payloadObj);
-};
+    onSubmit && onSubmit(payloadObj); 
+    };
 
   return (
     <form onSubmit={handleSubmit}>
@@ -377,29 +379,52 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
                     gap: 6,
                   }}
                 >
-                  {opts.map((opt) => {
+                  {opts.map((opt, optIndex) => {
+                    const base =
+                      (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+                      (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+                      ((task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE)
+                        ? ["True", "False"]
+                        : []);
+
+                    const optBaseIndex = base.findIndex(
+                      (x) => String(x).trim() === String(opt).trim()
+                    );
+
                     const isSelected = answerVal === opt;
+
+                    // Visual rules in review:
+                    // - correct option gets a green border
+                    // - chosen wrong option gets a red border
+                    const border =
+                      isReview && isCorrect
+                        ? "2px solid #16a34a"
+                        : isReview && isChosen && !isCorrect
+                        ? "2px solid #dc2626"
+                        : isSelected
+                        ? `2px solid ${CONTRAST_ACCENT}`
+                        : `1px solid ${CONTRAST_BORDER}`;
+
+                    const background =
+                      isSelected ? CONTRAST_ACCENT : "#ffffff";
+
+                    const color =
+                      isSelected ? "#ffffff" : CONTRAST_TEXT_DARK;
+
                     return (
                       <button
-                        key={opt}
+                        key={`${item.id ?? idx}:${optIndex}`}
                         type="button"
                         onClick={() => handleChoiceClick(idx, opt)}
                         disabled={submitting || disabled}
                         style={{
                           padding: "8px 10px",
                           borderRadius: 999,
-                          border: isSelected
-                            ? `2px solid ${CONTRAST_ACCENT}`
-                            : `1px solid ${CONTRAST_BORDER}`,
-                          background: isSelected
-                            ? CONTRAST_ACCENT
-                            : "#ffffff",
-                          color: isSelected ? "#ffffff" : CONTRAST_TEXT_DARK,
+                          border,
+                          background,
+                          color,
                           textAlign: "left",
-                          cursor:
-                            submitting || disabled
-                              ? "not-allowed"
-                              : "pointer",
+                          cursor: submitting || disabled ? "not-allowed" : "pointer",
                           fontSize: "0.9rem",
                           transition: "background 0.15s, border-color 0.15s",
                         }}
@@ -481,6 +506,10 @@ export default function TaskRunner({
   answerDraft,
   disabled = false,
   socket,
+
+  mode = "play",  // play || review
+  review = null,
+
   // for FlashcardsRace
   roomCode,
   playerTeam,
@@ -492,6 +521,8 @@ export default function TaskRunner({
 
   const t = task;
   const type = normalizeTaskType(t.taskType || t.type);
+
+  const isReview = mode === "review";
 
   const isChoiceType =
     type === TASK_TYPES.MULTIPLE_CHOICE || type === TASK_TYPES.TRUE_FALSE;
@@ -611,7 +642,7 @@ export default function TaskRunner({
 
   // MULTI-PART: MC / TF / SHORT-ANSWER with items → render all parts together
   if (hasMultiItems && (isChoiceType || isShortType)) {
-    const mode = isChoiceType ? "choice" : "short";
+    const multiMode = isChoiceType ? "choice" : "short";
     return (
       <div className="space-y-3">
         {displayTitle && (
@@ -655,11 +686,12 @@ export default function TaskRunner({
         )}
 
         <MultiPartTask
-          mode={mode}
+          mode={isReview ? "review" : multiMode}
           task={t}
-          onSubmit={onSubmit}
+          review={review}                 // NEW
+          onSubmit={isReview ? null : onSubmit}
           submitting={submitting}
-          disabled={effectiveDisabled}
+          disabled={effectiveDisabled || isReview}
         />
       </div>
     );
@@ -673,10 +705,10 @@ export default function TaskRunner({
       content = (
         <MultipleChoiceTask
           task={t}
-          disabled={effectiveDisabled}
-          onSubmit={onSubmit}
-          onAnswerChange={onAnswerChange}
-          answerDraft={answerDraft}
+          mode={mode}            // NEW
+          review={review}        // NEW
+          disabled={effectiveDisabled || isReview}
+          onSubmit={isReview ? null : onSubmit}
         />
       );
       break;
@@ -684,8 +716,10 @@ export default function TaskRunner({
       content = (
         <TrueFalseTask
           task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
+          mode={mode}
+          review={review}
+          disabled={effectiveDisabled || isReview}
+          onSubmit={isReview ? null : onSubmit}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
         />

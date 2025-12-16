@@ -942,7 +942,6 @@ function StudentApp() {
       }
     }
 
-
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
       teamId,
@@ -963,6 +962,9 @@ function StudentApp() {
         );
         return;
       }
+
+      const [reviewState, setReviewState] = useState(null);
+      // { taskId, taskType, studentAnswer, correctAnswer, itemsCorrectAnswers, pointsEarned, ... }
 
       setStatusMessage("");
       setTaskLocked(true);
