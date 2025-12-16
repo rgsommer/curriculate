@@ -19,7 +19,7 @@ const COLOR_NAMES = COLORS;
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
-const DEFAULT_POST_SUBMIT_SECONDS = 15;
+const DEFAULT_POST_SUBMIT_SECONDS = 10;
 
 // Normalize a human-readable location into a slug like "room-12"
 function normalizeLocationSlug(raw) {
@@ -151,40 +151,11 @@ const socket = io(API_BASE_URL, {
 // -----------------------------
 const isObjectiveTask = (task) => {
   if (!task) return false;
-
-  // explicit flags
   if (task.objectiveScoring === true) return true;
-  if (task?.config?.objectiveScoring === true) return true;
-
-  // common "no AI" marker in this project
-  if (task.aiScoringRequired === false) return true;
-
-  // heuristic: objective task types usually ship correct answers/config
-  const t = task.taskType || task.type;
-  const items = Array.isArray(task.items) ? task.items : [];
-  const hasItemCorrect = items.some((it) => it && (it.correctAnswer !== undefined || it.referenceAnswer));
-  const hasTopCorrect = task.correctAnswer !== undefined && task.correctAnswer !== null;
-  const cfg = task.config && typeof task.config === "object" ? task.config : {};
-  const hasSortConfig =
-    Array.isArray(cfg.buckets) && cfg.buckets.length >= 2 &&
-    Array.isArray(cfg.items) && cfg.items.length >= 2 &&
-    cfg.items.some((it) => typeof it?.bucketIndex === "number");
-  const hasSeqConfig = Array.isArray(cfg.items) && cfg.items.length >= 2;
-
-  const objectiveTypes = new Set([
-    TASK_TYPES.TRUE_FALSE,
-    TASK_TYPES.MULTIPLE_CHOICE,
-    TASK_TYPES.SHORT_ANSWER,
-    TASK_TYPES.SORT,
-    TASK_TYPES.SEQUENCE,
-    TASK_TYPES.TIMELINE,
-  ]);
-
-  if (objectiveTypes.has(t) && (hasItemCorrect || hasTopCorrect || hasSortConfig || hasSeqConfig)) return true;
-
-  // scoringMode string fallback
+  if (task.config && task.config.objectiveScoring === true) return true;
   if (task.scoringMode && String(task.scoringMode).toLowerCase().includes("objective")) return true;
-
+  // fallback: some tasks may ship objectiveScoringRequired
+  if (task.objectiveScoringRequired === true) return true;
   return false;
 };
 
@@ -202,22 +173,12 @@ const getItemPrompt = (item, idx) => {
   return s || `Question ${idx + 1}`;
 };
 
-const tfCorrectToText = (val) => {
-  // supports: boolean, "true"/"false", 0/1, "0"/"1"
-  if (typeof val === "boolean") return val ? "True" : "False";
-  if (typeof val === "number") return val === 0 ? "True" : "False";
-  const s = String(val ?? "").trim().toLowerCase();
-  if (s === "true") return "True";
-  if (s === "false") return "False";
-  if (s === "0") return "True";
-  if (s === "1") return "False";
-  return "";
-};
-
 const buildObjectiveAnswerKey = (task) => {
   if (!task) return null;
 
   const taskType = task.taskType || task.type;
+
+  // Multi-part (MC / TF / SA) commonly store items on task.items
   const items = Array.isArray(task.items) ? task.items : [];
 
   // --- TRUE/FALSE ---
@@ -225,33 +186,39 @@ const buildObjectiveAnswerKey = (task) => {
     if (items.length) {
       return {
         title: "Answer key",
-        rows: items.map((it, idx) => ({
-          q: getItemPrompt(it, idx),
-          a: tfCorrectToText(it?.correctAnswer) || "(missing correct answer)",
-        })),
+        rows: items.map((it, idx) => {
+          const correct =
+            typeof it.correctAnswer === "boolean"
+              ? it.correctAnswer
+              : String(it.correctAnswer).toLowerCase() === "true";
+          return { q: getItemPrompt(it, idx), a: correct ? "True" : "False" };
+        }),
       };
     }
     // single TF fallback
-    const single = tfCorrectToText(task.correctAnswer);
-    if (single) {
+    if (typeof task.correctAnswer === "boolean") {
       return {
         title: "Answer key",
-        rows: [{ q: task.prompt || "True/False", a: single }],
+        rows: [{ q: task.prompt || "True/False", a: task.correctAnswer ? "True" : "False" }],
       };
     }
   }
 
   // --- MULTIPLE CHOICE ---
   if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
+    // multi-part MC
     if (items.length) {
       return {
         title: "Answer key",
         rows: items.map((it, idx) => {
           const opts = Array.isArray(it.options) ? it.options : [];
           const c = it.correctAnswer;
-          let correctText = "";
-          if (typeof c === "number") correctText = opts[c] ?? "";
-          else if (typeof c === "string") correctText = c;
+          const correctText =
+            typeof c === "number"
+              ? (opts[c] ?? "")
+              : typeof c === "string"
+              ? c
+              : "";
           return { q: getItemPrompt(it, idx), a: String(correctText || "").trim() || "(missing correct answer)" };
         }),
       };
@@ -260,7 +227,8 @@ const buildObjectiveAnswerKey = (task) => {
     // single MC fallback
     const opts = Array.isArray(task.options) ? task.options : [];
     const c = task.correctAnswer;
-    const correctText = typeof c === "number" ? (opts[c] ?? "") : typeof c === "string" ? c : "";
+    const correctText =
+      typeof c === "number" ? (opts[c] ?? "") : typeof c === "string" ? c : "";
     if (correctText) {
       return {
         title: "Answer key",
@@ -269,7 +237,7 @@ const buildObjectiveAnswerKey = (task) => {
     }
   }
 
-  // --- SHORT ANSWER ---
+  // --- SHORT ANSWER (reference answers) ---
   if (taskType === TASK_TYPES.SHORT_ANSWER) {
     if (items.length) {
       return {
@@ -280,6 +248,8 @@ const buildObjectiveAnswerKey = (task) => {
         })),
       };
     }
+
+    // single SA fallback
     const ref = String(task.referenceAnswer ?? "").trim();
     if (ref) {
       return { title: "Suggested answer", rows: [{ q: task.prompt || "Short answer", a: ref }] };
@@ -293,6 +263,7 @@ const buildObjectiveAnswerKey = (task) => {
     const sortItems = Array.isArray(cfg.items) ? cfg.items : [];
 
     if (buckets.length && sortItems.length) {
+      // group items by bucketIndex (only if provided)
       const grouped = buckets.map((b) => ({ bucket: String(b || "").trim(), items: [] }));
       const unassigned = [];
 
@@ -316,6 +287,7 @@ const buildObjectiveAnswerKey = (task) => {
   if (taskType === TASK_TYPES.SEQUENCE || taskType === TASK_TYPES.TIMELINE) {
     const cfg = task.config && typeof task.config === "object" ? task.config : {};
     const seq = Array.isArray(cfg.items) ? cfg.items : [];
+
     if (seq.length) {
       return {
         title: "Correct order",
@@ -329,7 +301,6 @@ const buildObjectiveAnswerKey = (task) => {
 
   return null;
 };
-
 
 // ---------------------------------------------------------------------
 // Utility helpers
@@ -877,11 +848,21 @@ function StudentApp() {
         }
       }
 
-      if (response.stationId) {
-        const stationInfo = normalizeStationId(response.stationId);
+      // ✅ accept BOTH legacy and new server field names
+      const joinStationId =
+        response.stationId ||
+        response.assignedStationId ||
+        response.assignedStation ||
+        null;
+
+      if (joinStationId) {
+        const stationInfo = normalizeStationId(joinStationId);
         setAssignedStationId(stationInfo.id);
-        setAssignedColor(stationInfo.color || null);
+        setAssignedColor(response.assignedColor || stationInfo.color || null);
         lastStationIdRef.current = stationInfo.id;
+      } else if (teamId) {
+        // belt + suspenders: fetch the room state if station wasn't included
+        socket.emit("room:request-state", { teamId });
       }
 
       const locSlug =
@@ -925,9 +906,7 @@ function StudentApp() {
   };
 
   const handleSubmitAnswer = (answerPayload) => {
-    if (!roomCode || !joined || !currentTask || submitting || taskLocked) {
-      return;
-    }
+    if (!roomCode || !joined || !currentTask || submitting || taskLocked) return;
 
     setSubmitting(true);
 
@@ -940,11 +919,13 @@ function StudentApp() {
           ? currentTaskIndex
           : null,
       answer: answerPayload,
+      timeMs: null, // optional; backend supports it
     };
 
-    socket.emit("submit-answer", payload, (response) => {
+    const onAck = (response) => {
       setSubmitting(false);
-      if (!response || response.error) {
+
+      if (!response || response.ok === false || response.error) {
         console.warn("Submit error:", response?.error || "Unknown error");
         setStatusMessage(
           response?.error || "There was a problem submitting. Try again."
@@ -955,37 +936,40 @@ function StudentApp() {
       setStatusMessage("");
       setTaskLocked(true);
 
-      if (!response.aiScoring && !response.objectiveScoring) {
-        // ✅ Fallback: show the 15s review countdown even if task:scored never arrives
-        const fallbackSeconds =
-          Number(response?.postSubmitSeconds) > 0
-            ? Number(response.postSubmitSeconds)
-            : DEFAULT_POST_SUBMIT_SECONDS;
+      // ✅ Always start the review countdown so the task clears and scanner returns
+      const lockSeconds =
+        Number(response?.postSubmitSeconds) > 0
+          ? Number(response.postSubmitSeconds)
+          : DEFAULT_POST_SUBMIT_SECONDS;
 
-        setTaskLocked(true);
-        setPostSubmitSecondsLeft(fallbackSeconds);
+      setPostSubmitSecondsLeft(lockSeconds);
+      if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
 
-        if (postSubmitTimerRef.current) {
-          clearInterval(postSubmitTimerRef.current);
-        }
-        let t = fallbackSeconds;
-        const timer = setInterval(() => {
-          t -= 1;
-          setPostSubmitSecondsLeft(t);
+      let t = lockSeconds;
+      const timer = setInterval(() => {
+        t -= 1;
+        setPostSubmitSecondsLeft(t);
 
-          if (t <= 0) {
+        if (t <= 0) {
           clearInterval(timer);
           endReviewAndReturnToScan();
         }
-        }, 1000);
+      }, 1000);
 
-        postSubmitTimerRef.current = timer;
-      }
+      postSubmitTimerRef.current = timer;
 
       if (response.alertSound) {
         tryPlayAlertSound();
       }
-    });
+    };
+    const normalizedAnswer =
+      typeof answer === "string" ? answer : JSON.stringify(answer ?? {});
+
+    // ✅ Use the event name your backend actually listens to
+    socket.emit("student:submitAnswer", payload, onAck);
+
+    // (Optional backward-compat if you still have older servers somewhere)
+    // socket.emit("submit-answer", payload, onAck);
   };
 
   // ─────────────────────────────────────────────
@@ -2293,119 +2277,164 @@ function StudentApp() {
               </div>
 
               {taskLocked && (
-                <div className="task-locked-overlay">
-                  {postSubmitSecondsLeft != null ? (
-                    <div style={{ width: "100%" }}>
-                      <div>
-                        Locked while your teacher reviews… <br />
-                        <span
-                          style={{
-                            fontVariantNumeric: "tabular-nums",
-                            fontSize: "1.1rem",
-                          }}
-                        >
-                          {postSubmitSecondsLeft}s
-                        </span>
-                      </div>
+              <div className="task-locked-overlay">
+                {postSubmitSecondsLeft != null ? (
+                  <div style={{ width: "100%" }}>
+                    {/* ✅ Answer feedback overlay (objective + AI) */}
+                    {lastTaskResult && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: "1.1rem", fontWeight: 800 }}>
+                          {typeof lastTaskResult.scoreDelta === "number" ? (
+                            lastTaskResult.scoreDelta > 0 ? (
+                              <>✅ Correct</>
+                            ) : (
+                              <>❌ Not quite</>
+                            )
+                          ) : (
+                            <>✅ Submitted</>
+                          )}
+                        </div>
 
-                      {/* ✅ Countdown bar (VISIBLE because it's inside the overlay) */}
-                      <div style={{ marginTop: 12 }}>
+                        {typeof lastTaskResult.scoreDelta === "number" && (
+                          <div style={{ marginTop: 4, fontSize: "0.95rem", opacity: 0.95 }}>
+                            Score change:{" "}
+                            <strong>
+                              {lastTaskResult.scoreDelta > 0 ? `+${lastTaskResult.scoreDelta}` : `${lastTaskResult.scoreDelta}`}
+                            </strong>
+                            {typeof lastTaskResult.maxPoints === "number" ? (
+                              <> / {lastTaskResult.maxPoints} pts</>
+                            ) : null}
+                          </div>
+                        )}
+
+                        {lastTaskResult.aiFeedback && (
+                          <div style={{ marginTop: 8, fontSize: "0.95rem", opacity: 0.95 }}>
+                            {String(lastTaskResult.aiFeedback)}
+                          </div>
+                        )}
+
+                        {lastTaskResult.correctAnswer != null &&
+                          (typeof lastTaskResult.correctAnswer === "string" ||
+                            typeof lastTaskResult.correctAnswer === "number") && (
+                            <div style={{ marginTop: 8, fontSize: "0.95rem", opacity: 0.95 }}>
+                              Correct answer: <strong>{String(lastTaskResult.correctAnswer)}</strong>
+                            </div>
+                          )}
+                      </div>
+                    )}
+
+                    {/* ✅ Always show the objective answer key during the lock */}
+                    {isObjectiveTask(currentTask) && (() => {
+                      const key = buildObjectiveAnswerKey(currentTask);
+                      if (!key) return null;
+
+                      // Render variants
+                      if (key.rows) {
+                        return (
+                          <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12 }}>
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {key.rows.map((r, i) => (
+                                <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                                  <div style={{ fontWeight: 700 }}>{r.q}</div>
+                                  <div style={{ marginTop: 4, opacity: 0.95 }}>
+                                    Correct: <strong>{r.a}</strong>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (key.ordered) {
+                        return (
+                          <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12 }}>
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
+                            <ol style={{ margin: 0, paddingLeft: 20 }}>
+                              {key.ordered.map((it) => (
+                                <li key={it.n} style={{ marginBottom: 6 }}>
+                                  {it.text}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        );
+                      }
+
+                      if (key.buckets) {
+                        return (
+                          <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12 }}>
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {key.buckets.map((b, idx) => (
+                                <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                                  <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                    {(b.items || []).map((txt, j) => (
+                                      <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
+                                        {txt}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                              {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
+                                <div style={{ marginTop: 6, opacity: 0.9 }}>
+                                  Unassigned: <strong>{key.unassigned.join(", ")}</strong>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return null;
+})()}
+
+
+                    <div>
+                      Locked while your teacher reviews… <br />
+                      <span
+                        style={{
+                          fontVariantNumeric: "tabular-nums",
+                          fontSize: "1.05rem",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {postSubmitSecondsLeft}s
+                      </span>
+                    </div>
+
+                    {/* ✅ Thinner countdown bar (line), just under the lock text */}
+                    <div style={{ marginTop: 8 }}>
+                      <div
+                        style={{
+                          height: 4,
+                          borderRadius: 999,
+                          background: "rgba(255,255,255,0.25)",
+                          overflow: "hidden",
+                        }}
+                      >
                         <div
                           style={{
-                            height: 3,
-                            borderRadius: 999,
-                            background: "rgba(255,255,255,0.25)",
-                            overflow: "hidden",
+                            height: "100%",
+                            width: `${Math.round(
+                              (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
+                            )}%`,
+                            background: "rgba(255,255,255,0.85)",
+                            transition: "width 200ms linear",
                           }}
-                        >
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${Math.round(
-                                (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
-                              )}%`,
-                              background: "rgba(255,255,255,0.85)",
-                              transition: "width 200ms linear",
-                            }}
-                          />
-                        </div>
+                        />
                       </div>
-
-                      {/* ✅ Objective answer key during lock */}
-                      {isObjectiveTask(currentTask) && (() => {
-                        const key = buildObjectiveAnswerKey(currentTask);
-                        if (!key) return null;
-
-                        if (key.rows) {
-                          return (
-                            <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                              <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                {key.rows.map((r, i) => (
-                                  <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                                    <div style={{ fontWeight: 700 }}>{r.q}</div>
-                                    <div style={{ marginTop: 4, opacity: 0.95 }}>
-                                      Correct: <strong>{r.a}</strong>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        if (key.ordered) {
-                          return (
-                            <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                              <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
-                              <ol style={{ margin: 0, paddingLeft: 20 }}>
-                                {key.ordered.map((it) => (
-                                  <li key={it.n} style={{ marginBottom: 6 }}>
-                                    {it.text}
-                                  </li>
-                                ))}
-                              </ol>
-                            </div>
-                          );
-                        }
-
-                        if (key.buckets) {
-                          return (
-                            <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                              <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                {key.buckets.map((b, idx) => (
-                                  <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                                    <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                      {(b.items || []).map((txt, j) => (
-                                        <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
-                                          {txt}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                                {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
-                                  <div style={{ marginTop: 6, opacity: 0.9 }}>
-                                    Unassigned: <strong>{key.unassigned.join(", ")}</strong>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        return null;
-                      })()}
-
                     </div>
-                  ) : (
-                    <div>Waiting for your next task to unlock…</div>
-                  )}
-                </div>
-              )}
-              </section>
+                  </div>
+                ) : (
+                  <div>Waiting for your next task to unlock…</div>
+                )}
+              </div>
+            )}
+            </section>
             )}
           {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
           {joined && currentTask && mustScan && (
