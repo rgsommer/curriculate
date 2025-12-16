@@ -14,7 +14,7 @@ import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
 import Login from "./pages/Login.jsx";
 
-import { useAuth } from "./auth/useAuth";
+i mport { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
 
 import { socket } from "./socket"; // adjust path if needed
