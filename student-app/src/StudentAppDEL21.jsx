@@ -146,43 +146,6 @@ const socket = io(API_BASE_URL, {
   reconnectionDelay: 1000,
 });
 
-
-// ---------------------------------------------------------------------
-// Local session persistence (room + team session)
-// - Refresh/reconnect should auto-resume the same room + team.
-// - Only "Join another room" clears these keys.
-// ---------------------------------------------------------------------
-const LS_KEYS = {
-  roomCode: "curriculate.roomCode",
-  teamSessionId: "curriculate.teamSessionId",
-  teamName: "curriculate.teamName",
-  members: "curriculate.members",
-};
-
-function lsGet(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function lsSet(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-}
-function lsDel(key) {
-  try {
-    localStorage.removeItem(key);
-  } catch {}
-}
-function clearSavedJoin() {
-  lsDel(LS_KEYS.roomCode);
-  lsDel(LS_KEYS.teamSessionId);
-  lsDel(LS_KEYS.teamName);
-  lsDel(LS_KEYS.members);
-}
-
 // -----------------------------
 // Objective answer-key helpers
 // -----------------------------
@@ -422,17 +385,9 @@ function StudentApp() {
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
-  const [roomCode, setRoomCode] = useState(() => (lsGet(LS_KEYS.roomCode) || ""));
-  const [teamName, setTeamName] = useState(() => (lsGet(LS_KEYS.teamName) || ""));
-  const [members, setMembers] = useState(() => {
-    try {
-      const raw = lsGet(LS_KEYS.members);
-      const parsed = raw ? JSON.parse(raw) : null;
-      return Array.isArray(parsed) && parsed.length ? parsed : ["", "", ""];
-    } catch {
-      return ["", "", ""];
-    }
-  });
+  const [roomCode, setRoomCode] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [members, setMembers] = useState(["", "", ""]);
   const [selectedRooms, setSelectedRooms] = useState([]);
 
   // Collaboration
@@ -442,9 +397,6 @@ function StudentApp() {
   // Persistent identifiers
   const [teamId, setTeamId] = useState(null); // TeamSession _id from backend
   const [teamSessionId, setTeamSessionId] = useState(null);
-  const userDroppedRoomRef = useRef(false);
-  const resumeAttemptedRef = useRef(false);
-
   const lastStationIdRef = useRef(null);
 
   // Station + scanner state
@@ -532,66 +484,7 @@ function StudentApp() {
     };
   }, []);
 
-  
   // ─────────────────────────────────────────────
-  // Auto-resume: after refresh/reconnect, re-join the same room + team
-  // (unless the user explicitly chose "Join another room")
-  // ─────────────────────────────────────────────
-  useEffect(() => {
-    if (!connected) return;
-    if (joined) return;
-    if (userDroppedRoomRef.current) return;
-    if (resumeAttemptedRef.current) return;
-
-    const savedRoom = (lsGet(LS_KEYS.roomCode) || "").trim().toUpperCase();
-    const savedTeamSessionId = (lsGet(LS_KEYS.teamSessionId) || "").trim();
-
-    if (!savedRoom || !savedTeamSessionId) return;
-
-    resumeAttemptedRef.current = true;
-    setStatusMessage("Reconnecting to your room…");
-
-    socket.emit(
-      "resume-team-session",
-      { roomCode: savedRoom, teamSessionId: savedTeamSessionId },
-      (resp) => {
-        const ok = resp && (resp.success === true || resp.ok === true);
-        if (!ok) {
-          // If resume fails, clear saved keys so the join form works normally.
-          clearSavedJoin();
-          setStatusMessage(resp?.error || "Could not resume your session. Please join again.");
-          return;
-        }
-
-        setRoomCode(savedRoom);
-        setTeamId(resp.teamId || savedTeamSessionId);
-        setTeamSessionId(resp.teamId || savedTeamSessionId);
-        setJoined(true);
-        setStatusMessage("");
-
-        // Restore station + colour
-        const stationId = resp.assignedStationId || resp.stationId || null;
-        if (stationId) {
-          const stationInfo = normalizeStationId(stationId);
-          setAssignedStationId(stationInfo.id);
-          setAssignedColor(stationInfo.color || null);
-          lastStationIdRef.current = stationInfo.id;
-        }
-
-        // Restore room state bits (scores/noise/location)
-        const state = resp.roomState || null;
-        if (state?.scores && typeof state.scores[(resp.teamId || savedTeamSessionId)] === "number") {
-          setScoreTotal(state.scores[(resp.teamId || savedTeamSessionId)]);
-        }
-
-        // If a taskset is running, backend will send the current task immediately.
-        // Make sure scanner is off until we need it.
-        setScannerActive(false);
-      }
-    );
-  }, [connected, joined]);
-
-// ─────────────────────────────────────────────
   // Server event listeners – room, tasks, noise, treats, scoring
   // ─────────────────────────────────────────────
 
@@ -949,15 +842,6 @@ function StudentApp() {
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
 
-      // ✅ Persist this join so refresh/reconnect can auto-resume.
-      lsSet(LS_KEYS.roomCode, payload.roomCode);
-      lsSet(LS_KEYS.teamSessionId, String(tid));
-      lsSet(LS_KEYS.teamName, payload.teamName);
-      try { lsSet(LS_KEYS.members, JSON.stringify(payload.members || [])); } catch {}
-      userDroppedRoomRef.current = false;
-      resumeAttemptedRef.current = false;
-
-
       if (response.currentTask) {
         setCurrentTask(response.currentTask.task || null);
         setCurrentTaskIndex(
@@ -1017,48 +901,6 @@ function StudentApp() {
           typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
       }));
     });
-
-  // Explicit user action: drop current room and show the join form.
-  // This is the ONLY time we clear saved join keys.
-  const handleJoinAnotherRoom = () => {
-    userDroppedRoomRef.current = true;
-    resumeAttemptedRef.current = false;
-    clearSavedJoin();
-
-    // reset core session state
-    setJoined(false);
-    setTeamId(null);
-    setTeamSessionId(null);
-    setStatusMessage("");
-
-    // reset station/task/scanner state
-    setAssignedStationId(null);
-    setAssignedColor(null);
-    setScannedStationId(null);
-    setScannerActive(false);
-    setScanError(null);
-    setScanStatus(null);
-
-    setCurrentTask(null);
-    setCurrentTaskIndex(null);
-    setTasksetTotalTasks(null);
-    setTimeLimitSeconds(null);
-    setRemainingMs(0);
-    setSubmitting(false);
-    setCurrentAnswerDraft("");
-
-    setTaskLocked(false);
-    setPostSubmitSecondsLeft(null);
-    setLastTaskResult(null);
-    setPointToast(null);
-    setShortAnswerReveal(null);
-
-    // clear join form fields (optional, but expected UX)
-    setRoomCode("");
-    setTeamName("");
-    setMembers(["", "", ""]);
-  };
-
   };
   // ----------------------------------------------------
   // End the 15s review lock and return to scan state
@@ -2130,24 +1972,6 @@ function StudentApp() {
               Theme 3
             </button>
           </div>
-
-          {joined && (
-            <button
-              type="button"
-              onClick={handleJoinAnotherRoom}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "1px solid rgba(148,163,184,0.6)",
-                background: "rgba(239,68,68,0.15)",
-                color: "#fecaca",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Join another room
-            </button>
-          )}
 
           <div
             style={{

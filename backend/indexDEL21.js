@@ -167,15 +167,8 @@ const OFFLINE_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
 setInterval(() => {
   const now = Date.now();
   const available = Object.values(rooms)
-    // A room is "available" if the teacher heartbeat is still fresh.
-    // We also keep ACTIVE rooms visible for late joiners even after launch.
-    .filter((r) => {
-      if (!r) return false;
-      const alive = r.expiresAt == null || r.expiresAt > now;
-      if (!alive) return false;
-      return !!(r.teacherSocketId || r.isActive || r.taskset);
-    })
-    .map((r) => ({
+    .filter(r => r && (r.expiresAt == null || r.expiresAt > now))
+    .map(r => ({
       roomCode: r.code,
       locationCode: r.locationCode || "Classroom",
       isActive: !!r.isActive,
@@ -199,9 +192,6 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     code: roomCode,
     teacherSocketId,
     createdAt: Date.now(),
-    // Heartbeat/availability
-    lastTeacherSeenAt: Date.now(),
-    expiresAt: Date.now() + 1000 * 60 * 60, // 1 hour rolling expiry
     teams: {},
     stations,
     taskset: null,
@@ -1029,18 +1019,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
+    // Only accept keepalive from the current teacher socket
+    if (room.teacherSocketId && room.teacherSocketId !== socket.id) return;
 
-    // Reconnect-safe: accept keepalive and refresh ownership.
-    // This prevents rooms from "disappearing" for late joiners when the teacher socket reconnects.
     room.teacherSocketId = socket.id;
     room.lastTeacherSeenAt = Date.now();
-    room.expiresAt = Date.now() + 1000 * 60 * 60; // rolling 1-hour expiry
-    room.isActive = room.isActive !== false ? room.isActive : true;
-
-    // Ensure the teacher socket remains in the room channel.
-    socket.join(code);
-    socket.data.role = "teacher";
-    socket.data.roomCode = code;
+    room.expiresAt = Date.now() + 1000 * 60 * 60; // extend to 1 hour from last ping
   });
 
   // ----------------------------------------------------
@@ -2245,8 +2229,6 @@ const code = (roomCode || "").toUpperCase();
     room.startedAt = Date.now();
     room.isActive = true;
     room.taskIndex = -1;
-    room.lastTeacherSeenAt = Date.now();
-    room.expiresAt = Date.now() + 1000 * 60 * 60;
 
     io.to(code).emit("session:started");
   });
@@ -2303,9 +2285,6 @@ const code = (roomCode || "").toUpperCase();
 
     room.isActive = true;
     room.startedAt = Date.now();
-    // Keep-alive bump so late joiners still see/find this room for at least an hour.
-    room.lastTeacherSeenAt = Date.now();
-    room.expiresAt = Date.now() + 1000 * 60 * 60;
 
     // Lightning round — only once per room
     if (!room.lightningInterval) {
