@@ -17,6 +17,8 @@ import Login from "./pages/Login.jsx";
 import { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
 
+import { socket } from "./socket"; // adjust path if needed
+
 function generateRoomCode() {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -42,6 +44,29 @@ function TeacherApp() {
     const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth < 768 : false
   );
+
+  useEffect(() => {
+    const code = (roomCode || "").trim().toUpperCase();
+    if (!code) return;
+
+    const ensureRoom = () => {
+      socket.emit("teacher:createRoom", { roomCode: code });
+    };
+
+    // create/claim immediately + after reconnects
+    if (socket.connected) ensureRoom();
+    socket.on("connect", ensureRoom);
+
+    // keep it alive for the whole session (1 hour+)
+    const t = setInterval(() => {
+      socket.emit("teacher:keepalive", { roomCode: code });
+    }, 5000);
+
+    return () => {
+      clearInterval(t);
+      socket.off("connect", ensureRoom);
+    };
+  }, [roomCode]);
 
   useEffect(() => {
     const handleResize = () => {
