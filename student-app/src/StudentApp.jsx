@@ -2353,7 +2353,7 @@ function StudentApp() {
                       </div>
 
                       {/* ✅ Objective answer key during lock */}
-                      {isObjectiveTask(currentTask) && (() => {
+                      {/* {isObjectiveTask(currentTask) && (() => {
                         const key = buildObjectiveAnswerKey(currentTask);
                         if (!key) return null;
 
@@ -2418,7 +2418,7 @@ function StudentApp() {
                         }
 
                         return null;
-                      })()}
+                      })()} */}
 
                     </div>
                   ) : (

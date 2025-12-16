@@ -60,8 +60,16 @@ export default function MakeAndSnapTask({
       return;
     }
 
-    const answerText = buildAnswerText(note, !!imagePreview);
-    onSubmit(answerText);
+    const answerText = buildAnswerText(note, true);
+
+    // ✅ Submit the actual photo (base64 data URL) + note + readable summary
+    onSubmit?.({
+      type: "make-and-snap",
+      note: note.trim(),
+      imageDataUrl: imagePreview, // <-- THIS is what you were missing
+      summary: answerText,
+    });
+
     setSubmitted(true);
   };
 

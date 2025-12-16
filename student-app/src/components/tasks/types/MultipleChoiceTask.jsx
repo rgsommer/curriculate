@@ -11,6 +11,11 @@ import React from "react";
  *  - Randomization is DETERMINISTIC per task (+ team if available) so it NEVER flips during interaction.
  *  - Multi-question submissions are mapped back to canonical order.
  *  - Single-question submits the chosen option string (legacy compatibility).
+ *
+ * Review behavior (NEW):
+ *  - Pass mode="review" and review={...} to highlight correct answers.
+ *  - Correct option: green tint/border
+ *  - Selected wrong option: red tint/border
  */
 export default function MultipleChoiceTask({
   task,
@@ -18,14 +23,18 @@ export default function MultipleChoiceTask({
   disabled,
   onAnswerChange,
   answerDraft,
+
+  // NEW
+  mode = "play", // "play" | "review"
+  review = null,
 }) {
+  const isReview = mode === "review";
+
   const theme = task?.uiTheme || "modern";
   const hasItems = Array.isArray(task?.items) && task.items.length > 0;
 
   // ---------- Stable seeded shuffle ----------
   function getTeamSalt() {
-    // Optional: if you store teamId somewhere, this makes randomization per-team.
-    // Safe fallbacks: if nothing exists, we still get stable per-task shuffles.
     try {
       return (
         localStorage.getItem("teamId") ||
@@ -71,16 +80,71 @@ export default function MultipleChoiceTask({
     return `${String(id)}:${teamSalt}`;
   }, [task?._id, task?.id, task?.taskId]);
 
+  // ---------- Helpers (NEW) ----------
+  function toCanonicalIndexFromAnyAnswer(baseOptions, answer) {
+    // answer may be number (canonical index) or string (option text)
+    if (!Array.isArray(baseOptions) || !baseOptions.length) return null;
+
+    if (typeof answer === "number" && Number.isFinite(answer)) {
+      return answer >= 0 && answer < baseOptions.length ? answer : null;
+    }
+
+    if (typeof answer === "string" && answer.trim()) {
+      const idx = baseOptions.findIndex((o) => String(o) === String(answer));
+      return idx >= 0 ? idx : null;
+    }
+
+    // some drafts/structures
+    if (answer && typeof answer === "object") {
+      const maybe = answer.baseIndex ?? answer.index ?? answer.value ?? answer.answer ?? null;
+      if (typeof maybe === "number") {
+        return maybe >= 0 && maybe < baseOptions.length ? maybe : null;
+      }
+      if (typeof maybe === "string") {
+        const idx = baseOptions.findIndex((o) => String(o) === String(maybe));
+        return idx >= 0 ? idx : null;
+      }
+    }
+
+    return null;
+  }
+
+  function getReviewPaint({ selected, isCorrect, isWrongChoice }) {
+    // Preserve theme for normal selection, but overlay correctness colors in review.
+    const borderColorDefault = "rgba(15,23,42,0.12)";
+
+    if (isReview && isCorrect) {
+      return {
+        background: "#dcfce7", // green-100
+        color: "#065f46", // emerald-800
+        borderColor: "#16a34a", // green-600
+      };
+    }
+
+    if (isReview && isWrongChoice) {
+      return {
+        background: "#fee2e2", // red-100
+        color: "#7f1d1d", // red-900-ish
+        borderColor: "#dc2626", // red-600
+      };
+    }
+
+    // not correctness paint; fall back to your existing styles
+    return {
+      background: selected ? optionSelectedBg : optionBaseBg,
+      color: selected ? "#ffffff" : "#111827",
+      borderColor: borderColorDefault,
+    };
+  }
+
   // ---------- State ----------
   // Single-question mode
   const [singleOptionOrder, setSingleOptionOrder] = React.useState([]);
-  const [singleSelectedDisplayIdx, setSingleSelectedDisplayIdx] =
-    React.useState(null);
+  const [singleSelectedDisplayIdx, setSingleSelectedDisplayIdx] = React.useState(null);
 
   // Multi-question mode
   const [presentedItems, setPresentedItems] = React.useState([]);
-  const [multiSelectedByDisplayIdx, setMultiSelectedByDisplayIdx] =
-    React.useState([]);
+  const [multiSelectedByDisplayIdx, setMultiSelectedByDisplayIdx] = React.useState([]);
 
   // ---------- Build stable presentation once per task ----------
   React.useEffect(() => {
@@ -144,7 +208,6 @@ export default function MultipleChoiceTask({
     if (!task || disabled) return;
 
     if (hasItems) {
-      // Expect JSON string: { kind:"multi-mc", answers:[canonicalOptionIdx...] }
       if (typeof answerDraft !== "string" || !answerDraft.trim()) return;
       let parsed = null;
       try {
@@ -152,8 +215,7 @@ export default function MultipleChoiceTask({
       } catch {
         return;
       }
-      if (!parsed || parsed.kind !== "multi-mc" || !Array.isArray(parsed.answers))
-        return;
+      if (!parsed || parsed.kind !== "multi-mc" || !Array.isArray(parsed.answers)) return;
 
       const canonicalAnswers = parsed.answers;
 
@@ -161,21 +223,16 @@ export default function MultipleChoiceTask({
       const next = presentedItems.map((pItem) => {
         const canonicalOptIdx = canonicalAnswers[pItem.canonicalIndex];
         if (canonicalOptIdx == null) return null;
-        const displayIdx = (pItem.optionOrder || []).findIndex(
-          (x) => x === canonicalOptIdx
-        );
+        const displayIdx = (pItem.optionOrder || []).findIndex((x) => x === canonicalOptIdx);
         return displayIdx >= 0 ? displayIdx : null;
       });
 
       if (next.length) setMultiSelectedByDisplayIdx(next);
     } else {
-      // Single mode uses option string
       if (typeof answerDraft !== "string" || !answerDraft.trim()) return;
 
       const baseOptions = Array.isArray(task.options) ? task.options : [];
-      const canonicalIdx = baseOptions.findIndex(
-        (o) => String(o) === String(answerDraft)
-      );
+      const canonicalIdx = baseOptions.findIndex((o) => String(o) === String(answerDraft));
       if (canonicalIdx < 0) return;
 
       const displayIdx = singleOptionOrder.findIndex((i) => i === canonicalIdx);
@@ -186,7 +243,7 @@ export default function MultipleChoiceTask({
 
   // ---------- Handlers ----------
   const handleSubmitClick = () => {
-    if (disabled) return;
+    if (disabled || isReview) return;
     if (!task) return;
 
     if (hasItems && presentedItems.length > 0) {
@@ -237,7 +294,8 @@ export default function MultipleChoiceTask({
   };
 
   const handleSingleSelect = (displayIdx) => {
-    if (disabled) return;
+    if (disabled || isReview) return;
+
     setSingleSelectedDisplayIdx(displayIdx);
 
     const baseOptions = Array.isArray(task.options) ? task.options : [];
@@ -253,7 +311,7 @@ export default function MultipleChoiceTask({
   };
 
   const handleMultiSelect = (displayIdx, optionDisplayIdx) => {
-    if (disabled) return;
+    if (disabled || isReview) return;
 
     setMultiSelectedByDisplayIdx((prev) => {
       const next = Array.isArray(prev) ? prev.slice() : [];
@@ -264,13 +322,8 @@ export default function MultipleChoiceTask({
     // Optional: you can emit draft here, but it can get noisy. Submit handles it.
   };
 
-  const {
-    cardBg,
-    cardHeaderBg,
-    cardHeaderText,
-    optionBaseBg,
-    optionSelectedBg,
-  } = getThemeColors(theme);
+  const { cardBg, cardHeaderBg, cardHeaderText, optionBaseBg, optionSelectedBg } =
+    getThemeColors(theme);
 
   // ---------- Render (multi-question) ----------
   if (hasItems && presentedItems.length > 0) {
@@ -303,81 +356,93 @@ export default function MultipleChoiceTask({
             </div>
           </header>
 
-          <div
-            className="flex-1 flex flex-col gap-3 overflow-y-auto"
-            style={{ paddingRight: 4 }}
-          >
-            {presentedItems.map((pItem, displayIdx) => (
-              <div
-                key={pItem.canonicalIndex}
-                className="rounded-xl border"
-                style={{
-                  padding: 10,
-                  borderColor: "rgba(15,23,42,0.08)",
-                  background: "rgba(255,255,255,0.85)",
-                }}
-              >
+          <div className="flex-1 flex flex-col gap-3 overflow-y-auto" style={{ paddingRight: 4 }}>
+            {presentedItems.map((pItem, displayIdx) => {
+              const selectedDisplayOptIdx = multiSelectedByDisplayIdx[displayIdx];
+
+              // Resolve canonical correct answer for this question
+              const canonicalItem = Array.isArray(task.items) ? task.items[pItem.canonicalIndex] : null;
+              const baseOptions = pItem.baseOptions || [];
+
+              const correctCanonicalIdx =
+                // Prefer review.correctAnswers (array by canonical index) if provided
+                toCanonicalIndexFromAnyAnswer(
+                  baseOptions,
+                  Array.isArray(review?.correctAnswers)
+                    ? review.correctAnswers[pItem.canonicalIndex]
+                    : review?.correctAnswerByIndex?.[pItem.canonicalIndex] // optional future shape
+                ) ??
+                // Fall back to task.items[].correctAnswer
+                toCanonicalIndexFromAnyAnswer(baseOptions, canonicalItem?.correctAnswer);
+
+              const correctDisplayIdx =
+                correctCanonicalIdx == null
+                  ? null
+                  : (pItem.optionOrder || []).findIndex((x) => x === correctCanonicalIdx);
+
+              return (
                 <div
+                  key={pItem.canonicalIndex}
+                  className="rounded-xl border"
                   style={{
-                    fontSize: "0.95rem",
-                    fontWeight: 600,
-                    marginBottom: 8,
+                    padding: 10,
+                    borderColor: "rgba(15,23,42,0.08)",
+                    background: "rgba(255,255,255,0.85)",
                   }}
                 >
-                  <span
-                    style={{
-                      display: "inline-block",
-                      minWidth: 20,
-                      fontWeight: 700,
-                      opacity: 0.7,
-                    }}
-                  >
-                    {displayIdx + 1}.
-                  </span>{" "}
-                  {pItem.prompt}
-                </div>
+                  <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 8 }}>
+                    <span style={{ display: "inline-block", minWidth: 20, fontWeight: 700, opacity: 0.7 }}>
+                      {displayIdx + 1}.
+                    </span>{" "}
+                    {pItem.prompt}
+                  </div>
 
-                <div className="flex flex-col gap-2">
-                  {pItem.displayOptions.map((opt, optIdx) => {
-                    const selected =
-                      multiSelectedByDisplayIdx[displayIdx] === optIdx;
-                    return (
-                      <button
-                        key={optIdx}
-                        type="button"
-                        onClick={() => handleMultiSelect(displayIdx, optIdx)}
-                        disabled={disabled}
-                        className="w-full text-left border rounded-lg px-3 py-2 text-sm"
-                        style={{
-                          background: selected ? optionSelectedBg : optionBaseBg,
-                          color: selected ? "#ffffff" : "#111827",
-                          opacity: disabled ? 0.6 : 1,
-                          borderColor: "rgba(15,23,42,0.12)",
-                          transition:
-                            "background 0.15s ease, transform 0.05s ease",
-                          transform: selected ? "scale(1.01)" : "scale(1)",
-                        }}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
+                  <div className="flex flex-col gap-2">
+                    {pItem.displayOptions.map((opt, optIdx) => {
+                      const selected = selectedDisplayOptIdx === optIdx;
+
+                      const isCorrect = isReview && correctDisplayIdx != null && optIdx === correctDisplayIdx;
+                      const isWrongChoice = isReview && selected && correctDisplayIdx != null && optIdx !== correctDisplayIdx;
+
+                      const paint = getReviewPaint({ selected, isCorrect, isWrongChoice });
+
+                      return (
+                        <button
+                          key={optIdx}
+                          type="button"
+                          onClick={() => handleMultiSelect(displayIdx, optIdx)}
+                          disabled={disabled || isReview}
+                          className="w-full text-left border rounded-lg px-3 py-2 text-sm"
+                          style={{
+                            background: paint.background,
+                            color: paint.color,
+                            opacity: disabled ? 0.6 : 1,
+                            borderColor: paint.borderColor,
+                            transition: "background 0.15s ease, transform 0.05s ease",
+                            transform: selected ? "scale(1.01)" : "scale(1)",
+                          }}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <button
             type="button"
             onClick={handleSubmitClick}
-            disabled={disabled}
+            disabled={disabled || isReview}
             className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
             style={{
-              background: disabled ? "#9ca3af" : "#0ea5e9",
+              background: disabled || isReview ? "#9ca3af" : "#0ea5e9",
               color: "#fff",
               fontWeight: 600,
               paddingInline: 20,
-              cursor: disabled ? "default" : "pointer",
+              cursor: disabled || isReview ? "default" : "pointer",
             }}
           >
             Submit all answers
@@ -393,6 +458,16 @@ export default function MultipleChoiceTask({
     singleOptionOrder.length && baseOptions.length
       ? singleOptionOrder.map((canonicalIdx) => baseOptions[canonicalIdx])
       : baseOptions;
+
+  // Resolve correct answer for single-question
+  const correctCanonicalIdx =
+    toCanonicalIndexFromAnyAnswer(baseOptions, review?.correctAnswer) ??
+    toCanonicalIndexFromAnyAnswer(baseOptions, task?.correctAnswer);
+
+  const correctDisplayIdx =
+    correctCanonicalIdx == null
+      ? null
+      : singleOptionOrder.findIndex((i) => i === correctCanonicalIdx);
 
   return (
     <div className="flex flex-col h-full p-3 gap-3">
@@ -432,18 +507,23 @@ export default function MultipleChoiceTask({
             {displayOptions.map((opt, displayIdx) => {
               const selected = singleSelectedDisplayIdx === displayIdx;
 
+              const isCorrect = isReview && correctDisplayIdx != null && displayIdx === correctDisplayIdx;
+              const isWrongChoice = isReview && selected && correctDisplayIdx != null && displayIdx !== correctDisplayIdx;
+
+              const paint = getReviewPaint({ selected, isCorrect, isWrongChoice });
+
               return (
                 <button
                   key={displayIdx}
                   type="button"
                   onClick={() => handleSingleSelect(displayIdx)}
-                  disabled={disabled}
+                  disabled={disabled || isReview}
                   className="w-full text-left border rounded-lg px-3 py-2"
                   style={{
-                    background: selected ? optionSelectedBg : optionBaseBg,
-                    color: selected ? "#ffffff" : "#111827",
+                    background: paint.background,
+                    color: paint.color,
                     opacity: disabled ? 0.6 : 1,
-                    borderColor: "rgba(15,23,42,0.12)",
+                    borderColor: paint.borderColor,
                     transition: "background 0.15s ease, transform 0.05s ease",
                     transform: selected ? "scale(1.01)" : "scale(1)",
                   }}
@@ -464,14 +544,14 @@ export default function MultipleChoiceTask({
         <button
           type="button"
           onClick={handleSubmitClick}
-          disabled={disabled}
+          disabled={disabled || isReview}
           className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
           style={{
-            background: disabled ? "#9ca3af" : "#0ea5e9",
+            background: disabled || isReview ? "#9ca3af" : "#0ea5e9",
             color: "#fff",
             fontWeight: 600,
             paddingInline: 20,
-            cursor: disabled ? "default" : "pointer",
+            cursor: disabled || isReview ? "default" : "pointer",
           }}
         >
           Submit
