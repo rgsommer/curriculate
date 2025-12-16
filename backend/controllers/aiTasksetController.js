@@ -215,6 +215,19 @@ ${prev}
     ],
   });
 
+  const retryMustHave = {
+    [TASK_TYPES.MULTIPLE_CHOICE]:
+      'MULTIPLE_CHOICE must include items[] with 3–5 questions. Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index).',
+    [TASK_TYPES.TRUE_FALSE]:
+      'TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 0=True, 1=False.',
+    [TASK_TYPES.SORT]:
+      'SORT must include config.buckets (>=2) and config.items (>=3). Each item: { text, bucketIndex:number|null }.',
+    [TASK_TYPES.SEQUENCE]:
+      'SEQUENCE must include config.items (>=3). Each item: { text }.',
+    [TASK_TYPES.JEOPARDY]:
+      'JEOPARDY (BrainBlitz) must include clues (>=3). Each clue: { clue, answer }.',
+  };
+
   const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
   return JSON.parse(raw);
 }
@@ -642,19 +655,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           : Array.isArray(t.events)
           ? t.events
           : [];
-
-        const retryMustHave = {
-          [TASK_TYPES.MULTIPLE_CHOICE]:
-            'MULTIPLE_CHOICE must include items[] with 3–5 questions. Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index).',
-          [TASK_TYPES.TRUE_FALSE]:
-            'TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 0=True, 1=False.',
-          [TASK_TYPES.SORT]:
-            'SORT must include config.buckets (>=2) and config.items (>=3). Each item: { text, bucketIndex:number|null }.',
-          [TASK_TYPES.SEQUENCE]:
-            'SEQUENCE must include config.items (>=3). Each item: { text }.',
-          [TASK_TYPES.JEOPARDY]:
-            'JEOPARDY (BrainBlitz) must include clues (>=3). Each clue: { clue, answer }.',
-    };
 
         const sortItems = rawItems
           .map((it, idx) => {
