@@ -163,6 +163,23 @@ mongoose
 const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
 const OFFLINE_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
 
+// Keep-alive server interval that broadcasts available rooms every ~5–10 seconds
+setInterval(() => {
+  const now = Date.now();
+  const available = Object.values(rooms)
+    .filter(r => r && (r.expiresAt == null || r.expiresAt > now))
+    .map(r => ({
+      roomCode: r.code,
+      locationCode: r.locationCode || "Classroom",
+      isActive: !!r.isActive,
+      startedAt: r.startedAt || null,
+      teamCount: Object.keys(r.teams || {}).length,
+      lastTeacherSeenAt: r.lastTeacherSeenAt || null,
+    }));
+
+  io.emit("rooms:available", available);
+}, 8000);
+
 async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
   const stations = {};
   const NUM_STATIONS = 8;
@@ -960,6 +977,14 @@ io.on("connection", (socket) => {
       io.to(code).emit("room:state", state);
       io.to(code).emit("roomState", state);
 
+      // Keep-alive pulse
+      rooms[code].teacherSocketId = socket.id;
+        rooms[code].lastTeacherSeenAt = Date.now();
+        rooms[code].expiresAt = Date.now() + 1000 * 60 * 60;
+
+        socket.data.role = "teacher";
+        socket.data.roomCode = code;
+
       if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
         return;
       }
@@ -973,9 +998,29 @@ io.on("connection", (socket) => {
     const state = buildRoomState(room);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
+
+    // When the teacher creates/claims a room, stamp a heartbeat
+    rooms[code].teacherSocketId = socket.id;
+    rooms[code].lastTeacherSeenAt = Date.now();
+    rooms[code].expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour
+    socket.data.role = "teacher";
+    socket.data.roomCode = code;
   
     if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
 
+  });
+
+  // teacher keepalive event
+  socket.on("teacher:keepalive", ({ roomCode }) => {
+    const code = (roomCode || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) return;
+    // Only accept keepalive from the current teacher socket
+    if (room.teacherSocketId && room.teacherSocketId !== socket.id) return;
+
+    room.teacherSocketId = socket.id;
+    room.lastTeacherSeenAt = Date.now();
+    room.expiresAt = Date.now() + 1000 * 60 * 60; // extend to 1 hour from last ping
   });
 
   // ----------------------------------------------------

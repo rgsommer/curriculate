@@ -226,6 +226,14 @@ export default function LiveSession({ roomCode }) {
   }, []);
 
   useEffect(() => {
+    if (!socket || !roomCode) return;
+    const t = setInterval(() => {
+      socket.emit("teacher:keepalive", { roomCode });
+    }, 5000);
+    return () => clearInterval(t);
+  }, [socket, roomCode]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadPresenterLocations() {
