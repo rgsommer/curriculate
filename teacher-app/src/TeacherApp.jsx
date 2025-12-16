@@ -14,7 +14,7 @@ import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
 import Login from "./pages/Login.jsx";
 
-i mport { useAuth } from "./auth/useAuth";
+import { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
 
 import { socket } from "./socket"; // adjust path if needed
@@ -35,6 +35,9 @@ function generateRoomCode() {
   return "AA";
 }
 
+const TEACHER_ENTRY_CODE = import.meta.env.VITE_TEACHER_ENTRY_CODE || "";
+const ENTRY_KEY = "curriculate.teacherApp.entry.ok";
+
 function TeacherApp() {
   const [roomCode, setRoomCode] = useState(() => generateRoomCode());
   const location = useLocation();
@@ -44,6 +47,14 @@ function TeacherApp() {
     const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth < 768 : false
   );
+
+  const [entryOk, setEntryOk] = useState(() => {
+    try {
+      return localStorage.getItem(ENTRY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     const code = (roomCode || "").trim().toUpperCase();
@@ -107,6 +118,17 @@ function TeacherApp() {
 
   const requireAuth = (element) =>
     isAuthenticated ? element : <Login />;
+
+  if (TEACHER_ENTRY_CODE && !entryOk) {
+    return (
+      <EntryGate
+        onPass={() => {
+          try { localStorage.setItem(ENTRY_KEY, "1"); } catch {}
+          setEntryOk(true);
+        }}
+      />
+    );
+  }
 
   const requireRoom = (element) =>
     roomCode ? element : <EnterRoomMessage />;
@@ -414,6 +436,45 @@ function HeaderBar({ isAuthenticated, user, logout }) {
           Login
         </a>
       )}
+    </div>
+  );
+}
+
+function EntryGate({ onPass }) {
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+
+  const submit = (e) => {
+    e.preventDefault();
+    const expected = (import.meta.env.VITE_TEACHER_ENTRY_CODE || "").trim();
+    if (!expected) return onPass(); // no code configured
+    if (code.trim() === expected) return onPass();
+    setErr("Incorrect code.");
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#111827", color: "#f9fafb" }}>
+      <form onSubmit={submit} style={{ width: 360, maxWidth: "90vw", background: "#0b1220", padding: 18, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)" }}>
+        <div style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 6 }}>Curriculate Presenter</div>
+        <div style={{ color: "rgba(249,250,251,0.75)", marginBottom: 12 }}>Enter access code to continue</div>
+
+        <input
+          value={code}
+          onChange={(e) => { setCode(e.target.value); setErr(""); }}
+          autoFocus
+          placeholder="Access code"
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.06)", color: "#f9fafb" }}
+        />
+
+        {err && <div style={{ color: "#fca5a5", marginTop: 10, fontSize: "0.9rem" }}>{err}</div>}
+
+        <button
+          type="submit"
+          style={{ width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "#0ea5e9", color: "#fff", fontWeight: 800, cursor: "pointer" }}
+        >
+          Enter
+        </button>
+      </form>
     </div>
   );
 }
