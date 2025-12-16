@@ -970,18 +970,18 @@ function StudentApp() {
       setStatusMessage("");
       setTaskLocked(true);
 
+      // Always start a review countdown so the task will clear even if task:scored never arrives
+      const fallbackSeconds =
+        Number(response?.postSubmitSeconds) > 0
+          ? Number(response.postSubmitSeconds)
+          : DEFAULT_POST_SUBMIT_SECONDS;
+
       setReviewState({
         studentAnswer: normalizedAnswer,
         taskId: payload.taskId,
         taskIndex: payload.taskIndex,
         secondsLeft: fallbackSeconds,
       });
-
-      // Always start a review countdown so the task will clear even if task:scored never arrives
-      const fallbackSeconds =
-        Number(response?.postSubmitSeconds) > 0
-          ? Number(response.postSubmitSeconds)
-          : DEFAULT_POST_SUBMIT_SECONDS;
 
       setPostSubmitSecondsLeft(fallbackSeconds);
 
