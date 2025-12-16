@@ -33,6 +33,7 @@ import HideNSeekTask from "./types/HideNSeekTask";
 import SpeechRecognitionTask from "./types/SpeechRecognitionTask"; // NEW
 import PronunciationTask from "./types/PronunciationTask"; // NEW
 import AIDebateJudgeTask from "./types/AIDebateJudgeTask"; // NEW
+import BrainBlitzTask from "./types/BrainBlitzTask";
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -832,6 +833,18 @@ export default function TaskRunner({
         />
       );
       break;
+
+    case TASK_TYPES.JEOPARDY:
+      content = (
+        <BrainBlitzTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
+      break;
+
     case TASK_TYPES.PRONUNCIATION:
       content = (
         <PronunciationTask
