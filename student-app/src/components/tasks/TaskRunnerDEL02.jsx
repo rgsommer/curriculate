@@ -302,12 +302,13 @@ function MultiPartTask({ mode, task, onSubmit, submitting, disabled }) {
       };
     });
 
-    const payloadObj = {
-      type: mode === "choice" ? "multi-choice" : "multi-short",
+    const payloadString = JSON.stringify({
+      kind: mode === "choice" ? "multi-mc" : "multi-short",
       answers: payload,
-    };
-    onSubmit && onSubmit(payloadObj);
-};
+    });
+    onSubmit && onSubmit(payloadString);
+
+  };
 
   return (
     <form onSubmit={handleSubmit}>

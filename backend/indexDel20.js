@@ -2108,6 +2108,11 @@ const code = (roomCode || "").toUpperCase();
     handleStudentSubmit(payload, ack);
   });
 
+  socket.on("task:submit", (payload) => {
+    handleStudentSubmit(payload);
+  });
+
+  
   socket.on("task:requestNext", ({ roomCode, teamId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -2120,18 +2125,7 @@ const code = (roomCode || "").toUpperCase();
 
   });
 
-  socket.on("task:submit", (payload, ack) => {
-    handleStudentSubmit(payload, ack);
-  });
-
-  // Backwards-compatible submit event names
-  socket.on("submit:answer", (payload, ack) => {
-    handleStudentSubmit(payload, ack);
-  });
-  socket.on("submit-answer", (payload, ack) => {
-    handleStudentSubmit(payload, ack);
-  });
-// ------------------------------
+  // ------------------------------
   // Teacher load taskset + location selections
   // ------------------------------
   async function handleTeacherLoadTaskset(payload = {}) {

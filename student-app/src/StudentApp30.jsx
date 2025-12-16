@@ -931,17 +931,6 @@ function StudentApp() {
     }
 
     setSubmitting(true);
-    // Normalize multi-part payloads from TaskRunner (can be object or JSON string)
-    let normalizedAnswer = answerPayload;
-    if (typeof answerPayload === "string" && answerPayload.trim().startsWith("{")) {
-      try {
-        const parsed = JSON.parse(answerPayload);
-        if (parsed && typeof parsed === "object") normalizedAnswer = parsed;
-      } catch {
-        // leave as string
-      }
-    }
-
 
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
@@ -951,7 +940,7 @@ function StudentApp() {
         typeof currentTaskIndex === "number" && currentTaskIndex >= 0
           ? currentTaskIndex
           : null,
-      answer: normalizedAnswer,
+      answer: answerPayload,
     };
 
     socket.emit("task:submit", payload, (response) => {
