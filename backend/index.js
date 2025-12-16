@@ -1034,14 +1034,13 @@ socket.on("task:force-advance", ({ roomCode }) => {
     const room = rooms[code];
     if (!room) return;
 
-    // Reconnect-safe: accept keepalive and refresh ownership.
-    // This prevents rooms from "disappearing" for late joiners when the teacher socket reconnects.
+    // keep room alive + reconnect-safe ownership
     room.teacherSocketId = socket.id;
     room.lastTeacherSeenAt = Date.now();
     room.expiresAt = Date.now() + 1000 * 60 * 60; // rolling 1-hour expiry
-    room.isActive = room.isActive !== false ? room.isActive : true;
 
-    // Ensure the teacher socket remains in the room channel.
+    // IMPORTANT: do NOT mutate room.isActive here
+
     socket.join(code);
     socket.data.role = "teacher";
     socket.data.roomCode = code;
@@ -1151,19 +1150,21 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
       // If taskset running, DO NOT push task immediately.
       // Instead, queue it so the NEXT SCAN delivers it.
-      if (room.taskset && Array.isArray(room.taskset.tasks) && room.taskset.tasks.length > 0) {
-        const idxRaw =
+      // ✅ Only send a task if the session has STARTED
+      if (
+        room.isActive === true &&
+        room.taskset &&
+        Array.isArray(room.taskset.tasks) &&
+        room.taskset.tasks.length > 0
+      ) {
+        const idx =
           typeof room.taskIndex === "number" && room.taskIndex >= 0
             ? room.taskIndex
-            : (typeof room.teams?.[teamId]?.taskIndex === "number" && room.teams[teamId].taskIndex >= 0)
+            : typeof room.teams?.[teamId]?.taskIndex === "number" && room.teams[teamId].taskIndex >= 0
             ? room.teams[teamId].taskIndex
             : 0;
 
-        const idx = Math.max(0, idxRaw);
-
-        // queue current task for delivery on scan
-        room.teams[teamId].nextTaskIndex = idx;
-        // optionally clear any currently shown task client-side by emitting state only
+        sendTaskToTeam(room, teamId, idx);
       }
 
       socket.data.roomCode = code;
