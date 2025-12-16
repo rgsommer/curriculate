@@ -1060,7 +1060,6 @@ function StudentApp() {
     setMembers(["", "", ""]);
   };
 
-  };
   // ----------------------------------------------------
   // End the 15s review lock and return to scan state
   // (Used by BOTH the server-scored path and the fallback timer)
