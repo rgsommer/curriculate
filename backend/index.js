@@ -3230,6 +3230,32 @@ app.post("/api/tasksets", async (req, res) => {
   }
 });
 
+// Verify TeacherApp entry code (auth required)
+app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
+  try {
+    const code = String(req.body?.code || "").trim();
+    if (!code || !/^[a-z0-9]+$/i.test(code)) {
+      return res.status(400).json({ ok: false, error: "Invalid code format" });
+    }
+
+    // Load teacher profile for this user
+    // Adjust model/field names to match your DB:
+    const teacher = await Teacher.findOne({ ownerId: req.userId }).lean();
+    if (!teacher) return res.status(404).json({ ok: false, error: "Teacher profile not found" });
+
+    // Stored in teacher profile (plain for now; later you can hash)
+    const expected = String(teacher.entryCode || "").trim();
+    if (!expected) return res.status(403).json({ ok: false, error: "No entry code set for this teacher" });
+
+    if (code !== expected) return res.status(401).json({ ok: false, error: "Incorrect code" });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("verify-entry-code error:", err);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
 app.get("/api/tasksets", async (req, res) => {
   try {
     const sets = await TaskSet.find().sort({ createdAt: -1 }).lean();

@@ -35,7 +35,6 @@ function generateRoomCode() {
   return "AA";
 }
 
-const TEACHER_ENTRY_CODE = import.meta.env.VITE_TEACHER_ENTRY_CODE || "";
 const ENTRY_KEY = "curriculate.teacherApp.entry.ok";
 
 function TeacherApp() {
@@ -119,13 +118,15 @@ function TeacherApp() {
   const requireAuth = (element) =>
     isAuthenticated ? element : <Login />;
 
-  if (TEACHER_ENTRY_CODE && !entryOk) {
+  // After auth is established, require entry code unless already verified
+  if (isAuthenticated && !entryOk) {
     return (
-      <EntryGate
+      <EntryGateServer
         onPass={() => {
           try { localStorage.setItem(ENTRY_KEY, "1"); } catch {}
           setEntryOk(true);
         }}
+        onLogout={logout}
       />
     );
   }
@@ -357,6 +358,11 @@ function EnterRoomMessage() {
   );
 }
 
+const logoutWithClear = () => {
+  try { localStorage.removeItem(ENTRY_KEY); } catch {}
+  logout();
+};
+
 function NavLinkButton({ to, active, children }) {
   return (
     <Link
@@ -380,7 +386,7 @@ function NavLinkButton({ to, active, children }) {
   );
 }
 
-function HeaderBar({ isAuthenticated, user, logout }) {
+function HeaderBar({ isAuthenticated, user, logoutWithClear }) {
   return (
     <div
       style={{
@@ -406,7 +412,7 @@ function HeaderBar({ isAuthenticated, user, logout }) {
         >
           <span>{user?.email}</span>
           <button
-            onClick={logout}
+            onClick={logoutWithClear}
             style={{
               fontSize: "0.85rem",
               borderRadius: 6,
@@ -440,23 +446,47 @@ function HeaderBar({ isAuthenticated, user, logout }) {
   );
 }
 
-function EntryGate({ onPass }) {
+function EntryGateServer({ onPass, onLogout }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    const expected = (import.meta.env.VITE_TEACHER_ENTRY_CODE || "").trim();
-    if (!expected) return onPass(); // no code configured
-    if (code.trim() === expected) return onPass();
-    setErr("Incorrect code.");
+    setErr("");
+
+    const trimmed = code.trim();
+    if (!/^[a-z0-9]+$/i.test(trimmed)) {
+      setErr("Use letters and numbers only.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/teacher/verify-entry-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ code: trimmed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        setErr(data?.error || "Incorrect code.");
+        return;
+      }
+      onPass?.();
+    } catch {
+      setErr("Network error.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#111827", color: "#f9fafb" }}>
       <form onSubmit={submit} style={{ width: 360, maxWidth: "90vw", background: "#0b1220", padding: 18, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)" }}>
         <div style={{ fontWeight: 800, fontSize: "1.2rem", marginBottom: 6 }}>Curriculate Presenter</div>
-        <div style={{ color: "rgba(249,250,251,0.75)", marginBottom: 12 }}>Enter access code to continue</div>
+        <div style={{ color: "rgba(249,250,251,0.75)", marginBottom: 12 }}>Enter your access code</div>
 
         <input
           value={code}
@@ -470,9 +500,21 @@ function EntryGate({ onPass }) {
 
         <button
           type="submit"
-          style={{ width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "#0ea5e9", color: "#fff", fontWeight: 800, cursor: "pointer" }}
+          disabled={busy}
+          style={{ width: "100%", marginTop: 12, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "#0ea5e9", color: "#fff", fontWeight: 800, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 }}
         >
-          Enter
+          {busy ? "Checking…" : "Enter"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            try { localStorage.removeItem(ENTRY_KEY); } catch {}
+            onLogout?.();
+          }}
+          style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "transparent", color: "#e5e7eb", fontWeight: 700, cursor: "pointer" }}
+        >
+          Logout
         </button>
       </form>
     </div>

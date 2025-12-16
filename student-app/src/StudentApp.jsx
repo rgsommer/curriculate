@@ -7,6 +7,7 @@ import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
+import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 
 // Build marker so you can confirm the deployed bundle
 console.log("STUDENT BUILD MARKER v2025-12-12-AI, API_BASE_URL:", API_BASE_URL);
@@ -420,6 +421,7 @@ function StudentApp() {
   const [joined, setJoined] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [leaderboard, setLeaderboard] = useState([]); // Update via socket.on('leaderboard-update', setLeaderboard)
 
   const [roomCode, setRoomCode] = useState(() => (lsGet(LS_KEYS.roomCode) || ""));
   const [teamName, setTeamName] = useState(() => (lsGet(LS_KEYS.teamName) || ""));
@@ -1989,6 +1991,13 @@ function StudentApp() {
       </style>
 
       {/* HEADER */}
+      {joined && (
+        <AnimatedLeaderboard
+          leaderboard={leaderboard}
+          showConfetti={recentlyScoredBig} // Trigger on big points
+          currentTeamName={yourTeamName}
+        />
+      )}
       <header
         style={{
           display: "flex",
