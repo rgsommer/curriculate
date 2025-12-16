@@ -967,32 +967,26 @@ function StudentApp() {
       setStatusMessage("");
       setTaskLocked(true);
 
-      if (!response.aiScoring && !response.objectiveScoring) {
-        // ✅ Fallback: show the 15s review countdown even if task:scored never arrives
-        const fallbackSeconds =
-          Number(response?.postSubmitSeconds) > 0
-            ? Number(response.postSubmitSeconds)
-            : DEFAULT_POST_SUBMIT_SECONDS;
+      // Always start a review countdown so the task will clear even if task:scored never arrives
+      const fallbackSeconds =
+        Number(response?.postSubmitSeconds) > 0
+          ? Number(response.postSubmitSeconds)
+          : DEFAULT_POST_SUBMIT_SECONDS;
 
-        setTaskLocked(true);
-        setPostSubmitSecondsLeft(fallbackSeconds);
+      setPostSubmitSecondsLeft(fallbackSeconds);
 
-        if (postSubmitTimerRef.current) {
-          clearInterval(postSubmitTimerRef.current);
-        }
-        let t = fallbackSeconds;
-        const timer = setInterval(() => {
-          t -= 1;
-          setPostSubmitSecondsLeft(t);
-
-          if (t <= 0) {
+      if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
+      let t = fallbackSeconds;
+      const timer = setInterval(() => {
+        t -= 1;
+        setPostSubmitSecondsLeft(t);
+        if (t <= 0) {
           clearInterval(timer);
           endReviewAndReturnToScan();
         }
-        }, 1000);
+      }, 1000);
 
-        postSubmitTimerRef.current = timer;
-      }
+      postSubmitTimerRef.current = timer;
 
       if (response.alertSound) {
         tryPlayAlertSound();
