@@ -2318,7 +2318,7 @@ function StudentApp() {
                   {postSubmitSecondsLeft != null ? (
                     <div style={{ width: "100%" }}>
                       <div>
-                        Locked while your teacher reviews… <br />
+                        Review your answer… <br />
                         <span
                           style={{
                             fontVariantNumeric: "tabular-nums",
