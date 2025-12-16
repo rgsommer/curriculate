@@ -21,18 +21,22 @@ const client = new OpenAI({
 });
 
 // Build a list of implemented, AI-eligible task types
+// Build a list of implemented, AI-eligible task types that are safe to GENERATE.
+// - implemented !== false
+// - aiEligible !== false
+// - generatorEligible !== false (some types are AI-scoreable but not generator-safe)
+// - exclude HIDENSEEK (your special case)
 const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(
-    ([type, meta]) =>
-      meta.implemented !== false &&
-      meta.aiEligible !== false &&
-      meta.generatorEligible !== false &&
-      type !== TASK_TYPES.HIDENSEEK
+  .filter(([type, meta]) =>
+    meta?.implemented !== false &&
+    meta?.aiEligible !== false &&
+    meta?.generatorEligible !== false &&
+    type !== TASK_TYPES.HIDENSEEK
   )
   .map(([type]) => type);
 
 const CORE_TYPES =
-  AI_ELIGIBLE_TYPES && AI_ELIGIBLE_TYPES.length
+  AI_ELIGIBLE_TYPES.length
     ? AI_ELIGIBLE_TYPES
     : [TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER];
 
@@ -937,7 +941,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       if (!t.__needsRetry) continue;
 
       const allowedType = t.__retryType;
-      const mustHave = RETRY_MUST_HAVE[allowedType] || "Produce a valid task.";
+      const mustHave = retryMustHave[allowedType] || "Produce a valid task.";
 
       let replaced = null;
 
