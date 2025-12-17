@@ -50,11 +50,6 @@ const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", Ac
 const app = express();
 const server = http.createServer(app);
 
-db.teacherprofiles.updateOne(
-  { email: "rsommer@bramptoncs.org" },
-  { $set: { isAdmin: true, role: "admin" } }
-)
-
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 
 // Simple UUID generator
@@ -68,6 +63,11 @@ function generateUUID() {
 
 //const raceWinner = {};
 const teamClues = new Map(); // ← global store for mystery clues
+
+// helper functions
+function getOwnerId(req) {
+  return String(req.user?._id || req.user?.userId || req.user?.id || "").trim();
+}
 
 function getSessionByRoomCode(code) {
   return rooms[code.toUpperCase()];
@@ -2661,18 +2661,17 @@ const code = (roomCode || "").toUpperCase();
   // ──────────────────────────────────────────────────────────────
 
   // In-room pairing store keyed by taskId (or "default")
-  function getOrCreateCollabState(room, taskId = "default") {
-    if (!room._collab) room._collab = {};
-    if (!room._collab[taskId]) {
-      room._collab[taskId] = {
-        // teamId -> partnerTeamId
-        partnerByTeamId: {},
-        // teamId -> mainAnswer
-        mainByTeamId: {},
-        createdAt: Date.now(),
-      };
+  async function getOrCreateProfileForUser({ ownerId, email }) {
+    if (!ownerId) throw new Error("Missing ownerId");
+    let profile = await TeacherProfile.findOne({ ownerId });
+    if (!profile) {
+      profile = new TeacherProfile({
+        ownerId,
+        email: email || "",
+      });
+      await profile.save();
     }
-    return room._collab[taskId];
+    return profile;
   }
 
   function shuffle(arr) {
@@ -3170,7 +3169,8 @@ function isAdminProfile(profile) {
 
 async function adminRequired(req, res, next) {
   try {
-    const profile = await TeacherProfile.findOne({ ownerId: req.userId }).lean();
+    const ownerId = getOwnerId(req);
+    const profile = await TeacherProfile.findOne({ ownerId }).lean();
     if (!isAdminProfile(profile)) {
       return res.status(403).json({ ok: false, error: "Admin only" });
     }
@@ -3196,7 +3196,8 @@ function normalizeCode(raw) {
 
 app.get("/api/profile/me", authRequired, async (req, res) => {
   try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const ownerId = getOwnerId(req);
+    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
     const plain = profile.toObject();
 
     // Ensure both fields are present for the frontend
@@ -3212,7 +3213,8 @@ app.get("/api/profile/me", authRequired, async (req, res) => {
 
 app.get("/api/profile", authRequired, async (req, res) => {
   try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const ownerId = getOwnerId(req);
+    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
     const plain = profile.toObject();
 
     plain.presenterTitle = plain.presenterTitle || plain.title || "";
@@ -3227,7 +3229,8 @@ app.get("/api/profile", authRequired, async (req, res) => {
 
 app.put("/api/profile/me", authRequired, async (req, res) => {
   try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const ownerId = getOwnerId(req);
+    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
 
     // Keep presenterTitle and title in sync
     const body = { ...req.body };
@@ -3255,7 +3258,8 @@ app.put("/api/profile/me", authRequired, async (req, res) => {
 
 app.put("/api/profile", authRequired, async (req, res) => {
   try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const ownerId = getOwnerId(req);
+    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
 
     const body = { ...req.body };
     if (body.presenterTitle && !body.title) {
@@ -3299,7 +3303,8 @@ app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Invalid code format" });
     }
 
-    const profile = await TeacherProfile.findOne({ ownerId: req.userId }).lean();
+    const ownerId = getOwnerId(req);
+    const profile = await TeacherProfile.findOne({ ownerId }).lean();
     if (!profile) {
       return res.status(404).json({ ok: false, error: "Teacher profile not found" });
     }
@@ -3346,12 +3351,13 @@ app.post("/api/teacher/claim-access-code", authRequired, async (req, res) => {
 
     // Prevent the same user from consuming multiple seats accidentally
     const claimants = Array.isArray(access.claimants) ? access.claimants : [];
-    if (claimants.includes(req.userId)) {
+    const ownerId = getOwnerId(req);
+    if (claimants.includes(ownerId)) {
       return res.json({ ok: true, alreadyClaimed: true });
     }
 
     // Create or load teacher profile for this user
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
 
     // If teacher already has a different code, don't silently overwrite
     if (profile.entryCode && normalizeCode(profile.entryCode) !== code) {
@@ -3365,11 +3371,11 @@ app.post("/api/teacher/claim-access-code", authRequired, async (req, res) => {
         isActive: true,
         ...(access.expiresAt ? { expiresAt: { $gte: new Date() } } : {}),
         seatsUsed: { $lt: maxSeats },
-        claimants: { $ne: req.userId },
+        claimants: { $ne: ownerId },
       },
       {
         $inc: { seatsUsed: 1 },
-        $addToSet: { claimants: req.userId },
+        $addToSet: { claimants: ownerId },
         $setOnInsert: {},
         $set: { claimedAt: access.claimedAt || new Date() },
       },
@@ -3426,7 +3432,7 @@ app.post("/api/admin/access-codes", authRequired, adminRequired, async (req, res
       maxSeats,
       expiresAt,
       isActive: body.isActive !== false,
-      createdBy: req.userId,
+      createdBy: req.adminProfile?.ownerId || null,
       notes,
     });
 
