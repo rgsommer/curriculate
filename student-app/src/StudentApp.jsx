@@ -1327,6 +1327,11 @@ function StudentApp() {
   const isMusicalChairs =
     currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
+  const isPhotoJournal =
+    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL ||
+    currentTask?.taskType === "photo-journal" ||
+    currentTask?.taskType === "photo_journal";
+
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
         animation: "mc-header-pulse 1.4s ease-in-out infinite",
@@ -2538,7 +2543,7 @@ const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
                   review={reviewState}
                   socket={socket}
                   roomCode={roomCode}
-                  playerTeam={teamName}
+                  playerTeam={{ id: teamId, teamName }}
                   partnerAnswer={partnerAnswer}
                   showPartnerReply={showPartnerReply}
                   onPartnerReply={(replyText) => {
