@@ -2,7 +2,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 
 const router = express.Router();
 
