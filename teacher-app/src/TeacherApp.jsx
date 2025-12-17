@@ -46,6 +46,22 @@ const ENTRY_KEY = "curriculate.teacherApp.entry.ok";
  * - Button/input styling is restored to a clean, rounded blue UI.
  */
 function TeacherApp() {
+  const isAuthRoute =
+    location.pathname === "/login" ||
+    location.pathname.startsWith("/reset-password");
+
+  // If we're on auth routes, render ONLY the auth page (no sidebar/header)
+  if (isAuthRoute) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        {/* later */}
+        {/* <Route path="/reset-password" element={<ResetPassword />} /> */}
+        <Route path="*" element={<Login />} />
+      </Routes>
+    );
+  }
+
   const [roomCode, setRoomCode] = useState(() => generateRoomCode());
   const location = useLocation();
 
