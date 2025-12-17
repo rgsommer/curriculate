@@ -17,9 +17,10 @@ export default function Login() {
   const [forgotMsg, setForgotMsg] = useState("");
   const [forgotErr, setForgotErr] = useState("");
 
-  // dev helpers (optional if your backend returns them)
-  const [devResetToken, setDevResetToken] = useState("");
+  // dev-only display (only shows if server returns them)
   const [devResetLink, setDevResetLink] = useState("");
+  const [devResetToken, setDevResetToken] = useState("");
+  const [copied, setCopied] = useState(""); // "link" | "token" | ""
 
   const canSubmit = useMemo(() => {
     return !!email.trim() && !!String(password || "");
@@ -27,10 +28,7 @@ export default function Login() {
 
   const onSubmit = async (e) => {
     e.preventDefault();
-
     setErr("");
-    setForgotMsg("");
-    setForgotErr("");
 
     const em = (email || "").trim();
     const pw = String(password || "");
@@ -40,8 +38,7 @@ export default function Login() {
 
     setBusy(true);
     try {
-      // IMPORTANT: match your current useAuth signature: login(email, password)
-      await login(em, pw);
+      await login(em, pw); // matches your current useAuth signature
       window.location.href = "/";
     } catch (e2) {
       setErr(e2?.message || "Login failed.");
@@ -50,12 +47,13 @@ export default function Login() {
     }
   };
 
-  const copyToClipboard = async (text) => {
+  const copy = async (text, which) => {
     try {
-      await navigator.clipboard.writeText(text);
-      return true;
+      await navigator.clipboard.writeText(String(text || ""));
+      setCopied(which);
+      setTimeout(() => setCopied(""), 1200);
     } catch {
-      return false;
+      // ignore
     }
   };
 
@@ -63,8 +61,9 @@ export default function Login() {
     setForgotErr("");
     setForgotMsg("");
     setErr("");
-    setDevResetToken("");
     setDevResetLink("");
+    setDevResetToken("");
+    setCopied("");
 
     const em = (email || "").trim();
     if (!em) {
@@ -76,23 +75,22 @@ export default function Login() {
     try {
       const data = await requestPasswordReset(em);
 
-      // Safe default (anti-enumeration)
-      let msg =
-        "If that email exists, a reset link has been sent. (Dev: check backend logs.)";
-
-      // Dev-friendly: if backend returns token/link, show it
-      const token = data?.resetToken || data?.token || "";
+      // If your backend returns dev fields, show them. Otherwise show the generic safe message.
       const link = data?.resetLink || data?.link || "";
+      const token = data?.resetToken || data?.token || "";
 
-      if (token) setDevResetToken(String(token));
       if (link) setDevResetLink(String(link));
+      if (token) setDevResetToken(String(token));
 
-      if (token || link) {
-        msg =
-          "Dev reset info received. Use the token/link below to set a new password.";
+      if (link || token) {
+        setForgotMsg(
+          "Dev reset info received. Copy the link or token below to reset your password."
+        );
+      } else {
+        setForgotMsg(
+          "If that email exists, a reset link has been sent. (Dev: check backend logs.)"
+        );
       }
-
-      setForgotMsg(msg);
     } catch (e2) {
       setForgotErr(e2?.message || "Could not request reset.");
     } finally {
@@ -114,16 +112,8 @@ export default function Login() {
       }}
     >
       <div style={{ width: "100%", maxWidth: 520 }}>
-        {/* Top brand / tagline */}
         <div style={{ textAlign: "center", marginBottom: 16 }}>
-          <div
-            style={{
-              fontSize: 26,
-              fontWeight: 900,
-              letterSpacing: 0.2,
-              marginBottom: 6,
-            }}
-          >
+          <div style={{ fontSize: 26, fontWeight: 900, marginBottom: 6 }}>
             Curriculate
           </div>
           <div style={{ opacity: 0.78, fontSize: 14, lineHeight: 1.35 }}>
@@ -133,7 +123,6 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Center card */}
         <div
           style={{
             width: "100%",
@@ -182,11 +171,7 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => setShowPw((v) => !v)}
-                style={{
-                  ...ui.buttonGhost,
-                  width: 120,
-                  marginTop: 22,
-                }}
+                style={{ ...ui.buttonGhost, width: 120, marginTop: 22 }}
                 disabled={busy || forgotBusy}
               >
                 {showPw ? "Hide" : "Show"}
@@ -209,11 +194,7 @@ export default function Login() {
             <button
               type="button"
               onClick={() => setShowForgot((v) => !v)}
-              style={{
-                marginTop: 10,
-                width: "100%",
-                ...ui.buttonGhost,
-              }}
+              style={{ marginTop: 10, width: "100%", ...ui.buttonGhost }}
               disabled={busy}
             >
               {showForgot ? "Hide password reset" : "Forgot password?"}
@@ -233,7 +214,7 @@ export default function Login() {
                   We’ll send a reset link to your email.
                   <br />
                   <span style={{ opacity: 0.85 }}>
-                    (Dev mode: backend may return a token/link or print it to logs.)
+                    Dev mode: backend may return a token/link or print it to logs.
                   </span>
                 </div>
 
@@ -259,21 +240,22 @@ export default function Login() {
 
                 {(devResetLink || devResetToken) && (
                   <div style={{ marginTop: 12 }}>
-                    {devResetLink ? (
+                    {devResetLink && (
                       <DevRow
                         label="Dev reset link"
                         value={devResetLink}
-                        onCopy={() => copyToClipboard(devResetLink)}
+                        copied={copied === "link"}
+                        onCopy={() => copy(devResetLink, "link")}
                       />
-                    ) : null}
-
-                    {devResetToken ? (
+                    )}
+                    {devResetToken && (
                       <DevRow
                         label="Dev reset token"
                         value={devResetToken}
-                        onCopy={() => copyToClipboard(devResetToken)}
+                        copied={copied === "token"}
+                        onCopy={() => copy(devResetToken, "token")}
                       />
-                    ) : null}
+                    )}
                   </div>
                 )}
               </div>
@@ -281,7 +263,6 @@ export default function Login() {
           </form>
         </div>
 
-        {/* tiny footer */}
         <div style={{ textAlign: "center", opacity: 0.55, marginTop: 14, fontSize: 12 }}>
           © {new Date().getFullYear()} Curriculate
         </div>
@@ -290,7 +271,7 @@ export default function Login() {
   );
 }
 
-function DevRow({ label, value, onCopy }) {
+function DevRow({ label, value, onCopy, copied }) {
   return (
     <div
       style={{
@@ -318,8 +299,9 @@ function DevRow({ label, value, onCopy }) {
           {value}
         </div>
       </div>
+
       <button type="button" onClick={onCopy} style={{ ...ui.buttonGhost, width: 92 }}>
-        Copy
+        {copied ? "Copied!" : "Copy"}
       </button>
     </div>
   );
