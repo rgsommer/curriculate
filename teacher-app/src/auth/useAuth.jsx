@@ -21,7 +21,6 @@ export function AuthProvider({ children }) {
       throw new Error(data?.error || "Login failed");
     }
 
-    // 🔑 THIS IS THE ONLY PLACE TOKEN STORAGE BELONGS
     if (!data.token) {
       throw new Error("Login succeeded but no token returned");
     }
@@ -31,6 +30,37 @@ export function AuthProvider({ children }) {
     setUser(data.user || { email: data.email });
 
     return data.user;
+  };
+
+  // ✅ Forgot password: always returns ok=true if server is behaving
+  const requestPasswordReset = async (email) => {
+    const res = await fetch("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    // even if server returns ok:true always, still parse for errors
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to request password reset");
+    }
+    return data; // { ok:true }
+  };
+
+  const resetPassword = async ({ email, token, newPassword }) => {
+    const res = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, token, newPassword }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to reset password");
+    }
+    return data; // { ok:true }
   };
 
   const logout = () => {
@@ -48,6 +78,8 @@ export function AuthProvider({ children }) {
         isAuthenticated: !!token,
         login,
         logout,
+        requestPasswordReset,
+        resetPassword,
       }}
     >
       {children}

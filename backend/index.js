@@ -139,6 +139,7 @@ app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: "3mb" }));
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/auth", authRoutes);
+app.use("/api/auth", authRoutes);
 
 // ====================================================================
 //  SOCKET.IO
