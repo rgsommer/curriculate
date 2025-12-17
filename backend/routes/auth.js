@@ -74,6 +74,22 @@ router.post("/forgot-password", async (req, res) => {
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
+    const isDev =
+      process.env.NODE_ENV !== "production" ||
+      process.env.RETURN_RESET_TOKEN === "true";
+
+    if (isDev) {
+      return res.json({
+        ok: true,
+        // dev-only: lets you test without email
+        resetToken: rawToken,
+        email,
+      });
+    }
+
+    // prod behavior: don't reveal anything
+    return res.json({ ok: true });
+
     // 30 min expiry (tweak)
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
