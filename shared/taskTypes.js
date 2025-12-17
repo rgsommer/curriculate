@@ -17,6 +17,7 @@ export const TASK_TYPES = {
   SORT: "sort",
   SEQUENCE: "sequence",
   TIMELINE: "timeline",
+  VENNSORT: "vennsort",  // NEW: Venn diagram sorting with overlaps
 
   // Visual / creative proof
   PHOTO: "photo",
@@ -745,6 +746,28 @@ export const TASK_TYPE_META = {
       "Hunt for items or solve riddles across rooms. Each find ties to a learning fact. High-movement adventure.",
   },
 
+  [TASK_TYPES.VENNSORT]: {  // NEW: Venn diagram sorting
+    label: "Venn Sort",
+    category: CATEGORY.ORDERING,
+    hasOptions: false,
+    expectsText: false,
+    maxTime: 120,
+    maxTimeSeconds: 120,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+
+    objectiveScoring: true,
+    defaultAiScoringRequired: false,
+    correctAnswerShape: "map", // e.g., { item1: [cat1], item2: [cat1, cat2], ... }
+
+    quickTaskEligible: true,
+    multiItemCapable: false,
+
+    description:
+      "Drag 5–10 items into a Venn diagram with 2–3 overlapping categories. Supports exclusive and shared placements for objective scoring.",
+  },
+  
   [TASK_TYPES.DIFF_DETECTIVE]: {
     label: "Diff Detective",
     category: CATEGORY.QUESTION,
@@ -954,7 +977,9 @@ export function normalizeTaskType(value) {
   if (v === "mime" || v === "act" || v === "act-out") {
     return TASK_TYPES.MIME;
   }
-
+  if (v === "vennsort" || v === "venn-sort" || v === "venn" || v === "venndiagram" || v === "venn-diagram") {
+      return TASK_TYPES.VENNSORT;  // NEW normalization
+    }
   // Jeopardy / Brain Blitz legacy names
   if (
     v === "jeopardy" ||

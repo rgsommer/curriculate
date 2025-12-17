@@ -27,11 +27,7 @@ export async function fetchMyProfile() {
   const res = await fetch(`${API_BASE}/api/profile`, {
     credentials: "include",
   });
-
-  if (!res.ok) {
-    throw new Error("Failed to load profile");
-  }
-  return res.json();
+  return parseJsonOrThrow(res, "Failed to load profile");
 }
 
 export async function updateMyProfile(payload) {
@@ -41,9 +37,5 @@ export async function updateMyProfile(payload) {
     credentials: "include",
     body: JSON.stringify(payload),
   });
-
-  if (!res.ok) {
-    throw new Error("Failed to save profile");
-  }
-  return res.json();
+  return parseJsonOrThrow(res, "Failed to save profile");
 }
