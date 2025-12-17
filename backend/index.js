@@ -34,6 +34,10 @@ const server = http.createServer(app);
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 
+app.get("/api/version", (req, res) => {
+  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-16" });
+});
+
 // Simple UUID generator
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
