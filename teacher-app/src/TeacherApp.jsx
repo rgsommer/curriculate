@@ -480,7 +480,7 @@ function EntryGateServer({ user, onPass, onLogout }) {
     setBusy(true);
     try {
       // 1) Try verify (returning teacher)
-      const verifyRes = await fetch("/api/teacher/verify-entry-code", {
+      const verifyRes = await apifetch("/api/teacher/verify-entry-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -500,7 +500,7 @@ function EntryGateServer({ user, onPass, onLogout }) {
       }
 
       // 2) If verify fails, try claim (new teacher)
-      const claimRes = await fetch("/api/teacher/claim-access-code", {
+      const claimRes = await apifetch("/api/teacher/claim-access-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

@@ -50,6 +50,11 @@ const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", Ac
 const app = express();
 const server = http.createServer(app);
 
+db.teacherprofiles.updateOne(
+  { email: "rsommer@bramptoncs.org" },
+  { $set: { isAdmin: true, role: "admin" } }
+)
+
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 
 // Simple UUID generator
