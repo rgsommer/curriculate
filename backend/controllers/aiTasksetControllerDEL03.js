@@ -150,137 +150,28 @@ function normalizeHangmanWord(raw) {
 }
 
 function enforceHangmanFromWordBank(task, wordBank) {
-  // Pure helper: validate + normalize a Hangman task using ONLY the provided wordBank
   if (!task || task.taskType !== TASK_TYPES.HANGMAN_DUEL) return task;
 
   const bank = (Array.isArray(wordBank) ? wordBank : [])
     .map(normalizeHangmanWord)
     .filter(Boolean);
 
-  // If no bank, do not mutate (generator should have required this)
-  if (!bank.length) return task;
+  const chosen = normalizeHangmanWord(task.word);
 
   // “suitably challenging”: tune these if you want
   const minLen = 5;
   const maxLen = 14;
 
-  // Prefer multi-word shape
-  const rawList = Array.isArray(task.wordsByStation) ? task.wordsByStation : null;
+  const ok =
+    bank.includes(chosen) &&
+    chosen.length >= minLen &&
+    chosen.length <= maxLen;
 
-  // Back-compat: if a single word exists, convert to wordsByStation[0]
-  const singleWord = normalizeHangmanWord(task.word);
+  if (ok) return { ...task, word: chosen };
 
-  let list = [];
-  if (rawList && rawList.length) {
-    list = rawList
-      .map((entry) => ({
-        word: normalizeHangmanWord(entry?.word),
-        hint: typeof entry?.hint === "string" ? entry.hint.trim() : "",
-      }))
-      .filter((e) => e.word);
-  } else if (singleWord) {
-    list = [{ word: singleWord, hint: typeof task.hint === "string" ? task.hint.trim() : "" }];
-  }
-
-  // Enforce: choose 4–8 unique words from bank, similar length (max diff ≤ 2)
-  // Start from the list provided (if valid), otherwise build from bank.
-  const isFromBank = (w) => bank.includes(w);
-  const isLenOk = (w) => w.length >= minLen && w.length <= maxLen;
-
-  // Keep only valid candidates from provided list
-  const provided = [];
-  const seen = new Set();
-  for (const e of list) {
-    const w = e.word;
-    if (!w || seen.has(w)) continue;
-    if (!isFromBank(w)) continue;
-    if (!isLenOk(w)) continue;
-    provided.push({ word: w, hint: e.hint || "" });
-    seen.add(w);
-    if (provided.length >= 8) break;
-  }
-
-  // If we already have 4–8, ensure length similarity (diff ≤ 2); otherwise rebuild.
-  const lengthDiffOk = (arr) => {
-    if (!arr.length) return false;
-    const lens = arr.map((x) => x.word.length);
-    const min = Math.min(...lens);
-    const max = Math.max(...lens);
-    return max - min <= 2;
-  };
-
-  let finalList = provided;
-
-  if (finalList.length < 4 || !lengthDiffOk(finalList)) {
-    // Build from bank: filter to length window first
-    const bankFiltered = bank.filter((w) => isLenOk(w));
-
-    // Pick a tight length band (L..L+2) with the most available words
-    const counts = new Map();
-    for (const w of bankFiltered) {
-      const L = w.length;
-      for (let start = L - 2; start <= L; start++) {
-        const key = `${start}`;
-        const ok = L >= start && L <= start + 2;
-        if (!ok) continue;
-        counts.set(key, (counts.get(key) || 0) + 1);
-      }
-    }
-    // Choose best band
-    let bestStart = null;
-    let bestCount = -1;
-    for (const [k, c] of counts.entries()) {
-      if (c > bestCount) {
-        bestCount = c;
-        bestStart = Number(k);
-      }
-    }
-
-    const bandStart = Number.isFinite(bestStart) ? bestStart : minLen;
-    const band = bankFiltered.filter((w) => w.length >= bandStart && w.length <= bandStart + 2);
-
-    // Preserve any valid provided words that fit the band
-    const bandSet = new Set(band);
-    finalList = [];
-    const used = new Set();
-
-    for (const e of provided) {
-      if (!bandSet.has(e.word)) continue;
-      finalList.push({ word: e.word, hint: e.hint || "" });
-      used.add(e.word);
-    }
-
-    for (const w of band) {
-      if (finalList.length >= 8) break;
-      if (used.has(w)) continue;
-      finalList.push({ word: w, hint: "" });
-      used.add(w);
-    }
-
-    // If still <4, relax to any filtered bank words
-    if (finalList.length < 4) {
-      for (const w of bankFiltered) {
-        if (finalList.length >= 4) break;
-        if (used.has(w)) continue;
-        finalList.push({ word: w, hint: "" });
-        used.add(w);
-      }
-    }
-
-    // Absolute fallback: at least one
-    if (!finalList.length) {
-      finalList = [{ word: bank[0], hint: "" }];
-    }
-  }
-
-  return {
-    ...task,
-    // canonical multi-word shape
-    wordsByStation: finalList.slice(0, Math.min(8, finalList.length)),
-    // keep back-compat fields (optional) but make them coherent
-    word: (finalList[0]?.word || singleWord || bank[0] || "HANGMAN"),
-    hint: finalList[0]?.hint || (typeof task.hint === "string" ? task.hint.trim() : ""),
-  };
+  const valid = bank.filter((w) => w.length >= minLen && w.length <= maxLen);
+  const fallback = valid[0] || bank[0] || "HANGMAN";
+  return { ...task, word: fallback };
 }
 
 function tfItemsAreValid(items) {
@@ -351,7 +242,7 @@ Hard requirements:
 - SEQUENCE must include config: { items: [{ text }] }
 - JEOPARDY (BrainBlitz) must include clues: [{ clue, answer }]
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
-- HANGMAN_DUEL must include wordsByStation[] (4–8 entries). Each entry: { word, hint }. Each word must come ONLY from the vocabulary list (aiWordBank), all words must be different, and lengths must be similar (max length difference ≤ 2).
+- HANGMAN_DUEL must include "word" chosen EXACTLY from the vocabulary list and optional "hint".
 
 Return the task in this normalized shape:
 {
@@ -362,7 +253,6 @@ Return the task in this normalized shape:
   "correctAnswer": null,
   "items": [],
   "clues": [],
-  "wordsByStation": [],
   "config": {}
 }
 
@@ -541,7 +431,8 @@ Rules:
 - For JEOPARDY/BrainBlitz tasks: include clues (>=3) with {clue, answer}
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
 - TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
-- For HANGMAN_DUEL tasks: follow the HANGMAN_DUEL requirements block below (wordsByStation per station; no single "word" field).
+- For HANGMAN_DUEL tasks: MUST include "word" chosen EXACTLY from the vocabulary list above (aiWordBank). Do not invent words.
+  Also include optional "hint". Return: { title, prompt, taskType:"hangman-duel", word:"...", hint:"...", config:{} }
   HANGMAN_DUEL (taskType: "hangman-duel") requirements:
 
   You MUST generate a Hangman Duel task that provides DIFFERENT words per station so teams do not share answers.
@@ -571,12 +462,13 @@ Rules:
   - Each "word" must match a term from aiWordBank EXACTLY (same spelling), but you may output it in ALL CAPS.
   - Each station entry MUST have a DIFFERENT word (no duplicates).
   - All chosen words must be of similar difficulty:
-  - target word length window: choose words within a tight range (max length difference across chosen words ≤ 2 characters).
-  - avoid picking a single unusually obscure or unusually easy word compared to the others.
-- "hint" must be short (3–10 words), helpful but not a giveaway, and should not include the full word.
-- Only letters A–Z in the final "word" string (strip spaces/punctuation). If a term has spaces or punctuation, convert it to letters-only (e.g., "New France" → "NEWFRANCE") ONLY IF the letters-only form still clearly corresponds to the aiWordBank term.
+    - target word length window: choose words within a tight range (max length difference across chosen words ≤ 2 characters).
+    - avoid picking a single unusually obscure or unusually easy word compared to the others.
+  - "hint" must be short (3–10 words), helpful but not a giveaway, and should not include the full word.
+  - Only letters A–Z in the final "word" string (strip spaces/punctuation). If a term has spaces or punctuation, convert it to letters-only (e.g., "New France" → "NEWFRANCE") ONLY IF the letters-only form still clearly corresponds to the aiWordBank term.
 
-Do NOT include "options", "correctAnswer", or "items" for Hangman Duel.
+  Do NOT include "options", "correctAnswer", or "items" for Hangman Duel.
+  Return valid JSON only.
 
 Return ONLY valid JSON in this exact format (no backticks, no extra text):
 [
@@ -645,44 +537,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       let clues = Array.isArray(t.clues) ? t.clues : [];
       // Initialize correctAnswer early (some branches set it before the final normalization step)
       let correctAnswer = t.correctAnswer ?? null;
-      // ✅ HANGMAN DUEL normalization (multi-word per station)
-      // Expect: wordsByStation: [{ word, hint }...] chosen ONLY from aiWordBank
-      if (taskType === TASK_TYPES.HANGMAN_DUEL) {
-        const style = isNonEmptyString(t.style) ? t.style : (isNonEmptyString(config?.style) ? config.style : "classic");
-        const playerCount = clampInt(t.playerCount ?? config?.playerCount, 2, 8, 4);
-
-        // Accept AI output in either t.wordsByStation or t.config.wordsByStation; back-compat: t.word + t.hint
-        const wordsByStation =
-          (Array.isArray(t.wordsByStation) && t.wordsByStation) ||
-          (Array.isArray(config?.wordsByStation) && config.wordsByStation) ||
-          null;
-
-        const hangmanTask = enforceHangmanFromWordBank(
-          {
-            index,
-            title: isNonEmptyString(t.title) ? String(t.title).trim().slice(0, 120) : `Task ${index + 1}`,
-            prompt: isNonEmptyString(t.prompt) ? String(t.prompt).trim() : "Play Hangman Duel using the word bank terms.",
-            taskType,
-            style,
-            playerCount,
-            wordsByStation: wordsByStation || undefined,
-            word: t.word || config?.word || "",
-            hint: t.hint || config?.hint || "",
-            options: [],
-            correctAnswer: null,
-            aiScoringRequired: false,
-            timeLimitSeconds: Number.isFinite(t.timeLimitSeconds) ? clampInt(t.timeLimitSeconds, 10, 600, null) : null,
-            points: Number.isFinite(t.points) ? clampInt(t.points, 1, 50, 10) : 10,
-            config: {},
-            items: [],
-          },
-          rawWordBank
-        );
-
-        return hangmanTask;
-      }
-
-
 
       // -------- MULTIPLE CHOICE normalization (single vs multi) --------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {

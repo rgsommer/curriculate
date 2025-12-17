@@ -357,7 +357,7 @@ export const TASK_TYPE_META = {
     quickTaskEligible: false,
 
     description:
-      "AI generates a matched set of different words ONLY from the teacher-provided aiWordBank (wordsByStation: 4–8 entries). Each station index uses its own word so teams don’t help each other. Includes short hints; no real-time multiplayer server state required.",
+      "AI chooses one suitably challenging word ONLY from the teacher-provided aiWordBank, and generates a hint/category. Real-time duel gameplay.",
   },
 
 [TASK_TYPES.MIME]: {
@@ -992,11 +992,6 @@ export function normalizeTaskType(value) {
     v === "voice-answer"
   ) {
     return TASK_TYPES.SPEECH_RECOGNITION;
-  }
-
-  // Hangman (per-station word sets)
-  if (v === "hangman" || v === "hangman-duel" || v === "hangmanduel") {
-    return TASK_TYPES.HANGMAN_DUEL;
   }
 
   // Fallback: if it matches a known value exactly

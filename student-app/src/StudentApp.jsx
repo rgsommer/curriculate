@@ -1264,15 +1264,25 @@ function StudentApp() {
   // ─────────────────────────────────────────────
   // Derived values for UI
   // ─────────────────────────────────────────────
+  const stationInfo = normalizeStationId(assignedStationId);
+  const stationIndex = (() => {
+    const m = /^station-(\d+)$/.exec(String(stationInfo?.id || ""));
+    if (!m) return 0;
+    const n = parseInt(m[1], 10);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.max(0, Math.min(7, n - 1)); // clamp 0..7
+  })();
 
   const themedTask = currentTask
     ? {
         ...currentTask,
         locationSlug: normalizeLocationSlug(roomLocation),
+        stationId: stationInfo?.id || null,
+        stationColor: stationInfo?.color || assignedColor || null,
+        stationIndex, // <-- Hangman uses this to select wordsByStation[stationIndex]
       }
     : null;
 
-  const stationInfo = normalizeStationId(assignedStationId);
   const isMultiRoom =
         Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
@@ -1300,7 +1310,11 @@ function StudentApp() {
     currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
 
   const isMindMapper =
-    currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
+     currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
+
+  const isHangman =
+    currentTask?.taskType === TASK_TYPES.HANGMAN_DUEL ||
+    currentTask?.taskType === "hangman-duel";
   
   const isMultipleChoice =
     currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
@@ -1317,13 +1331,20 @@ function StudentApp() {
   const isMysteryClues =
     currentTask?.taskType === TASK_TYPES.MYSTERY_CLUES;
 
+  
   const mysteryHeaderStyle = isMysteryClues
+     ? {
+         animation: "mystery-glow 1.6s ease-in-out infinite",
+       }
+     : {};
+
+  const hangmanHeaderStyle = isHangman
     ? {
-        animation: "mystery-glow 1.6s ease-in-out infinite",
+        animation: "hangman-pulse 1.25s ease-in-out infinite",
       }
     : {};
 
-  const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
 
   const isOpenText = currentTask?.taskType === TASK_TYPES.OPEN_TEXT;
@@ -1361,6 +1382,12 @@ function StudentApp() {
     ? "linear-gradient(135deg, #e0f2fe 0%, #f5f3ff 40%, #f9fafb 100%)"
     : isPhoto
     ? "linear-gradient(135deg, #0f172a 0%, #38bdf8 40%, #e0f2fe 100%)"
+    : isPhotoJournal
+    ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
+    : isHangman
+    ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #facc15 70%, #f97316 100%)"
+    : isMadDash
+    ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
     : isBrainSparkNotes
     ? "linear-gradient(135deg, #fef9c3 0%, #fee2e2 40%, #f9fafb 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
@@ -1882,6 +1909,12 @@ function StudentApp() {
           100% {
             text-shadow: 0 0 4px rgba(56,189,248,0.3);
           }
+        }
+
+        /* HANGMAN header pulse */
+        @keyframes hangman-pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.03); }
         }
 
         /* MUSICAL CHAIRS header pulse */
@@ -2455,6 +2488,7 @@ function StudentApp() {
                   color: "#0f172a",
                   ...musicalChairsHeaderStyle,
                   ...mysteryHeaderStyle,
+                  ...hangmanHeaderStyle,
                 }}
               >
                 {currentTaskNumber && (

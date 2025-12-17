@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/TaskRunner.jsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
 
 import BodyBreakTask from "./types/BodyBreakTask";
@@ -35,6 +35,7 @@ import PronunciationTask from "./types/PronunciationTask"; // NEW
 import AIDebateJudgeTask from "./types/AIDebateJudgeTask"; // NEW
 import BrainBlitzTask from "./types/BrainBlitzTask";
 import PhotoJournalTask from "./types/PhotoJournalTask";
+import HangmanDuelTask from "./types/HangmanDuelTask";
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -51,9 +52,12 @@ function seededShuffle(array, seedStr) {
   }
 
   const rand = () => {
-    seed ^= seed << 13; seed >>>= 0;
-    seed ^= seed >> 17; seed >>>= 0;
-    seed ^= seed << 5;  seed >>>= 0;
+    seed ^= seed << 13;
+    seed >>>= 0;
+    seed ^= seed >> 17;
+    seed >>>= 0;
+    seed ^= seed << 5;
+    seed >>>= 0;
     return (seed >>> 0) / 4294967296;
   };
 
@@ -184,6 +188,13 @@ function normalizeTaskType(raw) {
     case "debate-judge":
       return TASK_TYPES.AI_DEBATE_JUDGE;
 
+    // Hangman (NEW)
+    case "hangman":
+    case "hangman-duel":
+    case "hangman_duel":
+    case "hangmanduel":
+      return TASK_TYPES.HANGMAN_DUEL || "hangman-duel";
+
     default:
       return raw;
   }
@@ -197,7 +208,7 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
   const isChoice = mode === "choice";
   const isShort = mode === "short";
   const isReview = mode === "review";
-  
+
   // Prefer AI "items" array; fall back to older shapes;
   // if none exist, treat as a single-question pack.
   const rawItems =
@@ -229,8 +240,12 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
 
     return items.map((item, idx) => {
       const base =
-        (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
-        (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+        (Array.isArray(item.options) &&
+          item.options.length > 0 &&
+          item.options) ||
+        (Array.isArray(item.choices) &&
+          item.choices.length > 0 &&
+          item.choices) ||
         (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
           ? ["True", "False"]
           : []);
@@ -244,16 +259,12 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
   }, [task?._id, task?.id, items]);
 
   const [answers, setAnswers] = useState(() =>
-    items.map(() => ({
-      value: isChoice ? null : "",
-    }))
+    items.map(() => ({ value: isChoice ? null : "" }))
   );
 
   const handleChoiceClick = (itemIndex, option) => {
     setAnswers((prev) =>
-      prev.map((ans, idx) =>
-        idx === itemIndex ? { ...ans, value: option } : ans
-      )
+      prev.map((ans, idx) => (idx === itemIndex ? { ...ans, value: option } : ans))
     );
   };
 
@@ -273,9 +284,8 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
 
     const payload = items.map((item, idx) => {
       let answerVal = answers[idx]?.value ?? null;
-      
-      const isTF =
-        task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE;
+
+      const isTF = task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE;
 
       if (isTF && typeof answerVal === "string") {
         const v = answerVal.trim().toLowerCase();
@@ -287,10 +297,13 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
       let baseIndex = null;
       if (isChoice && answerVal != null) {
         const base =
-          (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
-          (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-          (task.taskType === TASK_TYPES.TRUE_FALSE ||
-          task.type === TASK_TYPES.TRUE_FALSE
+          (Array.isArray(item.options) &&
+            item.options.length > 0 &&
+            item.options) ||
+          (Array.isArray(item.choices) &&
+            item.choices.length > 0 &&
+            item.choices) ||
+          (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
             ? ["True", "False"]
             : []);
 
@@ -314,9 +327,9 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
       type: mode === "choice" ? "multi-choice" : "multi-short",
       answers: payload,
     };
-    
+
     onSubmit?.(payloadObj);
-    };
+  };
 
   return (
     <form onSubmit={handleSubmit}>
@@ -354,7 +367,7 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
           const answerVal = answers[idx]?.value ?? "";
           const correctIndex = item?.correctAnswer ?? null;
           const studentIndex = review?.answers?.[idx]?.baseIndex ?? null;
-          
+
           return (
             <div
               key={item.id ?? idx}
@@ -390,9 +403,14 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
                 >
                   {opts.map((opt, optIndex) => {
                     const base =
-                      (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
-                      (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-                      ((task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE)
+                      (Array.isArray(item.options) &&
+                        item.options.length > 0 &&
+                        item.options) ||
+                      (Array.isArray(item.choices) &&
+                        item.choices.length > 0 &&
+                        item.choices) ||
+                      (task.taskType === TASK_TYPES.TRUE_FALSE ||
+                      task.type === TASK_TYPES.TRUE_FALSE
                         ? ["True", "False"]
                         : []);
 
@@ -402,11 +420,8 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
 
                     const isSelected = answerVal === opt;
                     const isCorrect = isReview && optBaseIndex === correctIndex;
-                    const isChosen  = isReview && optBaseIndex === studentIndex;
+                    const isChosen = isReview && optBaseIndex === studentIndex;
 
-                    // Visual rules in review:
-                    // - correct option gets a green border
-                    // - chosen wrong option gets a red border
                     const border =
                       isReview && isCorrect
                         ? "2px solid #16a34a"
@@ -416,11 +431,8 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
                         ? `2px solid ${CONTRAST_ACCENT}`
                         : `1px solid ${CONTRAST_BORDER}`;
 
-                    const background =
-                      isSelected ? CONTRAST_ACCENT : "#ffffff";
-
-                    const color =
-                      isSelected ? "#ffffff" : CONTRAST_TEXT_DARK;
+                    const background = isSelected ? CONTRAST_ACCENT : "#ffffff";
+                    const color = isSelected ? "#ffffff" : CONTRAST_TEXT_DARK;
 
                     return (
                       <button
@@ -435,7 +447,8 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
                           background,
                           color,
                           textAlign: "left",
-                          cursor: submitting || disabled ? "not-allowed" : "pointer",
+                          cursor:
+                            submitting || disabled ? "not-allowed" : "pointer",
                           fontSize: "0.9rem",
                           transition: "background 0.15s, border-color 0.15s",
                         }}
@@ -468,13 +481,7 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
         })}
       </div>
 
-      <div
-        style={{
-          marginTop: 12,
-          display: "flex",
-          justifyContent: "flex-end",
-        }}
-      >
+      <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
         <button
           type="submit"
           disabled={!allAnswered || submitting || disabled}
@@ -486,23 +493,15 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
             color: "#ffffff",
             fontSize: "0.9rem",
             fontWeight: 600,
-            cursor:
-              !allAnswered || submitting || disabled
-                ? "not-allowed"
-                : "pointer",
+            cursor: !allAnswered || submitting || disabled ? "not-allowed" : "pointer",
           }}
         >
-          {submitting
-            ? "Sending…"
-            : items.length > 1
-            ? "Submit all"
-            : "Submit"}
+          {submitting ? "Sending…" : items.length > 1 ? "Submit all" : "Submit"}
         </button>
       </div>
     </form>
   );
 }
-
 
 /* ─────────────────────────────────────────────
    Main TaskRunner
@@ -518,7 +517,7 @@ export default function TaskRunner({
   disabled = false,
   socket,
 
-  mode = "play",  // play || review
+  mode = "play", // play || review
   review = null,
 
   // for FlashcardsRace
@@ -532,6 +531,12 @@ export default function TaskRunner({
 
   const t = task;
   const type = normalizeTaskType(t.taskType || t.type);
+
+  // Hangman expects socket.current; keep existing socket usage for other tasks.
+  const socketRef = useRef(null);
+  useEffect(() => {
+    socketRef.current = socket || null;
+  }, [socket]);
 
   const isReview = mode === "review";
 
@@ -679,17 +684,10 @@ export default function TaskRunner({
               color: CONTRAST_TEXT_DARK,
             }}
           >
-            <div className="font-semibold">
-              Look at this station object:
-            </div>
-            <div>
-              {currentDisplay.name || currentDisplay.key}
-            </div>
+            <div className="font-semibold">Look at this station object:</div>
+            <div>{currentDisplay.name || currentDisplay.key}</div>
             {currentDisplay.description && (
-              <div
-                className="mt-1 text-xs"
-                style={{ color: "#4b5563" }}
-              >
+              <div className="mt-1 text-xs" style={{ color: "#4b5563" }}>
                 {currentDisplay.description}
               </div>
             )}
@@ -699,7 +697,7 @@ export default function TaskRunner({
         <MultiPartTask
           mode={isReview ? "review" : multiMode}
           task={t}
-          review={review}                 // NEW
+          review={review}
           onSubmit={isReview ? null : onSubmit}
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
@@ -723,6 +721,7 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.TRUE_FALSE:
       content = (
         <TrueFalseTask
@@ -748,7 +747,7 @@ export default function TaskRunner({
         />
       );
       break;
-  
+
     case TASK_TYPES.SEQUENCE:
       content = (
         <SequenceTask
@@ -759,16 +758,12 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.PHOTO:
-      content = (
-        <PhotoTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
-      );
+      content = <PhotoTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
       break;
-    case (TASK_TYPES.PHOTO_JOURNAL || "photo-journal"):
+
+    case TASK_TYPES.PHOTO_JOURNAL || "photo-journal":
       content = (
         <PhotoJournalTask
           task={t}
@@ -779,7 +774,8 @@ export default function TaskRunner({
         />
       );
       break;
-      case TASK_TYPES.MAKE_AND_SNAP:
+
+    case TASK_TYPES.MAKE_AND_SNAP:
       content = (
         <MakeAndSnapTask
           task={t}
@@ -790,16 +786,14 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
       content = (
-        <DrawMimeTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <DrawMimeTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
+
     case TASK_TYPES.DRAW_MIME:
       content = (
         <DrawMimeTask
@@ -811,15 +805,13 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.BODY_BREAK:
       content = (
-        <BodyBreakTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <BodyBreakTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
+
     case TASK_TYPES.OPEN_TEXT:
       content = (
         <OpenTextTask
@@ -831,6 +823,7 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.RECORD_AUDIO:
       content = (
         <RecordAudioTask
@@ -842,37 +835,25 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.SPEECH_RECOGNITION:
       content = (
-        <SpeechRecognitionTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <SpeechRecognitionTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
     case TASK_TYPES.JEOPARDY:
       content = (
-        <BrainBlitzTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <BrainBlitzTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
     case TASK_TYPES.PRONUNCIATION:
       content = (
-        <PronunciationTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <PronunciationTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
     case TASK_TYPES.SHORT_ANSWER:
       content = (
         <ShortAnswerTask
@@ -884,13 +865,13 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.COLLABORATION:
       content = (
         <CollaborationTask
           task={t}
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
-          // drafting + partner flow
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
           partnerAnswer={partnerAnswer}
@@ -899,25 +880,19 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.MUSICAL_CHAIRS:
       content = (
-        <MusicalChairsTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <MusicalChairsTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
     case TASK_TYPES.MYSTERY_CLUES:
       content = (
-        <MysteryCluesTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <MysteryCluesTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
+
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
       content = (
         <TrueFalseTicTacToeTask
@@ -929,17 +904,14 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.MAD_DASH:
     case TASK_TYPES.MAD_DASH_SEQUENCE:
       content = (
-        <MadDashSequenceTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <MadDashSequenceTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
     case TASK_TYPES.LIVE_DEBATE:
       content = (
         <LiveDebateTask
@@ -951,6 +923,7 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.AI_DEBATE_JUDGE:
       content = (
         <AIDebateJudgeTask
@@ -963,81 +936,52 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.FLASHCARDS:
       content = (
-        <FlashcardsTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <FlashcardsTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
     case TASK_TYPES.FLASHCARDS_RACE:
-      return (
-        <FlashcardsRaceTask
-          socket={socket}
-          roomCode={roomCode}
-          playerTeam={playerTeam}
-        />
-      );
+      return <FlashcardsRaceTask socket={socket} roomCode={roomCode} playerTeam={playerTeam} />;
+
     case TASK_TYPES.TIMELINE:
       content = (
-        <TimelineTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <TimelineTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
     case TASK_TYPES.PET_FEEDING:
       content = (
-        <PetFeedingTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <PetFeedingTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
+
     case TASK_TYPES.MOTION_MISSION:
       content = (
-        <MotionMissionTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <MotionMissionTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
+
     case TASK_TYPES.BRAINSTORM_BATTLE:
       content = (
-        <BrainstormBattleTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <BrainstormBattleTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
     case TASK_TYPES.MIND_MAPPER:
       content = (
-        <MindMapperTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <MindMapperTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
+
     case TASK_TYPES.SPEED_DRAW:
       content = (
-        <SpeedDrawTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-          socket={socket}
-        />
+        <SpeedDrawTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
     case TASK_TYPES.DIFF_DETECTIVE:
       content = (
         <DiffDetectiveTask
@@ -1049,24 +993,34 @@ export default function TaskRunner({
         />
       );
       break;
+
     case TASK_TYPES.BRAIN_SPARK_NOTES:
       content = (
-        <BrainSparkNotesTask
-          task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled}
-        />
+        <BrainSparkNotesTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
+
     case TASK_TYPES.HIDENSEEK:
       content = (
-        <HideNSeekTask
+        <HideNSeekTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
+      );
+      break;
+
+    case (TASK_TYPES.HANGMAN_DUEL || "hangman-duel"): {
+      const effectiveTeamId =
+        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+
+      content = (
+        <HangmanDuelTask
           task={t}
           onSubmit={onSubmit}
-          disabled={effectiveDisabled}
+          socket={socketRef}
+          roomCode={roomCode}
+          teamId={effectiveTeamId}
         />
       );
       break;
+    }
 
     default:
       return (
@@ -1106,15 +1060,10 @@ export default function TaskRunner({
             color: CONTRAST_TEXT_DARK,
           }}
         >
-          <div className="font-semibold">
-            Look at this station object:
-          </div>
+          <div className="font-semibold">Look at this station object:</div>
           <div>{currentDisplay.name || currentDisplay.key}</div>
           {currentDisplay.description && (
-            <div
-              className="mt-1 text-xs"
-              style={{ color: "#4b5563" }}
-            >
+            <div className="mt-1 text-xs" style={{ color: "#4b5563" }}>
               {currentDisplay.description}
             </div>
           )}

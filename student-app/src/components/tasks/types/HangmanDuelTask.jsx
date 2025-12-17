@@ -1,23 +1,23 @@
 // student-app/src/components/tasks/types/HangmanDuelTask.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
-  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
+  useSortable,
+  rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import useSound from "use-sound";
 
-// Draggable Letter Component
-const DraggableLetter = ({ id, children, disabled }) => {
+// Draggable Letter Cube (sortable item)
+function DraggableLetter({ id, children, disabled }) {
   const {
     attributes,
     listeners,
@@ -32,34 +32,27 @@ const DraggableLetter = ({ id, children, disabled }) => {
     transition,
     opacity: isDragging ? 0.5 : 1,
     cursor: disabled ? "not-allowed" : "grab",
+    padding: "12px",
+    margin: "4px",
+    background: "#fff",
+    borderRadius: 8,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+    fontWeight: 700,
+    fontSize: "1.4rem",
+    userSelect: "none",
+    touchAction: "none",
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        ...style,
-        padding: "12px 16px",
-        margin: "4px",
-        background: "#fff",
-        borderRadius: 12,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-        fontWeight: 700,
-        fontSize: "1.4rem",
-        userSelect: "none",
-        touchAction: "none",
-      }}
-      {...attributes}
-      {...listeners}
-    >
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       {children}
     </div>
   );
-};
+}
 
-// Droppable Blank
-const DroppableBlank = ({ id, children, isFilled }) => {
-  const { setNodeRef } = useSortable({ id });
+// Droppable Blank (proper droppable target, not sortable)
+function DroppableBlank({ id, children, isFilled }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
     <div
@@ -75,45 +68,135 @@ const DroppableBlank = ({ id, children, isFilled }) => {
         justifyContent: "center",
         fontSize: "1.8rem",
         fontWeight: 700,
-        background: isFilled ? "#d4f4dd" : "#fff",
+        background: isOver ? "#e0f2fe" : isFilled ? "#d4f4dd" : "#fff",
         color: isFilled ? "#16a34a" : "#666",
       }}
     >
       {children || "_"}
     </div>
   );
-};
+}
+
+// Power-Up Card
+function PowerUpCard({ name, onPlay, disabled }) {
+  return (
+    <button
+      onClick={onPlay}
+      disabled={disabled}
+      style={{
+        padding: "8px 16px",
+        margin: "4px",
+        background: disabled ? "#94a3b8" : "#3b82f6",
+        color: "#fff",
+        border: "none",
+        borderRadius: 12,
+        fontWeight: 600,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
+      }}
+    >
+      {name}
+    </button>
+  );
+}
+
+// Hangman SVG (returns a string of SVG markup)
+function HangmanSVG({ style, parts }) {
+  const snowmanStages = [
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/><line x1="100" y1="220" x2="50" y2="180" stroke="#8b4513" stroke-width="8"/><line x1="200" y1="220" x2="250" y2="180" stroke="#8b4513" stroke-width="8"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="350" width="300" height="50" fill="#e0f2fe"/><circle cx="150" cy="320" r="60" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="220" r="45" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="150" cy="140" r="30" fill="#ffffff" stroke="#cccccc" stroke-width="2"/><circle cx="140" cy="135" r="5" fill="#333333"/><circle cx="160" cy="135" r="5" fill="#333333"/><polygon points="150,140 180,145 150,150" fill="#f97316"/><line x1="100" y1="220" x2="50" y2="180" stroke="#8b4513" stroke-width="8"/><line x1="200" y1="220" x2="250" y2="180" stroke="#8b4513" stroke-width="8"/><rect x="120" y="100" width="60" height="40" fill="#000000"/><rect x="105" y="120" width="90" height="15" fill="#000000"/><rect x="120" y="160" width="60" height="20" fill="#ef4444"/></svg>',
+  ];
+
+  const christmasTreeStages = [
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="140" y="320" width="20" height="80" fill="#8b4513"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="140" y="320" width="20" height="80" fill="#8b4513"/><polygon points="150,320 80,380 220,380" fill="#166534"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="140" y="320" width="20" height="80" fill="#8b4513"/><polygon points="150,320 80,380 220,380" fill="#166534"/><polygon points="150,260 100,320 200,320" fill="#22c55e"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="140" y="320" width="20" height="80" fill="#8b4513"/><polygon points="150,320 80,380 220,380" fill="#166534"/><polygon points="150,260 100,320 200,320" fill="#22c55e"/><polygon points="150,200 110,260 190,260" fill="#16a34a"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="140" y="320" width="20" height="80" fill="#8b4513"/><polygon points="150,320 80,380 220,380" fill="#166534"/><polygon points="150,260 100,320 200,320" fill="#22c55e"/><polygon points="150,200 110,260 190,260" fill="#16a34a"/><polygon points="150,170 140,190 120,190 135,205 130,225 150,210 170,225 165,205 180,190 160,190" fill="#fbbf24"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="140" y="320" width="20" height="80" fill="#8b4513"/><polygon points="150,320 80,380 220,380" fill="#166534"/><polygon points="150,260 100,320 200,320" fill="#22c55e"/><polygon points="150,200 110,260 190,260" fill="#16a34a"/><polygon points="150,170 140,190 120,190 135,205 130,225 150,210 170,225 165,205 180,190 160,190" fill="#fbbf24"/><circle cx="120" cy="280" r="8" fill="#ef4444"/><circle cx="180" cy="280" r="8" fill="#3b82f6"/><circle cx="135" cy="240" r="8" fill="#eab308"/><circle cx="165" cy="240" r="8" fill="#a855f7"/><circle cx="150" cy="210" r="8" fill="#ef4444"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="140" y="320" width="20" height="80" fill="#8b4513"/><polygon points="150,320 80,380 220,380" fill="#166534"/><polygon points="150,260 100,320 200,320" fill="#22c55e"/><polygon points="150,200 110,260 190,260" fill="#16a34a"/><polygon points="150,170 140,190 120,190 135,205 130,225 150,210 170,225 165,205 180,190 160,190" fill="#fbbf24"/><circle cx="120" cy="280" r="8" fill="#ef4444"/><circle cx="180" cy="280" r="8" fill="#3b82f6"/><circle cx="135" cy="240" r="8" fill="#eab308"/><circle cx="165" cy="240" r="8" fill="#a855f7"/><circle cx="150" cy="210" r="8" fill="#ef4444"/><rect x="100" y="380" width="40" height="30" fill="#ef4444"/><rect x="160" y="380" width="40" height="30" fill="#3b82f6"/></svg>',
+  ];
+
+  const classicStages = [
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="220" x2="140" y2="260" stroke="#333" stroke-width="4"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="380" x2="280" y2="380" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="380" x2="50" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="50" y1="50" x2="180" y2="50" stroke="#8b4513" stroke-width="10"/><line x1="180" y1="50" x2="180" y2="100" stroke="#8b4513" stroke-width="8"/><circle cx="180" cy="120" r="20" fill="none" stroke="#333" stroke-width="4"/><line x1="180" y1="140" x2="180" y2="220" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="140" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="160" x2="220" y2="180" stroke="#333" stroke-width="4"/><line x1="180" y1="220" x2="140" y2="260" stroke="#333" stroke-width="4"/><line x1="180" y1="220" x2="220" y2="260" stroke="#333" stroke-width="4"/></svg>',
+  ];
+
+  const gingerbreadStages = [
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="80" y="200" width="140" height="150" fill="#d2691e" rx="10"/><polygon points="70,200 150,140 230,200" fill="#8b4513"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="80" y="200" width="140" height="150" fill="#d2691e" rx="10"/><polygon points="70,200 150,140 230,200" fill="#8b4513"/><rect x="130" y="280" width="40" height="70" fill="#654321"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="80" y="200" width="140" height="150" fill="#d2691e" rx="10"/><polygon points="70,200 150,140 230,200" fill="#8b4513"/><rect x="130" y="280" width="40" height="70" fill="#654321"/><rect x="100" y="240" width="40" height="40" fill="#87ceeb"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="80" y="200" width="140" height="150" fill="#d2691e" rx="10"/><polygon points="70,200 150,140 230,200" fill="#8b4513"/><rect x="130" y="280" width="40" height="70" fill="#654321"/><rect x="100" y="240" width="40" height="40" fill="#87ceeb"/><rect x="190" y="240" width="20" height="80" fill="#fff" rx="10"/><rect x="190" y="240" width="20" height="20" fill="#ef4444"/><rect x="190" y="280" width="20" height="20" fill="#ef4444"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="80" y="200" width="140" height="150" fill="#d2691e" rx="10"/><polygon points="70,200 150,140 230,200" fill="#8b4513"/><rect x="130" y="280" width="40" height="70" fill="#654321"/><rect x="100" y="240" width="40" height="40" fill="#87ceeb"/><rect x="190" y="240" width="20" height="80" fill="#fff" rx="10"/><rect x="190" y="240" width="20" height="20" fill="#ef4444"/><rect x="190" y="280" width="20" height="20" fill="#ef4444"/><circle cx="150" cy="170" r="15" fill="#22c55e"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="80" y="200" width="140" height="150" fill="#d2691e" rx="10"/><polygon points="70,200 150,140 230,200" fill="#8b4513"/><rect x="130" y="280" width="40" height="70" fill="#654321"/><rect x="100" y="240" width="40" height="40" fill="#87ceeb"/><rect x="190" y="240" width="20" height="80" fill="#fff" rx="10"/><rect x="190" y="240" width="20" height="20" fill="#ef4444"/><rect x="190" y="280" width="20" height="20" fill="#ef4444"/><circle cx="150" cy="170" r="15" fill="#22c55e"/><path d="M70,200 Q150,160 230,200" fill="none" stroke="#fff" stroke-width="8"/></svg>',
+    '<svg width="300" height="400" viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg"><rect x="80" y="200" width="140" height="150" fill="#d2691e" rx="10"/><polygon points="70,200 150,140 230,200" fill="#8b4513"/><rect x="130" y="280" width="40" height="70" fill="#654321"/><rect x="100" y="240" width="40" height="40" fill="#87ceeb"/><rect x="190" y="240" width="20" height="80" fill="#fff" rx="10"/><rect x="190" y="240" width="20" height="20" fill="#ef4444"/><rect x="190" y="280" width="20" height="20" fill="#ef4444"/><circle cx="150" cy="170" r="15" fill="#22c55e"/><path d="M70,200 Q150,160 230,200" fill="none" stroke="#fff" stroke-width="8"/><circle cx="100" cy="200" r="4" fill="#f97316"/><circle cx="120" cy="180" r="4" fill="#f97316"/><circle cx="180" cy="200" r="4" fill="#f97316"/><circle cx="200" cy="180" r="4" fill="#f97316"/></svg>',
+  ];
+
+  const stages =
+    {
+      snowman: snowmanStages,
+      "christmas-tree": christmasTreeStages,
+      classic: classicStages,
+      gingerbread: gingerbreadStages,
+    }[style] || classicStages;
+
+  const safeParts = Math.max(0, Math.min(Number(parts || 0), stages.length - 1));
+  return stages[safeParts];
+}
 
 const HangmanDuelTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
-  const [blanks, setBlanks] = useState(task.blanks || []); // Array of letters or null
+  const initialWord = useMemo(() => String(task?.word || ""), [task]);
+
+  const [blanks, setBlanks] = useState(() => {
+    const w = initialWord;
+    return w ? w.split("").map(() => "_") : [];
+  });
+
   const [wrongGuesses, setWrongGuesses] = useState(0);
   const [currentTurn, setCurrentTurn] = useState(1);
-  const [players, setPlayers] = useState(task.players || []); // [{ playerNumber, letters, eliminated }]
-  const [myPlayerNumber, setMyPlayerNumber] = useState(task.myPlayerNumber || 1);
+  const [playerCount, setPlayerCount] = useState(task?.playerCount || 1);
+  const [players, setPlayers] = useState(Array.isArray(task?.players) ? task.players : []);
+  const [myPlayerNumber, setMyPlayerNumber] = useState(task?.myPlayerNumber || 1);
   const [eliminated, setEliminated] = useState([]);
-  const [overlayTimer, setOverlayTimer] = useState(0);
+  const [gameStyle, setGameStyle] = useState(task?.style || "classic");
+
   const [submissionFeedback, setSubmissionFeedback] = useState(null);
-  const timerRef = useRef(null);
+  const [overlayTimer, setOverlayTimer] = useState(0);
+  const overlayTimerRef = useRef(null);
 
-  const isMyTurn = currentTurn === myPlayerNumber && !eliminated.includes(myPlayerNumber);
+  // Sound Effects (kept; you can wire them to server events later)
+  useSound("/sounds/correct-letter.mp3");
+  useSound("/sounds/wrong-guess.mp3");
+  useSound("/sounds/word-win.mp3");
+  useSound("/sounds/eliminated.mp3");
+  useSound("/sounds/power-up.mp3");
+  useSound("/sounds/reveal-letter.mp3");
+  useSound("/sounds/steal-letter.mp3");
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
+  const sensors = useSensors(useSensor(PointerSensor));
 
   const startOverlayTimer = () => {
     setOverlayTimer(15);
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
+    if (overlayTimerRef.current) clearInterval(overlayTimerRef.current);
+
+    overlayTimerRef.current = setInterval(() => {
       setOverlayTimer((prev) => {
         if (prev <= 1) {
-          clearInterval(timerRef.current);
+          if (overlayTimerRef.current) clearInterval(overlayTimerRef.current);
+          overlayTimerRef.current = null;
           setSubmissionFeedback(null);
           setOverlayTimer(0);
-          setCurrentTask(null); // Auto-advance
+          if (typeof onSubmit === "function") onSubmit(); // Auto-advance
           return 0;
         }
         return prev - 1;
@@ -122,128 +205,166 @@ const HangmanDuelTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
   };
 
   const handleDragEnd = (event) => {
-    if (!isMyTurn) return;
+    // ✅ FIX: correct turn check
+    if (currentTurn !== myPlayerNumber) return;
+
     const { active, over } = event;
-    if (over && over.id.startsWith("blank-")) {
-      const letter = active.id.split("-")[1];
-      const blankIndex = parseInt(over.id.split("-")[1]);
-      socket.current.emit("hangman-place-letter", {
-        roomCode,
-        teamId,
-        letter,
-        blankIndex,
-      });
-    }
+    if (!over) return;
+
+    const letter = active?.id;
+    const blankIndex = over?.id;
+
+    if (!socket?.current) return;
+    socket.current.emit("hangman-place-letter", {
+      roomCode,
+      teamId,
+      letter,
+      blankIndex,
+    });
   };
 
   const handleGuessWord = () => {
+    if (currentTurn !== myPlayerNumber) return;
     const guess = prompt("Guess the full word:");
-    if (guess) {
-      socket.current.emit("hangman-guess-word", { roomCode, teamId, guess });
-    }
+    if (!guess) return;
+    if (!socket?.current) return;
+    socket.current.emit("hangman-guess-word", { roomCode, teamId, guess });
+  };
+
+  const handlePlayPowerUp = (powerUpId) => {
+    if (currentTurn !== myPlayerNumber) return;
+    if (!socket?.current) return;
+    socket.current.emit("hangman-play-power-up", {
+      roomCode,
+      teamId,
+      powerUpId,
+    });
   };
 
   useEffect(() => {
-    socket.current.on("hangman-update", (update) => {
-      setBlanks(update.blanks);
-      setWrongGuesses(update.wrongGuesses);
-      setCurrentTurn(update.currentTurn);
-      setPlayers(update.players);
-      setEliminated(update.eliminated || []);
-    });
+    if (!socket?.current) return;
 
-    socket.current.on("submission-result", (data) => {
-      setSubmissionFeedback({
-        message: data.message || (data.correct ? "Correct!" : "Wrong guess!"),
-        positive: data.correct,
-        points: data.points,
-      });
-      startOverlayTimer();
-    });
+    const onUpdate = (update) => {
+      if (!update) return;
+
+      if (Array.isArray(update.blanks)) setBlanks(update.blanks);
+      if (typeof update.wrongGuesses === "number") setWrongGuesses(update.wrongGuesses);
+      if (typeof update.currentTurn === "number") setCurrentTurn(update.currentTurn);
+      if (typeof update.playerCount === "number") setPlayerCount(update.playerCount);
+      if (Array.isArray(update.players)) setPlayers(update.players);
+      if (Array.isArray(update.eliminated)) setEliminated(update.eliminated);
+      if (typeof update.style === "string") setGameStyle(update.style);
+
+      // Optional: if your server sends feedback, show the overlay
+      if (update.feedback) {
+        setSubmissionFeedback(update.feedback);
+        startOverlayTimer();
+      }
+    };
+
+    socket.current.on("hangman-update", onUpdate);
 
     return () => {
-      socket.current.off("hangman-update");
-      socket.current.off("submission-result");
-      if (timerRef.current) clearInterval(timerRef.current);
+      socket.current?.off("hangman-update", onUpdate);
+      if (overlayTimerRef.current) {
+        clearInterval(overlayTimerRef.current);
+        overlayTimerRef.current = null;
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
-
-  // Render hangman (replace with your gamified SVG)
-  const HangmanSVG = ({ parts }) => (
-    <div style={{ fontSize: "6rem", textAlign: "center" }}>
-      {parts >= 1 && "☃️"} {/* Snowman example */}
-      {parts >= 2 && "⛄"}
-      {parts >= 3 && "🎄"}
-      {/* Add more festive parts */}
-      {parts >= 6 && "🎉 Full! You lost!"}
-      {parts < 6 && <div>Lives: {6 - parts}</div>}
-    </div>
-  );
 
   return (
     <div style={{ padding: 20, textAlign: "center" }}>
-      <h2 style={{ fontSize: "2rem", marginBottom: 20 }}>Hangman Duel</h2>
+      <h2>Hangman Duel</h2>
 
-      <HangmanSVG parts={wrongGuesses} />
+      {/* ✅ FIX: render SVG string correctly */}
+      <div
+        dangerouslySetInnerHTML={{
+          __html: HangmanSVG({ style: gameStyle, parts: wrongGuesses }),
+        }}
+      />
 
       <div style={{ display: "flex", justifyContent: "center", margin: "20px 0" }}>
         {blanks.map((letter, i) => (
-          <DroppableBlank key={i} id={`blank-${i}`} isFilled={!!letter}>
+          <DroppableBlank key={i} id={i} isFilled={letter && letter !== "_"}>
             {letter}
           </DroppableBlank>
         ))}
       </div>
 
       <div style={{ fontSize: "1.4rem", margin: "16px 0" }}>
-        Turn: Player {currentTurn} {isMyTurn && "(You!)"}
+        Turn: Player {currentTurn} {currentTurn === myPlayerNumber && "(You!)"}
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 }}>
-          {players.map((player) => (
-            <div
-              key={player.playerNumber}
-              style={{
-                padding: 16,
-                borderRadius: 16,
-                background: eliminated.includes(player.playerNumber) ? "#fee2e2" : "#f0fdf4",
-                opacity: eliminated.includes(player.playerNumber) ? 0.6 : 1,
-              }}
-            >
-              <h3>Player {player.playerNumber} {player.playerNumber === myPlayerNumber && "(You)"}</h3>
-              {eliminated.includes(player.playerNumber) && <p>Eliminated</p>}
-              <SortableContext items={player.letters.map(l => l.id)}>
-                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center" }}>
-                  {player.letters.map((letter) => (
-                    <DraggableLetter
-                      key={letter.id}
-                      id={letter.id}
-                      disabled={!isMyTurn || eliminated.includes(player.playerNumber)}
-                    >
-                      {letter.value}
-                    </DraggableLetter>
-                  ))}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 20,
+          }}
+        >
+          {(players || []).map((player) => {
+            const pnum = player?.playerNumber;
+            const isElim = eliminated.includes(pnum);
+            const letters = Array.isArray(player?.letters) ? player.letters : [];
+            const powerUps = Array.isArray(player?.powerUps) ? player.powerUps : [];
+
+            const canDragFromThisPlayer =
+              currentTurn === myPlayerNumber && pnum === myPlayerNumber;
+
+            return (
+              <div
+                key={pnum}
+                style={{
+                  background: isElim ? "#fee2e2" : "#f0fdf4",
+                  opacity: isElim ? 0.6 : 1,
+                  borderRadius: 14,
+                  padding: 12,
+                }}
+              >
+                <h3>
+                  Player {pnum} {pnum === myPlayerNumber && "(You)"}
+                </h3>
+
+                {isElim && <p>Eliminated</p>}
+
+                <SortableContext items={letters} strategy={rectSortingStrategy}>
+                  <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center" }}>
+                    {letters.map((letter) => (
+                      <DraggableLetter key={letter} id={letter} disabled={!canDragFromThisPlayer}>
+                        {letter}
+                      </DraggableLetter>
+                    ))}
+                  </div>
+                </SortableContext>
+
+                <div style={{ marginTop: 16 }}>
+                  Power-Ups:
+                  <div style={{ marginTop: 8 }}>
+                    {powerUps.map((powerUp) => (
+                      <PowerUpCard
+                        key={powerUp}
+                        name={powerUp}
+                        onPlay={() => handlePlayPowerUp(powerUp)}
+                        disabled={currentTurn !== myPlayerNumber}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </SortableContext>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </DndContext>
 
-      {isMyTurn && (
-        <button
-          onClick={handleGuessWord}
-          style={{
-            marginTop: 24,
-            padding: "16px 32px",
-            fontSize: "1.2rem",
-            background: "#22c55e",
-            color: "#fff",
-            border: "none",
-            borderRadius: 999,
-            cursor: "pointer",
-          }}
-        >
+      {currentTurn === myPlayerNumber && (
+        <button onClick={handleGuessWord} style={{ marginTop: 16 }}>
           Guess Full Word
         </button>
       )}
@@ -255,23 +376,21 @@ const HangmanDuelTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
             position: "fixed",
             inset: 0,
             background: "rgba(0,0,0,0.9)",
+            zIndex: 1000,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
             color: "#fff",
-            zIndex: 1000,
             textAlign: "center",
             padding: 20,
           }}
         >
-          <div style={{ fontSize: "3rem", fontWeight: 900, marginBottom: 24 }}>
-            {submissionFeedback.message}
+          <div style={{ fontSize: "3rem", marginBottom: 24 }}>
+            {submissionFeedback.message || "Nice!"}
           </div>
-          {submissionFeedback.points != null && (
-            <div style={{ fontSize: "2rem" }}>
-              +{submissionFeedback.points} points!
-            </div>
+          {submissionFeedback.points && (
+            <div style={{ fontSize: "2rem" }}>+{submissionFeedback.points} points!</div>
           )}
           <div style={{ marginTop: 40, fontSize: "1.6rem" }}>
             Next task in {overlayTimer}s...
