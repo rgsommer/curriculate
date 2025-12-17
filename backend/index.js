@@ -3270,9 +3270,13 @@ app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
     }
 
     return res.json({ ok: true });
-  } catch (err) {
-    console.error("verify-entry-code failed:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    } catch (err) {
+    console.error("claim-access-code failed:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+      detail: process.env.NODE_ENV !== "production" ? String(err?.message || err) : undefined,
+    });
   }
 });
 
