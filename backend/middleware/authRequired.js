@@ -8,6 +8,8 @@ export function authRequired(req, res, next) {
   // TEMP DEV ONLY — remove before production launch
   if (authHeader === "Bearer dev-token" || authHeader === "Bearer dev-token123") {
     req.user = { _id: "dev-user-123", email: "dev@curriculate.net" };
+    req.userId = String(req.user?._id || req.user?.userId || req.user?.id || "").trim();
+
     return next();
   }
 
