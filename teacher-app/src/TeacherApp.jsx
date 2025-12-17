@@ -757,13 +757,6 @@ function AdminAccessCodesPage() {
     }
   };
 
-  // 🔑 THIS IS THE MISSING PIECE
-  if (data.token) {
-    localStorage.setItem("token", data.token);
-  } else {
-    throw new Error("Login succeeded but no token returned");
-  }
-
   useEffect(() => {
     load();
   }, []);

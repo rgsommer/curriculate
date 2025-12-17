@@ -26,6 +26,12 @@ export function AuthProvider({ children }) {
     localStorage.setItem("curriculate_token", value.token);
     return () => {
       localStorage.removeItem("curriculate_token");  // Clean up on unmount (optional for dev)
+    // 🔑 THIS IS THE MISSING PIECE
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      } else {
+        throw new Error("Login succeeded but no token returned");
+      }
     };
   }, []);  // Runs once on mount
 
