@@ -407,39 +407,6 @@ function formatRemainingMs(ms) {
 }
 
 // ---------------------------------------------------------------------
-// Error boundary to prevent a blank-white-screen if a task component throws
-// ---------------------------------------------------------------------
-class TaskErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error) {
-    if (this.props.onError) this.props.onError(error);
-    // Also log for DevTools
-    console.error("Task render error:", error);
-  }
-  render() {
-    if (this.state.hasError) {
-      const msg =
-        (this.state.error && (this.state.error.message || String(this.state.error))) ||
-        "Unknown error";
-      return (
-        <div style={{ padding: 16 }}>
-          <div style={{ fontWeight: 800, fontSize: "1.1rem" }}>⚠ Task crashed</div>
-          <div style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div>
-          {this.props.fallback || null}
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// ---------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------
 
@@ -455,8 +422,6 @@ function StudentApp() {
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [leaderboard, setLeaderboard] = useState([]); // Update via socket.on('leaderboard-update', setLeaderboard)
-  const [tasksetComplete, setTasksetComplete] = useState(false);
-  const [taskRenderError, setTaskRenderError] = useState(null);
 
   const [roomCode, setRoomCode] = useState(() => (lsGet(LS_KEYS.roomCode) || ""));
   const [teamName, setTeamName] = useState(() => (lsGet(LS_KEYS.teamName) || ""));
@@ -646,20 +611,6 @@ function StudentApp() {
         setScoreTotal(state.scores[teamId]);
       }
 
-
-// 🏆 Build a simple leaderboard from room state (fallback if no leaderboard-update event)
-if (state.scores && state.teams) {
-  const entries = Object.entries(state.scores)
-    .filter(([, sc]) => typeof sc === "number")
-    .map(([tid, sc]) => ({
-      teamName: state.teams?.[tid]?.teamName || state.teams?.[tid]?.name || `Team-${String(tid).slice(-4)}`,
-      score: sc,
-      rankChange: 0,
-    }))
-    .sort((a, b) => b.score - a.score);
-  setLeaderboard(entries);
-}
-
       if (Array.isArray(state.selectedRooms)) {
         setSelectedRooms(state.selectedRooms);
       }
@@ -731,9 +682,7 @@ if (state.scores && state.teams) {
       setPostSubmitSecondsLeft(null);
       setLastTaskResult(null);
       setPointToast(null);
-    setShortAnswerReveal(null);
-    setTasksetComplete(false);
-    setTaskRenderError(null);
+      setShortAnswerReveal(null);
     };
 
     // AI scoring + feedback
@@ -1110,8 +1059,6 @@ if (state.scores && state.teams) {
     setLastTaskResult(null);
     setPointToast(null);
     setShortAnswerReveal(null);
-    setTasksetComplete(false);
-    setTaskRenderError(null);
 
     // clear join form fields (optional, but expected UX)
     setRoomCode("");
@@ -1127,29 +1074,6 @@ if (state.scores && state.teams) {
     // stop lock + countdown
     setTaskLocked(false);
     setPostSubmitSecondsLeft(null);
-
-// If this was the last task in the taskset, go straight to the victory screen (no extra scan)
-const isLastTask =
-  typeof currentTaskIndex === "number" &&
-  typeof tasksetTotalTasks === "number" &&
-  tasksetTotalTasks > 0 &&
-  currentTaskIndex >= tasksetTotalTasks - 1;
-
-if (isLastTask) {
-  setTasksetComplete(true);
-  setScannerActive(false);
-  setReviewState(null);
-  // Refresh room state one last time so scores/leaderboard are up to date
-  socket.emit("room:request-state", { teamId });
-}
-
-    if (isLastTask) {
-      // hide task UI
-      setCurrentTask(null);
-      setCurrentTaskIndex(null);
-      setShortAnswerReveal(null);
-      return;
-    }
 
     // hide task UI so scanner is visible
     setCurrentTask(null);
@@ -1402,6 +1326,11 @@ if (isLastTask) {
 
   const isMusicalChairs =
     currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
+
+  const isPhotoJournal =
+    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL ||
+    currentTask?.taskType === "photo-journal" ||
+    currentTask?.taskType === "photo_journal";
 
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
@@ -2471,60 +2400,8 @@ const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
               )}
             </div>
           )}
-          
-{/* TASKSET COMPLETE SCREEN */}
-{tasksetComplete && (
-  <section
-    style={{
-      marginTop: 12,
-      padding: 16,
-      borderRadius: 18,
-      background: "rgba(255,255,255,0.92)",
-      border: "1px solid rgba(15,23,42,0.12)",
-      boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
-      textAlign: "center",
-    }}
-  >
-    <div style={{ fontSize: "1.6rem", fontWeight: 900, marginBottom: 6 }}>
-      🎉 Victory!
-    </div>
-    <div style={{ fontSize: "1rem", opacity: 0.85, marginBottom: 12 }}>
-      Task set complete — great work.
-    </div>
-
-    <div style={{ fontSize: "1.15rem", fontWeight: 800, marginBottom: 14 }}>
-      Your Team: {teamName || "Team"} — {typeof scoreTotal === "number" ? scoreTotal : 0} pts
-    </div>
-
-    <AnimatedLeaderboard
-      leaderboard={leaderboard}
-      showConfetti={true}
-      currentTeamName={teamName || null}
-    />
-
-    <div style={{ marginTop: 14, display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
-      <button
-        type="button"
-        onClick={() => socket.emit("room:request-state", { teamId })}
-        className="border rounded-full px-4 py-2"
-        style={{ background: "#0ea5e9", color: "#fff", fontWeight: 700 }}
-      >
-        Refresh scores
-      </button>
-      <button
-        type="button"
-        onClick={handleJoinAnotherRoom}
-        className="border rounded-full px-4 py-2"
-        style={{ background: "#111827", color: "#fff", fontWeight: 700 }}
-      >
-        Join another room
-      </button>
-    </div>
-  </section>
-)}
-
-{/* SCANNER PANEL (shows whenever scannerActive is true) */}
-          {scannerActive && !tasksetComplete && (
+          {/* SCANNER PANEL (shows whenever scannerActive is true) */}
+          {scannerActive && (
           <section
             style={{
               marginTop: 6,
@@ -2595,7 +2472,7 @@ const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && currentTask && !mustScan && !tasksetComplete && (
+          {joined && currentTask && !mustScan && (
             <section
               className="task-card"
               style={{
@@ -2647,18 +2524,6 @@ const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
                   minHeight: isMotionMission || isPetFeeding ? "60vh" : undefined,
                 }}
               >
-                <TaskErrorBoundary onError={(err) => setTaskRenderError(err)} fallback={
-                  <div style={{ marginTop: 12 }}>
-                    <button
-                      type="button"
-                      onClick={endReviewAndReturnToScan}
-                      className="border rounded-full px-4 py-2"
-                      style={{ background: "#111827", color: "#fff", fontWeight: 700 }}
-                    >
-                      Back to scan
-                    </button>
-                  </div>
-                }>
                 <TaskRunner
                   key={
                     currentTask?.id ??
@@ -2695,7 +2560,6 @@ const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
                     });
                   }}
                 />
-                </TaskErrorBoundary>
               </div>
 
               {taskLocked && (
