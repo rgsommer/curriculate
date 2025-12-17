@@ -155,6 +155,46 @@ router.post("/reset-password", async (req, res) => {
     record.usedAt = new Date();
     await record.save();
 
+    const isDevReturn =
+      process.env.RETURN_RESET_TOKEN === "true" ||
+      process.env.NODE_ENV !== "production";
+
+    if (!user) {
+      return res.json({ ok: true });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    // 30 min expiry (tweak)
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    await PasswordReset.create({
+      userId: user._id,
+      tokenHash,
+      expiresAt,
+      usedAt: null,
+    });
+
+    // Build reset link
+    const appBase =
+      process.env.APP_BASE_URL ||
+      process.env.TEACHER_APP_URL ||
+      "http://localhost:5173";
+
+    const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(
+      email
+    )}`;
+
+    // Dev: log it
+    console.log("🔐 Password reset link (dev):", resetLink);
+
+    // ✅ Dev-only: return token/link so the UI can show Copy button
+    if (isDevReturn) {
+      return res.json({ ok: true, resetToken: rawToken, resetLink });
+    }
+
+    // Prod: do not reveal anything
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /reset-password failed:", err);
