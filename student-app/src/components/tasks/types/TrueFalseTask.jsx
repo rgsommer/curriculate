@@ -111,7 +111,7 @@ export default function TrueFalseTask({
       setSingleSecondLabel(flip ? "True" : "False");
       setSingleSelected(null);
     }
-  }, [taskKey, hasItems]);
+}, [task, taskKey, hasItems]);
 
   const handleSubmitClick = () => {
     if (disabled) return;
