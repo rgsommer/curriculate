@@ -1,5 +1,5 @@
 // teacher-app/src/pages/Login.jsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useAuth } from "../auth/useAuth";
 
 export default function Login() {
@@ -7,6 +7,7 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -16,8 +17,17 @@ export default function Login() {
   const [forgotMsg, setForgotMsg] = useState("");
   const [forgotErr, setForgotErr] = useState("");
 
+  // dev helpers (optional if your backend returns them)
+  const [devResetToken, setDevResetToken] = useState("");
+  const [devResetLink, setDevResetLink] = useState("");
+
+  const canSubmit = useMemo(() => {
+    return !!email.trim() && !!String(password || "");
+  }, [email, password]);
+
   const onSubmit = async (e) => {
     e.preventDefault();
+
     setErr("");
     setForgotMsg("");
     setForgotErr("");
@@ -30,9 +40,8 @@ export default function Login() {
 
     setBusy(true);
     try {
-      await login(email.trim(), password.trim());
-      // Your TeacherApp routes will take over once authenticated
-      // (no sidebar on this page anyway)
+      // IMPORTANT: match your current useAuth signature: login(email, password)
+      await login(em, pw);
       window.location.href = "/";
     } catch (e2) {
       setErr(e2?.message || "Login failed.");
@@ -41,10 +50,21 @@ export default function Login() {
     }
   };
 
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const onForgot = async () => {
     setForgotErr("");
     setForgotMsg("");
     setErr("");
+    setDevResetToken("");
+    setDevResetLink("");
 
     const em = (email || "").trim();
     if (!em) {
@@ -54,10 +74,25 @@ export default function Login() {
 
     setForgotBusy(true);
     try {
-      await requestPasswordReset(em);
-      setForgotMsg(
-        "If that email exists, a reset link has been sent. (Dev: check backend logs.)"
-      );
+      const data = await requestPasswordReset(em);
+
+      // Safe default (anti-enumeration)
+      let msg =
+        "If that email exists, a reset link has been sent. (Dev: check backend logs.)";
+
+      // Dev-friendly: if backend returns token/link, show it
+      const token = data?.resetToken || data?.token || "";
+      const link = data?.resetLink || data?.link || "";
+
+      if (token) setDevResetToken(String(token));
+      if (link) setDevResetLink(String(link));
+
+      if (token || link) {
+        msg =
+          "Dev reset info received. Use the token/link below to set a new password.";
+      }
+
+      setForgotMsg(msg);
     } catch (e2) {
       setForgotErr(e2?.message || "Could not request reset.");
     } finally {
@@ -125,19 +160,38 @@ export default function Login() {
               placeholder="you@school.ca"
               autoComplete="email"
               style={ui.input}
+              disabled={busy || forgotBusy}
             />
 
             <div style={{ height: 10 }} />
 
-            <label style={ui.label}>Password</label>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              type="password"
-              autoComplete="current-password"
-              style={ui.input}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={ui.label}>Password</label>
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  type={showPw ? "text" : "password"}
+                  autoComplete="current-password"
+                  style={ui.input}
+                  disabled={busy || forgotBusy}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                style={{
+                  ...ui.buttonGhost,
+                  width: 120,
+                  marginTop: 22,
+                }}
+                disabled={busy || forgotBusy}
+              >
+                {showPw ? "Hide" : "Show"}
+              </button>
+            </div>
 
             {err && (
               <div style={{ color: "#fca5a5", marginTop: 10, fontWeight: 700 }}>
@@ -146,7 +200,7 @@ export default function Login() {
             )}
 
             <button
-              disabled={busy}
+              disabled={busy || forgotBusy || !canSubmit}
               style={{ ...ui.buttonPrimary, marginTop: 14, width: "100%" }}
             >
               {busy ? "Signing in…" : "Sign in"}
@@ -160,6 +214,7 @@ export default function Login() {
                 width: "100%",
                 ...ui.buttonGhost,
               }}
+              disabled={busy}
             >
               {showForgot ? "Hide password reset" : "Forgot password?"}
             </button>
@@ -178,14 +233,14 @@ export default function Login() {
                   We’ll send a reset link to your email.
                   <br />
                   <span style={{ opacity: 0.85 }}>
-                    (Dev mode: link prints in backend logs.)
+                    (Dev mode: backend may return a token/link or print it to logs.)
                   </span>
                 </div>
 
                 <button
                   type="button"
                   onClick={onForgot}
-                  disabled={forgotBusy}
+                  disabled={forgotBusy || busy}
                   style={{ ...ui.buttonPrimary, width: "100%" }}
                 >
                   {forgotBusy ? "Sending…" : "Send reset link"}
@@ -201,6 +256,26 @@ export default function Login() {
                     {forgotMsg}
                   </div>
                 )}
+
+                {(devResetLink || devResetToken) && (
+                  <div style={{ marginTop: 12 }}>
+                    {devResetLink ? (
+                      <DevRow
+                        label="Dev reset link"
+                        value={devResetLink}
+                        onCopy={() => copyToClipboard(devResetLink)}
+                      />
+                    ) : null}
+
+                    {devResetToken ? (
+                      <DevRow
+                        label="Dev reset token"
+                        value={devResetToken}
+                        onCopy={() => copyToClipboard(devResetToken)}
+                      />
+                    ) : null}
+                  </div>
+                )}
               </div>
             )}
           </form>
@@ -211,6 +286,41 @@ export default function Login() {
           © {new Date().getFullYear()} Curriculate
         </div>
       </div>
+    </div>
+  );
+}
+
+function DevRow({ label, value, onCopy }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 10,
+        alignItems: "center",
+        marginTop: 10,
+        padding: 10,
+        borderRadius: 12,
+        border: "1px solid rgba(148,163,184,0.18)",
+        background: "rgba(2,6,23,0.55)",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 4 }}>{label}</div>
+        <div
+          style={{
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            fontSize: 12,
+            wordBreak: "break-all",
+            opacity: 0.9,
+          }}
+        >
+          {value}
+        </div>
+      </div>
+      <button type="button" onClick={onCopy} style={{ ...ui.buttonGhost, width: 92 }}>
+        Copy
+      </button>
     </div>
   );
 }
