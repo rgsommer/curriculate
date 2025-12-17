@@ -594,7 +594,7 @@ function EntryGateServer({ user, onPass, onLogout }) {
                 setCode(e.target.value);
                 setErr("");
               }}
-              placeholder="e.g., BCS-2025-001"
+              placeholder="Enter your access code"
               style={ui.input}
             />
 
