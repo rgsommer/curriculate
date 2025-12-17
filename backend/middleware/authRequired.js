@@ -1,5 +1,4 @@
 // backend/middleware/authRequired.js
-
 import jwt from "jsonwebtoken";
 
 export function authRequired(req, res, next) {
@@ -8,8 +7,7 @@ export function authRequired(req, res, next) {
   // TEMP DEV ONLY — remove before production launch
   if (authHeader === "Bearer dev-token" || authHeader === "Bearer dev-token123") {
     req.user = { _id: "dev-user-123", email: "dev@curriculate.net" };
-    req.userId = String(req.user?._id || req.user?.userId || req.user?.id || "").trim();
-
+    req.userId = String(req.user._id); // ✅ compatibility
     return next();
   }
 
@@ -23,6 +21,13 @@ export function authRequired(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     req.user = payload;
+
+    // ✅ compatibility for code paths that still use req.userId
+    req.userId = String(payload?._id || payload?.userId || payload?.id || "").trim();
+    if (!req.userId) {
+      return res.status(401).json({ error: "Invalid token (missing user id)" });
+    }
+
     next();
   } catch (err) {
     console.warn("Invalid token attempt:", err.message);
