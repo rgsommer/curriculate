@@ -145,12 +145,11 @@ function TeacherApp() {
     setRoomCode(generateRoomCode());
   };
 
-  const onLive =
-    location.pathname === "/" || location.pathname.startsWith("/live");
-  const onHost = location.pathname.startsWith("/host");
-  const onTasksets = location.pathname.startsWith("/tasksets");
-  const onReports = location.pathname.startsWith("/reports");
-  const onMyPlan = location.pathname.startsWith("/my-plan");
+  const onLive = routeLocation.pathname === "/" || routeLocation.pathname.startsWith("/live");
+  const onHost = routeLocation.pathname.startsWith("/host");
+  const onTasksets = routeLocation.pathname.startsWith("/tasksets");
+  const onReports = routeLocation.pathname.startsWith("/reports");
+  const onMyPlan = routeLocation.pathname.startsWith("/my-plan");
   const onProfile = location.pathname.startsWith("/teacher/profile");
   const onAiTasksets = location.pathname.startsWith("/teacher/ai-tasksets");
   const onAdmin = location.pathname.startsWith("/admin");
