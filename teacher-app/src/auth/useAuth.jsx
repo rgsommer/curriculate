@@ -1,41 +1,58 @@
-import React, { createContext, useContext, useEffect } from "react";  // ← Add useEffect
+// teacher-app/src/auth/useAuth.jsx
+import React, { createContext, useContext, useState } from "react";
 
-// Very simple "always logged in" auth stub for development.
-
-const AuthContext = createContext({
-  user: { name: "Dev Presenter" },
-  token: "dev-token",  // Dummy token for dev API calls
-  initializing: false,
-  isAuthenticated: true,
-  login: async () => ({ name: "Dev Presenter" }),
-  logout: () => {},
-});
+const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const value = {
-    user: { name: "Dev Presenter" },
-    token: "dev-token",
-    initializing: false,
-    isAuthenticated: true,
-    login: async () => ({ name: "Dev Presenter" }),
-    logout: () => {},
-  }; 
-  
-  // ← NEW: Save dummy token to localStorage for API calls
-  useEffect(() => {
-    localStorage.setItem("curriculate_token", value.token);
-    return () => {
-      localStorage.removeItem("curriculate_token");  // Clean up on unmount (optional for dev)
-    // 🔑 THIS IS THE MISSING PIECE
-      if (data.token) {
-        localStorage.setItem("token", data.token);
-      } else {
-        throw new Error("Login succeeded but no token returned");
-      }
-    };
-  }, []);  // Runs once on mount
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [initializing, setInitializing] = useState(false);
 
-  return (<AuthContext.Provider value={value}>{children}</AuthContext.Provider>);
+  const login = async (credentials) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Login failed");
+    }
+
+    // 🔑 THIS IS THE ONLY PLACE TOKEN STORAGE BELONGS
+    if (!data.token) {
+      throw new Error("Login succeeded but no token returned");
+    }
+
+    localStorage.setItem("token", data.token);
+    setToken(data.token);
+    setUser(data.user || { email: data.email });
+
+    return data.user;
+  };
+
+  const logout = () => {
+    localStorage.removeItem("token");
+    setToken(null);
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        initializing,
+        isAuthenticated: !!token,
+        login,
+        logout,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
