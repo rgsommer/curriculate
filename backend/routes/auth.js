@@ -6,16 +6,8 @@ import bcrypt from "bcrypt";
 
 const router = express.Router();
 
-/**
- * ASSUMPTION:
- * You have a User model with at least:
- *  - email: String
- *  - passwordHash: String
- *
- * If your project uses a different user model name/fields,
- * update getUserByEmail() + setUserPassword().
- */
-const User = mongoose.models.User; // or import User from "../models/User.js";
+// NOTE: adjust if your actual model name differs
+const User = mongoose.models.User;
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -28,15 +20,11 @@ async function getUserByEmail(email) {
 
 async function setUserPassword(user, newPassword) {
   const hash = await bcrypt.hash(String(newPassword), 10);
-  // adjust field name if yours differs
-  user.passwordHash = hash;
+  user.passwordHash = hash; // adjust if your field name differs
   await user.save();
 }
 
-/**
- * Password reset token store (separate collection)
- * Keeps auth clean and avoids storing raw tokens.
- */
+// Password reset token store
 const PasswordResetSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
@@ -47,17 +35,36 @@ const PasswordResetSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// TTL index: expire documents at expiresAt
 PasswordResetSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const PasswordReset =
   mongoose.models.PasswordReset || mongoose.model("PasswordReset", PasswordResetSchema);
+
+function isDevReturnEnabled() {
+  return (
+    process.env.RETURN_RESET_TOKEN === "true" ||
+    process.env.NODE_ENV !== "production"
+  );
+}
+
+function buildResetLink(email, rawToken) {
+  const appBase =
+    process.env.APP_BASE_URL ||
+    process.env.TEACHER_APP_URL ||
+    "http://localhost:5173";
+
+  return `${String(appBase).replace(/\/+$/, "")}/reset-password?token=${rawToken}&email=${encodeURIComponent(
+    email
+  )}`;
+}
 
 /**
  * POST /forgot-password
  * Body: { email }
  *
  * Always returns { ok:true } to avoid account enumeration.
- * In dev: logs a reset link (token) to server console.
+ * If RETURN_RESET_TOKEN=true (or non-production), also returns resetToken/resetLink.
  */
 router.post("/forgot-password", async (req, res) => {
   try {
@@ -66,31 +73,13 @@ router.post("/forgot-password", async (req, res) => {
 
     const user = await getUserByEmail(email);
 
-    // Always respond ok=true (anti-enumeration)
-    res.json({ ok: true });
-
-    if (!user) return;
+    // Anti-enumeration: if user doesn't exist, still return ok:true
+    if (!user) return res.json({ ok: true });
 
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
-    const isDev =
-      process.env.NODE_ENV !== "production" ||
-      process.env.RETURN_RESET_TOKEN === "true";
-
-    if (isDev) {
-      return res.json({
-        ok: true,
-        // dev-only: lets you test without email
-        resetToken: rawToken,
-        email,
-      });
-    }
-
-    // prod behavior: don't reveal anything
-    return res.json({ ok: true });
-
-    // 30 min expiry (tweak)
+    // 30 min expiry
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
     await PasswordReset.create({
@@ -100,21 +89,22 @@ router.post("/forgot-password", async (req, res) => {
       usedAt: null,
     });
 
-    // In prod you'd email the link; in dev we print it.
-    const appBase =
-      process.env.APP_BASE_URL ||
-      process.env.TEACHER_APP_URL ||
-      "http://localhost:5173";
+    const resetLink = buildResetLink(email, rawToken);
 
-    const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(
-      email
-    )}`;
-
+    // Dev: log it
     console.log("🔐 Password reset link (dev):", resetLink);
+
+    // Dev-only: return token/link so UI can show Copy button
+    if (isDevReturnEnabled()) {
+      return res.json({ ok: true, resetToken: rawToken, resetLink });
+    }
+
+    // Prod: don't reveal token/link
+    return res.json({ ok: true });
   } catch (err) {
     console.error("POST /forgot-password failed:", err);
-    // still avoid enumeration; return generic ok
-    res.status(200).json({ ok: true });
+    // still avoid enumeration
+    return res.status(200).json({ ok: true });
   }
 });
 
@@ -152,49 +142,11 @@ router.post("/reset-password", async (req, res) => {
     }
 
     await setUserPassword(user, newPassword);
+
+    // mark token used so it can't be reused
     record.usedAt = new Date();
     await record.save();
 
-    const isDevReturn =
-      process.env.RETURN_RESET_TOKEN === "true" ||
-      process.env.NODE_ENV !== "production";
-
-    if (!user) {
-      return res.json({ ok: true });
-    }
-
-    const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-
-    // 30 min expiry (tweak)
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-    await PasswordReset.create({
-      userId: user._id,
-      tokenHash,
-      expiresAt,
-      usedAt: null,
-    });
-
-    // Build reset link
-    const appBase =
-      process.env.APP_BASE_URL ||
-      process.env.TEACHER_APP_URL ||
-      "http://localhost:5173";
-
-    const resetLink = `${appBase}/reset-password?token=${rawToken}&email=${encodeURIComponent(
-      email
-    )}`;
-
-    // Dev: log it
-    console.log("🔐 Password reset link (dev):", resetLink);
-
-    // ✅ Dev-only: return token/link so the UI can show Copy button
-    if (isDevReturn) {
-      return res.json({ ok: true, resetToken: rawToken, resetLink });
-    }
-
-    // Prod: do not reveal anything
     return res.json({ ok: true });
   } catch (err) {
     console.error("POST /reset-password failed:", err);
