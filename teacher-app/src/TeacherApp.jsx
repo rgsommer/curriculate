@@ -13,6 +13,7 @@ import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
 import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
 import Login from "./pages/Login.jsx";
+import { apiFetch } from "./api/apiFetch";
 
 import { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
@@ -480,13 +481,11 @@ function EntryGateServer({ user, onPass, onLogout }) {
     setBusy(true);
     try {
       // 1) Try verify (returning teacher)
-      const verifyRes = await apifetch("/api/teacher/verify-entry-code", {
+      const verifyRes = await apiFetch("/api/teacher/verify-entry-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ code: trimmed }),
       });
-
       let verifyData = null;
       try {
         verifyData = await verifyRes.json();
@@ -500,10 +499,9 @@ function EntryGateServer({ user, onPass, onLogout }) {
       }
 
       // 2) If verify fails, try claim (new teacher)
-      const claimRes = await apifetch("/api/teacher/claim-access-code", {
+      const claimRes = await apiFetch("/api/teacher/claim-access-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ code: trimmed }),
       });
 
@@ -530,7 +528,8 @@ function EntryGateServer({ user, onPass, onLogout }) {
           "Welcome to Curriculate!",
       });
       setStage("welcome");
-    } catch {
+    } catch (e) {
+      console.error("Admin create code failed:", e);
       setErr("Network error");
     } finally {
       setBusy(false);
@@ -744,9 +743,7 @@ function AdminAccessCodesPage() {
     setErr("");
     setBusy(true);
     try {
-      const res = await fetch("/api/admin/access-codes", {
-        credentials: "include",
-      });
+      const res = await apiFetch("/api/admin/access-codes");
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
         setErr(data?.error || "Could not load access codes.");
@@ -774,10 +771,9 @@ function AdminAccessCodesPage() {
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       };
 
-      const res = await fetch("/api/admin/access-codes", {
+      const res = await apiFetch("/api/admin/access-codes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => null);
@@ -786,10 +782,10 @@ function AdminAccessCodesPage() {
         return;
       }
       await load();
-    } catch {
-      setErr("Network error");
-    } finally {
-      setBusy(false);
+    } catch (e) {
+        console.error("EntryGate submit failed:", e);
+        setErr("Network error");
+      }
     }
   };
 
