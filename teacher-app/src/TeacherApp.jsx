@@ -583,7 +583,7 @@ function EntryGateServer({ user, onPass, onLogout }) {
               Teacher Access
             </h2>
             <p style={{ opacity: 0.78, marginBottom: 14, lineHeight: 1.4 }}>
-              Enter your Curriculate access code to unlock the Teacher App.
+              Enter your Curriculate access code.
             </p>
 
             <label style={ui.label}>Access code</label>
