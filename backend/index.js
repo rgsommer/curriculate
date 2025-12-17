@@ -129,16 +129,6 @@ const AccessCodeSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", AccessCodeSchema);
-db.teacherprofiles.updateOne(
-  { ownerId: "dev-user-123" },
-  { $set: { isAdmin: true, role: "admin", roles: ["admin"] } }
-)
-db.teacherprofiles.updateOne(
-  { ownerId: "dev-user-123" },
-  { $set: { entryCode: "BCS-DEV-001" } }
-)
-
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
