@@ -776,6 +776,7 @@ function AdminAccessCodesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
         setErr(data?.error || "Could not create code.");
@@ -783,9 +784,10 @@ function AdminAccessCodesPage() {
       }
       await load();
     } catch (e) {
-        console.error("EntryGate submit failed:", e);
-        setErr("Network error");
-      }
+      console.error("Admin create code failed:", e);
+      setErr("Network error");
+    } finally {
+      setBusy(false);
     }
   };
 
