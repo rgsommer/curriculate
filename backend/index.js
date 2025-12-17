@@ -3149,19 +3149,25 @@ app.get("/db-check", async (req, res) => {
 
 async function getOrCreateProfileForUser({ ownerId, email } = {}) {
   if (!ownerId) throw new Error("Missing ownerId");
+
   let profile = await TeacherProfile.findOne({ ownerId });
+
   if (!profile) {
-    profile = new TeacherProfile({ ownerId, email: req.user?.email || "" });
+    profile = new TeacherProfile({
+      ownerId,
+      email: email || "",
+    });
     await profile.save();
     return profile;
   }
+
   if (email && !profile.email) {
     profile.email = email;
     await profile.save();
   }
+
   return profile;
 }
-
 
 // --------------------------------------------------------------------
 // Per-user Teacher Profile (auth required)
