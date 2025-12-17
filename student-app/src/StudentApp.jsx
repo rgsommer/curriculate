@@ -652,6 +652,8 @@ function StudentApp() {
       const limit = payload.timeLimitSeconds || null;
       setTimeLimitSeconds(limit);
 
+      console.log("[StudentApp] task:assigned", payload?.task || payload);
+      
       if (limit && limit > 0) {
         const endTime = Date.now() + limit * 1000;
         setRemainingMs(endTime - Date.now());
