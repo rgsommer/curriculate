@@ -123,11 +123,12 @@ const AccessCodeSchema = new mongoose.Schema(
     code: { type: String, required: true, unique: true, uppercase: true, trim: true },
     planTier: { type: String, default: "FREE" },
     maxSeats: { type: Number, default: 1 },
-    claimants: { type: [String], default: [] }, // stores ownerIds
+    claimants: { type: [String], default: [] },
     disabled: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
+const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", AccessCodeSchema);
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
@@ -3150,7 +3151,7 @@ async function getOrCreateProfileForUser({ ownerId, email } = {}) {
   if (!ownerId) throw new Error("Missing ownerId");
   let profile = await TeacherProfile.findOne({ ownerId });
   if (!profile) {
-    profile = new TeacherProfile({ ownerId, email: email || "" });
+    profile = new TeacherProfile({ ownerId, email: req.user?.email || "" });
     await profile.save();
     return profile;
   }
@@ -3282,57 +3283,47 @@ app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
 
 app.post("/api/teacher/claim-access-code", authRequired, async (req, res) => {
   try {
-    const ownerId = getOwnerId(req);
+    const ownerId = String(req.user?._id || req.user?.userId || req.user?.id || req.userId || "").trim();
     if (!ownerId) return res.status(401).json({ ok: false, error: "Missing user id" });
 
     const code = String(req.body?.code || "").trim().toUpperCase();
     if (!code) return res.status(400).json({ ok: false, error: "Missing code" });
 
-    // Load profile (create if needed)
-    let profile = await TeacherProfile.findOne({ ownerId });
-    if (!profile) {
-      profile = new TeacherProfile({ ownerId, email: req.user?.email || "" });
-    }
-
-    // Prevent switching codes without admin intervention
-    if (profile.entryCode && String(profile.entryCode).trim()) {
-      return res.status(409).json({ ok: false, error: "This account already has an access code." });
-    }
-
-    // If you have an AccessCode collection, validate it here.
-    // If you DON'T yet, you can temporarily allow “any code” by commenting this block.
-    const access = await AccessCode.findOne({ code }).lean();
+    const access = await AccessCode.findOne({ code });
     if (!access) return res.status(404).json({ ok: false, error: "Code not found" });
     if (access.disabled) return res.status(403).json({ ok: false, error: "Code disabled" });
 
-    // One-time claim (or seats-based claim)
-    const maxSeats = access.maxSeats ?? 1;
-    const claimants = Array.isArray(access.claimants) ? access.claimants : [];
-    const alreadyClaimedByMe = claimants.includes(ownerId);
+    let profile = await TeacherProfile.findOne({ ownerId });
+    if (!profile) profile = new TeacherProfile({ ownerId, email: req.user?.email || "" });
 
-    if (!alreadyClaimedByMe && claimants.length >= maxSeats) {
+    if (String(profile.entryCode || "").trim()) {
+      return res.status(409).json({ ok: false, error: "This account already has an access code." });
+    }
+
+    const maxSeats = Math.max(1, Number(access.maxSeats || 1));
+    const claimants = Array.isArray(access.claimants) ? access.claimants : [];
+    const already = claimants.includes(ownerId);
+
+    if (!already && claimants.length >= maxSeats) {
       return res.status(403).json({ ok: false, error: "Code already fully claimed" });
     }
 
-    // Attach code + plan to teacher profile
     profile.entryCode = code;
-    if (access.planTier) profile.planTier = access.planTier; // only if your schema has it
     await profile.save();
 
-    // Persist claimant
-    await AccessCode.updateOne(
-      { _id: access._id },
-      { $addToSet: { claimants: ownerId }, $setOnInsert: { createdAt: new Date() } }
-    );
+    if (!already) {
+      access.claimants = claimants.concat(ownerId);
+      await access.save();
+    }
 
-    return res.json({
-      ok: true,
-      welcome: { message: "Welcome to Curriculate!" },
-      plan: { tier: access.planTier || "FREE" },
-    });
+    return res.json({ ok: true, entryCode: profile.entryCode, planTier: access.planTier || "FREE" });
   } catch (err) {
     console.error("claim-access-code failed:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
+    return res.status(500).json({
+      ok: false,
+      error: "Server error",
+      detail: process.env.NODE_ENV !== "production" ? String(err?.message || err) : undefined,
+    });
   }
 });
 
