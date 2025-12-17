@@ -29,24 +29,6 @@ import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 
-// Access codes (claimable by teachers; created/managed by admin teachers)
-const AccessCodeSchema = new mongoose.Schema(
-  {
-    code: { type: String, required: true, unique: true, index: true },
-    planTier: { type: String, default: "FREE" }, // FREE | PLUS | PRO (or your tiers)
-    maxSeats: { type: Number, default: 1 },
-    seatsUsed: { type: Number, default: 0 },
-    expiresAt: { type: Date, default: null },
-    isActive: { type: Boolean, default: true },
-    createdBy: { type: String, default: null }, // userId of admin who created it
-    claimants: { type: [String], default: [] }, // userIds who claimed (supports maxSeats > 1)
-    claimedAt: { type: Date, default: null }, // first claim timestamp
-    notes: { type: String, default: "" },
-  },
-  { timestamps: true }
-);
-const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", AccessCodeSchema);
-
 const app = express();
 const server = http.createServer(app);
 
@@ -3143,55 +3125,18 @@ app.get("/db-check", async (req, res) => {
   }
 });
 
-async function getOrCreateProfileForUser(userId) {
-  if (!userId) throw new Error("Missing userId");
-  let profile = await TeacherProfile.findOne({ ownerId: userId });
+async function getOrCreateProfile() {
+  let profile = await TeacherProfile.findOne();
   if (!profile) {
-    profile = new TeacherProfile({ ownerId: userId });
+    profile = new TeacherProfile({});
     await profile.save();
   }
   return profile;
 }
 
-function isAdminProfile(profile) {
-  if (!profile) return false;
-  // Support several possible shapes; you can standardize later.
-  if (profile.isAdmin === true) return true;
-  if (typeof profile.role === "string" && profile.role.toLowerCase() === "admin") return true;
-  if (typeof profile.userType === "string" && profile.userType.toLowerCase() === "admin") return true;
-  if (Array.isArray(profile.roles) && profile.roles.map(String).map((s) => s.toLowerCase()).includes("admin")) return true;
-  return false;
-}
-
-async function adminRequired(req, res, next) {
+app.get("/api/profile/me", async (req, res) => {
   try {
-    const profile = await TeacherProfile.findOne({ ownerId: req.userId }).lean();
-    if (!isAdminProfile(profile)) {
-      return res.status(403).json({ ok: false, error: "Admin only" });
-    }
-    req.adminProfile = profile;
-    next();
-  } catch (err) {
-    console.error("adminRequired failed:", err);
-    res.status(500).json({ ok: false, error: "Server error" });
-  }
-}
-
-function randomAccessCode(len = 6) {
-  // Avoid ambiguous chars: 0/O, 1/I
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
-
-function normalizeCode(raw) {
-  return String(raw || "").trim().toUpperCase();
-}
-
-app.get("/api/profile/me", authRequired, async (req, res) => {
-  try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const profile = await getOrCreateProfile();
     const plain = profile.toObject();
 
     // Ensure both fields are present for the frontend
@@ -3205,9 +3150,9 @@ app.get("/api/profile/me", authRequired, async (req, res) => {
   }
 });
 
-app.get("/api/profile", authRequired, async (req, res) => {
+app.get("/api/profile", async (req, res) => {
   try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const profile = await getOrCreateProfile();
     const plain = profile.toObject();
 
     plain.presenterTitle = plain.presenterTitle || plain.title || "";
@@ -3220,9 +3165,9 @@ app.get("/api/profile", authRequired, async (req, res) => {
   }
 });
 
-app.put("/api/profile/me", authRequired, async (req, res) => {
+app.put("/api/profile/me", async (req, res) => {
   try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const profile = await getOrCreateProfile();
 
     // Keep presenterTitle and title in sync
     const body = { ...req.body };
@@ -3248,9 +3193,9 @@ app.put("/api/profile/me", authRequired, async (req, res) => {
   }
 });
 
-app.put("/api/profile", authRequired, async (req, res) => {
+app.put("/api/profile", async (req, res) => {
   try {
-    const profile = await getOrCreateProfileForUser(req.userId);
+    const profile = await getOrCreateProfile();
 
     const body = { ...req.body };
     if (body.presenterTitle && !body.title) {
@@ -3288,9 +3233,9 @@ app.post("/api/tasksets", async (req, res) => {
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
   try {
-    const code = normalizeCode(req.body?.code);
+    const code = String(req.body?.code || "").trim();
 
-    if (!/^[A-Z0-9]+$/.test(code)) {
+    if (!/^[a-z0-9]+$/i.test(code)) {
       return res.status(400).json({ ok: false, error: "Invalid code format" });
     }
 
@@ -3303,150 +3248,13 @@ app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
       return res.status(403).json({ ok: false, error: "No entry code assigned" });
     }
 
-    if (normalizeCode(profile.entryCode) !== code) {
+    if (profile.entryCode !== code) {
       return res.status(401).json({ ok: false, error: "Incorrect code" });
     }
 
     res.json({ ok: true });
   } catch (err) {
     console.error("verify-entry-code failed:", err);
-    res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
-
-// Claim an access code (first-time gate / onboarding)
-app.post("/api/teacher/claim-access-code", authRequired, async (req, res) => {
-  try {
-    const code = normalizeCode(req.body?.code);
-
-    if (!/^[A-Z0-9]+$/.test(code)) {
-      return res.status(400).json({ ok: false, error: "Invalid code format" });
-    }
-
-    const access = await AccessCode.findOne({ code }).lean();
-    if (!access || access.isActive === false) {
-      return res.status(404).json({ ok: false, error: "Code not found" });
-    }
-
-    if (access.expiresAt && new Date(access.expiresAt).getTime() < Date.now()) {
-      return res.status(410).json({ ok: false, error: "Code expired" });
-    }
-
-    // Seat check
-    const seatsUsed = Number(access.seatsUsed || 0);
-    const maxSeats = Number(access.maxSeats || 1);
-    if (seatsUsed >= maxSeats) {
-      return res.status(409).json({ ok: false, error: "Code already fully claimed" });
-    }
-
-    // Prevent the same user from consuming multiple seats accidentally
-    const claimants = Array.isArray(access.claimants) ? access.claimants : [];
-    if (claimants.includes(req.userId)) {
-      return res.json({ ok: true, alreadyClaimed: true });
-    }
-
-    // Create or load teacher profile for this user
-    const profile = await getOrCreateProfileForUser(req.userId);
-
-    // If teacher already has a different code, don't silently overwrite
-    if (profile.entryCode && normalizeCode(profile.entryCode) !== code) {
-      return res.status(409).json({ ok: false, error: "A different access code is already assigned to this account" });
-    }
-
-    // Atomically claim a seat
-    const claimUpdate = await AccessCode.findOneAndUpdate(
-      {
-        code,
-        isActive: true,
-        ...(access.expiresAt ? { expiresAt: { $gte: new Date() } } : {}),
-        seatsUsed: { $lt: maxSeats },
-        claimants: { $ne: req.userId },
-      },
-      {
-        $inc: { seatsUsed: 1 },
-        $addToSet: { claimants: req.userId },
-        $setOnInsert: {},
-        $set: { claimedAt: access.claimedAt || new Date() },
-      },
-      { new: true }
-    ).lean();
-
-    if (!claimUpdate) {
-      return res.status(409).json({ ok: false, error: "Unable to claim code (it may have just been claimed)" });
-    }
-
-    // Apply plan + entry code to profile
-    profile.entryCode = code;
-    profile.planTier = claimUpdate.planTier || profile.planTier || "FREE";
-    // Optional convenience flags for frontend onboarding
-    if (profile.welcomeSeen === undefined) profile.welcomeSeen = false;
-    await profile.save();
-
-    const plan = {
-      tier: profile.planTier || "FREE",
-      maxSeats: claimUpdate.maxSeats || 1,
-      expiresAt: claimUpdate.expiresAt || null,
-    };
-
-    const welcome = {
-      title: "Welcome to Curriculate Teacher!",
-      message: "Your access code was accepted and your teacher profile is ready.",
-    };
-
-    res.json({ ok: true, code, plan, welcome, profile: profile.toObject() });
-  } catch (err) {
-    console.error("claim-access-code failed:", err);
-    res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
-
-// Admin: create a new access code
-app.post("/api/admin/access-codes", authRequired, adminRequired, async (req, res) => {
-  try {
-    const body = req.body || {};
-    const planTier = String(body.planTier || "FREE").toUpperCase();
-    const maxSeats = Math.max(1, Number(body.maxSeats || 1));
-    const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
-    const notes = String(body.notes || "");
-
-    let code = normalizeCode(body.code);
-    if (!code) code = randomAccessCode(6);
-    if (!/^[A-Z0-9]+$/.test(code)) {
-      return res.status(400).json({ ok: false, error: "Invalid code format" });
-    }
-
-    const created = await AccessCode.create({
-      code,
-      planTier,
-      maxSeats,
-      expiresAt,
-      isActive: body.isActive !== false,
-      createdBy: req.userId,
-      notes,
-    });
-
-    res.status(201).json({ ok: true, accessCode: created.toObject() });
-  } catch (err) {
-    if (String(err?.code) === "11000") {
-      return res.status(409).json({ ok: false, error: "Code already exists" });
-    }
-    console.error("admin create access code failed:", err);
-    res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
-
-// Admin: list access codes
-app.get("/api/admin/access-codes", authRequired, adminRequired, async (req, res) => {
-  try {
-    const q = {};
-    if (req.query.active === "true") q.isActive = true;
-    if (req.query.active === "false") q.isActive = false;
-    if (req.query.planTier) q.planTier = String(req.query.planTier).toUpperCase();
-
-    const items = await AccessCode.find(q).sort({ createdAt: -1 }).lean();
-    res.json({ ok: true, items });
-  } catch (err) {
-    console.error("admin list access codes failed:", err);
     res.status(500).json({ ok: false, error: "Server error" });
   }
 });

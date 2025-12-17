@@ -1281,10 +1281,13 @@ function StudentApp() {
         stationColor: stationInfo?.color || assignedColor || null,
         stationIndex, // <-- Hangman uses this to select wordsByStation[stationIndex]
       }
-    : null;
+    : null;      
+
+  const yourTeamName = teamName || "";
+  const recentlyScoredBig = false; // or compute from lastTaskResult/pointToast if you already track it
 
   const isMultiRoom =
-        Array.isArray(selectedRooms) && selectedRooms.length > 1;
+    Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
   const noiseBarOpacity = noiseState.enabled ? noiseState.brightness : 0.08;
 
