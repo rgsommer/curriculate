@@ -190,6 +190,10 @@ export default function TrueFalseTask({
           <div className="flex-1 flex flex-col gap-3 overflow-y-auto" style={{ paddingRight: 4 }}>
             {presentedItems.map((pItem, displayIdx) => {
               const selected = multiSelectedValues[displayIdx];
+              const firstVal = pItem.firstLabel.toLowerCase() === "true" ? "true" : "false";
+              const secondVal = pItem.secondLabel.toLowerCase() === "true" ? "true" : "false";
+              const isFirstSelected = selected === firstVal;
+              const isSecondSelected = selected === secondVal;
               return (
                 <div
                   key={pItem.canonicalIndex}
@@ -219,7 +223,7 @@ export default function TrueFalseTask({
                           selected === (pItem.firstLabel.toLowerCase() === "true" ? "true" : "false")
                             ? optionSelectedBg
                             : optionBaseBg,
-                        color: selected ? "#fff" : "#111827",
+                        color: isFirstSelected ? "#fff" : "#111827",
                         opacity: disabled ? 0.6 : 1,
                         borderColor: "rgba(15,23,42,0.12)",
                       }}
@@ -237,7 +241,7 @@ export default function TrueFalseTask({
                           selected === (pItem.secondLabel.toLowerCase() === "true" ? "true" : "false")
                             ? optionSelectedBg
                             : optionBaseBg,
-                        color: selected ? "#fff" : "#111827",
+                        color: isSecondSelected ? "#fff" : "#111827",
                         opacity: disabled ? 0.6 : 1,
                         borderColor: "rgba(15,23,42,0.12)",
                       }}
