@@ -130,6 +130,10 @@ const AccessCodeSchema = new mongoose.Schema(
 );
 
 const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", AccessCodeSchema);
+db.teacherprofiles.updateOne(
+  { ownerId: "dev-user-123" },
+  { $set: { isAdmin: true, role: "admin", roles: ["admin"] } }
+)
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
