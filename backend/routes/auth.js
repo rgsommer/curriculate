@@ -83,11 +83,6 @@ router.post("/forgot-password", async (req, res) => {
     // 30 min expiry
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
-    console.log("[forgot-password] NODE_ENV =", process.env.NODE_ENV);
-    console.log("[forgot-password] RETURN_RESET_TOKEN =", process.env.RETURN_RESET_TOKEN);
-    console.log("[forgot-password] devReturn =", isDevReturnEnabled());
-    console.log("[forgot-password] email =", email, "userFound =", !!user);
-
     await PasswordReset.create({
       userId: user._id,
       tokenHash,
@@ -99,6 +94,13 @@ router.post("/forgot-password", async (req, res) => {
 
     // Dev: log it
     console.log("🔐 Password reset link (dev):", resetLink);
+    console.log("[forgot-password] email =", email, "userFound =", !!user);
+    console.log("[forgot-password] NODE_ENV =", process.env.NODE_ENV);
+    console.log("[forgot-password] RETURN_RESET_TOKEN =", process.env.RETURN_RESET_TOKEN);
+    console.log("[forgot-password] devReturn =", isDevReturnEnabled());
+    console.log("[forgot-password] email =", email, "userFound =", !!user);
+
+    console.log("[forgot-password] RETURN_RESET_TOKEN =", process.env.RETURN_RESET_TOKEN, "NODE_ENV =", process.env.NODE_ENV, "devReturn =", isDevReturnEnabled());
 
     // Dev-only: return token/link so UI can show Copy button
     if (isDevReturnEnabled()) {
