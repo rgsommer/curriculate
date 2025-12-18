@@ -7,7 +7,7 @@ import bcrypt from "bcrypt";
 const router = express.Router();
 
 // NOTE: adjust if your actual model name differs
-const User = mongoose.models.User;
+import User from "../models/User.js"; // or "../models/UserModel.js"
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
