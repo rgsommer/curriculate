@@ -17,9 +17,10 @@ export default function BrainBlitzTask({
   const recognitionRef = useRef(null);
 
   const raw =
-    (Array.isArray(task.clues) && task.clues) ||
-    (Array.isArray(task.questions) && task.questions) ||
-    (Array.isArray(task.items) && task.items) ||
+    (Array.isArray(task?.config?.clues) && task.config.clues) ||
+    (Array.isArray(task?.clues) && task.clues) ||
+    (Array.isArray(task?.questions) && task.questions) ||
+    (Array.isArray(task?.items) && task.items) ||
     [];
 
   const clues = raw

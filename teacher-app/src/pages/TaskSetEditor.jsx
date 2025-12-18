@@ -434,6 +434,37 @@ export default function TaskSetEditor() {
         correctAnswer = null;
       }
 
+      // --- BrainBlitz / Jeopardy: persist clues into config.clues (so they survive save/load) ---
+      if (normalizedType === TASK_TYPES.JEOPARDY) {
+        const rawClues =
+          Array.isArray(t.clues) ? t.clues :
+          Array.isArray(t.config?.clues) ? t.config.clues :
+          Array.isArray(t.items) ? t.items :
+          [];
+
+        const normalizedClues = (Array.isArray(rawClues) ? rawClues : [])
+          .map((c, i) => {
+            if (typeof c === "string") return { clue: c.trim(), answer: "" };
+            if (c && typeof c === "object") {
+              const clueText = String(c.clue ?? c.prompt ?? c.question ?? c.text ?? "").trim();
+              const ansText = String(c.answer ?? c.correctAnswer ?? "").trim();
+              return { clue: clueText, answer: ansText };
+            }
+            return { clue: "", answer: "" };
+          })
+          .filter((c) => c.clue && c.clue.trim().length > 0);
+
+        const prevCfg = base.config && typeof base.config === "object" ? base.config : {};
+        base.config = { ...prevCfg, clues: normalizedClues };
+
+        // Optional cleanup: keep clues in ONE place only
+        delete base.clues;
+
+        // Jeopardy/BrainBlitz shouldn't be using options/correctAnswer
+        base.options = [];
+        base.correctAnswer = null;
+      }
+
       // Infer aiScoringRequired if not explicitly set.
       // We want objective tasks (MC, TF, Sort, Sequence, etc.) to be scored
       // rule-based without calling the AI model, while non-objective types
