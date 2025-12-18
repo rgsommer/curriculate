@@ -714,32 +714,30 @@ export default function TaskRunner({
   switch (type) {
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
-        <MultipleChoiceTask
+        <MultiPartTask
+          mode={isReview ? "review" : "choice"}
           task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled || isReview}
-          onAnswerChange={onAnswerChange}
-          answerDraft={answerDraft}
-          mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+          onSubmit={isReview ? null : onSubmit}
+          submitting={submitting}
+          disabled={effectiveDisabled || isReview}
         />
       );
       break;
 
     case TASK_TYPES.TRUE_FALSE:
       content = (
-        <TrueFalseTask
+        <MultiPartTask
+          mode={isReview ? "review" : "choice"}
           task={t}
-          onSubmit={onSubmit}
-          disabled={effectiveDisabled || isReview}
-          onAnswerChange={onAnswerChange}
-          answerDraft={answerDraft}
-          mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+          onSubmit={isReview ? null : onSubmit}
+          submitting={submitting}
+          disabled={effectiveDisabled || isReview}
         />
       );
       break;
-
+      
     case TASK_TYPES.SORT:
       content = (
         <SortTask
