@@ -14,6 +14,7 @@ export default function Login() {
 
   const [showForgot, setShowForgot] = useState(false);
   const [forgotBusy, setForgotBusy] = useState(false);
+
   const [showCodeSignup, setShowCodeSignup] = useState(false);
   const [accessCode, setAccessCode] = useState("");
   const [codeErr, setCodeErr] = useState("");
@@ -30,13 +31,20 @@ export default function Login() {
     return !!email.trim() && !!String(password || "");
   }, [email, password]);
 
+  const onGoSignup = () => {
+    setCodeErr("");
+    const code = String(accessCode || "").trim().toUpperCase();
+    if (!code) return setCodeErr("Please enter your access code.");
+    window.location.href = `/signup?code=${encodeURIComponent(code)}`;
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setErr("");
     setForgotErr("");
     setForgotMsg("");
 
-    const em = (email || "").trim();
+    const em = String(email || "").trim();
     const pw = String(password || "");
 
     if (!em) return setErr("Please enter your email.");
@@ -44,7 +52,8 @@ export default function Login() {
 
     setBusy(true);
     try {
-      await login(em, pw);
+      // ✅ IMPORTANT: your useAuth.login expects an object
+      await login({ email: em, password: pw });
       window.location.href = "/";
     } catch (e2) {
       setErr(e2?.message || "Login failed.");
@@ -59,17 +68,9 @@ export default function Login() {
       setCopied(which);
       setTimeout(() => setCopied(""), 1200);
     } catch {
-      // ignore clipboard failures (e.g., insecure context)
+      // ignore clipboard failures
     }
   };
-
-  const onGoSignup = () => {
-      setCodeErr("");
-      const code = String(accessCode || "").trim().toUpperCase();
-      if (!code) return setCodeErr("Please enter your access code.");
-      // Keep it simple and router-agnostic
-      window.location.href = `/signup?code=${encodeURIComponent(code)}`;
-    };
 
   const onForgot = async () => {
     setForgotErr("");
@@ -79,7 +80,7 @@ export default function Login() {
     setDevResetToken("");
     setCopied("");
 
-    const em = (email || "").trim();
+    const em = String(email || "").trim();
     if (!em) {
       setForgotErr("Enter your email above first.");
       return;
@@ -100,7 +101,7 @@ export default function Login() {
         setForgotMsg("Dev reset info received. Copy the link or token below.");
       } else {
         setForgotMsg(
-          "Request received, but no dev token/link was returned. (Backend is likely in safe mode returning only {ok:true}.)"
+          "Request received, but no dev token/link was returned. (Backend is likely returning only {ok:true}.)"
         );
       }
     } catch (e2) {
@@ -207,7 +208,7 @@ export default function Login() {
               type="button"
               onClick={() => setShowForgot((v) => !v)}
               style={{ marginTop: 10, width: "100%", ...ui.buttonGhost }}
-              disabled={busy}
+              disabled={busy || forgotBusy}
             >
               {showForgot ? "Hide password reset" : "Forgot password?"}
             </button>
@@ -221,7 +222,9 @@ export default function Login() {
               style={{ marginTop: 10, width: "100%", ...ui.buttonGhost }}
               disabled={busy || forgotBusy}
             >
-              {showCodeSignup ? "Hide access code signup" : "Have an access code? Create account"}
+              {showCodeSignup
+                ? "Hide access code signup"
+                : "Have an access code? Create account"}
             </button>
 
             {showCodeSignup && (
@@ -234,12 +237,16 @@ export default function Login() {
                   border: "1px solid rgba(148,163,184,0.25)",
                 }}
               >
-                <div style={{ fontWeight: 900, marginBottom: 6 }}>Create an account with an access code</div>
+                <div style={{ fontWeight: 900, marginBottom: 6 }}>
+                  Create an account with an access code
+                </div>
 
                 <label style={ui.label}>Access Code</label>
                 <input
                   value={accessCode}
-                  onChange={(e) => setAccessCode(String(e.target.value || "").toUpperCase())}
+                  onChange={(e) =>
+                    setAccessCode(String(e.target.value || "").toUpperCase())
+                  }
                   placeholder="ABC123"
                   autoComplete="off"
                   style={ui.input}
@@ -267,7 +274,6 @@ export default function Login() {
               </div>
             )}
 
-
             {showForgot && (
               <div
                 style={{
@@ -282,7 +288,8 @@ export default function Login() {
                   We’ll send a reset link to your email.
                   <br />
                   <span style={{ opacity: 0.85 }}>
-                    Dev: if backend returns token/link, it will appear below with Copy buttons.
+                    Dev: if backend returns token/link, it will appear below with Copy
+                    buttons.
                   </span>
                 </div>
 
@@ -358,7 +365,8 @@ function DevRow({ label, value, onCopy, copied }) {
         <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 4 }}>{label}</div>
         <div
           style={{
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            fontFamily:
+              "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
             fontSize: 12,
             wordBreak: "break-all",
             opacity: 0.9,

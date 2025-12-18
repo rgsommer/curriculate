@@ -140,8 +140,13 @@ export function AuthProvider({ children }) {
     };
   }, [API_BASE, token]);
 
-  const login = async ({ email, password }) => {
+  const login = async (arg1, arg2) => {
     setAuthError("");
+
+    // Support BOTH: login({email, password}) and login(email, password)
+    const email = typeof arg1 === "object" && arg1 ? arg1.email : arg1;
+    const password = typeof arg1 === "object" && arg1 ? arg1.password : arg2;
+
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -172,7 +177,6 @@ export function AuthProvider({ children }) {
     lsSet("curriculate_token", data.token);
     setToken(data.token);
 
-    // if backend returns user too, use it; otherwise fetch profile
     if (data.user) setUser(data.user);
     else await loadMe(data.token);
 
