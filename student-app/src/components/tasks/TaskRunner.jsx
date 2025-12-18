@@ -659,6 +659,8 @@ export default function TaskRunner({
   // MULTI-PART: MC / TF / SHORT-ANSWER with items → render all parts together
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
+    const noop = () => {};
+          
     return (
       <div className="space-y-3">
         {displayTitle && (
@@ -698,7 +700,7 @@ export default function TaskRunner({
           mode={isReview ? "review" : multiMode}
           task={t}
           review={review}
-          onSubmit={isReview ? null : onSubmit}
+          onSubmit={isReview ? noop : onSubmit}
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
         />
@@ -714,10 +716,12 @@ export default function TaskRunner({
       content = (
         <MultipleChoiceTask
           task={t}
-          mode={mode}            // NEW
-          review={review}        // NEW
+          onSubmit={onSubmit}
           disabled={effectiveDisabled || isReview}
-          onSubmit={isReview ? null : onSubmit}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;
@@ -726,12 +730,12 @@ export default function TaskRunner({
       content = (
         <TrueFalseTask
           task={t}
-          mode={mode}
-          review={review}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled || isReview}
-          onSubmit={isReview ? null : onSubmit}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;
@@ -744,6 +748,8 @@ export default function TaskRunner({
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;
@@ -755,6 +761,8 @@ export default function TaskRunner({
           onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;
@@ -859,9 +867,11 @@ export default function TaskRunner({
         <ShortAnswerTask
           task={t}
           onSubmit={onSubmit}
-          disabled={effectiveDisabled}
+          disabled={effectiveDisabled || isReview}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;
@@ -898,9 +908,11 @@ export default function TaskRunner({
         <TrueFalseTicTacToeTask
           task={t}
           onSubmit={onSubmit}
-          disabled={effectiveDisabled}
+          disabled={effectiveDisabled || isReview}
           socket={socket}
           teamRole={t.teamRole}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;
@@ -987,9 +999,11 @@ export default function TaskRunner({
         <DiffDetectiveTask
           task={t}
           onSubmit={onSubmit}
-          disabled={effectiveDisabled}
+          disabled={effectiveDisabled || isReview}
           socket={socket}
           raceStatus={diffRaceStatus}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;

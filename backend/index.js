@@ -1376,6 +1376,96 @@ socket.on("task:force-advance", ({ roomCode }) => {
     return { id: null, number: null, color: null };
   }
 
+  function buildReviewPayload({ task, answer, correct, aiScore }) {
+    const type = task?.taskType;
+      // MC / TF (single-question)
+      if (type === "multiple-choice" || type === "true-false") {
+        const correctAnswer = task?.correctAnswer ?? null;
+        return { correctAnswer };
+      }
+
+      // Multi-question objective packs (MC / TF only)
+      if (
+        Array.isArray(task?.items) &&
+        task.items.length > 0 &&
+        (
+          task.taskType === "multiple-choice" ||
+          task.taskType === "true-false" ||
+          task.taskType === "multi-choice" ||
+          task.taskType === "multi-true-false"
+        )
+      ) {
+        // Only include answers that actually exist
+        const correctAnswers = task.items.map((it) =>
+          it?.correctAnswer ?? null
+        );
+
+        // Guard: if none of the items define correctAnswer, bail
+        const hasAnyCorrect = correctAnswers.some((v) => v !== null);
+        if (!hasAnyCorrect) return null;
+
+        return { correctAnswers };
+      }
+
+      // SORT (server currently receives pct score, but it still knows the key)
+      if (type === "sort") {
+        // Prefer ids; fall back to text if no ids exist
+        const correctMap = {};
+        (task?.items || []).forEach((it, idx) => {
+          const key = it?.id != null ? String(it.id) : String(idx);
+          if (it?.correctBucketId != null) correctMap[key] = String(it.correctBucketId);
+          else if (it?.correctBucket != null) correctMap[key] = String(it.correctBucket);
+        });
+
+        // studentMap can be included if your front-end submits placements.
+        const studentMap = answer?.placements || answer?.studentMap || null;
+
+        return { correctMap, studentMap };
+      }
+
+      // SEQUENCE
+      if (type === "sequence") {
+        const correctOrder =
+          Array.isArray(task?.correctOrder) ? task.correctOrder :
+          Array.isArray(task?.order) ? task.order :
+          null;
+
+        const studentOrder = answer?.order || answer?.sequence || answer || null;
+
+        return { correctOrder, studentOrder };
+      }
+
+      // DIFF DETECTIVE
+      if (type === "diff-detective") {
+        return {
+          correctSpots: task?.spots || task?.correctSpots || null,
+          studentSpots: answer?.spots || answer?.taps || null,
+          matchedIds: aiScore?.matchedIds || null,
+        };
+      }
+
+      // TRUE/FALSE TIC-TAC-TOE
+      if (type === "true-false-tictactoe") {
+        // only if your task carries correct answers for each cell/statement
+        return {
+          correctAnswers: task?.correctAnswers || null,
+          studentAnswers: answer?.answers || null,
+        };
+      }
+
+      // SHORT ANSWER (AI)
+      if (type === "short-answer") {
+        return {
+          aiSuggestedAnswer: aiScore?.suggestedAnswer || aiScore?.modelAnswer || null,
+          aiFeedback: aiScore?.feedback || aiScore?.rationale || null,
+          score: aiScore?.score ?? aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+        };
+      }
+
+      return null;
+    }
+
   const handleStationScan = (payload = {}, ack) => {
     try {
       const { roomCode, teamId, stationId, locationSlug } = payload || {};
@@ -1700,32 +1790,27 @@ socket.on("station:scan", handleStationScan);
 
     // ✅ Normalize multi-pack answers sent as JSON strings from StudentApp/TaskRunner
     if (typeof answer === "string") {
-      const s = answer.trim();
-      if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
-        try {
-          const parsed = JSON.parse(s);
+      try {
+        const parsed = JSON.parse(answer);
 
-          // TaskRunner sends: { kind: "multi-mc" | "multi-short", answers: [...] }
-          if (
-            parsed &&
-            typeof parsed === "object" &&
-            Array.isArray(parsed.answers) &&
-            parsed.answers.length > 0
-          ) {
-            const kind = parsed.kind || parsed.type;
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray(parsed.answers) &&
+          parsed.answers.length > 0
+        ) {
+          const kind = parsed.kind || parsed.type;
 
-            // Convert to the server’s expected shape
-            if (kind === "multi-mc" || kind === "multi-choice") {
-              answer = { type: "multi-choice", answers: parsed.answers };
-            } else if (kind === "multi-short" || kind === "multi-sa") {
-              answer = { type: "multi-short", answers: parsed.answers };
-            } else if (parsed.type === "multi-choice" || parsed.type === "multi-short") {
-              answer = parsed; // already in expected shape
-            }
+          if (kind === "multi-mc" || kind === "multi-choice") {
+            answer = { type: "multi-choice", answers: parsed.answers };
+          } else if (kind === "multi-short" || kind === "multi-sa") {
+            answer = { type: "multi-short", answers: parsed.answers };
+          } else if (parsed.type === "multi-choice" || parsed.type === "multi-short") {
+            answer = parsed;
           }
-        } catch {
-          // Not JSON; keep as plain string answer
         }
+      } catch (err) {
+        // Not JSON; keep as plain string answer
       }
     }
 
@@ -2129,6 +2214,8 @@ const code = (roomCode || "").toUpperCase();
       }
     }
 
+    const review = buildReviewPayload({ task, answer, correct, aiScore });
+
     const submissionSummary = {
       roomCode: code,
       teamId: effectiveTeamId,
@@ -2141,12 +2228,20 @@ const code = (roomCode || "").toUpperCase();
       submittedAt,
       aiScore, // <-- carries multi-pack or AI info, including PhotoJournal feedback
     };
-    io.to(code).emit("taskSubmission", submissionSummary);
+    io.to(code).emit("taskSubmission", { ...submissionSummary, review });
 
     socket.emit("task:received");
     if (typeof ack === "function") {
-      ack({ ok: true });
+      ack({
+        ok: true,
+        taskIndex: idx,
+        points: pointsEarned,
+        correct,
+        review,
+        aiScore,
+      });
     }
+
 
     // =======================================================
     // AUTO-ADVANCE: when ALL teams have submitted this task
@@ -2200,9 +2295,6 @@ const code = (roomCode || "").toUpperCase();
   });
 
   // Backwards-compatible submit event names
-  socket.on("submit:answer", (payload, ack) => {
-    handleStudentSubmit(payload, ack);
-  });
   socket.on("submit-answer", (payload, ack) => {
     handleStudentSubmit(payload, ack);
   });
