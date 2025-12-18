@@ -29,6 +29,8 @@ export default function Login() {
   const onSubmit = async (e) => {
     e.preventDefault();
     setErr("");
+    setForgotErr("");
+    setForgotMsg("");
 
     const em = (email || "").trim();
     const pw = String(password || "");
@@ -38,7 +40,7 @@ export default function Login() {
 
     setBusy(true);
     try {
-      await login(em, pw); // matches your current useAuth signature
+      await login(em, pw);
       window.location.href = "/";
     } catch (e2) {
       setErr(e2?.message || "Login failed.");
@@ -53,7 +55,7 @@ export default function Login() {
       setCopied(which);
       setTimeout(() => setCopied(""), 1200);
     } catch {
-      // ignore
+      // ignore clipboard failures (e.g., insecure context)
     }
   };
 
@@ -76,7 +78,6 @@ export default function Login() {
       const data = await requestPasswordReset(em);
       console.log("forgot-password response:", data);
 
-      // If your backend returns dev fields, show them. Otherwise show the generic safe message.
       const link = data?.resetLink || data?.link || "";
       const token = data?.resetToken || data?.token || "";
 
@@ -84,12 +85,10 @@ export default function Login() {
       if (token) setDevResetToken(String(token));
 
       if (link || token) {
-        setForgotMsg(
-          "Dev reset info received. Copy the link or token below to reset your password."
-        );
+        setForgotMsg("Dev reset info received. Copy the link or token below.");
       } else {
         setForgotMsg(
-          "If that email exists, a reset link has been sent. (Dev: check backend logs.)"
+          "Request received, but no dev token/link was returned. (Backend is likely in safe mode returning only {ok:true}.)"
         );
       }
     } catch (e2) {
@@ -215,7 +214,7 @@ export default function Login() {
                   We’ll send a reset link to your email.
                   <br />
                   <span style={{ opacity: 0.85 }}>
-                    Dev mode: backend may return a token/link or print it to logs.
+                    Dev: if backend returns token/link, it will appear below with Copy buttons.
                   </span>
                 </div>
 
