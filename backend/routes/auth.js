@@ -3,11 +3,11 @@ import express from "express";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
+import User from "../models/User.js"; // or "../models/UserModel.js"
 
 const router = express.Router();
 
 // NOTE: adjust if your actual model name differs
-import User from "../models/User.js"; // or "../models/UserModel.js"
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
