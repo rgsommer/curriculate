@@ -14,10 +14,6 @@ export default function Login() {
 
   const [showForgot, setShowForgot] = useState(false);
   const [forgotBusy, setForgotBusy] = useState(false);
-  const [showCodeSignup, setShowCodeSignup] = useState(false);
-  const [accessCode, setAccessCode] = useState("");
-  const [codeErr, setCodeErr] = useState("");
-
   const [forgotMsg, setForgotMsg] = useState("");
   const [forgotErr, setForgotErr] = useState("");
 
@@ -204,62 +200,6 @@ export default function Login() {
               {showForgot ? "Hide password reset" : "Forgot password?"}
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setShowCodeSignup((v) => !v);
-                setCodeErr("");
-              }}
-              style={{ marginTop: 10, width: "100%", ...ui.buttonGhost }}
-              disabled={busy || forgotBusy}
-            >
-              {showCodeSignup ? "Hide access code signup" : "Have an access code? Create account"}
-            </button>
-
-            {showCodeSignup && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 14,
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(148,163,184,0.25)",
-                }}
-              >
-                <div style={{ fontWeight: 900, marginBottom: 6 }}>Create an account with an access code</div>
-
-                <label style={ui.label}>Access Code</label>
-                <input
-                  value={accessCode}
-                  onChange={(e) => setAccessCode(String(e.target.value || "").toUpperCase())}
-                  placeholder="ABC123"
-                  autoComplete="off"
-                  style={ui.input}
-                  disabled={busy || forgotBusy}
-                />
-
-                <button
-                  type="button"
-                  onClick={onGoSignup}
-                  disabled={busy || forgotBusy}
-                  style={{ ...ui.buttonPrimary, width: "100%", marginTop: 10 }}
-                >
-                  Continue
-                </button>
-
-                {codeErr && (
-                  <div style={{ color: "#fca5a5", marginTop: 10, fontWeight: 700 }}>
-                    {codeErr}
-                  </div>
-                )}
-
-                <div style={{ opacity: 0.75, marginTop: 10, fontSize: "0.9rem" }}>
-                  You’ll set your email, name, and password on the next screen.
-                </div>
-              </div>
-            )}
-
-
             {showForgot && (
               <div
                 style={{
@@ -330,15 +270,6 @@ export default function Login() {
     </div>
   );
 }
-  const onGoSignup = () => {
-    setCodeErr("");
-    const code = String(accessCode || "").trim().toUpperCase();
-    if (!code) return setCodeErr("Please enter your access code.");
-    // Keep it simple and router-agnostic
-    window.location.href = `/signup?code=${encodeURIComponent(code)}`;
-  };
-
-
 
 function DevRow({ label, value, onCopy, copied }) {
   return (
