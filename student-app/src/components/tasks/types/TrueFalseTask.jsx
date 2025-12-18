@@ -22,6 +22,20 @@ export default function TrueFalseTask({
   const [singleFirstLabel, setSingleFirstLabel] = React.useState("True");
   const [singleSecondLabel, setSingleSecondLabel] = React.useState("False");
 
+  function safeText(val, fallback = "") {
+    if (val == null) return fallback;
+    if (typeof val === "string") return val;
+    if (typeof val === "number" || typeof val === "boolean") return String(val);
+    // common backend shapes
+    if (typeof val === "object") {
+      if (typeof val.text === "string") return val.text;
+      if (typeof val.prompt === "string") return val.prompt;
+      if (typeof val.title === "string") return val.title;
+      if (typeof val.value === "string") return val.value;
+    }
+    return fallback;
+  }
+
   function getTeamSalt() {
     try {
       return (
@@ -38,12 +52,16 @@ export default function TrueFalseTask({
   function seededShuffle(arr, seedStr) {
     const a = [...arr];
     let seed = 0;
-    for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    for (let i = 0; i < seedStr.length; i++)
+      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
 
     const rand = () => {
-      seed ^= seed << 13; seed >>>= 0;
-      seed ^= seed >> 17; seed >>>= 0;
-      seed ^= seed << 5;  seed >>>= 0;
+      seed ^= seed << 13;
+      seed >>>= 0;
+      seed ^= seed >> 17;
+      seed >>>= 0;
+      seed ^= seed << 5;
+      seed >>>= 0;
       return (seed >>> 0) / 4294967296;
     };
 
@@ -56,10 +74,14 @@ export default function TrueFalseTask({
 
   function seededBool(seedStr) {
     let seed = 0;
-    for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
-    seed ^= seed << 13; seed >>>= 0;
-    seed ^= seed >> 17; seed >>>= 0;
-    seed ^= seed << 5;  seed >>>= 0;
+    for (let i = 0; i < seedStr.length; i++)
+      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    seed ^= seed << 13;
+    seed >>>= 0;
+    seed ^= seed >> 17;
+    seed >>>= 0;
+    seed ^= seed << 5;
+    seed >>>= 0;
     return (seed >>> 0) % 2 === 0;
   }
 
@@ -71,6 +93,12 @@ export default function TrueFalseTask({
 
   React.useEffect(() => {
     if (!task) return;
+
+    // restore draft selection if present (won't crash if empty)
+    if (!hasItems && typeof answerDraft === "string") {
+      const d = answerDraft.toLowerCase();
+      if (d === "true" || d === "false") setSingleSelected(d);
+    }
 
     if (hasItems) {
       const canonicalItems = Array.isArray(task.items) ? task.items : [];
@@ -86,13 +114,10 @@ export default function TrueFalseTask({
         const flip = seededBool(`${taskKey}:tf:q${canonicalIndex}:flip`);
 
         const prompt =
-          (typeof item.prompt === "string" && item.prompt.trim()
-            ? item.prompt.trim()
-            : typeof item.text === "string" && item.text.trim()
-            ? item.text.trim()
-            : typeof task.prompt === "string" && task.prompt.trim()
-            ? task.prompt.trim()
-            : `Question ${canonicalIndex + 1}`);
+          safeText(item.prompt, "").trim() ||
+          safeText(item.text, "").trim() ||
+          safeText(task.prompt, "").trim() ||
+          `Question ${canonicalIndex + 1}`;
 
         return {
           canonicalIndex,
@@ -111,14 +136,14 @@ export default function TrueFalseTask({
       setSingleSecondLabel(flip ? "True" : "False");
       setSingleSelected(null);
     }
-}, [task, taskKey, hasItems]);
+  }, [task, taskKey, hasItems, answerDraft]);
 
   const handleSubmitClick = () => {
     if (disabled) return;
     if (!task) return;
 
     if (hasItems && presentedItems.length > 0) {
-      const canonicalCount = task.items.length;
+      const canonicalCount = Array.isArray(task.items) ? task.items.length : 0;
       const canonicalAnswers = new Array(canonicalCount).fill(null);
 
       presentedItems.forEach((pItem, displayIdx) => {
@@ -159,6 +184,10 @@ export default function TrueFalseTask({
   const { cardBg, cardHeaderBg, cardHeaderText, optionBaseBg, optionSelectedBg } =
     getThemeColors(theme);
 
+  const safeTitle = safeText(task?.title, "").trim() || "Quick Check";
+  const safePrompt =
+    safeText(task?.prompt, "").trim() || safeText(task?.text, "").trim() || "";
+
   if (hasItems && presentedItems.length > 0) {
     return (
       <div className="flex flex-col h-full p-3 gap-3">
@@ -182,9 +211,7 @@ export default function TrueFalseTask({
             }}
           >
             <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>True / False</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>
-              {task.title || "Quick Check"}
-            </div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{safeTitle}</div>
           </header>
 
           <div className="flex-1 flex flex-col gap-3 overflow-y-auto" style={{ paddingRight: 4 }}>
@@ -194,6 +221,7 @@ export default function TrueFalseTask({
               const secondVal = pItem.secondLabel.toLowerCase() === "true" ? "true" : "false";
               const isFirstSelected = selected === firstVal;
               const isSecondSelected = selected === secondVal;
+
               return (
                 <div
                   key={pItem.canonicalIndex}
@@ -205,7 +233,14 @@ export default function TrueFalseTask({
                   }}
                 >
                   <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: 8 }}>
-                    <span style={{ display: "inline-block", minWidth: 20, fontWeight: 700, opacity: 0.7 }}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        minWidth: 20,
+                        fontWeight: 700,
+                        opacity: 0.7,
+                      }}
+                    >
                       {displayIdx + 1}.
                     </span>{" "}
                     {pItem.prompt}
@@ -218,11 +253,7 @@ export default function TrueFalseTask({
                       disabled={disabled}
                       className="flex-1 border rounded-lg px-3 py-2"
                       style={{
-                        background:
-                          selected &&
-                          selected === (pItem.firstLabel.toLowerCase() === "true" ? "true" : "false")
-                            ? optionSelectedBg
-                            : optionBaseBg,
+                        background: isFirstSelected ? optionSelectedBg : optionBaseBg,
                         color: isFirstSelected ? "#fff" : "#111827",
                         opacity: disabled ? 0.6 : 1,
                         borderColor: "rgba(15,23,42,0.12)",
@@ -236,11 +267,7 @@ export default function TrueFalseTask({
                       disabled={disabled}
                       className="flex-1 border rounded-lg px-3 py-2"
                       style={{
-                        background:
-                          selected &&
-                          selected === (pItem.secondLabel.toLowerCase() === "true" ? "true" : "false")
-                            ? optionSelectedBg
-                            : optionBaseBg,
+                        background: isSecondSelected ? optionSelectedBg : optionBaseBg,
                         color: isSecondSelected ? "#fff" : "#111827",
                         opacity: disabled ? 0.6 : 1,
                         borderColor: "rgba(15,23,42,0.12)",
@@ -295,14 +322,12 @@ export default function TrueFalseTask({
           }}
         >
           <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>True / False</div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>
-            {task.title || "Quick Check"}
-          </div>
+          <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{safeTitle}</div>
         </header>
 
         <div className="flex-1 flex flex-col gap-3 overflow-y-auto">
           <div className="font-semibold text-base max-h-40 overflow-y-auto">
-            {task.prompt}
+            {safePrompt || " "}
           </div>
 
           <div className="flex gap-2 mt-2">
@@ -390,4 +415,3 @@ function getThemeColors(theme) {
       };
   }
 }
-
