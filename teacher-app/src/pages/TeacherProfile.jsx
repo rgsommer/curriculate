@@ -23,7 +23,7 @@ export default function TeacherProfile() {
     email: "",
     schoolName: "",
     defaultStations: 8,
-    treatsPerSession: 4,
+    treatsPerSession: 2,
     perspectives: [],
     assessmentCategories: [EMPTY_CATEGORY],
     includeIndividualReports: false,
@@ -69,7 +69,7 @@ export default function TeacherProfile() {
           treatsPerSession:
             typeof data.treatsPerSession === "number"
               ? data.treatsPerSession
-              : 4,
+              : 2,
           perspectives: Array.isArray(data.perspectives)
             ? data.perspectives
             : [],
@@ -180,7 +180,7 @@ export default function TeacherProfile() {
         treatsPerSession:
           typeof profile.treatsPerSession === "number"
             ? profile.treatsPerSession
-            : Number(profile.treatsPerSession || 4) || 4,
+            : Number(profile.treatsPerSession || 2) || 2,
         locationOptions: Array.isArray(profile.locationOptions)
           ? profile.locationOptions
               .map((s) => (s || "").toString().trim())
@@ -240,7 +240,7 @@ export default function TeacherProfile() {
     );
   }
 
-  const treatsValue = Number(profile.treatsPerSession ?? 4);
+  const treatsValue = Number(profile.treatsPerSession ?? 2);
 
   return (
     <div

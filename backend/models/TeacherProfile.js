@@ -96,7 +96,7 @@ const TeacherProfileSchema = new Schema(
     defaultStations: { type: Number, default: 8 },
 
     // ✅ Random Treats (your UI saves this)
-    treatsPerSession: { type: Number, default: 4 },
+    treatsPerSession: { type: Number, default: 2 },
 
     // ✅ Multi-room location labels (your UI saves this)
     locationOptions: { type: [String], default: [] },
