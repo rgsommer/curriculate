@@ -74,13 +74,11 @@ export default function Login() {
     setForgotBusy(true);
     try {
       const data = await requestPasswordReset(em);
+      console.log("forgot-password response:", data);
 
       // If your backend returns dev fields, show them. Otherwise show the generic safe message.
       const link = data?.resetLink || data?.link || "";
       const token = data?.resetToken || data?.token || "";
-
-      const data = await requestPasswordReset(em);
-      console.log("forgot-password response:", data);
 
       if (link) setDevResetLink(String(link));
       if (token) setDevResetToken(String(token));
@@ -99,7 +97,6 @@ export default function Login() {
     } finally {
       setForgotBusy(false);
     }
-  };
 
   return (
     <div
