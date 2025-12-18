@@ -3308,7 +3308,7 @@ app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
 
 app.post("/api/teacher/claim-access-code", authRequired, async (req, res) => {
   try {
-    const ownerId = String(req.user?._id || req.user?.userId || req.user?.id || req.userId || "").trim();
+    const ownerId = getOwnerId(req);
     if (!ownerId) return res.status(401).json({ ok: false, error: "Missing user id" });
 
     const code = String(req.body?.code || "").trim().toUpperCase();
@@ -3318,35 +3318,59 @@ app.post("/api/teacher/claim-access-code", authRequired, async (req, res) => {
     if (!access) return res.status(404).json({ ok: false, error: "Code not found" });
     if (access.disabled) return res.status(403).json({ ok: false, error: "Code disabled" });
 
-    let profile = await TeacherProfile.findOne({ ownerId });
-    if (!profile) profile = new TeacherProfile({ ownerId, email: req.user?.email || "" });
-
-    if (String(profile.entryCode || "").trim()) {
-      return res.status(409).json({ ok: false, error: "This account already has an access code." });
-    }
-
     const maxSeats = Math.max(1, Number(access.maxSeats || 1));
     const claimants = Array.isArray(access.claimants) ? access.claimants : [];
-    const already = claimants.includes(ownerId);
+    const alreadyClaimedByThisUser = claimants.includes(ownerId);
 
-    if (!already && claimants.length >= maxSeats) {
+    if (!alreadyClaimedByThisUser && claimants.length >= maxSeats) {
       return res.status(403).json({ ok: false, error: "Code already fully claimed" });
     }
 
-    profile.entryCode = code;
-    await profile.save();
+    // 1) Attach entryCode ONLY if empty (prevents overwriting + prevents dup create issues)
+    const profile = await TeacherProfile.findOneAndUpdate(
+      { ownerId, $or: [{ entryCode: { $exists: false } }, { entryCode: "" }, { entryCode: null }] },
+      {
+        $set: {
+          ownerId,
+          email: String(req.user?.email || "").toLowerCase(),
+          entryCode: code,
+        },
+      },
+      { new: true, upsert: true }
+    );
 
-    if (!already) {
-      access.claimants = claimants.concat(ownerId);
-      await access.save();
+    // If profile existed but already had entryCode, the update returns null (because filter didn't match)
+    if (!profile) {
+      const existing = await TeacherProfile.findOne({ ownerId });
+      return res.status(409).json({
+        ok: false,
+        error: `This account already has an access code (${existing?.entryCode || "set"}).`,
+      });
     }
 
-    return res.json({ ok: true, entryCode: profile.entryCode, planTier: access.planTier || "FREE" });
+    // 2) Claim seat idempotently
+    if (!alreadyClaimedByThisUser) {
+      await AccessCode.updateOne({ _id: access._id }, { $addToSet: { claimants: ownerId } });
+    }
+
+    return res.json({
+      ok: true,
+      entryCode: profile.entryCode || "",
+      planTier: access.planTier || "FREE",
+    });
   } catch (err) {
     console.error("claim-access-code failed:", err);
+
+    // Convert common dup-key into a friendly response
+    const msg = String(err?.message || "");
+    if (msg.includes("E11000") || msg.toLowerCase().includes("duplicate key")) {
+      return res.status(409).json({ ok: false, error: "Profile already exists for this user." });
+    }
+
     return res.status(500).json({
       ok: false,
       error: "Server error",
+      // helpful while you're debugging (remove later if you want)
       detail: process.env.NODE_ENV !== "production" ? String(err?.message || err) : undefined,
     });
   }
