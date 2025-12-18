@@ -8,6 +8,8 @@ import TaskSets from "./pages/TaskSets.jsx";
 import TaskSetEditor from "./pages/TaskSetEditor.jsx";
 import TeacherProfile from "./pages/TeacherProfile.jsx";
 import AiTasksetGenerator from "./pages/AiTasksetGenerator.jsx";
+import Signup from "./pages/Signup.jsx";
+
 import StationPosters from "./pages/StationPosters.jsx";
 import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
 import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
@@ -50,19 +52,21 @@ function TeacherApp() {
 
   const isAuthRoute =
     routeLocation.pathname === "/login" ||
+    routeLocation.pathname === "/signup" ||
     routeLocation.pathname.startsWith("/reset-password");
 
   // If we're on auth routes, render ONLY the auth page (no sidebar/header)
   if (isAuthRoute) {
-    return (
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        {/* later */}
-        {/* <Route path="/reset-password" element={<ResetPassword />} /> */}
-        <Route path="*" element={<Login />} />
-      </Routes>
-    );
-  }
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      {/* later */}
+      {/* <Route path="/reset-password" element={<ResetPassword />} /> */}
+      <Route path="*" element={<Login />} />
+    </Routes>
+  );
+}
 
   const [roomCode, setRoomCode] = useState(() => generateRoomCode());
   const location = useLocation();
