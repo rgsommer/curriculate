@@ -222,7 +222,7 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
   const NUM_STATIONS = 8;
   for (let i = 1; i <= NUM_STATIONS; i++) {
     const id = `station-${i}`;
-    stations[id] = { id, assignedTeamId: null };
+    stations[id] = { id, assignedTeamId: null, color: COLORS[i - 1] || null };
   }
 
   const room = {
@@ -1500,10 +1500,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
       // If the team has no expected station yet, accept the scan as the initial assignment
       if (!expectedStation) {
-        // persist on team object (wherever your team state lives)
-        team.currentStationId = stationId;
-        team.lastScannedStationId = stationId;
+        const norm = normalizeStationId(stationId);
+        const canonicalId = norm?.id || stationId;
 
+        team.currentStationId = canonicalId;
+        team.lastScannedStationId = canonicalId;
+      
         // (optional) also store color for convenience
         team.assignedColor = scanned?.color || null;
 
@@ -1567,10 +1569,26 @@ socket.on("task:force-advance", ({ roomCode }) => {
         Array.isArray(room.selectedRooms) && room.selectedRooms.length > 1;
 
       if (isMultiRoom) {
-        const expectedLoc = normalizeLocationSlug(team.locationSlug || room.locationCode);
-        const scannedLoc = normalizeLocationSlug(locationSlug);
+        const classroomSlug = normalizeLocationSlug(room.locationCode || "Classroom");
 
-        if (expectedLoc && scannedLoc && expectedLoc !== scannedLoc) {
+        // Non-classroom locations are whatever teacher selected, excluding classroom
+        const nonClassroom = new Set(
+          (room.selectedRooms || [])
+            .map((r) => normalizeLocationSlug(r))
+            .filter((r) => r && r !== classroomSlug)
+        );
+
+        // If scan is NOT one of the non-classroom locations, treat it as Classroom
+        let scannedLoc = normalizeLocationSlug(locationSlug);
+        if (!nonClassroom.has(scannedLoc)) {
+          scannedLoc = classroomSlug;
+        }
+
+        // Expected location: if team has none, default to Classroom
+        const expectedLoc = normalizeLocationSlug(team.locationSlug || room.locationCode || "Classroom");
+
+        // ✅ Only enforce mismatch if expected is a non-classroom location
+        if (nonClassroom.has(expectedLoc) && scannedLoc !== expectedLoc) {
           if (typeof ack === "function") {
             ack({
               ok: false,
@@ -1580,6 +1598,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
           return;
         }
       }
+
 
       // ✅ Mark scan accepted
       team.lastScannedStationId = expectedStation || stationId || null;
@@ -2152,18 +2171,18 @@ const code = (roomCode || "").toUpperCase();
       }
     }
 
-    const extractedPhotoUrl =
-      answer?.photoUrl ||
-      answer?.imageUrl ||
-      answer?.fileUrl ||
-      answer?.mediaUrl ||
-      answer?.data?.photoUrl ||
-      answer?.data?.imageUrl ||
-      answer?.data?.fileUrl ||
-      answer?.data?.mediaUrl ||
-      (Array.isArray(answer?.photos) ? answer.photos[0] : null) ||
-      (Array.isArray(answer?.data?.photos) ? answer.data.photos[0] : null) ||
-      null;
+      const extractedPhotoUrl =
+        answer?.photoUrl ||
+        answer?.imageUrl ||
+        answer?.fileUrl ||
+        answer?.mediaUrl ||
+        answer?.data?.photoUrl ||
+        answer?.data?.imageUrl ||
+        answer?.data?.fileUrl ||
+        answer?.data?.mediaUrl ||
+        (Array.isArray(answer?.photos) ? answer.photos[0] : null) ||
+        (Array.isArray(answer?.data?.photos) ? answer.data.photos[0] : null) ||
+        null;
 
     room.submissions.push({
       roomCode: code,
@@ -2541,6 +2560,13 @@ const code = (roomCode || "").toUpperCase();
         let room = rooms[code];
         if (!room) {
           room = rooms[code] = await createRoom(code, socket.id);
+        }
+
+        // ✅ Multi-room support for quick tasks too
+        if (Array.isArray(selectedRooms) && selectedRooms.length > 0) {
+          room.selectedRooms = selectedRooms;
+        } else {
+          room.selectedRooms = null;
         }
 
         // Preserve as much info as LiveSession gave us as possible
@@ -3311,14 +3337,18 @@ app.get("/api/profile", authRequired, async (req, res) => {
       email: req.user?.email || "",
     });
 
-    return res.json({
+     return res.json({
       ok: true,
       userId: ownerId,
       email: (req.user?.email || profile.email || "").toLowerCase(),
       name: req.user?.name || profile.presenterName || profile.displayName || "",
       isAdmin: !!(profile.isAdmin || req.user?.isAdmin),
-      entryCode: profile.entryCode || "",     // IMPORTANT: your schema defaults to ""
+      entryCode: profile.entryCode || "",
       planTier: null,
+      // ✅ Rooms for multi-room
+      locationOptions: Array.isArray(profile.locationOptions) ? profile.locationOptions : ["Classroom"],
+      // ✅ If LiveSession reads this, expose it too
+      treatsPerSession: typeof profile.treatsPerSession === "number" ? profile.treatsPerSession : undefined,
     });
   } catch (e) {
     console.error("GET /api/profile failed:", e);

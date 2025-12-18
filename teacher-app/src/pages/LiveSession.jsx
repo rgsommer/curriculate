@@ -1,7 +1,7 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
-import { fetchMyProfile } from "../api/profile";
+import { fetchMyProfile, updateMyProfile } from "../api/profile";
 import {
   TASK_TYPES,
   TASK_TYPE_META,
@@ -68,6 +68,17 @@ function pickPhotoUrl(sub) {
   );
 }
 
+function normalizeRooms(input) {
+  return Array.from(
+    new Set(
+      (input || "")
+        .split(/\r?\n|,/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 function buildLatestPhotoByTeam(submissions = []) {
   const out = {}; // teamId -> { url, at }
   for (const s of submissions) {
@@ -129,6 +140,9 @@ export default function LiveSession({ roomCode }) {
   const [quickStatus, setQuickStatus] = useState("");
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [teacherRooms, setTeacherRooms] = useState([]);
+  const [roomsDraft, setRoomsDraft] = useState("");
+  const [isSavingRooms, setIsSavingRooms] = useState(false);
+  const [roomsSaveMsg, setRoomsSaveMsg] = useState("");
 
   // NEW dynamic system — only these
   const [taskType, setTaskType] = useState(
@@ -217,7 +231,7 @@ export default function LiveSession({ roomCode }) {
   // Location override (multi-room presets from Presenter Profile)
   const [locationOptions, setLocationOptions] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
-
+  
   // Hide & Seek launch-time clues
   const [hideNSeekTasks, setHideNSeekTasks] = useState([]);
   const [hideNSeekClues, setHideNSeekClues] = useState({});
@@ -252,7 +266,9 @@ export default function LiveSession({ roomCode }) {
   useEffect(() => {
     async function loadTeacherRooms() {
       const profile = await fetchMyProfile();
-      setTeacherRooms(profile.locationOptions || []);
+      const rooms = profile.locationOptions || [];
+      setTeacherRooms(rooms);
+      setRoomsDraft((profile.locationOptions || []).join("\n"));
 
       // Optional: use profile.treatsPerSession as the default treat quota
       if (profile && typeof profile.treatsPerSession !== "undefined") {
@@ -643,6 +659,33 @@ useEffect(() => {
     setShowRoomSetup(true);
   };
 
+  async function saveTeacherRooms() {
+    try {
+      setIsSavingRooms(true);
+      setRoomsSaveMsg("");
+
+      const rooms = normalizeRooms(roomsDraft);
+      const updated = await updateMyProfile({ locationOptions: rooms });
+
+      const nextRooms =
+        updated?.locationOptions ||
+        updated?.profile?.locationOptions ||
+        rooms;
+
+      setTeacherRooms(nextRooms);
+      setSelectedRooms((prev) => prev.filter((r) => nextRooms.includes(r)));
+      setRoomsDraft(nextRooms.join("\n"));
+
+      setRoomsSaveMsg("Saved.");
+      setTimeout(() => setRoomsSaveMsg(""), 1500);
+    } catch (e) {
+      console.error("[LiveSession] save rooms failed:", e);
+      setRoomsSaveMsg("Save failed.");
+    } finally {
+      setIsSavingRooms(false);
+    }
+  }
+
   const handleLaunchQuickTask = () => {
     if (!roomCode || !taskConfig.prompt?.trim()) return;
 
@@ -721,7 +764,6 @@ useEffect(() => {
       setIsLaunchingQuick(false);
       setQuickStatus("Quick task launched!");
     }, 300);
-    setLastQuickTask(taskToSend);
     setQuickFlashcardsText("");
   };
 
@@ -842,10 +884,11 @@ useEffect(() => {
           gradeLevel: gradeStr || "",
           original: baseTask.original || "",
           modified: baseTask.modified || "",
-          differences: Array.isArray(baseTask.differences)
-            ? baseTask.differences
-            : [],
+          differences: Array.isArray(baseTask.differences) ? baseTask.differences : [],
         });
+        setShowAiGen(false);
+        return;
+      }
 
       // 🟡 Brain Spark Notes special case
       if (generatedType === TASK_TYPES.BRAIN_SPARK_NOTES) {
@@ -853,15 +896,8 @@ useEffect(() => {
           prompt: baseTask.prompt || "",
           subject: aiSubject || "Ad-hoc",
           gradeLevel: gradeStr || "",
-          bullets: Array.isArray(baseTask.bullets)
-            ? baseTask.bullets
-            : [],
+          bullets: Array.isArray(baseTask.bullets) ? baseTask.bullets : [],
         });
-
-        setShowAiGen(false);
-        return;
-      }
-
         setShowAiGen(false);
         return;
       }
@@ -1738,37 +1774,39 @@ Precipitation — rain, snow, hail`}
                 </div>
               )}
 
-              {/* Multi-room selector (for special types) */}
-              {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") &&
-                teacherRooms.length > 1 && (
-                  <div style={{ marginTop: 4, marginBottom: 8 }}>
-                    <label style={{ fontSize: "0.8rem" }}>
-                      Send to rooms:
-                    </label>
-                    <select
-                      multiple
-                      size={3}
-                      value={selectedRooms}
-                      onChange={(e) =>
-                        setSelectedRooms(
-                          Array.from(e.target.selectedOptions, (o) => o.value)
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        padding: 6,
-                        borderRadius: 8,
-                        marginTop: 4,
-                      }}
-                    >
-                      {teacherRooms.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
+              {/* Multi-room selector (ALL quick tasks) */}
+              {teacherRooms.length > 1 && (
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 6 }}>
+                    Send to rooms (multi-room)
+                  </label>
+
+                  <select
+                    multiple
+                    size={Math.min(6, Math.max(3, teacherRooms.length))}
+                    value={selectedRooms}
+                    onChange={(e) =>
+                      setSelectedRooms(Array.from(e.target.selectedOptions, (o) => o.value))
+                    }
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid #d1d5db",
+                    }}
+                  >
+                    {teacherRooms.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+                    Leave empty for single-room. Select 2+ rooms to enable multi-room mode.
                   </div>
-                )}
+                </div>
+              )}
 
               {/* Quick task buttons */}
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -1922,7 +1960,52 @@ Precipitation — rain, snow, hail`}
             </div>
           </div>
 
-          <div style={{ marginTop: 8, fontSize: "0.8rem" }}>
+          {/** Rooms / multi-room config */}
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid #e5e7eb" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontWeight: 700 }}>Rooms (saved to Teacher Profile)</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>{roomsSaveMsg}</div>
+              </div>
+
+              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                <textarea
+                  value={roomsDraft}
+                  onChange={(e) => setRoomsDraft(e.target.value)}
+                  rows={Math.min(8, Math.max(3, (roomsDraft || "").split(/\r?\n/).length))}
+                  placeholder={"Classroom\nHallway\nLibrary"}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid #d1d5db",
+                    fontFamily: "inherit",
+                    fontSize: 14,
+                  }}
+                />
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    onClick={saveTeacherRooms}
+                    disabled={isSavingRooms}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "none",
+                      fontWeight: 700,
+                      cursor: isSavingRooms ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {isSavingRooms ? "Saving…" : "Save Rooms"}
+                  </button>
+
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    Separate by commas or new lines. These rooms power multi-room launches.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+<div style={{ marginTop: 8, fontSize: "0.8rem" }}>
             <label>
               Post-submit review time:{" "}
               <select
@@ -2246,8 +2329,6 @@ Precipitation — rain, snow, hail`}
                   gap: 6,
                   fontSize: "0.8rem",
                   color: "#374151",
-                  maxHeight: 200,
-                  overflowY: "auto",
                 }}
               >
                 {latestSubmissions.map((s) => {
