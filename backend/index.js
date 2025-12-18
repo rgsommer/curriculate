@@ -12,6 +12,7 @@ import bodyParser from "body-parser";
 import Session from "./models/Session.js"; // Or LiveSession if renamed
 
 import TaskSet from "./models/TaskSet.js";
+import User from "./models/User.js";
 import TeacherProfile from "./models/TeacherProfile.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import TeamSession from "./models/TeamSession.js"; // NEW IMPORT
@@ -3195,15 +3196,41 @@ app.get("/api/profile/me", authRequired, async (req, res) => {
 
 app.get("/api/profile", authRequired, async (req, res) => {
   try {
-    const ownerId = getOwnerId(req);
-    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
-    const plain = profile.toObject();
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile fetch failed (/api/profile):", err);
-    res.status(500).json({ error: "Failed to fetch profile" });
+    // Try a few common shapes (depends on your authRequired middleware)
+    const userId =
+      req.user?.userId ||
+      req.user?.id ||
+      req.userId ||
+      req.auth?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId).lean();
+    if (!user) return res.status(404).json({ ok: false, error: "User not found" });
+
+    // Your profiles use ownerId as a STRING in multiple places — keep it consistent
+    const ownerId = String(user._id);
+
+    const profile =
+      (await TeacherProfile.findOne({ ownerId }).lean()) ||
+      (await TeacherProfile.findOne({ ownerId: user._id }).lean()); // fallback if schema differs
+
+    return res.json({
+      ok: true,
+      userId: ownerId,
+      email: user.email || "",
+      name: user.name || "",
+      isAdmin: !!user.isAdmin,
+
+      // license / access code fields (these are what stops “enter access code again”)
+      entryCode: profile?.entryCode || null,
+      planTier: profile?.planTier || null,
+    });
+  } catch (e) {
+    console.error("GET /api/profile failed:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 
