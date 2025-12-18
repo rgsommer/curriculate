@@ -1217,6 +1217,10 @@ if (isLastTask) {
           : DEFAULT_POST_SUBMIT_SECONDS;
 
       setReviewState({
+        ...(response?.review && typeof response.review === "object" ? response.review : null),
+        correct: typeof response?.correct === "boolean" ? response.correct : undefined,
+        points: typeof response?.points === "number" ? response.points : undefined,
+
         studentAnswer: normalizedAnswer,
         taskId: payload.taskId,
         taskIndex: payload.taskIndex,

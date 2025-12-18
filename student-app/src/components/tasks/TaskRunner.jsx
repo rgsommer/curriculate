@@ -366,7 +366,10 @@ function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
           const opts = isChoice ? itemOptions[idx] || [] : [];
           const answerVal = answers[idx]?.value ?? "";
           const correctIndex = item?.correctAnswer ?? null;
-          const studentIndex = review?.answers?.[idx]?.baseIndex ?? null;
+          const studentIndex =
+            review?.answers?.[idx]?.baseIndex ??
+            review?.studentAnswer?.[idx]?.baseIndex ??
+            null;
 
           return (
             <div
