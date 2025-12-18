@@ -604,7 +604,8 @@ function buildRoomState(room) {
     startedAt: room.startedAt || null,
     isActive: !!room.isActive,
     selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],
-
+    submissions: Array.isArray(room.submissions) ? room.submissions : [],
+    
     // Random treats (for LiveSession UI)
     treatsConfig: {
       enabled: !!treatsConfig.enabled,
@@ -612,7 +613,7 @@ function buildRoomState(room) {
         typeof treatsConfig.total === "number" &&
         !Number.isNaN(treatsConfig.total)
           ? treatsConfig.total
-          : 4,
+          : 2,
       given:
         typeof treatsConfig.given === "number" &&
         !Number.isNaN(treatsConfig.given)
@@ -2151,6 +2152,19 @@ const code = (roomCode || "").toUpperCase();
       }
     }
 
+    const extractedPhotoUrl =
+      answer?.photoUrl ||
+      answer?.imageUrl ||
+      answer?.fileUrl ||
+      answer?.mediaUrl ||
+      answer?.data?.photoUrl ||
+      answer?.data?.imageUrl ||
+      answer?.data?.fileUrl ||
+      answer?.data?.mediaUrl ||
+      (Array.isArray(answer?.photos) ? answer.photos[0] : null) ||
+      (Array.isArray(answer?.data?.photos) ? answer.data.photos[0] : null) ||
+      null;
+
     room.submissions.push({
       roomCode: code,
       teamId: effectiveTeamId,
@@ -2158,6 +2172,7 @@ const code = (roomCode || "").toUpperCase();
       playerId: socket.data.playerId || null,
       taskIndex: idx,
       answer,
+      photoUrl: extractedPhotoUrl,
       correct,
       points: pointsEarned,
       aiScore,

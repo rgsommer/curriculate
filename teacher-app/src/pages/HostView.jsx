@@ -8,10 +8,56 @@ const trophyEmojis = ["🥇", "🥈", "🥉"];
 const podiumHeights = ["h-32", "h-48", "h-24"]; // 2nd, 1st, 3rd
 const podiumColors = ["bg-gray-400", "bg-yellow-500", "bg-orange-600"];
 
+// Photo task types (keep broad so it works with your naming)
+const PHOTO_TASK_TYPES = new Set([
+  "photo-task",
+  "phototask",
+  "photo",
+  "photojournal",
+  "photo-journal",
+  "photoJournal",
+  "PhotoTask",
+  "PhotoJournal",
+]);
+
+function pickPhotoUrl(sub) {
+  return (
+    sub?.photoUrl ||
+    sub?.imageUrl ||
+    sub?.fileUrl ||
+    sub?.mediaUrl ||
+    sub?.data?.photoUrl ||
+    sub?.data?.imageUrl ||
+    sub?.data?.fileUrl ||
+    sub?.data?.mediaUrl ||
+    (Array.isArray(sub?.photos) ? sub.photos[0] : null) ||
+    (Array.isArray(sub?.data?.photos) ? sub.data.photos[0] : null) ||
+    null
+  );
+}
+
+function buildLatestPhotoByTeam(submissions = []) {
+  const out = {}; // teamId -> { url, at }
+  for (const s of submissions) {
+    const tt = (s?.taskType || s?.task?.taskType || "").toString();
+    if (!PHOTO_TASK_TYPES.has(tt)) continue;
+
+    const url = pickPhotoUrl(s);
+    if (!url) continue;
+
+    const at = new Date(s?.submittedAt || s?.createdAt || 0).getTime();
+    if (!out[s.teamId] || at > out[s.teamId].at) {
+      out[s.teamId] = { url, at };
+    }
+  }
+  return out;
+}
+
 export default function HostView({ roomCode }) {
   const [roomState, setRoomState] = useState({
     teams: {},
     scores: {},
+    submissions: [],
     taskIndex: -1,
     locationCode: "Classroom",
   });
@@ -39,11 +85,14 @@ export default function HostView({ roomCode }) {
       [joinSoundRef, fanfareRef, cheerRef].forEach((ref) => {
         if (ref.current) {
           ref.current.muted = true;
-          ref.current.play().then(() => {
-            ref.current.pause();
-            ref.current.currentTime = 0;
-            ref.current.muted = false;
-          }).catch(() => {});
+          ref.current
+            .play()
+            .then(() => {
+              ref.current.pause();
+              ref.current.currentTime = 0;
+              ref.current.muted = false;
+            })
+            .catch(() => {});
         }
       });
       window.removeEventListener("click", unlock);
@@ -62,7 +111,11 @@ export default function HostView({ roomCode }) {
       const safe = state || {};
       setRoomState((prev) => {
         const newLeaderboard = Object.entries(safe.scores || {})
-          .map(([id, pts]) => ({ teamId: id, pts: pts || 0, name: safe.teams[id]?.teamName || id }))
+          .map(([id, pts]) => ({
+            teamId: id,
+            pts: pts || 0,
+            name: safe.teams?.[id]?.teamName || id,
+          }))
           .sort((a, b) => b.pts - a.pts);
 
         if (prevLeaderboard.length > 0) {
@@ -78,7 +131,12 @@ export default function HostView({ roomCode }) {
         }
         setPrevLeaderboard(newLeaderboard);
 
-        return { ...prev, teams: safe.teams || {}, scores: safe.scores || {} };
+        return {
+          ...prev,
+          teams: safe.teams || {},
+          scores: safe.scores || {},
+          submissions: Array.isArray(safe.submissions) ? safe.submissions : prev.submissions || [],
+        };
       });
     };
 
@@ -99,6 +157,7 @@ export default function HostView({ roomCode }) {
       socket.off("teamJoined", handleTeamJoined);
       socket.off("team:joined", handleTeamJoined);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode, prevLeaderboard]);
 
   // Memoized data
@@ -113,19 +172,32 @@ export default function HostView({ roomCode }) {
 
   const leaderboard = useMemo(() => {
     return Object.entries(roomState.scores || {})
-      .map(([id, pts]) => ({ teamId: id, pts: pts || 0, name: roomState.teams[id]?.teamName || id }))
+      .map(([id, pts]) => ({
+        teamId: id,
+        pts: pts || 0,
+        name: roomState.teams?.[id]?.teamName || id,
+      }))
       .sort((a, b) => b.pts - a.pts);
   }, [roomState.scores, roomState.teams]);
+
+  const latestPhotoByTeam = useMemo(() => {
+    return buildLatestPhotoByTeam(roomState.submissions || []);
+  }, [roomState.submissions]);
 
   const topThree = leaderboard.slice(0, 3);
   const displayOrder = [1, 0, 2]; // 2nd left, 1st center, 3rd right
 
-  const playFanfare = () => fanfareRef.current?.play().catch(() => {});
-  const playBigCheer = () => cheerRef.current?.play().catch(() => {});
-
   return (
     <div className="h-screen w-screen bg-gradient-to-br from-purple-600 to-blue-800 flex flex-col overflow-hidden relative">
-      {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={300} gravity={0.15} />}
+      {showConfetti && (
+        <Confetti
+          width={window.innerWidth}
+          height={window.innerHeight}
+          recycle={false}
+          numberOfPieces={300}
+          gravity={0.15}
+        />
+      )}
 
       {/* Podium Section */}
       {topThree.length > 0 && (
@@ -156,7 +228,8 @@ export default function HostView({ roomCode }) {
                   className={`origin-bottom w-64 md:w-80 rounded-t-3xl px-8 py-12 text-center text-white font-bold shadow-2xl ${podiumColors[idx]}`}
                 >
                   <div className="text-5xl md:text-6xl mb-4">
-                    {idx + 1}{idx === 0 ? "st" : idx === 1 ? "nd" : "rd"}
+                    {idx + 1}
+                    {idx === 0 ? "st" : idx === 1 ? "nd" : "rd"}
                   </div>
                   <div className="text-3xl md:text-4xl truncate px-4">{team.name}</div>
                   <div className="text-6xl md:text-7xl mt-8">{team.pts} pts</div>
@@ -200,7 +273,8 @@ export default function HostView({ roomCode }) {
                         <div className="text-2xl text-gray-700 mt-2">{t.members.join(", ")}</div>
                       )}
                       <div className="text-2xl text-gray-600 mt-4">
-                        Station: <span className="font-mono bg-gray-200 px-4 py-2 rounded-lg">{t.station}</span>
+                        Station:{" "}
+                        <span className="font-mono bg-gray-200 px-4 py-2 rounded-lg">{t.station}</span>
                       </div>
                     </motion.div>
                   ))}
@@ -216,21 +290,52 @@ export default function HostView({ roomCode }) {
             ) : (
               <ol className="space-y-8 text-3xl md:text-4xl">
                 <AnimatePresence>
-                  {leaderboard.map((row, i) => (
-                    <motion.li
-                      key={row.teamId}
-                      layout
-                      initial={{ opacity: 0, x: 100 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -100 }}
-                      transition={{ delay: i * 0.05, duration: 0.5 }}
-                      className="bg-gradient-to-r from-gray-100 to-gray-50 rounded-2xl px-10 py-8 flex justify-between items-center shadow-lg"
-                    >
-                      <span className="font-black text-5xl text-indigo-600">{i + 1}.</span>
-                      <span className="font-bold flex-1 text-left ml-12">{row.name}</span>
-                      <span className="font-black text-6xl text-indigo-700">{row.pts} pts</span>
-                    </motion.li>
-                  ))}
+                  {leaderboard.map((row, i) => {
+                    const thumb = latestPhotoByTeam?.[row.teamId]?.url;
+
+                    return (
+                      <motion.li
+                        key={row.teamId}
+                        layout
+                        initial={{ opacity: 0, x: 100 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -100 }}
+                        transition={{ delay: i * 0.05, duration: 0.5 }}
+                        className="bg-gradient-to-r from-gray-100 to-gray-50 rounded-2xl px-10 py-8 flex items-center shadow-lg"
+                      >
+                        {/* Rank */}
+                        <span className="font-black text-5xl text-indigo-600">{i + 1}.</span>
+
+                        {/* Thumb */}
+                        {thumb ? (
+                          <img
+                            src={thumb}
+                            alt="photo submission"
+                            className="ml-8"
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: 12,
+                              objectFit: "cover",
+                              border: "1px solid rgba(0,0,0,0.12)",
+                              flex: "0 0 auto",
+                            }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div className="ml-8" style={{ width: 44, height: 44, flex: "0 0 auto" }} />
+                        )}
+
+                        {/* Name */}
+                        <span className="font-bold flex-1 text-left ml-10">{row.name}</span>
+
+                        {/* Points */}
+                        <span className="font-black text-6xl text-indigo-700">{row.pts} pts</span>
+                      </motion.li>
+                    );
+                  })}
                 </AnimatePresence>
               </ol>
             )}

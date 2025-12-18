@@ -89,9 +89,7 @@ function TeacherApp() {
 
   const [entryOk, setEntryOk] = useState(() => {
     try {
-      // (Optional hardening) tie to user email if present so different users don't inherit.
-      const stored = localStorage.getItem(ENTRY_KEY);
-      return stored === "1" || stored === (user?.email ? `1:${user.email}` : "1");
+      return localStorage.getItem(ENTRY_KEY) === "1";
     } catch {
       return false;
     }
@@ -180,7 +178,7 @@ function TeacherApp() {
         onPass={() => {
           try {
             const v = user?.email ? `1:${user.email}` : "1";
-            localStorage.setItem(ENTRY_KEY, v);
+            localStorage.setItem(ENTRY_KEY, "1");
           } catch {}
           setEntryOk(true);
         }}

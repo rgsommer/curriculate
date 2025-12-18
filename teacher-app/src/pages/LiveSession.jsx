@@ -42,6 +42,49 @@ const PURPOSE_OPTIONS = [
   "Assessment",
 ];
 
+const PHOTO_TASK_TYPES = new Set([
+  "photo-task",
+  "photojournal",
+  "photo-journal",
+  "photo",
+  "photoJournal",
+  "PhotoTask",
+  "PhotoJournal",
+]);
+
+function pickPhotoUrl(sub) {
+  return (
+    sub?.photoUrl ||
+    sub?.imageUrl ||
+    sub?.fileUrl ||
+    sub?.mediaUrl ||
+    sub?.data?.photoUrl ||
+    sub?.data?.imageUrl ||
+    sub?.data?.fileUrl ||
+    sub?.data?.mediaUrl ||
+    (Array.isArray(sub?.photos) ? sub.photos[0] : null) ||
+    (Array.isArray(sub?.data?.photos) ? sub.data.photos[0] : null) ||
+    null
+  );
+}
+
+function buildLatestPhotoByTeam(submissions = []) {
+  const out = {}; // teamId -> { url, at }
+  for (const s of submissions) {
+    const tt = (s?.taskType || s?.task?.taskType || "").toString();
+    if (!PHOTO_TASK_TYPES.has(tt)) continue;
+
+    const url = pickPhotoUrl(s);
+    if (!url) continue;
+
+    const at = new Date(s?.submittedAt || s?.createdAt || 0).getTime();
+    if (!out[s.teamId] || at > out[s.teamId].at) {
+      out[s.teamId] = { url, at };
+    }
+  }
+  return out;
+}
+
 function stationIdToColor(id) {
   const m = /^station-(\d+)$/.exec(id || "");
   const idx = m ? parseInt(m[1], 10) - 1 : -1;
@@ -326,6 +369,7 @@ useEffect(() => {
         stations: state.stations || [],
         teams: state.teams || {},
         scores: state.scores || {},
+        submissions: Array.isArray(state.submissions) ? state.submissions : (prev.submissions || []),
         locationCode: state.locationCode || prev.locationCode || "Classroom",
         taskIndex:
           typeof state.taskIndex === "number"
@@ -1052,6 +1096,11 @@ useEffect(() => {
   // Derived helpers + button state
   // ----------------------------------------------------
   const teams = roomState.teams || {};
+  const latestPhotoByTeam = React.useMemo(
+        () => buildLatestPhotoByTeam(roomState?.submissions || []),
+        [roomState?.submissions]
+      );
+      
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
@@ -2109,10 +2158,41 @@ Precipitation — rain, snow, hail`}
               {leaderboard.length > 0 ? (
                 <ul style={{ paddingLeft: 16, margin: 0 }}>
                   {leaderboard.map((team, idx) => (
-                    <li key={team.teamId} style={{ marginBottom: 4 }}>
-                      <strong>{idx + 1}.</strong>{" "}
-                      {teams[team.teamId]?.teamName || team.name} —{" "}
-                      {team.score} pts
+                    <li
+                      key={team.teamId}
+                      style={{
+                        marginBottom: 6,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      {/* Thumbnail */}
+                      {latestPhotoByTeam[team.teamId]?.url ? (
+                        <img
+                          src={latestPhotoByTeam[team.teamId].url}
+                          alt="photo submission"
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 8,
+                            objectFit: "cover",
+                            border: "1px solid rgba(0,0,0,0.12)",
+                            flex: "0 0 auto",
+                          }}
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <div style={{ width: 34, height: 34, flex: "0 0 auto" }} />
+                      )}
+
+                      {/* Rank + Name + Score */}
+                      <div style={{ flex: 1 }}>
+                        <strong>{idx + 1}.</strong>{" "}
+                        {teams[team.teamId]?.teamName || team.name} — {team.score} pts
+                      </div>
                     </li>
                   ))}
                 </ul>

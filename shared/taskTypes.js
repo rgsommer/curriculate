@@ -252,7 +252,7 @@ export const TASK_TYPE_META = {
     quickTaskEligible: true,
 
     description:
-      "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, etc.). No scoring. It could be as crazy as 'make yourselves into the shape of a __, or the letter(s) __, where these blanks are related to the subject at hand.",
+      "Short movement break. Give a fun 30–60 second physical challenge (jump like a frog, mirror your partner, form yourselves into as many of the letters of __ (one of the vocab words) etc.). No scoring. It could be as crazy as 'make yourselves into the shape of a __, or the letter(s) __, where these blanks are related to the subject at hand.",
   },
 
   [TASK_TYPES.PHOTO_JOURNAL]: {

@@ -679,25 +679,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           rawWordBank
         );
 
-        // ✅ Finalize per-station word + hint so StudentApp can render placeholders
-        const stationIdx = Number.isInteger(t.stationIndex)
-          ? t.stationIndex
-          : Number.isInteger(t.stationIdIndex)
-          ? t.stationIdIndex
-          : index % ((hangmanTask.wordsByStation && hangmanTask.wordsByStation.length) || 1);
-
-        const stationEntry =
-          Array.isArray(hangmanTask.wordsByStation) && hangmanTask.wordsByStation.length
-            ? hangmanTask.wordsByStation[stationIdx] || hangmanTask.wordsByStation[0]
-            : null;
-
-        return {
-          ...hangmanTask,
-          stationIndex: stationIdx,
-          word: stationEntry?.word || hangmanTask.word || "",
-          hint: stationEntry?.hint || hangmanTask.hint || "",
-        };
-
+        return hangmanTask;
       }
 
 
