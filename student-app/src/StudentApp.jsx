@@ -1429,7 +1429,12 @@ if (isLastTask) {
       }
     : {};
 
-const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+  const isPhotoJournal =
+    currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL ||
+    currentTask?.taskType === "photo-journal" ||
+    currentTask?.taskType === "photo_journal";
+
+  const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
 
   const isOpenText = currentTask?.taskType === TASK_TYPES.OPEN_TEXT;

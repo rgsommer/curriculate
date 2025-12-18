@@ -204,10 +204,10 @@ function normalizeTaskType(raw) {
    Multi-part renderer for MC / TF / Short Answer
    ───────────────────────────────────────────── */
 
-function MultiPartTask({ mode, task, review, onSubmit, submitting, disabled }) {
-  const isChoice = mode === "choice";
-  const isShort = mode === "short";
-  const isReview = mode === "review";
+  function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitting, disabled }) {
+    const isChoice = mode === "choice";
+    const isShort = mode === "short";
+    const isReview = !!readOnly;
 
   // Prefer AI "items" array; fall back to older shapes;
   // if none exist, treat as a single-question pack.
@@ -700,13 +700,15 @@ export default function TaskRunner({
         )}
 
         <MultiPartTask
-          mode={isReview ? "review" : multiMode}
+          mode={multiMode}
+          readOnly={isReview}
           task={t}
           review={review}
-          onSubmit={isReview ? noop : onSubmit}
+          onSubmit={isReview ? () => {} : onSubmit}
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
         />
+
       </div>
     );
   }
@@ -718,7 +720,8 @@ export default function TaskRunner({
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask
-          mode={isReview ? "review" : "choice"}
+          mode="choice"
+          readOnly={isReview}
           task={t}
           review={isReview ? review : null}
           onSubmit={isReview ? null : onSubmit}
@@ -731,7 +734,8 @@ export default function TaskRunner({
     case TASK_TYPES.TRUE_FALSE:
       content = (
         <MultiPartTask
-          mode={isReview ? "review" : "choice"}
+          mode="choice"
+          readOnly={isReview}
           task={t}
           review={isReview ? review : null}
           onSubmit={isReview ? null : onSubmit}
