@@ -63,6 +63,14 @@ export default function Login() {
     }
   };
 
+  const onGoSignup = () => {
+      setCodeErr("");
+      const code = String(accessCode || "").trim().toUpperCase();
+      if (!code) return setCodeErr("Please enter your access code.");
+      // Keep it simple and router-agnostic
+      window.location.href = `/signup?code=${encodeURIComponent(code)}`;
+    };
+
   const onForgot = async () => {
     setForgotErr("");
     setForgotMsg("");
@@ -330,15 +338,6 @@ export default function Login() {
     </div>
   );
 }
-  const onGoSignup = () => {
-    setCodeErr("");
-    const code = String(accessCode || "").trim().toUpperCase();
-    if (!code) return setCodeErr("Please enter your access code.");
-    // Keep it simple and router-agnostic
-    window.location.href = `/signup?code=${encodeURIComponent(code)}`;
-  };
-
-
 
 function DevRow({ label, value, onCopy, copied }) {
   return (
