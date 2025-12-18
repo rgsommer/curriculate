@@ -12,17 +12,24 @@ function getQueryParam(name) {
 }
 
 function pickApiBase() {
-  // Prefer explicit env vars; fall back to same-origin.
-  // (Keeping this resilient across dev/prod deployments.)
-  const env =
-    (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
-  return (
-    env.VITE_API_URL ||
-    env.VITE_BACKEND_URL ||
-    env.VITE_SERVER_URL ||
-    env.VITE_API_BASE ||
-    ""
-  ).replace(/\/+$/, "");
+  const envBase = (() => {
+    try {
+      return import.meta?.env?.VITE_API_BASE;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (envBase && String(envBase).trim()) {
+    return String(envBase).trim().replace(/\/+$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    const host = window.location.host;
+    if (host === "set.curriculate.net") return "https://api.curriculate.net";
+  }
+
+  return "";
 }
 
 export default function Signup() {
