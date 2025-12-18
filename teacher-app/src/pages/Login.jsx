@@ -79,6 +79,9 @@ export default function Login() {
       const link = data?.resetLink || data?.link || "";
       const token = data?.resetToken || data?.token || "";
 
+      const data = await requestPasswordReset(em);
+      console.log("forgot-password response:", data);
+
       if (link) setDevResetLink(String(link));
       if (token) setDevResetToken(String(token));
 
