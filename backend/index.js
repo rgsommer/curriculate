@@ -3196,37 +3196,22 @@ app.get("/api/profile/me", authRequired, async (req, res) => {
 
 app.get("/api/profile", authRequired, async (req, res) => {
   try {
-    // Try a few common shapes (depends on your authRequired middleware)
-    const userId =
-      req.user?.userId ||
-      req.user?.id ||
-      req.userId ||
-      req.auth?.userId;
+    const ownerId = getOwnerId(req);
+    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
 
-    if (!userId) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
-    }
-
-    const user = await User.findById(userId).lean();
-    if (!user) return res.status(404).json({ ok: false, error: "User not found" });
-
-    // Your profiles use ownerId as a STRING in multiple places — keep it consistent
-    const ownerId = String(user._id);
-
-    const profile =
-      (await TeacherProfile.findOne({ ownerId }).lean()) ||
-      (await TeacherProfile.findOne({ ownerId: user._id }).lean()); // fallback if schema differs
+    const profile = await getOrCreateProfileForUser({
+      ownerId,
+      email: req.user?.email || "",
+    });
 
     return res.json({
       ok: true,
       userId: ownerId,
-      email: user.email || "",
-      name: user.name || "",
-      isAdmin: !!user.isAdmin,
-
-      // license / access code fields (these are what stops “enter access code again”)
-      entryCode: profile?.entryCode || null,
-      planTier: profile?.planTier || null,
+      email: (req.user?.email || profile.email || "").toLowerCase(),
+      name: req.user?.name || profile.presenterName || profile.displayName || "",
+      isAdmin: !!(profile.isAdmin || req.user?.isAdmin),
+      entryCode: profile.entryCode || "",     // IMPORTANT: your schema defaults to ""
+      planTier: null,
     });
   } catch (e) {
     console.error("GET /api/profile failed:", e);
