@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import User from "../models/User.js"; // or "../models/UserModel.js"
+import TeacherProfile from "../models/TeacherProfile.js";
 
 const router = express.Router();
 
@@ -59,6 +60,57 @@ function buildResetLink(email, rawToken) {
     email
   )}`;
 }
+
+router.post("/signup-with-code", async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password = String(req.body?.password || "");
+    const name = String(req.body?.name || "").trim();
+    const accessCode = String(req.body?.accessCode || "").trim().toUpperCase();
+
+    if (!email || !password || !accessCode) {
+      return res.status(400).json({ ok: false, error: "Missing fields" });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ ok: false, error: "Password too short (min 8)" });
+    }
+
+    // 1) ensure not already registered
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(409).json({ ok: false, error: "Email already in use" });
+
+    // 2) validate access code
+    const access = await mongoose.model("AccessCode").findOne({ code: accessCode }); // if model registered
+    if (!access) return res.status(404).json({ ok: false, error: "Invalid access code" });
+    if (access.disabled) return res.status(403).json({ ok: false, error: "Access code disabled" });
+
+    const maxSeats = Math.max(1, Number(access.maxSeats || 1));
+    const claimants = Array.isArray(access.claimants) ? access.claimants : [];
+    if (claimants.length >= maxSeats) {
+      return res.status(403).json({ ok: false, error: "Access code already fully claimed" });
+    }
+
+    // 3) create user
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await User.create({ email, name, passwordHash });
+
+    // 4) create teacher profile and assign entry code
+    let profile = await TeacherProfile.findOne({ ownerId: String(user._id) });
+    if (!profile) profile = new TeacherProfile({ ownerId: String(user._id), email });
+    profile.entryCode = accessCode;
+    await profile.save();
+
+    // 5) claim seat
+    access.claimants = claimants.concat(String(user._id));
+    await access.save();
+
+    // 6) return success (use your existing login/token mechanism here)
+    return res.json({ ok: true, userId: String(user._id) });
+  } catch (err) {
+    console.error("signup-with-code failed:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
 
 /**
  * POST /forgot-password

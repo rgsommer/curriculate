@@ -28,6 +28,7 @@ import authRoutes from "./routes/auth.js";
 import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
+import AccessCode from "./models/AccessCode.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -137,18 +138,6 @@ app.use(cors(corsOptions));
 
 // Explicitly handle preflight for all routes
 app.options("*", cors(corsOptions));
-
-const AccessCodeSchema = new mongoose.Schema(
-  {
-    code: { type: String, required: true, unique: true, uppercase: true, trim: true },
-    planTier: { type: String, default: "FREE" },
-    maxSeats: { type: Number, default: 1 },
-    claimants: { type: [String], default: [] },
-    disabled: { type: Boolean, default: false },
-  },
-  { timestamps: true }
-);
-const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", AccessCodeSchema);
 
 // ====================================================================
 //  EXPRESS MIDDLEWARE
