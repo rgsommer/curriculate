@@ -42,10 +42,11 @@ const PasswordReset =
   mongoose.models.PasswordReset || mongoose.model("PasswordReset", PasswordResetSchema);
 
 function isDevReturnEnabled() {
-  return (
-    process.env.RETURN_RESET_TOKEN === "true" ||
-    process.env.NODE_ENV !== "production"
-  );
+  const v = String(process.env.RETURN_RESET_TOKEN || "").trim().toLowerCase();
+  if (v === "true" || v === "1" || v === "yes" || v === "on") return true;
+
+  // keep your existing dev behavior too, if you want
+  return process.env.NODE_ENV !== "production";
 }
 
 function buildResetLink(email, rawToken) {

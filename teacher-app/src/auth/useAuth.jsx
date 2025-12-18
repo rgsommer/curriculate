@@ -21,7 +21,7 @@ function getApiBase() {
   // You can change this later, but this will immediately stop 405s.
   if (typeof window !== "undefined") {
     const host = window.location.host;
-    if (host === "set.curriculate.net") return "https://set.curriculate.net";
+    if (host === "set.curriculate.net") return "https://api.curriculate.net";
   }
 
   // 3) Local dev fallback
