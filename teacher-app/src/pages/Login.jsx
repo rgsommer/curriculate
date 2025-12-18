@@ -94,8 +94,6 @@ export default function Login() {
       }
     } catch (e2) {
       setForgotErr(e2?.message || "Could not request reset.");
-    } finally {
-      setForgotBusy(false);
     }
 
   return (
