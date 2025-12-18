@@ -108,15 +108,35 @@ function isVercelPreview(origin) {
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow non-browser requests (e.g., Postman, server-to-server, or tools)
     if (!origin) return callback(null, true);
+
+    // Allow your known origins + Vercel previews
     if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
       return callback(null, true);
     }
-    console.warn("❌ Blocked CORS:", origin);
+
+    // OPTIONAL: In development, allow localhost flexibly
+    if (process.env.NODE_ENV !== "production") {
+      if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
+        return callback(null, true);
+      }
+    }
+
+    console.warn("Blocked CORS origin:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
+  optionsSuccessStatus: 200, // Important: some browsers choke on 204
 };
+
+// Apply CORS
+app.use(cors(corsOptions));
+
+// Explicitly handle preflight for all routes
+app.options("*", cors(corsOptions));
 
 const AccessCodeSchema = new mongoose.Schema(
   {
@@ -129,9 +149,6 @@ const AccessCodeSchema = new mongoose.Schema(
   { timestamps: true }
 );
 const AccessCode = mongoose.models.AccessCode || mongoose.model("AccessCode", AccessCodeSchema);
-
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
 
 // ====================================================================
 //  EXPRESS MIDDLEWARE
