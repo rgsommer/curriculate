@@ -106,19 +106,31 @@ function isVercelPreview(origin) {
   return origin && origin.endsWith(".vercel.app");
 }
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // allow server-to-server / curl (no origin)
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser requests (e.g., Postman, server-to-server, or tools)
+    if (!origin) return callback(null, true);
+
+    // Allow your known origins + Vercel previews
+    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
+      return callback(null, true);
+    }
+
+    // OPTIONAL: In development, allow localhost flexibly
+    if (process.env.NODE_ENV !== "production") {
+      if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
+        return callback(null, true);
+      }
+    }
+
+    console.warn("Blocked CORS origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 200, // Important: some browsers choke on 204
+};
 
 // Apply CORS
 app.use(cors(corsOptions));
