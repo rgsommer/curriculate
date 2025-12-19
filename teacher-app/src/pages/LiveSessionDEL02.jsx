@@ -1,7 +1,7 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { socket } from "../socket";
-import { fetchMyProfile } from "../api/profile";
+import { fetchMyProfile, updateMyProfile } from "../api/profile";
 import {
   TASK_TYPES,
   TASK_TYPE_META,
@@ -68,6 +68,17 @@ function pickPhotoUrl(sub) {
   );
 }
 
+function normalizeRooms(input) {
+  return Array.from(
+    new Set(
+      (input || "")
+        .split(/\r?\n|,/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 function buildLatestPhotoByTeam(submissions = []) {
   const out = {}; // teamId -> { url, at }
   for (const s of submissions) {
@@ -129,6 +140,9 @@ export default function LiveSession({ roomCode }) {
   const [quickStatus, setQuickStatus] = useState("");
   const [selectedRooms, setSelectedRooms] = useState([]);
   const [teacherRooms, setTeacherRooms] = useState([]);
+  const [roomsDraft, setRoomsDraft] = useState("");
+  const [isSavingRooms, setIsSavingRooms] = useState(false);
+  const [roomsSaveMsg, setRoomsSaveMsg] = useState("");
 
   // NEW dynamic system — only these
   const [taskType, setTaskType] = useState(
@@ -217,7 +231,7 @@ export default function LiveSession({ roomCode }) {
   // Location override (multi-room presets from Presenter Profile)
   const [locationOptions, setLocationOptions] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
-
+  
   // Hide & Seek launch-time clues
   const [hideNSeekTasks, setHideNSeekTasks] = useState([]);
   const [hideNSeekClues, setHideNSeekClues] = useState({});
@@ -252,7 +266,9 @@ export default function LiveSession({ roomCode }) {
   useEffect(() => {
     async function loadTeacherRooms() {
       const profile = await fetchMyProfile();
-      setTeacherRooms(profile.locationOptions || []);
+      const rooms = profile.locationOptions || [];
+      setTeacherRooms(rooms);
+      setRoomsDraft((profile.locationOptions || []).join("\n"));
 
       // Optional: use profile.treatsPerSession as the default treat quota
       if (profile && typeof profile.treatsPerSession !== "undefined") {
@@ -601,6 +617,7 @@ useEffect(() => {
     activeTasksetMeta,
     selectedLocation,
     noiseThreshold,
+    selectedRooms,
   ]);
 
   // ----------------------------------------------------
@@ -642,6 +659,33 @@ useEffect(() => {
     if (!isFixedStationTaskset) return;
     setShowRoomSetup(true);
   };
+
+  async function saveTeacherRooms() {
+    try {
+      setIsSavingRooms(true);
+      setRoomsSaveMsg("");
+
+      const rooms = normalizeRooms(roomsDraft);
+      const updated = await updateMyProfile({ locationOptions: rooms });
+
+      const nextRooms =
+        updated?.locationOptions ||
+        updated?.profile?.locationOptions ||
+        rooms;
+
+      setTeacherRooms(nextRooms);
+      setSelectedRooms((prev) => prev.filter((r) => nextRooms.includes(r)));
+      setRoomsDraft(nextRooms.join("\n"));
+
+      setRoomsSaveMsg("Saved.");
+      setTimeout(() => setRoomsSaveMsg(""), 1500);
+    } catch (e) {
+      console.error("[LiveSession] save rooms failed:", e);
+      setRoomsSaveMsg("Save failed.");
+    } finally {
+      setIsSavingRooms(false);
+    }
+  }
 
   const handleLaunchQuickTask = () => {
     if (!roomCode || !taskConfig.prompt?.trim()) return;
@@ -721,7 +765,6 @@ useEffect(() => {
       setIsLaunchingQuick(false);
       setQuickStatus("Quick task launched!");
     }, 300);
-    setLastQuickTask(taskToSend);
     setQuickFlashcardsText("");
   };
 
@@ -842,10 +885,11 @@ useEffect(() => {
           gradeLevel: gradeStr || "",
           original: baseTask.original || "",
           modified: baseTask.modified || "",
-          differences: Array.isArray(baseTask.differences)
-            ? baseTask.differences
-            : [],
+          differences: Array.isArray(baseTask.differences) ? baseTask.differences : [],
         });
+        setShowAiGen(false);
+        return;
+      }
 
       // 🟡 Brain Spark Notes special case
       if (generatedType === TASK_TYPES.BRAIN_SPARK_NOTES) {
@@ -853,15 +897,8 @@ useEffect(() => {
           prompt: baseTask.prompt || "",
           subject: aiSubject || "Ad-hoc",
           gradeLevel: gradeStr || "",
-          bullets: Array.isArray(baseTask.bullets)
-            ? baseTask.bullets
-            : [],
+          bullets: Array.isArray(baseTask.bullets) ? baseTask.bullets : [],
         });
-
-        setShowAiGen(false);
-        return;
-      }
-
         setShowAiGen(false);
         return;
       }
@@ -1456,8 +1493,6 @@ useEffect(() => {
           minHeight: 0,
           flexDirection: isNarrow ? "column" : "row",
           alignItems: "stretch",
-          height: isNarrow ? "auto" : "calc(100vh - 230px)",
-          overflow: isNarrow ? "visible" : "hidden",
         }}
       >
         {/* LEFT 1/3: Task controls + Noise/Treats */}
@@ -1465,7 +1500,6 @@ useEffect(() => {
           style={{
             flex: 1,
             minWidth: isNarrow ? "100%" : 0,
-          overflow: "auto",
             display: "flex",
             flexDirection: "column",
             gap: 16,
@@ -1490,103 +1524,7 @@ useEffect(() => {
               Task controls
             </div>
 
-            {/* Quick task */}            {/* Taskset launch + skip */}
-            <div
-              style={{
-                marginTop: 8,
-                borderTop: "1px solid #f3f4f6",
-                paddingTop: 8,
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  fontSize: "0.8rem",
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>Taskset</span>
-                {activeTasksetMeta ? (
-                  <span style={{ color: "#6b7280" }}>
-                    Active: <strong>{activeTasksetName}</strong>
-                  </span>
-                ) : (
-                  <span style={{ color: "#9ca3af" }}>
-                    No active taskset selected.
-                  </span>
-                )}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={launchBtnOnClick || undefined}
-                  style={{
-                    flex: 1,
-                    padding: "6px 8px",
-                    borderRadius: 6,
-                    border: "none",
-                    background: launchBtnBg,
-                    color: "#ffffff",
-                    fontSize: "0.85rem",
-                    cursor: launchBtnDisabled ? "not-allowed" : "pointer",
-                    opacity: launchBtnDisabled ? 0.5 : 1,
-                  }}
-                  disabled={launchBtnDisabled}
-                >
-                  {launchBtnLabel}
-                </button>
-              </div>
-
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={handleSkipTask}
-                  disabled={!taskFlowActive}
-                >
-                  End task → unlock next
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 8, fontSize: "0.8rem" }}>
-            <label>
-              Post-submit review time:{" "}
-              <select
-                value={reviewPauseSeconds}
-                onChange={(e) =>
-                  setReviewPauseSeconds(
-                    parseInt(e.target.value, 10) || 15
-                  )
-                }
-                style={{
-                  marginLeft: 4,
-                  padding: "2px 6px",
-                  borderRadius: 6,
-                  border: "1px solid #d1d5db",
-                  fontSize: "0.8rem",
-                }}
-              >
-                <option value={10}>10 seconds</option>
-                <option value={15}>15 seconds</option>
-                <option value={20}>20 seconds</option>
-              </select>
-            </label>
-          </div>
-
-
-
-
+            {/* Quick task */}
             <div
               style={{
                 marginBottom: 12,
@@ -1677,7 +1615,22 @@ Precipitation — rain, snow, hail`}
                     </div>
                   )}
                 </>
-              ) : null}
+              ) : (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    padding: 8,
+                    borderRadius: 8,
+                    background: "#f1f5f9",
+                    border: "1px dashed #cbd5e1",
+                    fontSize: "0.8rem",
+                    color: "#64748b",
+                  }}
+                >
+                  No quick task prepared yet. Click{" "}
+                  <strong>Generate Task</strong> to create one.
+                </div>
+              )}
 
 
               {lastQuickTask && (
@@ -1822,74 +1775,75 @@ Precipitation — rain, snow, hail`}
                 </div>
               )}
 
-              {/* Multi-room selector (for special types) */}
-              {(taskType === "HIDENSEEK" || taskType === "BRAIN_STORM") &&
-                teacherRooms.length > 1 && (
-                  <div style={{ marginTop: 4, marginBottom: 8 }}>
-                    <label style={{ fontSize: "0.8rem" }}>
-                      Send to rooms:
-                    </label>
-                    <select
-                      multiple
-                      size={3}
-                      value={selectedRooms}
-                      onChange={(e) =>
-                        setSelectedRooms(
-                          Array.from(e.target.selectedOptions, (o) => o.value)
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        padding: 6,
-                        borderRadius: 8,
-                        marginTop: 4,
-                      }}
-                    >
-                      {teacherRooms.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
+              {/* Multi-room selector (ALL quick tasks) */}
+              {teacherRooms.length > 1 && (
+                <div style={{ marginTop: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 6 }}>
+                    Send to rooms (multi-room)
+                  </label>
+
+                  <select
+                    multiple
+                    size={Math.min(6, Math.max(3, teacherRooms.length))}
+                    value={selectedRooms}
+                    onChange={(e) =>
+                      setSelectedRooms(Array.from(e.target.selectedOptions, (o) => o.value))
+                    }
+                    style={{
+                      width: "100%",
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid #d1d5db",
+                    }}
+                  >
+                    {teacherRooms.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+                    Leave empty for single-room. Select 2+ rooms to enable multi-room mode.
                   </div>
-                )}
+                </div>
+              )}
 
               {/* Quick task buttons */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-                <button
-                  onClick={() => setShowAiGen(true)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 999,
-                    background: "#7c3aed",
-                    color: "white",
-                    border: "none",
-                    fontSize: "0.9rem",
-                    fontWeight: 900,
-                    cursor: "pointer",
-                  }}
-                >
-                  Generate Quick Task
-                </button>
-
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 <button
                   onClick={handleLaunchQuickTask}
                   disabled={!taskConfig.prompt?.trim()}
                   style={{
-                    width: "100%",
-                    padding: "12px",
+                    flex: 1,
+                    padding: "10px",
                     borderRadius: 999,
-                    background: taskConfig.prompt?.trim() ? "#0ea5e9" : "#94a3b8",
+                    background: taskConfig.prompt?.trim()
+                      ? "#0ea5e9"
+                      : "#94a3b8",
                     color: "white",
                     border: "none",
-                    fontSize: "0.9rem",
-                    fontWeight: 900,
-                    cursor: taskConfig.prompt?.trim() ? "pointer" : "not-allowed",
-                    opacity: taskConfig.prompt?.trim() ? 1 : 0.75,
+                    fontWeight: 600,
+                    cursor: taskConfig.prompt?.trim()
+                      ? "pointer"
+                      : "not-allowed",
                   }}
                 >
-                  {isLaunchingQuick ? "Launching…" : "Launch Quick Task"}
+                  {isLaunchingQuick ? "Launching…" : "Launch Task"}
+                </button>
+
+                <button
+                  onClick={() => setShowAiGen(true)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    background: "#6366f1",
+                    color: "white",
+                    border: "none",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  Generate Task
                 </button>
               </div>
             </div>
@@ -1937,6 +1891,145 @@ Precipitation — rain, snow, hail`}
                 Room Layout
               </button>
             </div>
+
+            {/* Taskset launch + skip */}
+            <div
+              style={{
+                marginTop: 8,
+                borderTop: "1px solid #f3f4f6",
+                paddingTop: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>Taskset</span>
+                {activeTasksetMeta ? (
+                  <span style={{ color: "#6b7280" }}>
+                    Active: <strong>{activeTasksetName}</strong>
+                  </span>
+                ) : (
+                  <span style={{ color: "#9ca3af" }}>
+                    No active taskset selected.
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={launchBtnOnClick || undefined}
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: launchBtnBg,
+                    color: "#ffffff",
+                    fontSize: "0.85rem",
+                    cursor: launchBtnDisabled ? "not-allowed" : "pointer",
+                    opacity: launchBtnDisabled ? 0.5 : 1,
+                  }}
+                  disabled={launchBtnDisabled}
+                >
+                  {launchBtnLabel}
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleSkipTask}
+                  disabled={!taskFlowActive}
+                >
+                  End task → unlock next
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/** Rooms / multi-room config */}
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 12, border: "1px solid #e5e7eb" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontWeight: 700 }}>Rooms (saved to Teacher Profile)</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>{roomsSaveMsg}</div>
+              </div>
+
+              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                <textarea
+                  value={roomsDraft}
+                  onChange={(e) => setRoomsDraft(e.target.value)}
+                  rows={Math.min(8, Math.max(3, (roomsDraft || "").split(/\r?\n/).length))}
+                  placeholder={"Classroom\nHallway\nLibrary"}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid #d1d5db",
+                    fontFamily: "inherit",
+                    fontSize: 14,
+                  }}
+                />
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    onClick={saveTeacherRooms}
+                    disabled={isSavingRooms}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "none",
+                      fontWeight: 700,
+                      cursor: isSavingRooms ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {isSavingRooms ? "Saving…" : "Save Rooms"}
+                  </button>
+
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    Separate by commas or new lines. These rooms power multi-room launches.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+<div style={{ marginTop: 8, fontSize: "0.8rem" }}>
+            <label>
+              Post-submit review time:{" "}
+              <select
+                value={reviewPauseSeconds}
+                onChange={(e) =>
+                  setReviewPauseSeconds(
+                    parseInt(e.target.value, 10) || 15
+                  )
+                }
+                style={{
+                  marginLeft: 4,
+                  padding: "2px 6px",
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <option value={10}>10 seconds</option>
+                <option value={15}>15 seconds</option>
+                <option value={20}>20 seconds</option>
+              </select>
+            </label>
+          </div>
 
           {/* Noise & Treats Controls */}
           <div
@@ -2031,84 +2124,6 @@ Precipitation — rain, snow, hail`}
               >
                 Treats
               </h3>
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <span style={{ fontSize: "0.875rem", color: "#374151" }}>
-                  Enabled: <strong>{treatsConfig.enabled ? "On" : "Off"}</strong>
-                </span>
-
-                <button
-                  onClick={() => {
-                    if (!roomCode) return;
-                    const code = roomCode.toUpperCase();
-                    const nextEnabled = !treatsConfig.enabled;
-                    socket.emit("teacher:updateTreatsConfig", {
-                      roomCode: code,
-                      enabled: nextEnabled,
-                    });
-                  }}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 999,
-                    border: "none",
-                    background: treatsConfig.enabled ? "#22c55e" : "#e5e7eb",
-                    color: treatsConfig.enabled ? "white" : "#374151",
-                    fontSize: "0.8rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {treatsConfig.enabled ? "On" : "Off"}
-                </button>
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="20"
-                  value={treatsConfig.total}
-                  onChange={(e) => {
-                    if (!roomCode) return;
-                    const code = roomCode.toUpperCase();
-                    const v = Number(e.target.value);
-                    socket.emit("teacher:updateTreatsConfig", {
-                      roomCode: code,
-                      total: v,
-                    });
-                  }}
-                  style={{
-                    width: "100%",
-                    height: 8,
-                    borderRadius: 4,
-                    background: "#e5e7eb",
-                    outline: "none",
-                    appearance: "none",
-                  }}
-                  aria-label="Total treats available"
-                />
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontSize: "0.8rem",
-                    color: "#6b7280",
-                    display: "flex",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Total: {treatsConfig.total}</span>
-                  <span>Given: {treatsConfig.given}</span>
-                </div>
-              </div>
-
 
               <p
                 style={{
@@ -2171,7 +2186,6 @@ Precipitation — rain, snow, hail`}
           style={{
             flex: 1,
             minWidth: isNarrow ? "100%" : 0,
-          overflow: "hidden",
           }}
         >
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Teams</h2>
@@ -2183,9 +2197,6 @@ Precipitation — rain, snow, hail`}
                 display: "grid",
                 gridTemplateColumns:
                   "repeat(auto-fill, minmax(180px, 1fr))",
-                gridAutoRows: "min-content",
-                overflowY: "auto",
-                paddingRight: 4,
                 minHeight: 120,
                 gap: 12,
                 width: "100%",
@@ -2201,7 +2212,6 @@ Precipitation — rain, snow, hail`}
           style={{
             flex: 1,
             minWidth: isNarrow ? "100%" : 0,
-          overflow: "hidden",
             display: "flex",
             flexDirection: "column",
             gap: 12,
@@ -2320,8 +2330,6 @@ Precipitation — rain, snow, hail`}
                   gap: 6,
                   fontSize: "0.8rem",
                   color: "#374151",
-                  maxHeight: 200,
-                  overflowY: "auto",
                 }}
               >
                 {latestSubmissions.map((s) => {
@@ -2717,7 +2725,7 @@ Precipitation — rain, snow, hail`}
                           data._id ||
                           tasksetDoc._id ||
                           activeTasksetMeta?._id,
-                        selectedRooms,
+                          selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
                       });
                     }
                   } catch (err) {

@@ -124,6 +124,9 @@ export default function LiveSession({ roomCode }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [scanEvents, setScanEvents] = useState([]);
   const [teamOrder, setTeamOrder] = useState([]);
+  const [deleteTeamModal, setDeleteTeamModal] = useState(null);
+  // { teamId, label }
+
 
   const [isLaunchingQuick, setIsLaunchingQuick] = useState(false);
   const [quickStatus, setQuickStatus] = useState("");
@@ -150,6 +153,11 @@ export default function LiveSession({ roomCode }) {
 
   // Keep track of the most recently launched quick task
   const [lastQuickTask, setLastQuickTask] = useState(null);
+
+  //Kiosk mode
+  const openHostKiosk = () => {
+    window.open("/host-kiosk", "_blank", "noopener,noreferrer");
+  };
 
   // Active taskset meta
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
@@ -392,7 +400,7 @@ useEffect(() => {
         .map(([teamId, score]) => ({
           teamId,
           score,
-          name: teams[teamId]?.teamName || "Team",
+          name: (teams[teamId]?.teamEmoji ? `${teams[teamId].teamEmoji} ` : "") + (teams[teamId]?.teamName || "Team"),
         }))
         .sort((a, b) => b.score - a.score);
       setLeaderboard(leaderboardArr);
@@ -1179,7 +1187,32 @@ useEffect(() => {
     launchBtnDisabled = true;
   }
 
-  const renderTeamCard = (teamId) => {
+  
+  const formatTeamLabel = (teamId, fallbackName) => {
+    const t = teams?.[teamId] || {};
+    const base = t.teamName || fallbackName || "Team";
+    const emoji = t.teamEmoji || "";
+    return emoji ? `${emoji} ${base}` : base;
+  };
+
+  const openDeleteTeamModal = (teamId) => {
+    if (!teamId) return;
+    setDeleteTeamModal({ teamId, label: formatTeamLabel(teamId) });
+  };
+
+  const confirmDeleteTeam = () => {
+    const teamId = deleteTeamModal?.teamId;
+    if (!teamId || !roomCode) return;
+    const code = roomCode.toUpperCase();
+
+    socket.emit("teacher:deleteTeam", { roomCode: code, teamId }, (ack) => {
+      // Keep UI quiet; log only
+      if (!ack?.ok) console.error("teacher:deleteTeam failed:", ack?.error);
+      setDeleteTeamModal(null);
+    });
+  };
+
+const renderTeamCard = (teamId) => {
     const team = teams[teamId];
     if (!team) return null;
 
@@ -1220,7 +1253,13 @@ useEffect(() => {
               gap: 6,
             }}
           >
-            <span>{team.teamName || "Team"}</span>
+            <span
+              onClick={() => openDeleteTeamModal(teamId)}
+              title="Delete/kick this team"
+              style={{ cursor: "pointer", textDecoration: "underline" }}
+            >
+              {(team.teamEmoji ? `${team.teamEmoji} ` : "") + (team.teamName || "Team")}
+            </span>
             {team.members && team.members.length > 0 && (
               <span
                 style={{
@@ -1456,8 +1495,6 @@ useEffect(() => {
           minHeight: 0,
           flexDirection: isNarrow ? "column" : "row",
           alignItems: "stretch",
-          height: isNarrow ? "auto" : "calc(100vh - 230px)",
-          overflow: isNarrow ? "visible" : "hidden",
         }}
       >
         {/* LEFT 1/3: Task controls + Noise/Treats */}
@@ -1465,7 +1502,6 @@ useEffect(() => {
           style={{
             flex: 1,
             minWidth: isNarrow ? "100%" : 0,
-          overflow: "auto",
             display: "flex",
             flexDirection: "column",
             gap: 16,
@@ -1490,103 +1526,7 @@ useEffect(() => {
               Task controls
             </div>
 
-            {/* Quick task */}            {/* Taskset launch + skip */}
-            <div
-              style={{
-                marginTop: 8,
-                borderTop: "1px solid #f3f4f6",
-                paddingTop: 8,
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  fontSize: "0.8rem",
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>Taskset</span>
-                {activeTasksetMeta ? (
-                  <span style={{ color: "#6b7280" }}>
-                    Active: <strong>{activeTasksetName}</strong>
-                  </span>
-                ) : (
-                  <span style={{ color: "#9ca3af" }}>
-                    No active taskset selected.
-                  </span>
-                )}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={launchBtnOnClick || undefined}
-                  style={{
-                    flex: 1,
-                    padding: "6px 8px",
-                    borderRadius: 6,
-                    border: "none",
-                    background: launchBtnBg,
-                    color: "#ffffff",
-                    fontSize: "0.85rem",
-                    cursor: launchBtnDisabled ? "not-allowed" : "pointer",
-                    opacity: launchBtnDisabled ? 0.5 : 1,
-                  }}
-                  disabled={launchBtnDisabled}
-                >
-                  {launchBtnLabel}
-                </button>
-              </div>
-
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={handleSkipTask}
-                  disabled={!taskFlowActive}
-                >
-                  End task → unlock next
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 8, fontSize: "0.8rem" }}>
-            <label>
-              Post-submit review time:{" "}
-              <select
-                value={reviewPauseSeconds}
-                onChange={(e) =>
-                  setReviewPauseSeconds(
-                    parseInt(e.target.value, 10) || 15
-                  )
-                }
-                style={{
-                  marginLeft: 4,
-                  padding: "2px 6px",
-                  borderRadius: 6,
-                  border: "1px solid #d1d5db",
-                  fontSize: "0.8rem",
-                }}
-              >
-                <option value={10}>10 seconds</option>
-                <option value={15}>15 seconds</option>
-                <option value={20}>20 seconds</option>
-              </select>
-            </label>
-          </div>
-
-
-
-
+            {/* Quick task */}
             <div
               style={{
                 marginBottom: 12,
@@ -1677,7 +1617,22 @@ Precipitation — rain, snow, hail`}
                     </div>
                   )}
                 </>
-              ) : null}
+              ) : (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    padding: 8,
+                    borderRadius: 8,
+                    background: "#f1f5f9",
+                    border: "1px dashed #cbd5e1",
+                    fontSize: "0.8rem",
+                    color: "#64748b",
+                  }}
+                >
+                  No quick task prepared yet. Click{" "}
+                  <strong>Generate Task</strong> to create one.
+                </div>
+              )}
 
 
               {lastQuickTask && (
@@ -1855,41 +1810,40 @@ Precipitation — rain, snow, hail`}
                 )}
 
               {/* Quick task buttons */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-                <button
-                  onClick={() => setShowAiGen(true)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 999,
-                    background: "#7c3aed",
-                    color: "white",
-                    border: "none",
-                    fontSize: "0.9rem",
-                    fontWeight: 900,
-                    cursor: "pointer",
-                  }}
-                >
-                  Generate Quick Task
-                </button>
-
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                 <button
                   onClick={handleLaunchQuickTask}
                   disabled={!taskConfig.prompt?.trim()}
                   style={{
-                    width: "100%",
-                    padding: "12px",
+                    flex: 1,
+                    padding: "10px",
                     borderRadius: 999,
-                    background: taskConfig.prompt?.trim() ? "#0ea5e9" : "#94a3b8",
+                    background: taskConfig.prompt?.trim()
+                      ? "#0ea5e9"
+                      : "#94a3b8",
                     color: "white",
                     border: "none",
-                    fontSize: "0.9rem",
-                    fontWeight: 900,
-                    cursor: taskConfig.prompt?.trim() ? "pointer" : "not-allowed",
-                    opacity: taskConfig.prompt?.trim() ? 1 : 0.75,
+                    fontWeight: 600,
+                    cursor: taskConfig.prompt?.trim()
+                      ? "pointer"
+                      : "not-allowed",
                   }}
                 >
-                  {isLaunchingQuick ? "Launching…" : "Launch Quick Task"}
+                  {isLaunchingQuick ? "Launching…" : "Launch Task"}
+                </button>
+
+                <button
+                  onClick={() => setShowAiGen(true)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    background: "#6366f1",
+                    color: "white",
+                    border: "none",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  Generate Task
                 </button>
               </div>
             </div>
@@ -1937,6 +1891,100 @@ Precipitation — rain, snow, hail`}
                 Room Layout
               </button>
             </div>
+
+            {/* Taskset launch + skip */}
+            <div
+              style={{
+                marginTop: 8,
+                borderTop: "1px solid #f3f4f6",
+                paddingTop: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>Taskset</span>
+                {activeTasksetMeta ? (
+                  <span style={{ color: "#6b7280" }}>
+                    Active: <strong>{activeTasksetName}</strong>
+                  </span>
+                ) : (
+                  <span style={{ color: "#9ca3af" }}>
+                    No active taskset selected.
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={launchBtnOnClick || undefined}
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: launchBtnBg,
+                    color: "#ffffff",
+                    fontSize: "0.85rem",
+                    cursor: launchBtnDisabled ? "not-allowed" : "pointer",
+                    opacity: launchBtnDisabled ? 0.5 : 1,
+                  }}
+                  disabled={launchBtnDisabled}
+                >
+                  {launchBtnLabel}
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleSkipTask}
+                  disabled={!taskFlowActive}
+                >
+                  End task → unlock next
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: "0.8rem" }}>
+            <label>
+              Post-submit review time:{" "}
+              <select
+                value={reviewPauseSeconds}
+                onChange={(e) =>
+                  setReviewPauseSeconds(
+                    parseInt(e.target.value, 10) || 15
+                  )
+                }
+                style={{
+                  marginLeft: 4,
+                  padding: "2px 6px",
+                  borderRadius: 6,
+                  border: "1px solid #d1d5db",
+                  fontSize: "0.8rem",
+                }}
+              >
+                <option value={10}>10 seconds</option>
+                <option value={15}>15 seconds</option>
+                <option value={20}>20 seconds</option>
+              </select>
+            </label>
+          </div>
 
           {/* Noise & Treats Controls */}
           <div
@@ -2031,84 +2079,6 @@ Precipitation — rain, snow, hail`}
               >
                 Treats
               </h3>
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <span style={{ fontSize: "0.875rem", color: "#374151" }}>
-                  Enabled: <strong>{treatsConfig.enabled ? "On" : "Off"}</strong>
-                </span>
-
-                <button
-                  onClick={() => {
-                    if (!roomCode) return;
-                    const code = roomCode.toUpperCase();
-                    const nextEnabled = !treatsConfig.enabled;
-                    socket.emit("teacher:updateTreatsConfig", {
-                      roomCode: code,
-                      enabled: nextEnabled,
-                    });
-                  }}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 999,
-                    border: "none",
-                    background: treatsConfig.enabled ? "#22c55e" : "#e5e7eb",
-                    color: treatsConfig.enabled ? "white" : "#374151",
-                    fontSize: "0.8rem",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {treatsConfig.enabled ? "On" : "Off"}
-                </button>
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="20"
-                  value={treatsConfig.total}
-                  onChange={(e) => {
-                    if (!roomCode) return;
-                    const code = roomCode.toUpperCase();
-                    const v = Number(e.target.value);
-                    socket.emit("teacher:updateTreatsConfig", {
-                      roomCode: code,
-                      total: v,
-                    });
-                  }}
-                  style={{
-                    width: "100%",
-                    height: 8,
-                    borderRadius: 4,
-                    background: "#e5e7eb",
-                    outline: "none",
-                    appearance: "none",
-                  }}
-                  aria-label="Total treats available"
-                />
-                <div
-                  style={{
-                    marginTop: 6,
-                    fontSize: "0.8rem",
-                    color: "#6b7280",
-                    display: "flex",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>Total: {treatsConfig.total}</span>
-                  <span>Given: {treatsConfig.given}</span>
-                </div>
-              </div>
-
 
               <p
                 style={{
@@ -2171,7 +2141,6 @@ Precipitation — rain, snow, hail`}
           style={{
             flex: 1,
             minWidth: isNarrow ? "100%" : 0,
-          overflow: "hidden",
           }}
         >
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Teams</h2>
@@ -2183,9 +2152,6 @@ Precipitation — rain, snow, hail`}
                 display: "grid",
                 gridTemplateColumns:
                   "repeat(auto-fill, minmax(180px, 1fr))",
-                gridAutoRows: "min-content",
-                overflowY: "auto",
-                paddingRight: 4,
                 minHeight: 120,
                 gap: 12,
                 width: "100%",
@@ -2197,17 +2163,32 @@ Precipitation — rain, snow, hail`}
         </div>
 
         {/* RIGHT 1/3: Leaderboard + Submissions + Scan log */}
-        <div
-          style={{
-            flex: 1,
-            minWidth: isNarrow ? "100%" : 0,
-          overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          {/* Leaderboard */}
+          <div
+            style={{
+              flex: 1,
+              minWidth: isNarrow ? "100%" : 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={openHostKiosk}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(15,23,42,0.15)",
+                  background: "#ffffff",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+              >
+                Open Host Kiosk
+              </button>
+            </div>
+
+            {/* Leaderboard */}
           <section
             style={{
               width: "100%",
@@ -2265,7 +2246,14 @@ Precipitation — rain, snow, hail`}
                       {/* Rank + Name + Score */}
                       <div style={{ flex: 1 }}>
                         <strong>{idx + 1}.</strong>{" "}
-                        {teams[team.teamId]?.teamName || team.name} — {team.score} pts
+                        <span
+                          onClick={() => openDeleteTeamModal(team.teamId)}
+                          title="Delete/kick this team"
+                          style={{ cursor: "pointer", textDecoration: "underline" }}
+                        >
+                          {formatTeamLabel(team.teamId, team.name)}
+                        </span>
+                        — {team.score} pts
                       </div>
                     </li>
                   ))}
@@ -2325,8 +2313,7 @@ Precipitation — rain, snow, hail`}
                 }}
               >
                 {latestSubmissions.map((s) => {
-                  const teamName =
-                    teams[s.teamId]?.teamName || s.teamName || "Team";
+                  const teamName = formatTeamLabel(s.teamId, s.teamName);
                   const pts =
                     typeof s.points === "number" ? s.points : 0;
                   const correctIcon =
@@ -2970,6 +2957,74 @@ Precipitation — rain, snow, hail`}
           </div>
         </div>
       )}
+
+        {/* Confirm delete/kick modal */}
+        {deleteTeamModal && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.55)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: 16,
+            }}
+            onClick={() => setDeleteTeamModal(null)}
+          >
+            <div
+              style={{
+                width: "min(520px, 100%)",
+                background: "white",
+                borderRadius: 16,
+                padding: 16,
+                boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>
+                Delete team?
+              </div>
+
+              <div style={{ color: "#374151", marginBottom: 14, lineHeight: 1.35 }}>
+                Remove <strong>{deleteTeamModal.label}</strong> from this room and kick them off immediately?
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  onClick={() => setDeleteTeamModal(null)}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
+                    background: "white",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={confirmDeleteTeam}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: "1px solid #991b1b",
+                    background: "#dc2626",
+                    color: "white",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                  }}
+                >
+                  Delete &amp; kick
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
     </div>
   );
 }

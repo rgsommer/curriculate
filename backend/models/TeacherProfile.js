@@ -99,7 +99,7 @@ const TeacherProfileSchema = new Schema(
     treatsPerSession: { type: Number, default: 2 },
 
     // ✅ Multi-room location labels (your UI saves this)
-    locationOptions: { type: [String], default: [] },
+    locationOptions: { type: [String], default: ["Classroom"] },
 
     // ✅ Voice settings (your UI has these fields)
     voiceId: { type: String, default: "" },

@@ -757,6 +757,39 @@ function ensureTreatsConfig(room) {
   }
 }
 
+function isMultiRoomRoom(room) {
+  return Array.isArray(room?.selectedRooms) && room.selectedRooms.length > 1;
+}
+
+function normalizeSlug(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function displayRoomLabel(room, slugOrLabel) {
+  const fallback = String(room?.locationCode || "Classroom").trim();
+  const slug = normalizeSlug(slugOrLabel);
+  const selected = Array.isArray(room?.selectedRooms) ? room.selectedRooms : [];
+
+  for (const label of selected) {
+    if (normalizeSlug(label) === slug) return String(label).trim();
+  }
+  // If they scanned something not in selectedRooms, treat as classroom (your rule)
+  return fallback;
+}
+
+function formatGoTo(room, locationSlugOrLabel, colorName) {
+  const color = String(colorName || "").toUpperCase();
+  if (isMultiRoomRoom(room)) {
+    const locLabel = displayRoomLabel(room, locationSlugOrLabel).toUpperCase();
+    return `${locLabel} ${color}`;
+  }
+  return color;
+}
+
 function maybeAwardTreat(code, room, teamId) {
   ensureTreatsConfig(room);
   const cfg = room.treatsConfig;
@@ -1550,18 +1583,17 @@ socket.on("task:force-advance", ({ roomCode }) => {
           ack({
             ok: false,
             // Option A (more helpful)
-            error: `You scanned ${scannedLabel}. Go to ${expectedLabel}.`,
-
+            
             // Option B (less revealing) — swap the error line above for this one:
             // error: `You scanned ${scannedLabel}.`,
-
             scannedStationId: scanned?.id || stationId || null,
             scannedColor: scanned?.color || null,
             expectedStationId: expected?.id || expectedStation || null,
             expectedColor: expected?.color || null,
           });
         }
-        return;
+        const goTo = formatGoTo(room, expectedLocationSlugOrLabel, expectedColorName);
+        return { ok: false, error: `Go to ${goTo}` };
       }
 
       // 3) Location correctness (multi-room only)
@@ -2428,7 +2460,13 @@ const code = (roomCode || "").toUpperCase();
     room.taskIndex = -1;
     room.lastTeacherSeenAt = Date.now();
     room.expiresAt = Date.now() + 1000 * 60 * 60;
+    const selectedRooms = Array.isArray(payload?.selectedRooms)
+      ? payload.selectedRooms.map((s) => (s || "").toString().trim()).filter(Boolean)
+      : [];
+    room.enforceLocation = selectedRooms.length > 1;
 
+    room.selectedRooms = selectedRooms;
+    
     io.to(code).emit("session:started");
   });
 
@@ -3327,34 +3365,39 @@ app.get("/api/profile/me", authRequired, async (req, res) => {
   }
 });
 
-app.get("/api/profile", authRequired, async (req, res) => {
-  try {
-    const ownerId = getOwnerId(req);
-    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+ app.get("/api/profile", authRequired, async (req, res) => {
+   try {
+     const ownerId = getOwnerId(req);
+     if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
 
-    const profile = await getOrCreateProfileForUser({
-      ownerId,
-      email: req.user?.email || "",
-    });
+     const profile = await getOrCreateProfileForUser({
+       ownerId,
+       email: req.user?.email || "",
+     });
 
      return res.json({
-      ok: true,
-      userId: ownerId,
-      email: (req.user?.email || profile.email || "").toLowerCase(),
-      name: req.user?.name || profile.presenterName || profile.displayName || "",
-      isAdmin: !!(profile.isAdmin || req.user?.isAdmin),
-      entryCode: profile.entryCode || "",
-      planTier: null,
-      // ✅ Rooms for multi-room
-      locationOptions: Array.isArray(profile.locationOptions) ? profile.locationOptions : ["Classroom"],
-      // ✅ If LiveSession reads this, expose it too
-      treatsPerSession: typeof profile.treatsPerSession === "number" ? profile.treatsPerSession : undefined,
-    });
-  } catch (e) {
-    console.error("GET /api/profile failed:", e);
-    return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
+       ok: true,
+       userId: ownerId,
+       email: (req.user?.email || profile.email || "").toLowerCase(),
+       name: req.user?.name || profile.presenterName || profile.displayName || "",
+       isAdmin: !!(profile.isAdmin || req.user?.isAdmin),
+       entryCode: profile.entryCode || "",     // IMPORTANT: your schema defaults to ""
+       planTier: null,
+      // ✅ Rooms for multi-room (fix: always return it)
+      locationOptions: Array.isArray(profile.locationOptions)
+        ? profile.locationOptions
+        : ["Classroom"],
+      // Optional passthrough
+      treatsPerSession:
+        typeof profile.treatsPerSession === "number"
+          ? profile.treatsPerSession
+          : undefined,
+     });
+   } catch (e) {
+     console.error("GET /api/profile failed:", e);
+     return res.status(500).json({ ok: false, error: "Server error" });
+   }
+ });
 
 app.put("/api/profile/me", authRequired, async (req, res) => {
   try {
@@ -3378,29 +3421,34 @@ app.put("/api/profile/me", authRequired, async (req, res) => {
   }
 });
 
-app.put("/api/profile", authRequired, async (req, res) => {
-  try {
-    const ownerId = getOwnerId(req);
-    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
+app.put("/api/profile", requireAuth, async (req, res) => {
+   try {
+     const userId = req.user?.id || req.user?._id || req.user?.userId;
+     if (!userId) return res.status(401).json({ ok: false, error: "Unauthorized" });
 
-    const body = { ...req.body };
-    if (body.presenterTitle && !body.title) body.title = body.presenterTitle;
-    if (body.title && !body.presenterTitle) body.presenterTitle = body.title;
+     const profile = await TeacherProfile.findOne({ userId });
+     if (!profile) return res.status(404).json({ ok: false, error: "Profile not found" });
 
-    Object.assign(profile, body);
-    await profile.save();
+    // --- MULTI-ROOM: persist teacher-defined room list ---
+    if ("locationOptions" in (req.body || {})) {
+      const raw = Array.isArray(req.body.locationOptions) ? req.body.locationOptions : [];
+      const cleaned = Array.from(
+        new Set(
+          raw
+            .map((s) => (s || "").toString().trim())
+            .filter(Boolean)
+        )
+      );
+      profile.locationOptions = cleaned.length ? cleaned : ["Classroom"];
+    }
 
-    const plain = profile.toObject();
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile update failed (/api/profile):", err);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-
+     await profile.save();
+     return res.json(profile);
+   } catch (err) {
+     console.error("PUT /api/profile error:", err);
+     return res.status(500).json({ ok: false, error: "Server error" });
+   }
+ });
 
 app.post("/api/tasksets", async (req, res) => {
   try {

@@ -36,6 +36,7 @@ import AIDebateJudgeTask from "./types/AIDebateJudgeTask"; // NEW
 import BrainBlitzTask from "./types/BrainBlitzTask";
 import PhotoJournalTask from "./types/PhotoJournalTask";
 import HangmanDuelTask from "./types/HangmanDuelTask";
+import MatchingTask from "./types/MatchingTask"; // ✅ NEW
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -108,6 +109,15 @@ function normalizeTaskType(raw) {
     case "seq":
     case "sequence":
       return TASK_TYPES.SEQUENCE;
+
+    // ✅ Matching (NEW)
+    case "matching":
+    case "match":
+    case "match-up":
+    case "match_up":
+    case "matchup":
+    case "pairs":
+      return TASK_TYPES.MATCHING || "matching";
 
     // Timeline
     case "timeline":
@@ -204,10 +214,18 @@ function normalizeTaskType(raw) {
    Multi-part renderer for MC / TF / Short Answer
    ───────────────────────────────────────────── */
 
-  function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitting, disabled }) {
-    const isChoice = mode === "choice";
-    const isShort = mode === "short";
-    const isReview = !!readOnly;
+function MultiPartTask({
+  mode,
+  task,
+  review,
+  readOnly = false,
+  onSubmit,
+  submitting,
+  disabled,
+}) {
+  const isChoice = mode === "choice";
+  const isShort = mode === "short";
+  const isReview = !!readOnly;
 
   // Prefer AI "items" array; fall back to older shapes;
   // if none exist, treat as a single-question pack.
@@ -662,8 +680,7 @@ export default function TaskRunner({
   // MULTI-PART: MC / TF / SHORT-ANSWER with items → render all parts together
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
-    const noop = () => {};
-          
+
     return (
       <div className="space-y-3">
         {displayTitle && (
@@ -708,7 +725,6 @@ export default function TaskRunner({
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
         />
-
       </div>
     );
   }
@@ -744,7 +760,7 @@ export default function TaskRunner({
         />
       );
       break;
-      
+
     case TASK_TYPES.SORT:
       content = (
         <SortTask
@@ -768,6 +784,21 @@ export default function TaskRunner({
           socket={socket}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+        />
+      );
+      break;
+
+    // ✅ Matching (NEW)
+    case (TASK_TYPES.MATCHING || "matching"):
+      content = (
+        <MatchingTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled || isReview}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
         />
       );
       break;

@@ -88,7 +88,10 @@ function normalizeStationId(raw) {
   }
 
   // Case 5: URL that contains a color segment like ".../red"
-  const colorRegex = new RegExp(`(?:^|[\\/\\?#&=])(${COLOR_NAMES.join("|")})(?:$|[\\/\\?#&=])`, "i");
+  const colorRegex = new RegExp(
+    `(?:^|[\\/\\?#&=])(${COLOR_NAMES.join("|")})(?:$|[\\/\\?#&=])`,
+    "i"
+  );
   const cm = lower.match(colorRegex);
   if (cm) {
     const c = cm[1].toLowerCase();
@@ -102,6 +105,26 @@ function normalizeStationId(raw) {
 
   // Default fallback
   return { id: s, color: null, label: s.toUpperCase() };
+}
+
+function titleCaseRoom(label) {
+  const s = (label || "").toString().trim();
+  if (!s) return "CLASSROOM";
+  return s.toUpperCase();
+}
+
+function displayRoomFromSlugOrLabel(loc, selectedRooms) {
+  // if teacher provided “Upper Hallway”, show that; otherwise fall back to slug-ish text
+  const cleaned = (loc || "").toString().trim();
+  if (!cleaned) return "CLASSROOM";
+
+  const found =
+    (selectedRooms || []).find((r) => r.toLowerCase() === cleaned.toLowerCase()) ||
+    null;
+
+  // if it’s already a nice label, use it; else make slug more readable
+  const label = found || cleaned.replace(/[-_]/g, " ").replace(/\s+/g, " ");
+  return titleCaseRoom(label);
 }
 
 function getStationBubbleStyles(colorName) {
@@ -199,12 +222,16 @@ const isObjectiveTask = (task) => {
   // heuristic: objective task types usually ship correct answers/config
   const t = task.taskType || task.type;
   const items = Array.isArray(task.items) ? task.items : [];
-  const hasItemCorrect = items.some((it) => it && (it.correctAnswer !== undefined || it.referenceAnswer));
+  const hasItemCorrect = items.some(
+    (it) => it && (it.correctAnswer !== undefined || it.referenceAnswer)
+  );
   const hasTopCorrect = task.correctAnswer !== undefined && task.correctAnswer !== null;
   const cfg = task.config && typeof task.config === "object" ? task.config : {};
   const hasSortConfig =
-    Array.isArray(cfg.buckets) && cfg.buckets.length >= 2 &&
-    Array.isArray(cfg.items) && cfg.items.length >= 2 &&
+    Array.isArray(cfg.buckets) &&
+    cfg.buckets.length >= 2 &&
+    Array.isArray(cfg.items) &&
+    cfg.items.length >= 2 &&
     cfg.items.some((it) => typeof it?.bucketIndex === "number");
   const hasSeqConfig = Array.isArray(cfg.items) && cfg.items.length >= 2;
 
@@ -217,10 +244,12 @@ const isObjectiveTask = (task) => {
     TASK_TYPES.TIMELINE,
   ]);
 
-  if (objectiveTypes.has(t) && (hasItemCorrect || hasTopCorrect || hasSortConfig || hasSeqConfig)) return true;
+  if (objectiveTypes.has(t) && (hasItemCorrect || hasTopCorrect || hasSortConfig || hasSeqConfig))
+    return true;
 
   // scoringMode string fallback
-  if (task.scoringMode && String(task.scoringMode).toLowerCase().includes("objective")) return true;
+  if (task.scoringMode && String(task.scoringMode).toLowerCase().includes("objective"))
+    return true;
 
   return false;
 };
@@ -297,7 +326,8 @@ const buildObjectiveAnswerKey = (task) => {
     // single MC fallback
     const opts = Array.isArray(task.options) ? task.options : [];
     const c = task.correctAnswer;
-    const correctText = typeof c === "number" ? (opts[c] ?? "") : typeof c === "string" ? c : "";
+    const correctText =
+      typeof c === "number" ? opts[c] ?? "" : typeof c === "string" ? c : "";
     if (correctText) {
       return {
         title: "Answer key",
@@ -366,7 +396,6 @@ const buildObjectiveAnswerKey = (task) => {
 
   return null;
 };
-
 
 // ---------------------------------------------------------------------
 // Utility helpers
@@ -458,8 +487,8 @@ function StudentApp() {
   const [tasksetComplete, setTasksetComplete] = useState(false);
   const [taskRenderError, setTaskRenderError] = useState(null);
 
-  const [roomCode, setRoomCode] = useState(() => (lsGet(LS_KEYS.roomCode) || ""));
-  const [teamName, setTeamName] = useState(() => (lsGet(LS_KEYS.teamName) || ""));
+  const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
+  const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
   const [members, setMembers] = useState(() => {
     try {
       const raw = lsGet(LS_KEYS.members);
@@ -469,8 +498,8 @@ function StudentApp() {
       return ["", "", ""];
     }
   });
-  const [selectedRooms, setSelectedRooms] = useState([]);
   const [roomIsActive, setRoomIsActive] = useState(false);
+  const [roomState, setRoomState] = useState(null);
 
   // Collaboration
   const [partnerAnswer, setPartnerAnswer] = useState(null);
@@ -491,6 +520,7 @@ function StudentApp() {
   const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
   const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
+  const [waitingForLaunch, setWaitingForLaunch] = useState(false);
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
@@ -523,9 +553,6 @@ function StudentApp() {
   const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
   const [taskLocked, setTaskLocked] = useState(false);
   const [reviewState, setReviewState] = useState(null);
-
-  // Whether to enforce location (fixed-station / multi-room hunts)
-  const [enforceLocation, setEnforceLocation] = useState(false);
 
   // Teacher-defined location (e.g. "Classroom", "Hallway") + stable ref
   const [roomLocation, setRoomLocation] = useState(DEFAULT_LOCATION);
@@ -569,7 +596,6 @@ function StudentApp() {
     };
   }, []);
 
-  
   // ─────────────────────────────────────────────
   // Auto-resume: after refresh/reconnect, re-join the same room + team
   // (unless the user explicitly chose "Join another room")
@@ -620,6 +646,11 @@ function StudentApp() {
         if (state?.scores && typeof state.scores[(resp.teamId || savedTeamSessionId)] === "number") {
           setScoreTotal(state.scores[(resp.teamId || savedTeamSessionId)]);
         }
+        const expectedRoom = displayRoomFromSlugOrLabel(
+          roomState?.teams?.[teamId]?.locationSlug || "Classroom",
+          roomState?.selectedRooms || []
+        );
+        const expectedColor = (assignedColor || "").toUpperCase();
 
         // If a taskset is running, backend will send the current task immediately.
         // Make sure scanner is off until we need it.
@@ -628,7 +659,7 @@ function StudentApp() {
     );
   }, [connected, joined]);
 
-// ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
   // Server event listeners – room, tasks, noise, treats, scoring
   // ─────────────────────────────────────────────
 
@@ -646,23 +677,25 @@ function StudentApp() {
         setScoreTotal(state.scores[teamId]);
       }
 
-
-// 🏆 Build a simple leaderboard from room state (fallback if no leaderboard-update event)
-if (state.scores && state.teams) {
-  const entries = Object.entries(state.scores)
-    .filter(([, sc]) => typeof sc === "number")
-    .map(([tid, sc]) => ({
-      teamName: state.teams?.[tid]?.teamName || state.teams?.[tid]?.name || `Team-${String(tid).slice(-4)}`,
-      score: sc,
-      rankChange: 0,
-    }))
-    .sort((a, b) => b.score - a.score);
-  setLeaderboard(entries);
-}
-
-      if (Array.isArray(state.selectedRooms)) {
-        setSelectedRooms(state.selectedRooms);
+      // 🏆 Build a simple leaderboard from room state (fallback if no leaderboard-update event)
+      if (state.scores && state.teams) {
+        const entries = Object.entries(state.scores)
+          .filter(([, sc]) => typeof sc === "number")
+          .map(([tid, sc]) => ({
+            teamName:
+              state.teams?.[tid]?.teamName ||
+              state.teams?.[tid]?.name ||
+              `Team-${String(tid).slice(-4)}`,
+            score: sc,
+            rankChange: 0,
+          }))
+          .sort((a, b) => b.score - a.score);
+        setLeaderboard(entries);
       }
+
+      // ✅ store full roomState (instead of setSelectedRooms which doesn't exist)
+      setRoomState(state);
+
       const newStationId = myTeam.currentStationId || myTeam.stationId;
       if (newStationId && newStationId !== lastStationIdRef.current) {
         lastStationIdRef.current = newStationId;
@@ -685,24 +718,33 @@ if (state.scores && state.teams) {
       setNoiseState((prev) => ({
         ...prev,
         enabled: !!noiseCfg.enabled,
-        threshold:
-          typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
+        threshold: typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
       }));
     };
 
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
       setCurrentTask(payload.task || payload || null);
-      const idx = (typeof payload.taskIndex === "number") ? payload.taskIndex : (typeof payload.index === "number" ? payload.index : null);
+      const idx =
+        typeof payload.taskIndex === "number"
+          ? payload.taskIndex
+          : typeof payload.index === "number"
+          ? payload.index
+          : null;
       setCurrentTaskIndex(idx);
-      const total = (typeof payload.totalTasks === "number") ? payload.totalTasks : (typeof payload.total === "number" ? payload.total : null);
+      const total =
+        typeof payload.totalTasks === "number"
+          ? payload.totalTasks
+          : typeof payload.total === "number"
+          ? payload.total
+          : null;
       setTasksetTotalTasks(total);
 
       const limit = payload.timeLimitSeconds || null;
       setTimeLimitSeconds(limit);
 
       console.log("[StudentApp] task:assigned", payload?.task || payload);
-      
+
       if (limit && limit > 0) {
         const endTime = Date.now() + limit * 1000;
         setRemainingMs(endTime - Date.now());
@@ -731,9 +773,12 @@ if (state.scores && state.teams) {
       setPostSubmitSecondsLeft(null);
       setLastTaskResult(null);
       setPointToast(null);
-    setShortAnswerReveal(null);
-    setTasksetComplete(false);
-    setTaskRenderError(null);
+      setShortAnswerReveal(null);
+      setTasksetComplete(false);
+      setTaskRenderError(null);
+
+      // ✅ Clear waiting overlay when a task arrives
+      setWaitingForLaunch(false);
     };
 
     // AI scoring + feedback
@@ -766,8 +811,7 @@ if (state.scores && state.teams) {
         maxPoints: typeof maxPoints === "number" ? maxPoints : null,
         aiFeedback: aiFeedback || null,
         taskId: taskId || null,
-        taskIndex:
-          typeof taskIndex === "number" && taskIndex >= 0 ? taskIndex : null,
+        taskIndex: typeof taskIndex === "number" && taskIndex >= 0 ? taskIndex : null,
         method: method || null,
         correctAnswer: correctAnswer ?? null,
       });
@@ -823,21 +867,15 @@ if (state.scores && state.teams) {
       if (!payload) return;
       setNoiseState((prev) => ({
         ...prev,
-        level:
-          typeof payload.level === "number" ? payload.level : prev.level,
-        brightness:
-          typeof payload.brightness === "number"
-            ? payload.brightness
-            : prev.brightness,
+        level: typeof payload.level === "number" ? payload.level : prev.level,
+        brightness: typeof payload.brightness === "number" ? payload.brightness : prev.brightness,
       }));
     };
 
     const handleTreat = (payload) => {
       if (!payload) return;
       if (payload.type === "point-bonus") {
-        setTreatMessage(
-          payload.message || "Surprise point bonus for your team!"
-        );
+        setTreatMessage(payload.message || "Surprise point bonus for your team!");
         tryPlayTreatSound();
         setTimeout(() => setTreatMessage(null), 4000);
       } else if (payload.type === "fun-message") {
@@ -896,10 +934,11 @@ if (state.scores && state.teams) {
   // -------------------------------------------------------------------
   // Auto-open scanner when a scan is required
   // -------------------------------------------------------------------
+  const enforceLocation = !!roomState?.taskset?.enforceLocation;
+  const selectedRooms = roomState?.selectedRooms || [];
+
   const mustScan =
-    enforceLocation &&
-    assignedStationId &&
-    scannedStationId !== assignedStationId;
+    enforceLocation && assignedStationId && scannedStationId !== assignedStationId;
 
   useEffect(() => {
     if (!joined) return;
@@ -909,14 +948,12 @@ if (state.scores && state.teams) {
     setScannerActive(true);
 
     // Separately, ensure assignment info is fetched so colour can display
-    const inferredColor =
-      assignedColor || normalizeStationId(assignedStationId)?.color;
+    const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
 
     if (!inferredColor && teamId) {
       socket.emit("room:request-state", { teamId });
     }
   }, [joined, currentTask, assignedColor, assignedStationId, teamId]);
-
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -935,15 +972,11 @@ if (state.scores && state.teams) {
   // ─────────────────────────────────────────────
   useEffect(() => {
     try {
-      const alertAudio = new Audio(
-        "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"
-      );
+      const alertAudio = new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg");
       alertAudio.volume = 0.15;
       sndAlert.current = alertAudio;
 
-      const treatAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
+      const treatAudio = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
       treatAudio.volume = 0.2;
       sndTreat.current = treatAudio;
     } catch (err) {
@@ -994,9 +1027,7 @@ if (state.scores && state.teams) {
       const ok = response && (response.ok === true || response.success === true);
       const errMsg = response?.error;
       if (!ok) {
-        setStatusMessage(
-          response?.error || "Could not join. Check the code with your teacher."
-        );
+        setStatusMessage(response?.error || "Could not join. Check the code with your teacher.");
         return;
       }
 
@@ -1010,10 +1041,11 @@ if (state.scores && state.teams) {
       lsSet(LS_KEYS.roomCode, payload.roomCode);
       lsSet(LS_KEYS.teamSessionId, String(tid));
       lsSet(LS_KEYS.teamName, payload.teamName);
-      try { lsSet(LS_KEYS.members, JSON.stringify(payload.members || [])); } catch {}
+      try {
+        lsSet(LS_KEYS.members, JSON.stringify(payload.members || []));
+      } catch {}
       userDroppedRoomRef.current = false;
       resumeAttemptedRef.current = false;
-
 
       if (response.currentTask) {
         setCurrentTask(response.currentTask.task || null);
@@ -1052,17 +1084,15 @@ if (state.scores && state.teams) {
       }
 
       const joinStationId = response?.stationId || response?.assignedStationId;
-        if (joinStationId) {
-          const stationInfo = normalizeStationId(joinStationId);
-          setAssignedStationId(stationInfo.id);
-          setAssignedColor(stationInfo.color || response?.assignedColor || null);
-          lastStationIdRef.current = stationInfo.id;
-        }
+      if (joinStationId) {
+        const stationInfo = normalizeStationId(joinStationId);
+        setAssignedStationId(stationInfo.id);
+        setAssignedColor(stationInfo.color || response?.assignedColor || null);
+        lastStationIdRef.current = stationInfo.id;
+      }
 
       const locSlug =
-        response.locationSlug ||
-        roomLocationFromStateRef.current ||
-        DEFAULT_LOCATION;
+        response.locationSlug || roomLocationFromStateRef.current || DEFAULT_LOCATION;
       setRoomLocation(locSlug);
       roomLocationFromStateRef.current = locSlug;
 
@@ -1070,8 +1100,7 @@ if (state.scores && state.teams) {
       setNoiseState((prev) => ({
         ...prev,
         enabled: !!noiseCfg.enabled,
-        threshold:
-          typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
+        threshold: typeof noiseCfg.threshold === "number" ? noiseCfg.threshold : 0,
       }));
     });
   };
@@ -1128,20 +1157,20 @@ if (state.scores && state.teams) {
     setTaskLocked(false);
     setPostSubmitSecondsLeft(null);
 
-// If this was the last task in the taskset, go straight to the victory screen (no extra scan)
-const isLastTask =
-  typeof currentTaskIndex === "number" &&
-  typeof tasksetTotalTasks === "number" &&
-  tasksetTotalTasks > 0 &&
-  currentTaskIndex >= tasksetTotalTasks - 1;
+    // If this was the last task in the taskset, go straight to the victory screen (no extra scan)
+    const isLastTask =
+      typeof currentTaskIndex === "number" &&
+      typeof tasksetTotalTasks === "number" &&
+      tasksetTotalTasks > 0 &&
+      currentTaskIndex >= tasksetTotalTasks - 1;
 
-if (isLastTask) {
-  setTasksetComplete(true);
-  setScannerActive(false);
-  setReviewState(null);
-  // Refresh room state one last time so scores/leaderboard are up to date
-  socket.emit("room:request-state", { teamId });
-}
+    if (isLastTask) {
+      setTasksetComplete(true);
+      setScannerActive(false);
+      setReviewState(null);
+      // Refresh room state one last time so scores/leaderboard are up to date
+      socket.emit("room:request-state", { teamId });
+    }
 
     if (isLastTask) {
       // hide task UI
@@ -1166,7 +1195,6 @@ if (isLastTask) {
     setScannerActive(true);
 
     setReviewState(null);
-
   };
 
   const handleSubmitAnswer = (answerPayload) => {
@@ -1190,10 +1218,7 @@ if (isLastTask) {
       roomCode: roomCode.trim().toUpperCase(),
       teamId,
       taskId: currentTask._id || currentTask.id,
-      taskIndex:
-        typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-          ? currentTaskIndex
-          : null,
+      taskIndex: typeof currentTaskIndex === "number" && currentTaskIndex >= 0 ? currentTaskIndex : null,
       answer: normalizedAnswer,
     };
 
@@ -1201,9 +1226,7 @@ if (isLastTask) {
       setSubmitting(false);
       if (!response || response.error) {
         console.warn("Submit error:", response?.error || "Unknown error");
-        setStatusMessage(
-          response?.error || "There was a problem submitting. Try again."
-        );
+        setStatusMessage(response?.error || "There was a problem submitting. Try again.");
         return;
       }
 
@@ -1279,10 +1302,7 @@ if (isLastTask) {
 
     // Only include locationSlug when it should be enforced (multi-room hunts)
     if (enforceLocation && multi) {
-      scanPayload.locationSlug = (roomLocation || "")
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, "-");
+      scanPayload.locationSlug = (roomLocation || "").trim().toLowerCase().replace(/\s+/g, "-");
     }
 
     socket.emit("station:scan", scanPayload, (resp) => {
@@ -1304,9 +1324,7 @@ if (isLastTask) {
       }
 
       // Close only after server accepts AND if it matches expected station
-      const expectedId = resp?.stationId
-        ? normalizeStationId(resp.stationId).id
-        : assignedStationId;
+      const expectedId = resp?.stationId ? normalizeStationId(resp.stationId).id : assignedStationId;
 
       const accepted = norm.id === expectedId;
       setScannerActive(accepted ? false : true);
@@ -1314,34 +1332,22 @@ if (isLastTask) {
       // ✅ UX: show “Wait…” ONLY for the first scan when the taskset is not launched
       if (accepted) {
         const isInitial = !!resp?.initialAssignment; // your server sets this on first-ever scan
-        const waitingForLaunch = !!resp?.waitingForLaunch || !roomIsActive;
+        const waiting = !!resp?.waitingForLaunch || !roomIsActive;
 
-        if (isInitial && waitingForLaunch) {
+        // ✅ Fix: use resp (not ack)
+        setWaitingForLaunch(!!resp?.waitingForLaunch || !roomIsActive);
+
+        if (isInitial && waiting) {
           setStatusMessage("✅ Scan accepted. Wait for your next task…");
         } else {
           // Clear any stale wait message once tasks are live
           setStatusMessage("");
         }
-
-        // Optional: tiny debug log to confirm whether scan actually delivered a task
-        // console.log("scan ok", { deliveredTask: resp?.deliveredTask, waitingForLaunch });
       }
     });
 
     socket.emit("task:requestNext", { roomCode: code, teamId });
-
   };
-
-  // ─────────────────────────────────────────────
-  // Location enforcement & station gating
-  // ─────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!currentTask) return;
-    const cfg = currentTask.config || {};
-    const enforce = !!cfg.requireScan && !!cfg.stationBased;
-    setEnforceLocation(enforce);
-  }, [currentTask]);
 
   // ─────────────────────────────────────────────
   // Derived values for UI
@@ -1355,6 +1361,21 @@ if (isLastTask) {
     return Math.max(0, Math.min(7, n - 1)); // clamp 0..7
   })();
 
+  // ✅ Recreate the destination text after stationInfo exists
+  const expectedLoc =
+    roomState?.teams?.[teamId]?.locationSlug ||
+    roomState?.teams?.[teamId]?.locationCode ||
+    roomState?.locationCode ||
+    "Classroom";
+
+  const expectedRoom = displayRoomFromSlugOrLabel(expectedLoc, selectedRooms);
+  const expectedColor = (assignedColor || stationInfo?.color || "").toUpperCase();
+
+  const destinationText =
+    enforceLocation && Array.isArray(selectedRooms) && selectedRooms.length > 1
+      ? `${expectedRoom} ${expectedColor}`
+      : `${expectedColor}`;
+
   const themedTask = currentTask
     ? {
         ...currentTask,
@@ -1363,49 +1384,40 @@ if (isLastTask) {
         stationColor: stationInfo?.color || assignedColor || null,
         stationIndex, // <-- Hangman uses this to select wordsByStation[stationIndex]
       }
-    : null;      
+    : null;
 
   const yourTeamName = teamName || "";
   const recentlyScoredBig = false; // or compute from lastTaskResult/pointToast if you already track it
 
-  const isMultiRoom =
-    Array.isArray(selectedRooms) && selectedRooms.length > 1;
+  const isMultiRoom = Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
   const noiseBarOpacity = noiseState.enabled ? noiseState.brightness : 0.08;
 
   const timerDisplay = timeLimitSeconds ? formatRemainingMs(remainingMs) : null;
 
   const responseFontSize = currentTask && currentTask.largeText ? "1.1rem" : "1rem";
-  const responseHeadingFontSize =
-    currentTask && currentTask.largeText ? "1.4rem" : "1.2rem";
+  const responseHeadingFontSize = currentTask && currentTask.largeText ? "1.4rem" : "1.2rem";
 
-  const isMotionMission =
-    currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
+  const isMotionMission = currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
   const isPetFeeding = currentTask?.taskType === TASK_TYPES.PET_FEEDING;
   const isRecordAudio = currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
 
   const isJeopardy = currentTask?.taskType === TASK_TYPES.BRAINSTORM_BATTLE;
-  const isFlashcardsRace =
-    currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
+  const isFlashcardsRace = currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
   const isMadDash =
     currentTask?.taskType === TASK_TYPES.MAD_DASH ||
     currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE;
 
-  const isMakeAndSnap =
-    currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
+  const isMakeAndSnap = currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
 
-  const isMindMapper =
-     currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
+  const isMindMapper = currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
 
   const isHangman =
-    currentTask?.taskType === TASK_TYPES.HANGMAN_DUEL ||
-    currentTask?.taskType === "hangman-duel";
-  
-  const isMultipleChoice =
-    currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
+    currentTask?.taskType === TASK_TYPES.HANGMAN_DUEL || currentTask?.taskType === "hangman-duel";
 
-  const isMusicalChairs =
-    currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
+  const isMultipleChoice = currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
+
+  const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
@@ -1413,15 +1425,13 @@ if (isLastTask) {
       }
     : {};
 
-  const isMysteryClues =
-    currentTask?.taskType === TASK_TYPES.MYSTERY_CLUES;
+  const isMysteryClues = currentTask?.taskType === TASK_TYPES.MYSTERY_CLUES;
 
-  
   const mysteryHeaderStyle = isMysteryClues
-     ? {
-         animation: "mystery-glow 1.6s ease-in-out infinite",
-       }
-     : {};
+    ? {
+        animation: "mystery-glow 1.6s ease-in-out infinite",
+      }
+    : {};
 
   const hangmanHeaderStyle = isHangman
     ? {
@@ -1439,8 +1449,7 @@ if (isLastTask) {
 
   const isOpenText = currentTask?.taskType === TASK_TYPES.OPEN_TEXT;
   const isPhoto = currentTask?.taskType === TASK_TYPES.PHOTO;
-  const isBrainSparkNotes =
-    currentTask?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES;
+  const isBrainSparkNotes = currentTask?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES;
 
   const baseTaskCardStyle = {
     marginBottom: 12,
@@ -1476,22 +1485,16 @@ if (isLastTask) {
     ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
     : isHangman
     ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #facc15 70%, #f97316 100%)"
-    : isMadDash
-    ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
     : isBrainSparkNotes
     ? "linear-gradient(135deg, #fef9c3 0%, #fee2e2 40%, #f9fafb 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
   const currentTaskNumber =
-    typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-      ? currentTaskIndex + 1
-      : null;
+    typeof currentTaskIndex === "number" && currentTaskIndex >= 0 ? currentTaskIndex + 1 : null;
 
   const totalTasks =
-    typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0
-      ? tasksetTotalTasks
-      : null;
+    typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0 ? tasksetTotalTasks : null;
 
   const progressLabel =
     currentTaskNumber && totalTasks
@@ -1503,7 +1506,7 @@ if (isLastTask) {
   // ─────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────
-          
+
   return (
     <div
       style={{
@@ -1513,8 +1516,7 @@ if (isLastTask) {
         flexDirection: "column",
         alignItems: "stretch",
         justifyContent: "flex-start",
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         background: isFlashcardsRace
           ? "radial-gradient(circle at top, #1e293b 0%, #0f172a 25%, #4f46e5 60%, #f97316 100%)"
           : isMadDash
@@ -2533,7 +2535,7 @@ if (isLastTask) {
 )}
 
 {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-          {scannerActive && !tasksetComplete && (
+{scannerActive && !tasksetComplete && (
           <section
             style={{
               marginTop: 6,
@@ -2555,7 +2557,7 @@ if (isLastTask) {
 
                 // Multi-room only: show location + colour
                 if (isMultiRoom && enforceLocation && locationUpper) {
-                  return `Scan QR Code at ${locationUpper} ${colorUpper}`;
+                  return expectedColor ? `Scan QR Code at ${destinationText}` : "Scan station QR code";
                 }
 
                 // Single-room: colour only
@@ -2585,7 +2587,31 @@ if (isLastTask) {
                   boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
                   maxWidth: "90vw",
                 }}>
-                  <QrScanner onScan={handleScan} onError={setScanError} />
+                  {scannerActive && (
+                    <div style={{ position: "relative", width: "100%" }}>
+                      <QrScanner onScan={handleScan} onError={setScanError} />
+                    {waitingForLaunch && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          textAlign: "center",
+                          padding: 20,
+                          fontSize: 28,
+                          fontWeight: 800,
+                          color: "white",
+                          textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        Waiting for Curriculate to Launch...
+                      </div>
+                    )}
+                  </div>
+                )}
                   {scanError && (
                     <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
                       ⚠ {scanError}

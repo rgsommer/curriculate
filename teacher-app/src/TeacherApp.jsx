@@ -55,6 +55,8 @@ function TeacherApp() {
     routeLocation.pathname === "/signup" ||
     routeLocation.pathname.startsWith("/reset-password");
 
+  const isHostKioskRoute = routeLocation.pathname === "/host-kiosk";
+
   // If we're on auth routes, render ONLY the auth page (no sidebar/header)
   if (isAuthRoute) {
   return (
@@ -67,6 +69,21 @@ function TeacherApp() {
     </Routes>
   );
 }
+
+  if (isHostKioskRoute) {
+    const requireAuth = (element) => (isAuthenticated ? element : <Login />);
+    const requireRoom = (element) => (roomCode ? element : <EnterRoomMessage />);
+
+    return (
+      <Routes>
+        <Route
+          path="/host-kiosk"
+          element={requireAuth(requireRoom(<HostView roomCode={roomCode} />))}
+        />
+        <Route path="*" element={requireAuth(requireRoom(<HostView roomCode={roomCode} />))} />
+      </Routes>
+    );
+  }
 
   const [roomCode, setRoomCode] = useState(() => generateRoomCode());
   const location = useLocation();
