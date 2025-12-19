@@ -22,6 +22,56 @@ const DEFAULT_LOCATION = "Classroom";
 
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
+// --- MATCHING reveal helper (student review overlay) ---
+function buildMatchingReveal(task, reviewState) {
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+  const correctMatches =
+    (reviewState && typeof reviewState.correctMatches === "object" && reviewState.correctMatches) ||
+    (cfg && typeof cfg.correctMatches === "object" && cfg.correctMatches) ||
+    (task && typeof task.correctMatches === "object" && task.correctMatches) ||
+    null;
+
+  if (!correctMatches) return null;
+
+  const leftItems = Array.isArray(reviewState?.leftItems)
+    ? reviewState.leftItems
+    : Array.isArray(cfg?.leftItems)
+    ? cfg.leftItems
+    : Array.isArray(task?.leftItems)
+    ? task.leftItems
+    : [];
+
+  const rightItems = Array.isArray(reviewState?.rightItems)
+    ? reviewState.rightItems
+    : Array.isArray(cfg?.rightItems)
+    ? cfg.rightItems
+    : Array.isArray(task?.rightItems)
+    ? task.rightItems
+    : [];
+
+  const leftTextById = {};
+  for (const it of leftItems) {
+    const id = String(it?.id ?? "");
+    const text = String(it?.text ?? it?.label ?? it ?? "").trim();
+    if (id && text) leftTextById[id] = text;
+  }
+
+  const rightTextById = {};
+  for (const it of rightItems) {
+    const id = String(it?.id ?? "");
+    const text = String(it?.text ?? it?.label ?? it ?? "").trim();
+    if (id && text) rightTextById[id] = text;
+  }
+
+  const rows = Object.entries(correctMatches).map(([l, r]) => {
+    const left = leftTextById[String(l)] || String(l);
+    const right = rightTextById[String(r)] || String(r);
+    return { left, right };
+  });
+
+  return rows.length ? rows : null;
+}
+
 // Normalize a human-readable location into a slug like "room-12"
 function normalizeLocationSlug(raw) {
   if (!raw) return "";
@@ -2771,9 +2821,50 @@ function StudentApp() {
                           />
                         </div>
                       </div>
+                      {/* Matching answer reveal during lock */}
+                      {currentTask?.taskType === TASK_TYPES.MATCHING && (() => {
+                        const rows = buildMatchingReveal(currentTask, reviewState);
+                        if (!rows) return null;
+
+                        return (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              width: "100%",
+                              background: "rgba(255,255,255,0.14)",
+                              border: "1px solid rgba(255,255,255,0.25)",
+                              borderRadius: 12,
+                              padding: 12,
+                              textAlign: "left",
+                            }}
+                          >
+                            <div style={{ fontWeight: 800, marginBottom: 8 }}>Correct matches</div>
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {rows.map((r, i) => (
+                                <div
+                                  key={i}
+                                  style={{
+                                    padding: 8,
+                                    borderRadius: 10,
+                                    background: "rgba(0,0,0,0.12)",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    gap: 10,
+                                  }}
+                                >
+                                  <div style={{ fontWeight: 700 }}>{r.left}</div>
+                                  <div style={{ opacity: 0.95 }}>→</div>
+                                  <div style={{ fontWeight: 700 }}>{r.right}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* ✅ Objective answer key during lock */}
-                      {/* {isObjectiveTask(currentTask) && (() => {
+                      {isObjectiveTask(currentTask) && (() => {
                         const key = buildObjectiveAnswerKey(currentTask);
                         if (!key) return null;
 
@@ -2838,7 +2929,7 @@ function StudentApp() {
                         }
 
                         return null;
-                      })()} */}
+                      })()}
 
                     </div>
                   ) : (

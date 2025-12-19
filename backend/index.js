@@ -848,6 +848,87 @@ function arraysDeepEqual(a, b) {
   }
 }
 
+function scoreMatchingTask(task, answer, basePoints) {
+  // Accept shapes:
+  // task.config.correctMatches OR task.correctMatches
+  // answer.matches OR answer.correctMatches OR answer.pairs
+  const cfg = (task && typeof task === "object" ? (task.config || task) : {}) || {};
+
+  const correctMatches =
+    (cfg && typeof cfg.correctMatches === "object" && cfg.correctMatches) ||
+    (task && typeof task.correctMatches === "object" && task.correctMatches) ||
+    null;
+
+  if (!correctMatches || typeof correctMatches !== "object") {
+    return {
+      ok: false,
+      error: "Task has no correctMatches.",
+      correct: null,
+      pointsEarned: 0,
+      aiScore: { strategy: "matching", error: "missing-correctMatches" },
+    };
+  }
+
+  const submitted =
+    (answer && typeof answer.matches === "object" && answer.matches) ||
+    (answer && typeof answer.correctMatches === "object" && answer.correctMatches) ||
+    (answer && typeof answer.pairs === "object" && answer.pairs) ||
+    null;
+
+  if (!submitted || typeof submitted !== "object") {
+    return {
+      ok: false,
+      error: "Answer has no matches map.",
+      correct: false,
+      pointsEarned: 0,
+      aiScore: { strategy: "matching", error: "missing-submitted-matches" },
+    };
+  }
+
+  const leftIds = Object.keys(correctMatches);
+  if (leftIds.length === 0) {
+    return {
+      ok: false,
+      error: "No pairs in correctMatches.",
+      correct: null,
+      pointsEarned: 0,
+      aiScore: { strategy: "matching", error: "empty-correctMatches" },
+    };
+  }
+
+  let correctCount = 0;
+  let evaluated = 0;
+
+  for (const leftId of leftIds) {
+    const expectedRight = String(correctMatches[leftId] ?? "");
+    const gotRight = submitted[leftId] != null ? String(submitted[leftId]) : "";
+    evaluated += 1;
+    if (expectedRight && gotRight && expectedRight === gotRight) correctCount += 1;
+  }
+
+  const fraction = evaluated > 0 ? Math.max(0, Math.min(1, correctCount / evaluated)) : 0;
+  const pointsEarned = Math.round((Number(basePoints) || 0) * fraction);
+
+  const correct =
+    fraction === 1 ? true :
+    fraction === 0 ? false :
+    null;
+
+  return {
+    ok: true,
+    correct,
+    pointsEarned,
+    aiScore: {
+      strategy: "matching",
+      correctCount,
+      totalPairs: evaluated,
+      fractionCorrect: fraction,
+      maxPoints: Number(basePoints) || 0,
+      totalScore: pointsEarned,
+    },
+  };
+}
+
 function updateNoiseDerivedState(code, room) {
   ensureNoiseControl(room);
   const control = room.noiseControl;
@@ -1478,6 +1559,16 @@ socket.on("task:force-advance", ({ roomCode }) => {
         };
       }
 
+      // MATCHING (objective)
+      if (type === "matching") {
+        const cfg = task?.config || task || {};
+        return {
+          correctMatches: cfg?.correctMatches || task?.correctMatches || null,
+          leftItems: cfg?.leftItems || task?.leftItems || null,
+          rightItems: cfg?.rightItems || task?.rightItems || null,
+        };
+      }
+
       // TRUE/FALSE TIC-TAC-TOE
       if (type === "true-false-tictactoe") {
         // only if your task carries correct answers for each cell/statement
@@ -2071,13 +2162,16 @@ const code = (roomCode || "").toUpperCase();
     }
 
     // ----------------------------
-    // 2) Non-multi tasks → AI / rule-based scoring core
+    // 2) Non-multi tasks → Matching (objective)
     // ----------------------------
-    if (!isMultiPack) {
+    if (!isMultiPack && task.taskType === "matching") {
+      const scored = scoreMatchingTask(task, answer, basePoints);
+      aiScore = scored.aiScore;
+      correct = scored.correct;
+      pointsEarned = scored.pointsEarned;
+    }
+    if (!isMultiPack && task.taskType !== "matching") {
       try {
-        // Let the central AI/rule-based scorer decide how to grade this task.
-        // For objective tasks this stays rule-based only; for PhotoJournal
-        // and other subjective tasks this may call OpenAI.
         aiScore = await generateAIScore({
           task,
           rubric: task.aiRubric || null,
