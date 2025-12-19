@@ -40,16 +40,6 @@ function normalizeStudentAnswerPrimitive(raw) {
 
 function scoreSubmissionRuleBased({ task, submission }) {
   const meta = TASK_TYPE_META[task.taskType] || {};
-
-  // If the caller accidentally sends an objective task here, skip AI scoring.
-  if (meta.objectiveScoring) {
-    return {
-      score: null,
-      maxPoints: typeof task.points === "number" ? task.points : null,
-      method: "skipped-objective",
-      details: { reason: "Objective task types should be scored deterministically (not via aiScoring)." },
-    };
-  }
   if (!meta.objectiveScoring) return null;
 
   const points = typeof task.points === "number" ? task.points : 1;
@@ -1141,16 +1131,6 @@ export async function generateAIScore({ task, submission, rubric }) {
   }
 
   const meta = TASK_TYPE_META[task.taskType] || {};
-
-  // If the caller accidentally sends an objective task here, skip AI scoring.
-  if (meta.objectiveScoring) {
-    return {
-      score: null,
-      maxPoints: typeof task.points === "number" ? task.points : null,
-      method: "skipped-objective",
-      details: { reason: "Objective task types should be scored deterministically (not via aiScoring)." },
-    };
-  }
   const hasCorrect =
     task.correctAnswer != null ||
     (Array.isArray(task.items) &&
@@ -1164,11 +1144,15 @@ export async function generateAIScore({ task, submission, rubric }) {
         : meta.defaultAiScoringRequired,
   };
 
-  // 2) Determine whether AI scoring is required for this (non-objective) task type.
-  const requiresAI =
-    task?.aiScoringRequired === true ||
-    meta.defaultAiScoringRequired === true ||
-    !!rubric;
+  // 1) Try rule-based if objective and correct answers exist
+  const ruleResult = scoreSubmissionRuleBased({ task: safeTask, submission });
+  if (ruleResult) return ruleResult;
+
+  // 2) If AI is not required and no rubric, skip
+  const hasExplicitFlag = typeof safeTask.aiScoringRequired === "boolean";
+  const requiresAI = hasExplicitFlag
+    ? safeTask.aiScoringRequired
+    : !hasCorrect && !!rubric;
 
   if (!requiresAI) {
     return {
@@ -1177,7 +1161,7 @@ export async function generateAIScore({ task, submission, rubric }) {
       method: "none",
       details: {
         reason:
-          "AI scoring not required and no rubric was provided.",
+          "AI scoring not required and no objective rule-based scoring available.",
       },
     };
   }

@@ -490,7 +490,6 @@ function buildRoomState(room) {
       },
 
       brainstorm: null,
-      moodCheckins: {},
       selectedRooms: [],
     };
   }
@@ -605,7 +604,6 @@ function buildRoomState(room) {
     startedAt: room.startedAt || null,
     isActive: !!room.isActive,
     selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],
-    moodCheckins: room.moodCheckins && typeof room.moodCheckins === "object" ? room.moodCheckins : {},
     submissions: Array.isArray(room.submissions) ? room.submissions : [],
     
     // Random treats (for LiveSession UI)
@@ -931,98 +929,6 @@ function scoreMatchingTask(task, answer, basePoints) {
   };
 }
 
-function scoreVennSortTask(task, answer, basePoints) {
-  // Accept shapes:
-  // - correctAnswer at task.correctAnswer OR task.config.correctAnswer
-  // - submitted placements at answer.placements OR answer (if already shaped)
-  const cfg = (task && typeof task === "object" ? (task.config || task) : {}) || {};
-
-  const correctAnswer =
-    (task && typeof task.correctAnswer === "object" && task.correctAnswer) ||
-    (cfg && typeof cfg.correctAnswer === "object" && cfg.correctAnswer) ||
-    null;
-
-  if (!correctAnswer || typeof correctAnswer !== "object") {
-    return {
-      ok: false,
-      error: "Task has no correctAnswer map.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "vennsort", error: "missing-correctAnswer" },
-    };
-  }
-
-  const submitted =
-    (answer && typeof answer === "object" && typeof answer.placements === "object" && answer.placements) ||
-    (answer && typeof answer === "object" ? answer : null);
-
-  if (!submitted || typeof submitted !== "object") {
-    return {
-      ok: false,
-      error: "Answer has no placements map.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "vennsort", error: "missing-submitted-placements" },
-    };
-  }
-
-  const correctKeys = Object.keys(correctAnswer);
-  if (correctKeys.length === 0) {
-    return {
-      ok: false,
-      error: "No items in correctAnswer.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "vennsort", error: "empty-correctAnswer" },
-    };
-  }
-
-  const normCats = (arr) =>
-    Array.isArray(arr)
-      ? arr
-          .map((x) => String(x || "").trim())
-          .filter(Boolean)
-          .sort()
-      : [];
-
-  let correctCount = 0;
-  let evaluated = 0;
-
-  for (const itemId of correctKeys) {
-    const expected = normCats(correctAnswer[itemId]);
-    const got = normCats(submitted[itemId]);
-
-    evaluated += 1;
-
-    // Exact match (including "belongs nowhere" => [])
-    if (JSON.stringify(expected) === JSON.stringify(got)) {
-      correctCount += 1;
-    }
-  }
-
-  const fraction = evaluated > 0 ? Math.max(0, Math.min(1, correctCount / evaluated)) : 0;
-  const pointsEarned = Math.round((Number(basePoints) || 0) * fraction);
-
-  const correct =
-    fraction === 1 ? true :
-    fraction === 0 ? false :
-    null;
-
-  return {
-    ok: true,
-    correct,
-    pointsEarned,
-    aiScore: {
-      strategy: "vennsort",
-      correctCount,
-      totalItems: evaluated,
-      fractionCorrect: fraction,
-      maxPoints: Number(basePoints) || 0,
-      totalScore: pointsEarned,
-    },
-  };
-}
-
 function updateNoiseDerivedState(code, room) {
   ensureNoiseControl(room);
   const control = room.noiseControl;
@@ -1293,9 +1199,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
       const { roomCode, teamName, members } = payload || {};
       const code = (roomCode || "").toUpperCase().trim();
       const cleanName = (teamName || "").trim();
-      const meta = TASK_TYPE_META[task.taskType] || {};
-      const isObjective = meta.objectiveScoring === true;
-
       const memberList = Array.isArray(members)
         ? members
             .filter((m) => typeof m === "string")
@@ -1618,16 +1521,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
         return { correctAnswers };
       }
-
-        // VENNSORT
-        if (type === "vennsort") {
-          const cfg = task?.config || task || {};
-          return {
-            categories: cfg?.categories || null,
-            correctAnswer: task?.correctAnswer ?? cfg?.correctAnswer ?? null,
-            studentPlacements: answer?.placements ?? answer ?? null,
-          };
-        }
 
       // SORT (server currently receives pct score, but it still knows the key)
       if (type === "sort") {
@@ -2034,60 +1927,6 @@ socket.on("station:scan", handleStationScan);
     io.to(code).emit("roomState", state);
   });
 
-
-  // ===========================================================
-  // Mood Check-in (vibe setter; no scoring / no timer)
-  // Student emits: "submit-mood-checkin" with { roomCode, teamId, moods[], excitement }
-  // We store it so HostView/LiveSession can optionally display it.
-  // ===========================================================
-  socket.on("submit-mood-checkin", (payload = {}, ack) => {
-    try {
-      const { roomCode, teamId, moods, excitement } = payload || {};
-      const code = (roomCode || "").toUpperCase();
-      const room = rooms[code];
-      if (!room) {
-        if (typeof ack === "function") ack({ ok: false, error: "Room not found" });
-        return;
-      }
-
-      const effectiveTeamId = teamId || socket.data.teamId;
-      if (!effectiveTeamId) {
-        if (typeof ack === "function") ack({ ok: false, error: "Missing teamId" });
-        return;
-      }
-
-      if (!room.moodCheckins || typeof room.moodCheckins !== "object") {
-        room.moodCheckins = {};
-      }
-
-      const safeMoods = Array.isArray(moods)
-        ? moods.map((n) => (Number.isInteger(n) && n >= 0 && n <= 4 ? n : null))
-        : [];
-
-      room.moodCheckins[String(effectiveTeamId)] = {
-        moods: safeMoods,
-        excitement: typeof excitement === "string" ? excitement.trim().slice(0, 500) : "",
-        submittedAt: Date.now(),
-      };
-
-      // broadcast lightweight update (safe for UIs that don't listen)
-      io.to(code).emit("mood-checkin:update", {
-        teamId: String(effectiveTeamId),
-        moods: safeMoods,
-        excitement: typeof excitement === "string" ? excitement.trim().slice(0, 500) : "",
-      });
-
-      // keep room state in sync for any dashboards
-      const state = buildRoomState(room);
-      io.to(code).emit("room:state", state);
-      io.to(code).emit("roomState", state);
-
-      if (typeof ack === "function") ack({ ok: true });
-    } catch (err) {
-      console.error("submit-mood-checkin failed:", err);
-      if (typeof ack === "function") ack({ ok: false, error: "Server error" });
-    }
-  });
   const handleStudentSubmit = async (payload, ack) => {
     const { roomCode, teamId, taskIndex, timeMs } = payload || {};
     let { answer } = payload || {};
@@ -2150,7 +1989,6 @@ const code = (roomCode || "").toUpperCase();
       team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
 
     const meta = TASK_TYPE_META?.[task.taskType] || {};
-    const isObjective = meta.objectiveScoring === true;
     const basePoints = task.points ?? 10;
 
     // Detect multi-question pack answers from TaskRunner
@@ -2326,23 +2164,13 @@ const code = (roomCode || "").toUpperCase();
     // ----------------------------
     // 2) Non-multi tasks → Matching (objective)
     // ----------------------------
-    const isVennSort = task.taskType === "vennsort" || task.taskType === "venn-sort";
-
     if (!isMultiPack && task.taskType === "matching") {
       const scored = scoreMatchingTask(task, answer, basePoints);
       aiScore = scored.aiScore;
       correct = scored.correct;
       pointsEarned = scored.pointsEarned;
     }
-    // ✅ NEW: VENNSORT (objective)
-    if (!isMultiPack && isVennSort) {
-      const scored = scoreVennSortTask(task, answer, basePoints);
-      aiScore = scored.aiScore;
-      correct = scored.correct;
-      pointsEarned = scored.pointsEarned;
-    }
-
-    if (!isMultiPack && !isObjective) {
+    if (!isMultiPack && task.taskType !== "matching") {
       try {
         aiScore = await generateAIScore({
           task,

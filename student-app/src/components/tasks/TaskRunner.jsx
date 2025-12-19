@@ -30,14 +30,16 @@ import SpeedDrawTask from "./types/SpeedDrawTask";
 import DiffDetectiveTask from "./types/DiffDetectiveTask";
 import BrainSparkNotesTask from "./types/BrainSparkNotesTask";
 import HideNSeekTask from "./types/HideNSeekTask";
-import SpeechRecognitionTask from "./types/SpeechRecognitionTask"; // NEW
-import PronunciationTask from "./types/PronunciationTask"; // NEW
-import AIDebateJudgeTask from "./types/AIDebateJudgeTask"; // NEW
+import SpeechRecognitionTask from "./types/SpeechRecognitionTask";
+import PronunciationTask from "./types/PronunciationTask";
+import AIDebateJudgeTask from "./types/AIDebateJudgeTask";
 import BrainBlitzTask from "./types/BrainBlitzTask";
 import PhotoJournalTask from "./types/PhotoJournalTask";
 import HangmanDuelTask from "./types/HangmanDuelTask";
-import MatchingTask from "./types/MatchingTask"; // ✅ NEW
+import MatchingTask from "./types/MatchingTask";
 import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
+import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
+import VennSortTask from "./types/VennSortTask";
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -124,7 +126,17 @@ function normalizeTaskType(raw) {
     case "timeline":
       return TASK_TYPES.TIMELINE;
 
-    // Photo / Media
+    // VennSort (2–3 circles)
+    case "vennsort":
+    case "venn-sort":
+    case "venn_sort":
+    case "venn":
+    case "venn-diagram":
+    case "venn_diagram":
+    case "venndiagram":
+      return TASK_TYPES.VENNSORT || "vennsort";
+
+      // Photo / Media
     case "photo":
       return TASK_TYPES.PHOTO;
 
@@ -157,6 +169,14 @@ function normalizeTaskType(raw) {
     case "body-break":
     case "body_break":
       return TASK_TYPES.BODY_BREAK;
+
+    // ✅ Mood check-in (NEW)
+    case "mood-checkin":
+    case "mood-check-in":
+    case "mood_checkin":
+    case "moodcheckin":
+    case "mood_check_in":
+      return TASK_TYPES.MOOD_CHECKIN || "mood-checkin";
 
     // Draw-only tasks
     case "Draw":
@@ -221,7 +241,7 @@ function normalizeTaskType(raw) {
 
     default:
       return raw;
-}
+  }
 }
 
 /* ─────────────────────────────────────────────
@@ -241,8 +261,6 @@ function MultiPartTask({
   const isShort = mode === "short";
   const isReview = !!readOnly;
 
-  // Prefer AI "items" array; fall back to older shapes;
-  // if none exist, treat as a single-question pack.
   const rawItems =
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
     (Array.isArray(task.questions) &&
@@ -266,7 +284,6 @@ function MultiPartTask({
           },
         ];
 
-  // Per-item shuffled options; base options always reconstructed in submit.
   const itemOptions = useMemo(() => {
     const taskKey = String(task?._id || task?.id || "task");
 
@@ -285,7 +302,6 @@ function MultiPartTask({
       if (!base || base.length === 0) return [];
 
       const itemKey = String(item?.id || item?._id || `i${idx}`);
-      // ✅ shuffled, but stable for this task+item
       return seededShuffle(base, `${taskKey}:${itemKey}`);
     });
   }, [task?._id, task?.id, items]);
@@ -324,8 +340,6 @@ function MultiPartTask({
         if (v === "true" || v === "false") answerVal = v;
       }
 
-      // For choice-based items, compute index in ORIGINAL base options,
-      // not in the shuffled order.
       let baseIndex = null;
       if (isChoice && answerVal != null) {
         const base =
@@ -588,7 +602,6 @@ export default function TaskRunner({
   const meta = TASK_TYPE_META[type];
   const [diffRaceStatus, setDiffRaceStatus] = useState(null);
 
-  // Listen for race events from the server when this is a diff-detective task
   useEffect(() => {
     if (!socket) return;
 
@@ -691,7 +704,6 @@ export default function TaskRunner({
     );
   }
 
-  // MULTI-PART: MC / TF / SHORT-ANSWER with items → render all parts together
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
 
@@ -743,10 +755,26 @@ export default function TaskRunner({
     );
   }
 
-  // Single-part / other task types → your existing components
   let content = null;
 
   switch (type) {
+    // ✅ Mood Check-in (NEW)
+    case (TASK_TYPES.MOOD_CHECKIN || "mood-checkin"): {
+      const effectiveTeamId =
+        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+
+      content = (
+        <MoodCheckInTask
+          task={t}
+          onSubmit={onSubmit}
+          socket={socketRef}     // if your MoodCheckInTask emits its own event
+          roomCode={roomCode}
+          teamId={effectiveTeamId}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask
@@ -771,6 +799,23 @@ export default function TaskRunner({
           onSubmit={isReview ? null : onSubmit}
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+
+    case TASK_TYPES.VENNSORT:
+    case "vennsort":
+    case "venn-sort":
+      content = (
+        <VennSortTask
+          task={t}
+          onSubmit={onSubmit}
+          disabled={effectiveDisabled || isReview}
+          onAnswerChange={onAnswerChange}
+          answerDraft={answerDraft}
+          socket={socket}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
         />
       );
       break;
@@ -802,7 +847,6 @@ export default function TaskRunner({
       );
       break;
 
-    // ✅ Matching (NEW)
     case (TASK_TYPES.MATCHING || "matching"):
       content = (
         <MatchingTask
@@ -920,7 +964,7 @@ export default function TaskRunner({
         <WordWeaverDuelTask
           task={t}
           onSubmit={onSubmit}
-          socket={socketRef}   // matches your hangman pattern
+          socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
           disabled={effectiveDisabled || isReview}

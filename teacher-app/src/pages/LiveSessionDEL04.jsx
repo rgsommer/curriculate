@@ -118,8 +118,6 @@ export default function LiveSession({ roomCode }) {
     },
     // NEW: brainstorm battle summary from backend
     brainstorm: null,
-    // NEW: mood check-ins (no scoring)
-    moodCheckins: {},
   });
 
   const [submissions, setSubmissions] = useState({});
@@ -382,8 +380,6 @@ useEffect(() => {
         noise: state.noise || prev.noise,
         // NEW: brainstorm summary from backend
         brainstorm: state.brainstorm || null,
-        // NEW: mood check-ins (no scoring)
-        moodCheckins: state.moodCheckins || prev.moodCheckins || {},
       }));
 
       if (!selectedLocation && state.locationCode) {
@@ -546,29 +542,7 @@ useEffect(() => {
       }
     };
 
-    
-    // Mood Check-in updates (no scoring)
-    const handleMoodCheckinUpdate = (payload) => {
-      if (!payload) return;
-
-      // Accept either {roomCode, teamId, moodCheckin} or {roomCode, teamId, data}
-      const rc = (payload.roomCode || payload.code || "").toString().toUpperCase();
-      if (rc && roomCode && rc !== roomCode.toUpperCase()) return;
-
-      const teamId = payload.teamId || payload.team || payload?.moodCheckin?.teamId || payload?.data?.teamId || null;
-      const checkin = payload.moodCheckin || payload.data || payload.checkin || null;
-      if (!teamId || !checkin) return;
-
-      setRoomState((prev) => ({
-        ...prev,
-        moodCheckins: {
-          ...(prev.moodCheckins || {}),
-          [teamId]: checkin,
-        },
-      }));
-    };
-
-// Transcript result events from backend
+    // Transcript result events from backend
     const handleTranscriptSent = (payload) => {
       handleEndSessionAck({ ok: true, ...payload });
     };
@@ -588,8 +562,6 @@ useEffect(() => {
     socket.on("teacher:roomSetup", handleRoomSetup);
     socket.on("session:noiseLevel", handleNoiseLevel);
     socket.on("teacher:treatAssigned", handleTreatAssigned);
-
-    socket.on("mood-checkin:update", handleMoodCheckinUpdate);
 
     socket.on("transcript:sent", handleTranscriptSent);
     socket.on("transcript:error", handleTranscriptError);
@@ -615,7 +587,6 @@ useEffect(() => {
       socket.off("teacher:roomSetup", handleRoomSetup);
       socket.off("session:noiseLevel", handleNoiseLevel);
       socket.off("teacher:treatAssigned", handleTreatAssigned);
-      socket.off("mood-checkin:update", handleMoodCheckinUpdate);
 
       socket.off("transcript:sent", handleTranscriptSent);
       socket.off("transcript:error", handleTranscriptError);
@@ -1171,24 +1142,6 @@ useEffect(() => {
   const brainstormTeams = brainstorm?.teams
     ? Object.values(brainstorm.teams).sort((a, b) => b.ideaCount - a.ideaCount)
     : [];
-
-  // NEW: Mood Check-ins (from MoodCheckinTask) — not scored
-  const moodCheckins = roomState?.moodCheckins || {};
-  const moodEmojiByKey = {
-    super_excited: "😄",
-    good: "🙂",
-    okay: "😐",
-    tired: "😴",
-    not_great: "😔",
-  };
-  const moodLabelByKey = {
-    super_excited: "Super excited!",
-    good: "Feeling good",
-    okay: "Okay",
-    tired: "A bit tired",
-    not_great: "Not great",
-  };
-
 
   // NEW: latest submissions list (for right-hand panel)
   const latestSubmissions = Object.values(submissions)
@@ -2254,142 +2207,7 @@ Precipitation — rain, snow, hail`}
             gap: 12,
           }}
         >
-          
-          {/* Mood Check-ins (MoodCheckinTask) */}
-          {moodCheckins && Object.keys(moodCheckins).length > 0 && (
-            <section
-              style={{
-                width: "100%",
-                border: "1px solid #d1d5db",
-                borderRadius: 10,
-                padding: 12,
-                background: "#ffffff",
-              }}
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                  marginBottom: 10,
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                }}
-              >
-                Mood check-in
-              </h2>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {Object.entries(moodCheckins).map(([teamId, checkin]) => {
-                  const teamName =
-                    teams?.[teamId]?.teamName ||
-                    teams?.[teamId]?.name ||
-                    "Team";
-
-                  const moodArr = Array.isArray(checkin?.moods)
-                    ? checkin.moods
-                    : [];
-
-                  return (
-                    <div
-                      key={teamId}
-                      style={{
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px solid #e5e7eb",
-                        background: "#f9fafb",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "baseline",
-                          gap: 10,
-                        }}
-                      >
-                        <div style={{ fontWeight: 800 }}>{teamName}</div>
-                        {checkin?.submittedAt && (
-                          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                            {new Date(checkin.submittedAt).toLocaleTimeString()}
-                          </div>
-                        )}
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 6,
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: 8,
-                          alignItems: "center",
-                        }}
-                      >
-                        {moodArr.length === 0 ? (
-                          <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                            (no selections)
-                          </span>
-                        ) : (
-                          moodArr.map((idx, i) => {
-                            const iNum = typeof idx === "number" ? idx : Number(idx);
-                            const key =
-                              iNum === 0
-                                ? "super_excited"
-                                : iNum === 1
-                                ? "good"
-                                : iNum === 2
-                                ? "okay"
-                                : iNum === 3
-                                ? "tired"
-                                : iNum === 4
-                                ? "not_great"
-                                : null;
-
-                            return (
-                              <span
-                                key={i}
-                                title={key ? moodLabelByKey[key] : "Unknown"}
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 6,
-                                  padding: "6px 10px",
-                                  borderRadius: 999,
-                                  border: "1px solid #e5e7eb",
-                                  background: "#ffffff",
-                                  fontSize: "1rem",
-                                }}
-                              >
-                                <span style={{ fontSize: "1.15rem" }}>
-                                  {key ? moodEmojiByKey[key] : "❓"}
-                                </span>
-                                <span style={{ fontSize: "0.8rem", color: "#374151" }}>
-                                  Player {i + 1}
-                                </span>
-                              </span>
-                            );
-                          })
-                        )}
-                      </div>
-
-                      {checkin?.excitement && String(checkin.excitement).trim() && (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            fontSize: "0.85rem",
-                            color: "#334155",
-                          }}
-                        >
-                          <span style={{ fontWeight: 800 }}>Excited about:</span>{" "}
-                          {String(checkin.excitement).trim()}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-{/* Leaderboard */}
+          {/* Leaderboard */}
           <section
             style={{
               width: "100%",
