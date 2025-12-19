@@ -37,6 +37,7 @@ import BrainBlitzTask from "./types/BrainBlitzTask";
 import PhotoJournalTask from "./types/PhotoJournalTask";
 import HangmanDuelTask from "./types/HangmanDuelTask";
 import MatchingTask from "./types/MatchingTask"; // ✅ NEW
+import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -205,9 +206,22 @@ function normalizeTaskType(raw) {
     case "hangmanduel":
       return TASK_TYPES.HANGMAN_DUEL || "hangman-duel";
 
+    // ✅ WordWeaver Duel (NEW)
+    case "word-weaver":
+    case "word_weaver":
+    case "wordweaver":
+    case "word-weaver-duel":
+    case "word_weaver_duel":
+    case "wordweaverduel":
+      return TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel";
+
+    // already normalized constant coming through
+    case (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"):
+      return TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel";
+
     default:
       return raw;
-  }
+}
 }
 
 /* ─────────────────────────────────────────────
@@ -897,6 +911,25 @@ export default function TaskRunner({
         <PronunciationTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
+
+    case (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"): {
+      const effectiveTeamId =
+        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+
+      content = (
+        <WordWeaverDuelTask
+          task={t}
+          onSubmit={onSubmit}
+          socket={socketRef}   // matches your hangman pattern
+          roomCode={roomCode}
+          teamId={effectiveTeamId}
+          disabled={effectiveDisabled || isReview}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
+        />
+      );
+      break;
+    }
 
     case TASK_TYPES.SHORT_ANSWER:
       content = (

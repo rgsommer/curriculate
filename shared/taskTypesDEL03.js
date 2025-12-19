@@ -44,7 +44,6 @@ export const TASK_TYPES = {
   DIFF_DETECTIVE: "diff-detective",
   DRAW_MIME: "draw-mime",
   HANGMAN_DUEL: "hangman-duel",
-  WORD_WEAVER_DUEL: "word-weaver-duel",
 
   // Kept for backwards compatibility; behaviour now largely driven by location
   MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
@@ -378,29 +377,6 @@ export const TASK_TYPE_META = {
 
     description:
       "AI generates a matched set of different words ONLY from the teacher-provided aiWordBank (wordsByStation: 4–8 entries). Each station index uses its own word so teams don’t help each other. Includes short hints; no real-time multiplayer server state required.",
-  },
-
-[TASK_TYPES.WORD_WEAVER_DUEL]: {
-    label: "Word Weaver Duel",
-    category: CATEGORY.COMPETITIVE,
-    hasOptions: false,
-    expectsText: true,
-    maxTime: 240,
-    maxTimeSeconds: 240,
-    implemented: true,
-
-    aiEligible: true,
-
-    // WordWeaver is typically objective (exact phrase / word matches),
-    // but can be AI-scored if you later choose to grade partial credit.
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
-    correctAnswerShape: null,
-
-    quickTaskEligible: false,
-
-    description:
-      "Teams reconstruct a target phrase by entering each word (optionally with tiles/drag UI). Designed to work without real-time server state; if sockets are available, progress can be mirrored for duel feel.",
   },
 
 [TASK_TYPES.MIME]: {

@@ -23,6 +23,7 @@ const DEFAULT_LOCATION = "Classroom";
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
 // --- MATCHING reveal helper (student review overlay) ---
+// --- MATCHING reveal helper (student review overlay) ---
 function buildMatchingReveal(task, reviewState) {
   const cfg = task?.config && typeof task.config === "object" ? task.config : {};
   const correctMatches =
@@ -32,6 +33,14 @@ function buildMatchingReveal(task, reviewState) {
     null;
 
   if (!correctMatches) return null;
+
+  // Student submission map (we saved it in reviewState.studentAnswer on submit)
+  const studentRaw = reviewState?.studentAnswer;
+  const studentMatches =
+    (studentRaw && typeof studentRaw.matches === "object" && studentRaw.matches) ||
+    (studentRaw && typeof studentRaw.pairs === "object" && studentRaw.pairs) ||
+    (studentRaw && typeof studentRaw.correctMatches === "object" && studentRaw.correctMatches) ||
+    null;
 
   const leftItems = Array.isArray(reviewState?.leftItems)
     ? reviewState.leftItems
@@ -63,13 +72,42 @@ function buildMatchingReveal(task, reviewState) {
     if (id && text) rightTextById[id] = text;
   }
 
-  const rows = Object.entries(correctMatches).map(([l, r]) => {
-    const left = leftTextById[String(l)] || String(l);
-    const right = rightTextById[String(r)] || String(r);
-    return { left, right };
+  let correctCount = 0;
+  const entries = Object.entries(correctMatches);
+
+  const rows = entries.map(([l, r]) => {
+    const leftId = String(l);
+    const rightId = String(r);
+
+    const left = leftTextById[leftId] || leftId;
+    const right = rightTextById[rightId] || rightId;
+
+    const studentRight = studentMatches?.[leftId] != null ? String(studentMatches[leftId]) : null;
+
+    const isAnswered = studentRight != null;
+    const isCorrect = isAnswered && studentRight === rightId;
+
+    if (isCorrect) correctCount += 1;
+
+    const studentRightText =
+      studentRight != null ? (rightTextById[String(studentRight)] || String(studentRight)) : null;
+
+    return {
+      leftId,
+      rightId,
+      left,
+      right,
+      studentRight,
+      studentRightText,
+      isAnswered,
+      isCorrect,
+    };
   });
 
-  return rows.length ? rows : null;
+  const totalPairs = entries.length || 1;
+  const percent = Math.round((correctCount / totalPairs) * 100);
+
+  return { rows, correctCount, totalPairs, percent };
 }
 
 // Normalize a human-readable location into a slug like "room-12"
@@ -2785,46 +2823,73 @@ function StudentApp() {
 
               {taskLocked && (
                 <div className="task-locked-overlay">
-                  {postSubmitSecondsLeft != null ? (
-                    <div style={{ width: "100%" }}>
-                      <div>
-                        Review your answer… <br />
-                        <span
-                          style={{
-                            fontVariantNumeric: "tabular-nums",
-                            fontSize: "1.1rem",
-                          }}
-                        >
-                          {postSubmitSecondsLeft}s
-                        </span>
-                      </div>
+                  <style>{`
+                    @keyframes matchPopIn {
+                      from { transform: translateY(6px) scale(0.98); opacity: 0; }
+                      to   { transform: translateY(0px) scale(1); opacity: 1; }
+                    }
+                  `}</style>
 
-                      {/* ✅ Countdown bar (VISIBLE because it's inside the overlay) */}
-                      <div style={{ marginTop: 12 }}>
-                        <div
-                          style={{
-                            height: 3,
-                            borderRadius: 999,
-                            background: "rgba(255,255,255,0.25)",
-                            overflow: "hidden",
-                          }}
-                        >
+                  {postSubmitSecondsLeft != null && (() => {
+                    // Determine total lock duration safely for progress bar
+                    const lockTotal =
+                      typeof reviewState?.secondsLeft === "number"
+                        ? reviewState.secondsLeft
+                        : (typeof postSubmitSecondsLeft === "number"
+                            ? postSubmitSecondsLeft
+                            : DEFAULT_POST_SUBMIT_SECONDS);
+
+                    const percent =
+                      lockTotal > 0
+                        ? Math.round((postSubmitSecondsLeft / lockTotal) * 100)
+                        : 0;
+
+                    return (
+                      <div style={{ width: "100%" }}>
+                        <div>
+                          Review your answer… <br />
+                          <span
+                            style={{
+                              fontVariantNumeric: "tabular-nums",
+                              fontSize: "1.1rem",
+                            }}
+                          >
+                            {postSubmitSecondsLeft}s
+                          </span>
+                        </div>
+
+                        {/* Countdown bar */}
+                        <div style={{ marginTop: 12 }}>
                           <div
                             style={{
-                              height: "100%",
-                              width: `${Math.round(
-                                (postSubmitSecondsLeft / DEFAULT_POST_SUBMIT_SECONDS) * 100
-                              )}%`,
-                              background: "rgba(255,255,255,0.85)",
-                              transition: "width 200ms linear",
+                              height: 3,
+                              borderRadius: 999,
+                              background: "rgba(255,255,255,0.25)",
+                              overflow: "hidden",
                             }}
-                          />
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: `${percent}%`,
+                                background: "rgba(255,255,255,0.85)",
+                                transition: "width 200ms linear",
+                              }}
+                            />
+                          </div>
                         </div>
                       </div>
+                    );
+                  })()}
                       {/* Matching answer reveal during lock */}
-                      {currentTask?.taskType === TASK_TYPES.MATCHING && (() => {
-                        const rows = buildMatchingReveal(currentTask, reviewState);
-                        if (!rows) return null;
+                      {/* Matching answer reveal during lock (highlight + animate + percent) */}
+                      {currentTask?.taskType === "matching" && (() => {
+                        const data = buildMatchingReveal(currentTask, reviewState);
+                        if (!data) return null;
+
+                        const { rows, correctCount, totalPairs, percent } = data;
+                        const pointsEarned = typeof reviewState?.points === "number" ? reviewState.points : null;
+                        const maxPoints = typeof currentTask?.points === "number" ? currentTask.points : null;
 
                         return (
                           <div
@@ -2838,26 +2903,93 @@ function StudentApp() {
                               textAlign: "left",
                             }}
                           >
-                            <div style={{ fontWeight: 800, marginBottom: 8 }}>Correct matches</div>
+                            {/* Summary row */}
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                              <div style={{ fontWeight: 900 }}>Matching results</div>
+                              <div style={{ fontWeight: 900 }}>
+                                {percent}% ({correctCount}/{totalPairs})
+                                {pointsEarned != null ? ` • +${pointsEarned}` : ""}
+                                {maxPoints != null ? `/${maxPoints}` : ""}
+                              </div>
+                            </div>
 
-                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                              {rows.map((r, i) => (
-                                <div
-                                  key={i}
-                                  style={{
-                                    padding: 8,
-                                    borderRadius: 10,
-                                    background: "rgba(0,0,0,0.12)",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    gap: 10,
-                                  }}
-                                >
-                                  <div style={{ fontWeight: 700 }}>{r.left}</div>
-                                  <div style={{ opacity: 0.95 }}>→</div>
-                                  <div style={{ fontWeight: 700 }}>{r.right}</div>
-                                </div>
-                              ))}
+                            {/* Percent bar */}
+                            <div
+                              style={{
+                                marginTop: 8,
+                                height: 10,
+                                borderRadius: 999,
+                                background: "rgba(0,0,0,0.18)",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${percent}%`,
+                                  height: "100%",
+                                  borderRadius: 999,
+                                  background: percent >= 80 ? "rgba(34,197,94,0.9)" : percent >= 50 ? "rgba(250,204,21,0.9)" : "rgba(239,68,68,0.9)",
+                                  transition: "width 250ms ease",
+                                }}
+                              />
+                            </div>
+
+                            {/* Pair reveals */}
+                            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                              {rows.map((r, i) => {
+                                const bg = r.isCorrect
+                                  ? "rgba(34,197,94,0.22)"
+                                  : r.isAnswered
+                                  ? "rgba(239,68,68,0.22)"
+                                  : "rgba(0,0,0,0.14)";
+
+                                const border = r.isCorrect
+                                  ? "1px solid rgba(34,197,94,0.45)"
+                                  : r.isAnswered
+                                  ? "1px solid rgba(239,68,68,0.45)"
+                                  : "1px solid rgba(255,255,255,0.18)";
+
+                                const icon = r.isCorrect ? "✅" : r.isAnswered ? "❌" : "⏺️";
+
+                                return (
+                                  <div
+                                    key={`${r.leftId}:${r.rightId}`}
+                                    style={{
+                                      padding: 10,
+                                      borderRadius: 12,
+                                      background: bg,
+                                      border,
+                                      animation: "matchPopIn 240ms ease both",
+                                      animationDelay: `${i * 60}ms`,
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                                      <div style={{ fontWeight: 800 }}>{r.left}</div>
+                                      <div style={{ fontWeight: 900, opacity: 0.95 }}>{icon}</div>
+                                    </div>
+
+                                    <div style={{ marginTop: 6, fontSize: "0.95rem", opacity: 0.98 }}>
+                                      <div>
+                                        <span style={{ opacity: 0.85 }}>Correct:</span>{" "}
+                                        <span style={{ fontWeight: 800 }}>{r.right}</span>
+                                      </div>
+
+                                      {r.isAnswered && !r.isCorrect && (
+                                        <div style={{ marginTop: 4 }}>
+                                          <span style={{ opacity: 0.85 }}>You chose:</span>{" "}
+                                          <span style={{ fontWeight: 800 }}>{r.studentRightText ?? "—"}</span>
+                                        </div>
+                                      )}
+
+                                      {!r.isAnswered && (
+                                        <div style={{ marginTop: 4, opacity: 0.85 }}>
+                                          You didn’t match this one.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         );
@@ -2930,11 +3062,6 @@ function StudentApp() {
 
                         return null;
                       })()}
-
-                    </div>
-                  ) : (
-                    <div>Waiting for your next task to unlock…</div>
-                  )}
                 </div>
               )}
               </section>

@@ -1,306 +1,455 @@
-// student-app/src/components/tasks/types/WordWeaverDuelTask.jsx
-import React, { useEffect, useState, useRef } from "react";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { SortableContext, useSortable, rectSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import useSound from "use-sound";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-// Draggable Word Tile
-function DraggableWord({ id, children, disabled, rotation }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+/**
+ * WordWeaverDuelTask
+ * - Defensive: never assumes optional fields/events exist
+ * - Duel-safe: can show opponent progress if socket emits updates (optional)
+ * - No undefined references: no wrongGuesses/DroppableBlank/etc.
+ *
+ * Supported task shapes:
+ *  - task.phrase OR task.targetPhrase OR task.solution: "THE QUICK BROWN FOX"
+ *  - task.wordBank OR task.words: ["THE","QUICK","BROWN","FOX"] (optional; will auto-generate if missing)
+ *  - task.prompt/task.instructions: optional
+ */
+export default function WordWeaverDuelTask({
+  task,
+  onSubmit,
+  socket, // can be socketRef OR socket instance
+  roomCode,
+  teamId,
+  disabled = false,
+  mode = "play", // "play" | "review"
+  review = null,
+}) {
+  const sock = useMemo(() => socket?.current || socket || null, [socket]);
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    cursor: disabled ? "not-allowed" : "grab",
-    display: "inline-block",
-    padding: "10px 16px",
-    margin: "6px",
-    background: "#fff",
-    borderRadius: 12,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-    fontWeight: 700,
-    fontSize: "1.2rem",
-    userSelect: "none",
-    touchAction: "none",
-    transform: rotation ? "rotate(90deg)" : "none", // Vertical/horizontal
+  const phrase = useMemo(() => {
+    const p = task?.targetPhrase ?? task?.phrase ?? task?.solution ?? task?.answerPhrase ?? "";
+    return String(p || "").trim();
+  }, [task]);
+
+  const tokens = useMemo(() => {
+    if (!phrase) return [];
+    return phrase.split(/\s+/).filter(Boolean);
+  }, [phrase]);
+
+  const initialBank = useMemo(() => {
+    const wb = task?.wordBank ?? task?.words ?? task?.bank ?? null;
+    if (Array.isArray(wb) && wb.length) return wb.map((w) => String(w));
+    if (!tokens.length) return [];
+    const arr = [...tokens];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [task, tokens]);
+
+  const prompt = useMemo(
+    () =>
+      task?.prompt ??
+      task?.instructions ??
+      "Rebuild the phrase by placing the correct words in order.",
+    [task]
+  );
+
+  const [slots, setSlots] = useState(() => tokens.map(() => ""));
+  const [bank, setBank] = useState(() => initialBank);
+  const [pickedIndex, setPickedIndex] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  const [opponent, setOpponent] = useState({ teamId: null, filled: 0, submitted: false });
+
+  const teamIdRef = useRef(teamId);
+  const roomCodeRef = useRef(roomCode);
+  useEffect(() => {
+    teamIdRef.current = teamId;
+  }, [teamId]);
+  useEffect(() => {
+    roomCodeRef.current = roomCode;
+  }, [roomCode]);
+
+  // Reset state when task changes
+  useEffect(() => {
+    setSlots(tokens.map(() => ""));
+    setBank(initialBank);
+    setPickedIndex(null);
+    setSubmitted(false);
+    setOpponent({ teamId: null, filled: 0, submitted: false });
+  }, [phrase, tokens, initialBank]);
+
+  const canInteract = mode === "play" && !disabled && !submitted;
+
+  // Optional socket listeners for opponent progress
+  useEffect(() => {
+    if (!sock || typeof sock.on !== "function") return;
+
+    const handler = (payload) => {
+      try {
+        const p = payload || {};
+        // ignore self
+        if (p.teamId && teamIdRef.current && String(p.teamId) === String(teamIdRef.current)) return;
+        // optional room guard
+        if (p.roomCode && roomCodeRef.current && String(p.roomCode) !== String(roomCodeRef.current))
+          return;
+
+        const filled = Number.isFinite(p.filled)
+          ? p.filled
+          : Array.isArray(p.slots)
+            ? p.slots.filter(Boolean).length
+            : 0;
+
+        setOpponent({
+          teamId: p.teamId ?? null,
+          filled,
+          submitted: !!p.submitted,
+        });
+      } catch {
+        // no-op
+      }
+    };
+
+    sock.on("wordweaver:opponent-progress", handler);
+    sock.on("wordweaver:progress", handler);
+    sock.on("duel:progress", handler);
+
+    return () => {
+      try {
+        sock.off?.("wordweaver:opponent-progress", handler);
+        sock.off?.("wordweaver:progress", handler);
+        sock.off?.("duel:progress", handler);
+      } catch {
+        // no-op
+      }
+    };
+  }, [sock]);
+
+  // Emit our progress (optional; harmless if server ignores it)
+  useEffect(() => {
+    if (!sock || typeof sock.emit !== "function") return;
+    if (!roomCode || !teamId) return;
+    if (mode !== "play") return;
+
+    const filled = slots.filter(Boolean).length;
+
+    try {
+      sock.emit("wordweaver:progress", { roomCode, teamId, filled, submitted });
+    } catch {
+      // no-op
+    }
+  }, [sock, roomCode, teamId, slots, submitted, mode]);
+
+  const placeWordIntoSlot = (slotIdx, word) => {
+    if (!canInteract) return;
+    const w = String(word || "").trim();
+    if (!w) return;
+
+    setSlots((prev) => {
+      const next = [...prev];
+      next[slotIdx] = w;
+      return next;
+    });
+
+    setBank((prev) => {
+      const next = [...prev];
+      const i = next.findIndex((x) => String(x) === String(w));
+      if (i >= 0) next.splice(i, 1);
+      return next;
+    });
+
+    setPickedIndex(null);
   };
 
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
-    </div>
-  );
-}
+  const clearSlot = (slotIdx) => {
+    if (!canInteract) return;
+    setSlots((prev) => {
+      const next = [...prev];
+      const removed = next[slotIdx];
+      next[slotIdx] = "";
+      if (removed) setBank((b) => [...b, removed]);
+      return next;
+    });
+  };
 
-// Droppable Grid Cell
-function DroppableCell({ id, children, isOccupied }) {
-  const { setNodeRef } = useSortable({ id });
+  const handleSlotClick = (slotIdx) => {
+    if (!canInteract) return;
+    if (slots[slotIdx]) return clearSlot(slotIdx);
+    if (pickedIndex !== null && bank[pickedIndex] != null) return placeWordIntoSlot(slotIdx, bank[pickedIndex]);
+  };
 
-  return (
-    <div
-      ref={setNodeRef}
-      style={{
-        width: 40,
-        height: 40,
-        border: "1px solid #ccc",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "1.2rem",
-        fontWeight: 700,
-        background: isOccupied ? "#d4f4dd" : "#f9fafb",
-        color: isOccupied ? "#16a34a" : "#666",
-      }}
-    >
-      {children || ""}
-    </div>
-  );
-}
+  const handlePick = (idx) => {
+    if (!canInteract) return;
+    setPickedIndex((cur) => (cur === idx ? null : idx));
+  };
 
-// Power-Up Card
-function PowerUpCard({ id, name, onPlay, disabled }) {
-  return (
-    <button
-      onClick={onPlay}
-      disabled={disabled}
-      style={{
-        padding: "8px 16px",
-        margin: "4px",
-        background: disabled ? "#94a3b8" : "#3b82f6",
-        color: "#fff",
-        border: "none",
-        borderRadius: 12,
-        fontWeight: 600,
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.7 : 1,
-      }}
-    >
-      {name}
-    </button>
-  );
-}
+  const handleReset = () => {
+    if (!canInteract) return;
+    setSlots(tokens.map(() => ""));
+    setBank(initialBank);
+    setPickedIndex(null);
+  };
 
-// Hangman SVG (Gamified Styles)
-function HangmanSVG({ style, parts }) {
-  if (style === "snowman") {
-    // Paste full Snowman SVG stages from previous response
-    return <svg width="200" height="200" viewBox="0 0 200 200">
-      {/* Conditional stages based on parts, e.g.: */}
-      {parts >= 1 && <circle cx="100" cy="180" r="40" fill="#fff" />}
-      {/* ... add all parts */}
-    </svg>;
-  } else if (style === "christmas-tree") {
-    // Paste full Christmas Tree SVG stages
-    return <svg width="200" height="200" viewBox="0 0 200 200">
-      {/* Conditional stages */}
-    </svg>;
-  } else if (style === "classic") {
-    // Paste full Classic Hangman SVG stages
-    return <svg width="200" height="200" viewBox="0 0 200 200">
-      {/* Conditional stages */}
-    </svg>;
-  } else if (style === "gingerbread") {
-    // Paste full Gingerbread House SVG stages
-    return <svg width="200" height="200" viewBox="0 0 200 200">
-      {/* Conditional stages */}
-    </svg>;
-  }
-  return <div>No style selected</div>;
-}
+  const handleSubmit = () => {
+    if (!canInteract) return;
+    const answer = slots.join(" ").trim();
 
-const WordWeaverDuelTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
-  const [grid, setGrid] = useState(task.config.grid || Array.from({ length: task.config.gridSize || 10 }, () => Array(task.config.gridSize || 10).fill(null)));
-  const [currentTurn, setCurrentTurn] = useState(1);
-  const [playerCount, setPlayerCount] = useState(task.config.playerCount || 1);
-  const [players, setPlayers] = useState(task.config.players || []);
-  const [myPlayerNumber, setMyPlayerNumber] = useState(task.myPlayerNumber || 1);
-  const [eliminated, setEliminated] = useState([]);
-  const [gameStyle, setGameStyle] = useState(null);
-  const [styleChosen, setStyleChosen] = useState(false);
-  const [submissionFeedback, setSubmissionFeedback] = useState(null);
-  const [overlayTimer, setOverlayTimer] = useState(0);
-  const overlayTimerRef = useRef(null);
-  const [gridRotation, setGridRotation] = useState(0);
-
-  // Sound Effects
-  const [playCorrect] = useSound("/sounds/correct-letter.mp3");
-  const [playWrong] = useSound("/sounds/wrong-guess.mp3");
-  const [playWin] = useSound("/sounds/word-win.mp3");
-  const [playLose] = useSound("/sounds/eliminated.mp3");
-  const [playPowerUp] = useSound("/sounds/power-up.mp3");
-  const [playReveal] = useSound("/sounds/reveal-letter.mp3");
-  const [playSteal] = useSound("/sounds/steal-letter.mp3");
-
-  // Animations State
-  const [stealAnimation, setStealAnimation] = useState(null); // { letter, fromPlayer, toPlayer }
-  const [revealAnimation, setRevealAnimation] = useState(null); // { letter, blankIndex }
-  const [extraGuessAnimation, setExtraGuessAnimation] = useState(null); // { playerNumber }
-
-  const sensors = useSensors(useSensor(PointerSensor));
-
-  const startOverlayTimer = () => {
-    setOverlayTimer(15);
-    if (overlayTimerRef.current) clearInterval(overlayTimerRef.current);
-    overlayTimerRef.current = setInterval(() => {
-      setOverlayTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(overlayTimerRef.current);
-          setSubmissionFeedback(null);
-          setOverlayTimer(0);
-          onSubmit(); // Auto-advance to next task/scan
-          return 0;
-        }
-        return prev - 1;
+    setSubmitted(true);
+    try {
+      onSubmit?.({
+        answer,
+        slots,
+        meta: {
+          roomCode: roomCode ?? null,
+          teamId: teamId ?? null,
+          taskType: task?.taskType ?? "word-weaver-duel",
+        },
       });
-    }, 1000);
-  };
+    } catch {
+      setSubmitted(false);
+    }
 
-  const handleChooseStyle = (style) => {
-    socket.current.emit("word-weaver-choose-style", { roomCode, teamId, style });
-    setStyleChosen(true);
-  };
-
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
-    if (over) {
-      const word = active.id;
-      const [row, col] = over.id.split(",").map(Number);
-      socket.current.emit("word-weaver-place-word", { roomCode, teamId, word, row, col, rotation: gridRotation });
+    if (sock && typeof sock.emit === "function" && roomCode && teamId) {
+      try {
+        sock.emit("wordweaver:submit", { roomCode, teamId, answer });
+      } catch {
+        // no-op
+      }
     }
   };
 
-  const handlePlayPowerUp = (powerUpId) => {
-    socket.current.emit("word-weaver-play-power-up", { roomCode, teamId, powerUpId });
-  };
+  const progress = useMemo(() => {
+    const filled = slots.filter(Boolean).length;
+    const total = Math.max(tokens.length, 1);
+    return { filled, total, pct: tokens.length ? Math.round((filled / tokens.length) * 100) : 0 };
+  }, [slots, tokens.length]);
 
-  useEffect(() => {
-    socket.current.on("word-weaver-update", (update) => {
-      setGrid(update.grid);
-      setCurrentTurn(update.currentTurn);
-      setPlayers(update.players);
-      setEliminated(update.eliminated);
-      setGameStyle(update.style);
-    });
+  const reviewCorrect = useMemo(() => {
+    if (mode !== "review") return null;
+    if (review && typeof review === "object") {
+      if (typeof review.correct === "boolean") return review.correct;
+      if (typeof review.isCorrect === "boolean") return review.isCorrect;
+      if (typeof review.score === "number") return review.score > 0;
+    }
+    return null;
+  }, [mode, review]);
 
-    socket.current.on("letter-correct", () => playCorrect());
-    socket.current.on("letter-wrong", () => playWrong());
-    socket.current.on("game-win", () => playWin());
-    socket.current.on("player-eliminated", () => playLose());
-    socket.current.on("power-up-used", () => playPowerUp());
-    socket.current.on("power-up-reveal-letter", () => playReveal());
-    socket.current.on("power-up-steal-letter", () => playSteal());
-
-    return () => {
-      socket.current.off("word-weaver-update");
-      socket.current.off("letter-correct");
-      socket.current.off("letter-wrong");
-      socket.current.off("game-win");
-      socket.current.off("player-eliminated");
-      socket.current.off("power-up-used");
-      socket.current.off("power-up-reveal-letter");
-      socket.current.off("power-up-steal-letter");
-    };
-  }, []);
-
-  if (!styleChosen) {
+  // -------- Defensive rendering ----------
+  if (!task) {
     return (
-      <div style={{ textAlign: "center", padding: 32 }}>
-        <h2>Choose Game Style!</h2>
-        <button onClick={() => handleChooseStyle("snowman")}>Snowman</button>
-        <button onClick={() => handleChooseStyle("christmas-tree")}>Christmas Tree</button>
-        <button onClick={() => handleChooseStyle("classic")}>Classic</button>
-        <button onClick={() => handleChooseStyle("gingerbread")}>Gingerbread</button>
+      <div className="task task-wordweaver" style={styles.wrap}>
+        <h2 style={styles.title}>Word Weaver</h2>
+        <div style={styles.muted}>No task data received.</div>
+      </div>
+    );
+  }
+
+  if (!phrase || tokens.length === 0) {
+    return (
+      <div className="task task-wordweaver" style={styles.wrap}>
+        <h2 style={styles.title}>Word Weaver</h2>
+        <div style={styles.muted}>
+          Missing phrase. Expected <code>task.phrase</code> or <code>task.targetPhrase</code>.
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 20, textAlign: "center" }}>
-      <h2>Word Weaver Duel</h2>
-
-      <HangmanSVG style={gameStyle} parts={wrongGuesses} />
-
-      <div style={{ display: "flex", justifyContent: "center", margin: "20px 0" }}>
-        {blanks.map((letter, i) => (
-          <DroppableBlank key={i} id={i} isFilled={!!letter}>
-            {letter}
-          </DroppableBlank>
-        ))}
-      </div>
-
-      <div style={{ fontSize: "1.4rem", margin: "16px 0" }}>
-        Turn: Player {currentTurn} {currentTurn === myPlayerNumber && "(You!)"}
-      </div>
-
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 }}>
-          {players.map((player) => (
-            <div key={player.playerNumber} style={{ background: eliminated.includes(player.playerNumber) ? "#fee2e2" : "#f0fdf4", opacity: eliminated.includes(player.playerNumber) ? 0.6 : 1 }}>
-              <h3>Player {player.playerNumber} {player.playerNumber === myPlayerNumber && "(You)"}</h3>
-              {eliminated.includes(player.playerNumber) && <p>Eliminated</p>}
-              <SortableContext items={player.letters}>
-                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center" }}>
-                  {player.letters.map((letter) => (
-                    <DraggableLetter key={letter} id={letter} disabled={!currentTurn === player.playerNumber}>
-                      {letter}
-                    </DraggableLetter>
-                  ))}
-                </div>
-              </SortableContext>
-              <div style={{ marginTop: 16 }}>
-                Power-Ups:
-                {player.powerUps.map((powerUp) => (
-                  <PowerUpCard
-                    key={powerUp}
-                    name={powerUp}
-                    onPlay={() => handlePlayPowerUp(powerUp)}
-                    disabled={!currentTurn === player.playerNumber}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+    <div className="task task-wordweaver" style={styles.wrap}>
+      <div style={styles.headerRow}>
+        <h2 style={styles.title}>Word Weaver</h2>
+        <div style={styles.pill}>
+          {progress.filled}/{progress.total}
         </div>
-      </DndContext>
+      </div>
 
-      {currentTurn === myPlayerNumber && (
-        <button onClick={handleGuessWord}>Guess Full Word</button>
+      <div style={styles.prompt}>{prompt}</div>
+
+      {(opponent.teamId || opponent.filled > 0 || opponent.submitted) && (
+        <div style={styles.duelBox}>
+          <div style={styles.duelTitle}>Duel status</div>
+          <div style={styles.duelLine}>
+            <span style={styles.duelLabel}>You:</span>
+            <span>
+              {progress.filled}/{progress.total} {submitted ? "• submitted" : ""}
+            </span>
+          </div>
+          <div style={styles.duelLine}>
+            <span style={styles.duelLabel}>Opponent:</span>
+            <span>
+              {opponent.filled}/{progress.total} {opponent.submitted ? "• submitted" : ""}
+            </span>
+          </div>
+        </div>
       )}
 
-      {/* Overlay */}
-      {submissionFeedback && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 1000, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", textAlign: "center", padding: 20 }}>
-          <div style={{ fontSize: "3rem", marginBottom: 24 }}>
-            {submissionFeedback.message}
-          </div>
-          {submissionFeedback.points && (
-            <div style={{ fontSize: "2rem" }}>
-              +{submissionFeedback.points} points!
-            </div>
+      <div style={styles.slotsWrap}>
+        {tokens.map((_, i) => {
+          const filled = !!slots[i];
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => handleSlotClick(i)}
+              disabled={!canInteract}
+              style={{
+                ...styles.slot,
+                ...(filled ? styles.slotFilled : styles.slotEmpty),
+              }}
+              title={
+                canInteract
+                  ? filled
+                    ? "Click to remove this word"
+                    : pickedIndex !== null
+                      ? "Click to place the selected word here"
+                      : "Select a word below, then click here"
+                  : ""
+              }
+            >
+              {filled ? slots[i] : "_____"}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={styles.bankTitle}>Word Bank</div>
+      <div style={styles.bankWrap}>
+        {bank.length === 0 ? (
+          <div style={styles.muted}>No words left in the bank.</div>
+        ) : (
+          bank.map((w, idx) => {
+            const selected = pickedIndex === idx;
+            return (
+              <button
+                key={`${w}-${idx}`}
+                type="button"
+                onClick={() => handlePick(idx)}
+                disabled={!canInteract}
+                style={{
+                  ...styles.wordChip,
+                  ...(selected ? styles.wordChipSelected : null),
+                }}
+                aria-pressed={selected}
+              >
+                {w}
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      <div style={styles.controls}>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!canInteract || slots.some((s) => !s)}
+          style={styles.submitBtn}
+        >
+          Submit
+        </button>
+        <button type="button" onClick={handleReset} disabled={!canInteract} style={styles.secondaryBtn}>
+          Reset
+        </button>
+      </div>
+
+      {mode === "review" && (
+        <div style={styles.reviewBox}>
+          <div style={styles.reviewTitle}>Review</div>
+          {reviewCorrect === null ? (
+            <div style={styles.muted}>Feedback not available.</div>
+          ) : reviewCorrect ? (
+            <div style={styles.good}>Correct ✅</div>
+          ) : (
+            <div style={styles.bad}>Not quite ❌</div>
           )}
-          <div style={{ marginTop: 40, fontSize: "1.6rem" }}>
-            Next task in {overlayTimer}s...
-          </div>
-        </div>
-      )}
-
-      {/* Waiting */}
-      {!currentTask && !submissionFeedback && !showQrScanner && (
-        <div style={{ textAlign: "center", padding: 60 }}>
-          <h2 style={{ fontSize: "2.2rem" }}>Waiting for your next task…</h2>
-          <p style={{ fontSize: "1.5rem", color: "#64748b" }}>Get ready to Curriculate!</p>
+          {review?.feedback && <div style={styles.feedback}>{String(review.feedback)}</div>}
         </div>
       )}
     </div>
   );
-};
+}
 
-export default WordWeaverDuelTask;
+const styles = {
+  wrap: {
+    padding: 14,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.04)",
+  },
+  headerRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  title: { margin: 0, fontSize: 22, lineHeight: "26px" },
+  pill: {
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    border: "1px solid rgba(255,255,255,0.14)",
+    opacity: 0.9,
+  },
+  prompt: { marginTop: 8, opacity: 0.92 },
+  slotsWrap: { marginTop: 14, display: "flex", flexWrap: "wrap", gap: 10 },
+  slot: {
+    padding: "10px 12px",
+    minWidth: 84,
+    borderRadius: 12,
+    border: "1px dashed rgba(255,255,255,0.18)",
+    cursor: "pointer",
+    fontSize: 14,
+  },
+  slotEmpty: { background: "rgba(0,0,0,0.12)", opacity: 0.9 },
+  slotFilled: { background: "rgba(255,255,255,0.06)", borderStyle: "solid" },
+  bankTitle: { marginTop: 14, fontWeight: 600, opacity: 0.92 },
+  bankWrap: { marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 },
+  wordChip: {
+    padding: "8px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.06)",
+    cursor: "pointer",
+    fontSize: 13,
+  },
+  wordChipSelected: {
+    transform: "scale(1.02)",
+    border: "1px solid rgba(255,255,255,0.35)",
+    background: "rgba(255,255,255,0.12)",
+  },
+  controls: { marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" },
+  submitBtn: {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(255,255,255,0.10)",
+    cursor: "pointer",
+    fontWeight: 700,
+  },
+  secondaryBtn: {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(0,0,0,0.10)",
+    cursor: "pointer",
+    fontWeight: 600,
+    opacity: 0.95,
+  },
+  muted: { opacity: 0.7, marginTop: 8 },
+  duelBox: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(0,0,0,0.12)",
+  },
+  duelTitle: { fontWeight: 700, marginBottom: 6, opacity: 0.9 },
+  duelLine: { opacity: 0.9, display: "flex", gap: 6, flexWrap: "wrap" },
+  duelLabel: { opacity: 0.75, minWidth: 72 },
+  reviewBox: {
+    marginTop: 14,
+    padding: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(0,0,0,0.10)",
+  },
+  reviewTitle: { fontWeight: 700, marginBottom: 6, opacity: 0.9 },
+  good: { fontWeight: 800 },
+  bad: { fontWeight: 800 },
+  feedback: { marginTop: 8, opacity: 0.9 },
+};

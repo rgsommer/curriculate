@@ -109,12 +109,6 @@ function normalizeSelectedType(raw) {
   if (v === "hangman" || v === "hangman-duel" || v === "hangmanduel")
     return TASK_TYPES.HANGMAN_DUEL;
 
-  if (
-    v === "word-weaver" || v === "wordweaver" || v === "word-weaver-duel" ||
-    v === "wordweaverduel" || v === "word-weaver_duel" || v === "word_weaver_duel"
-  )
-    return TASK_TYPES.WORD_WEAVER_DUEL;
-
   if (v === "flashcards") return TASK_TYPES.FLASHCARDS;
   if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
     return TASK_TYPES.DIFF_DETECTIVE;
@@ -357,9 +351,7 @@ Hard requirements:
 - SEQUENCE must include config: { items: [{ text }] }
 - JEOPARDY (BrainBlitz) must include clues: [{ clue, answer }]
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
-- HANGMAN_DUEL must include wordsByStation[]
-- WORD_WEAVER_DUEL must include phrase (string). Optionally include targetWords[] (array of words) for objective checking.
- (4–8 entries). Each entry: { word, hint }. Each word must come ONLY from the vocabulary list (aiWordBank), all words must be different, and lengths must be similar (max length difference ≤ 2).
+- HANGMAN_DUEL must include wordsByStation[] (4–8 entries). Each entry: { word, hint }. Each word must come ONLY from the vocabulary list (aiWordBank), all words must be different, and lengths must be similar (max length difference ≤ 2).
 
 Return the task in this normalized shape:
 {
@@ -549,9 +541,7 @@ Rules:
 - For JEOPARDY/BrainBlitz tasks: include clues (>=3) with {clue, answer}
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
 - TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
-- For HANGMAN_DUEL tasks:
-- For WORD_WEAVER_DUEL tasks: include phrase (string) and (optional) targetWords[].
- follow the HANGMAN_DUEL requirements block below (wordsByStation per station; no single "word" field).
+- For HANGMAN_DUEL tasks: follow the HANGMAN_DUEL requirements block below (wordsByStation per station; no single "word" field).
   HANGMAN_DUEL (taskType: "hangman-duel") requirements:
 
   You MUST generate a Hangman Duel task that provides DIFFERENT words per station so teams do not share answers.

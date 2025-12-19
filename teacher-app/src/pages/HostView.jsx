@@ -3,17 +3,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../socket";
 import { motion, AnimatePresence } from "framer-motion";
 import Confetti from "react-confetti";
-import {
-  Trophy,
-  Camera,
-  Users,
-  Sparkles,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
+import { Trophy, Camera, Users, Sparkles, Volume2, VolumeX } from "lucide-react";
 
 const trophyEmojis = ["🥇", "🥈", "🥉"];
-
+const podiumHeights = ["h-40", "h-56", "h-32"];
 const podiumColors = [
   "bg-gradient-to-b from-cyan-400 to-blue-600 shadow-cyan-500/50",
   "bg-gradient-to-b from-yellow-300 to-amber-500 shadow-yellow-400/50",
@@ -30,6 +23,54 @@ const PHOTO_TASK_TYPES = new Set([
   "PhotoTask",
   "PhotoJournal",
 ]);
+
+/* ------------------------------------------------------------
+   Option A: Vibrant HostView visuals (no new dependencies)
+   - Soft animated glow blobs
+   - Subtle grain / rays overlay
+------------------------------------------------------------ */
+const AURORA_OVERLAY_STYLE = {
+  backgroundImage: `
+    radial-gradient(900px circle at 15% 20%, rgba(255,255,255,0.14), transparent 60%),
+    radial-gradient(800px circle at 80% 28%, rgba(34,211,238,0.16), transparent 55%),
+    radial-gradient(950px circle at 45% 90%, rgba(168,85,247,0.14), transparent 60%),
+    linear-gradient(120deg, rgba(255,255,255,0.06), transparent 35%, rgba(255,255,255,0.04)),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.05), rgba(255,255,255,0.05) 1px, transparent 1px, transparent 4px)
+  `,
+};
+
+function AuroraBackdrop() {
+  return (
+    <>
+      {/* Soft glow blobs */}
+      <motion.div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-36 -left-36 w-[520px] h-[520px] rounded-full blur-3xl opacity-35 bg-pink-400"
+        animate={{ x: [0, 24, 0], y: [0, -18, 0] }}
+        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <motion.div
+        aria-hidden="true"
+        className="pointer-events-none absolute top-10 -right-40 w-[560px] h-[560px] rounded-full blur-3xl opacity-30 bg-cyan-300"
+        animate={{ x: [0, -18, 0], y: [0, 22, 0] }}
+        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <motion.div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-52 left-1/3 w-[640px] h-[640px] rounded-full blur-3xl opacity-25 bg-purple-400"
+        animate={{ x: [0, 16, 0], y: [0, 14, 0] }}
+        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+      />
+
+      {/* Grain + rays overlay */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-35 mix-blend-overlay"
+        style={AURORA_OVERLAY_STYLE}
+      />
+    </>
+  );
+}
 
 function pickPhotoUrl(sub) {
   return (
@@ -48,7 +89,7 @@ function pickPhotoUrl(sub) {
 }
 
 function buildLatestPhotoByTeam(submissions = []) {
-  const out = {}; // teamId -> { url, at }
+  const out = {};
   for (const s of submissions) {
     const tt = (s?.taskType || s?.task?.taskType || "").toString();
     if (!PHOTO_TASK_TYPES.has(tt)) continue;
@@ -64,12 +105,6 @@ function buildLatestPhotoByTeam(submissions = []) {
   return out;
 }
 
-function formatTeamLabel(team) {
-  const base = team?.teamName || team?.name || "Team";
-  const emoji = team?.teamEmoji || "";
-  return emoji ? `${emoji} ${base}` : base;
-}
-
 export default function HostView({ roomCode }) {
   const [roomState, setRoomState] = useState({
     teams: {},
@@ -79,34 +114,54 @@ export default function HostView({ roomCode }) {
     locationCode: "Classroom",
   });
 
+  const [activeTab, setActiveTab] = useState("leaderboard");
   const [showConfetti, setShowConfetti] = useState(false);
-  const [prevLeaderboard, setPrevLeaderboard] = useState([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [activeTab, setActiveTab] = useState("leaderboard"); // "leaderboard" | "teams"
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  // delete-team modal (click NAME only)
-  const [deleteTeamModal, setDeleteTeamModal] = useState(null);
-  // { teamId, label }
+  // Delete team modal
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteTeamId, setDeleteTeamId] = useState(null);
 
-  // Sound refs
+  // Sound refs (kept from your working HostView)
   const joinSoundRef = useRef(null);
-  const fanfareRef = useRef(null);
-  const cheerRef = useRef(null);
+  const correctSoundRef = useRef(null);
+  const wrongSoundRef = useRef(null);
+  const cheerSoundRef = useRef(null);
 
-  // Preload sounds + resize listener (confetti sizing)
+  const openDeleteTeamModal = (teamId) => {
+    if (!teamId) return;
+    setDeleteTeamId(teamId);
+    setDeleteModalOpen(true);
+  };
+
+  const closeDeleteTeamModal = () => {
+    setDeleteModalOpen(false);
+    setDeleteTeamId(null);
+  };
+
+  const kickTeam = () => {
+    if (!deleteTeamId) return;
+    socket.emit("team:kick", { roomCode: String(roomCode || "").toUpperCase().trim(), teamId: deleteTeamId });
+    closeDeleteTeamModal();
+  };
+
   useEffect(() => {
-    // You already used these names earlier; keep them stable.
-    joinSoundRef.current = new Audio("/sounds/join.mp3");
-    fanfareRef.current = new Audio("/sounds/fanfare.mp3");
-    cheerRef.current = new Audio("/sounds/cheer.mp3");
-
-    [joinSoundRef, fanfareRef, cheerRef].forEach((ref) => {
-      if (ref.current) {
+    // Prepare sounds (safe: if missing, play() just fails silently)
+    const load = (ref, src) => {
+      try {
+        ref.current = new Audio(src);
         ref.current.preload = "auto";
         ref.current.volume = 0.7;
+      } catch {
+        ref.current = null;
       }
-    });
+    };
+
+    load(joinSoundRef, "/sounds/team-join.mp3");
+    load(correctSoundRef, "/sounds/correct-ding.mp3");
+    load(wrongSoundRef, "/sounds/wrong-buzzer.mp3");
+    load(cheerSoundRef, "/sounds/applause-cheer.mp3");
 
     const handleResize = () =>
       setDimensions({ width: window.innerWidth, height: window.innerHeight });
@@ -131,7 +186,6 @@ export default function HostView({ roomCode }) {
     if (!roomCode) return;
     const code = String(roomCode).toUpperCase().trim();
 
-    // Join as host (your existing HostView already did this)
     socket.emit("joinRoom", { roomCode: code, role: "host", name: "Host" });
 
     const handleRoom = (state) => {
@@ -151,106 +205,81 @@ export default function HostView({ roomCode }) {
     const handleTeamJoined = () => {
       playSound(joinSoundRef);
       setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 2500);
+      setTimeout(() => setShowConfetti(false), 2000);
+    };
+
+    const handleScoreUpdate = () => {
+      playSound(correctSoundRef);
+    };
+
+    const handleWrong = () => {
+      playSound(wrongSoundRef);
+    };
+
+    const handleEnded = () => {
+      playSound(cheerSoundRef);
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 7000);
     };
 
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("teamJoined", handleTeamJoined);
     socket.on("team:joined", handleTeamJoined);
+    socket.on("score:updated", handleScoreUpdate);
+    socket.on("score:wrong", handleWrong);
+    socket.on("session-ended", handleEnded);
+
+    socket.emit("room:request-state", { roomCode: code });
 
     return () => {
       socket.off("roomState", handleRoom);
       socket.off("room:state", handleRoom);
       socket.off("teamJoined", handleTeamJoined);
       socket.off("team:joined", handleTeamJoined);
+      socket.off("score:updated", handleScoreUpdate);
+      socket.off("score:wrong", handleWrong);
+      socket.off("session-ended", handleEnded);
     };
   }, [roomCode, soundEnabled]);
 
-  // Derived data
-  const latestPhotoByTeam = useMemo(
-    () => buildLatestPhotoByTeam(roomState.submissions || []),
+  const codeUpper = useMemo(
+    () => String(roomCode || "").toUpperCase().trim(),
+    [roomCode]
+  );
+
+  const latestPhotos = useMemo(
+    () => buildLatestPhotoByTeam(roomState.submissions),
     [roomState.submissions]
   );
 
-  const teams = useMemo(() => {
-    return Object.entries(roomState.teams || {}).map(([id, t]) => ({
-      teamId: id,
-      label: formatTeamLabel(t) || id,
-      rawTeamName: t.teamName || t.name || id,
-      members: Array.isArray(t.members) ? t.members : [],
-      station: t.currentStationId || t.station || "—",
-      emoji: t.teamEmoji || "",
-    }));
-  }, [roomState.teams]);
-
   const leaderboard = useMemo(() => {
-    return Object.entries(roomState.scores || {})
-      .map(([id, pts]) => {
-        const t = roomState.teams?.[id] || {};
-        return {
-          teamId: id,
-          name: formatTeamLabel(t) || id,
-          pts: typeof pts === "number" ? pts : 0,
-          thumb: latestPhotoByTeam?.[id]?.url || null,
-        };
-      })
+    const teamsObj = roomState.teams || {};
+    const scoresObj = roomState.scores || {};
+
+    const rows = Object.values(teamsObj)
+      .map((t) => ({
+        teamId: t.id || t.teamId || t._id,
+        name: t.teamName || t.name || "Team",
+        pts: scoresObj[t.id || t.teamId || t._id] || 0,
+        thumb: latestPhotos[t.id || t.teamId || t._id]?.url || null,
+      }))
+      .filter((r) => !!r.teamId)
       .sort((a, b) => b.pts - a.pts);
-  }, [roomState.scores, roomState.teams, latestPhotoByTeam]);
 
-  // Confetti + sounds when leader changes (preserves previous behavior)
-  useEffect(() => {
-    if (!leaderboard.length) return;
+    return rows;
+  }, [roomState.teams, roomState.scores, latestPhotos]);
 
-    if (prevLeaderboard.length > 0) {
-      const oldLeader = prevLeaderboard[0]?.teamId;
-      const newLeader = leaderboard[0]?.teamId;
+  const topThree = useMemo(() => leaderboard.slice(0, 3), [leaderboard]);
 
-      if (newLeader && oldLeader && newLeader !== oldLeader) {
-        playSound(cheerRef);
-        setShowConfetti(true);
-        setTimeout(() => setShowConfetti(false), 6000);
-      } else {
-        // If any score increased, do a softer fanfare
-        let increased = false;
-        for (let i = 0; i < leaderboard.length; i++) {
-          if ((leaderboard[i]?.pts || 0) > (prevLeaderboard[i]?.pts || 0)) {
-            increased = true;
-            break;
-          }
-        }
-        if (increased) playSound(fanfareRef);
-      }
-    }
-
-    setPrevLeaderboard(leaderboard);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaderboard]);
-
-  const topThree = leaderboard.slice(0, 3);
-  const displayOrder = [1, 0, 2]; // 2nd left, 1st center, 3rd right
-
-  // Delete/kick handlers
-  const openDeleteTeamModal = (teamId) => {
-    const t = roomState?.teams?.[teamId] || {};
-    setDeleteTeamModal({ teamId, label: formatTeamLabel(t) });
-  };
-
-  const confirmDeleteTeam = () => {
-    const teamId = deleteTeamModal?.teamId;
-    const code = String(roomCode || "").toUpperCase().trim();
-    if (!teamId || !code) return;
-
-    socket.emit("teacher:deleteTeam", { roomCode: code, teamId }, (ack) => {
-      setDeleteTeamModal(null);
-      if (!ack?.ok) console.error("teacher:deleteTeam failed:", ack?.error);
-    });
-  };
-
-  const codeUpper = (roomCode || "").toUpperCase().trim();
+  // Display order: [2nd, 1st, 3rd] for podium vibe
+  const displayOrder = [1, 0, 2];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-600 via-purple-700 to-cyan-600 text-white relative overflow-hidden">
+      {/* Vibrant backdrop (Option A) */}
+      <AuroraBackdrop />
+
       {/* Confetti */}
       {showConfetti && (
         <Confetti
@@ -262,17 +291,11 @@ export default function HostView({ roomCode }) {
         />
       )}
 
-      {/* Subtle background glow */}
-      <div className="absolute inset-0 opacity-30 pointer-events-none">
-        <div className="absolute -top-40 -left-40 w-[520px] h-[520px] bg-white/20 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 w-[520px] h-[520px] bg-white/20 rounded-full blur-3xl" />
-      </div>
-
       <div className="max-w-7xl mx-auto p-8 relative z-10">
         {/* Sound toggle */}
         <div className="absolute top-8 right-8 z-20">
           <button
-            onClick={() => setSoundEnabled((v) => !v)}
+            onClick={() => setSoundEnabled((s) => !s)}
             className="p-4 bg-black/30 backdrop-blur rounded-full shadow-lg hover:scale-110 transition"
             title={soundEnabled ? "Sound on" : "Sound off"}
             aria-label="Toggle sound"
@@ -287,53 +310,61 @@ export default function HostView({ roomCode }) {
 
         {/* Header: Room Code + play.curriculate.net */}
         <div className="text-center mb-8 select-none">
+          {/* Title glow “halo” */}
+          <motion.div
+            aria-hidden="true"
+            className="mx-auto mb-3 h-10 w-[520px] max-w-[90vw] rounded-full blur-2xl opacity-40 bg-white"
+            animate={{ opacity: [0.18, 0.45, 0.18] }}
+            transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+          />
+
           <div className="flex items-center justify-center gap-3 mb-2 opacity-95">
             <Sparkles className="w-7 h-7" />
-            <div className="text-2xl font-extrabold tracking-[0.18em]">
-              ROOM CODE
-            </div>
+            <div className="text-2xl font-extrabold tracking-[0.18em]">ROOM CODE</div>
             <Sparkles className="w-7 h-7" />
           </div>
 
-          <div className="font-black leading-none mb-2" style={{ fontSize: "clamp(3.5rem, 8vw, 6.6rem)" }}>
+          <div
+            className="font-black leading-none mb-2"
+            style={{ fontSize: "clamp(3.5rem, 8vw, 6.6rem)" }}
+          >
             {codeUpper || "—"}
           </div>
 
           <div className="text-xl md:text-2xl font-bold opacity-95 tracking-wide">
             play.curriculate.net
           </div>
+
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => setActiveTab("leaderboard")}
+              className={`px-6 py-3 rounded-2xl font-extrabold text-lg md:text-xl shadow-lg backdrop-blur transition ${
+                activeTab === "leaderboard"
+                  ? "bg-white/25 border border-white/40"
+                  : "bg-black/20 border border-white/20 hover:bg-white/15"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Trophy className="w-6 h-6" /> Leaderboard
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("teams")}
+              className={`px-6 py-3 rounded-2xl font-extrabold text-lg md:text-xl shadow-lg backdrop-blur transition ${
+                activeTab === "teams"
+                  ? "bg-white/25 border border-white/40"
+                  : "bg-black/20 border border-white/20 hover:bg-white/15"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Users className="w-6 h-6" /> Teams
+              </span>
+            </button>
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex justify-center gap-4 mb-8">
-          <button
-            onClick={() => setActiveTab("leaderboard")}
-            className={`px-6 py-3 rounded-2xl font-extrabold text-lg md:text-xl shadow-lg backdrop-blur transition ${
-              activeTab === "leaderboard"
-                ? "bg-white/25 border border-white/40"
-                : "bg-black/20 border border-white/20 hover:bg-white/15"
-            }`}
-          >
-            <span className="inline-flex items-center gap-2">
-              <Trophy className="w-6 h-6" /> Leaderboard
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("teams")}
-            className={`px-6 py-3 rounded-2xl font-extrabold text-lg md:text-xl shadow-lg backdrop-blur transition ${
-              activeTab === "teams"
-                ? "bg-white/25 border border-white/40"
-                : "bg-black/20 border border-white/20 hover:bg-white/15"
-            }`}
-          >
-            <span className="inline-flex items-center gap-2">
-              <Users className="w-6 h-6" /> Teams
-            </span>
-          </button>
-        </div>
-
-        {/* Podium (always visible, keeps your “wow” moment) */}
+        {/* Podium (always visible) */}
         {topThree.length > 0 && (
           <div className="flex items-end justify-center pb-8 gap-10 md:gap-16 mb-10">
             {displayOrder.map((idx, pos) => {
@@ -343,15 +374,34 @@ export default function HostView({ roomCode }) {
                   key={row.teamId || idx}
                   initial={{ y: 520, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: pos * 0.12, type: "spring", stiffness: 60, damping: 18 }}
+                  transition={{
+                    delay: pos * 0.12,
+                    type: "spring",
+                    stiffness: 60,
+                    damping: 18,
+                  }}
                   className="flex flex-col items-center"
                 >
                   <div className="text-7xl md:text-8xl mb-5">{trophyEmojis[idx] || "🏅"}</div>
 
                   <div
-                    className={`w-72 md:w-80 rounded-t-3xl px-8 py-10 text-center text-white font-black shadow-2xl ${podiumColors[idx]}`}
+                    className={`relative overflow-hidden w-72 md:w-80 rounded-t-3xl px-8 py-10 text-center text-white font-black shadow-2xl ring-1 ring-white/20 ${podiumColors[idx]}`}
                   >
+                    {/* Shine sweep */}
+                    <motion.div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -top-10 -left-40 h-40 w-40 rotate-12 bg-white/20 blur-xl"
+                      animate={{ x: [-120, 520] }}
+                      transition={{
+                        duration: 3.6,
+                        repeat: Infinity,
+                        repeatDelay: 1.4,
+                        ease: "easeInOut",
+                      }}
+                    />
+
                     <div className="text-4xl md:text-5xl mb-3">{idx + 1}</div>
+
                     <div className="text-2xl md:text-3xl truncate px-2 underline decoration-white/40">
                       {/* NAME ONLY clickable for delete */}
                       <span
@@ -362,6 +412,7 @@ export default function HostView({ roomCode }) {
                         {row.name}
                       </span>
                     </div>
+
                     <div className="text-5xl md:text-6xl mt-6">{row.pts} pts</div>
                   </div>
 
@@ -398,46 +449,55 @@ export default function HostView({ roomCode }) {
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -60 }}
                         transition={{ duration: 0.25 }}
-                        className="bg-white/10 border border-white/20 rounded-2xl px-5 py-4 flex items-center shadow-lg"
+                        className="group relative overflow-hidden bg-white/10 border border-white/20 rounded-2xl px-5 py-4 flex items-center shadow-lg hover:bg-white/15 hover:shadow-2xl hover:-translate-y-0.5 transition"
                         style={{ cursor: "default" }} // safe for scroll
                       >
-                        <span className="font-black text-2xl md:text-3xl w-14 text-white/95">
+                        {/* Hover glow + subtle shimmer */}
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-300"
+                          style={{
+                            backgroundImage:
+                              "radial-gradient(600px circle at 20% 10%, rgba(255,255,255,0.14), transparent 60%), radial-gradient(500px circle at 85% 40%, rgba(34,211,238,0.16), transparent 55%)",
+                          }}
+                        />
+                        <motion.div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -top-10 -left-52 h-24 w-52 rotate-12 bg-white/10 blur-lg"
+                          animate={{ x: [-120, 820] }}
+                          transition={{
+                            duration: 5.5,
+                            repeat: Infinity,
+                            repeatDelay: 1.2,
+                            ease: "easeInOut",
+                          }}
+                        />
+
+                        <span className="font-black text-2xl md:text-3xl w-14 text-white/95 relative">
                           {i + 1}.
                         </span>
 
-                        {/* Photo thumb (if any) */}
+                        {/* Photo thumb if available */}
                         {row.thumb ? (
                           <img
                             src={row.thumb}
-                            alt="photo submission"
-                            style={{
-                              width: 44,
-                              height: 44,
-                              borderRadius: 12,
-                              objectFit: "cover",
-                              border: "1px solid rgba(255,255,255,0.25)",
-                              marginRight: 14,
-                              flex: "0 0 auto",
-                            }}
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                            }}
+                            alt={row.name}
+                            className="w-11 h-11 md:w-12 md:h-12 rounded-full object-cover border-2 border-white/60 shadow-lg mr-4 relative"
                           />
                         ) : (
-                          <div style={{ width: 44, height: 44, marginRight: 14 }} />
+                          <div className="w-11 h-11 md:w-12 md:h-12 rounded-full bg-white/10 border border-white/25 mr-4 relative" />
                         )}
 
-                        {/* NAME ONLY clickable for delete */}
                         <span
-                          className="font-extrabold flex-1 text-left underline decoration-white/30"
-                          style={{ cursor: "pointer" }}
+                          className="font-extrabold flex-1 truncate relative"
                           title="Delete/kick this team"
+                          style={{ cursor: "pointer" }}
                           onClick={() => openDeleteTeamModal(row.teamId)}
                         >
                           {row.name}
                         </span>
 
-                        <span className="font-black text-3xl md:text-4xl text-white">
+                        <span className="font-black text-2xl md:text-3xl ml-4 relative">
                           {row.pts} pts
                         </span>
                       </motion.li>
@@ -453,125 +513,82 @@ export default function HostView({ roomCode }) {
                 <div className="text-2xl md:text-3xl font-extrabold">Teams</div>
               </div>
 
-              {teams.length === 0 ? (
+              {Object.keys(roomState.teams || {}).length === 0 ? (
                 <div className="text-center text-2xl opacity-90 py-10">
-                  No teams joined yet.
+                  No teams yet.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {teams
-                    .slice()
-                    .sort((a, b) => a.label.localeCompare(b.label))
-                    .map((t) => (
-                      <motion.div
-                        key={t.teamId}
-                        initial={{ opacity: 0, y: 16 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.22 }}
-                        className="bg-white/10 border border-white/20 rounded-2xl p-5 shadow-lg"
-                        style={{ cursor: "default" }} // safe for scroll
-                      >
-                        {/* NAME ONLY clickable for delete */}
-                        <div
-                          className="text-2xl md:text-3xl font-black underline decoration-white/30"
-                          style={{ cursor: "pointer" }}
-                          title="Delete/kick this team"
-                          onClick={() => openDeleteTeamModal(t.teamId)}
-                        >
-                          {t.label}
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.values(roomState.teams || {}).map((t) => {
+                    const id = t.id || t.teamId || t._id;
+                    const name = t.teamName || t.name || "Team";
+                    const pts = (roomState.scores || {})[id] || 0;
+                    const thumb = latestPhotos[id]?.url || null;
 
-                        {t.members?.length > 0 && (
-                          <div className="text-white/90 mt-1">
-                            {t.members.join(", ")}
-                          </div>
+                    return (
+                      <div
+                        key={id}
+                        className="bg-white/10 border border-white/20 rounded-2xl p-4 flex items-center gap-4 shadow-lg hover:bg-white/15 transition"
+                      >
+                        {thumb ? (
+                          <img
+                            src={thumb}
+                            alt={name}
+                            className="w-12 h-12 rounded-full object-cover border-2 border-white/60 shadow"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-white/10 border border-white/25" />
                         )}
 
-                        <div className="mt-3 flex items-center gap-3 text-white/90">
-                          <Camera className="w-5 h-5 opacity-90" />
-                          <span className="font-semibold">
-                            Latest photo:
-                          </span>
-                          <span className="opacity-90">
-                            {latestPhotoByTeam?.[t.teamId]?.url ? "Yes" : "—"}
-                          </span>
+                        <div className="flex-1 min-w-0">
+                          <div
+                            className="font-extrabold text-xl truncate underline decoration-white/30"
+                            title="Delete/kick this team"
+                            style={{ cursor: "pointer" }}
+                            onClick={() => openDeleteTeamModal(id)}
+                          >
+                            {name}
+                          </div>
+                          <div className="opacity-90">ID: {id}</div>
                         </div>
-                      </motion.div>
-                    ))}
+
+                        <div className="font-black text-2xl">{pts} pts</div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </>
           )}
         </div>
-      </div>
 
-      {/* Confirm delete/kick modal */}
-      {deleteTeamModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            padding: 16,
-          }}
-          onClick={() => setDeleteTeamModal(null)}
-        >
-          <div
-            style={{
-              width: "min(520px, 100%)",
-              background: "white",
-              borderRadius: 16,
-              padding: 16,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>
-              Delete team?
-            </div>
+        {/* Delete team modal */}
+        {deleteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+            <div className="w-full max-w-lg bg-zinc-900 text-white rounded-3xl border border-white/20 shadow-2xl p-6">
+              <div className="text-2xl font-extrabold mb-2">Kick team?</div>
+              <div className="opacity-90 mb-6">
+                This will remove the team from the room. (They can re-join if they scan again.)
+              </div>
 
-            <div style={{ color: "#374151", marginBottom: 14, lineHeight: 1.35 }}>
-              Remove <strong>{deleteTeamModal.label}</strong> from this room and
-              kick them off immediately?
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-              <button
-                onClick={() => setDeleteTeamModal(null)}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1px solid #e5e7eb",
-                  background: "white",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={confirmDeleteTeam}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1px solid #991b1b",
-                  background: "#dc2626",
-                  color: "white",
-                  fontWeight: 900,
-                  cursor: "pointer",
-                }}
-              >
-                Delete & kick
-              </button>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={closeDeleteTeamModal}
+                  className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={kickTeam}
+                  className="px-5 py-3 rounded-2xl bg-red-500/90 hover:bg-red-500 transition font-black"
+                >
+                  Kick Team
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
