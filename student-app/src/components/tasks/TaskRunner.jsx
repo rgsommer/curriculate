@@ -120,7 +120,7 @@ function normalizeTaskType(raw) {
     case "match_up":
     case "matchup":
     case "pairs":
-      return TASK_TYPES.MATCHING || "matching";
+      return TASK_TYPES.MATCHING;
 
     // Timeline
     case "timeline":
@@ -134,7 +134,7 @@ function normalizeTaskType(raw) {
     case "venn-diagram":
     case "venn_diagram":
     case "venndiagram":
-      return TASK_TYPES.VENNSORT || "vennsort";
+      return TASK_TYPES.VENNSORT;
 
       // Photo / Media
     case "photo":
@@ -148,7 +148,7 @@ function normalizeTaskType(raw) {
     case "photo-journal":
     case "photo_journal":
     case "photojournal":
-      return TASK_TYPES.PHOTO_JOURNAL || "photo-journal";
+      return TASK_TYPES.PHOTO_JOURNAL;
 
     case "record-audio":
     case "record_audio":
@@ -176,7 +176,7 @@ function normalizeTaskType(raw) {
     case "mood_checkin":
     case "moodcheckin":
     case "mood_check_in":
-      return TASK_TYPES.MOOD_CHECKIN || "mood-checkin";
+      return TASK_TYPES.MOOD_CHECKIN;
 
     // Draw-only tasks
     case "Draw":
@@ -224,7 +224,7 @@ function normalizeTaskType(raw) {
     case "hangman-duel":
     case "hangman_duel":
     case "hangmanduel":
-      return TASK_TYPES.HANGMAN_DUEL || "hangman-duel";
+      return TASK_TYPES.HANGMAN_DUEL;
 
     // ✅ WordWeaver Duel (NEW)
     case "word-weaver":
@@ -233,12 +233,11 @@ function normalizeTaskType(raw) {
     case "word-weaver-duel":
     case "word_weaver_duel":
     case "wordweaverduel":
-      return TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel";
+      return TASK_TYPES.WORD_WEAVER_DUEL;
 
     // already normalized constant coming through
-    case (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"):
-      return TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel";
-
+    case (TASK_TYPES.WORD_WEAVER_DUEL):
+      return TASK_TYPES.WORD_WEAVER_DUEL;
     default:
       return raw;
   }
