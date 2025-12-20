@@ -12,15 +12,24 @@ export default function AnalyticsOverview() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const onReady = () => {
+      // re-fetch reports list
+      fetchReports();
+    };
+    socket.on("report:ready", onReady);
+    return () => socket.off("report:ready", onReady);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadSessions() {
       setLoading(true);
       setError("");
       try {
-        const res = await api.get("/analytics/sessions");
+        const res = await api.get("/api/reports");
         if (!cancelled) {
-          setSessions(res.data.sessions || []);
+          setSessions(res.data.reports || []);
         }
       } catch (err) {
         console.error("Analytics load error", err);

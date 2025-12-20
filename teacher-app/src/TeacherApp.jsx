@@ -112,6 +112,18 @@ function TeacherApp() {
     }
   });
 
+  socket.emit("teacher:endSessionAndEmail", {
+    roomCode: code,
+    ownerId: teacher?.ownerId || teacher?._id || user?._id,
+    teacherEmail,
+    includeIndividualReports,
+    assessmentCategories,
+    // optional:
+    className,
+    gradeLevel,
+    planTierUsed,
+  });
+
   // Ensure room exists + keepalive for whole session
   useEffect(() => {
     const code = (roomCode || "").trim().toUpperCase();

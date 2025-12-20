@@ -31,45 +31,6 @@ import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import AccessCode from "./models/AccessCode.js";
 
-// --------------------------------------------------------------------
-// Reports are immutable snapshots (do NOT overload Session with reports)
-// --------------------------------------------------------------------
-// NOTE: We define the model here to keep index.js drop-in friendly.
-// If you later add ./models/SessionReport.js, you can remove this block
-// and import the model instead.
-const SessionReport = mongoose.models.SessionReport || mongoose.model(
-  "SessionReport",
-  new mongoose.Schema(
-    {
-      ownerId: { type: String, index: true, required: true },
-      roomCode: { type: String, index: true, required: true },
-      className: { type: String, default: "" },
-      gradeLevel: { type: String, default: "" },
-      planTierUsed: { type: String, default: "" },
-
-      // Summary / overview for quick listing + email teaser
-      headline: { type: String, default: "" },
-      overviewEmail: { type: String, default: "" }, // brief email-ready overview (plain text)
-      parentNote: { type: String, default: "" }, // "Today in __class..." (plain text)
-
-      // Full report payload (JSON snapshot)
-      summary: { type: mongoose.Schema.Types.Mixed, default: null },
-      transcript: { type: mongoose.Schema.Types.Mixed, default: null },
-      perParticipant: { type: mongoose.Schema.Types.Mixed, default: null },
-
-      // Attachments metadata (photos/recordings that were submitted)
-      mediaSubmissions: { type: Array, default: [] }, // [{teamId, teamName, taskIndex, taskType, label, url, submittedAt}]
-      // Optional: if your emailer generates a PDF and returns a storage url, store it here
-      pdfUrl: { type: String, default: "" },
-
-      // Scoring / rubric categories used for this report
-      assessmentCategories: { type: Array, default: [] },
-      includeIndividualReports: { type: Boolean, default: false },
-    },
-    { timestamps: true }
-  )
-);
-
 const app = express();
 const server = http.createServer(app);
 
@@ -3266,181 +3227,58 @@ const code = (roomCode || "").toUpperCase();
   });
 
   // Teacher ends session + email reports
-  // Teacher ends session + generate immutable report snapshot + email teacher
-// (Reports are stored in SessionReport; Session stays lightweight)
-socket.on(
-  "teacher:endSessionAndEmail",
-  async ({
-    roomCode,
-    ownerId, // Option A: teacher identity comes from auth/profile on frontend
-    teacherEmail, // optional override
-    assessmentCategories,
-    includeIndividualReports,
-    schoolName,
-    perspectives,
-    className,
-    gradeLevel,
-    planTierUsed,
-  } = {}) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) {
-      socket.emit("transcript:error", { message: "Room not found" });
-      return;
-    }
-
-    const safeOwnerId = String(ownerId || "").trim();
-
-    // If ownerId isn't provided, try to infer from the connected teacher profile (best-effort)
-    // NOTE: This is intentionally conservative to avoid mismatching owners.
-    if (!safeOwnerId) {
-      console.warn("teacher:endSessionAndEmail missing ownerId (Option A expects it).");
-    }
-
-    // 1) Build transcript + stats
-    const transcript = buildTranscript(room);
-    const perParticipant = computePerParticipantStats(room, transcript);
-
-    // 2) Pull any photo/recording submissions (anything with photoUrl/mediaUrl)
-    const mediaSubmissions = (Array.isArray(room.submissions) ? room.submissions : [])
-      .filter((s) => !!(s && (s.photoUrl || s?.answer?.mediaUrl || s?.answer?.fileUrl || s?.answer?.recordingUrl)))
-      .map((s) => {
-        const url =
-          s.photoUrl ||
-          s?.answer?.recordingUrl ||
-          s?.answer?.mediaUrl ||
-          s?.answer?.fileUrl ||
-          "";
-        const task = room?.taskset?.tasks?.[s.taskIndex] || {};
-        const taskType = task?.taskType || "unknown";
-        const teamName = s.teamName || room?.teams?.[s.teamId]?.teamName || `Team-${String(s.teamId).slice(-4)}`;
-        const label = `${taskType} - ${teamName} - Task ${Number.isFinite(s.taskIndex) ? (s.taskIndex + 1) : ""}`.trim();
-        return {
-          teamId: String(s.teamId || ""),
-          teamName,
-          taskIndex: s.taskIndex ?? null,
-          taskType,
-          label,
-          url,
-          submittedAt: s.submittedAt || null,
-        };
-      });
-
-    // 3) Generate AI summary (overview + engagement)
-    const summary = await generateSessionSummaries({
-      roomCode: code,
-      transcript,
-      perParticipant,
+  socket.on(
+    "teacher:endSessionAndEmail",
+    async ({
+      roomCode,
+      teacherEmail,
       assessmentCategories,
+      includeIndividualReports,
+      schoolName,
       perspectives,
-      className,
-      gradeLevel,
-      planTierUsed,
-    });
-
-    // 4) Compose parent note (safe, plain text; AI summary may also include one)
-    const safeClass = (className || room?.taskset?.name || "class").toString().trim() || "class";
-    const safeGrade = (gradeLevel || room?.taskset?.gradeLevel || "").toString().trim();
-    const concepts =
-      (summary && (summary.conceptsCovered || summary.concepts || summary.topics)) ||
-      (room?.taskset?.subject ? [room.taskset.subject] : []);
-    const conceptsText = Array.isArray(concepts) ? concepts.filter(Boolean).slice(0, 4).join(", ") : String(concepts || "");
-    const activities =
-      (summary && (summary.activities || summary.activityHighlights)) ||
-      (room?.taskset?.tasks || []).slice(0, 3).map((t) => t?.title || t?.taskType).filter(Boolean);
-
-    const activitiesText = Array.isArray(activities) ? activities.filter(Boolean).slice(0, 4).join(", ") : String(activities || "");
-
-    const engagementText =
-      (summary && (summary.engagementLevel || summary.engagement)) ||
-      "good";
-    const proficiencyText =
-      (summary && (summary.overallProficiency || summary.proficiency)) ||
-      "a developing level of proficiency";
-
-    const parentNote =
-      `Today in ${safeClass}${safeGrade ? ` (Grade ${safeGrade})` : ""}, we completed a Curriculate activity wherein students were actively involved in exploring/reviewing ${conceptsText || "key concepts"}. ` +
-      `They completed activities such as ${activitiesText || "interactive team challenges"}. ` +
-      `The level of engagement was ${engagementText}. ` +
-      `Overall, students achieved ${proficiencyText}.`;
-
-    // 5) Persist immutable report snapshot
-    let reportDoc = null;
-    try {
-      if (safeOwnerId) {
-        reportDoc = await SessionReport.create({
-          ownerId: safeOwnerId,
-          roomCode: code,
-          className: safeClass,
-          gradeLevel: safeGrade,
-          planTierUsed: String(planTierUsed || "").trim(),
-          headline: (summary && (summary.headline || summary.title)) || `Curriculate Report — ${code}`,
-          overviewEmail: (summary && (summary.emailOverview || summary.overview || "")) || "",
-          parentNote,
-          summary,
-          transcript,
-          perParticipant,
-          mediaSubmissions,
-          assessmentCategories: Array.isArray(assessmentCategories) ? assessmentCategories : [],
-          includeIndividualReports: !!includeIndividualReports,
-        });
+    }) => {
+      const code = (roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        socket.emit("transcript:error", { message: "Room not found" });
+        return;
       }
-    } catch (e) {
-      console.error("Failed to persist SessionReport:", e);
-    }
 
-    // 6) Determine teacher email (override -> profile -> payload)
-    let toEmail = (teacherEmail || "").toString().trim();
-    try {
-      if (!toEmail && safeOwnerId) {
-        const profile = await TeacherProfile.findOne({ ownerId: safeOwnerId }).lean();
-        if (profile?.email) toEmail = String(profile.email).trim();
-      }
-    } catch (e) {
-      console.warn("TeacherProfile email lookup failed:", e);
-    }
+      const transcript = buildTranscript(room);
+      const perParticipant = computePerParticipantStats(room, transcript);
 
-    // 7) Send email (includes report teaser; emailer may attach PDF)
-    try {
-      await sendTranscriptEmail({
-        to: toEmail,
+      const summary = await generateSessionSummaries({
         roomCode: code,
-        schoolName,
-        summary,
         transcript,
         perParticipant,
         assessmentCategories,
-        includeIndividualReports,
-        // New: include parent note + media list for the email template if supported
-        parentNote,
-        mediaSubmissions,
-        // New: include reportId so email can point teacher to Reports page
-        reportId: reportDoc?._id ? String(reportDoc._id) : null,
-        planTierUsed,
+        perspectives,
       });
 
-      // Notify teacher UI that the report is ready
-      if (reportDoc?._id) {
-        io.to(code).emit("report:ready", {
+      try {
+        await sendTranscriptEmail({
+          to: teacherEmail,
           roomCode: code,
-          reportId: String(reportDoc._id),
+          schoolName,
+          summary,
+          transcript,
+          perParticipant,
+          assessmentCategories,
+          includeIndividualReports,
+        });
+
+        socket.emit("transcript:sent", {
+          ok: true,
+          email: teacherEmail,
+        });
+      } catch (e) {
+        console.error("Transcript emailing failed:", e);
+        socket.emit("transcript:error", {
+          message: "Failed to send transcript email",
         });
       }
-
-      socket.emit("transcript:sent", {
-        ok: true,
-        email: toEmail || teacherEmail || "",
-        reportId: reportDoc?._id ? String(reportDoc._id) : null,
-      });
-    } catch (e) {
-      console.error("Transcript emailing failed:", e);
-      socket.emit("transcript:error", {
-        message: "Failed to send transcript email",
-      });
     }
-  }
-);
-
+  );
 
   // ──────────────────────────────────────────────────────────────
   // Collaboration task: Random pairing + bonus for quality replies
@@ -4264,46 +4102,6 @@ app.post("/api/sessions/:roomCode/end", authRequired, async (req, res) => {
   } catch (err) {
     console.error("End session error:", err);
     res.status(500).json({ error: "Failed to end session" });
-  }
-});
-
-// ====================================================================
-//  REPORTS API (immutable snapshots)
-//  TeacherApp "Reports" sidebar should hit these endpoints.
-// ====================================================================
-
-// List reports for current teacher (most recent first)
-app.get("/api/reports", authRequired, async (req, res) => {
-  try {
-    const ownerId = getOwnerId(req);
-    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
-
-    const rows = await SessionReport.find({ ownerId })
-      .sort({ createdAt: -1 })
-      .select("_id roomCode className gradeLevel headline createdAt planTierUsed")
-      .lean();
-
-    return res.json({ ok: true, reports: rows || [] });
-  } catch (err) {
-    console.error("GET /api/reports failed:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
-
-// Get one report (full JSON snapshot)
-app.get("/api/reports/:id", authRequired, async (req, res) => {
-  try {
-    const ownerId = getOwnerId(req);
-    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
-
-    const id = String(req.params.id || "").trim();
-    const doc = await SessionReport.findOne({ _id: id, ownerId }).lean();
-    if (!doc) return res.status(404).json({ ok: false, error: "Report not found" });
-
-    return res.json({ ok: true, report: doc });
-  } catch (err) {
-    console.error("GET /api/reports/:id failed:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 

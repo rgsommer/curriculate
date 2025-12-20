@@ -1062,7 +1062,11 @@ useEffect(() => {
     setIsEndingSession(true);
     setEndSessionMessage("");
 
-    socket.emit("teacher:endSessionAndEmail", { roomCode: code });
+    socket.emit("teacher:endSessionAndEmail", {
+      code,
+      ownerId: teacher?.ownerId || teacher?._id || user?.id || user?._id,
+      includeIndividualReports,
+    });
   };
 
   const handleGiveTreat = () => {
