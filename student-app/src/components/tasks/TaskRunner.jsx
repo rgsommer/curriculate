@@ -838,6 +838,7 @@ const handleTaskSubmit = (payload) => {
           socket={socketRef}     // if your MoodCheckInTask emits its own event
           roomCode={roomCode}
           teamId={effectiveTeamId}
+          memberNames={memberNames}
           disabled={effectiveDisabled || isReview}
         />
       );

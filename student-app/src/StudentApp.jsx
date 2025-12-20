@@ -1363,10 +1363,13 @@ if (!currentTask && payloadType === "treasure-runner") {
 }
 
 // ✅ Never route mood check-in through task:submit (it has its own socket event in the task)
-if (payloadType === "mood-checkin") {
-  setSubmitting(false);
-  setStatusMessage("");
-  return;
+const isMood = currentTask?.taskType === "MOOD_CHECKIN"; // adjust to your constant
+if (isMood) {
+  if (payloadType === "mood-checkin") {
+    setSubmitting(false);
+    setStatusMessage("");
+    return;
+  }
 }
 
 if (!currentTask) return;

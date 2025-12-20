@@ -71,7 +71,7 @@ function ConfettiBurst({ show, onDone }) {
   );
 }
 
-export default function MoodCheckInTask({ task, onSubmit, disabled = false }) {
+export default function MoodCheckInTask({ task, onSubmit, disabled = false, memberNames = [] }) {
   const cfg = (task?.config && typeof task.config === "object") ? task.config : {};
 
   const playerCountRaw =
@@ -164,9 +164,10 @@ export default function MoodCheckInTask({ task, onSubmit, disabled = false }) {
             }}
           >
             <div style={{ fontSize: "1.15rem", fontWeight: 900, marginBottom: 10 }}>
-              const displayName = (memberNames?.[playerIndex] || "").trim() || `Player ${playerIndex + 1}`;
-
-              displayName
+              {(() => {
+                const displayName = String(memberNames?.[i] ?? "").trim() || `Player ${i + 1}`;
+                return displayName;
+              })()}
             </div>
 
             <div
