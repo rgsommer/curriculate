@@ -2,7 +2,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
-import MultiPlayerFeedbackTask from "./components/tasks/types/MultiPlayerFeedbackTask.jsx";
 import QrScanner from "./components/QrScanner.jsx";
 import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
