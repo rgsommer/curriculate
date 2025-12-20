@@ -1121,7 +1121,11 @@ function StudentApp() {
     teamName.trim().length >= 1 &&
     members.some((m) => m.trim().length > 0);
 
-    const handleJoinRoom = () => {
+  // ----------------------------------------------------
+  // Join the teacher’s room (student side)
+  // Gold-standard flow: Join → Scan → Mood → Treasure (idle) → first task → tasks loop
+  // ----------------------------------------------------
+  const handleJoinRoom = () => {
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
       teamName: (teamName || "").trim(),
@@ -1137,7 +1141,24 @@ function StudentApp() {
 
       const ok = response && (response.ok === true || response.success === true);
       if (!ok) {
-        setStatusMessage(response?.error || "Could not join. Check the code with your teacher.");
+        const errRaw =
+          response?.error ??
+          response?.message ??
+          response?.msg ??
+          "";
+
+        const err = String(errRaw).trim();
+
+        const isDeadRoom = /room\s*(code)?\s*not\s*found|code\s*not\s*found|invalid\s*session|session\s*ended|room\s*ended|closed|expired|no\s*active/i.test(
+          err.toLowerCase()
+        );
+
+        if (isDeadRoom) {
+          forceReturnToJoin("That session is no longer active. Join a new room.");
+          return;
+        }
+
+        setStatusMessage(err || "Could not join. Check the code with your teacher.");
         return;
       }
 
@@ -1145,7 +1166,7 @@ function StudentApp() {
       setJoined(true);
       setStatusMessage("");
 
-      // Gold-standard pipeline start: Join → Scan → Mood → Treasure → first task
+      // Standard pipeline start: Join → Scan → Mood → Treasure → first task
       setPostPhase("scan");
       setTasksetComplete(false);
       setTaskRenderError(null);
@@ -1267,249 +1288,99 @@ function StudentApp() {
     });
   };
 
+  // Explicit user action: drop current room and show the join form.
+  // This is the ONLY time we clear saved join keys.
+  const handleJoinAnotherRoom = () => {
+    userDroppedRoomRef.current = true;
+    resumeAttemptedRef.current = false;
+    clearSavedJoin();
+
+    // reset core session state
+    setJoined(false);
+    setTeamId(null);
+    setTeamSessionId(null);
+    setStatusMessage("");
+
+    // reset station/task/scanner state
+    setAssignedStationId(null);
+    setAssignedColor(null);
+    setScannedStationId(null);
+    setScannerActive(false);
+    setScanError(null);
+    setScanStatus(null);
+    setWaitingForLaunch(false);
+
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setTasksetTotalTasks(null);
+    setTimeLimitSeconds(null);
+    setRemainingMs(0);
+    setSubmitting(false);
+    setCurrentAnswerDraft("");
+
+    setTaskLocked(false);
+    setPostSubmitSecondsLeft(null);
+    setLastTaskResult(null);
+    setPointToast(null);
+    setShortAnswerReveal(null);
+    setTasksetComplete(false);
+    setTaskRenderError(null);
+
+    // reset pipeline
+    setPostPhase("join"); // or whatever your join-screen phase is
+
+    // clear join form fields (optional, but expected UX)
+    setRoomCode("");
+    setTeamName("");
+    setMembers(["", "", ""]);
+  };
+
   const handleJoin = (e) => {
     e.preventDefault();
     if (!canJoin || joiningRoom) return;
     handleJoinRoom();
   };
 
-  // Explicit user action: drop current room and show the join form.
-    // This is the ONLY time we clear saved join keys.
-    const handleJoinAnotherRoom = () => {
-      userDroppedRoomRef.current = true;
-      resumeAttemptedRef.current = false;
-      clearSavedJoin();
+  const forceReturnToJoin = (msg) => {
+    userDroppedRoomRef.current = true;     // prevents immediate auto-resume loops
+    resumeAttemptedRef.current = false;
+    clearSavedJoin();
 
-      // reset core session state
-      setJoined(false);
-      setTeamId(null);
-      setTeamSessionId(null);
-      setStatusMessage("");
+    // reset core session state
+    setJoined(false);
+    setTeamId(null);
+    setTeamSessionId(null);
 
-      // reset station/task/scanner state
-      setAssignedStationId(null);
-      setAssignedColor(null);
-      setScannedStationId(null);
-      setScannerActive(false);
-      setScanError(null);
-      setScanStatus(null);
-      setWaitingForLaunch(false);
+    // reset station/task/scanner state
+    setAssignedStationId(null);
+    setAssignedColor(null);
+    setScannedStationId(null);
+    setScannerActive(false);
+    setScanError(null);
+    setScanStatus(null);
+    setWaitingForLaunch(false);
 
-      setCurrentTask(null);
-      setCurrentTaskIndex(null);
-      setTasksetTotalTasks(null);
-      setTimeLimitSeconds(null);
-      setRemainingMs(0);
-      setSubmitting(false);
-      setCurrentAnswerDraft("");
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setTasksetTotalTasks(null);
+    setTimeLimitSeconds(null);
+    setRemainingMs(0);
 
-      setTaskLocked(false);
-      setPostSubmitSecondsLeft(null);
-      setLastTaskResult(null);
-      setPointToast(null);
-      setShortAnswerReveal(null);
-      setTasksetComplete(false);
-      setTaskRenderError(null);
+    setSubmitting(false);
+    setCurrentAnswerDraft("");
+    setTaskLocked(false);
+    setPostSubmitSecondsLeft(null);
+    setLastTaskResult(null);
+    setPointToast(null);
+    setShortAnswerReveal(null);
+    setTasksetComplete(false);
+    setTaskRenderError(null);
 
-      // reset pipeline
-      setPostPhase("join");
+    setPostPhase("join");
 
-      // clear join form fields (optional, but expected UX)
-      setRoomCode("");
-      setTeamName("");
-      setMembers(["", "", ""]);
-    };
-
-    // ----------------------------------------------------
-    // End the 15s review lock and return to scan state
-    // (Used by BOTH the server-scored path and the fallback timer)
-    // ----------------------------------------------------
-    const endReviewAndReturnToScan = () => {
-      // stop lock + countdown
-      setTaskLocked(false);
-      setPostSubmitSecondsLeft(null);
-
-      const isLastTask =
-        typeof currentTaskIndex === "number" &&
-        typeof tasksetTotalTasks === "number" &&
-        currentTaskIndex >= 0 &&
-        tasksetTotalTasks > 0 &&
-        currentTaskIndex === tasksetTotalTasks - 1;
-
-      // If this was the last task in the taskset, go to post-task feedback first
-      if (isLastTask) {
-        setPostPhase("feedback");
-        setTasksetComplete(false);
-        setScannerActive(false);
-        setReviewState(null);
-
-        // Refresh room state one last time so scores/leaderboard are up to date
-        socket.emit("room:request-state", { teamId });
-
-        // hide task UI
-        setCurrentTask(null);
-        setCurrentTaskIndex(null);
-        setShortAnswerReveal(null);
-        return;
-      }
-
-      // hide task UI so scanner is visible
-      setCurrentTask(null);
-      setCurrentTaskIndex(null);
-      setShortAnswerReveal(null);
-
-      // reset scan gate/error state (return to scan)
-      setScannedStationId(null);
-      setScanStatus(null);
-      setScanError(null);
-
-      setPostPhase("scan");
-
-      // refresh assignment + show scanner
-      socket.emit("room:request-state", { teamId });
-      setScannerActive(true);
-
-      setReviewState(null);
-    };
-
-    const handleSubmitAnswer = (answerPayload) => {
-      if (!roomCode || !joined || submitting || taskLocked) return;
-
-      // Determine payload type (warm-up tasks may submit without currentTask)
-      const payloadType =
-        (answerPayload &&
-          typeof answerPayload === "object" &&
-          (answerPayload.type || answerPayload.taskType)) ||
-        null;
-
-      // ----------------------------------------------------
-      // Treasure Runner: allow submits even without currentTask
-      // ----------------------------------------------------
-      if (!currentTask && payloadType === "treasure-runner") {
-        setSubmitting(true);
-
-        const deltaRaw =
-          answerPayload?.pointsEarned ??
-          answerPayload?.points ??
-          answerPayload?.scoreDelta ??
-          0;
-
-        const delta = Number(deltaRaw) || 0;
-
-        // optimistic local update (server will also update room state if it supports score:add)
-        if (delta) setScoreTotal((prev) => (typeof prev === "number" ? prev + delta : delta));
-
-        try {
-          socket.emit("score:add", {
-            roomCode: roomCode.trim().toUpperCase(),
-            teamId,
-            delta,
-            reason: "TreasureRunner",
-            meta: answerPayload || null,
-          });
-          socket.emit("treasure:finish", {
-            roomCode: roomCode.trim().toUpperCase(),
-            teamId,
-            ...answerPayload,
-            delta,
-          });
-        } catch {}
-
-        setSubmitting(false);
-        return;
-      }
-
-      // ----------------------------------------------------
-      // Mood Check-in: DO NOT requestNext here.
-      // Flow rule: Scan → Mood → Treasure (idle) → first task arrives → tasks
-      // ----------------------------------------------------
-      if (payloadType === "mood-checkin") {
-        setSubmitting(false);
-        setStatusMessage("");
-
-        // advance into treasure holding shell immediately
-        setPostPhase("treasure");
-
-        return;
-      }
-
-      // If there’s no currentTask and it’s not a warm-up payload, do nothing.
-      if (!currentTask) return;
-
-      setSubmitting(true);
-
-      // Normalize multi-part payloads from TaskRunner (can be object or JSON string)
-      let normalizedAnswer = answerPayload;
-      if (typeof answerPayload === "string" && answerPayload.trim().startsWith("{")) {
-        try {
-          const parsed = JSON.parse(answerPayload);
-          if (parsed && typeof parsed === "object") normalizedAnswer = parsed;
-        } catch {
-          // leave as string
-        }
-      }
-
-      const payload = {
-        roomCode: roomCode.trim().toUpperCase(),
-        teamId,
-        taskId: currentTask._id || currentTask.id,
-        taskIndex:
-          typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-            ? currentTaskIndex
-            : null,
-        answer: normalizedAnswer,
-      };
-
-      socket.emit("task:submit", payload, (response) => {
-        setSubmitting(false);
-
-        if (!response || response.error) {
-          console.warn("Submit error:", response?.error || "Unknown error");
-          setStatusMessage(response?.error || "There was a problem submitting. Try again.");
-          return;
-        }
-
-        setStatusMessage("");
-        setTaskLocked(true);
-
-        // Always start a review countdown so the task will clear even if task:scored never arrives
-        const fallbackSeconds =
-          Number(response?.postSubmitSeconds) > 0
-            ? Number(response.postSubmitSeconds)
-            : DEFAULT_POST_SUBMIT_SECONDS;
-
-        setReviewState({
-          ...(response?.review && typeof response.review === "object" ? response.review : null),
-          correct: typeof response?.correct === "boolean" ? response.correct : undefined,
-          points: typeof response?.points === "number" ? response.points : undefined,
-
-          studentAnswer: normalizedAnswer,
-          taskId: payload.taskId,
-          taskIndex: payload.taskIndex,
-          secondsLeft: fallbackSeconds,
-        });
-
-        setPostSubmitSecondsLeft(fallbackSeconds);
-
-        if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
-
-        let t = fallbackSeconds;
-        const timer = setInterval(() => {
-          t -= 1;
-          setPostSubmitSecondsLeft(t);
-          if (t <= 0) {
-            clearInterval(timer);
-            endReviewAndReturnToScan();
-          }
-        }, 1000);
-
-        postSubmitTimerRef.current = timer;
-
-        if (response.alertSound) {
-          tryPlayAlertSound();
-        }
-      });
-    };
+    // helpful message for the student
+    setStatusMessage(msg || "Session ended. Please join a new room.");
+  };
 
   // ─────────────────────────────────────────────
   // QR Scanner
