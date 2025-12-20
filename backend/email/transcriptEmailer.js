@@ -754,19 +754,21 @@ export async function sendTranscriptEmail({
     ? `${process.env.EMAIL_SUBJECT_PREFIX} ${tasksetName} (Room ${roomCode})`
     : `Curriculate Report Ready — ${tasksetName} (Room ${roomCode})`;
 
-  await mailer.sendMail({
-  from: resolveFromAddress(),
-  ...(resolveReplyTo() ? { replyTo: resolveReplyTo() } : {}),
-  to,
-  subject,
-  html,
-  attachments: [
-    {
-      filename: `Curriculate-Report-${roomCode || "session"}.pdf`,
-      content: pdfBuffer,
-      contentType: "application/pdf",
-    },
-  ],
-});
+    const replyTo = resolveReplyTo();
+
+    await mailer.sendMail({
+      from: resolveFromAddress(),
+      ...(replyTo ? { replyTo } : {}),
+      to,
+      subject,
+      html,
+      attachments: [
+        {
+          filename: `Curriculate-Report-${roomCode || "session"}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    });
 
 }

@@ -1028,22 +1028,32 @@ function StudentApp() {
   const selectedRooms = roomState?.selectedRooms || [];
 
   const mustScan =
-    enforceLocation && assignedStationId && scannedStationId !== assignedStationId;
+    !!assignedStationId && scannedStationId !== assignedStationId;
+
+  const lastStateRequestAtRef = useRef(0);
 
   useEffect(() => {
     if (!joined) return;
-    if (currentTask) return; // only manage scanner between tasks
 
-    // Only show scanner when a scan is required.
-    setScannerActive(!!mustScan);
+    // 1) If scan is required, force scanner open and exit.
+    if (mustScan) {
+      setScannerActive(true);
+      return;
+    }
 
-    // Separately, ensure assignment info is fetched so colour can display
-    const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
+    // 2) If scan is NOT required, we still might need state to infer colour.
+    const inferredColor =
+      assignedColor || normalizeStationId(assignedStationId)?.color;
 
     if (!inferredColor && teamId) {
-      socket.emit("room:request-state", { teamId });
+      // throttle so we don't spam the server on re-renders
+      const now = Date.now();
+      if (now - lastStateRequestAtRef.current > 1200) {
+        lastStateRequestAtRef.current = now;
+        socket.emit("room:request-state", { teamId });
+      }
     }
-  }, [joined, currentTask, assignedColor, assignedStationId, teamId, mustScan]);
+  }, [joined, mustScan, assignedColor, assignedStationId, teamId]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -1123,7 +1133,9 @@ function StudentApp() {
 
       setJoined(true);
       setStatusMessage("");
-      setPostPhase("mood"); // start Mood → TreasureRunner pipeline immediately
+      setPostPhase("tasks");
+      setScannedStationId(null);
+
       setWaitingForLaunch(false);
 
       const tid = response.teamId || response.teamSessionId;
@@ -1334,9 +1346,10 @@ if (!currentTask && payloadType === "treasure-runner") {
   return;
 }
 
-if (!currentTask && payloadType === "mood-checkin") {
-  // MoodCheckinTask typically emits its own socket event internally.
-  // We just accept the submission and let TaskRunner move to TreasureRunner while waiting.
+// ✅ Never route mood check-in through task:submit (it has its own socket event in the task)
+if (payloadType === "mood-checkin") {
+  setSubmitting(false);
+  setStatusMessage("");
   return;
 }
 
@@ -2901,6 +2914,7 @@ if (!currentTask) return;
                   socket={socket}
                   roomCode={roomCode}
                   playerTeam={{ id: teamId, teamName }}
+                  memberNames={members.filter((m) => m.trim().length > 0)}
                   partnerAnswer={partnerAnswer}
                   showPartnerReply={showPartnerReply}
                   onPartnerReply={(replyText) => {
