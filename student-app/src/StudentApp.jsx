@@ -1478,6 +1478,7 @@ if (!currentTask) return;
     socket.emit("station:scan", scanPayload, (resp) => {
       if (!resp || resp.ok === false) {
         setScanStatus("error");
+        setWaitingForLaunch(false);
         setScanError(resp?.error || "Scan not accepted.");
         setScannerActive(true); // keep camera open if rejected
         return;
@@ -1505,7 +1506,7 @@ if (!currentTask) return;
         const waiting = !!resp?.waitingForLaunch || !roomIsActive;
 
         // ✅ Fix: use resp (not ack)
-        setWaitingForLaunch(!!resp?.waitingForLaunch || !roomIsActive);
+        setWaitingForLaunch(isInitial && waiting);
 
         if (isInitial && waiting) {
           setStatusMessage("✅ Scan accepted. Wait for your next task…");
