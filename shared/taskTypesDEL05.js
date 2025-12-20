@@ -16,7 +16,6 @@ export const TASK_TYPES = {
   // Ordering / drag-and-drop
   SORT: "sort",
   SEQUENCE: "sequence",
-  MATCHING: "matching",
   TIMELINE: "timeline",
   VENNSORT: "vennsort",  // NEW: Venn diagram sorting with overlaps
 
@@ -28,12 +27,6 @@ export const TASK_TYPES = {
 
   // ✅ NEW: vibe-setter (no scoring, no timer)
   MOOD_CHECKIN: "mood-checkin",
-
-  // Pre-task / interstitial
-  TREASURE_RUNNER: "treasure-runner",
-
-  // Post-taskset reflection
-  MULTI_PLAYER_FEEDBACK: "multi-player-feedback",
 
   // Extended task types (some may not be AI-generated yet)
   JEOPARDY: "brain-blitz",        // renamed from "jeopardy"

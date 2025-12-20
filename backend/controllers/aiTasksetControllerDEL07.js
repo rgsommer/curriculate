@@ -157,14 +157,8 @@ function normalizeSelectedType(raw) {
     return TASK_TYPES.DRAW_OR_MIME;
   if (v === "body-break" || v === "bodybreak") return TASK_TYPES.BODY_BREAK;
 
-  // Pre-task / interstitial
-  if (v === "mood-checkin" || v === "moodcheckin" || v === "mood") return TASK_TYPES.MOOD_CHECKIN;
-  if (v === "treasure-runner" || v === "treasurerunner" || v === "treasure")
+  if (v === "treasure-runner" || v === "treasurerunner" || v === "treasure_runner")
     return TASK_TYPES.TREASURE_RUNNER;
-
-  // Post-taskset
-  if (v === "multi-player-feedback" || v === "multiplayerfeedback" || v === "feedback")
-    return TASK_TYPES.MULTI_PLAYER_FEEDBACK;
 
   return null;
 }

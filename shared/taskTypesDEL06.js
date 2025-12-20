@@ -16,7 +16,6 @@ export const TASK_TYPES = {
   // Ordering / drag-and-drop
   SORT: "sort",
   SEQUENCE: "sequence",
-  MATCHING: "matching",
   TIMELINE: "timeline",
   VENNSORT: "vennsort",  // NEW: Venn diagram sorting with overlaps
 
@@ -29,11 +28,8 @@ export const TASK_TYPES = {
   // ✅ NEW: vibe-setter (no scoring, no timer)
   MOOD_CHECKIN: "mood-checkin",
 
-  // Pre-task / interstitial
+  // Waiting-room mini-game (between tasks)
   TREASURE_RUNNER: "treasure-runner",
-
-  // Post-taskset reflection
-  MULTI_PLAYER_FEEDBACK: "multi-player-feedback",
 
   // Extended task types (some may not be AI-generated yet)
   JEOPARDY: "brain-blitz",        // renamed from "jeopardy"
@@ -53,6 +49,7 @@ export const TASK_TYPES = {
   SPEED_DRAW: "speed-draw",
   DIFF_DETECTIVE: "diff-detective",
   DRAW_MIME: "draw-mime",
+  MATCHING: "matching",
   HANGMAN_DUEL: "hangman-duel",
   WORD_WEAVER_DUEL: "word-weaver-duel",
 
@@ -427,6 +424,32 @@ export const TASK_TYPE_META = {
     description:
       "A fun vibe-setter before the task set: each player taps a mood emoji, optionally adds what they’re excited about. No timer, no scoring.",
   },
+// ✅ NEW: Treasure Runner (waiting-room mini-game)
+[TASK_TYPES.TREASURE_RUNNER]: {
+  label: "Treasure Runner",
+  category: CATEGORY.COMPETITIVE,
+  hasOptions: false,
+  expectsText: false,
+  maxTime: 60,
+  maxTimeSeconds: 60,
+  implemented: true,
+
+  // Not a curriculum task to generate inside AI tasksets by default
+  aiEligible: false,
+  generatorEligible: false,
+
+  objectiveScoring: false,
+  defaultAiScoringRequired: false,
+  correctAnswerShape: null,
+
+  // Useful as a filler mini-game (Quick Task / waiting state)
+  quickTaskEligible: true,
+
+  special: true,
+  description:
+    "A fast, arcade-style mini-game shown while waiting for the next task. Bonus points can be awarded based on score/placement.",
+},
+
 
   // === Other extended types ===
 

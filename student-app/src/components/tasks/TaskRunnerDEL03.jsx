@@ -39,7 +39,6 @@ import HangmanDuelTask from "./types/HangmanDuelTask";
 import MatchingTask from "./types/MatchingTask";
 import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
-import TreasureRunnerTask from "./types/TreasureRunnerTask";
 import VennSortTask from "./types/VennSortTask";
 
 // High-contrast neutrals for inner task cards / text
@@ -576,63 +575,9 @@ export default function TaskRunner({
   showPartnerReply,
   onPartnerReply,
 }) {
-  // TaskRunner can also render "pre-task" flow tasks (Mood Check-in / Treasure Runner)
-  // when the real task is not yet available.
+  if (!task) return null;
 
-  const teamKey = `${roomCode || "room"}:${
-    playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || "team"
-  }`;
-  const moodKey = `curriculate:moodDone:${teamKey}`;
-  const firstTaskKey = `curriculate:firstTaskSeen:${teamKey}`;
-
-  const [moodDone, setMoodDone] = useState(() => {
-    try {
-      return sessionStorage.getItem(moodKey) === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  const [firstTaskSeen, setFirstTaskSeen] = useState(() => {
-    try {
-      return sessionStorage.getItem(firstTaskKey) === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  // Determine whether we should force MoodCheckin first (per-team, per-room session).
-  const mustRunMoodFirst = mode === "play" && !moodDone;
-
-  // Determine whether we should show TreasureRunner while waiting for the first real task.
-  const shouldShowTreasureWhileWaiting =
-    mode === "play" && moodDone && !firstTaskSeen && !task;
-
-  // Build an effective task for rendering.
-  const effectiveTask = mustRunMoodFirst
-    ? {
-        ...(task || {}),
-        taskType: TASK_TYPES.MOOD_CHECKIN,
-        title: task?.title || "Mood Check-in",
-        prompt:
-          task?.prompt ||
-          "Quick check-in: how are you feeling right now? (This helps your teacher support you.)",
-        points: 0,
-      }
-    : shouldShowTreasureWhileWaiting
-    ? {
-        taskType: TASK_TYPES.TREASURE_RUNNER,
-        title: "Treasure Runner",
-        prompt: "Warm-up race while we load your first task…",
-        points: 0,
-        // 60s race by default
-        durationSec: 60,
-      }
-    : task;
-
-  if (!effectiveTask) return null;
-
-  const t = effectiveTask;
+  const t = task;
   const type = normalizeTaskType(t.taskType || t.type);
 
   // Hangman expects socket.current; keep existing socket usage for other tasks.
@@ -640,23 +585,6 @@ export default function TaskRunner({
   useEffect(() => {
     socketRef.current = socket || null;
   }, [socket]);
-
-  // Mark when the first real task arrives so we can stop the TreasureRunner warm-up.
-  useEffect(() => {
-    if (!task) return;
-    const incomingType = normalizeTaskType(task.taskType || task.type);
-
-    // Ignore pre-flow tasks.
-    if (incomingType === TASK_TYPES.MOOD_CHECKIN) return;
-    if (incomingType === TASK_TYPES.TREASURE_RUNNER) return;
-
-    if (!firstTaskSeen) {
-      setFirstTaskSeen(true);
-      try {
-        sessionStorage.setItem(firstTaskKey, "1");
-      } catch {}
-    }
-  }, [task, firstTaskSeen, firstTaskKey]);
 
   const isReview = mode === "review";
 
@@ -837,14 +765,7 @@ export default function TaskRunner({
       content = (
         <MoodCheckInTask
           task={t}
-          onSubmit={(payload) => {
-            // Persist completion so MoodCheckin runs once per team per room session.
-            setMoodDone(true);
-            try {
-              sessionStorage.setItem(moodKey, "1");
-            } catch {}
-            onSubmit?.(payload);
-          }}
+          onSubmit={onSubmit}
           socket={socketRef}     // if your MoodCheckInTask emits its own event
           roomCode={roomCode}
           teamId={effectiveTeamId}
@@ -852,24 +773,6 @@ export default function TaskRunner({
         />
       );
       break;
-
-    // ✅ Treasure Runner (warm-up while loading first task)
-    case TASK_TYPES.TREASURE_RUNNER: {
-      const effectiveTeamId =
-        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
-
-      content = (
-        <TreasureRunnerTask
-          task={t}
-          onSubmit={isReview ? () => {} : onSubmit}
-          socket={socketRef}
-          roomCode={roomCode}
-          teamId={effectiveTeamId}
-          disabled={effectiveDisabled || isReview}
-        />
-      );
-      break;
-    }
 
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
