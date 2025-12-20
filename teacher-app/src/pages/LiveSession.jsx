@@ -8,6 +8,7 @@ import {
   QUICK_TASK_ELIGIBLE_TYPES,
 } from "../../../shared/taskTypes.js";
 import { API_BASE_URL } from "../config";
+import { useAuth } from "../auth/useAuth";
 
 const API_BASE = API_BASE_URL || "";
 
@@ -98,6 +99,8 @@ export function isObjectiveScoringTaskType(taskType) {
 
 export default function LiveSession({ roomCode }) {
   const [status, setStatus] = useState("Checking connection…");
+  const { user } = useAuth();
+
   const [roomState, setRoomState] = useState({
     stations: [],
     teams: {},
@@ -1064,15 +1067,10 @@ useEffect(() => {
     setEndSessionMessage("");
 
     socket.emit("teacher:endSessionAndEmail", {
-      roomCode: code,                 // ✅ FIXED key name
-      ownerId: user?._id,             // ✅ safe, always exists
-      teacherEmail: user?.email,      // ✅ optional but useful
-      includeIndividualReports: true, // ✅ default (can wire to profile later)
-
-      // Optional metadata (safe to include if backend ignores)
-      className: activeTasksetMeta?.className,
-      gradeLevel: activeTasksetMeta?.gradeLevel,
-      planTierUsed: "pro",
+      roomCode: code, // ✅ must be roomCode (backend expects this)
+      ownerId: teacher?.ownerId || teacher?._id || user?.id || user?._id,
+      teacherEmail: user?.email, // optional but helpful
+      includeIndividualReports,
     });
   };
 
