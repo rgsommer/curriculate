@@ -1141,7 +1141,24 @@ function StudentApp() {
 
       const ok = response && (response.ok === true || response.success === true);
       if (!ok) {
-        setStatusMessage(response?.error || "Could not join. Check the code with your teacher.");
+        const errRaw =
+          response?.error ??
+          response?.message ??
+          response?.msg ??
+          "";
+
+        const err = String(errRaw).trim();
+
+        const isDeadRoom = /room\s*(code)?\s*not\s*found|code\s*not\s*found|invalid\s*session|session\s*ended|room\s*ended|closed|expired|no\s*active/i.test(
+          err.toLowerCase()
+        );
+
+        if (isDeadRoom) {
+          forceReturnToJoin("That session is no longer active. Join a new room.");
+          return;
+        }
+
+        setStatusMessage(err || "Could not join. Check the code with your teacher.");
         return;
       }
 
@@ -1275,6 +1292,47 @@ function StudentApp() {
     e.preventDefault();
     if (!canJoin || joiningRoom) return;
     handleJoinRoom();
+  };
+
+  const forceReturnToJoin = (msg) => {
+    userDroppedRoomRef.current = true;     // prevents immediate auto-resume loops
+    resumeAttemptedRef.current = false;
+    clearSavedJoin();
+
+    // reset core session state
+    setJoined(false);
+    setTeamId(null);
+    setTeamSessionId(null);
+
+    // reset station/task/scanner state
+    setAssignedStationId(null);
+    setAssignedColor(null);
+    setScannedStationId(null);
+    setScannerActive(false);
+    setScanError(null);
+    setScanStatus(null);
+    setWaitingForLaunch(false);
+
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setTasksetTotalTasks(null);
+    setTimeLimitSeconds(null);
+    setRemainingMs(0);
+
+    setSubmitting(false);
+    setCurrentAnswerDraft("");
+    setTaskLocked(false);
+    setPostSubmitSecondsLeft(null);
+    setLastTaskResult(null);
+    setPointToast(null);
+    setShortAnswerReveal(null);
+    setTasksetComplete(false);
+    setTaskRenderError(null);
+
+    setPostPhase("join");
+
+    // helpful message for the student
+    setStatusMessage(msg || "Session ended. Please join a new room.");
   };
 
   // ─────────────────────────────────────────────
