@@ -1507,6 +1507,7 @@ if (!currentTask) return;
 
       if (!accepted) {
         setScanStatus("error");
+        setWaitingForLaunch(false);
         setScannedStationId(null);
         setScanError("Wrong station. Scan your assigned station QR.");
         setScannerActive(true);
@@ -1514,15 +1515,15 @@ if (!currentTask) return;
       }
 
       setScanStatus("ok");
+      setScanError(null);
       setScannedStationId(norm.id);
       setScannerActive(false);
 
-      // ✅ initial-scan waiting overlay (only when the scan is the initial assignment)
       const isInitial = !!resp?.initialAssignment;
       const waiting = !!resp?.waitingForLaunch || !roomIsActive;
+
       setWaitingForLaunch(isInitial && waiting);
 
-      // ✅ gold-standard: after ACCEPTED scan, request Mood/next task if not waiting
       if (!waiting) {
         socket.emit("task:requestNext", { roomCode: code, teamId });
       }
