@@ -665,15 +665,7 @@ useEffect(() => {
 
     const url = `${base}/station-posters?${params.toString()}`;
     window.open(url, "_blank", "noopener,noreferrer");
-  }
-
-  const handleOpenKiosk = () => {
-    const code = (roomCode || "").trim().toUpperCase();
-    if (!code) return;
-    // Host/Presenter kiosk view (opens in new tab)
-    const url = `${window.location.origin}/host?room=${encodeURIComponent(code)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-  };;
+  };
 
   const handleShowRoomLayoutClick = () => {
     if (!isFixedStationTaskset) return;
@@ -1976,23 +1968,6 @@ Precipitation — rain, snow, hail`}
 
               <button
                 type="button"
-                onClick={handleOpenKiosk}
-                disabled={!roomCode}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #d1d5db",
-                  background: roomCode ? "#111827" : "#f3f4f6",
-                  color: roomCode ? "#ffffff" : "#9ca3af",
-                  fontSize: "0.8rem",
-                  cursor: roomCode ? "pointer" : "not-allowed",
-                }}
-              >
-                Open Kiosk
-              </button>
-
-              <button
-                type="button"
                 title="Room Layout for Fixed-Station task sets"
                 onClick={handleShowRoomLayoutClick}
                 disabled={!isFixedStationTaskset}
@@ -2061,31 +2036,6 @@ Precipitation — rain, snow, hail`}
               </div>
 
               <div style={{ marginTop: 12 }}>
-                {/* Noise level meter (live) */}
-                <div
-                  title={`Noise level: ${Math.round(noiseLevel)} / 100`}
-                  style={{
-                    width: "100%",
-                    height: 8,
-                    borderRadius: 4,
-                    background: "#e5e7eb",
-                    overflow: "hidden",
-                    marginBottom: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${Math.max(0, Math.min(100, noiseLevel))}%`,
-                      height: "100%",
-                      background:
-                        noiseEnabled && noiseThreshold > 0 && noiseLevel >= noiseThreshold
-                          ? "#ef4444"
-                          : "#22c55e",
-                      transition: "width 120ms linear",
-                    }}
-                  />
-                </div>
-
                 <input
                   type="range"
                   min="0"

@@ -525,7 +525,7 @@ function buildRoomState(room) {
         brightness: 1,
       },
 
-      // Backward/forward compatibility: StudentApp reads noiseConfig
+      // Back-compat alias (StudentApp reads noiseConfig)
       noiseConfig: {
         enabled: false,
         threshold: 0,
@@ -685,7 +685,7 @@ function buildRoomState(room) {
           : 1,
     },
 
-    // Backward/forward compatibility: StudentApp reads noiseConfig
+    // Back-compat alias (StudentApp reads noiseConfig)
     noiseConfig: {
       enabled: !!noiseControl.enabled && (noiseControl.threshold || 0) > 0,
       threshold:
@@ -1115,7 +1115,7 @@ function updateNoiseDerivedState(code, room) {
     threshold,
   });
 
-  // StudentApp listens to this for dimming + live meter.
+  // Compatibility for StudentApp/older clients that listen to "noise:update"
   io.to(code).emit("noise:update", {
     roomCode: code,
     level,
@@ -1613,6 +1613,10 @@ socket.on("task:force-advance", ({ roomCode }) => {
           teamSessionId: teamId,
           assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
           assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
+          noiseConfig: state?.noiseConfig || {
+            enabled: !!state?.noise?.enabled,
+            threshold: typeof state?.noise?.threshold === "number" ? state.noise.threshold : 0,
+          },
           roomState: state,
         });
       }
@@ -1711,6 +1715,10 @@ socket.on("task:force-advance", ({ roomCode }) => {
           teamId,
           assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
           assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
+          noiseConfig: state?.noiseConfig || {
+            enabled: !!state?.noise?.enabled,
+            threshold: typeof state?.noise?.threshold === "number" ? state.noise.threshold : 0,
+          },
           roomState: state,
         });
       }
