@@ -572,6 +572,7 @@ export default function TaskRunner({
   // for FlashcardsRace
   roomCode,
   playerTeam,
+  memberNames = [],
   partnerAnswer,
   showPartnerReply,
   onPartnerReply,

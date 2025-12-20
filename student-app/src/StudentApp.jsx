@@ -743,7 +743,7 @@ function StudentApp() {
 
         // If a taskset is running, backend will send the current task immediately.
         // Make sure scanner is off until we need it.
-        setScannerActive(false);
+        if (!mustScan) setScannerActive(false);
       }
     );
   }, [connected, joined]);
@@ -2930,7 +2930,7 @@ if (!currentTask) return;
                   socket={socket}
                   roomCode={roomCode}
                   playerTeam={{ id: teamId, teamName }}
-                  memberNames={members.filter((m) => m.trim().length > 0)}
+                  memberNames={members}
                   partnerAnswer={partnerAnswer}
                   showPartnerReply={showPartnerReply}
                   onPartnerReply={(replyText) => {
