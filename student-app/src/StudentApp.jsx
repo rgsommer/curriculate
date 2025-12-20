@@ -1121,7 +1121,7 @@ function StudentApp() {
     teamName.trim().length >= 1 &&
     members.some((m) => m.trim().length > 0);
 
-    const handleJoinRoom = () => {
+  const handleJoinRoom = () => {
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
       teamName: (teamName || "").trim(),
@@ -1578,13 +1578,33 @@ function StudentApp() {
       const isInitial = !!resp?.initialAssignment;
       const waiting = !!resp?.waitingForLaunch || !roomIsActive;
 
-      setWaitingForLaunch(isInitial && waiting);
+      // After a correct scan, we ALWAYS go into the warm-up pipeline.
+      // No task requests from scan.
+      setWaitingForLaunch(true);
+      setPostPhase("mood");
 
       if (!waiting) {
         socket.emit("task:requestNext", { roomCode: code, teamId });
       }
     });
   };
+
+  useEffect(() => {
+    if (!joined) return;
+    if (postPhase !== "treasure") return;
+    if (!roomIsActive) return;
+    if (currentTask) return;
+    if (!teamId || !roomCode) return;
+
+    const now = Date.now();
+    if (now - lastRequestNextAtRef.current < 1200) return;
+    lastRequestNextAtRef.current = now;
+
+    socket.emit("task:requestNext", {
+      roomCode: roomCode.trim().toUpperCase(),
+      teamId,
+    });
+  }, [joined, postPhase, roomIsActive, currentTask, teamId, roomCode]);
 
   // ─────────────────────────────────────────────
   // Derived values for UI
@@ -2719,6 +2739,52 @@ function StudentApp() {
               )}
             </div>
           )}
+
+    {joined && postPhase === "mood" && !tasksetComplete && (
+      <section
+        style={{
+          marginTop: 10,
+          padding: 16,
+          borderRadius: 18,
+          background: "rgba(255,255,255,0.92)",
+          border: "1px solid rgba(15,23,42,0.12)",
+          boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
+        }}
+      >
+        <MoodCheckInTask
+          socket={socket}
+          roomCode={roomCode}
+          teamId={teamId}
+          memberNames={members}
+          onSubmit={(payload) => {
+            // Ensure handleSubmitAnswer recognizes it as mood-checkin
+            handleSubmitAnswer({ type: "mood-checkin", ...(payload || {}) });
+          }}
+        />
+      </section>
+    )}  
+
+    {joined && postPhase === "treasure" && !tasksetComplete && !currentTask && (
+      <section
+        style={{
+          marginTop: 10,
+          padding: 16,
+          borderRadius: 18,
+          background: "rgba(255,255,255,0.92)",
+          border: "1px solid rgba(15,23,42,0.12)",
+          boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
+        }}
+      >
+        <TreasureRunner
+          onSubmit={(payload) => {
+            handleSubmitAnswer({ type: "treasure-runner", ...(payload || {}) });
+          }}
+        />
+        <div style={{ marginTop: 10, fontWeight: 700, opacity: 0.8, textAlign: "center" }}>
+          Waiting for your first task…
+        </div>
+      </section>
+    )}
           
 {/* POST-TASK FEEDBACK (after last task, before trophy) */}
 {postPhase === "feedback" && !tasksetComplete && (
