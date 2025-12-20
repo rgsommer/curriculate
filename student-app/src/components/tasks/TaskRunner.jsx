@@ -842,21 +842,22 @@ const handleTaskSubmit = (payload) => {
         />
       );
       break;
-// ✅ Treasure Runner (warm-up while waiting)
-case TASK_TYPES.TREASURE_RUNNER:
-case "treasure-runner": {
-  content = (
-    <TreasureRunnerTask
-      socket={socket}
-      roomCode={roomCode}
-      playerTeam={playerTeam}
-      onSubmit={handleTaskSubmit}
-      disabled={effectiveDisabled || isReview}
-    />
-  );
-  break;
-}
-
+    }
+        
+    // ✅ Treasure Runner (warm-up while waiting)
+    case TASK_TYPES.TREASURE_RUNNER:
+    case "treasure-runner": {
+      content = (
+        <TreasureRunnerTask
+          socket={socket}
+          roomCode={roomCode}
+          playerTeam={playerTeam}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    }
 
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
