@@ -1363,28 +1363,17 @@ if (!currentTask && payloadType === "treasure-runner") {
 }
 
 // ✅ Never route mood check-in through task:submit (it has its own socket event in the task)
-const isMood = currentTask?.taskType === "MOOD_CHECKIN"; // adjust to your constant
-if (isMood) {
-  if (payloadType === "mood-checkin") {
-    setSubmitting(false);
-    setStatusMessage("");
-    return;
-  }
+if (payloadType === "mood-checkin") {
+  setSubmitting(false);
+  setStatusMessage("");
+  const code = roomCode.trim().toUpperCase();
+  socket.emit("task:requestNext", { roomCode: code, teamId });
+  return;
 }
 
 if (!currentTask) return;
 
     setSubmitting(true);
-
-    // ✅ Mood Check-in is a vibe-setter (no scoring / no review lock).
-    // The MoodCheckinTask itself emits its own socket event (submit-mood-checkin).
-    // Here we simply exit back to scan so the normal flow can continue.
-    if ((currentTask?.taskType || currentTask?.type) === "mood-checkin") {
-      setSubmitting(false);
-      setStatusMessage("");
-      endReviewAndReturnToScan();
-      return;
-    }
 
     // Normalize multi-part payloads from TaskRunner (can be object or JSON string)
     let normalizedAnswer = answerPayload;
