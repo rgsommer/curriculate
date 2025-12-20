@@ -1028,32 +1028,29 @@ function StudentApp() {
   const selectedRooms = roomState?.selectedRooms || [];
 
   const mustScan =
-    !!assignedStationId && scannedStationId !== assignedStationId;
-
-  const lastStateRequestAtRef = useRef(0);
+    assignedStationId
+      ? (scannedStationId !== assignedStationId)
+      : (!!assignedColor && !scannedStationId);
+      
+  const lastRequestNextAtRef = useRef(0);
 
   useEffect(() => {
     if (!joined) return;
+    if (!teamId) return;
+    if (!roomCode?.trim()) return;
+    if (tasksetComplete) return;
+    if (mustScan) return;
+    if (currentTask) return;
 
-    // 1) If scan is required, force scanner open and exit.
-    if (mustScan) {
-      setScannerActive(true);
-      return;
-    }
+    const now = Date.now();
+    if (now - lastRequestNextAtRef.current < 1200) return;
+    lastRequestNextAtRef.current = now;
 
-    // 2) If scan is NOT required, we still might need state to infer colour.
-    const inferredColor =
-      assignedColor || normalizeStationId(assignedStationId)?.color;
-
-    if (!inferredColor && teamId) {
-      // throttle so we don't spam the server on re-renders
-      const now = Date.now();
-      if (now - lastStateRequestAtRef.current > 1200) {
-        lastStateRequestAtRef.current = now;
-        socket.emit("room:request-state", { teamId });
-      }
-    }
-  }, [joined, mustScan, assignedColor, assignedStationId, teamId]);
+    socket.emit("task:requestNext", {
+      roomCode: roomCode.trim().toUpperCase(),
+      teamId,
+    });
+  }, [joined, teamId, roomCode, mustScan, currentTask, tasksetComplete]);
 
   // Clean up timers on unmount
   useEffect(() => {
