@@ -9,28 +9,14 @@
 //  It renders from an immutable "snapshot" payload you pass in.
 // ====================================================================
 
-import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
+import { mailer } from "./mailer.js";
 
 // --------------------------------------------------------------------
 // Branding
 // --------------------------------------------------------------------
 const BRAND_NAME = "Curriculate";
 const BRAND_TAGLINE = "Active learning, live classrooms.";
-
-// --------------------------------------------------------------------
-// Transport
-// --------------------------------------------------------------------
-function createTransporter() {
-  const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, EMAIL_SECURE } = process.env;
-
-  return nodemailer.createTransport({
-    host: EMAIL_HOST,
-    port: Number(EMAIL_PORT || 587),
-    secure: String(EMAIL_SECURE).toLowerCase() === "true",
-    auth: EMAIL_USER ? { user: EMAIL_USER, pass: EMAIL_PASS } : undefined,
-  });
-}
 
 function resolveFromAddress() {
   // Option A: send from an alias (noreply@curriculate.net) while authenticating with EMAIL_USER.
@@ -768,20 +754,19 @@ export async function sendTranscriptEmail({
     ? `${process.env.EMAIL_SUBJECT_PREFIX} ${tasksetName} (Room ${roomCode})`
     : `Curriculate Report Ready — ${tasksetName} (Room ${roomCode})`;
 
-  const transporter = createTransporter();
+  await mailer.sendMail({
+  from: resolveFromAddress(),
+  ...(resolveReplyTo() ? { replyTo: resolveReplyTo() } : {}),
+  to,
+  subject,
+  html,
+  attachments: [
+    {
+      filename: `Curriculate-Report-${roomCode || "session"}.pdf`,
+      content: pdfBuffer,
+      contentType: "application/pdf",
+    },
+  ],
+});
 
-  await transporter.sendMail({
-    from: resolveFromAddress(),
-    ...(resolveReplyTo() ? { replyTo: resolveReplyTo() } : {}),
-    to,
-    subject,
-    html,
-    attachments: [
-      {
-        filename: `Curriculate-Report-${roomCode || "session"}.pdf`,
-        content: pdfBuffer,
-        contentType: "application/pdf",
-      },
-    ],
-  });
 }
