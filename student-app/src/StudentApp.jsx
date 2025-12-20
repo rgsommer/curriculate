@@ -1377,10 +1377,24 @@ function StudentApp() {
 
       // Determine payload type (warm-up tasks may submit without currentTask)
       const payloadType =
-        (answerPayload &&
-          typeof answerPayload === "object" &&
+        (answerPayload && typeof answerPayload === "object" &&
           (answerPayload.type || answerPayload.taskType)) ||
         null;
+
+      // Mood = advance pipeline only
+      if (payloadType === TASK_TYPES.MOOD_CHECKIN) {
+        setSubmitting(false);
+        setStatusMessage("");
+        setPostPhase("treasure");
+        return;
+      }
+
+      // Treasure = score only, stay in treasure until task arrives
+      if (!currentTask && payloadType === TASK_TYPES.TREASURE_RUNNER) {
+        // scoring logic (you already have this)
+        setSubmitting(false);
+        return;
+      }
 
       // ----------------------------------------------------
       // Treasure Runner: allow submits even without currentTask
