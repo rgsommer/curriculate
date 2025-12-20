@@ -49,7 +49,10 @@ const ENTRY_KEY = "curriculate.teacherApp.entry.ok";
  */
 function TeacherApp() {
   const routeLocation = useLocation();
-
+  const location = routeLocation; // optional, keeps your existing uses
+  const { isAuthenticated, user, logout } = useAuth();
+  const [roomCode, setRoomCode] = useState(() => generateRoomCode());
+  
   const isAuthRoute =
     routeLocation.pathname === "/login" ||
     routeLocation.pathname === "/signup" ||
@@ -85,11 +88,6 @@ function TeacherApp() {
     );
   }
 
-  const [roomCode, setRoomCode] = useState(() => generateRoomCode());
-  const location = useLocation();
-
-  const { isAuthenticated, user, logout } = useAuth();
-
   const [isMobile, setIsMobile] = useState(
     typeof window !== "undefined" ? window.innerWidth < 768 : false
   );
@@ -110,18 +108,6 @@ function TeacherApp() {
     } catch {
       return false;
     }
-  });
-
-  socket.emit("teacher:endSessionAndEmail", {
-    roomCode,
-    ownerId: teacher?.ownerId || teacher?._id || user?._id,
-    teacherEmail,
-    includeIndividualReports,
-    assessmentCategories,
-    // optional:
-    className,
-    gradeLevel,
-    planTierUsed,
   });
 
   // Ensure room exists + keepalive for whole session

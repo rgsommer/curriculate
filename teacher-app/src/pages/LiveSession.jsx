@@ -1058,14 +1058,21 @@ useEffect(() => {
 
   const handleEndSessionAndEmail = () => {
     if (!roomCode || isEndingSession) return;
+
     const code = roomCode.toUpperCase();
     setIsEndingSession(true);
     setEndSessionMessage("");
 
     socket.emit("teacher:endSessionAndEmail", {
-      code,
-      ownerId: teacher?.ownerId || teacher?._id || user?.id || user?._id,
-      includeIndividualReports,
+      roomCode: code,                 // ✅ FIXED key name
+      ownerId: user?._id,             // ✅ safe, always exists
+      teacherEmail: user?.email,      // ✅ optional but useful
+      includeIndividualReports: true, // ✅ default (can wire to profile later)
+
+      // Optional metadata (safe to include if backend ignores)
+      className: activeTasksetMeta?.className,
+      gradeLevel: activeTasksetMeta?.gradeLevel,
+      planTierUsed: "pro",
     });
   };
 
