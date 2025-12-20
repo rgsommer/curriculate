@@ -1399,7 +1399,11 @@ function StudentApp() {
       // ----------------------------------------------------
       // Treasure Runner: allow submits even without currentTask
       // ----------------------------------------------------
-      if (!currentTask && payloadType === "treasure-runner") {
+      const isTreasure =
+        payloadType === TASK_TYPES.TREASURE_RUNNER ||
+        payloadType === "treasure-runner";
+
+      if (!currentTask && isTreasure) {
         setSubmitting(true);
 
         const deltaRaw =
@@ -1409,8 +1413,6 @@ function StudentApp() {
           0;
 
         const delta = Number(deltaRaw) || 0;
-
-        // optimistic local update (server will also update room state if it supports score:add)
         if (delta) setScoreTotal((prev) => (typeof prev === "number" ? prev + delta : delta));
 
         try {
@@ -1598,9 +1600,6 @@ function StudentApp() {
       setWaitingForLaunch(true);
       setPostPhase("mood");
 
-      if (!waiting) {
-        socket.emit("task:requestNext", { roomCode: code, teamId });
-      }
     });
   };
 
@@ -1774,10 +1773,6 @@ function StudentApp() {
       : currentTaskNumber
       ? `Task ${currentTaskNumber}`
       : null;
-
-  const isTreasure =
-      payloadType === TASK_TYPES.TREASURE_RUNNER ||
-      payloadType === "treasure-runner"; // optional
 
   // ─────────────────────────────────────────────
   // Render
@@ -2783,7 +2778,7 @@ function StudentApp() {
       </section>
     )}  
 
-    {joined && postPhase === "treasure" && isTreasure && !tasksetComplete && !currentTask && (
+    {joined && postPhase === "treasure" && !tasksetComplete && !currentTask && (
       <section
         style={{
           marginTop: 10,
