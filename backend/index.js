@@ -2794,7 +2794,6 @@ const code = (roomCode || "").toUpperCase();
       });
     }
 
-
     // =======================================================
     // AUTO-ADVANCE: when ALL teams have submitted this task
     // =======================================================

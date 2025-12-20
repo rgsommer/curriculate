@@ -1031,9 +1031,11 @@ function StudentApp() {
     !!enforceLocation ||
     !!currentTask?.lockToStation ||
     !!currentTask?.config?.lockToStation ||
-    !!currentTask?.requireStationScan ||
-    !!currentTask?.config?.requireStationScan;
-
+    !!currentTask?.fixedStationId ||
+    !!currentTask?.config?.fixedStationId ||
+    !!currentTask?.lockToStationId ||
+    !!currentTask?.config?.lockToStationId;
+    
   const mustScan =
   assignedStationId
     ? (scannedStationId !== assignedStationId)
@@ -1199,10 +1201,16 @@ function StudentApp() {
               return prev - 1000;
             });
           }, 1000);
+
         } else {
           setRemainingMs(0);
         }
       }
+
+      setTimeout(() => {
+          const hasAssignment = !!(response?.stationId || response?.assignedStationId || response?.assignedColor);
+          if (hasAssignment) setScannerActive(true);
+        }, 0);
 
       const joinStationId = response?.stationId || response?.assignedStationId;
       if (joinStationId) {
@@ -1210,6 +1218,10 @@ function StudentApp() {
         setAssignedStationId(stationInfo.id);
         setAssignedColor(stationInfo.color || response?.assignedColor || null);
         lastStationIdRef.current = stationInfo.id;
+      }
+
+      if (!joinStationId && response?.assignedColor) {
+        setAssignedColor(String(response.assignedColor).toLowerCase());
       }
 
       const locSlug =
@@ -1458,9 +1470,6 @@ if (!currentTask) return;
       return;
     }
 
-    // Record scan for mustScan gating + UI
-    setScannedStationId(norm.id);
-
     const code = (roomCode || "").trim().toUpperCase();
 
     // Avoid TDZ: do NOT reference isMultiRoom here (it's declared later)
@@ -1481,45 +1490,43 @@ if (!currentTask) return;
       if (!resp || resp.ok === false) {
         setScanStatus("error");
         setWaitingForLaunch(false);
+        setScannedStationId(null);
         setScanError(resp?.error || "Scan not accepted.");
-        setScannerActive(true); // keep camera open if rejected
+        setScannerActive(true);
+        return;
+      }
+
+      setScanError(null);
+
+      // ✅ define expectedId locally (was missing)
+      const expectedId = resp?.stationId
+        ? normalizeStationId(resp.stationId).id
+        : assignedStationId;
+
+      const accepted = norm.id === expectedId;
+
+      if (!accepted) {
+        setScanStatus("error");
+        setScannedStationId(null);
+        setScanError("Wrong station. Scan your assigned station QR.");
+        setScannerActive(true);
         return;
       }
 
       setScanStatus("ok");
-      setScanError(null);
+      setScannedStationId(norm.id);
+      setScannerActive(false);
 
-      // Update assignment if server returns it
-      if (resp?.stationId) {
-        const info = normalizeStationId(resp.stationId);
-        setAssignedStationId(info.id);
-        setAssignedColor(info.color || resp?.assignedColor || null);
-      }
+      // ✅ initial-scan waiting overlay (only when the scan is the initial assignment)
+      const isInitial = !!resp?.initialAssignment;
+      const waiting = !!resp?.waitingForLaunch || !roomIsActive;
+      setWaitingForLaunch(isInitial && waiting);
 
-      // Close only after server accepts AND if it matches expected station
-      const expectedId = resp?.stationId ? normalizeStationId(resp.stationId).id : assignedStationId;
-
-      const accepted = norm.id === expectedId;
-      setScannerActive(accepted ? false : true);
-
-      // ✅ UX: show “Wait…” ONLY for the first scan when the taskset is not launched
-      if (accepted) {
-        const isInitial = !!resp?.initialAssignment; // your server sets this on first-ever scan
-        const waiting = !!resp?.waitingForLaunch || !roomIsActive;
-
-        // ✅ Fix: use resp (not ack)
-        setWaitingForLaunch(isInitial && waiting);
-
-        if (isInitial && waiting) {
-          setStatusMessage("✅ Scan accepted. Wait for your next task…");
-        } else {
-          // Clear any stale wait message once tasks are live
-          setStatusMessage("");
-        }
+      // ✅ gold-standard: after ACCEPTED scan, request Mood/next task if not waiting
+      if (!waiting) {
+        socket.emit("task:requestNext", { roomCode: code, teamId });
       }
     });
-
-    socket.emit("task:requestNext", { roomCode: code, teamId });
   };
 
   // ─────────────────────────────────────────────
