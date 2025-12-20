@@ -1027,11 +1027,20 @@ function StudentApp() {
   const enforceLocation = !!roomState?.taskset?.enforceLocation;
   const selectedRooms = roomState?.selectedRooms || [];
 
+  const taskHardLocksStation =
+    !!enforceLocation ||
+    !!currentTask?.lockToStation ||
+    !!currentTask?.config?.lockToStation ||
+    !!currentTask?.requireStationScan ||
+    !!currentTask?.config?.requireStationScan;
+
   const mustScan =
-    assignedStationId
-      ? (scannedStationId !== assignedStationId)
-      : (!!assignedColor && !scannedStationId);
-      
+  assignedStationId
+    ? (scannedStationId !== assignedStationId)
+    : (!!assignedColor && !scannedStationId);
+
+  const hardMustScan = taskHardLocksStation && mustScan;
+    
   const lastRequestNextAtRef = useRef(0);
 
   useEffect(() => {
@@ -2843,7 +2852,7 @@ if (!currentTask) return;
             </section>
           )}
 
-          {joined && postPhase === "tasks" && !!currentTask && !mustScan && !tasksetComplete && (
+          {joined && postPhase === "tasks" && !!currentTask && !hardMustScan && !tasksetComplete && (
             <section
               className="task-card"
               style={{
@@ -3177,7 +3186,7 @@ if (!currentTask) return;
               </section>
             )}
           {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
-          {joined && currentTask && mustScan && (
+          {joined && currentTask && hardMustScan && (
             <section
               style={{
                 marginTop: 10,
