@@ -1049,14 +1049,14 @@ function StudentApp() {
     if (!joined) return;
 
     // If we’re supposed to scan (because of gating), open camera.
-    if (mustScan) {
+    if (mustScan && !scannerActive) {
       setScannerActive(true);
       return;
     }
 
     // If we have no current task and we’re not in a waiting screen,
     // keep scanner available so the team can scan into their station flow.
-    if (!currentTask && !waitingForLaunch) {
+    if (!currentTask && !waitingForLaunch && !scannedStationId) {
       setScannerActive(true);
     }
 
