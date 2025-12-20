@@ -2,7 +2,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
-import MultiPlayerFeedbackTask from "./components/tasks/types/MultiPlayerFeedbackTask.jsx";
 import QrScanner from "./components/QrScanner.jsx";
 import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
@@ -574,7 +573,6 @@ function StudentApp() {
   const [statusMessage, setStatusMessage] = useState("");
   const [leaderboard, setLeaderboard] = useState([]); // Update via socket.on('leaderboard-update', setLeaderboard)
   const [tasksetComplete, setTasksetComplete] = useState(false);
-  const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "feedback" | "trophy"
   const [taskRenderError, setTaskRenderError] = useState(null);
 
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
@@ -865,8 +863,6 @@ function StudentApp() {
       setPointToast(null);
       setShortAnswerReveal(null);
       setTasksetComplete(false);
-    setPostPhase("tasks");
-      setPostPhase("tasks");
       setTaskRenderError(null);
 
       // ✅ Clear waiting overlay when a task arrives
@@ -1036,8 +1032,8 @@ function StudentApp() {
     if (!joined) return;
     if (currentTask) return; // only manage scanner between tasks
 
-    // Only show scanner when a scan is required.
-    setScannerActive(!!mustScan);
+    // Turn scanner ON so the camera prompt appears
+    setScannerActive(true);
 
     // Separately, ensure assignment info is fetched so colour can display
     const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
@@ -1045,7 +1041,7 @@ function StudentApp() {
     if (!inferredColor && teamId) {
       socket.emit("room:request-state", { teamId });
     }
-  }, [joined, currentTask, assignedColor, assignedStationId, teamId, mustScan]);
+  }, [joined, currentTask, assignedColor, assignedStationId, teamId]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -1249,23 +1245,30 @@ function StudentApp() {
     setTaskLocked(false);
     setPostSubmitSecondsLeft(null);
 
-    // If this was the last task in the taskset, go to post-task feedback first
-if (isLastTask) {
-  setPostPhase("feedback");
-  setTasksetComplete(false);
-  setScannerActive(false);
-  setReviewState(null);
-  // Refresh room state one last time so scores/leaderboard are up to date
-  socket.emit("room:request-state", { teamId });
+    // If this was the last task in the taskset, go straight to the victory screen (no extra scan)
+    const isLastTask =
+      typeof currentTaskIndex === "number" &&
+      typeof tasksetTotalTasks === "number" &&
+      tasksetTotalTasks > 0 &&
+      currentTaskIndex >= tasksetTotalTasks - 1;
 
-  // hide task UI
-  setCurrentTask(null);
-  setCurrentTaskIndex(null);
-  setShortAnswerReveal(null);
-  return;
-}
+    if (isLastTask) {
+      setTasksetComplete(true);
+      setScannerActive(false);
+      setReviewState(null);
+      // Refresh room state one last time so scores/leaderboard are up to date
+      socket.emit("room:request-state", { teamId });
+    }
 
-// hide task UI so scanner is visible
+    if (isLastTask) {
+      // hide task UI
+      setCurrentTask(null);
+      setCurrentTaskIndex(null);
+      setShortAnswerReveal(null);
+      return;
+    }
+
+    // hide task UI so scanner is visible
     setCurrentTask(null);
     setCurrentTaskIndex(null);
     setShortAnswerReveal(null);
@@ -1283,56 +1286,9 @@ if (isLastTask) {
   };
 
   const handleSubmitAnswer = (answerPayload) => {
-if (!roomCode || !joined || submitting || taskLocked) {
-  return;
-}
-
-// Allow "warm-up" tasks (MoodCheckin/TreasureRunner) to submit even when no currentTask is assigned yet.
-const payloadType =
-  (answerPayload && typeof answerPayload === "object" && (answerPayload.type || answerPayload.taskType)) ||
-  null;
-
-if (!currentTask && payloadType === "treasure-runner") {
-  setSubmitting(true);
-
-  const deltaRaw =
-    answerPayload?.pointsEarned ??
-    answerPayload?.points ??
-    answerPayload?.scoreDelta ??
-    0;
-
-  const delta = Number(deltaRaw) || 0;
-
-  // optimistic local update (server will also update room state if it supports score:add)
-  if (delta) setScoreTotal((prev) => (typeof prev === "number" ? prev + delta : delta));
-
-  try {
-    socket.emit("score:add", {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      delta,
-      reason: "TreasureRunner",
-      meta: answerPayload || null,
-    });
-    socket.emit("treasure:finish", {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-      ...answerPayload,
-      delta,
-    });
-  } catch {}
-
-  setSubmitting(false);
-  return;
-}
-
-if (!currentTask && payloadType === "mood-checkin") {
-  // MoodCheckinTask typically emits its own socket event internally.
-  // We just accept the submission and let TaskRunner move to TreasureRunner while waiting.
-  return;
-}
-
-if (!currentTask) return;
+    if (!roomCode || !joined || !currentTask || submitting || taskLocked) {
+      return;
+    }
 
     setSubmitting(true);
 
@@ -2626,38 +2582,7 @@ if (!currentTask) return;
             </div>
           )}
           
-{/* POST-TASK FEEDBACK (after last task, before trophy) */}
-{postPhase === "feedback" && !tasksetComplete && (
-  <section
-    style={{
-      marginTop: 12,
-      padding: 16,
-      borderRadius: 18,
-      background: "rgba(255,255,255,0.92)",
-      border: "1px solid rgba(15,23,42,0.12)",
-      boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
-    }}
-  >
-    <MultiPlayerFeedbackTask
-      roomCode={roomCode}
-      teamId={teamId}
-      teamName={teamName}
-      socket={socket}
-      onSubmit={(payload) => {
-        // send to server if it’s listening
-        try {
-          socket.emit("feedback:submit", payload);
-        } catch {}
-        setPostPhase("trophy");
-        setTasksetComplete(true);
-        // refresh scores for final trophy
-        socket.emit("room:request-state", { teamId });
-      }}
-    />
-  </section>
-)}
-
-          {/* TASKSET COMPLETE SCREEN */}
+{/* TASKSET COMPLETE SCREEN */}
 {tasksetComplete && (
   <section
     style={{
@@ -2804,7 +2729,7 @@ if (!currentTask) return;
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && postPhase === "tasks" && !mustScan && !tasksetComplete && (
+          {joined && currentTask && !mustScan && !tasksetComplete && (
             <section
               className="task-card"
               style={{

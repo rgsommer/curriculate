@@ -1239,7 +1239,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
   // If a 15s timer is pending, cancel it and advance immediately
   cancelScheduledNextTask(session);
   advanceTaskNow({ io, session, roomCode, reason: "teacher-force" });
-});
+}
 
   // ----------------------------------------------------
   // Bonus points (TreasureRunner warm-up, etc.)
@@ -1360,6 +1360,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
       if (typeof ack === "function") ack({ ok: false, error: "Server error" });
     }
   });
+);
 
 // LOG EVERY EVENT THIS SOCKET EMITS
   socket.onAny((event, ...args) => {
@@ -1913,8 +1914,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
         (expected.id && scanned.id && expected.id === scanned.id) ||
         (expected.color && scanned.color && expected.color === scanned.color);
 
-      
-if (!stationMatches) {
+      if (!stationMatches) {
         console.error("Wrong station:", {
           expectedStation,
           expected,
@@ -1932,22 +1932,24 @@ if (!stationMatches) {
           (expected?.id ? String(expected.id).toUpperCase() : null) ||
           (expectedStation ? String(expectedStation).toUpperCase() : "YOUR STATION");
 
-        const expectedLocationSlugOrLabel =
-          team.locationSlug || room.locationCode || "Classroom";
-        const expectedColorName = expected?.color || expectedLabel || "YOUR STATION";
-        const goTo = formatGoTo(room, expectedLocationSlugOrLabel, expectedColorName);
-
         if (typeof ack === "function") {
           ack({
             ok: false,
-            error: `Go to ${goTo}`,
+            // Option A (more helpful)
+            
+            // Option B (less revealing) — swap the error line above for this one:
+            // error: `You scanned ${scannedLabel}.`,
             scannedStationId: scanned?.id || stationId || null,
             scannedColor: scanned?.color || null,
             expectedStationId: expected?.id || expectedStation || null,
             expectedColor: expected?.color || null,
           });
         }
-        return;
+        const expectedLocationSlugOrLabel =
+          team.locationSlug || room.locationCode || "Classroom";
+        const expectedColorName = expected?.color || expectedLabel || "YOUR STATION";
+        const goTo = formatGoTo(room, expectedLocationSlugOrLabel, expectedColorName);
+        return { ok: false, error: `Go to ${goTo}` };
       }
 
       // 3) Location correctness (multi-room only)

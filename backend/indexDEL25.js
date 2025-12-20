@@ -78,42 +78,6 @@ function updateTeamScore(room, teamId, points) {
   }
 }
 
-// Add non-task bonus points (e.g., TreasureRunner warm-up) in a way that
-// updates BOTH the in-memory team score (legacy) and the roomState.scores
-// (which are derived from room.submissions).
-function addBonusSubmission(room, teamId, points, reason = "bonus", meta = {}) {
-  if (!room || !room.teams || !room.teams[teamId]) return false;
-
-  const pts = Number(points) || 0;
-  if (!Number.isFinite(pts) || pts === 0) return false;
-
-  // Legacy score field (some older UIs still read this)
-  updateTeamScore(room, teamId, pts);
-
-  const team = room.teams[teamId];
-  const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-
-  if (!Array.isArray(room.submissions)) room.submissions = [];
-
-  room.submissions.push({
-    roomCode: room.code,
-    teamId,
-    teamName,
-    playerId: null,
-    taskIndex: -1,
-    answer: { type: "bonus", reason, meta },
-    photoUrl: null,
-    correct: null,
-    points: pts,
-    aiScore: { strategy: "bonus", reason, meta },
-    timeMs: null,
-    submittedAt: Date.now(),
-  });
-
-  return true;
-}
-
-
 function getRandomTeam(roomCode) {
   const room = rooms[roomCode];
   const teams = Object.values(room?.teams || {});
@@ -1241,126 +1205,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
   advanceTaskNow({ io, session, roomCode, reason: "teacher-force" });
 });
 
-  // ----------------------------------------------------
-  // Bonus points (TreasureRunner warm-up, etc.)
-  // Student emits: "score:add" with { roomCode, teamId, delta, reason, meta }
-  // We record a bonus submission so roomState.scores (derived from submissions)
-  // updates immediately for StudentApp + LiveSession.
-  // ----------------------------------------------------
-  socket.on("score:add", (payload = {}, ack) => {
-    try {
-      const { roomCode, teamId, delta, reason, meta } = payload || {};
-      const code = (roomCode || socket.data?.roomCode || "").toUpperCase();
-      const room = rooms[code];
-
-      const effectiveTeamId = teamId || socket.data?.teamId;
-
-      if (!code || !room || !effectiveTeamId || !room.teams?.[effectiveTeamId]) {
-        if (typeof ack === "function") ack({ ok: false, error: "Invalid room/team" });
-        return;
-      }
-
-      const pts = Number(delta);
-      if (!Number.isFinite(pts) || pts === 0) {
-        if (typeof ack === "function") ack({ ok: false, error: "Invalid delta" });
-        return;
-      }
-
-      const ok = addBonusSubmission(
-        room,
-        String(effectiveTeamId),
-        pts,
-        typeof reason === "string" ? reason.slice(0, 100) : "bonus",
-        meta && typeof meta === "object" ? meta : {}
-      );
-
-      if (ok) {
-        const state = buildRoomState(room);
-        io.to(code).emit("room:state", state);
-        io.to(code).emit("roomState", state);
-      }
-
-      if (typeof ack === "function") ack({ ok: !!ok });
-    } catch (err) {
-      console.error("score:add failed:", err);
-      if (typeof ack === "function") ack({ ok: false, error: "Server error" });
-    }
-  });
-
-  // Optional: TreasureRunner completion event (no scoring implied here; scoring should use score:add)
-  socket.on("treasure:finish", (payload = {}, ack) => {
-    try {
-      const { roomCode, teamId, pointsEarned, placement } = payload || {};
-      const code = (roomCode || socket.data?.roomCode || "").toUpperCase();
-      const room = rooms[code];
-      const effectiveTeamId = teamId || socket.data?.teamId;
-
-      if (!code || !room || !effectiveTeamId) {
-        if (typeof ack === "function") ack({ ok: false });
-        return;
-      }
-
-      io.to(code).emit("treasure:finish", {
-        roomCode: code,
-        teamId: String(effectiveTeamId),
-        teamName: room.teams?.[effectiveTeamId]?.teamName || null,
-        pointsEarned: Number(pointsEarned) || 0,
-        placement: placement ?? null,
-        finishedAt: Date.now(),
-      });
-
-      if (typeof ack === "function") ack({ ok: true });
-    } catch (err) {
-      console.error("treasure:finish failed:", err);
-      if (typeof ack === "function") ack({ ok: false });
-    }
-  });
-
-  // ----------------------------------------------------
-  // Post-taskset feedback (between last task and trophy screen)
-  // Student emits: "feedback:submit" with { roomCode, teamId, rating, ... }
-  // ----------------------------------------------------
-  socket.on("feedback:submit", (payload = {}, ack) => {
-    try {
-      const { roomCode, teamId } = payload || {};
-      const code = (roomCode || socket.data?.roomCode || "").toUpperCase();
-      const room = rooms[code];
-
-      const effectiveTeamId = teamId || socket.data?.teamId;
-
-      if (!code || !room || !effectiveTeamId) {
-        if (typeof ack === "function") ack({ ok: false, error: "Invalid room/team" });
-        return;
-      }
-
-      if (!room.feedback || typeof room.feedback !== "object") {
-        room.feedback = {};
-      }
-
-      const safe = {
-        submittedAt: Date.now(),
-        rating: Number(payload.rating) || null,
-        highlights: typeof payload.highlights === "string" ? payload.highlights.slice(0, 500) : "",
-        improvements: typeof payload.improvements === "string" ? payload.improvements.slice(0, 500) : "",
-        favoriteTask: typeof payload.favoriteTask === "string" ? payload.favoriteTask.slice(0, 200) : "",
-      };
-
-      room.feedback[String(effectiveTeamId)] = safe;
-
-      io.to(code).emit("feedback:update", {
-        roomCode: code,
-        teamId: String(effectiveTeamId),
-        teamName: room.teams?.[effectiveTeamId]?.teamName || null,
-        ...safe,
-      });
-
-      if (typeof ack === "function") ack({ ok: true });
-    } catch (err) {
-      console.error("feedback:submit failed:", err);
-      if (typeof ack === "function") ack({ ok: false, error: "Server error" });
-    }
-  });
-
 // LOG EVERY EVENT THIS SOCKET EMITS
   socket.onAny((event, ...args) => {
     console.log(
@@ -1449,6 +1293,8 @@ socket.on("task:force-advance", ({ roomCode }) => {
       const { roomCode, teamName, members } = payload || {};
       const code = (roomCode || "").toUpperCase().trim();
       const cleanName = (teamName || "").trim();
+      const meta = TASK_TYPE_META[task.taskType] || {};
+      const isObjective = meta.objectiveScoring === true;
 
       const memberList = Array.isArray(members)
         ? members
@@ -1913,8 +1759,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
         (expected.id && scanned.id && expected.id === scanned.id) ||
         (expected.color && scanned.color && expected.color === scanned.color);
 
-      
-if (!stationMatches) {
+      if (!stationMatches) {
         console.error("Wrong station:", {
           expectedStation,
           expected,
@@ -1932,22 +1777,21 @@ if (!stationMatches) {
           (expected?.id ? String(expected.id).toUpperCase() : null) ||
           (expectedStation ? String(expectedStation).toUpperCase() : "YOUR STATION");
 
-        const expectedLocationSlugOrLabel =
-          team.locationSlug || room.locationCode || "Classroom";
-        const expectedColorName = expected?.color || expectedLabel || "YOUR STATION";
-        const goTo = formatGoTo(room, expectedLocationSlugOrLabel, expectedColorName);
-
         if (typeof ack === "function") {
           ack({
             ok: false,
-            error: `Go to ${goTo}`,
+            // Option A (more helpful)
+            
+            // Option B (less revealing) — swap the error line above for this one:
+            // error: `You scanned ${scannedLabel}.`,
             scannedStationId: scanned?.id || stationId || null,
             scannedColor: scanned?.color || null,
             expectedStationId: expected?.id || expectedStation || null,
             expectedColor: expected?.color || null,
           });
         }
-        return;
+        const goTo = formatGoTo(room, expectedLocationSlugOrLabel, expectedColorName);
+        return { ok: false, error: `Go to ${goTo}` };
       }
 
       // 3) Location correctness (multi-room only)
@@ -2872,8 +2716,7 @@ const code = (roomCode || "").toUpperCase();
     handleTeacherLoadTaskset(payload || {});
   });
 
-  socket.on("teacher:startSession", (payload = {}) => {
-    const { roomCode, selectedRooms: selectedRoomsRaw } = payload || {};
+  socket.on("teacher:startSession", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
@@ -2883,8 +2726,8 @@ const code = (roomCode || "").toUpperCase();
     room.taskIndex = -1;
     room.lastTeacherSeenAt = Date.now();
     room.expiresAt = Date.now() + 1000 * 60 * 60;
-    const selectedRooms = Array.isArray(selectedRoomsRaw)
-      ? selectedRoomsRaw.map((s) => (s || "").toString().trim()).filter(Boolean)
+    const selectedRooms = Array.isArray(payload?.selectedRooms)
+      ? payload.selectedRooms.map((s) => (s || "").toString().trim()).filter(Boolean)
       : [];
     room.enforceLocation = selectedRooms.length > 1;
 
@@ -3844,7 +3687,7 @@ app.put("/api/profile/me", authRequired, async (req, res) => {
   }
 });
 
-app.put("/api/profile", authRequired, async (req, res) => {
+app.put("/api/profile", requireAuth, async (req, res) => {
    try {
      const userId = req.user?.id || req.user?._id || req.user?.userId;
      if (!userId) return res.status(401).json({ ok: false, error: "Unauthorized" });

@@ -1,121 +1,152 @@
-// student-app/src/components/tasks/types/MultiplayerFeedbackTask.jsx
-import React, { useState } from "react";
+// student-app/src/components/tasks/types/MultiPlayerFeedbackTask.jsx
+import React, { useMemo, useState } from "react";
 
-const EMOJIS = [
-  { emoji: "😍", value: 5, label: "Loved it!" },
-  { emoji: "😊", value: 4, label: "Really liked it" },
-  { emoji: "🙂", value: 3, label: "It was okay" },
-  { emoji: "😐", value: 2, label: "Meh" },
-  { emoji: "😞", value: 1, label: "Didn't like it" },
-];
+export default function MultiPlayerFeedbackTask({
+  roomCode,
+  teamId,
+  teamName,
+  socket,
+  onSubmit,
+}) {
+  const [rating, setRating] = useState(4); // 1..5
+  const [favorite, setFavorite] = useState("");
+  const [improve, setImprove] = useState("");
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
 
-const MultiplayerFeedbackTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
-  const playerCount = task.config.playerCount || 1;
-  const [ratings, setRatings] = useState(Array(playerCount).fill(null)); // null or 1-5
-  const [comment, setComment] = useState("");
+  const canSend = useMemo(() => {
+    return !!roomCode && !!teamId && !sending;
+  }, [roomCode, teamId, sending]);
 
-  const handleRating = (playerIndex, value) => {
-    const newRatings = [...ratings];
-    newRatings[playerIndex] = value;
-    setRatings(newRatings);
-  };
+  const send = () => {
+    if (!canSend) return;
+    setSending(true);
 
-  const handleSubmit = () => {
-    socket.current.emit("submit-multiplayer-feedback", {
-      roomCode,
+    const payload = {
+      type: "multi-player-feedback",
+      roomCode: String(roomCode || "").trim().toUpperCase(),
       teamId,
-      ratings, // array [5, 4, null, 2]
-      comment: comment.trim(),
-    });
-    onSubmit({ feedbackSent: true });
-  };
+      teamName: teamName || null,
+      rating: Number(rating) || 0,
+      favorite: String(favorite || "").trim() || null,
+      improve: String(improve || "").trim() || null,
+      note: String(note || "").trim() || null,
+      submittedAt: new Date().toISOString(),
+    };
 
-  const allRated = ratings.every(r => r !== null);
+    try {
+      // Fire-and-forget; server may or may not listen.
+      socket?.emit?.("feedback:submit", payload);
+    } catch {}
+
+    try {
+      onSubmit && onSubmit(payload);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
-    <div style={{
-      padding: 32,
-      textAlign: "center",
-      minHeight: "80vh",
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "center",
-      background: "linear-gradient(135deg, #e0e7ff, #c7d2fe)",
-    }}>
-      <h2 style={{ fontSize: "2rem", marginBottom: 40 }}>
-        How did your team like this set?
-      </h2>
-
-      {Array.from({ length: playerCount }, (_, i) => (
-        <div key={i} style={{ marginBottom: 32 }}>
-          <h3 style={{ fontSize: "1.3rem", marginBottom: 12 }}>
-            Player {i + 1}
-          </h3>
-          <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
-            {EMOJIS.map((e) => (
-              <button
-                key={e.value}
-                onClick={() => handleRating(i, e.value)}
-                style={{
-                  fontSize: "3.5rem",
-                  background: ratings[i] === e.value ? "#22c55e" : "rgba(255,255,255,0.7)",
-                  borderRadius: 16,
-                  padding: 12,
-                  border: ratings[i] === e.value ? "4px solid #15803d" : "none",
-                  cursor: "pointer",
-                }}
-              >
-                {e.emoji}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      <div style={{ margin: "40px 0" }}>
-        <label style={{ fontSize: "1.1rem", display: "block", marginBottom: 12 }}>
-          Team comment (optional)
-        </label>
-        <textarea
-          placeholder="What did you like? Any suggestions?"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          rows={4}
-          style={{
-            width: "90%",
-            maxWidth: 500,
-            padding: 16,
-            fontSize: "1rem",
-            borderRadius: 12,
-            border: "1px solid #cbd5e1",
-            background: "#fff",
-          }}
-        />
+    <div style={{ textAlign: "left" }}>
+      <div style={{ fontSize: "1.25rem", fontWeight: 900, marginBottom: 6 }}>
+        🗳️ Quick Team Feedback
+      </div>
+      <div style={{ opacity: 0.8, marginBottom: 12 }}>
+        Help improve the next round. This takes ~15 seconds.
       </div>
 
-      <button
-        onClick={handleSubmit}
-        disabled={!allRated}
-        style={{
-          padding: "16px 40px",
-          fontSize: "1.3rem",
-          fontWeight: 700,
-          background: allRated ? "#22c55e" : "#94a3b8",
-          color: "#fff",
-          border: "none",
-          borderRadius: 999,
-          cursor: allRated ? "pointer" : "not-allowed",
-          opacity: allRated ? 1 : 0.6,
-        }}
-      >
-        Send Team Feedback
-      </button>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>Overall fun (1–5)</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setRating(n)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: n === rating ? "2px solid #0ea5e9" : "1px solid rgba(15,23,42,0.25)",
+                background: n === rating ? "rgba(14,165,233,0.15)" : "rgba(15,23,42,0.04)",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <p style={{ marginTop: 24, fontSize: "0.9rem", color: "#64748b" }}>
-        You can skip if you want — thanks for playing!
-      </p>
+      <div style={{ display: "grid", gap: 10 }}>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 800 }}>Favorite part</span>
+          <input
+            value={favorite}
+            onChange={(e) => setFavorite(e.target.value)}
+            placeholder="e.g., Hangman, BrainSparkNotes, treasures…"
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(15,23,42,0.2)",
+              outline: "none",
+            }}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 800 }}>One thing to improve</span>
+          <input
+            value={improve}
+            onChange={(e) => setImprove(e.target.value)}
+            placeholder="e.g., more time, clearer hints, harder questions…"
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(15,23,42,0.2)",
+              outline: "none",
+            }}
+          />
+        </label>
+
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 800 }}>Anything else?</span>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Optional"
+            rows={3}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(15,23,42,0.2)",
+              outline: "none",
+              resize: "vertical",
+            }}
+          />
+        </label>
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          onClick={send}
+          disabled={!canSend}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 999,
+            border: "none",
+            background: "linear-gradient(135deg, #0ea5e9, #6366f1)",
+            color: "#fff",
+            fontWeight: 900,
+            cursor: canSend ? "pointer" : "not-allowed",
+            opacity: canSend ? 1 : 0.6,
+            boxShadow: "0 12px 28px rgba(2,132,199,0.35)",
+          }}
+        >
+          {sending ? "Sending…" : "Submit feedback"}
+        </button>
+      </div>
     </div>
   );
-};
-
-export default MultiplayerFeedbackTask;
+}

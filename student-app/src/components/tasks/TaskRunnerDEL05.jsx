@@ -39,7 +39,7 @@ import HangmanDuelTask from "./types/HangmanDuelTask";
 import MatchingTask from "./types/MatchingTask";
 import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
-import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
+import TreasureRunnerTask from "./types/TreasureRunnerTask";
 import VennSortTask from "./types/VennSortTask";
 
 // High-contrast neutrals for inner task cards / text
@@ -576,84 +576,87 @@ export default function TaskRunner({
   showPartnerReply,
   onPartnerReply,
 }) {
-  if (!task) return null;
+  // TaskRunner can also render "pre-task" flow tasks (Mood Check-in / Treasure Runner)
+  // when the real task is not yet available.
 
-const teamKey = useMemo(() => {
-  const rc = String(roomCode || "").trim().toUpperCase();
-  const tid = playerTeam?.id || "anon";
-  return rc && tid ? `${rc}::${tid}` : null;
-}, [roomCode, playerTeam?.id]);
+  const teamKey = `${roomCode || "room"}:${
+    playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || "team"
+  }`;
+  const moodKey = `curriculate:moodDone:${teamKey}`;
+  const firstTaskKey = `curriculate:firstTaskSeen:${teamKey}`;
 
-const [moodDone, setMoodDone] = useState(() => {
-  try {
-    return teamKey ? sessionStorage.getItem(`crl:moodDone:${teamKey}`) === "1" : false;
-  } catch {
-    return false;
-  }
-});
+  const [moodDone, setMoodDone] = useState(() => {
+    try {
+      return sessionStorage.getItem(moodKey) === "1";
+    } catch {
+      return false;
+    }
+  });
 
-const [seenRealTask, setSeenRealTask] = useState(() => {
-  try {
-    return teamKey ? sessionStorage.getItem(`crl:seenRealTask:${teamKey}`) === "1" : false;
-  } catch {
-    return false;
-  }
-});
+  const [firstTaskSeen, setFirstTaskSeen] = useState(() => {
+    try {
+      return sessionStorage.getItem(firstTaskKey) === "1";
+    } catch {
+      return false;
+    }
+  });
 
-useEffect(() => {
-  if (!teamKey) return;
-  try {
-    sessionStorage.setItem(`crl:moodDone:${teamKey}`, moodDone ? "1" : "0");
-    sessionStorage.setItem(`crl:seenRealTask:${teamKey}`, seenRealTask ? "1" : "0");
-  } catch {}
-}, [teamKey, moodDone, seenRealTask]);
+  // Determine whether we should force MoodCheckin first (per-team, per-room session).
+  const mustRunMoodFirst = mode === "play" && !moodDone;
 
-const rawTask = task || null;
-const rawType = rawTask ? normalizeTaskType(rawTask.taskType || rawTask.type) : null;
+  // Determine whether we should show TreasureRunner while waiting for the first real task.
+  const shouldShowTreasureWhileWaiting =
+    mode === "play" && moodDone && !firstTaskSeen && !task;
 
-useEffect(() => {
-  if (!rawType) return;
-  if (rawType !== TASK_TYPES.MOOD_CHECKIN && rawType !== TASK_TYPES.TREASURE_RUNNER) {
-    setSeenRealTask(true);
-  }
-}, [rawType]);
+  // Build an effective task for rendering.
+  const effectiveTask = mustRunMoodFirst
+    ? {
+        ...(task || {}),
+        taskType: TASK_TYPES.MOOD_CHECKIN,
+        title: task?.title || "Mood Check-in",
+        prompt:
+          task?.prompt ||
+          "Quick check-in: how are you feeling right now? (This helps your teacher support you.)",
+        points: 0,
+      }
+    : shouldShowTreasureWhileWaiting
+    ? {
+        taskType: TASK_TYPES.TREASURE_RUNNER,
+        title: "Treasure Runner",
+        prompt: "Warm-up race while we load your first task…",
+        points: 0,
+        // 60s race by default
+        durationSec: 60,
+      }
+    : task;
 
-// Effective task for the "waiting window":
-// 1) MoodCheckin (once) after station scan
-// 2) TreasureRunner until the first real task arrives
-const t = useMemo(() => {
-  if (!moodDone && rawType !== TASK_TYPES.MOOD_CHECKIN) {
-    return {
-      taskType: TASK_TYPES.MOOD_CHECKIN,
-      prompt: "Quick check-in before we start:",
-    };
-  }
-  if (!rawTask && moodDone && !seenRealTask) {
-    return { taskType: TASK_TYPES.TREASURE_RUNNER };
-  }
-  return rawTask;
-}, [rawTask, rawType, moodDone, seenRealTask]);
+  if (!effectiveTask) return null;
 
-const type = t ? normalizeTaskType(t.taskType || t.type) : null;
-
-const handleTaskSubmit = (payload) => {
-  const pType =
-    payload && typeof payload === "object" ? payload.type || payload.taskType : null;
-
-  if (pType === "mood-checkin") setMoodDone(true);
-
-  // TreasureRunner points are awarded via sockets inside the task,
-  // and StudentApp also does an optimistic score update.
-  try {
-    onSubmit && onSubmit(payload);
-  } catch {}
-};
+  const t = effectiveTask;
+  const type = normalizeTaskType(t.taskType || t.type);
 
   // Hangman expects socket.current; keep existing socket usage for other tasks.
   const socketRef = useRef(null);
   useEffect(() => {
     socketRef.current = socket || null;
   }, [socket]);
+
+  // Mark when the first real task arrives so we can stop the TreasureRunner warm-up.
+  useEffect(() => {
+    if (!task) return;
+    const incomingType = normalizeTaskType(task.taskType || task.type);
+
+    // Ignore pre-flow tasks.
+    if (incomingType === TASK_TYPES.MOOD_CHECKIN) return;
+    if (incomingType === TASK_TYPES.TREASURE_RUNNER) return;
+
+    if (!firstTaskSeen) {
+      setFirstTaskSeen(true);
+      try {
+        sessionStorage.setItem(firstTaskKey, "1");
+      } catch {}
+    }
+  }, [task, firstTaskSeen, firstTaskKey]);
 
   const isReview = mode === "review";
 
@@ -834,7 +837,14 @@ const handleTaskSubmit = (payload) => {
       content = (
         <MoodCheckInTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={(payload) => {
+            // Persist completion so MoodCheckin runs once per team per room session.
+            setMoodDone(true);
+            try {
+              sessionStorage.setItem(moodKey, "1");
+            } catch {}
+            onSubmit?.(payload);
+          }}
           socket={socketRef}     // if your MoodCheckInTask emits its own event
           roomCode={roomCode}
           teamId={effectiveTeamId}
@@ -842,22 +852,24 @@ const handleTaskSubmit = (payload) => {
         />
       );
       break;
-// ✅ Treasure Runner (warm-up while waiting)
-case TASK_TYPES.TREASURE_RUNNER:
-case "treasure-runner": {
-  content = (
-    <TreasureRunnerTask
-      socket={socket}
-      roomCode={roomCode}
-      playerTeam={playerTeam}
-      onSubmit={handleTaskSubmit}
-      disabled={effectiveDisabled || isReview}
-    />
-  );
-  break;
-}
+    }
 
-
+    // ✅ Treasure Runner (warm-up while loading first task)
+    case TASK_TYPES.TREASURE_RUNNER: 
+      const effectiveTeamId =
+        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      content = (
+        <TreasureRunnerTask
+          task={t}
+          onSubmit={isReview ? () => {} : onSubmit}
+          socket={socketRef}
+          roomCode={roomCode}
+          teamId={effectiveTeamId}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask
@@ -865,7 +877,7 @@ case "treasure-runner": {
           readOnly={isReview}
           task={t}
           review={isReview ? review : null}
-          onSubmit={isReview ? null : handleTaskSubmit}
+          onSubmit={isReview ? null : onSubmit}
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
         />
@@ -879,7 +891,7 @@ case "treasure-runner": {
           readOnly={isReview}
           task={t}
           review={isReview ? review : null}
-          onSubmit={isReview ? null : handleTaskSubmit}
+          onSubmit={isReview ? null : onSubmit}
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
         />
@@ -892,7 +904,7 @@ case "treasure-runner": {
       content = (
         <VennSortTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled || isReview}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -907,7 +919,7 @@ case "treasure-runner": {
       content = (
         <SortTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -921,7 +933,7 @@ case "treasure-runner": {
       content = (
         <SequenceTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
           mode={isReview ? "review" : "play"}
@@ -934,7 +946,7 @@ case "treasure-runner": {
       content = (
         <MatchingTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled || isReview}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
@@ -945,14 +957,14 @@ case "treasure-runner": {
       break;
 
     case TASK_TYPES.PHOTO:
-      content = <PhotoTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = <PhotoTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.PHOTO_JOURNAL || "photo-journal":
       content = (
         <PhotoJournalTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -964,7 +976,7 @@ case "treasure-runner": {
       content = (
         <MakeAndSnapTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -975,7 +987,7 @@ case "treasure-runner": {
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
       content = (
-        <DrawMimeTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <DrawMimeTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
@@ -983,7 +995,7 @@ case "treasure-runner": {
       content = (
         <DrawMimeTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -993,7 +1005,7 @@ case "treasure-runner": {
 
     case TASK_TYPES.BODY_BREAK:
       content = (
-        <BodyBreakTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <BodyBreakTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
@@ -1001,7 +1013,7 @@ case "treasure-runner": {
       content = (
         <OpenTextTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -1013,7 +1025,7 @@ case "treasure-runner": {
       content = (
         <RecordAudioTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -1023,19 +1035,19 @@ case "treasure-runner": {
 
     case TASK_TYPES.SPEECH_RECOGNITION:
       content = (
-        <SpeechRecognitionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <SpeechRecognitionTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
     case TASK_TYPES.JEOPARDY:
       content = (
-        <BrainBlitzTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <BrainBlitzTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
     case TASK_TYPES.PRONUNCIATION:
       content = (
-        <PronunciationTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <PronunciationTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
@@ -1046,7 +1058,7 @@ case "treasure-runner": {
       content = (
         <WordWeaverDuelTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
@@ -1062,7 +1074,7 @@ case "treasure-runner": {
       content = (
         <ShortAnswerTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled || isReview}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -1076,7 +1088,7 @@ case "treasure-runner": {
       content = (
         <CollaborationTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
@@ -1089,13 +1101,13 @@ case "treasure-runner": {
 
     case TASK_TYPES.MUSICAL_CHAIRS:
       content = (
-        <MusicalChairsTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <MusicalChairsTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
     case TASK_TYPES.MYSTERY_CLUES:
       content = (
-        <MysteryCluesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <MysteryCluesTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
@@ -1103,7 +1115,7 @@ case "treasure-runner": {
       content = (
         <TrueFalseTicTacToeTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled || isReview}
           socket={socket}
           teamRole={t.teamRole}
@@ -1116,7 +1128,7 @@ case "treasure-runner": {
     case TASK_TYPES.MAD_DASH:
     case TASK_TYPES.MAD_DASH_SEQUENCE:
       content = (
-        <MadDashSequenceTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <MadDashSequenceTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
@@ -1124,7 +1136,7 @@ case "treasure-runner": {
       content = (
         <LiveDebateTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
           teamMembers={t.teamMembers || ["Alice", "Bob", "Charlie", "Dana"]}
@@ -1136,7 +1148,7 @@ case "treasure-runner": {
       content = (
         <AIDebateJudgeTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled}
           socket={socket}
           roomCode={roomCode}
@@ -1147,7 +1159,7 @@ case "treasure-runner": {
 
     case TASK_TYPES.FLASHCARDS:
       content = (
-        <FlashcardsTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <FlashcardsTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
@@ -1156,37 +1168,37 @@ case "treasure-runner": {
 
     case TASK_TYPES.TIMELINE:
       content = (
-        <TimelineTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <TimelineTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
     case TASK_TYPES.PET_FEEDING:
       content = (
-        <PetFeedingTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <PetFeedingTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
     case TASK_TYPES.MOTION_MISSION:
       content = (
-        <MotionMissionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <MotionMissionTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
     case TASK_TYPES.BRAINSTORM_BATTLE:
       content = (
-        <BrainstormBattleTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <BrainstormBattleTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
     case TASK_TYPES.MIND_MAPPER:
       content = (
-        <MindMapperTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <MindMapperTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
     case TASK_TYPES.SPEED_DRAW:
       content = (
-        <SpeedDrawTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <SpeedDrawTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} socket={socket} />
       );
       break;
 
@@ -1194,7 +1206,7 @@ case "treasure-runner": {
       content = (
         <DiffDetectiveTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           disabled={effectiveDisabled || isReview}
           socket={socket}
           raceStatus={diffRaceStatus}
@@ -1206,13 +1218,13 @@ case "treasure-runner": {
 
     case TASK_TYPES.BRAIN_SPARK_NOTES:
       content = (
-        <BrainSparkNotesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <BrainSparkNotesTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
     case TASK_TYPES.HIDENSEEK:
       content = (
-        <HideNSeekTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <HideNSeekTask task={t} onSubmit={onSubmit} disabled={effectiveDisabled} />
       );
       break;
 
@@ -1223,7 +1235,7 @@ case "treasure-runner": {
       content = (
         <HangmanDuelTask
           task={t}
-          onSubmit={handleTaskSubmit}
+          onSubmit={onSubmit}
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
