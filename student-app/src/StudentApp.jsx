@@ -864,7 +864,6 @@ function StudentApp() {
       setPointToast(null);
       setShortAnswerReveal(null);
       setTasksetComplete(false);
-    setPostPhase("tasks");
       setPostPhase("tasks");
       setTaskRenderError(null);
 
@@ -1124,6 +1123,9 @@ function StudentApp() {
 
       setJoined(true);
       setStatusMessage("");
+      setPostPhase("mood"); // start Mood → TreasureRunner pipeline immediately
+      setWaitingForLaunch(false);
+
       const tid = response.teamId || response.teamSessionId;
       setTeamId(tid);
       setTeamSessionId(response.teamSessionId || response.teamId || null);
@@ -1254,7 +1256,7 @@ function StudentApp() {
       currentTaskIndex >= 0 &&
       tasksetTotalTasks > 0 &&
       currentTaskIndex === tasksetTotalTasks - 1;
-      
+  
     // If this was the last task in the taskset, go to post-task feedback first
 if (isLastTask) {
   setPostPhase("feedback");
@@ -2810,7 +2812,7 @@ if (!currentTask) return;
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && postPhase === "tasks" && !currentTask && !tasksetComplete && (
+          {joined && postPhase === "tasks" && !currentTask && !mustScan && !tasksetComplete && waitingForLaunch && (
             <section
               style={{
                 marginTop: 10,
@@ -2823,26 +2825,22 @@ if (!currentTask) return;
                 boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
               }}
             >
-              <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>Waiting for your next task…</div>
+              <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>Getting your first activity ready…</div>
               <div style={{ marginTop: 6, opacity: 0.9 }}>
-                If your team just scanned, you’re good. Your teacher may not have launched yet.
+                Next up: <strong>Mood Check-in</strong>, then <strong>Treasure Runner</strong>. If this takes more than a few
+                seconds, rescan or ask your teacher.
               </div>
             </section>
           )}
-            <section className="task-card"> ... </section>
-            )}
+
+          {joined && postPhase === "tasks" && !!currentTask && !mustScan && !tasksetComplete && (
+            <section
+              className="task-card"
               style={{
                 ...baseTaskCardStyle,
                 ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
-                  ? {
-                      background: "transparent",
-                      padding: 0,
-                      border: "none",
-                      boxShadow: "none",
-                    }
-                  : {
-                      background: taskCardBackground,
-                    }),
+                  ? { background: "transparent", padding: 0, border: "none", boxShadow: "none" }
+                  : { background: taskCardBackground }),
               }}
             >
               <h2
@@ -2852,25 +2850,16 @@ if (!currentTask) return;
                   fontSize: responseHeadingFontSize,
                   letterSpacing: 0.2,
                   color: "#0f172a",
-                  ...musicalChairsHeaderStyle,
-                  ...mysteryHeaderStyle,
-                  ...hangmanHeaderStyle,
+                  ...(musicalChairsHeaderStyle || {}),
+                  ...(mysteryHeaderStyle || {}),
+                  ...(hangmanHeaderStyle || {}),
                 }}
               >
                 {currentTaskNumber && (
-                  <div
-                    style={{
-                      marginBottom: 8,
-                      fontSize: "0.8rem",
-                      color: "#4b5563",
-                    }}
-                  >
-                    {progressLabel}
-                  </div>
+                  <div style={{ marginBottom: 8, fontSize: "0.8rem", color: "#4b5563" }}>{progressLabel}</div>
                 )}
                 {currentTask.title || currentTask.name || "Task"}
               </h2>
-
               <div
                 className="task-content-inner"
                 style={{
