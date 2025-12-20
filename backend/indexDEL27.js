@@ -525,12 +525,6 @@ function buildRoomState(room) {
         brightness: 1,
       },
 
-      // Back-compat alias (StudentApp reads noiseConfig)
-      noiseConfig: {
-        enabled: false,
-        threshold: 0,
-      },
-
       brainstorm: null,
       moodCheckins: {},
       selectedRooms: [],
@@ -683,16 +677,6 @@ function buildRoomState(room) {
         !Number.isNaN(room.noiseBrightness)
           ? room.noiseBrightness
           : 1,
-    },
-
-    // Back-compat alias (StudentApp reads noiseConfig)
-    noiseConfig: {
-      enabled: !!noiseControl.enabled && (noiseControl.threshold || 0) > 0,
-      threshold:
-        typeof noiseControl.threshold === "number" &&
-        !Number.isNaN(noiseControl.threshold)
-          ? noiseControl.threshold
-          : 0,
     },
 
     // Brainstorm battle – light summary so LiveSession can show counts
@@ -1108,15 +1092,6 @@ function updateNoiseDerivedState(code, room) {
 
   // Emit direct noise status (for live meters / dimming)
   io.to(code).emit("session:noiseLevel", {
-    roomCode: code,
-    level,
-    brightness,
-    enabled,
-    threshold,
-  });
-
-  // Compatibility for StudentApp/older clients that listen to "noise:update"
-  io.to(code).emit("noise:update", {
     roomCode: code,
     level,
     brightness,
@@ -1613,10 +1588,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
           teamSessionId: teamId,
           assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
           assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
-          noiseConfig: state?.noiseConfig || {
-            enabled: !!state?.noise?.enabled,
-            threshold: typeof state?.noise?.threshold === "number" ? state.noise.threshold : 0,
-          },
           roomState: state,
         });
       }
@@ -1715,10 +1686,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
           teamId,
           assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
           assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
-          noiseConfig: state?.noiseConfig || {
-            enabled: !!state?.noise?.enabled,
-            threshold: typeof state?.noise?.threshold === "number" ? state.noise.threshold : 0,
-          },
           roomState: state,
         });
       }
