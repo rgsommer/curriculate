@@ -113,7 +113,7 @@ function TeacherApp() {
   });
 
   socket.emit("teacher:endSessionAndEmail", {
-    roomCode: code,
+    roomCode,
     ownerId: teacher?.ownerId || teacher?._id || user?._id,
     teacherEmail,
     includeIndividualReports,
