@@ -1423,13 +1423,14 @@ function StudentApp() {
       // Mood Check-in: DO NOT requestNext here.
       // Flow rule: Scan → Mood → Treasure (idle) → first task arrives → tasks
       // ----------------------------------------------------
-      if (payloadType === "mood-checkin") {
+      const isMood =
+        payloadType === TASK_TYPES.MOOD_CHECKIN ||
+        payloadType === "mood-checkin"; // optional backward compatibility
+
+      if (isMood) {
         setSubmitting(false);
         setStatusMessage("");
-
-        // advance into treasure holding shell immediately
         setPostPhase("treasure");
-
         return;
       }
 
@@ -1759,6 +1760,10 @@ function StudentApp() {
       : currentTaskNumber
       ? `Task ${currentTaskNumber}`
       : null;
+
+  const isTreasure =
+      payloadType === TASK_TYPES.TREASURE_RUNNER ||
+      payloadType === "treasure-runner"; // optional
 
   // ─────────────────────────────────────────────
   // Render
@@ -2758,13 +2763,13 @@ function StudentApp() {
           memberNames={members}
           onSubmit={(payload) => {
             // Ensure handleSubmitAnswer recognizes it as mood-checkin
-            handleSubmitAnswer({ type: "mood-checkin", ...(payload || {}) });
+            handleSubmitAnswer({ type: TASK_TYPES.MOOD_CHECKIN, ...payload })
           }}
         />
       </section>
     )}  
 
-    {joined && postPhase === "treasure" && !tasksetComplete && !currentTask && (
+    {joined && postPhase === "treasure" && isTreasure && !tasksetComplete && !currentTask && (
       <section
         style={{
           marginTop: 10,
@@ -2777,7 +2782,7 @@ function StudentApp() {
       >
         <TreasureRunner
           onSubmit={(payload) => {
-            handleSubmitAnswer({ type: "treasure-runner", ...(payload || {}) });
+            handleSubmitAnswer({ type: TASK_TYPES.TREASURE_RUNNER, ...payload })
           }}
         />
         <div style={{ marginTop: 10, fontWeight: 700, opacity: 0.8, textAlign: "center" }}>

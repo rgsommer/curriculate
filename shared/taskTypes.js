@@ -422,7 +422,7 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     correctAnswerShape: null,
 
-    quickTaskEligible: true,
+    quickTaskEligible: false,
 
     description:
       "A fun vibe-setter before the task set: each player taps a mood emoji, optionally adds what they’re excited about. No timer, no scoring.",
