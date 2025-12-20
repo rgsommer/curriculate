@@ -1248,6 +1248,13 @@ function StudentApp() {
     setTaskLocked(false);
     setPostSubmitSecondsLeft(null);
 
+    const isLastTask =
+      typeof currentTaskIndex === "number" &&
+      typeof tasksetTotalTasks === "number" &&
+      currentTaskIndex >= 0 &&
+      tasksetTotalTasks > 0 &&
+      currentTaskIndex === tasksetTotalTasks - 1;
+      
     // If this was the last task in the taskset, go to post-task feedback first
 if (isLastTask) {
   setPostPhase("feedback");
@@ -2803,9 +2810,27 @@ if (!currentTask) return;
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && postPhase === "tasks" && !mustScan && !tasksetComplete && (
+          {joined && postPhase === "tasks" && !currentTask && !tasksetComplete && (
             <section
-              className="task-card"
+              style={{
+                marginTop: 10,
+                padding: 16,
+                borderRadius: 18,
+                background: "rgba(15,23,42,0.9)",
+                border: "1px solid rgba(148,163,184,0.75)",
+                color: "#f9fafb",
+                textAlign: "center",
+                boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
+              }}
+            >
+              <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>Waiting for your next task…</div>
+              <div style={{ marginTop: 6, opacity: 0.9 }}>
+                If your team just scanned, you’re good. Your teacher may not have launched yet.
+              </div>
+            </section>
+          )}
+            <section className="task-card"> ... </section>
+            )}
               style={{
                 ...baseTaskCardStyle,
                 ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
