@@ -1054,24 +1054,18 @@ function StudentApp() {
       return;
     }
 
-    // If we have no current task and we’re not in a waiting screen,
-    // keep scanner available so the team can scan into their station flow.
-    if (!currentTask && !waitingForLaunch && !scannedStationId) {
-      setScannerActive(true);
-    }
-
     // Ensure assignment info is fetched so colour can display
     const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
     if (!inferredColor && teamId) socket.emit("room:request-state", { teamId });
-  }, [
-    joined,
-    mustScan,
-    currentTask,
-    waitingForLaunch,
-    assignedColor,
-    assignedStationId,
-    teamId,
-  ]);
+      }, [
+        joined,
+        mustScan,
+        currentTask,
+        waitingForLaunch,
+        assignedColor,
+        assignedStationId,
+        teamId,
+      ]);
 
   // Clean up timers on unmount
   useEffect(() => {
