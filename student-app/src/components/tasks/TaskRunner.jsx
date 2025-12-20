@@ -852,12 +852,12 @@ export default function TaskRunner({
         />
       );
       break;
+    }
 
     // ✅ Treasure Runner (warm-up while loading first task)
-    case TASK_TYPES.TREASURE_RUNNER: {
+    case TASK_TYPES.TREASURE_RUNNER: 
       const effectiveTeamId =
         t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
-
       content = (
         <TreasureRunnerTask
           task={t}
@@ -869,8 +869,7 @@ export default function TaskRunner({
         />
       );
       break;
-    }
-
+    
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask
