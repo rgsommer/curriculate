@@ -1125,7 +1125,7 @@ function StudentApp() {
   // Join the teacher’s room (student side)
   // Gold-standard flow: Join → Scan → Mood → Treasure (idle) → first task → tasks loop
   // ----------------------------------------------------
-    const handleJoinRoom = () => {
+  const handleJoinRoom = () => {
     const payload = {
       roomCode: roomCode.trim().toUpperCase(),
       teamName: (teamName || "").trim(),
@@ -1286,6 +1286,53 @@ function StudentApp() {
         if (hasAssignment) setScannerActive(true);
       }, 0);
     });
+  };
+
+  // Explicit user action: drop current room and show the join form.
+  // This is the ONLY time we clear saved join keys.
+  const handleJoinAnotherRoom = () => {
+    userDroppedRoomRef.current = true;
+    resumeAttemptedRef.current = false;
+    clearSavedJoin();
+
+    // reset core session state
+    setJoined(false);
+    setTeamId(null);
+    setTeamSessionId(null);
+    setStatusMessage("");
+
+    // reset station/task/scanner state
+    setAssignedStationId(null);
+    setAssignedColor(null);
+    setScannedStationId(null);
+    setScannerActive(false);
+    setScanError(null);
+    setScanStatus(null);
+    setWaitingForLaunch(false);
+
+    setCurrentTask(null);
+    setCurrentTaskIndex(null);
+    setTasksetTotalTasks(null);
+    setTimeLimitSeconds(null);
+    setRemainingMs(0);
+    setSubmitting(false);
+    setCurrentAnswerDraft("");
+
+    setTaskLocked(false);
+    setPostSubmitSecondsLeft(null);
+    setLastTaskResult(null);
+    setPointToast(null);
+    setShortAnswerReveal(null);
+    setTasksetComplete(false);
+    setTaskRenderError(null);
+
+    // reset pipeline
+    setPostPhase("join"); // or whatever your join-screen phase is
+
+    // clear join form fields (optional, but expected UX)
+    setRoomCode("");
+    setTeamName("");
+    setMembers(["", "", ""]);
   };
 
   const handleJoin = (e) => {
