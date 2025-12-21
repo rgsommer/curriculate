@@ -578,9 +578,7 @@ function StudentApp() {
   const [tasksetComplete, setTasksetComplete] = useState(false);
   const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "feedback" | "trophy"
   const [taskRenderError, setTaskRenderError] = useState(null);
-  const isPhysicalTask =
-    currentTask?.category === CATEGORY.PHYSICAL;
-
+  
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
   const [members, setMembers] = useState(() => {
@@ -631,6 +629,8 @@ function StudentApp() {
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
   const currentTaskRef = useRef(null);
     useEffect(() => { currentTaskRef.current = currentTask; }, [currentTask]);
+  const isPhysicalTask =
+    currentTask?.category === CATEGORY.PHYSICAL;
 
   const postPhaseRef = useRef(postPhase);
     useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
