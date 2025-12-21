@@ -1502,7 +1502,7 @@ function StudentApp() {
 
         setStatusMessage("");
         const isPhysical =
-          currentTask?.category === CATEGORY.PHYSICAL;
+          currentTask?.category === "PHYSICAL";
 
         const shouldReview = !isPhysical;
 
@@ -1761,6 +1761,8 @@ function StudentApp() {
     currentTask?.taskType === TASK_TYPES.PHOTO_JOURNAL ||
     currentTask?.taskType === "photo-journal" ||
     currentTask?.taskType === "photo_journal";
+
+  const isPhysicalTask = currentTask?.category === "PHYSICAL";
 
   const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
