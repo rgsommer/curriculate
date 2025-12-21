@@ -1611,14 +1611,8 @@ function StudentApp() {
       // After a correct scan, we ALWAYS go into the warm-up pipeline.
       // No task requests from scan.
       setWaitingForLaunch(true);
+      setPostPhase("treasure"); // never set mood from scan if you want mood only once per join
 
-      // If a real task already exists, never go back to warmups
-      if (currentTaskRef.current) {
-        setPostPhase("tasks");
-      } else {
-        // Warmups run only once per join
-        setPostPhase(warmupDone ? "treasure" : "mood");
-      }
     });
   };
 
