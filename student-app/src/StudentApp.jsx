@@ -3005,7 +3005,7 @@ function StudentApp() {
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && postPhase === "tasks" && !currentTask && !mustScan && !tasksetComplete && waitingForLaunch && (
+          {joined && postPhase === "tasks" && !mustScan && !tasksetComplete && waitingForLaunch && (
             <section
               style={{
                 marginTop: 10,
