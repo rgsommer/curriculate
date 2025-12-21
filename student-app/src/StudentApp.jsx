@@ -1459,18 +1459,7 @@ function StudentApp() {
         setSubmitting(false);
         return;
       }
-
-      useEffect(() => {
-        if (!currentTask) return;
-
-        // If a scan is required, DO NOT flip into tasks mode yet.
-        if (mustScan) return;
-
-        if (postPhase !== "tasks") setPostPhase("tasks");
-      }, [currentTask, mustScan, postPhase]);
-
-      setSubmitting(true);
-
+    
       // Normalize multi-part payloads from TaskRunner (can be object or JSON string)
       let normalizedAnswer = answerPayload;
       if (typeof answerPayload === "string" && answerPayload.trim().startsWith("{")) {
@@ -3176,7 +3165,6 @@ function StudentApp() {
                       </div>
                     );
                   })()}
-                      {/* Matching answer reveal during lock */}
                       {/* Matching answer reveal during lock (highlight + animate + percent) */}
                       {currentTask?.taskType === "matching" && (() => {
                         const data = buildMatchingReveal(currentTask, reviewState);
