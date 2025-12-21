@@ -1630,7 +1630,6 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
     if (postPhase !== "treasure") return;
-    if (!roomIsActive) return;
     if (currentTask) return;
     if (!teamId || !roomCode) return;
 
