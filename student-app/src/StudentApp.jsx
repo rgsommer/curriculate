@@ -1458,21 +1458,6 @@ function StudentApp() {
         return;
       }
 
-      // ----------------------------------------------------
-      // Mood Check-in: DO NOT requestNext here.
-      // Flow rule: Scan → Mood → Treasure (idle) → first task arrives → tasks
-      // ----------------------------------------------------
-      const isMood =
-        payloadType === TASK_TYPES.MOOD_CHECKIN ||
-        payloadType === "mood-checkin"; // optional backward compatibility
-
-      if (isMood) {
-        setSubmitting(false);
-        setStatusMessage("");
-        setPostPhase("treasure");
-        return;
-      }
-
       // If there’s no currentTask and it’s not a warm-up payload, do nothing.
       if (!currentTask) return;
 
