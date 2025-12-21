@@ -604,7 +604,9 @@ function StudentApp() {
   const resumeAttemptedRef = useRef(false);
 
   const lastStationIdRef = useRef(null);
+
   const [warmupDone, setWarmupDone] = useState(false);
+  const [warmupStep, setWarmupStep] = useState("mood"); 
 
   // Station + scanner state
   const [assignedStationId, setAssignedStationId] = useState(null);
@@ -1083,6 +1085,10 @@ function StudentApp() {
       if (countdownTimerRef.current) {
         clearInterval(countdownTimerRef.current);
       }
+      setReviewState(null);
+      setTaskLocked(false);
+      setPostSubmitSecondsLeft(null);
+      setShortAnswerReveal(null);
       if (postSubmitTimerRef.current) {
         clearInterval(postSubmitTimerRef.current);
       }
@@ -1289,6 +1295,7 @@ function StudentApp() {
       userDroppedRoomRef.current = true;
       resumeAttemptedRef.current = false;
       setWarmupDone(false);
+      setWarmupStep("mood");
 
       clearSavedJoin();
 
@@ -1397,15 +1404,16 @@ function StudentApp() {
       if (payloadType === TASK_TYPES.MOOD_CHECKIN) {
         setSubmitting(false);
         setStatusMessage("");
-        setWarmupDone(true);
+        setWarmupStep("treasure");
         setPostPhase("treasure");
         return;
       }
 
       // Treasure = score only, stay in treasure until task arrives
       if (!currentTask && payloadType === TASK_TYPES.TREASURE_RUNNER) {
-        // scoring logic (you already have this)
         setSubmitting(false);
+        setWarmupStep("done");
+        setPostPhase("treasure");
         return;
       }
 
@@ -1611,8 +1619,11 @@ function StudentApp() {
       // After a correct scan, we ALWAYS go into the warm-up pipeline.
       // No task requests from scan.
       setWaitingForLaunch(true);
-      setPostPhase("treasure"); // never set mood from scan if you want mood only once per join
-
+      if (warmupStep === "done") {
+        setPostPhase("treasure"); // idle waiting for tasks
+      } else {
+        setPostPhase("mood");     // ALWAYS mood first
+      }
     });
   };
 
@@ -2767,7 +2778,7 @@ function StudentApp() {
             </div>
           )}
 
-    {joined && postPhase === "mood" && !tasksetComplete && !currentTask && (
+    {joined && postPhase === "mood" && warmupStep === "mood" && !currentTask && (
       <section
         style={{
           marginTop: 10,
@@ -2791,7 +2802,7 @@ function StudentApp() {
       </section>
     )}  
 
-    {joined && postPhase === "treasure" && !tasksetComplete && !currentTask && (
+    {joined && postPhase === "mood" && warmupStep === "treasure" && !currentTask && (
       <section
         style={{
           marginTop: 10,
@@ -3075,8 +3086,8 @@ function StudentApp() {
                   onAnswerChange={setCurrentAnswerDraft}
                   answerDraft={currentAnswerDraft}
                   disabled={taskLocked || submitting}
+                  review={taskLocked ? reviewState : null}
                   mode={taskLocked ? "review" : "play"}
-                  review={reviewState}
                   socket={socket}
                   roomCode={roomCode}
                   playerTeam={{ id: teamId, teamName }}
