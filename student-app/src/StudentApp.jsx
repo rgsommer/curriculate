@@ -617,6 +617,7 @@ function StudentApp() {
   const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
   const [waitingForLaunch, setWaitingForLaunch] = useState(false);
   const tasksStartedRef = useRef(false);
+  const [tasksStarted, setTasksStarted] = useState(false);
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
@@ -881,6 +882,8 @@ function StudentApp() {
       setPointToast(null);
       setShortAnswerReveal(null);
       setTasksetComplete(false);
+      setTasksStarted(true);
+      setWarmupStep("done");
       setPostPhase("tasks");
       setTaskRenderError(null);
 
