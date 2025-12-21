@@ -616,6 +616,7 @@ function StudentApp() {
   const [scanError, setScanError] = useState(null);
   const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
   const [waitingForLaunch, setWaitingForLaunch] = useState(false);
+  const tasksStartedRef = useRef(false);
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
@@ -824,6 +825,11 @@ function StudentApp() {
 
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
+      tasksStartedRef.current = true;
+        setWarmupStep("done");
+        setPostPhase("tasks");
+        setScannerActive(false);
+        setWaitingForLaunch(false);
       setCurrentTask(payload.task || payload || null);
       const idx =
         typeof payload.taskIndex === "number"
