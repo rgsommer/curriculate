@@ -1094,10 +1094,8 @@ function StudentApp() {
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
       setShortAnswerReveal(null);
-
       if (postSubmitTimerRef.current) {
         clearInterval(postSubmitTimerRef.current);
-        postSubmitTimerRef.current = null;
       }
     };
   }, []);
@@ -1564,10 +1562,10 @@ function StudentApp() {
     if (!data || !joined || !teamId) return;
 
     if (currentTaskRef.current || postPhaseRef.current === "tasks") {
-      setScanError(null);
-      setScannerActive(false);
-      return;
-    }
+    setScanError(null);
+    setScannerActive(false);
+    return;
+  }
 
     setScanError(null);
 
