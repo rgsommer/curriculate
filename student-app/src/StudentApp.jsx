@@ -1610,6 +1610,10 @@ function StudentApp() {
       setWaitingForLaunch(true);
       if (currentTaskRef.current) {
         setPostPhase("tasks");
+        socket.emit("task:requestNext", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+        });
       } else if (warmupStep === "done") {
         setPostPhase("treasure"); // idle waiting for tasks
       } else {
@@ -1621,7 +1625,7 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
     if (postPhase !== "treasure") return;
-    //if (currentTask) return;
+    if (currentTask) return;
     if (!teamId || !roomCode) return;
 
     const now = Date.now();
