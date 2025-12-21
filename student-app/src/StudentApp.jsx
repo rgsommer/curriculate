@@ -832,6 +832,8 @@ function StudentApp() {
         setScannerActive(false);
         setWaitingForLaunch(false);
       setCurrentTask(payload.task || payload || null);
+      setMoodTask(null); // Clear mood
+      setTreasureRunner(false); // Clear treasure
       const idx =
         typeof payload.taskIndex === "number"
           ? payload.taskIndex
@@ -2809,6 +2811,8 @@ function StudentApp() {
         <TreasureRunner
           onSubmit={(payload) => {
             handleSubmitAnswer({ type: TASK_TYPES.TREASURE_RUNNER, ...payload })
+            setMoodTask(null);
+            
           }}
         />
         <div style={{ marginTop: 10, fontWeight: 700, opacity: 0.8, textAlign: "center" }}>
