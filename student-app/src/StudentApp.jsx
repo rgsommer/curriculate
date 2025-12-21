@@ -1235,22 +1235,17 @@ function StudentApp() {
       // -------------------------
       if (response.currentTask?.task) {
         const ct = response.currentTask.task;
-        const t = String(ct?.taskType || ct?.type || "").toLowerCase();
-        if (t === "mood-checkin") {
-          setCurrentTask(ct);
-          setCurrentTaskIndex(
-            typeof response.currentTask.taskIndex === "number"
-              ? response.currentTask.taskIndex
-              : null
-          );
-          setTasksetTotalTasks(
-            typeof response.currentTask.totalTasks === "number"
-              ? response.currentTask.totalTasks
-              : null
-          );
 
-          const limit = response.currentTask.timeLimitSeconds || null;
-          setTimeLimitSeconds(limit);
+        setCurrentTask(ct);
+        setCurrentTaskIndex(
+          typeof response.currentTask.taskIndex === "number" ? response.currentTask.taskIndex : null
+        );
+        setTasksetTotalTasks(
+          typeof response.currentTask.totalTasks === "number" ? response.currentTask.totalTasks : null
+        );
+
+        const limit = response.currentTask.timeLimitSeconds || null;
+        setTimeLimitSeconds(limit);
 
           if (limit && limit > 0) {
             const endTime = Date.now() + limit * 1000;
@@ -1275,13 +1270,6 @@ function StudentApp() {
           setTimeLimitSeconds(null);
           setRemainingMs(0);
         }
-      } else {
-        setCurrentTask(null);
-        setCurrentTaskIndex(null);
-        setTasksetTotalTasks(null);
-        setTimeLimitSeconds(null);
-        setRemainingMs(0);
-      }
 
       // -------------------------
       // Turn on camera scanner if we have any assignment signal
