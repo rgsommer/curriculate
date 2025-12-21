@@ -205,10 +205,19 @@ export default function AiTasksetGenerator() {
           setGenerating(false);
           return;
         }
-        estimatedTaskCount = Math.max(
-          selectedTaskTypes.length,
-          Math.min(20, Math.round(totalDurationMinutes / 5))
+        let estimatedTaskCount = Math.min(
+          20,
+          Math.round(totalDurationMinutes / 5)
         );
+
+        if (uniqueTaskTypes) {
+          estimatedTaskCount = Math.min(
+            estimatedTaskCount,
+            selectedTaskTypes.length
+          );
+        }
+
+        estimatedTaskCount = Math.max(1, estimatedTaskCount);
         requiredTaskTypes = selectedTaskTypes;
       }
 
@@ -223,6 +232,7 @@ export default function AiTasksetGenerator() {
         subject: form.subject,
         difficulty: form.difficulty,
         learningGoal: form.learningGoal,
+        uniqueTaskTypes: true,
 
         // Title = main topic; textarea = special considerations
         topicTitle: form.name.trim(),

@@ -1186,9 +1186,32 @@ const handleTaskSubmit = (payload) => {
       const effectiveTeamId =
         t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
 
+      const stationIndex =
+        Number.isFinite(t?.stationIndex) ? t.stationIndex : null;
+
+      const wordFromItems =
+        Array.isArray(t?.items) && stationIndex != null
+          ? (t.items?.[stationIndex]?.word ||
+            t.items?.[stationIndex]?.hangmanWord ||
+            t.items?.[stationIndex]?.answer ||
+            t.items?.[stationIndex]?.value)
+          : null;
+
+      const wordFallback =
+        t?.word ||
+        t?.hangmanWord ||
+        t?.data?.word ||
+        wordFromItems ||
+        (Array.isArray(t?.options) ? t.options?.[0] : null) ||
+        t?.correctAnswer ||
+        t?.displayKey ||
+        "";
+
+      const tFixed = { ...t, word: wordFallback };
+
       content = (
         <HangmanDuelTask
-          task={t}
+          task={tFixed}
           onSubmit={handleTaskSubmit}
           socket={socketRef}
           roomCode={roomCode}

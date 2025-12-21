@@ -189,6 +189,29 @@ export default function MadDashSequenceTask({
         MAD DASH!
       </h1>
 
+      <style>{`
+        @keyframes md-run {
+          0% { transform: translateX(-20vw); }
+          100% { transform: translateX(120vw); }
+        }
+      `}</style>
+
+      <div
+        style={{
+          position: "absolute",
+          top: 90,
+          left: 0,
+          right: 0,
+          fontSize: 34,
+          opacity: 0.9,
+          whiteSpace: "nowrap",
+          animation: "md-run 3.5s linear infinite",
+        }}
+        aria-hidden="true"
+      >
+        🏃‍♂️💨 🏃‍♀️💨 🏃‍♂️💨
+      </div>
+
       {/* SEQUENCE PHASE – GLOWING BUBBLES */}
       {showSequence && (
         <div className="text-center px-4 md:px-8">

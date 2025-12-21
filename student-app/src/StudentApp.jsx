@@ -867,28 +867,6 @@ function StudentApp() {
         console.log("[StudentApp] Ignoring task:assigned during review lock", payload);
         return;
       }
-      tasksStartedRef.current = true;
-        setWarmupStep("done");
-        setPostPhase("tasks");
-        setScannerActive(false);
-        setWaitingForLaunch(false);
-      setCurrentTask(payload.task || payload || null);
-      setPostPhase("tasks"); // Clear mood
-      const idx =
-        typeof payload.taskIndex === "number"
-          ? payload.taskIndex
-          : typeof payload.index === "number"
-          ? payload.index
-          : null;
-      setCurrentTaskIndex(idx);
-      const total =
-        typeof payload.totalTasks === "number"
-          ? payload.totalTasks
-          : typeof payload.total === "number"
-          ? payload.total
-          : null;
-      setTasksetTotalTasks(total);
-
       const limit = payload.timeLimitSeconds || null;
       setTimeLimitSeconds(limit);
 
@@ -916,6 +894,28 @@ function StudentApp() {
           countdownTimerRef.current = null;
         }
       }
+
+      tasksStartedRef.current = true;
+        setWarmupStep("done");
+        setPostPhase("tasks");
+        setScannerActive(false);
+        setWaitingForLaunch(false);
+      setCurrentTask(payload.task || payload || null);
+      setPostPhase("tasks"); // Clear mood
+      const idx =
+        typeof payload.taskIndex === "number"
+          ? payload.taskIndex
+          : typeof payload.index === "number"
+          ? payload.index
+          : null;
+      setCurrentTaskIndex(idx);
+      const total =
+        typeof payload.totalTasks === "number"
+          ? payload.totalTasks
+          : typeof payload.total === "number"
+          ? payload.total
+          : null;
+      setTasksetTotalTasks(total);
 
       setCurrentAnswerDraft("");
       setTaskLocked(false);
@@ -1113,7 +1113,15 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
-    if (taskLocked) return;
+    if (taskLocked) {
+      setScannerActive(false);
+      return;
+    }
+
+    if (postSubmitSecondsLeft != null) {
+      setScannerActive(false);
+      return;
+    }
     
     // If we’re supposed to scan (because of gating), open camera.
     if (mustScan && !scannerActive) {
@@ -1123,16 +1131,19 @@ function StudentApp() {
 
     // Ensure assignment info is fetched so colour can display
     const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
-    if (!inferredColor && teamId) socket.emit("room:request-state", { teamId });
-      }, [
-        joined,
-        mustScan,
-        currentTask,
-        waitingForLaunch,
-        assignedColor,
-        assignedStationId,
-        teamId,
-      ]);
+  if (!inferredColor && teamId) socket.emit("room:request-state", { teamId });
+    }, [
+      joined,
+      mustScan,
+      currentTask,
+      waitingForLaunch,
+      assignedColor,
+      assignedStationId,
+      teamId,
+      taskLocked,
+      postSubmitSecondsLeft,
+      scannerActive,
+    ]);
 
     useEffect(() => {
       if (currentTask && postPhase !== "tasks") {
@@ -1537,6 +1548,8 @@ function StudentApp() {
 
         setStatusMessage("");
         const isPhysical =
+          !!currentTask?.isPhysical ||
+          !!currentTask?.config?.isPhysical ||
           currentTask?.category === "PHYSICAL";
 
         const shouldReview = !isPhysical;
@@ -1797,7 +1810,10 @@ function StudentApp() {
     currentTask?.taskType === "photo-journal" ||
     currentTask?.taskType === "photo_journal";
 
-  const isPhysicalTask = currentTask?.category === "PHYSICAL";
+  const isPhysicalTask =
+    !!currentTask?.isPhysical ||
+    !!currentTask?.config?.isPhysical ||
+    currentTask?.category === "PHYSICAL";
 
   const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
@@ -2227,11 +2243,9 @@ function StudentApp() {
           position: absolute;
           inset: 0;
           border-radius: inherit;
-          background: radial-gradient(
-            circle at top,
-            rgba(15,23,42,0.3),
-            rgba(15,23,42,0.9)
-          );
+          background: rgba(0,0,0,0.25);      /* not grey “sheet”, just light dim */
+          backdrop-filter: blur(6px);        /* glass */
+          -webkit-backdrop-filter: blur(6px);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -2917,7 +2931,7 @@ function StudentApp() {
   </section>
 )}
 
-          {/* TASKSET COMPLETE SCREEN */}
+{/* TASKSET COMPLETE SCREEN */}
 {tasksetComplete && (
   <section
     style={{
@@ -2969,525 +2983,532 @@ function StudentApp() {
 )}
 
 {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-{scannerActive && !tasksetComplete && (
-          <section
-            style={{
-              marginTop: 6,
-              padding: 16,
-              borderRadius: 18,
-              background: (assignedColor || stationInfo?.color || "black"),
-              color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
-              border: "2px solid rgba(255,255,255,0.55)",
-              textAlign: "center",
-              boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
-              {(() => {
-                if (taskLocked) return; //revisit
-                const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
-                const locationUpper = String(roomLocation || "").toUpperCase();
+{scannerActive && !tasksetComplete && postSubmitSecondsLeft == null && !taskLocked && ( //revisit
+<section
+  style={{
+    marginTop: 6,
+    padding: 16,
+    borderRadius: 18,
+    background: (assignedColor || stationInfo?.color || "black"),
+    color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
+    border: "2px solid rgba(255,255,255,0.55)",
+    textAlign: "center",
+    boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+  }}
+>
+  <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
+    {(() => {
+      if (taskLocked) return; //revisit
+      const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
+      const locationUpper = String(roomLocation || "").toUpperCase();
 
-                if (!colorUpper) return "Scan station QR code";
+      if (!colorUpper) return "Scan station QR code";
 
-                // Multi-room only: show location + colour
-                if (isMultiRoom && enforceLocation && locationUpper) {
-                  return expectedColor ? `Scan QR Code at ${destinationText}` : "Scan station QR code";
-                }
+      // Multi-room only: show location + colour
+      if (isMultiRoom && enforceLocation && locationUpper) {
+        return expectedColor ? `Scan QR Code at ${destinationText}` : "Scan station QR code";
+      }
 
-                // Single-room: colour only
-                return `Scan QR Code at ${colorUpper}`;
-              })()}
-            </div>
+      // Single-room: colour only
+      return `Scan QR Code at ${colorUpper}`;
+    })()}
+  </div>
 
-            <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-              Get ready to Curriculate!
-            </div>
+  <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
+    Get ready to Curriculate!
+  </div>
 
+  <div
+    style={{
+      marginTop: 12,
+      background: "rgba(0,0,0,0.25)",
+      borderRadius: 14,
+      overflow: "hidden",
+      border: "2px solid rgba(255,255,255,0.55)",
+    }}
+  >
+    <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
+      <div style={{
+        backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
+        borderRadius: 16,
+        padding: 16,
+        display: "inline-block",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+        maxWidth: "90vw",
+      }}>
+        {scannerActive && (
+          <div style={{ position: "relative", width: "100%" }}>
+            <QrScanner onScan={handleScan} onError={setScanError} />
+          {waitingForLaunch && (
             <div
               style={{
-                marginTop: 12,
-                background: "rgba(0,0,0,0.25)",
-                borderRadius: 14,
-                overflow: "hidden",
-                border: "2px solid rgba(255,255,255,0.55)",
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                padding: 20,
+                fontSize: 28,
+                fontWeight: 800,
+                color: "white",
+                textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+                pointerEvents: "none",
               }}
             >
-              <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
-                <div style={{
-                  backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
-                  borderRadius: 16,
-                  padding: 16,
-                  display: "inline-block",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-                  maxWidth: "90vw",
-                }}>
-                  {scannerActive && (
-                    <div style={{ position: "relative", width: "100%" }}>
-                      <QrScanner onScan={handleScan} onError={setScanError} />
-                    {waitingForLaunch && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          textAlign: "center",
-                          padding: 20,
-                          fontSize: 28,
-                          fontWeight: 800,
-                          color: "white",
-                          textShadow: "0 2px 12px rgba(0,0,0,0.6)",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        {waitingForLaunch && !tasksStartedRef.current && (
-                          <div>Waiting for Curriculate to Launch...</div>
-                        )}                      
-                      </div>
-                    )}
-                  </div>
-                )}
-                  {scanError && (
-                    <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
-                      ⚠ {scanError}
-                    </div>
-                  )}
-                </div>
-              </section>
+              {waitingForLaunch && !tasksStartedRef.current && (
+                <div>Waiting for Curriculate to Launch...</div>
+              )}                      
             </div>
-
-            {scanStatus === "ok" && (
-              <div style={{ marginTop: 10, fontWeight: 800 }}>
-                ✅ Correct station — waiting for your next task…
-              </div>
-            )}
-          </section>
+          )}
+        </div>
+      )}
+        {scanError && (
+          <div className="scan-error" style={{ marginTop: 12, color: "#ef4444", fontWeight: 600 }}>
+            ⚠ {scanError}
+          </div>
         )}
-        
-          {/* TASK CARD (only when not gated) */}
-          {joined && postPhase === "tasks" && !currentTask && (!mustScan || taskLocked) && !tasksetComplete && waitingForLaunch && (
-            <section
-              style={{
-                marginTop: 10,
-                padding: 16,
-                borderRadius: 18,
-                background: "rgba(15,23,42,0.25)", //was 0.9
-                border: "1px solid rgba(148,163,184,0.75)",
-                color: "#f9fafb",
-                textAlign: "center",
-                boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
-              }}
-            >
-              <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>Getting your first activity ready…</div>
-              <div style={{ marginTop: 6, opacity: 0.9 }}>
-                If this takes more than a few seconds, rescan or ask your teacher.
-              </div>
-            </section>
-          )}
+      </div>
+    </section>
+  </div>
 
-          {joined && postPhase === "tasks" && !!currentTask && (!mustScan || taskLocked) && !tasksetComplete && (
-            <section
-              className="task-card"
-              style={{
-                ...baseTaskCardStyle,
-                ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
-                  ? { background: "transparent", padding: 0, border: "none", boxShadow: "none" }
-                  : { background: taskCardBackground }),
-              }}
-            >
-              <h2
-                style={{
-                  marginTop: 0,
-                  marginBottom: 6,
-                  fontSize: responseHeadingFontSize,
-                  letterSpacing: 0.2,
-                  color: "#0f172a",
-                  ...(musicalChairsHeaderStyle || {}),
-                  ...(mysteryHeaderStyle || {}),
-                  ...(hangmanHeaderStyle || {}),
-                }}
-              >
-                {currentTaskNumber && (
-                  <div style={{ marginBottom: 8, fontSize: "0.8rem", color: "#4b5563" }}>{progressLabel}</div>
-                )}
-                {currentTask.title || currentTask.name || "Task"}
-              </h2>
-              <div
-                className="task-content-inner"
-                style={{
-                  position: "relative",
-                  fontSize: responseFontSize,
-                  lineHeight: 1.5,
-                  minHeight: isMotionMission || isPetFeeding ? "60vh" : undefined,
-                }}
-              >
-                <TaskErrorBoundary onError={(err) => setTaskRenderError(err)} fallback={
-                  <div style={{ marginTop: 12 }}>
-                    <button
-                      type="button"
-                      onClick={endReviewAndReturnToScan}
-                      className="border rounded-full px-4 py-2"
-                      style={{ background: "#111827", color: "#fff", fontWeight: 700 }}
-                    >
-                      Back to scan
-                    </button>
-                  </div>
-                }>
-                <TaskRunner
-                  key={
-                    currentTask?.id ??
-                    currentTask?._id ??
-                    currentTaskIndex ??
-                    currentTask?.prompt ??
-                    "task"
-                  }
-                  task={themedTask}
-                  taskTypes={TASK_TYPES}
-                  onSubmit={handleSubmitAnswer}
-                  submitting={submitting}
-                  onAnswerChange={setCurrentAnswerDraft}
-                  answerDraft={currentAnswerDraft}
-                  disabled={taskLocked || submitting}
-                  review={taskLocked ? reviewState : null}
-                  mode={taskLocked ? "review" : "play"}
-                  socket={socket}
-                  roomCode={roomCode}
-                  playerTeam={{ id: teamId, teamName }}
-                  memberNames={members}
-                  partnerAnswer={partnerAnswer}
-                  showPartnerReply={showPartnerReply}
-                  onPartnerReply={(replyText) => {
-                  if (!roomCode || !joined || !currentTask || teamId == null) return;
+  {scanStatus === "ok" && (
+    <div style={{ marginTop: 10, fontWeight: 800 }}>
+      ✅ Correct station — waiting for your next task…
+    </div>
+  )}
+</section>
+)}
 
-                  socket.emit("collab:reply", {
-                    roomCode: roomCode.trim().toUpperCase(),
-                    teamId,
-                    taskIndex:
-                      typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-                        ? currentTaskIndex
-                        : null,
-                    reply: replyText,
-                  });
-                  }}
-                />
-                </TaskErrorBoundary>
-              </div>
+{/* TASK CARD (only when not gated) */}
+{joined && postPhase === "tasks" && !currentTask && (!mustScan || taskLocked) && !tasksetComplete && waitingForLaunch && (
+  <section
+    style={{
+      marginTop: 10,
+      padding: 16,
+      borderRadius: 18,
+      background: "rgba(15,23,42,0.25)", //was 0.9
+      border: "1px solid rgba(148,163,184,0.75)",
+      color: "#f9fafb",
+      textAlign: "center",
+      boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
+    }}
+  >
+    <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>Getting your first activity ready…</div>
+    <div style={{ marginTop: 6, opacity: 0.9 }}>
+      If this takes more than a few seconds, rescan or ask your teacher.
+    </div>
+  </section>
+)}
 
-              {taskLocked && !isPhysicalTask && (
-                <div className="task-locked-overlay">
-                  <style>{`
-                    @keyframes matchPopIn {
-                      from { transform: translateY(6px) scale(0.98); opacity: 0; }
-                      to   { transform: translateY(0px) scale(1); opacity: 1; }
-                    }
-                  `}</style>
-
-                  {postSubmitSecondsLeft != null && (() => {
-                    // Determine total lock duration safely for progress bar
-                    const lockTotal =
-                      typeof reviewState?.secondsLeft === "number"
-                        ? reviewState.secondsLeft
-                        : (typeof postSubmitSecondsLeft === "number"
-                            ? postSubmitSecondsLeft
-                            : DEFAULT_POST_SUBMIT_SECONDS);
-
-                    const percent =
-                      lockTotal > 0
-                        ? Math.round((postSubmitSecondsLeft / lockTotal) * 100)
-                        : 0;
-
-                    return (
-                      <div style={{ width: "100%" }}>
-                        <div>
-                          Review your answer… <br />
-                          <span
-                            style={{
-                              fontVariantNumeric: "tabular-nums",
-                              fontSize: "1.1rem",
-                            }}
-                          >
-                            {postSubmitSecondsLeft}s
-                          </span>
-                        </div>
-
-                        {/* Countdown bar */}
-                        <div style={{ marginTop: 12 }}>
-                          <div
-                            style={{
-                              height: 3,
-                              borderRadius: 999,
-                              background: "rgba(255,255,255,0.25)",
-                              overflow: "hidden",
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: "100%",
-                                width: `${percent}%`,
-                                background: "rgba(255,255,255,0.85)",
-                                transition: "width 200ms linear",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                      {/* Matching answer reveal during lock (highlight + animate + percent) */}
-                      {currentTask?.taskType === "matching" && (() => {
-                        const data = buildMatchingReveal(currentTask, reviewState);
-                        if (!data) return null;
-
-                        const { rows, correctCount, totalPairs, percent } = data;
-                        const pointsEarned = typeof reviewState?.points === "number" ? reviewState.points : null;
-                        const maxPoints = typeof currentTask?.points === "number" ? currentTask.points : null;
-
-                        return (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              width: "100%",
-                              background: "rgba(255,255,255,0.14)",
-                              border: "1px solid rgba(255,255,255,0.25)",
-                              borderRadius: 12,
-                              padding: 12,
-                              textAlign: "left",
-                            }}
-                          >
-                            {/* Summary row */}
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                              <div style={{ fontWeight: 900 }}>Matching results</div>
-                              <div style={{ fontWeight: 900 }}>
-                                {percent}% ({correctCount}/{totalPairs})
-                                {pointsEarned != null ? ` • +${pointsEarned}` : ""}
-                                {maxPoints != null ? `/${maxPoints}` : ""}
-                              </div>
-                            </div>
-
-                            {/* Percent bar */}
-                            <div
-                              style={{
-                                marginTop: 8,
-                                height: 10,
-                                borderRadius: 999,
-                                background: "rgba(0,0,0,0.18)",
-                                overflow: "hidden",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: `${percent}%`,
-                                  height: "100%",
-                                  borderRadius: 999,
-                                  background: percent >= 80 ? "rgba(34,197,94,0.9)" : percent >= 50 ? "rgba(250,204,21,0.9)" : "rgba(239,68,68,0.9)",
-                                  transition: "width 250ms ease",
-                                }}
-                              />
-                            </div>
-
-                            {/* Pair reveals */}
-                            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                              {rows.map((r, i) => {
-                                const bg = r.isCorrect
-                                  ? "rgba(34,197,94,0.22)"
-                                  : r.isAnswered
-                                  ? "rgba(239,68,68,0.22)"
-                                  : "rgba(0,0,0,0.14)";
-
-                                const border = r.isCorrect
-                                  ? "1px solid rgba(34,197,94,0.45)"
-                                  : r.isAnswered
-                                  ? "1px solid rgba(239,68,68,0.45)"
-                                  : "1px solid rgba(255,255,255,0.18)";
-
-                                const icon = r.isCorrect ? "✅" : r.isAnswered ? "❌" : "⏺️";
-
-                                return (
-                                  <div
-                                    key={`${r.leftId}:${r.rightId}`}
-                                    style={{
-                                      padding: 10,
-                                      borderRadius: 12,
-                                      background: bg,
-                                      border,
-                                      animation: "matchPopIn 240ms ease both",
-                                      animationDelay: `${i * 60}ms`,
-                                    }}
-                                  >
-                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                                      <div style={{ fontWeight: 800 }}>{r.left}</div>
-                                      <div style={{ fontWeight: 900, opacity: 0.95 }}>{icon}</div>
-                                    </div>
-
-                                    <div style={{ marginTop: 6, fontSize: "0.95rem", opacity: 0.98 }}>
-                                      <div>
-                                        <span style={{ opacity: 0.85 }}>Correct:</span>{" "}
-                                        <span style={{ fontWeight: 800 }}>{r.right}</span>
-                                      </div>
-
-                                      {r.isAnswered && !r.isCorrect && (
-                                        <div style={{ marginTop: 4 }}>
-                                          <span style={{ opacity: 0.85 }}>You chose:</span>{" "}
-                                          <span style={{ fontWeight: 800 }}>{r.studentRightText ?? "—"}</span>
-                                        </div>
-                                      )}
-
-                                      {!r.isAnswered && (
-                                        <div style={{ marginTop: 4, opacity: 0.85 }}>
-                                          You didn’t match this one.
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* ✅ Objective answer key during lock: revisit later
-                      {isObjectiveTask(currentTask) && (() => {
-                        const key = buildObjectiveAnswerKey(currentTask);
-                        if (!key) return null;
-
-                        if (key.rows) {
-                          return (
-                            <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                              <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                {key.rows.map((r, i) => (
-                                  <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                                    <div style={{ fontWeight: 700 }}>{r.q}</div>
-                                    <div style={{ marginTop: 4, opacity: 0.95 }}>
-                                      Correct: <strong>{r.a}</strong>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        if (key.ordered) {
-                          return (
-                            <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                              <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
-                              <ol style={{ margin: 0, paddingLeft: 20 }}>
-                                {key.ordered.map((it) => (
-                                  <li key={it.n} style={{ marginBottom: 6 }}>
-                                    {it.text}
-                                  </li>
-                                ))}
-                              </ol>
-                            </div>
-                          );
-                        }
-
-                        if (key.buckets) {
-                          return (
-                            <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                              <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                {key.buckets.map((b, idx) => (
-                                  <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                                    <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                      {(b.items || []).map((txt, j) => (
-                                        <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
-                                          {txt}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                                {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
-                                  <div style={{ marginTop: 6, opacity: 0.9 }}>
-                                    Unassigned: <strong>{key.unassigned.join(", ")}</strong>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        return null;
-                      })()} */}
-                </div>
-              )}
-              </section>
-            )}
-          {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
-          {joined && currentTask && hardMustScan && (
-            <section
-              style={{
-                marginTop: 10,
-                padding: 16,
-                borderRadius: 18,
-                background: "rgba(15,23,42,0.9)",
-                border: "1px solid rgba(248,250,252,0.8)",
-                color: "#fefce8",
-                textAlign: "center",
-                boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
-              }}
-            >
-              <div style={{ fontSize: "1rem", fontWeight: 700 }}>
-                🚪 Scan the correct station first
-              </div>
-              <p style={{ marginTop: 6, fontSize: "0.9rem", marginBottom: 0 }}>
-                Your teacher has locked this task to a specific station. Scan the station’s
-                QR code to unlock it.
-              </p>
-            </section>
-          )}
-        </main>
+{joined && postPhase === "tasks" && !!currentTask && (!mustScan || taskLocked) && !tasksetComplete && (
+  <section
+    className="task-card"
+    style={{
+      ...baseTaskCardStyle,
+      ...(isMotionMission || isPetFeeding || isRecordAudio || isJeopardy
+        ? { background: "transparent", padding: 0, border: "none", boxShadow: "none" }
+        : { background: taskCardBackground }),
+    }}
+  >
+    <h2
+      style={{
+        marginTop: 0,
+        marginBottom: 6,
+        fontSize: responseHeadingFontSize,
+        letterSpacing: 0.2,
+        color: "#0f172a",
+        ...(musicalChairsHeaderStyle || {}),
+        ...(mysteryHeaderStyle || {}),
+        ...(hangmanHeaderStyle || {}),
+      }}
+    >
+      {currentTaskNumber && (
+        <div style={{ marginBottom: 8, fontSize: "0.8rem", color: "#4b5563" }}>{progressLabel}</div>
       )}
-
-      {/* TREAT BANNER */}
-      {treatMessage && <div className="treat-banner">{treatMessage}</div>}
-
-      {/* POINT TOAST */}
-      {pointToast && (
-        <div className={`toast ${pointToast.positive ? "" : "negative"}`}>
-          {pointToast.message}
+      {currentTask.title || currentTask.name || "Task"}
+    </h2>
+    <div
+      className="task-content-inner"
+      style={{
+        position: "relative",
+        fontSize: responseFontSize,
+        lineHeight: 1.5,
+        minHeight: isMotionMission || isPetFeeding ? "60vh" : undefined,
+      }}
+    >
+      <TaskErrorBoundary onError={(err) => setTaskRenderError(err)} fallback={
+        <div style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            onClick={endReviewAndReturnToScan}
+            className="border rounded-full px-4 py-2"
+            style={{ background: "#111827", color: "#fff", fontWeight: 700 }}
+          >
+            Back to scan
+          </button>
         </div>
-      )}
+      }>
+      <TaskRunner
+        key={
+          currentTask?.id ??
+          currentTask?._id ??
+          currentTaskIndex ??
+          currentTask?.prompt ??
+          "task"
+        }
+        task={themedTask}
+        taskTypes={TASK_TYPES}
+        onSubmit={handleSubmitAnswer}
+        submitting={submitting}
+        onAnswerChange={setCurrentAnswerDraft}
+        answerDraft={currentAnswerDraft}
+        disabled={taskLocked || submitting}
+        review={taskLocked ? reviewState : null}
+        mode={taskLocked ? "review" : "play"}
+        socket={socket}
+        roomCode={roomCode}
+        playerTeam={{ id: teamId, teamName }}
+        memberNames={members}
+        partnerAnswer={partnerAnswer}
+        showPartnerReply={showPartnerReply}
+        onPartnerReply={(replyText) => {
+        if (!roomCode || !joined || !currentTask || teamId == null) return;
 
-      {/* CONFETTI LAYER */}
-      {showConfetti && (
-        <div className="confetti-layer">
-          {Array.from({ length: 40 }).map((_, i) => (
-            <div
-              key={i}
-              className="confetti-piece"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 40}%`,
-                transform: `rotate(${Math.random() * 45}deg)`,
-              }}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* FOOTER STRIP */}
-      <div
-        style={{
-          marginTop: 16,
-          height: "50vh",
-          borderTopLeftRadius: 32,
-          borderTopRightRadius: 32,
-          backgroundColor: assignedColor
-            ? assignedColor
-            : stationInfo?.color
-            ? stationInfo.color
-            : "#e5e7eb",
-          boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
+        socket.emit("collab:reply", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+          taskIndex:
+            typeof currentTaskIndex === "number" && currentTaskIndex >= 0
+              ? currentTaskIndex
+              : null,
+          reply: replyText,
+        });
         }}
       />
+      </TaskErrorBoundary>
     </div>
+
+    {taskLocked && !isPhysicalTask && (
+      <div className="task-locked-overlay">
+        <style>{`
+          @keyframes matchPopIn {
+            from { transform: translateY(6px) scale(0.98); opacity: 0; }
+            to   { transform: translateY(0px) scale(1); opacity: 1; }
+          }
+        `}</style>
+
+        {postSubmitSecondsLeft != null && (() => {
+          // Determine total lock duration safely for progress bar
+          const lockTotal =
+            typeof reviewState?.secondsLeft === "number"
+              ? reviewState.secondsLeft
+              : (typeof postSubmitSecondsLeft === "number"
+                  ? postSubmitSecondsLeft
+                  : DEFAULT_POST_SUBMIT_SECONDS);
+
+          const percent =
+            lockTotal > 0
+              ? Math.round((postSubmitSecondsLeft / lockTotal) * 100)
+              : 0;
+
+          return (
+            <div style={{ width: "100%", paddingTop: 18 }}>
+              <div>
+                Review your answer… <br />
+                <span
+                  style={{
+                    fontVariantNumeric: "tabular-nums",
+                    fontSize: "1.1rem",
+                  }}
+                >
+                  {postSubmitSecondsLeft}s
+                </span>
+              </div>
+
+              {/* Countdown bar */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  left: 12,
+                  right: 12,
+                }}
+              >
+                <div
+                  style={{
+                    height: 4,
+                    borderRadius: 999,
+                    background: "rgba(255,255,255,0.25)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${percent}%`,
+                      background: "rgba(255,255,255,0.9)",
+                      transition: "width 200ms linear",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+            {/* Matching answer reveal during lock (highlight + animate + percent) */}
+            {currentTask?.taskType === "matching" && (() => {
+              const data = buildMatchingReveal(currentTask, reviewState);
+              if (!data) return null;
+
+              const { rows, correctCount, totalPairs, percent } = data;
+              const pointsEarned = typeof reviewState?.points === "number" ? reviewState.points : null;
+              const maxPoints = typeof currentTask?.points === "number" ? currentTask.points : null;
+
+              return (
+                <div
+                  style={{
+                    marginTop: 12,
+                    width: "100%",
+                    background: "rgba(255,255,255,0.14)",
+                    border: "1px solid rgba(255,255,255,0.25)",
+                    borderRadius: 12,
+                    padding: 12,
+                    textAlign: "left",
+                  }}
+                >
+                  {/* Summary row */}
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <div style={{ fontWeight: 900 }}>Matching results</div>
+                    <div style={{ fontWeight: 900 }}>
+                      {percent}% ({correctCount}/{totalPairs})
+                      {pointsEarned != null ? ` • +${pointsEarned}` : ""}
+                      {maxPoints != null ? `/${maxPoints}` : ""}
+                    </div>
+                  </div>
+
+                  {/* Percent bar */}
+                  <div
+                    style={{
+                      marginTop: 8,
+                      height: 10,
+                      borderRadius: 999,
+                      background: "rgba(0,0,0,0.18)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${percent}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        background: percent >= 80 ? "rgba(34,197,94,0.9)" : percent >= 50 ? "rgba(250,204,21,0.9)" : "rgba(239,68,68,0.9)",
+                        transition: "width 250ms ease",
+                      }}
+                    />
+                  </div>
+
+                  {/* Pair reveals */}
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {rows.map((r, i) => {
+                      const bg = r.isCorrect
+                        ? "rgba(34,197,94,0.22)"
+                        : r.isAnswered
+                        ? "rgba(239,68,68,0.22)"
+                        : "rgba(0,0,0,0.14)";
+
+                      const border = r.isCorrect
+                        ? "1px solid rgba(34,197,94,0.45)"
+                        : r.isAnswered
+                        ? "1px solid rgba(239,68,68,0.45)"
+                        : "1px solid rgba(255,255,255,0.18)";
+
+                      const icon = r.isCorrect ? "✅" : r.isAnswered ? "❌" : "⏺️";
+
+                      return (
+                        <div
+                          key={`${r.leftId}:${r.rightId}`}
+                          style={{
+                            padding: 10,
+                            borderRadius: 12,
+                            background: bg,
+                            border,
+                            animation: "matchPopIn 240ms ease both",
+                            animationDelay: `${i * 60}ms`,
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                            <div style={{ fontWeight: 800 }}>{r.left}</div>
+                            <div style={{ fontWeight: 900, opacity: 0.95 }}>{icon}</div>
+                          </div>
+
+                          <div style={{ marginTop: 6, fontSize: "0.95rem", opacity: 0.98 }}>
+                            <div>
+                              <span style={{ opacity: 0.85 }}>Correct:</span>{" "}
+                              <span style={{ fontWeight: 800 }}>{r.right}</span>
+                            </div>
+
+                            {r.isAnswered && !r.isCorrect && (
+                              <div style={{ marginTop: 4 }}>
+                                <span style={{ opacity: 0.85 }}>You chose:</span>{" "}
+                                <span style={{ fontWeight: 800 }}>{r.studentRightText ?? "—"}</span>
+                              </div>
+                            )}
+
+                            {!r.isAnswered && (
+                              <div style={{ marginTop: 4, opacity: 0.85 }}>
+                                You didn’t match this one.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ✅ Objective answer key during lock: revisit later
+            {isObjectiveTask(currentTask) && (() => {
+              const key = buildObjectiveAnswerKey(currentTask);
+              if (!key) return null;
+
+              if (key.rows) {
+                return (
+                  <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {key.rows.map((r, i) => (
+                        <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                          <div style={{ fontWeight: 700 }}>{r.q}</div>
+                          <div style={{ marginTop: 4, opacity: 0.95 }}>
+                            Correct: <strong>{r.a}</strong>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              if (key.ordered) {
+                return (
+                  <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
+                    <ol style={{ margin: 0, paddingLeft: 20 }}>
+                      {key.ordered.map((it) => (
+                        <li key={it.n} style={{ marginBottom: 6 }}>
+                          {it.text}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                );
+              }
+
+              if (key.buckets) {
+                return (
+                  <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {key.buckets.map((b, idx) => (
+                        <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                          <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {(b.items || []).map((txt, j) => (
+                              <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
+                                {txt}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
+                        <div style={{ marginTop: 6, opacity: 0.9 }}>
+                          Unassigned: <strong>{key.unassigned.join(", ")}</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              return null;
+            })()} */}
+          </div>
+        )}
+        </section>
+      )}
+    {/* Must scan gate (message only; scanner itself is already above when scannerActive) */}
+    {joined && currentTask && hardMustScan && (
+      <section
+        style={{
+          marginTop: 10,
+          padding: 16,
+          borderRadius: 18,
+          background: "rgba(15,23,42,0.9)",
+          border: "1px solid rgba(248,250,252,0.8)",
+          color: "#fefce8",
+          textAlign: "center",
+          boxShadow: "0 16px 40px rgba(15,23,42,0.95)",
+        }}
+      >
+        <div style={{ fontSize: "1rem", fontWeight: 700 }}>
+          🚪 Scan the correct station first
+        </div>
+        <p style={{ marginTop: 6, fontSize: "0.9rem", marginBottom: 0 }}>
+          Your teacher has locked this task to a specific station. Scan the station’s
+          QR code to unlock it.
+        </p>
+      </section>
+      )}
+    </main>
+    )}
+
+    {/* TREAT BANNER */}
+    {treatMessage && <div className="treat-banner">{treatMessage}</div>}
+
+    {/* POINT TOAST */}
+    {pointToast && (
+      <div className={`toast ${pointToast.positive ? "" : "negative"}`}>
+        {pointToast.message}
+      </div>
+    )}
+
+    {/* CONFETTI LAYER */}
+    {showConfetti && (
+      <div className="confetti-layer">
+        {Array.from({ length: 40 }).map((_, i) => (
+          <div
+            key={i}
+            className="confetti-piece"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 40}%`,
+              transform: `rotate(${Math.random() * 45}deg)`,
+            }}
+          />
+        ))}
+      </div>
+    )}
+
+    {/* FOOTER STRIP */}
+    <div
+      style={{
+        marginTop: 16,
+        height: "50vh",
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        backgroundColor: assignedColor
+          ? assignedColor
+          : stationInfo?.color
+          ? stationInfo.color
+          : "#e5e7eb",
+        boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
+      }}
+    />
+  </div>
   );
 }
 
