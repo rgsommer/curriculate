@@ -1561,12 +1561,6 @@ function StudentApp() {
   const handleScan = (data) => {
     if (!data || !joined || !teamId) return;
 
-    if (currentTaskRef.current || postPhaseRef.current === "tasks") {
-    setScanError(null);
-    setScannerActive(false);
-    return;
-  }
-
     setScanError(null);
 
     const norm = normalizeStationId(data);
