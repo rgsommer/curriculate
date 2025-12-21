@@ -3313,7 +3313,7 @@ function StudentApp() {
                         );
                       })()}
 
-                      {/* ✅ Objective answer key during lock */}
+                      {/* ✅ Objective answer key during lock: revisit later
                       {isObjectiveTask(currentTask) && (() => {
                         const key = buildObjectiveAnswerKey(currentTask);
                         if (!key) return null;
@@ -3379,7 +3379,7 @@ function StudentApp() {
                         }
 
                         return null;
-                      })()}
+                      })()} */}
                 </div>
               )}
               </section>
