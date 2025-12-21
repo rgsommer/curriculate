@@ -1065,9 +1065,11 @@ function StudentApp() {
     !!currentTask?.config?.lockToStationId;
     
   const mustScan =
-  assignedStationId
-    ? (scannedStationId !== assignedStationId)
-    : (!!assignedColor && !scannedStationId);
+    taskLocked
+      ? false
+      : assignedStationId
+        ? (scannedStationId !== assignedStationId)
+        : (!!assignedColor && !scannedStationId);
 
   const hardMustScan = taskHardLocksStation && mustScan;
     
@@ -1076,6 +1078,8 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
 
+    if (taskLocked) return;
+    
     // If we’re supposed to scan (because of gating), open camera.
     if (mustScan && !scannerActive) {
       setScannerActive(true);
