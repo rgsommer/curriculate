@@ -826,6 +826,12 @@ function StudentApp() {
 
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
+      // If we are still showing the 15s review overlay, do NOT advance tasks yet.
+      // This prevents "Task 2 appears before scan complete".
+      if (taskLocked || postSubmitSecondsLeft != null) {
+        console.log("[StudentApp] Ignoring task:assigned during review lock", payload);
+        return;
+      }
       tasksStartedRef.current = true;
         setWarmupStep("done");
         setPostPhase("tasks");
@@ -1540,14 +1546,15 @@ function StudentApp() {
   const handleScan = (data) => {
     if (!data || !joined || !teamId) return;
 
-    // If we already have a real task (or are in task mode), ignore scans entirely
-    if (currentTaskRef.current || postPhaseRef.current === "tasks") {
+    // Ignore scans only if a task is currently on screen (or we're in locked review).
+    // We MUST allow scans between tasks even if postPhase is "tasks".
+    if (currentTaskRef.current || taskLocked) {
       setScanError(null);
       setScannerActive(false);
       return;
     }
 
-    const norm = normalizeStationId(data);
+  const norm = normalizeStationId(data);
     if (!norm?.id) {
       setScanError("Unrecognized station QR code.");
       return;
@@ -1608,17 +1615,19 @@ function StudentApp() {
       // After a correct scan, we ALWAYS go into the warm-up pipeline.
       // No task requests from scan.
       setWaitingForLaunch(true);
-      if (currentTaskRef.current) {
+
+      // If the taskset has started, scanning means: request the next task.
+      if (tasksStartedRef.current || tasksStarted) {
         setPostPhase("tasks");
         socket.emit("task:requestNext", {
           roomCode: roomCode.trim().toUpperCase(),
           teamId,
         });
-      } else if (warmupStep === "done") {
-        setPostPhase("treasure"); // idle waiting for tasks
-      } else {
-        setPostPhase("mood");     // ALWAYS mood first
+        return;
       }
+      // Otherwise use warm-up pipeline
+      if (warmupStep === "done") setPostPhase("treasure");
+      else setPostPhase("mood");
     });
   };
 
