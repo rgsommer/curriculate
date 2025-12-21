@@ -266,6 +266,25 @@ mongoose
 //  ROOM ENGINE (In-Memory)
 // ====================================================================
 const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
+
+function pruneTeacherRooms(teacherSocketId, keepCode = null) {
+  const keep = keepCode ? String(keepCode).toUpperCase() : null;
+
+  for (const [code, room] of Object.entries(rooms)) {
+    if (!room) continue;
+    if (room.teacherSocketId !== teacherSocketId) continue;
+    if (keep && code === keep) continue;
+
+    // notify any UIs that still care
+    io.to(code).emit("room:closed", { roomCode: code });
+
+    // boot everyone from the socket.io room, then delete
+    io.in(code).socketsLeave(code);
+    delete rooms[code];
+    console.log(`[ROOM] pruned old teacher room ${code} for socket ${teacherSocketId}`);
+  }
+}
+
 const OFFLINE_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
 
 // Keep-alive server interval that broadcasts available rooms every ~5–10 seconds
@@ -1442,6 +1461,8 @@ socket.on("task:force-advance", ({ roomCode }) => {
     const code = roomCode?.toUpperCase();
     if (!code) return;
 
+    pruneTeacherRooms(socket.id, code);
+
     if (rooms[code]) {
       rooms[code].teacherSocketId = socket.id;
       socket.join(code);
@@ -1492,6 +1513,8 @@ socket.on("task:force-advance", ({ roomCode }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
+
+    pruneTeacherRooms(socket.id, code);
 
     // keep room alive + reconnect-safe ownership
     room.teacherSocketId = socket.id;
@@ -3793,6 +3816,12 @@ socket.on(
   // ─────────────────────────────────────────────
   socket.on("disconnect", async (reason) => {
     try {
+      // ✅ Teacher disconnect: stop broadcasting rooms from this LiveSession instance
+      if (socket.data?.role === "teacher") {
+        pruneTeacherRooms(socket.id, null);
+        return;
+      }
+
       const code = (socket.data?.roomCode || "").toUpperCase();
       const teamId = socket.data?.teamId;
 
