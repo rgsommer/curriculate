@@ -2802,7 +2802,7 @@ function StudentApp() {
       </section>
     )}  
 
-    {joined && postPhase === "mood" && warmupStep === "treasure" && !currentTask && (
+    {joined && postPhase === "treasure" && (warmupStep === "treasure" || warmupStep === "done") && !currentTask && (
       <section
         style={{
           marginTop: 10,
