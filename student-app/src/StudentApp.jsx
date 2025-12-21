@@ -1177,7 +1177,7 @@ function StudentApp() {
       setJoined(true);
       setStatusMessage("");
 
-      // Gold-standard pipeline start: Join → Scan → Mood → Treasure → first task
+      // Pipeline start: Join → Scan → Mood → Treasure → first task
       setPostPhase("scan");
       setTasksetComplete(false);
       setTaskRenderError(null);
@@ -2811,7 +2811,7 @@ function StudentApp() {
         <TreasureRunner
           onSubmit={(payload) => {
             handleSubmitAnswer({ type: TASK_TYPES.TREASURE_RUNNER, ...payload })
-            setMoodTask(null);
+            setPostPhase("tasks");
             
           }}
         />
