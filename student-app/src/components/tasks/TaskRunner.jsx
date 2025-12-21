@@ -835,25 +835,6 @@ const handleTaskSubmit = (payload) => {
   let content = null;
 
   switch (type) {
-    // ✅ Mood Check-in (NEW)
-    case (TASK_TYPES.MOOD_CHECKIN || "mood-checkin"): {
-      const effectiveTeamId =
-        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
-
-      content = (
-        <MoodCheckInTask
-          task={t}
-          onSubmit={handleTaskSubmit}
-          socket={socketRef}     // if your MoodCheckInTask emits its own event
-          roomCode={roomCode}
-          teamId={effectiveTeamId}
-          memberNames={memberNames}
-          disabled={effectiveDisabled || isReview}
-        />
-      );
-      break;
-    }
-        
     // ✅ Treasure Runner (warm-up while waiting)
     case TASK_TYPES.TREASURE_RUNNER:
     case "treasure-runner": {
