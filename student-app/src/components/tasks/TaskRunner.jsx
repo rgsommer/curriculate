@@ -638,15 +638,23 @@ const t = useMemo(() => {
 const type = t ? normalizeTaskType(t.taskType || t.type) : null;
 
 const handleTaskSubmit = (payload) => {
+  // If a task submits a primitive (ShortAnswerTask submits a string),
+  // wrap it so StudentApp can route it consistently.
+  let outgoing = payload;
+  if (payload != null && typeof payload !== "object") {
+    outgoing = {
+      type, // normalized type for the current rendered task
+      answer: payload,
+    };
+  }
+
   const pType =
-    payload && typeof payload === "object" ? payload.type || payload.taskType : null;
+    outgoing && typeof outgoing === "object" ? outgoing.type || outgoing.taskType : null;
 
   if (pType === "mood-checkin") setMoodDone(true);
 
-  // TreasureRunner points are awarded via sockets inside the task,
-  // and StudentApp also does an optimistic score update.
   try {
-    onSubmit && onSubmit(payload);
+    onSubmit && onSubmit(outgoing);
   } catch {}
 };
 
