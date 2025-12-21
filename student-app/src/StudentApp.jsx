@@ -1613,7 +1613,7 @@ function StudentApp() {
       setWaitingForLaunch(true);
 
       // If a real task already exists, never go back to warmups
-      if (currentTask) {
+      if (currentTaskRef.current) {
         setPostPhase("tasks");
       } else {
         // Warmups run only once per join
