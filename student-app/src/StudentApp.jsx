@@ -1614,13 +1614,35 @@ function StudentApp() {
 
       // After a correct scan, we ALWAYS go into the warm-up pipeline.
       // No task requests from scan.
+      setScannedStationId(norm.id);
+      setScannerActive(false);
+
       setWaitingForLaunch(true);
 
-      // If the taskset has started, scanning means: request the next task.
+      // If the taskset has started, scanning means: request the next task NOW.
       if (tasksStartedRef.current || tasksStarted) {
         setPostPhase("tasks");
-        return;
-      }
+        const now = Date.now();
+        if (now - lastRequestNextAtRef.current >= 1200) {
+          lastRequestNextAtRef.current = now;
+          socket.emit("task:requestNext", {
+            roomCode: code,
+            teamId,
+          });
+        }
+      if (tasksStartedRef.current || tasksStarted) {
+        setPostPhase("tasks");
+         const now = Date.now();
+         if (now - lastRequestNextAtRef.current >= 1200) {
+           lastRequestNextAtRef.current = now;
+           socket.emit("task:requestNext", {
+             roomCode: code,
+             teamId,
+           });
+         }
+         return;
+     }
+
       // Otherwise use warm-up pipeline
       if (warmupStep === "done") setPostPhase("treasure");
       else setPostPhase("mood");
@@ -1629,19 +1651,18 @@ function StudentApp() {
 
   useEffect(() => {
     if (!joined) return;
-    //if (postPhase !== "treasure") return;
     if (currentTask) return;
     if (!teamId || !roomCode) return;
+
+    // only when scan gate is satisfied
+    if (scannedStationId !== assignedStationId) return;
 
     const now = Date.now();
     if (now - lastRequestNextAtRef.current < 1200) return;
     lastRequestNextAtRef.current = now;
 
-    socket.emit("task:requestNext", {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamId,
-    });
-  }, [joined, postPhase, roomIsActive, currentTask, teamId, roomCode]);
+    socket.emit("task:requestNext", { roomCode: roomCode.trim().toUpperCase(), teamId });
+  }, [joined, currentTask, teamId, roomCode, scannedStationId, assignedStationId]);
 
   // ─────────────────────────────────────────────
   // Derived values for UI
