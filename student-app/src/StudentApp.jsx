@@ -832,8 +832,7 @@ function StudentApp() {
         setScannerActive(false);
         setWaitingForLaunch(false);
       setCurrentTask(payload.task || payload || null);
-      setMoodTask(null); // Clear mood
-      setTreasureRunner(false); // Clear treasure
+      setPostPhase("tasks"); // Clear mood
       const idx =
         typeof payload.taskIndex === "number"
           ? payload.taskIndex
