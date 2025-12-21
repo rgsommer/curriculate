@@ -585,56 +585,7 @@ const teamKey = useMemo(() => {
   return rc && tid ? `${rc}::${tid}` : null;
 }, [roomCode, playerTeam?.id]);
 
-const [moodDone, setMoodDone] = useState(() => {
-  try {
-    return teamKey ? sessionStorage.getItem(`crl:moodDone:${teamKey}`) === "1" : false;
-  } catch {
-    return false;
-  }
-});
-
-const [seenRealTask, setSeenRealTask] = useState(() => {
-  try {
-    return teamKey ? sessionStorage.getItem(`crl:seenRealTask:${teamKey}`) === "1" : false;
-  } catch {
-    return false;
-  }
-});
-
-useEffect(() => {
-  if (!teamKey) return;
-  try {
-    sessionStorage.setItem(`crl:moodDone:${teamKey}`, moodDone ? "1" : "0");
-    sessionStorage.setItem(`crl:seenRealTask:${teamKey}`, seenRealTask ? "1" : "0");
-  } catch {}
-}, [teamKey, moodDone, seenRealTask]);
-
-const rawTask = task || null;
-const rawType = rawTask ? normalizeTaskType(rawTask.taskType || rawTask.type) : null;
-
-useEffect(() => {
-  if (!rawType) return;
-  if (rawType !== TASK_TYPES.MOOD_CHECKIN && rawType !== TASK_TYPES.TREASURE_RUNNER) {
-    setSeenRealTask(true);
-  }
-}, [rawType]);
-
-// Effective task for the "waiting window":
-// 1) MoodCheckin (once) after station scan
-// 2) TreasureRunner until the first real task arrives
-const t = useMemo(() => {
-  if (!moodDone && rawType !== TASK_TYPES.MOOD_CHECKIN) {
-    return {
-      taskType: TASK_TYPES.MOOD_CHECKIN,
-      prompt: "Quick check-in before we start:",
-    };
-  }
-  if (!rawTask && moodDone && !seenRealTask) {
-    return { taskType: TASK_TYPES.TREASURE_RUNNER };
-  }
-  return rawTask;
-}, [rawTask, rawType, moodDone, seenRealTask]);
-
+const t = task || null;
 const type = t ? normalizeTaskType(t.taskType || t.type) : null;
 
 const handleTaskSubmit = (payload) => {
@@ -651,8 +602,7 @@ const handleTaskSubmit = (payload) => {
   const pType =
     outgoing && typeof outgoing === "object" ? outgoing.type || outgoing.taskType : null;
 
-  if (pType === "mood-checkin") setMoodDone(true);
-
+    
   try {
     onSubmit && onSubmit(outgoing);
   } catch {}
@@ -824,7 +774,7 @@ const handleTaskSubmit = (payload) => {
           readOnly={isReview}
           task={t}
           review={review}
-          onSubmit={isReview ? () => {} : onSubmit}
+          onSubmit={isReview ? () => {} : handleTaskSubmit}
           submitting={submitting}
           disabled={effectiveDisabled || isReview}
         />
@@ -835,6 +785,26 @@ const handleTaskSubmit = (payload) => {
   let content = null;
 
   switch (type) {
+    // ✅ Mood Check-in (NEW)
+    case TASK_TYPES.MOOD_CHECKIN:
+    case "mood-checkin": {
+    const effectiveTeamId =
+        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+
+      content = (
+        <MoodCheckInTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          socket={socketRef}     // if your MoodCheckInTask emits its own event
+          roomCode={roomCode}
+          teamId={effectiveTeamId}
+          memberNames={memberNames}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    }
+        
     // ✅ Treasure Runner (warm-up while waiting)
     case TASK_TYPES.TREASURE_RUNNER:
     case "treasure-runner": {
@@ -922,7 +892,8 @@ const handleTaskSubmit = (payload) => {
       );
       break;
 
-    case (TASK_TYPES.MATCHING || "matching"):
+    case TASK_TYPES.MATCHING:
+    case "matching":
       content = (
         <MatchingTask
           task={t}
@@ -940,7 +911,8 @@ const handleTaskSubmit = (payload) => {
       content = <PhotoTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
-    case TASK_TYPES.PHOTO_JOURNAL || "photo-journal":
+    case TASK_TYPES.PHOTO_JOURNAL:
+    case "photo-journal":
       content = (
         <PhotoJournalTask
           task={t}
@@ -1031,7 +1003,8 @@ const handleTaskSubmit = (payload) => {
       );
       break;
 
-    case (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"): {
+    case TASK_TYPES.WORD_WEAVER_DUEL:
+    case "word-weaver-duel": {
       const effectiveTeamId =
         t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
 
@@ -1208,7 +1181,8 @@ const handleTaskSubmit = (payload) => {
       );
       break;
 
-    case (TASK_TYPES.HANGMAN_DUEL || "hangman-duel"): {
+    case TASK_TYPES.HANGMAN_DUEL:
+    case "hangman-duel": {
       const effectiveTeamId =
         t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
 
