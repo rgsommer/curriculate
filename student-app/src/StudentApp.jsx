@@ -607,11 +607,6 @@ function StudentApp() {
 
   const [warmupDone, setWarmupDone] = useState(false);
   const [warmupStep, setWarmupStep] = useState("mood"); 
-  const currentTaskRef = useRef(null);
-  useEffect(() => { currentTaskRef.current = currentTask; }, [currentTask]);
-
-  const postPhaseRef = useRef(postPhase);
-  useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
 
   // Station + scanner state
   const [assignedStationId, setAssignedStationId] = useState(null);
