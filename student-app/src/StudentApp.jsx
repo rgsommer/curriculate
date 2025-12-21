@@ -629,9 +629,7 @@ function StudentApp() {
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
   const currentTaskRef = useRef(null);
     useEffect(() => { currentTaskRef.current = currentTask; }, [currentTask]);
-  const isPhysicalTask =
-    currentTask?.category === CATEGORY.PHYSICAL;
-
+  
   const postPhaseRef = useRef(postPhase);
     useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
 
@@ -1494,6 +1492,8 @@ function StudentApp() {
         answer: normalizedAnswer,
       };
 
+      setSubmitting(true);
+      
       socket.emit("task:submit", payload, (response) => {
         if (!response || response.error) {
           console.warn("Submit error:", response?.error || "Unknown error");
@@ -1503,7 +1503,10 @@ function StudentApp() {
         }
 
         setStatusMessage("");
-        const shouldReview = !isPhysicalTask;
+        const isPhysical =
+          currentTask?.category === CATEGORY.PHYSICAL;
+
+        const shouldReview = !isPhysical;
 
         if (shouldReview) {
           setTaskLocked(true);
@@ -3049,7 +3052,7 @@ function StudentApp() {
             </section>
           )}
 
-          {joined && postPhase === "tasks" && !!currentTask && !mustScan && !tasksetComplete && (
+          {joined && postPhase === "tasks" && !!currentTask && (!mustScan || taskLocked) && !tasksetComplete && (
             <section
               className="task-card"
               style={{
@@ -3137,7 +3140,7 @@ function StudentApp() {
                 </TaskErrorBoundary>
               </div>
 
-              {taskLocked && (
+              {taskLocked && !isPhysicalTask && (
                 <div className="task-locked-overlay">
                   <style>{`
                     @keyframes matchPopIn {
