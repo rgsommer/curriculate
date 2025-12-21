@@ -1629,7 +1629,9 @@ function StudentApp() {
       // After a correct scan, we ALWAYS go into the warm-up pipeline.
       // No task requests from scan.
       setWaitingForLaunch(true);
-      if (warmupStep === "done") {
+      if (currentTaskRef.current) {
+        setPostPhase("tasks");
+      } else if (warmupStep === "done") {
         setPostPhase("treasure"); // idle waiting for tasks
       } else {
         setPostPhase("mood");     // ALWAYS mood first
