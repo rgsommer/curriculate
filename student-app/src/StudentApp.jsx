@@ -1619,10 +1619,6 @@ function StudentApp() {
       // If the taskset has started, scanning means: request the next task.
       if (tasksStartedRef.current || tasksStarted) {
         setPostPhase("tasks");
-        socket.emit("task:requestNext", {
-          roomCode: roomCode.trim().toUpperCase(),
-          teamId,
-        });
         return;
       }
       // Otherwise use warm-up pipeline
@@ -1633,7 +1629,7 @@ function StudentApp() {
 
   useEffect(() => {
     if (!joined) return;
-    if (postPhase !== "treasure") return;
+    //if (postPhase !== "treasure") return;
     if (currentTask) return;
     if (!teamId || !roomCode) return;
 
