@@ -26,7 +26,6 @@ const DEFAULT_LOCATION = "Classroom";
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
 // --- MATCHING reveal helper (student review overlay) ---
-// --- MATCHING reveal helper (student review overlay) ---
 function buildMatchingReveal(task, reviewState) {
   const cfg = task?.config && typeof task.config === "object" ? task.config : {};
   const correctMatches =
@@ -710,55 +709,91 @@ function StudentApp() {
 
     const savedRoom = (lsGet(LS_KEYS.roomCode) || "").trim().toUpperCase();
     const savedTeamSessionId = (lsGet(LS_KEYS.teamSessionId) || "").trim();
-
     if (!savedRoom || !savedTeamSessionId) return;
 
     resumeAttemptedRef.current = true;
     setStatusMessage("Reconnecting to your room…");
 
-    socket.emit(
-      "resume-team-session",
-      { roomCode: savedRoom, teamSessionId: savedTeamSessionId },
-      (resp) => {
-        const ok = resp && (resp.success === true || resp.ok === true);
-        if (!ok) {
-          // If resume fails, clear saved keys so the join form works normally.
-          clearSavedJoin();
-          setStatusMessage(resp?.error || "Could not resume your session. Please join again.");
-          return;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      setStatusMessage("");
+      socket.off("rooms:available", onRooms);
+    };
+
+    const wipeAndReturnToJoin = (msg) => {
+      clearSavedJoin();
+      setRoomCode("");
+      setJoined(false);
+      setTeamId(null);
+      setTeamSessionId(null);
+      setStatusMessage(msg || "That room is no longer available. Please join a new room.");
+      finish();
+    };
+
+    const doResume = () => {
+      socket.emit(
+        "resume-team-session",
+        { roomCode: savedRoom, teamSessionId: savedTeamSessionId },
+        (resp) => {
+          const ok = resp && (resp.success === true || resp.ok === true);
+          if (!ok) return wipeAndReturnToJoin(resp?.error || "Could not resume your session.");
+
+          setRoomCode(savedRoom);
+          setTeamId(resp.teamId || savedTeamSessionId);
+          setTeamSessionId(resp.teamId || savedTeamSessionId);
+          setJoined(true);
+          setStatusMessage("");
+
+          const stationId = resp.assignedStationId || resp.stationId || null;
+          if (stationId) {
+            const stationInfo = normalizeStationId(stationId);
+            setAssignedStationId(stationInfo.id);
+            setAssignedColor(stationInfo.color || null);
+            lastStationIdRef.current = stationInfo.id;
+          }
+
+          const state = resp.roomState || null;
+          const effectiveTeam = resp.teamId || savedTeamSessionId;
+          if (state?.scores && typeof state.scores[effectiveTeam] === "number") {
+            setScoreTotal(state.scores[effectiveTeam]);
+          }
+
+          finish();
         }
+      );
+    };
 
-        setRoomCode(savedRoom);
-        setTeamId(resp.teamId || savedTeamSessionId);
-        setTeamSessionId(resp.teamId || savedTeamSessionId);
-        setJoined(true);
-        setStatusMessage("");
+    const onRooms = (roomsList = []) => {
+      const exists = Array.isArray(roomsList)
+        ? roomsList.some((r) => String(r?.roomCode || "").trim().toUpperCase() === savedRoom)
+        : false;
 
-        // Restore station + colour
-        const stationId = resp.assignedStationId || resp.stationId || null;
-        if (stationId) {
-          const stationInfo = normalizeStationId(stationId);
-          setAssignedStationId(stationInfo.id);
-          setAssignedColor(stationInfo.color || null);
-          lastStationIdRef.current = stationInfo.id;
-        }
-
-        // Restore room state bits (scores/noise/location)
-        const state = resp.roomState || null;
-        if (state?.scores && typeof state.scores[(resp.teamId || savedTeamSessionId)] === "number") {
-          setScoreTotal(state.scores[(resp.teamId || savedTeamSessionId)]);
-        }
-        const expectedRoom = displayRoomFromSlugOrLabel(
-          roomState?.teams?.[teamId]?.locationSlug || "Classroom",
-          roomState?.selectedRooms || []
-        );
-        const expectedColor = (assignedColor || "").toUpperCase();
-
-        // If a taskset is running, backend will send the current task immediately.
-        // Make sure scanner is off until we need it.
-        if (!mustScan) setScannerActive(false);
+      if (!exists) {
+        // not broadcast => clear and return to join (no extra click)
+        wipeAndReturnToJoin("Room is no longer available. Join a new room.");
+        return;
       }
-    );
+
+      // broadcast exists => resume
+      doResume();
+    };
+
+    socket.on("rooms:available", onRooms);
+
+    // Timeout safety in case broadcast is slow/offline
+    const t = setTimeout(() => {
+      if (finished) return;
+      // If we can't confirm broadcast, don't trap the UI.
+      // Wipe saved join so user can join cleanly.
+      wipeAndReturnToJoin("Could not confirm room. Please join a new room.");
+    }, 6500);
+
+    return () => {
+      clearTimeout(t);
+      socket.off("rooms:available", onRooms);
+    };
   }, [connected, joined]);
 
   // ─────────────────────────────────────────────
