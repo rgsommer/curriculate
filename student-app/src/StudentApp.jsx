@@ -1498,8 +1498,7 @@ function StudentApp() {
 
         setStatusMessage("");
         setTaskLocked(true);
-        setSubmitting(false);
-
+        
         // Always start a review countdown so the task will clear even if task:scored never arrives
         const fallbackSecondsRaw =
           Number(response?.postSubmitSeconds) > 0
