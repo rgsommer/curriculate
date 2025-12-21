@@ -1624,7 +1624,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
             ? room.teams[teamId].taskIndex
             : 0;
 
-        sendTaskToTeam(room, teamId, idx);
+        sendTaskToTeam(room, teamId, idx); //revisit this: re-join scan should not cause next task
       }
 
       socket.data.roomCode = code;
@@ -2794,35 +2794,6 @@ const code = (roomCode || "").toUpperCase();
       });
     }
 
-    // =======================================================
-    // AUTO-ADVANCE: when ALL teams have submitted this task
-    // =======================================================
-
-    try {
-      const totalTeams = Object.keys(room.teams || {}).length;
-
-      const submittedTeams = new Set(
-        room.submissions
-          .filter(s => s.taskIndex === idx)
-          .map(s => s.teamId)
-      );
-
-      const allSubmitted =
-        totalTeams > 0 && submittedTeams.size >= totalTeams;
-
-      if (allSubmitted) {
-        scheduleNextTask({
-          io,
-          session: room,
-          roomCode: code,
-          reason: "all-teams-submitted",
-          baseTaskIndex: idx,
-        });
-      }
-    } catch (err) {
-      console.error("Auto-advance scheduling failed:", err);
-    }
-
   };
 
   socket.on("student:submitAnswer", (payload, ack) => {
@@ -2837,7 +2808,7 @@ const code = (roomCode || "").toUpperCase();
     const team = room.teams[teamId];
     if (!team) return;
 
-    sendTaskToTeam(room, teamId, (team.taskIndex ?? -1) + 1);
+    // sendTaskToTeam(room, teamId, (team.taskIndex ?? -1) + 1);
 
   });
 
