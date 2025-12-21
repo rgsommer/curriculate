@@ -1492,8 +1492,6 @@ function StudentApp() {
         answer: normalizedAnswer,
       };
 
-      setSubmitting(true);
-      
       socket.emit("task:submit", payload, (response) => {
         if (!response || response.error) {
           console.warn("Submit error:", response?.error || "Unknown error");
