@@ -2795,7 +2795,7 @@ function StudentApp() {
             </div>
           )}
 
-    {joined && postPhase === "mood" && warmupStep === "mood" && !currentTask && (
+    {!tasksStartedRef.current && postPhase === "mood" && warmupStep === "mood" && !currentTask && (
       <section
         style={{
           marginTop: 10,
