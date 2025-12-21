@@ -1622,28 +1622,16 @@ function StudentApp() {
       // If the taskset has started, scanning means: request the next task NOW.
       if (tasksStartedRef.current || tasksStarted) {
         setPostPhase("tasks");
+
         const now = Date.now();
         if (now - lastRequestNextAtRef.current >= 1200) {
           lastRequestNextAtRef.current = now;
-          socket.emit("task:requestNext", {
-            roomCode: code,
-            teamId,
-          });
+          socket.emit("task:requestNext", { roomCode: code, teamId });
         }
-      if (tasksStartedRef.current || tasksStarted) {
-        setPostPhase("tasks");
-         const now = Date.now();
-         if (now - lastRequestNextAtRef.current >= 1200) {
-           lastRequestNextAtRef.current = now;
-           socket.emit("task:requestNext", {
-             roomCode: code,
-             teamId,
-           });
-         }
-         return;
-     }
+        return;
+      }
 
-      // Otherwise use warm-up pipeline
+      // Otherwise use warm-up pipeline (pre-taskset only)
       if (warmupStep === "done") setPostPhase("treasure");
       else setPostPhase("mood");
     });
@@ -1661,7 +1649,7 @@ function StudentApp() {
     if (now - lastRequestNextAtRef.current < 1200) return;
     lastRequestNextAtRef.current = now;
 
-    socket.emit("task:requestNext", { roomCode: roomCode.trim().toUpperCase(), teamId });
+    // socket.emit("task:requestNext", { roomCode: roomCode.trim().toUpperCase(), teamId });
   }, [joined, currentTask, teamId, roomCode, scannedStationId, assignedStationId]);
 
   // ─────────────────────────────────────────────
