@@ -604,6 +604,7 @@ function StudentApp() {
   const resumeAttemptedRef = useRef(false);
 
   const lastStationIdRef = useRef(null);
+  const [warmupDone, setWarmupDone] = useState(false);
 
   // Station + scanner state
   const [assignedStationId, setAssignedStationId] = useState(null);
@@ -1070,6 +1071,12 @@ function StudentApp() {
         teamId,
       ]);
 
+    useEffect(() => {
+      if (currentTask && postPhase !== "tasks") {
+        setPostPhase("tasks");
+      }
+    }, [currentTask, postPhase]);
+
   // Clean up timers on unmount
   useEffect(() => {
     return () => {
@@ -1281,6 +1288,8 @@ function StudentApp() {
     const handleJoinAnotherRoom = () => {
       userDroppedRoomRef.current = true;
       resumeAttemptedRef.current = false;
+      setWarmupDone(false);
+
       clearSavedJoin();
 
       // reset core session state
@@ -1388,6 +1397,7 @@ function StudentApp() {
       if (payloadType === TASK_TYPES.MOOD_CHECKIN) {
         setSubmitting(false);
         setStatusMessage("");
+        setWarmupDone(true);
         setPostPhase("treasure");
         return;
       }
@@ -1601,8 +1611,14 @@ function StudentApp() {
       // After a correct scan, we ALWAYS go into the warm-up pipeline.
       // No task requests from scan.
       setWaitingForLaunch(true);
-      setPostPhase("mood");
 
+      // If a real task already exists, never go back to warmups
+      if (currentTask) {
+        setPostPhase("tasks");
+      } else {
+        // Warmups run only once per join
+        setPostPhase(warmupDone ? "treasure" : "mood");
+      }
     });
   };
 
@@ -2757,7 +2773,7 @@ function StudentApp() {
             </div>
           )}
 
-    {joined && postPhase === "mood" && !tasksetComplete && (
+    {joined && postPhase === "mood" && !tasksetComplete && !currentTask && (
       <section
         style={{
           marginTop: 10,
