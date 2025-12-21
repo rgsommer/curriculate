@@ -1621,7 +1621,7 @@ function StudentApp() {
   useEffect(() => {
     if (!joined) return;
     if (postPhase !== "treasure") return;
-    if (currentTask) return;
+    //if (currentTask) return;
     if (!teamId || !roomCode) return;
 
     const now = Date.now();
