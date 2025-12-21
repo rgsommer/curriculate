@@ -578,6 +578,8 @@ function StudentApp() {
   const [tasksetComplete, setTasksetComplete] = useState(false);
   const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "feedback" | "trophy"
   const [taskRenderError, setTaskRenderError] = useState(null);
+  const isPhysicalTask =
+    currentTask?.category === CATEGORY.PHYSICAL;
 
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
@@ -1501,42 +1503,49 @@ function StudentApp() {
         }
 
         setStatusMessage("");
-        setTaskLocked(true);
-        
-        // Always start a review countdown so the task will clear even if task:scored never arrives
-        const fallbackSecondsRaw =
-          Number(response?.postSubmitSeconds) > 0
-            ? Number(response.postSubmitSeconds)
-            : DEFAULT_POST_SUBMIT_SECONDS;
+        const shouldReview = !isPhysicalTask;
 
-        const fallbackSeconds = Math.max(3, Number(fallbackSecondsRaw) || DEFAULT_POST_SUBMIT_SECONDS || 15);
-        
-        setReviewState({
-          ...(response?.review && typeof response.review === "object" ? response.review : null),
-          correct: typeof response?.correct === "boolean" ? response.correct : undefined,
-          points: typeof response?.points === "number" ? response.points : undefined,
+        if (shouldReview) {
+          setTaskLocked(true);
 
-          studentAnswer: normalizedAnswer,
-          taskId: payload.taskId,
-          taskIndex: payload.taskIndex,
-          secondsLeft: fallbackSeconds,
-        });
+          const fallbackSeconds =
+            Number(response?.postSubmitSeconds) > 0
+              ? Number(response.postSubmitSeconds)
+              : DEFAULT_POST_SUBMIT_SECONDS;
 
-        setPostSubmitSecondsLeft(fallbackSeconds);
+          setReviewState({
+            ...(response?.review && typeof response.review === "object" ? response.review : null),
+            correct: typeof response?.correct === "boolean" ? response.correct : undefined,
+            points: typeof response?.points === "number" ? response.points : undefined,
+            studentAnswer: normalizedAnswer,
+            taskId: payload.taskId,
+            taskIndex: payload.taskIndex,
+            secondsLeft: fallbackSeconds,
+          });
 
-        if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
+          setPostSubmitSecondsLeft(fallbackSeconds);
 
-        let t = fallbackSeconds;
-        const timer = setInterval(() => {
-          t -= 1;
-          setPostSubmitSecondsLeft(t);
-          if (t <= 0) {
-            clearInterval(timer);
-            endReviewAndReturnToScan();
-          }
-        }, 1000);
+          if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
 
-        postSubmitTimerRef.current = timer;
+          let t = fallbackSeconds;
+          const timer = setInterval(() => {
+            t -= 1;
+            setPostSubmitSecondsLeft(t);
+            if (t <= 0) {
+              clearInterval(timer);
+              endReviewAndReturnToScan();
+            }
+          }, 1000);
+
+          postSubmitTimerRef.current = timer;
+        } else {
+          // ✅ PHYSICAL TASK: no overlay, go straight to scan
+          setTaskLocked(false);
+          setReviewState(null);
+          setPostSubmitSecondsLeft(null);
+          endReviewAndReturnToScan();
+          return;
+        }
 
         if (response.alertSound) {
           tryPlayAlertSound();
@@ -2937,6 +2946,7 @@ function StudentApp() {
           >
             <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
               {(() => {
+                if (taskLocked) return; //revisit
                 const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
                 const locationUpper = String(roomLocation || "").toUpperCase();
 
@@ -3019,7 +3029,7 @@ function StudentApp() {
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && postPhase === "tasks" && !mustScan && !tasksetComplete && waitingForLaunch && (
+          {joined && postPhase === "tasks" && (!mustScan || taskLocked) && !tasksetComplete && waitingForLaunch && (
             <section
               style={{
                 marginTop: 10,
