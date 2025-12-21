@@ -198,9 +198,31 @@ export default function LiveSession({ roomCode }) {
   const [roomSetup, setRoomSetup] = useState(null);
   const [showRoomSetup, setShowRoomSetup] = useState(false);
 
-  // End-session / email reports logic
+  // Pruning of old rooms
+  const teacherInstanceIdRef = useRef(null);
+  if (teacherInstanceIdRef.current == null) {
+    try {
+      const key = "curriculate.teacherInstanceId";
+      let id = localStorage.getItem(key);
+
+      if (!id) {
+        id =
+          (typeof crypto !== "undefined" && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        localStorage.setItem(key, id);
+      }
+
+      teacherInstanceIdRef.current = id;
+    } catch {
+      teacherInstanceIdRef.current = `fallback-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+  }
+
+    // End-session / email reports logic
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
+  const [includeIndividualReports, setIncludeIndividualReports] = useState(false);
 
   // Join & treat sounds
   const joinSoundRef = useRef(null);
@@ -257,7 +279,15 @@ export default function LiveSession({ roomCode }) {
   useEffect(() => {
     async function loadTeacherRooms() {
       const profile = await fetchMyProfile();
+      const include =
+        typeof profile?.includeIndividualReports === "boolean"
+          ? profile.includeIndividualReports
+          : !!profile?.includeStudentReports;
+
+      setIncludeIndividualReports(include);
+
       setTeacherRooms(profile.locationOptions || []);
+      setLocationOptions(profile.locationOptions || []);
 
       // Optional: use profile.treatsPerSession as the default treat quota
       if (profile && typeof profile.treatsPerSession !== "undefined") {
@@ -276,69 +306,28 @@ export default function LiveSession({ roomCode }) {
   useEffect(() => {
     if (!socket || !roomCode) return;
     const t = setInterval(() => {
-      socket.emit("teacher:keepalive", { roomCode });
+      socket.emit("teacher:keepalive", {
+        roomCode,
+        teacherInstanceId: teacherInstanceIdRef.current,
+      });
     }, 5000);
     return () => clearInterval(t);
-  }, [socket, roomCode]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadPresenterLocations() {
-      try {
-        const data = await fetchMyProfile();
-        if (cancelled || !data) return;
-
-        if (Array.isArray(data.locationOptions) && data.locationOptions.length) {
-          setLocationOptions(
-            data.locationOptions
-              .map((s) => (s || "").toString().trim())
-              .filter(Boolean)
-          );
-        }
-      } catch (err) {
-        console.error(
-          "[LiveSession] Failed to load presenter profile for locations:",
-          err
-        );
-      }
-    }
-
-    loadPresenterLocations();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // ----------------------------------------------------
-  // Create the room whenever roomCode changes
-  // ----------------------------------------------------
-  useEffect(() => {
-    if (!roomCode) return;
-
-    const code = roomCode.toUpperCase();
-    setStatus("Connecting…");
-
-    socket.emit("teacher:createRoom", { roomCode: code });
-
-    // We do NOT need to join as a student/team here.
-    setStatus("Connected.");
   }, [roomCode]);
 
-
-// ----------------------------------------------------
-// NEW: Re-create the room after any socket reconnect
-// (Fixes: students joining later get "room not available" if the server
-//  restarted and the teacher socket silently reconnected without changing roomCode.)
-// ----------------------------------------------------
-useEffect(() => {
+  // ----------------------------------------------------
+  // Ensure room exists + re-assert on reconnect
+  // ----------------------------------------------------
+  useEffect(() => {
   if (!roomCode) return;
 
   const code = roomCode.toUpperCase();
 
   const ensureRoom = () => {
     try {
-      socket.emit("teacher:createRoom", { roomCode: code });
+      socket.emit("teacher:createRoom", {
+        roomCode: code,
+        teacherInstanceId: teacherInstanceIdRef.current,
+      });
       setStatus("Connected.");
     } catch (err) {
       // no-op
@@ -668,7 +657,7 @@ useEffect(() => {
 
     const url = `${base}/station-posters?${params.toString()}`;
     window.open(url, "_blank", "noopener,noreferrer");
-  }
+  };
 
   const handleOpenKiosk = () => {
     const code = (roomCode || "").trim().toUpperCase();
@@ -676,7 +665,7 @@ useEffect(() => {
     // Host/Presenter kiosk view (opens in new tab)
     const url = `${window.location.origin}/host?room=${encodeURIComponent(code)}`;
     window.open(url, "_blank", "noopener,noreferrer");
-  };;
+  };
 
   const handleShowRoomLayoutClick = () => {
     if (!isFixedStationTaskset) return;
@@ -874,7 +863,7 @@ useEffect(() => {
       const generatedMeta = TASK_TYPE_META[generatedType] || {};
       const generatedIsMulti = !!generatedMeta.multiItemCapable;
 
-      // 🔵 DiffDetective special case (single-item)
+      // 🔵 DiffDetective
       if (generatedType === TASK_TYPES.DIFF_DETECTIVE) {
         setTaskConfig({
           prompt: baseTask.prompt || "",
@@ -882,26 +871,20 @@ useEffect(() => {
           gradeLevel: gradeStr || "",
           original: baseTask.original || "",
           modified: baseTask.modified || "",
-          differences: Array.isArray(baseTask.differences)
-            ? baseTask.differences
-            : [],
+          differences: Array.isArray(baseTask.differences) ? baseTask.differences : [],
         });
+        setShowAiGen(false);
+        return;
+      }
 
-      // 🟡 Brain Spark Notes special case
+      // 🟡 Brain Spark Notes
       if (generatedType === TASK_TYPES.BRAIN_SPARK_NOTES) {
         setTaskConfig({
           prompt: baseTask.prompt || "",
           subject: aiSubject || "Ad-hoc",
           gradeLevel: gradeStr || "",
-          bullets: Array.isArray(baseTask.bullets)
-            ? baseTask.bullets
-            : [],
+          bullets: Array.isArray(baseTask.bullets) ? baseTask.bullets : [],
         });
-
-        setShowAiGen(false);
-        return;
-      }
-
         setShowAiGen(false);
         return;
       }
@@ -1068,7 +1051,7 @@ useEffect(() => {
 
     socket.emit("teacher:endSessionAndEmail", {
       roomCode: code, // ✅ must be roomCode (backend expects this)
-      ownerId: teacher?.ownerId || teacher?._id || user?.id || user?._id,
+      ownerId: user?.id || user?._id,
       teacherEmail: user?.email, // optional but helpful
       includeIndividualReports,
     });

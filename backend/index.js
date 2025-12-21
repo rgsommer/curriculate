@@ -267,21 +267,31 @@ mongoose
 // ====================================================================
 const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
 
-function pruneTeacherRooms(teacherSocketId, keepCode = null) {
+// Teacher instance pruning: ensures each LiveSession instance owns only ONE room.
+// Uses a stable teacherInstanceId (sent by LiveSession), so refresh/reconnect doesn't leak rooms.
+function normalizeTeacherInstanceId(raw, socketIdFallback) {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  return v ? v : `socket:${socketIdFallback}`;
+}
+
+function pruneTeacherRoomsByInstance(teacherInstanceId, keepCode = null) {
   const keep = keepCode ? String(keepCode).toUpperCase() : null;
 
   for (const [code, room] of Object.entries(rooms)) {
     if (!room) continue;
-    if (room.teacherSocketId !== teacherSocketId) continue;
+    if (room.teacherInstanceId !== teacherInstanceId) continue;
     if (keep && code === keep) continue;
 
-    // notify any UIs that still care
-    io.to(code).emit("room:closed", { roomCode: code });
-
-    // boot everyone from the socket.io room, then delete
-    io.in(code).socketsLeave(code);
+    // notify and boot everyone, then delete
+    try {
+      io.to(code).emit("room:closed", { roomCode: code });
+    } catch {}
+    try {
+      io.in(code).socketsLeave(code);
+    } catch {}
     delete rooms[code];
-    console.log(`[ROOM] pruned old teacher room ${code} for socket ${teacherSocketId}`);
+
+    console.log(`[ROOM] pruned old room ${code} for teacherInstanceId=${teacherInstanceId}`);
   }
 }
 
@@ -1457,11 +1467,14 @@ socket.on("task:force-advance", ({ roomCode }) => {
   });
 
   // Teacher creates room
-  socket.on("teacher:createRoom", async ({ roomCode }, callback) => {
+  socket.on("teacher:createRoom", async ({ roomCode, teacherInstanceId }, callback) => {
     const code = roomCode?.toUpperCase();
     if (!code) return;
 
-    pruneTeacherRooms(socket.id, code);
+    const instId = normalizeTeacherInstanceId(teacherInstanceId, socket.id);
+
+    // ✅ Ensure this LiveSession instance only owns ONE room at a time
+    pruneTeacherRoomsByInstance(instId, code);
 
     if (rooms[code]) {
       rooms[code].teacherSocketId = socket.id;
@@ -1486,9 +1499,13 @@ socket.on("task:force-advance", ({ roomCode }) => {
       if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
         return;
       }
+
     console.log(`Teacher created room ${code}`);
     const room = await createRoom(code, socket.id);
     rooms[code] = room;
+    rooms[code].teacherInstanceId = instId;
+    socket.data.teacherInstanceId = instId;
+
     console.log(`Room ${code} is now READY for students`);
     socket.join(code);
 
@@ -1499,6 +1516,9 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
     // When the teacher creates/claims a room, stamp a heartbeat
     rooms[code].teacherSocketId = socket.id;
+    rooms[code].teacherInstanceId = instId;
+    socket.data.teacherInstanceId = instId;
+
     rooms[code].lastTeacherSeenAt = Date.now();
     rooms[code].expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour
     socket.data.role = "teacher";
@@ -1509,12 +1529,15 @@ socket.on("task:force-advance", ({ roomCode }) => {
   });
 
   // teacher keepalive event
-  socket.on("teacher:keepalive", ({ roomCode }) => {
+  socket.on("teacher:keepalive", ({ roomCode, teacherInstanceId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
 
-    pruneTeacherRooms(socket.id, code);
+    const instId = normalizeTeacherInstanceId(teacherInstanceId, socket.id);
+
+    // ✅ Safety net: if this instance ever had other rooms, kill them now
+    pruneTeacherRoomsByInstance(instId, code);
 
     // keep room alive + reconnect-safe ownership
     room.teacherSocketId = socket.id;
@@ -3818,7 +3841,8 @@ socket.on(
     try {
       // ✅ Teacher disconnect: stop broadcasting rooms from this LiveSession instance
       if (socket.data?.role === "teacher") {
-        pruneTeacherRooms(socket.id, null);
+        const instId = normalizeTeacherInstanceId(socket.data?.teacherInstanceId, socket.id);
+        pruneTeacherRoomsByInstance(instId, null);
         return;
       }
 
