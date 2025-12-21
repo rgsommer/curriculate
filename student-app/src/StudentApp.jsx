@@ -3032,13 +3032,13 @@ function StudentApp() {
         )}
         
           {/* TASK CARD (only when not gated) */}
-          {joined && postPhase === "tasks" && (!mustScan || taskLocked) && !tasksetComplete && waitingForLaunch && (
+          {joined && postPhase === "tasks" && !currentTask && (!mustScan || taskLocked) && !tasksetComplete && waitingForLaunch && (
             <section
               style={{
                 marginTop: 10,
                 padding: 16,
                 borderRadius: 18,
-                background: "rgba(15,23,42,0.9)",
+                background: "rgba(15,23,42,0.25)", //was 0.9
                 border: "1px solid rgba(148,163,184,0.75)",
                 color: "#f9fafb",
                 textAlign: "center",
