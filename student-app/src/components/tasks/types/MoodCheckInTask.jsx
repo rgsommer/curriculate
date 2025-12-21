@@ -45,7 +45,6 @@ function ConfettiBurst({ show, onDone }) {
         const size = 6 + ((i * 11) % 10);
         const duration = 1.0 + ((i * 13) % 9) / 10;
 
-        // Bright confetti palette
         const colors = ["#22c55e", "#3b82f6", "#f97316", "#e879f9", "#facc15", "#ef4444"];
         const bg = colors[i % colors.length];
 
@@ -71,23 +70,36 @@ function ConfettiBurst({ show, onDone }) {
   );
 }
 
-export default function MoodCheckInTask({ task, onSubmit, disabled = false, memberNames = [] }) {
-  const cfg = (task?.config && typeof task.config === "object") ? task.config : {};
+export default function MoodCheckInTask({
+  task,
+  onSubmit,
+  disabled = false,
+  memberNames = [],
+}) {
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  // Prefer memberNames length (team reality), but allow explicit overrides
+  const explicitCount =
+    cfg.playerCount ?? task?.playerCount ?? cfg.players ?? task?.players ?? null;
+
+  const inferredFromNames = Array.isArray(memberNames)
+    ? memberNames.filter((n) => String(n || "").trim().length > 0).length
+    : 0;
 
   const playerCountRaw =
-    cfg.playerCount ??
-    task?.playerCount ??
-    1;
+    explicitCount != null ? Number(explicitCount) : inferredFromNames || 1;
 
   const playerCount = Math.max(1, Math.min(8, Number(playerCountRaw) || 1));
-  const excitementEnabled = cfg.sharedExcitementEnabled !== false; // default ON
 
-  const [moods, setMoods] = useState(() => Array(playerCount).fill(null)); // store mood index 0..4
+  // Default ON, but teacher/task can turn it off
+  const excitementEnabled = cfg.sharedExcitementEnabled !== false;
+
+  const [moods, setMoods] = useState(() => Array(playerCount).fill(null)); // mood index 0..4
   const [excitement, setExcitement] = useState("");
   const [showConfetti, setShowConfetti] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  // If playerCount changes mid-render (rare), keep state aligned
+  // Keep moods array aligned if playerCount changes
   useEffect(() => {
     setMoods((prev) => {
       const next = Array(playerCount).fill(null);
@@ -98,11 +110,16 @@ export default function MoodCheckInTask({ task, onSubmit, disabled = false, memb
 
   const allSelected = moods.every((m) => m !== null);
 
-  const handleMood = (playerIndex, moodIndex) => {
+  const getDisplayName = (idx) => {
+    const raw = String(memberNames?.[idx] ?? "").trim();
+    return raw || `Player ${idx + 1}`;
+  };
+
+  const handleMood = (idx, moodIndex) => {
     if (disabled || submitted) return;
     setMoods((prev) => {
       const next = [...prev];
-      next[playerIndex] = moodIndex;
+      next[idx] = moodIndex;
       return next;
     });
   };
@@ -114,10 +131,9 @@ export default function MoodCheckInTask({ task, onSubmit, disabled = false, memb
     setSubmitted(true);
     setShowConfetti(true);
 
-    // ✅ Use the normal task submission pathway (no custom socket event needed)
+    // Keep payload simple; StudentApp can wrap with type if it wants
     onSubmit?.({
-      type: "mood-checkin",
-      moods, // array of indices (0..4) per player
+      moods, // indices 0..4
       excitement: excitementEnabled ? excitement.trim() : "",
       playerCount,
       moodLabels: moods.map((idx) => MOODS[idx]?.label || null),
@@ -147,7 +163,15 @@ export default function MoodCheckInTask({ task, onSubmit, disabled = false, memb
         <h2 style={{ fontSize: "2.1rem", marginBottom: 8, fontWeight: 900 }}>
           Mood Check-In
         </h2>
-        <div style={{ fontSize: "1.05rem", marginBottom: 22, fontWeight: 600, opacity: 0.92 }}>
+
+        <div
+          style={{
+            fontSize: "1.05rem",
+            marginBottom: 22,
+            fontWeight: 600,
+            opacity: 0.92,
+          }}
+        >
           Tap an emoji for each player — then let’s start strong.
         </div>
 
@@ -164,9 +188,7 @@ export default function MoodCheckInTask({ task, onSubmit, disabled = false, memb
             }}
           >
             <div style={{ fontSize: "1.15rem", fontWeight: 900, marginBottom: 10 }}>
-              const displayName = (memberNames?.[playerIndex] || "").trim() || `Player ${playerIndex + 1}`;
-
-              displayName
+              {getDisplayName(i)}
             </div>
 
             <div
@@ -233,7 +255,8 @@ export default function MoodCheckInTask({ task, onSubmit, disabled = false, memb
                 fontWeight: 900,
               }}
             >
-              What are you excited about today? <span style={{ fontWeight: 700, opacity: 0.85 }}>(optional)</span>
+              What are you excited about today?{" "}
+              <span style={{ fontWeight: 700, opacity: 0.85 }}>(optional)</span>
             </label>
 
             <textarea
@@ -265,7 +288,7 @@ export default function MoodCheckInTask({ task, onSubmit, disabled = false, memb
             style={{
               padding: "16px 46px",
               fontSize: "1.25rem",
-              fontWeight: 1000,
+              fontWeight: 900,
               background: allSelected && !disabled && !submitted ? "#22c55e" : "#94a3b8",
               color: "#ffffff",
               border: "none",
