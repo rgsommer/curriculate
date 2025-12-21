@@ -1489,23 +1489,25 @@ function StudentApp() {
       };
 
       socket.emit("task:submit", payload, (response) => {
-        setSubmitting(false);
-
         if (!response || response.error) {
           console.warn("Submit error:", response?.error || "Unknown error");
+          setSubmitting(false);
           setStatusMessage(response?.error || "There was a problem submitting. Try again.");
           return;
         }
 
         setStatusMessage("");
         setTaskLocked(true);
+        setSubmitting(false);
 
         // Always start a review countdown so the task will clear even if task:scored never arrives
-        const fallbackSeconds =
+        const fallbackSecondsRaw =
           Number(response?.postSubmitSeconds) > 0
             ? Number(response.postSubmitSeconds)
             : DEFAULT_POST_SUBMIT_SECONDS;
 
+        const fallbackSeconds = Math.max(3, Number(fallbackSecondsRaw) || DEFAULT_POST_SUBMIT_SECONDS || 15);
+        
         setReviewState({
           ...(response?.review && typeof response.review === "object" ? response.review : null),
           correct: typeof response?.correct === "boolean" ? response.correct : undefined,
@@ -3029,8 +3031,7 @@ function StudentApp() {
             >
               <div style={{ fontSize: "1.05rem", fontWeight: 800 }}>Getting your first activity ready…</div>
               <div style={{ marginTop: 6, opacity: 0.9 }}>
-                Next up: <strong>Mood Check-in</strong>, then <strong>Treasure Runner</strong>. If this takes more than a few
-                seconds, rescan or ask your teacher.
+                If this takes more than a few seconds, rescan or ask your teacher.
               </div>
             </section>
           )}
@@ -3107,17 +3108,17 @@ function StudentApp() {
                   partnerAnswer={partnerAnswer}
                   showPartnerReply={showPartnerReply}
                   onPartnerReply={(replyText) => {
-                    if (!roomCode || !joined || !currentTask || teamId == null) return;
+                  if (!roomCode || !joined || !currentTask || teamId == null) return;
 
-                    socket.emit("collab:reply", {
-                      roomCode: roomCode.trim().toUpperCase(),
-                      teamId,
-                      taskIndex:
-                        typeof currentTaskIndex === "number" && currentTaskIndex >= 0
-                          ? currentTaskIndex
-                          : null,
-                      reply: replyText,
-                    });
+                  socket.emit("collab:reply", {
+                    roomCode: roomCode.trim().toUpperCase(),
+                    teamId,
+                    taskIndex:
+                      typeof currentTaskIndex === "number" && currentTaskIndex >= 0
+                        ? currentTaskIndex
+                        : null,
+                    reply: replyText,
+                  });
                   }}
                 />
                 </TaskErrorBoundary>
