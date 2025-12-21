@@ -943,6 +943,7 @@ function StudentApp() {
         if (t <= 0) {
           clearInterval(timer);
           endReviewAndReturnToScan();
+          setWaitingForLaunch(false);
         }
       }, 1000);
 
@@ -1459,8 +1460,14 @@ function StudentApp() {
         return;
       }
 
-      // If there’s no currentTask and it’s not a warm-up payload, do nothing.
-      if (!currentTask) return;
+      useEffect(() => {
+        if (!currentTask) return;
+
+        // If a scan is required, DO NOT flip into tasks mode yet.
+        if (mustScan) return;
+
+        if (postPhase !== "tasks") setPostPhase("tasks");
+      }, [currentTask, mustScan, postPhase]);
 
       setSubmitting(true);
 
@@ -2975,7 +2982,9 @@ function StudentApp() {
                           pointerEvents: "none",
                         }}
                       >
-                        Waiting for Curriculate to Launch...
+                        {waitingForLaunch && !tasksStartedRef.current && (
+                          <div>Waiting for Curriculate to Launch...</div>
+                        )}                      
                       </div>
                     )}
                   </div>
@@ -3019,7 +3028,7 @@ function StudentApp() {
             </section>
           )}
 
-          {joined && postPhase === "tasks" && !!currentTask && !hardMustScan && !tasksetComplete && (
+          {joined && postPhase === "tasks" && !!currentTask && !mustScan && !tasksetComplete && (
             <section
               className="task-card"
               style={{
