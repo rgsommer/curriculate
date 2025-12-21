@@ -625,6 +625,11 @@ function StudentApp() {
   const [remainingMs, setRemainingMs] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
+  const currentTaskRef = useRef(null);
+    useEffect(() => { currentTaskRef.current = currentTask; }, [currentTask]);
+
+  const postPhaseRef = useRef(postPhase);
+    useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
 
   // Noise + treats
   const [noiseState, setNoiseState] = useState({
@@ -1556,7 +1561,12 @@ function StudentApp() {
   const handleScan = (data) => {
     if (!data || !joined || !teamId) return;
 
-    setScanError(null);
+    // If we already have a real task (or are in task mode), ignore scans entirely
+    if (currentTaskRef.current || postPhaseRef.current === "tasks") {
+      setScanError(null);
+      setScannerActive(false);
+      return;
+    }
 
     const norm = normalizeStationId(data);
     if (!norm?.id) {
