@@ -5,8 +5,8 @@ import TaskRunner from "./components/tasks/TaskRunner.jsx";
 import QrScanner from "./components/QrScanner.jsx";
 import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
-// import MoodCheckInTask from "./components/tasks/types/MoodCheckInTask";
-// import TreasureRunner from "./components/tasks/types/TreasureRunnerTask";
+import MoodCheckInTask from "./components/tasks/types/MoodCheckInTask";
+import TreasureRunner from "./components/tasks/types/TreasureRunnerTask";
 
 import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
@@ -1094,6 +1094,7 @@ function StudentApp() {
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
       setShortAnswerReveal(null);
+
       if (postSubmitTimerRef.current) {
         clearInterval(postSubmitTimerRef.current);
         postSubmitTimerRef.current = null;
