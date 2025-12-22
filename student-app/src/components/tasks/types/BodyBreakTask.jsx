@@ -4,7 +4,9 @@ export default function BodyBreakTask({ task, onSubmit, disabled }) {
   const handleDone = () => onSubmit({ done: true });
 
   const prompt = task?.prompt || "";
-  const isJumping = /jump|hops?|up\s*and\s*down/i.test(prompt);
+  const promptText = String(task?.prompt || "");
+  const isJumping =
+    /jump/i.test(promptText) || !!task?.movement || !!task?.config?.movement;
 
   return (
     <div className="p-4 text-center">
@@ -18,7 +20,12 @@ export default function BodyBreakTask({ task, onSubmit, disabled }) {
           animation: bb-bounce 0.6s ease-in-out infinite;
         }
       `}</style>
-
+      <style>{`
+        @keyframes bbJump {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-14px); }
+        }
+      `}</style>
       <h2 className="font-bold text-2xl mb-3">BODY BREAK!</h2>
 
       {isJumping && (
@@ -36,7 +43,22 @@ export default function BodyBreakTask({ task, onSubmit, disabled }) {
       {task.config?.verification === "timed" && (
         <p className="mb-2 text-sm text-gray-600">Complete it before the timer ends!</p>
       )}
-
+      {isJumping && (
+        <div className="mb-3 flex items-end justify-center gap-2 text-3xl">
+          {["😄","🏃‍♂️","🤸‍♀️","😄","🏃‍♀️"].map((e, i) => (
+            <span
+              key={i}
+              style={{
+                display: "inline-block",
+                animation: "bbJump 600ms ease-in-out infinite",
+                animationDelay: `${i * 90}ms`,
+              }}
+            >
+              {e}
+            </span>
+          ))}
+        </div>
+      )}
       <button
         className="mt-4 w-full border rounded px-3 py-3 font-bold"
         onClick={handleDone}

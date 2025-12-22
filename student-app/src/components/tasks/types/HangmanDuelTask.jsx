@@ -169,8 +169,28 @@ function HangmanSVG({ style, parts }) {
 // -------------------------------
 export default function HangmanDuelTask({ task, onSubmit, socket, roomCode, teamId }) {
   const word = useMemo(() => {
-    const raw = String(task?.word || task?.hangmanWord || task?.data?.word || "");
+    const stationIdx =
+      Number.isInteger(task?.stationIndex) ? task.stationIndex :
+      Number.isInteger(task?.stationIdIndex) ? task.stationIdIndex :
+      0;
+
+    const fromList =
+      task?.config?.wordsByStation?.[stationIdx]?.word ||
+      task?.wordsByStation?.[stationIdx]?.word ||
+      task?.config?.wordsByStation?.[0]?.word ||
+      task?.wordsByStation?.[0]?.word ||
+      "";
+
+    const raw = String(
+      task?.word ||
+      task?.config?.word ||
+      fromList ||
+      task?.hangmanWord ||
+      task?.data?.word ||
+      ""
+    );
     return raw.trim().toUpperCase();
+
   }, [task]);
 
   const slots = useMemo(() => {

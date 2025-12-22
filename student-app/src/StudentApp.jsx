@@ -957,6 +957,18 @@ function StudentApp() {
       } else if (typeof scoreDelta === "number") {
         setScoreTotal((prev) => prev + scoreDelta);
       }
+      // ✅ If the CURRENT task is physical, do NOT show the lock/overlay countdown.
+      // Some physical tasks can still emit task:scored (AI/teacher scoring), but we want
+      // the UI to immediately return to scan.
+      const liveTask = currentTaskRef.current;
+      const liveType = liveTask?.taskType || liveTask?.type;
+      const isPhysicalLive =
+        !!(liveTask?.isPhysical ||
+           liveTask?.config?.isPhysical ||
+           liveTask?.movement ||
+           liveTask?.config?.movement ||
+           liveType === TASK_TYPES.BODY_BREAK ||
+           liveType === TASK_TYPES.MAD_DASH_SEQUENCE);
 
       setLastTaskResult({
         scoreDelta: typeof scoreDelta === "number" ? scoreDelta : null,
@@ -967,6 +979,19 @@ function StudentApp() {
         method: method || null,
         correctAnswer: correctAnswer ?? null,
       });
+
+      if (isPhysicalLive) {
+        // clear any pending review timer + bounce straight back to scan
+        if (postSubmitTimerRef.current) {
+          clearInterval(postSubmitTimerRef.current);
+          postSubmitTimerRef.current = null;
+        }
+        setTaskLocked(false);
+        setPostSubmitSecondsLeft(null);
+        setWaitingForLaunch(false);
+        endReviewAndReturnToScan();
+        return;
+      }
 
       const lockSeconds =
         Number(payload?.postSubmitSeconds) > 0
@@ -2243,19 +2268,17 @@ function StudentApp() {
           position: absolute;
           inset: 0;
           border-radius: inherit;
-          background: rgba(0,0,0,0.25);      /* not grey “sheet”, just light dim */
-          backdrop-filter: blur(6px);        /* glass */
-          -webkit-backdrop-filter: blur(6px);
           display: flex;
-          align-items: center;
-          justify-content: center;
+          align-items: flex-start;
+          justify-content: flex-start;
           color: #f9fafb;
           font-weight: 600;
           font-size: 0.95rem;
           z-index: 20;
           text-align: center;
           padding: 14px;
-        }
+          background: transparent; /* ✅ no grey shading */
+         }
 
         /* PROGRESS LINE */
         .progress-line {
@@ -3213,229 +3236,242 @@ function StudentApp() {
               : 0;
 
           return (
-            <div style={{ width: "100%", paddingTop: 18 }}>
-              <div>
-                Review your answer… <br />
-                <span
-                  style={{
-                    fontVariantNumeric: "tabular-nums",
-                    fontSize: "1.1rem",
-                  }}
-                >
-                  {postSubmitSecondsLeft}s
-                </span>
-              </div>
-
-              {/* Countdown bar */}
+            <div style={{ width: "100%", position: "relative", minHeight: 120 }}>
+              {/* ✅ pinned top bar */}
               <div
                 style={{
                   position: "absolute",
-                  top: 10,
-                  left: 12,
-                  right: 12,
+                  top: 0,
+                  left: 0,
+                  right: 0,
                 }}
               >
                 <div
                   style={{
-                    height: 4,
+                  height: 3,
                     borderRadius: 999,
                     background: "rgba(255,255,255,0.25)",
                     overflow: "hidden",
                   }}
                 >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${percent}%`,
+                    background: "rgba(255,255,255,0.9)",
+                    transition: "width 200ms linear",
+                  }}
+                />
+              </div>
+            </div>
+            {/* centered message (no shaded background) */}
+            <div
+              style={{
+                marginTop: 18,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                paddingTop: 18,
+              }}
+            >
+              <div>
+                Review your answer…
+              </div>
+              <div
+                style={{
+                  fontVariantNumeric: "tabular-nums",
+                  fontSize: "1.2rem",
+                  fontWeight: 800,
+                }}
+              >
+                {postSubmitSecondsLeft}s
+              </div>
+            </div>
+          </div>
+          );
+        })()}
+          {/* Matching answer reveal during lock (highlight + animate + percent) */}
+          {currentTask?.taskType === "matching" && (() => {
+            const data = buildMatchingReveal(currentTask, reviewState);
+            if (!data) return null;
+
+            const { rows, correctCount, totalPairs, percent } = data;
+            const pointsEarned = typeof reviewState?.points === "number" ? reviewState.points : null;
+            const maxPoints = typeof currentTask?.points === "number" ? currentTask.points : null;
+
+            return (
+              <div
+                style={{
+                  marginTop: 12,
+                  width: "100%",
+                  background: "rgba(255,255,255,0.14)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: 12,
+                  padding: 12,
+                  textAlign: "left",
+                }}
+              >
+                {/* Summary row */}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                  <div style={{ fontWeight: 900 }}>Matching results</div>
+                  <div style={{ fontWeight: 900 }}>
+                    {percent}% ({correctCount}/{totalPairs})
+                    {pointsEarned != null ? ` • +${pointsEarned}` : ""}
+                    {maxPoints != null ? `/${maxPoints}` : ""}
+                  </div>
+                </div>
+
+                {/* Percent bar */}
+                <div
+                  style={{
+                    marginTop: 8,
+                    height: 10,
+                    borderRadius: 999,
+                    background: "rgba(0,0,0,0.18)",
+                    overflow: "hidden",
+                  }}
+                >
                   <div
                     style={{
-                      height: "100%",
                       width: `${percent}%`,
-                      background: "rgba(255,255,255,0.9)",
-                      transition: "width 200ms linear",
+                      height: "100%",
+                      borderRadius: 999,
+                      background: percent >= 80 ? "rgba(34,197,94,0.9)" : percent >= 50 ? "rgba(250,204,21,0.9)" : "rgba(239,68,68,0.9)",
+                      transition: "width 250ms ease",
                     }}
                   />
                 </div>
-              </div>
-            </div>
-          );
-        })()}
-            {/* Matching answer reveal during lock (highlight + animate + percent) */}
-            {currentTask?.taskType === "matching" && (() => {
-              const data = buildMatchingReveal(currentTask, reviewState);
-              if (!data) return null;
 
-              const { rows, correctCount, totalPairs, percent } = data;
-              const pointsEarned = typeof reviewState?.points === "number" ? reviewState.points : null;
-              const maxPoints = typeof currentTask?.points === "number" ? currentTask.points : null;
+                {/* Pair reveals */}
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {rows.map((r, i) => {
+                    const bg = r.isCorrect
+                      ? "rgba(34,197,94,0.22)"
+                      : r.isAnswered
+                      ? "rgba(239,68,68,0.22)"
+                      : "rgba(0,0,0,0.14)";
 
-              return (
-                <div
-                  style={{
-                    marginTop: 12,
-                    width: "100%",
-                    background: "rgba(255,255,255,0.14)",
-                    border: "1px solid rgba(255,255,255,0.25)",
-                    borderRadius: 12,
-                    padding: 12,
-                    textAlign: "left",
-                  }}
-                >
-                  {/* Summary row */}
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                    <div style={{ fontWeight: 900 }}>Matching results</div>
-                    <div style={{ fontWeight: 900 }}>
-                      {percent}% ({correctCount}/{totalPairs})
-                      {pointsEarned != null ? ` • +${pointsEarned}` : ""}
-                      {maxPoints != null ? `/${maxPoints}` : ""}
-                    </div>
-                  </div>
+                    const border = r.isCorrect
+                      ? "1px solid rgba(34,197,94,0.45)"
+                      : r.isAnswered
+                      ? "1px solid rgba(239,68,68,0.45)"
+                      : "1px solid rgba(255,255,255,0.18)";
 
-                  {/* Percent bar */}
-                  <div
-                    style={{
-                      marginTop: 8,
-                      height: 10,
-                      borderRadius: 999,
-                      background: "rgba(0,0,0,0.18)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${percent}%`,
-                        height: "100%",
-                        borderRadius: 999,
-                        background: percent >= 80 ? "rgba(34,197,94,0.9)" : percent >= 50 ? "rgba(250,204,21,0.9)" : "rgba(239,68,68,0.9)",
-                        transition: "width 250ms ease",
-                      }}
-                    />
-                  </div>
+                    const icon = r.isCorrect ? "✅" : r.isAnswered ? "❌" : "⏺️";
 
-                  {/* Pair reveals */}
-                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                    {rows.map((r, i) => {
-                      const bg = r.isCorrect
-                        ? "rgba(34,197,94,0.22)"
-                        : r.isAnswered
-                        ? "rgba(239,68,68,0.22)"
-                        : "rgba(0,0,0,0.14)";
-
-                      const border = r.isCorrect
-                        ? "1px solid rgba(34,197,94,0.45)"
-                        : r.isAnswered
-                        ? "1px solid rgba(239,68,68,0.45)"
-                        : "1px solid rgba(255,255,255,0.18)";
-
-                      const icon = r.isCorrect ? "✅" : r.isAnswered ? "❌" : "⏺️";
-
-                      return (
-                        <div
-                          key={`${r.leftId}:${r.rightId}`}
-                          style={{
-                            padding: 10,
-                            borderRadius: 12,
-                            background: bg,
-                            border,
-                            animation: "matchPopIn 240ms ease both",
-                            animationDelay: `${i * 60}ms`,
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                            <div style={{ fontWeight: 800 }}>{r.left}</div>
-                            <div style={{ fontWeight: 900, opacity: 0.95 }}>{icon}</div>
-                          </div>
-
-                          <div style={{ marginTop: 6, fontSize: "0.95rem", opacity: 0.98 }}>
-                            <div>
-                              <span style={{ opacity: 0.85 }}>Correct:</span>{" "}
-                              <span style={{ fontWeight: 800 }}>{r.right}</span>
-                            </div>
-
-                            {r.isAnswered && !r.isCorrect && (
-                              <div style={{ marginTop: 4 }}>
-                                <span style={{ opacity: 0.85 }}>You chose:</span>{" "}
-                                <span style={{ fontWeight: 800 }}>{r.studentRightText ?? "—"}</span>
-                              </div>
-                            )}
-
-                            {!r.isAnswered && (
-                              <div style={{ marginTop: 4, opacity: 0.85 }}>
-                                You didn’t match this one.
-                              </div>
-                            )}
-                          </div>
+                    return (
+                      <div
+                        key={`${r.leftId}:${r.rightId}`}
+                        style={{
+                          padding: 10,
+                          borderRadius: 12,
+                          background: bg,
+                          border,
+                          animation: "matchPopIn 240ms ease both",
+                          animationDelay: `${i * 60}ms`,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                          <div style={{ fontWeight: 800 }}>{r.left}</div>
+                          <div style={{ fontWeight: 900, opacity: 0.95 }}>{icon}</div>
                         </div>
-                      );
-                    })}
+
+                        <div style={{ marginTop: 6, fontSize: "0.95rem", opacity: 0.98 }}>
+                          <div>
+                            <span style={{ opacity: 0.85 }}>Correct:</span>{" "}
+                            <span style={{ fontWeight: 800 }}>{r.right}</span>
+                          </div>
+
+                          {r.isAnswered && !r.isCorrect && (
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{ opacity: 0.85 }}>You chose:</span>{" "}
+                              <span style={{ fontWeight: 800 }}>{r.studentRightText ?? "—"}</span>
+                            </div>
+                          )}
+
+                          {!r.isAnswered && (
+                            <div style={{ marginTop: 4, opacity: 0.85 }}>
+                              You didn’t match this one.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ✅ Objective answer key during lock: revisit later
+          {isObjectiveTask(currentTask) && (() => {
+            const key = buildObjectiveAnswerKey(currentTask);
+            if (!key) return null;
+
+            if (key.rows) {
+              return (
+                <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {key.rows.map((r, i) => (
+                      <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                        <div style={{ fontWeight: 700 }}>{r.q}</div>
+                        <div style={{ marginTop: 4, opacity: 0.95 }}>
+                          Correct: <strong>{r.a}</strong>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
-            })()}
+            }
 
-            {/* ✅ Objective answer key during lock: revisit later
-            {isObjectiveTask(currentTask) && (() => {
-              const key = buildObjectiveAnswerKey(currentTask);
-              if (!key) return null;
+            if (key.ordered) {
+              return (
+                <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
+                  <ol style={{ margin: 0, paddingLeft: 20 }}>
+                    {key.ordered.map((it) => (
+                      <li key={it.n} style={{ marginBottom: 6 }}>
+                        {it.text}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              );
+            }
 
-              if (key.rows) {
-                return (
-                  <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {key.rows.map((r, i) => (
-                        <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                          <div style={{ fontWeight: 700 }}>{r.q}</div>
-                          <div style={{ marginTop: 4, opacity: 0.95 }}>
-                            Correct: <strong>{r.a}</strong>
-                          </div>
+            if (key.buckets) {
+              return (
+                <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {key.buckets.map((b, idx) => (
+                      <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
+                        <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {(b.items || []).map((txt, j) => (
+                            <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
+                              {txt}
+                            </span>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
+                    {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
+                      <div style={{ marginTop: 6, opacity: 0.9 }}>
+                        Unassigned: <strong>{key.unassigned.join(", ")}</strong>
+                      </div>
+                    )}
                   </div>
-                );
-              }
+                </div>
+              );
+            }
 
-              if (key.ordered) {
-                return (
-                  <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
-                    <ol style={{ margin: 0, paddingLeft: 20 }}>
-                      {key.ordered.map((it) => (
-                        <li key={it.n} style={{ marginBottom: 6 }}>
-                          {it.text}
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                );
-              }
-
-              if (key.buckets) {
-                return (
-                  <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      {key.buckets.map((b, idx) => (
-                        <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                          <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {(b.items || []).map((txt, j) => (
-                              <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
-                                {txt}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
-                        <div style={{ marginTop: 6, opacity: 0.9 }}>
-                          Unassigned: <strong>{key.unassigned.join(", ")}</strong>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-
-              return null;
-            })()} */}
+            return null;
+          })()} */}
           </div>
         )}
         </section>

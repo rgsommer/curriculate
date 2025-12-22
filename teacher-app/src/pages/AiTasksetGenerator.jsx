@@ -205,20 +205,10 @@ export default function AiTasksetGenerator() {
           setGenerating(false);
           return;
         }
-        let estimatedTaskCount = Math.min(
-          20,
-          Math.round(totalDurationMinutes / 5)
-        );
-
-        if (uniqueTaskTypes) {
-          estimatedTaskCount = Math.min(
-            estimatedTaskCount,
-            selectedTaskTypes.length
-          );
-        }
-
-        estimatedTaskCount = Math.max(1, estimatedTaskCount);
-        requiredTaskTypes = selectedTaskTypes;
+        // ✅ If we’re limiting task types, we can’t generate more tasks than unique types
+        const uniqueTypes = Array.from(new Set(selectedTaskTypes));
+        estimatedTaskCount = Math.min(estimatedTaskCount, uniqueTypes.length);
+        requiredTaskTypes = uniqueTypes;
       }
 
       const curriculumLenses =

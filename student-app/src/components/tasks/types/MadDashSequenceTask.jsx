@@ -185,17 +185,32 @@ export default function MadDashSequenceTask({
   // --------- RENDER ----------
   return (
     <div className="relative flex flex-col items-center justify-center h-full bg-gradient-to-br from-red-700 via-orange-600 to-yellow-500 text-white overflow-hidden">
+      <style>{`
+        @keyframes mdRun {
+          0% { transform: translateX(-140%); opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { transform: translateX(140%); opacity: 0; }
+        }
+      `}</style>
+      
       <h1 className="absolute top-8 text-5xl md:text-7xl lg:text-8xl font-black drop-shadow-2xl z-10 animate-pulse">
         MAD DASH!
       </h1>
 
-      <style>{`
-        @keyframes md-run {
-          0% { transform: translateX(-20vw); }
-          100% { transform: translateX(120vw); }
-        }
-      `}</style>
-
+      {timerActive && isWinner === null && (
+        <div className="absolute top-24 left-0 right-0 flex justify-center z-10 pointer-events-none">
+          <div className="w-full max-w-xl overflow-hidden">
+            <div
+              className="text-4xl"
+              style={{ animation: "mdRun 1.2s linear infinite" }}
+            >
+              🏃‍♂️💨🏃‍♀️💨🏃‍♂️💨
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div
         style={{
           position: "absolute",

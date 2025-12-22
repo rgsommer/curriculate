@@ -787,11 +787,45 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
               hangmanTask.wordsByStation[0]
             : null;
 
+          const finalWord = stationEntry?.word || hangmanTask.word || "";
+          const finalHint = stationEntry?.hint || hangmanTask.hint || "";
+          const FALLBACK_WORDS = [
+            "CHRISTMAS",
+            "NATIVITY",
+            "BETHLEHEM",
+            "MANGER",
+            "WISEMEN",
+            "SHEPHERDS",
+            "STAR",
+            "GIFTS",
+          ];
+
+        const finalWordRaw =
+          stationEntry?.word ||
+          hangmanTask.word ||
+          (FALLBACK_WORDS[stationIdx % FALLBACK_WORDS.length] || "");
+
+        const finalHintRaw =
+          stationEntry?.hint ||
+          hangmanTask.hint ||
+          "Guess the term.";
+
         return {
           ...hangmanTask,
           stationIndex: stationIdx,
-          word: stationEntry?.word || hangmanTask.word || "",
-          hint: stationEntry?.hint || hangmanTask.hint || "",
+          word: String(finalWordRaw).trim(),
+          hint: String(finalHintRaw).trim(),
+          // ✅ keep canonical data in config too
+          config: {
+            ...(hangmanTask.config || {}),
+            wordsByStation: Array.isArray(hangmanTask.wordsByStation)
+              ? hangmanTask.wordsByStation
+              : [],
+            word: String(finalWordRaw).trim(),
+            hint: String(finalHintRaw).trim(),
+            style: hangmanTask.style || "classic",
+            playerCount: hangmanTask.playerCount || 4,
+          },
         };
       }
 
