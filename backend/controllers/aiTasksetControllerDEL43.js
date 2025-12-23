@@ -231,23 +231,6 @@ function sortConfigIsValid(cfg) {
   return buckets.length >= 2 && items.length >= 3;
 }
 
-// Ensure each bucket has at least one *correctly assigned* item.
-// Prevents cases like: Continents/Not Continents but all items are Continents.
-function sortHasAtLeastOnePerBucket(cfg) {
-  const buckets = Array.isArray(cfg?.buckets) ? cfg.buckets : [];
-  const items = Array.isArray(cfg?.items) ? cfg.items : [];
-  if (buckets.length < 2 || items.length < buckets.length) return false;
-
-  const counts = new Array(buckets.length).fill(0);
-  for (const it of items) {
-    const bi = it?.bucketIndex;
-    if (typeof bi === "number" && bi >= 0 && bi < buckets.length) {
-      counts[bi] += 1;
-    }
-  }
-  return counts.every((c) => c > 0);
-}
-
 function sequenceConfigIsValid(cfg) {
   const items = Array.isArray(cfg?.items) ? cfg.items : [];
   return items.length >= 3;
@@ -576,7 +559,7 @@ export const generateAiTaskset = async (req, res) => {
         .json({ error: "Invalid payload: " + errors.join(", ") });
     }
 
-    let safeCount = clampInt(requestedCount, 4, 20, 8);
+    const safeCount = clampInt(requestedCount, 4, 20, 8);
 
     // Resolve allowed task types
     const rawSelected =
@@ -600,22 +583,6 @@ export const generateAiTaskset = async (req, res) => {
     // (This prevents "missing tasks" like Matching simply because the model didn't pick it.)
     const requestedTypeSet = new Set(typePool);
     const mustCoverAllRequestedTypes = safeCount >= requestedTypeSet.size;
-
-
-    // Demo/test can pass an explicit taskTypes[] list (often the full set of eligible types).
-    const requestedTypesRaw = Array.isArray(req.body?.taskTypes) ? req.body.taskTypes : null;
-    const requestedTypes = requestedTypesRaw?.length
-      ? requestedTypesRaw
-          .map(normalizeSelectedType)
-          .filter(Boolean)
-          .filter((t) => AI_ELIGIBLE_TYPES.includes(t))
-      : null;
-
-    // If demo requested explicit types, generate one per type (and set count accordingly).
-    if (isDemoRequest && requestedTypes?.length) {
-      safeCount = clampInt(requestedTypes.length, 4, 40, requestedTypes.length);
-      typePool = requestedTypes.slice(); // force exact coverage for demo
-    }
 
     // Presenter lenses / perspectives
     let lenses = [];
@@ -713,7 +680,7 @@ Rules:
 - Mix of the allowed taskTypes only: ${taskTypeList}.
 ${coverAllLine}
 - Each task has a short clear title and a prompt that students will see.
-- For SORT tasks: include config.buckets (>=2) and config.items (>=3) with {text, bucketIndex|null}. Ensure EVERY bucket has at least one item correctly assigned (no empty categories).
+- For SORT tasks: include config.buckets (>=2) and config.items (>=3) with {text, bucketIndex|null}
 - For SEQUENCE tasks: include config.items (>=3) with {text}
 - For MATCHING tasks: include leftItems (5–7) and rightItems (5–7), each item {id,label}. Also include correctMatches as a map { "leftId": "rightId" }. (You may also include correctAnswer with the same map.)
 - For VENNSORT tasks: include config.categories (2–3 strings), config.items (5–10 strings or {id,text}), and correctAnswer as a map { "itemId": ["CategoryA", "CategoryB"] } (empty array allowed).
@@ -778,45 +745,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 ]
 `.trim();
 
-    let aiTasks = null;
-
-    if (isDemoRequest && requestedTypes?.length) {
-      // Generate EXACTLY one task per requested type (most reliable for Demo)
-      const demoTasks = [];
-      for (const allowedType of requestedTypes) {
-        const mustHave = retryMustHave?.[allowedType] || `Produce a valid ${allowedType} task with all required fields.`;
-        try {
-          const t = await regenerateSingleTask({
-            allowedType,
-            mustHave,
-            subject,
-            gradeLevel,
-            difficulty: normDifficulty,
-            learningGoal: normGoal,
-            topicLabel,
-            vocabularyLines,
-            specialConsiderations: [specialConsiderations, customNotes].filter(Boolean).join("\n\n"),
-            previousTask: null,
-          });
-          demoTasks.push(t);
-        } catch (e) {
-          console.error("Demo per-type generation failed for", allowedType, e);
-          // fall back to a placeholder so demo never hard-fails
-          demoTasks.push({
-            title: `${allowedType} (placeholder)`,
-            prompt: `Demo placeholder for ${allowedType}. Please regenerate this task.`,
-            taskType: allowedType,
-            options: [],
-            correctAnswer: null,
-            items: [],
-            clues: [],
-            config: {},
-          });
-        }
-      }
-      aiTasks = demoTasks;
-    } else {
-      const completion = await client.chat.completions.create({
+    const completion = await client.chat.completions.create({
       model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
       temperature: 0.4,
       max_tokens: 2600,
@@ -828,9 +757,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
     const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
 
-    if (!aiTasks) aiTasks = extractJsonFromText(raw);
-    }
-
+    let aiTasks = extractJsonFromText(raw);
     if (!aiTasks) {
       console.error("AI taskset JSON parse error:", raw.slice(0, 1200));
       return res.status(500).json({ error: "AI returned invalid JSON for taskset" });
@@ -840,6 +767,17 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       return res.status(500).json({ error: "AI returned no tasks" });
     }
 
+    // For demo/testing, allow taskTypes override
+    const requestedTypesRaw = Array.isArray(req.body?.taskTypes) ? req.body.taskTypes : null;
+
+    const requestedTypes = requestedTypesRaw?.length
+      ? requestedTypesRaw
+          .map(normalizeSelectedType)
+          .filter(Boolean)
+          // ✅ critical: only types that are safe to generate
+          .filter((t) => AI_ELIGIBLE_TYPES.includes(t))
+      : null;
+      
     const targetCount = requestedTypes?.length
       ? requestedTypes.length
       : Number(numberOfTasks || 8);
@@ -1273,20 +1211,15 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
         const candidateCfg = { ...aiConfig, buckets, items: sortItems };
 
-        const basicValid = sortConfigIsValid(candidateCfg);
-        const coverageValid = sortHasAtLeastOnePerBucket(candidateCfg);
-
-        if (!basicValid || !coverageValid) {
+        if (!sortConfigIsValid(candidateCfg)) {
           t.__needsRetry = true;
           t.__retryType = TASK_TYPES.SORT;
 
           const safeBuckets = buckets.length >= 2 ? buckets.slice(0, 2) : ["Group A", "Group B"];
           const safeItems =
-            sortItems.length >= Math.max(3, safeBuckets.length)
-              ? sortItems.slice(0, Math.max(3, safeBuckets.length))
-              : rawWordBank
-                  .slice(0, Math.max(3, safeBuckets.length))
-                  .map((w) => ({ text: String(w), bucketIndex: null }));
+            sortItems.length >= 3
+              ? sortItems.slice(0, 3)
+              : rawWordBank.slice(0, 3).map((w) => ({ text: String(w), bucketIndex: null }));
 
           config = { ...aiConfig, buckets: safeBuckets, items: safeItems };
         } else {
