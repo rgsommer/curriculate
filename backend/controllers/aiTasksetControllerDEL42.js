@@ -1,7 +1,7 @@
 // backend/controllers/aiTasksetController.js
 import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
-import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+import { TASK_TYPES, TASK_TYPE_META, normalizeTaskType } from "../../shared/taskTypes.js";
 
 const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
@@ -12,8 +12,6 @@ const retryMustHave = {
     "SORT must include config.buckets (>=2) and config.items (>=3). Each item: { text, bucketIndex:number|null }.",
   [TASK_TYPES.SEQUENCE]:
     "SEQUENCE must include config.items (>=3). Each item: { text }.",
-  [TASK_TYPES.MATCHING]:
-    'MATCHING must include leftItems[] and rightItems[] (5–7 each) and correctMatches map {"leftId":"rightId"}.',
   [TASK_TYPES.VENNSORT]:
     'VENNSORT must include config.categories (2–3 names) and config.items (5–10). Also include correctAnswer as a map: { "itemId": ["CategoryA", "CategoryB"] } (empty array allowed for "belongs nowhere").',
   [TASK_TYPES.JEOPARDY]:
@@ -78,97 +76,9 @@ function validateGeneratePayload(payload = {}) {
  * Example: "Brain Blitz!" => "brain-blitz"
  */
 function normalizeSelectedType(raw) {
-  if (!raw) return null;
-
-  const v = String(raw)
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, ""); // strip punctuation like !, ?, etc.
-
-  if (
-    v === "multiple-choice" ||
-    v === "multiplechoice" ||
-    v === "mcq" ||
-    v === "mc"
-  )
-    return TASK_TYPES.MULTIPLE_CHOICE;
-  if (v === "true-false" || v === "truefalse" || v === "tf")
-    return TASK_TYPES.TRUE_FALSE;
-  if (v === "short-answer" || v === "shortanswer" || v === "sa")
-    return TASK_TYPES.SHORT_ANSWER;
-  if (v === "open-text" || v === "opentext" || v === "open")
-    return TASK_TYPES.OPEN_TEXT;
-
-  if (v === "sort" || v === "categorize" || v === "sort-task")
-    return TASK_TYPES.SORT;
-
-  if (v === "sequence" || v === "timeline" || v === "order")
-    return TASK_TYPES.SEQUENCE;
-
-  if (
-    v === "vennsort" ||
-    v === "venn-sort" ||
-    v === "venn" ||
-    v === "venn-diagram" ||
-    v === "venn_diagram"
-  )
-    return TASK_TYPES.VENNSORT;
-
-  if (
-    v === "brain-blitz" ||
-    v === "brainblitz" ||
-    v === "jeopardy" ||
-    v === "jeopardy-game" ||
-    v === "jeopardy_game"
-  )
-    return TASK_TYPES.JEOPARDY;
-
-  if (
-    v === "brain-spark-notes" ||
-    v === "brainsparknotes" ||
-    v === "brain_spark_notes"
-  )
-    return TASK_TYPES.BRAIN_SPARK_NOTES;
-
-  if (v === "mind-mapper" || v === "mindmapper" || v === "mind_mapper")
-    return TASK_TYPES.MIND_MAPPER;
-
-  if (v === "hangman" || v === "hangman-duel" || v === "hangmanduel")
-    return TASK_TYPES.HANGMAN_DUEL;
-
-  if (
-    v === "word-weaver" ||
-    v === "wordweaver" ||
-    v === "word-weaver-duel" ||
-    v === "wordweaverduel" ||
-    v === "word-weaver_duel" ||
-    v === "word_weaver_duel"
-  )
-    return TASK_TYPES.WORD_WEAVER_DUEL;
-
-  if (v === "flashcards") return TASK_TYPES.FLASHCARDS;
-  if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
-    return TASK_TYPES.DIFF_DETECTIVE;
-
-  if (v === "photo") return TASK_TYPES.PHOTO;
-  if (v === "photo-journal" || v === "photojournal")
-    return TASK_TYPES.PHOTO_JOURNAL;
-  if (v === "draw-or-mime" || v === "drawormime")
-    return TASK_TYPES.DRAW_OR_MIME;
-  if (v === "body-break" || v === "bodybreak") return TASK_TYPES.BODY_BREAK;
-
-  // Pre-task / interstitial
-  if (v === "mood-checkin" || v === "moodcheckin" || v === "mood") return TASK_TYPES.MOOD_CHECKIN;
-  if (v === "treasure-runner" || v === "treasurerunner" || v === "treasure")
-    return TASK_TYPES.TREASURE_RUNNER;
-
-  // Post-taskset
-  if (v === "multi-player-feedback" || v === "multiplayerfeedback" || v === "feedback")
-    return TASK_TYPES.MULTI_PLAYER_FEEDBACK;
-
-  return null;
+  // Centralized in shared/taskTypes.js so we don’t maintain duplicate v=== maps.
+  // Returns a TASK_TYPES.* string or null.
+  return normalizeTaskType(raw);
 }
 
 function isNonEmptyString(x) {
@@ -179,41 +89,6 @@ function clampInt(n, min, max, fallback) {
   const v = Number(n);
   if (!Number.isFinite(v)) return fallback;
   return Math.max(min, Math.min(max, Math.round(v)));
-}
-
-function extractJsonFromText(rawText) {
-  const raw = String(rawText || "").trim();
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    // continue
-  }
-
-  const a0 = raw.indexOf("[");
-  const a1 = raw.lastIndexOf("]");
-  if (a0 >= 0 && a1 > a0) {
-    const sub = raw.slice(a0, a1 + 1);
-    try {
-      return JSON.parse(sub);
-    } catch {
-      // continue
-    }
-  }
-
-  const o0 = raw.indexOf("{");
-  const o1 = raw.lastIndexOf("}");
-  if (o0 >= 0 && o1 > o0) {
-    const sub = raw.slice(o0, o1 + 1);
-    try {
-      return JSON.parse(sub);
-    } catch {
-      // continue
-    }
-  }
-
-  return null;
 }
 
 function sortConfigIsValid(cfg) {
@@ -525,6 +400,15 @@ export const generateAiTaskset = async (req, res) => {
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
     const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
+    // For demo/testing, allow taskTypes override
+    const requestedTypes = Array.isArray(req.body?.taskTypes)
+      ? req.body.taskTypes.filter(Boolean)
+      : null;
+
+    const targetCount = requestedTypes?.length
+      ? requestedTypes.length
+      : Number(numberOfTasks || 8);
+      
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({ subject, gradeLevel, difficulty, learningGoal });
 
@@ -588,6 +472,7 @@ export const generateAiTaskset = async (req, res) => {
     const specialConsiderations = (topicDescription || "").trim();
     const customNotes = (customInstructions || "").trim();
 
+    
     // ---- Allowed types summary for the model ----
     const typeGuidelines = typePool
       .map((t) => {
@@ -646,7 +531,7 @@ Rules:
 - Each task has a short clear title and a prompt that students will see.
 - For SORT tasks: include config.buckets (>=2) and config.items (>=3) with {text, bucketIndex|null}
 - For SEQUENCE tasks: include config.items (>=3) with {text}
-- For MATCHING tasks: include leftItems (5–7) and rightItems (5–7), each item {id,label}. Also include correctMatches as a map { "leftId": "rightId" }. (You may also include correctAnswer with the same map.)
+- For MATCHING tasks: include config.leftItems (5–7) and config.rightItems (5–7), each item {id,text}. Also include correctAnswer as a map { "leftId": "rightId" }.
 - For VENNSORT tasks: include config.categories (2–3 strings), config.items (5–10 strings or {id,text}), and correctAnswer as a map { "itemId": ["CategoryA", "CategoryB"] } (empty array allowed).
 - For JEOPARDY/BrainBlitz tasks: include clues (>=3) with {clue, answer}
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
@@ -709,8 +594,8 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
     const completion = await client.chat.completions.create({
       model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
-      temperature: 0.4,
-      max_tokens: 2600,
+      temperature: 0.6,
+      max_tokens: 2200,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -719,50 +604,39 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
     const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
 
-    let aiTasks = extractJsonFromText(raw);
-    if (!aiTasks) {
-      console.error("AI taskset JSON parse error:", raw.slice(0, 1200));
-      return res.status(500).json({ error: "AI returned invalid JSON for taskset" });
+    let aiTasks;
+    try {
+      aiTasks = JSON.parse(raw);
+    } catch (err) {
+      console.error("AI taskset JSON parse error:", err, raw.slice(0, 800));
+      return res
+        .status(500)
+        .json({ error: "AI returned invalid JSON for taskset" });
     }
 
     if (!Array.isArray(aiTasks) || aiTasks.length === 0) {
       return res.status(500).json({ error: "AI returned no tasks" });
     }
 
-    // For demo/testing, allow taskTypes override
-    const requestedTypes = Array.isArray(req.body?.taskTypes)
-      ? req.body.taskTypes.map(normalizeSelectedType).filter(Boolean)
-      : null;
+// Demo generates one task per requested taskType (strict ordering)
+if (requestedTypes) {
+  if (!Array.isArray(aiTasks) || aiTasks.length !== requestedTypes.length) {
+    return res.status(400).json({
+      ok: false,
+      error: "AI did not return one task per requested task type.",
+    });
+  }
 
-    const targetCount = requestedTypes?.length
-      ? requestedTypes.length
-      : Number(numberOfTasks || 8);
-
-    // Demo generates one task per taskType
-        // Demo can request specific taskTypes. We accept AI returning tasks in any order,
-    // but we must end up with exactly ONE task per requested type.
-    if (requestedTypes?.length) {
-      const want = requestedTypes.map(normalizeSelectedType).filter(Boolean);
-      const wantSet = new Set(want);
-
-      const byType = new Map(); // type -> task
-      for (const t of Array.isArray(aiTasks) ? aiTasks : []) {
-        const got = normalizeSelectedType(t?.taskType || t?.type);
-        if (!got || !wantSet.has(got)) continue;
-        if (!byType.has(got)) byType.set(got, t);
-      }
-
-      const missing = want.filter((t) => !byType.has(t));
-      if (missing.length) {
-        return res.status(400).json({
-          ok: false,
-          error: `AI did not return a task for: ${missing.join(", ")}`,
-        });
-      }
-
-      // Re-order and collapse to one-per-type for downstream normalization
-      aiTasks = want.map((t) => byType.get(t));
+  for (let i = 0; i < requestedTypes.length; i++) {
+    const got = normalizeSelectedType(aiTasks[i]?.taskType || aiTasks[i]?.type);
+    if (got !== requestedTypes[i]) {
+      return res.status(400).json({
+        ok: false,
+        error: `Task ${i} type mismatch: expected ${requestedTypes[i]}, got ${got}`,
+      });
     }
+  }
+}
 
     // ---------- Normalize AI tasks into TaskSet schema ----------
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
@@ -1419,98 +1293,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         items = [];
       }
 
-
-      // -------- MATCHING normalization --------
-      else if (taskType === TASK_TYPES.MATCHING) {
-        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
-
-        const rawLeft =
-          (Array.isArray(t.leftItems) && t.leftItems) ||
-          (Array.isArray(aiConfig.leftItems) && aiConfig.leftItems) ||
-          null;
-
-        const rawRight =
-          (Array.isArray(t.rightItems) && t.rightItems) ||
-          (Array.isArray(aiConfig.rightItems) && aiConfig.rightItems) ||
-          null;
-
-        const rawPairs =
-          (Array.isArray(t.pairs) && t.pairs) ||
-          (Array.isArray(t.items) && t.items) ||
-          (Array.isArray(aiConfig.pairs) && aiConfig.pairs) ||
-          (Array.isArray(aiConfig.items) && aiConfig.items) ||
-          [];
-
-        const normItem = (x, idx, prefix) => {
-          if (typeof x === "string") return { id: `${prefix}${idx + 1}`, label: x.trim() };
-          const id = String(x?.id || x?._id || x?.key || `${prefix}${idx + 1}`).trim();
-          const label = String(x?.label || x?.text || x?.term || "").trim();
-          return { id, label: label || `${prefix}${idx + 1}` };
-        };
-
-        let leftItemsLocal = [];
-        let rightItemsLocal = [];
-        let correctMatchesLocal = {};
-
-        if (rawLeft && rawRight) {
-          leftItemsLocal = rawLeft.map((x, idx) => normItem(x, idx, "L"));
-          rightItemsLocal = rawRight.map((x, idx) => normItem(x, idx, "R"));
-
-          const cm =
-            (t.correctMatches && typeof t.correctMatches === "object" && t.correctMatches) ||
-            (t.correctAnswer && typeof t.correctAnswer === "object" && t.correctAnswer) ||
-            (aiConfig.correctMatches && typeof aiConfig.correctMatches === "object" && aiConfig.correctMatches) ||
-            (aiConfig.correctAnswer && typeof aiConfig.correctAnswer === "object" && aiConfig.correctAnswer) ||
-            {};
-
-          correctMatchesLocal = Object.fromEntries(
-            Object.entries(cm).map(([k, v]) => [String(k), String(v)])
-          );
-        } else {
-          leftItemsLocal = rawPairs.map((p, idx) => ({
-            id: String(p?.leftId || p?.leftKey || p?.id || `L${idx + 1}`),
-            label: String(p?.leftLabel || p?.leftText || p?.left || p?.term || `Left ${idx + 1}`).trim(),
-          }));
-          rightItemsLocal = rawPairs.map((p, idx) => ({
-            id: String(p?.rightId || p?.rightKey || p?.matchId || `R${idx + 1}`),
-            label: String(p?.rightLabel || p?.rightText || p?.right || p?.definition || `Right ${idx + 1}`).trim(),
-          }));
-          correctMatchesLocal = Object.fromEntries(
-            rawPairs.map((p, idx) => {
-              const leftId = String(p?.leftId || p?.leftKey || p?.id || `L${idx + 1}`);
-              const rightId = String(p?.rightId || p?.rightKey || p?.matchId || `R${idx + 1}`);
-              return [leftId, rightId];
-            })
-          );
-        }
-
-        if (leftItemsLocal.length < 3 || rightItemsLocal.length < 3) {
-          t.__needsRetry = true;
-          t.__retryType = TASK_TYPES.MATCHING;
-
-          const fallback = rawWordBank.slice(0, 6);
-          leftItemsLocal = fallback.map((w, i) => ({ id: `L${i + 1}`, label: String(w) }));
-          rightItemsLocal = fallback
-            .slice()
-            .reverse()
-            .map((w, i) => ({ id: `R${i + 1}`, label: String(w) }));
-          correctMatchesLocal = Object.fromEntries(
-            leftItemsLocal.map((l, i) => [l.id, rightItemsLocal[rightItemsLocal.length - 1 - i]?.id || rightItemsLocal[i]?.id])
-          );
-        }
-
-        // lift to top-level for the student MatchingTask component + objective checking
-        t.leftItems = leftItemsLocal;
-        t.rightItems = rightItemsLocal;
-        t.correctMatches = correctMatchesLocal;
-        t.correctAnswer = correctMatchesLocal;
-
-        options = [];
-        items = [];
-        config = { ...aiConfig };
-        correctAnswer = correctMatchesLocal;
-      }
-
       // ---- Titles / prompts / timers / points ----
       const title = isNonEmptyString(t.title)
         ? String(t.title).trim().slice(0, 120)
@@ -1578,13 +1360,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       };
 
       if (taskType === TASK_TYPES.JEOPARDY) out.clues = clues;
-
-      if (taskType === TASK_TYPES.MATCHING) {
-        out.leftItems = Array.isArray(t.leftItems) ? t.leftItems : [];
-        out.rightItems = Array.isArray(t.rightItems) ? t.rightItems : [];
-        out.correctMatches =
-          t.correctMatches && typeof t.correctMatches === "object" ? t.correctMatches : {};
-      }
 
       // carry retry flags (temporary; removed before save)
       if (t.__needsRetry) {
