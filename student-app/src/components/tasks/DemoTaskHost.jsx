@@ -3,14 +3,45 @@ import React from "react";
 import { TASK_TYPES } from "../../../shared/taskTypes.js";
 
 // import the SAME task components TaskRunner uses:
-import MoodCheckinTask from "./MoodCheckinTask.jsx";
-import TrueFalseTask from "./TrueFalseTask.jsx";
-import MultipleChoiceTask from "./MultipleChoiceTask.jsx";
-import OpenTextTask from "./OpenTextTask.jsx";
-import PhotoTask from "./PhotoTask.jsx";
-import PhotoJournalTask from "./PhotoJournalTask.jsx";
-import HangmanDuelTask from "./HangmanDuelTask.jsx";
-// ...etc: add all task components you support
+import BodyBreakTask from "./types/BodyBreakTask";
+import MakeAndSnapTask from "./types/MakeAndSnapTask";
+import MultipleChoiceTask from "./types/MultipleChoiceTask";
+import OpenTextTask from "./types/OpenTextTask";
+import PhotoTask from "./types/PhotoTask";
+import RecordAudioTask from "./types/RecordAudioTask";
+import SequenceTask from "./types/SequenceTask";
+import ShortAnswerTask from "./types/ShortAnswerTask";
+import SortTask from "./types/SortTask";
+import TrueFalseTask from "./types/TrueFalseTask";
+import DrawMimeTask from "./types/DrawMimeTask";
+import CollaborationTask from "./types/CollaborationTask";
+import MusicalChairsTask from "./types/MusicalChairsTask";
+import MysteryCluesTask from "./types/MysteryCluesTask";
+import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
+import MadDashSequenceTask from "./types/MadDashSequenceTask";
+import LiveDebateTask from "./types/LiveDebateTask";
+import FlashcardsTask from "./types/FlashcardsTask";
+import FlashcardsRaceTask from "./types/FlashcardsRaceTask";
+import TimelineTask from "./types/TimelineTask";
+import PetFeedingTask from "./types/PetFeedingTask";
+import MotionMissionTask from "./types/MotionMissionTask";
+import BrainstormBattleTask from "./types/BrainstormBattleTask";
+import MindMapperTask from "./types/MindMapperTask";
+import SpeedDrawTask from "./types/SpeedDrawTask";
+import DiffDetectiveTask from "./types/DiffDetectiveTask";
+import BrainSparkNotesTask from "./types/BrainSparkNotesTask";
+import HideNSeekTask from "./types/HideNSeekTask";
+import SpeechRecognitionTask from "./types/SpeechRecognitionTask";
+import PronunciationTask from "./types/PronunciationTask";
+import AIDebateJudgeTask from "./types/AIDebateJudgeTask";
+import BrainBlitzTask from "./types/BrainBlitzTask";
+import PhotoJournalTask from "./types/PhotoJournalTask";
+import HangmanDuelTask from "./types/HangmanDuelTask";
+import MatchingTask from "./types/MatchingTask";
+import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
+import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
+import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
+import VennSortTask from "./types/VennSortTask";
 
 export default function DemoTaskHost({ task, onSubmit, disabled }) {
   if (!task) return null;
