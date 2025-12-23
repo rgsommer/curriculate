@@ -4004,9 +4004,11 @@ const DEMO_VOCAB = (process.env.DEMO_VOCAB || "teamwork, integrity, perseverance
   .filter(Boolean);
 
 // Build from taskTypes meta so you don't maintain v=== lists by hand
-const DEMO_TASK_TYPES = Object.keys(TASK_TYPE_META).filter(
-  (t) => TASK_TYPE_META[t]?.enabled !== false
-);
+const DEMO_TASK_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta?.implemented !== false)
+  .filter(([, meta]) => meta?.aiEligible === true)
+  .filter(([, meta]) => meta?.generatorEligible !== false) // defaults to allowed
+  .map(([type]) => type);
 
 // Optional: fixed word bank used by the generator
 const DEMO_WORD_BANK = [
