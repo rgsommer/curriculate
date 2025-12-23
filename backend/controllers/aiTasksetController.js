@@ -561,7 +561,7 @@ export const generateAiTaskset = async (req, res) => {
     const customNotes = (customInstructions || "").trim();
 
     // Demo generates one task per taskType
-    f (requestedTypes) {
+    if (requestedTypes) {
       if (!Array.isArray(aiTasks) || aiTasks.length !== requestedTypes.length) {
         return res.status(400).json({
           ok: false,
