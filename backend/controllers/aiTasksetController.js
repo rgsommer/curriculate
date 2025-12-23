@@ -85,6 +85,8 @@ function normalizeSelectedType(raw) {
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, ""); // strip punctuation like !, ?, etc.
 
+  if (v === "matching" || v === "match" || v === "pairing" || v === "match-task")
+    return TASK_TYPES.MATCHING;
   if (
     v === "multiple-choice" ||
     v === "multiplechoice" ||
@@ -503,6 +505,7 @@ export const generateAiTaskset = async (req, res) => {
     const rawSelected =
       (Array.isArray(selectedTypes) && selectedTypes) ||
       (Array.isArray(req.body.requiredTaskTypes) && req.body.requiredTaskTypes) ||
+      (Array.isArray(req.body.taskTypes) && req.body.taskTypes) ||
       [];
 
     let typePool;
