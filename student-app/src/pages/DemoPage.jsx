@@ -3,17 +3,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../../shared/taskTypes.js";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
+import adminRoutes from "./routes/admin.js";
+import tasksetRoutes from "./routes/tasksets.js"; // assuming this has the /demo GET
 
-// Demo socket stub so TaskRunner tasks that expect socket don't crash
-const demoSocket = useMemo(
-  () => ({
-    on: () => {},
-    off: () => {},
-    emit: () => {},
-  }),
-  []
-);
+app.use("/api/admin", adminRoutes);
+app.use("/api/tasksets", tasksetRoutes); // adjust path if different
+
+const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
 // Define which types are “physical” to skip AI scoring + overlay
 const PHYSICAL_TYPES = new Set([
@@ -38,6 +34,16 @@ export default function DemoPage() {
   const [taskLocked, setTaskLocked] = useState(false);
   const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
   const postSubmitTimerRef = useRef(null);
+
+  // Demo socket stub so TaskRunner tasks that expect socket don't crash
+  const demoSocket = useMemo(
+    () => ({
+      on: () => {},
+      off: () => {},
+      emit: () => {},
+    }),
+    []
+  );
 
   const allTaskTypes = useMemo(() => {
     // TaskTypes list from shared
