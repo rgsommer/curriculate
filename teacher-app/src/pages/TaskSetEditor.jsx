@@ -55,8 +55,11 @@ function normalizeTaskType(raw) {
   if (v === "body-break" || v === "body_break") {
     return TASK_TYPES.BODY_BREAK;
   }
-  if (v === TASK_TYPES.JEOPARDY || v === "jeopardy" || v === "brain-blitz") {
+  if (v === TASK_TYPES.JEOPARDY || v === "jeopardy") {
     return TASK_TYPES.JEOPARDY;
+  }
+  if (v === "brain-blitz" || v === "brain_blitz" || v === TASK_TYPES.BRAIN_BLITZ) {
+    return TASK_TYPES.BRAIN_BLITZ;
   }
 
   // Fallback: if we know this type, keep it, otherwise default to short answer
@@ -199,6 +202,47 @@ export default function TaskSetEditor() {
             if (out.taskType === TASK_TYPES.TRUE_FALSE) {
               out.options = Array.isArray(out.options) && out.options.length ? out.options : ["True", "False"];
               if (out.correctAnswer === null || out.correctAnswer === undefined) out.correctAnswer = 0;
+            }
+
+            // Flashcards: AI often stores in config.items; student task expects task.cards
+            if (taskType === TASK_TYPES.FLASHCARDS) {
+              if (!Array.isArray(out.cards) && Array.isArray(out.config?.items)) {
+                out.cards = out.config.items.map((it) => ({
+                  question: it?.question ?? "",
+                  answer: it?.answer ?? "",
+                }));
+              }
+            }
+
+            // Hangman: show wordsByStation if present (AI puts it in config)
+            if (taskType === TASK_TYPES.HANGMAN_DUEL) {
+              if (!Array.isArray(out.wordsByStation) && Array.isArray(out.config?.wordsByStation)) {
+                out.wordsByStation = out.config.wordsByStation;
+              }
+            }
+
+            // BrainBlitz: AI may store clues in config.clues; editor expects task.clues
+            if (taskType === TASK_TYPES.BRAIN_BLITZ) {
+              if (!Array.isArray(out.clues) && Array.isArray(out.config?.clues)) {
+                out.clues = out.config.clues;
+              }
+            }
+
+            // VennSort: ensure categories include Both if prompt expects it
+            if (taskType === TASK_TYPES.VENNSORT) {
+              const cats = Array.isArray(out.config?.categories) ? out.config.categories : [];
+              if (cats.length === 2 && !cats.includes("Both")) {
+                out.config = { ...(out.config || {}), categories: [...cats, "Both"] };
+              }
+            }
+
+            // DiffDetective: normalize fields to what the student task reads
+            if (taskType === TASK_TYPES.DIFF_DETECTIVE) {
+              if (!out.original && out.config?.original) out.original = out.config.original;
+              if (!out.modified && out.config?.modified) out.modified = out.config.modified;
+              if (!Array.isArray(out.differences) && Array.isArray(out.config?.differences)) {
+                out.differences = out.config.differences;
+              }
             }
 
             return out;
@@ -1072,7 +1116,7 @@ export default function TaskSetEditor() {
                           key={i}
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "2fr 1fr auto",
+                            gridTemplateColumns: "1fr 2fr auto",
                             gap: 6,
                             alignItems: "center",
                           }}

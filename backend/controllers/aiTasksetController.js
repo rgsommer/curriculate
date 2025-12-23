@@ -156,7 +156,7 @@ function normalizeSelectedType(raw) {
   if (v === "photo-journal" || v === "photojournal")
     return TASK_TYPES.PHOTO_JOURNAL;
   if (v === "draw-or-mime" || v === "drawormime")
-    return TASK_TYPES.DRAW_OR_MIME;
+    return TASK_TYPES.DRAW_MIME;
   if (v === "body-break" || v === "bodybreak") return TASK_TYPES.BODY_BREAK;
 
   // Pre-task / interstitial
@@ -730,10 +730,16 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     }
 
     // For demo/testing, allow taskTypes override
-    const requestedTypes = Array.isArray(req.body?.taskTypes)
-      ? req.body.taskTypes.map(normalizeSelectedType).filter(Boolean)
-      : null;
+    const requestedTypesRaw = Array.isArray(req.body?.taskTypes) ? req.body.taskTypes : null;
 
+    const requestedTypes = requestedTypesRaw?.length
+      ? requestedTypesRaw
+          .map(normalizeSelectedType)
+          .filter(Boolean)
+          // ✅ critical: only types that are safe to generate
+          .filter((t) => AI_ELIGIBLE_TYPES.includes(t))
+      : null;
+      
     const targetCount = requestedTypes?.length
       ? requestedTypes.length
       : Number(numberOfTasks || 8);

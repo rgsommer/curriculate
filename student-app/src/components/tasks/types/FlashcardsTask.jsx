@@ -7,7 +7,17 @@ export default function FlashcardsTask({
   disabled,
   socket,
 }) {
-  const cards = Array.isArray(task?.cards) ? task.cards : [];
+  const cards =
+    Array.isArray(task?.cards)
+      ? task.cards
+      : Array.isArray(task?.config?.items)
+      ? task.config.items
+          .map((it) => ({
+            question: it?.question ?? it?.front ?? it?.q ?? "",
+            answer: it?.answer ?? it?.back ?? it?.a ?? "",
+          }))
+          .filter((c) => String(c.question || "").trim() && String(c.answer || "").trim())
+  : [];
 
   // Track which card is shown & whether it is flipped
   const [index, setIndex] = useState(0);
