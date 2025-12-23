@@ -1,7 +1,5 @@
 // backend/models/DemoTaskset.js
 
-import mongoose from "mongoose";
-
 const DemoTasksetSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true }, // e.g. "default"

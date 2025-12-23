@@ -1,7 +1,7 @@
 // backend/controllers/aiTasksetController.js
 import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
-import { TASK_TYPES, TASK_TYPE_META, normalizeTaskTypeId } from "../../shared/taskTypes.js";
+import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
 const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
@@ -76,9 +76,99 @@ function validateGeneratePayload(payload = {}) {
  * Example: "Brain Blitz!" => "brain-blitz"
  */
 function normalizeSelectedType(raw) {
-  // Delegate to shared normalizer so we don't maintain duplicate v=== chains here.
-  const normalized = normalizeTaskTypeId(raw);
-  return normalized || null;
+  if (!raw) return null;
+
+  const v = String(raw)
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, ""); // strip punctuation like !, ?, etc.
+
+  if (v === "matching" || v === "match" || v === "pairing" || v === "match-task")
+    return TASK_TYPES.MATCHING;
+  if (
+    v === "multiple-choice" ||
+    v === "multiplechoice" ||
+    v === "mcq" ||
+    v === "mc"
+  )
+    return TASK_TYPES.MULTIPLE_CHOICE;
+  if (v === "true-false" || v === "truefalse" || v === "tf")
+    return TASK_TYPES.TRUE_FALSE;
+  if (v === "short-answer" || v === "shortanswer" || v === "sa")
+    return TASK_TYPES.SHORT_ANSWER;
+  if (v === "open-text" || v === "opentext" || v === "open")
+    return TASK_TYPES.OPEN_TEXT;
+
+  if (v === "sort" || v === "categorize" || v === "sort-task")
+    return TASK_TYPES.SORT;
+
+  if (v === "sequence" || v === "timeline" || v === "order")
+    return TASK_TYPES.SEQUENCE;
+
+  if (
+    v === "vennsort" ||
+    v === "venn-sort" ||
+    v === "venn" ||
+    v === "venn-diagram" ||
+    v === "venn_diagram"
+  )
+    return TASK_TYPES.VENNSORT;
+
+  if (
+    v === "brain-blitz" ||
+    v === "brainblitz" ||
+    v === "jeopardy" ||
+    v === "jeopardy-game" ||
+    v === "jeopardy_game"
+  )
+    return TASK_TYPES.JEOPARDY;
+
+  if (
+    v === "brain-spark-notes" ||
+    v === "brainsparknotes" ||
+    v === "brain_spark_notes"
+  )
+    return TASK_TYPES.BRAIN_SPARK_NOTES;
+
+  if (v === "mind-mapper" || v === "mindmapper" || v === "mind_mapper")
+    return TASK_TYPES.MIND_MAPPER;
+
+  if (v === "hangman" || v === "hangman-duel" || v === "hangmanduel")
+    return TASK_TYPES.HANGMAN_DUEL;
+
+  if (
+    v === "word-weaver" ||
+    v === "wordweaver" ||
+    v === "word-weaver-duel" ||
+    v === "wordweaverduel" ||
+    v === "word-weaver_duel" ||
+    v === "word_weaver_duel"
+  )
+    return TASK_TYPES.WORD_WEAVER_DUEL;
+
+  if (v === "flashcards") return TASK_TYPES.FLASHCARDS;
+  if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
+    return TASK_TYPES.DIFF_DETECTIVE;
+
+  if (v === "photo") return TASK_TYPES.PHOTO;
+  if (v === "photo-journal" || v === "photojournal")
+    return TASK_TYPES.PHOTO_JOURNAL;
+  if (v === "draw-or-mime" || v === "drawormime")
+    return TASK_TYPES.DRAW_OR_MIME;
+  if (v === "body-break" || v === "bodybreak") return TASK_TYPES.BODY_BREAK;
+
+  // Pre-task / interstitial
+  if (v === "mood-checkin" || v === "moodcheckin" || v === "mood") return TASK_TYPES.MOOD_CHECKIN;
+  if (v === "treasure-runner" || v === "treasurerunner" || v === "treasure")
+    return TASK_TYPES.TREASURE_RUNNER;
+
+  // Post-taskset
+  if (v === "multi-player-feedback" || v === "multiplayerfeedback" || v === "feedback")
+    return TASK_TYPES.MULTI_PLAYER_FEEDBACK;
+
+  return null;
 }
 
 function isNonEmptyString(x) {
@@ -397,6 +487,7 @@ export const generateAiTaskset = async (req, res) => {
       displays,
     } = req.body || {};
 
+    const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
     const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
@@ -414,6 +505,7 @@ export const generateAiTaskset = async (req, res) => {
     const rawSelected =
       (Array.isArray(selectedTypes) && selectedTypes) ||
       (Array.isArray(req.body.requiredTaskTypes) && req.body.requiredTaskTypes) ||
+      (Array.isArray(req.body.taskTypes) && req.body.taskTypes) ||
       [];
 
     let typePool;
@@ -425,11 +517,6 @@ export const generateAiTaskset = async (req, res) => {
       typePool = normalized.length ? normalized : CORE_TYPES;
     } else {
       typePool = CORE_TYPES;
-    }
-
-    // If demo explicitly requests taskTypes, use that as the pool (and keep its order)
-    if (Array.isArray(requestedTypes) && requestedTypes.length) {
-      typePool = requestedTypes;
     }
 
     // Presenter lenses / perspectives
