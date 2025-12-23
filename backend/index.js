@@ -3994,17 +3994,58 @@ async function getOrCreateProfileForUser({ ownerId, email } = {}) {
 
 const DEMO_ADMIN_KEY = String(process.env.DEMO_ADMIN_KEY || "").trim();
 
-// GET current demo taskset (from cache or generated)
+// Helper: run an Express handler and capture res.json payload
+async function runJsonHandler(handler, reqLike) {
+  return new Promise((resolve, reject) => {
+    const resLike = {
+      statusCode: 200,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        resolve({ status: this.statusCode, payload });
+      },
+      send(payload) {
+        resolve({ status: this.statusCode, payload });
+      },
+      end(payload) {
+        resolve({ status: this.statusCode, payload });
+      },
+      set() {
+        return this;
+      },
+    };
+
+    Promise.resolve(handler(reqLike, resLike)).catch(reject);
+  });
+}
+
+function extractTaskset(payload) {
+  if (!payload) return null;
+  // common shapes we’ve seen in your codebase
+  return (
+    payload.taskset ||
+    payload.taskSet ||
+    payload.data?.taskset ||
+    payload.result?.taskset ||
+    payload.payload?.taskset ||
+    null
+  );
+}
+
+// GET current demo taskset
 app.get("/api/demo/taskset", async (req, res) => {
   try {
-    // If you already have caching logic, use it here instead.
-    // Minimal: generate fresh each time for now:
-    const fakeReq = { body: { mode: "demo", count: 10 }, user: null };
-    const generated = await generateAiTaskset(fakeReq);
+    const reqLike = { body: { mode: "demo", count: 10 }, user: null };
+    const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
 
-    // normalize: depending on your controller return shape
-    const taskset = generated?.taskset || generated;
+    if (status >= 400) {
+      console.error("[DEMO] controller returned HTTP", status, payload);
+      return res.status(500).json({ ok: false, error: "Failed to load demo taskset" });
+    }
 
+    const taskset = extractTaskset(payload) || payload;
     return res.json({ ok: true, taskset });
   } catch (e) {
     console.error("[DEMO] GET /api/demo/taskset failed:", e);
@@ -4020,11 +4061,15 @@ app.post("/api/demo/taskset/regenerate", async (req, res) => {
       return res.status(403).json({ ok: false, error: "Forbidden" });
     }
 
-    const fakeReq = { body: { mode: "demo", count: 10, force: true }, user: null };
-    const generated = await generateAiTaskset(fakeReq);
+    const reqLike = { body: { mode: "demo", count: 10, force: true }, user: null };
+    const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
 
-    const taskset = generated?.taskset || generated;
+    if (status >= 400) {
+      console.error("[DEMO] controller returned HTTP", status, payload);
+      return res.status(500).json({ ok: false, error: "Failed to regenerate demo taskset" });
+    }
 
+    const taskset = extractTaskset(payload) || payload;
     return res.json({ ok: true, taskset });
   } catch (e) {
     console.error("[DEMO] POST /api/demo/taskset/regenerate failed:", e);
