@@ -1,7 +1,7 @@
 // student-app/src/pages/DemoPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
-import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
+import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
