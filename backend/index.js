@@ -3989,28 +3989,39 @@ async function getOrCreateProfileForUser({ ownerId, email } = {}) {
 }
 
 // ====================================================================
-//  DEMO TASKSET ENDPOINTS
+//  DEMO TASKSET POOL (for /demo page)
 // ====================================================================
 
 const DEMO_ADMIN_KEY = String(process.env.DEMO_ADMIN_KEY || "").trim();
+let demoTasksetCache = null;
+let demoTasksetUpdatedAt = 0;
 
-// Helper: run an Express handler and capture res.json payload
+function requireDemoAdmin(req, res) {
+  const key = String(req.headers["x-demo-admin-key"] || "").trim();
+  if (!DEMO_ADMIN_KEY || key !== DEMO_ADMIN_KEY) {
+    res.status(403).json({ ok: false, error: "Forbidden" });
+    return true;
+  }
+  return false;
+}
+
+// Run an Express handler and capture JSON output
 async function runJsonHandler(handler, reqLike) {
   return new Promise((resolve, reject) => {
     const resLike = {
-      statusCode: 200,
+      _status: 200,
       status(code) {
-        this.statusCode = code;
+        this._status = code;
         return this;
       },
       json(payload) {
-        resolve({ status: this.statusCode, payload });
+        resolve({ status: this._status, payload });
       },
       send(payload) {
-        resolve({ status: this.statusCode, payload });
+        resolve({ status: this._status, payload });
       },
-      end(payload) {
-        resolve({ status: this.statusCode, payload });
+      end() {
+        resolve({ status: this._status, payload: null });
       },
       set() {
         return this;
@@ -4021,9 +4032,8 @@ async function runJsonHandler(handler, reqLike) {
   });
 }
 
-function extractTaskset(payload) {
+function normalizeTaskset(payload) {
   if (!payload) return null;
-  // common shapes we’ve seen in your codebase
   return (
     payload.taskset ||
     payload.taskSet ||
@@ -4034,46 +4044,75 @@ function extractTaskset(payload) {
   );
 }
 
-// GET current demo taskset
+// Returns current cached demo taskset; generates one if missing
 app.get("/api/demo/taskset", async (req, res) => {
   try {
-    const reqLike = { body: { mode: "demo", count: 10 }, user: null };
-    const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
+    if (!demoTasksetCache) {
+      const fakeReq = {
+        body: { mode: "demo", count: 10 },
+        user: null,
+        headers: {},
+        query: {},
+        params: {},
+      };
 
-    if (status >= 400) {
-      console.error("[DEMO] controller returned HTTP", status, payload);
-      return res.status(500).json({ ok: false, error: "Failed to load demo taskset" });
+      const { status, payload } = await runJsonHandler(generateAiTaskset, fakeReq);
+
+      if (status >= 400 || payload?.ok === false) {
+        console.error("[DEMO] generateAiTaskset returned:", status, payload);
+        return res.status(500).json({
+          ok: false,
+          error: payload?.error || `Generator failed (HTTP ${status})`,
+        });
+      }
+
+      demoTasksetCache = normalizeTaskset(payload) || payload;
+      demoTasksetUpdatedAt = Date.now();
     }
 
-    const taskset = extractTaskset(payload) || payload;
-    return res.json({ ok: true, taskset });
+    return res.json({ ok: true, taskset: demoTasksetCache, updatedAt: demoTasksetUpdatedAt });
   } catch (e) {
     console.error("[DEMO] GET /api/demo/taskset failed:", e);
-    return res.status(500).json({ ok: false, error: "Failed to load demo taskset" });
+    return res.status(500).json({
+      ok: false,
+      error: process.env.NODE_ENV === "production" ? "Failed to load demo taskset" : String(e?.message || e),
+    });
   }
 });
 
-// POST regenerate demo taskset (admin key required)
+// Forces regenerate (admin key required)
 app.post("/api/demo/taskset/regenerate", async (req, res) => {
+  if (requireDemoAdmin(req, res)) return;
+
   try {
-    const key = String(req.headers["x-demo-admin-key"] || "").trim();
-    if (!DEMO_ADMIN_KEY || key !== DEMO_ADMIN_KEY) {
-      return res.status(403).json({ ok: false, error: "Forbidden" });
+    const fakeReq = {
+      body: { mode: "demo", count: 10, force: true },
+      user: null,
+      headers: {},
+      query: {},
+      params: {},
+    };
+
+    const { status, payload } = await runJsonHandler(generateAiTaskset, fakeReq);
+
+    if (status >= 400 || payload?.ok === false) {
+      console.error("[DEMO] generateAiTaskset returned:", status, payload);
+      return res.status(500).json({
+        ok: false,
+        error: payload?.error || `Generator failed (HTTP ${status})`,
+      });
     }
 
-    const reqLike = { body: { mode: "demo", count: 10, force: true }, user: null };
-    const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
+    demoTasksetCache = normalizeTaskset(payload) || payload;
+    demoTasksetUpdatedAt = Date.now();
 
-    if (status >= 400) {
-      console.error("[DEMO] controller returned HTTP", status, payload);
-      return res.status(500).json({ ok: false, error: "Failed to regenerate demo taskset" });
-    }
-
-    const taskset = extractTaskset(payload) || payload;
-    return res.json({ ok: true, taskset });
+    return res.json({ ok: true, taskset: demoTasksetCache, updatedAt: demoTasksetUpdatedAt });
   } catch (e) {
     console.error("[DEMO] POST /api/demo/taskset/regenerate failed:", e);
-    return res.status(500).json({ ok: false, error: "Failed to regenerate demo taskset" });
+    return res.status(500).json({
+      ok: false,
+      error: process.env.NODE_ENV === "production" ? "Failed to regenerate demo taskset" : String(e?.message || e),
+    });
   }
 });
 
