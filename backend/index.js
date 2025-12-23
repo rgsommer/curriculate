@@ -196,7 +196,7 @@ const corsOptions = {
         origin.startsWith("http://localhost:") ||
         origin.startsWith("http://127.0.0.1:")
       ) {
-        return callback(null, true);
+        return callback(null, false);
       }
     }
 
@@ -4006,6 +4006,7 @@ function requireDemoAdmin(req, res) {
 }
 
 // Run an Express handler and capture JSON output
+// Run an Express handler and capture res.json payload
 async function runJsonHandler(handler, reqLike) {
   return new Promise((resolve, reject) => {
     const resLike = {
@@ -4034,21 +4035,14 @@ async function runJsonHandler(handler, reqLike) {
 
 function normalizeTaskset(payload) {
   if (!payload) return null;
-  return (
-    payload.taskset ||
-    payload.taskSet ||
-    payload.data?.taskset ||
-    payload.result?.taskset ||
-    payload.payload?.taskset ||
-    null
-  );
+  return payload.taskset || payload.taskSet || payload.data?.taskset || payload.result?.taskset || null;
 }
 
-// Returns current cached demo taskset; generates one if missing
+// GET current demo taskset (generate once then cache)
 app.get("/api/demo/taskset", async (req, res) => {
   try {
     if (!demoTasksetCache) {
-      const fakeReq = {
+      const reqLike = {
         body: { mode: "demo", count: 10 },
         user: null,
         headers: {},
@@ -4056,14 +4050,11 @@ app.get("/api/demo/taskset", async (req, res) => {
         params: {},
       };
 
-      const { status, payload } = await runJsonHandler(generateAiTaskset, fakeReq);
+      const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
 
       if (status >= 400 || payload?.ok === false) {
         console.error("[DEMO] generateAiTaskset returned:", status, payload);
-        return res.status(500).json({
-          ok: false,
-          error: payload?.error || `Generator failed (HTTP ${status})`,
-        });
+        return res.status(500).json({ ok: false, error: payload?.error || `Generator failed (HTTP ${status})` });
       }
 
       demoTasksetCache = normalizeTaskset(payload) || payload;
@@ -4073,19 +4064,17 @@ app.get("/api/demo/taskset", async (req, res) => {
     return res.json({ ok: true, taskset: demoTasksetCache, updatedAt: demoTasksetUpdatedAt });
   } catch (e) {
     console.error("[DEMO] GET /api/demo/taskset failed:", e);
-    return res.status(500).json({
-      ok: false,
-      error: process.env.NODE_ENV === "production" ? "Failed to load demo taskset" : String(e?.message || e),
-    });
+    return res.status(500).json({ ok: false, error: "Failed to load demo taskset" });
   }
 });
 
-// Forces regenerate (admin key required)
+// POST regenerate (admin key required)
 app.post("/api/demo/taskset/regenerate", async (req, res) => {
-  if (requireDemoAdmin(req, res)) return;
+  const denied = requireDemoAdmin(req, res);
+  if (denied) return;
 
   try {
-    const fakeReq = {
+    const reqLike = {
       body: { mode: "demo", count: 10, force: true },
       user: null,
       headers: {},
@@ -4093,14 +4082,11 @@ app.post("/api/demo/taskset/regenerate", async (req, res) => {
       params: {},
     };
 
-    const { status, payload } = await runJsonHandler(generateAiTaskset, fakeReq);
+    const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
 
     if (status >= 400 || payload?.ok === false) {
       console.error("[DEMO] generateAiTaskset returned:", status, payload);
-      return res.status(500).json({
-        ok: false,
-        error: payload?.error || `Generator failed (HTTP ${status})`,
-      });
+      return res.status(500).json({ ok: false, error: payload?.error || `Generator failed (HTTP ${status})` });
     }
 
     demoTasksetCache = normalizeTaskset(payload) || payload;
@@ -4109,10 +4095,7 @@ app.post("/api/demo/taskset/regenerate", async (req, res) => {
     return res.json({ ok: true, taskset: demoTasksetCache, updatedAt: demoTasksetUpdatedAt });
   } catch (e) {
     console.error("[DEMO] POST /api/demo/taskset/regenerate failed:", e);
-    return res.status(500).json({
-      ok: false,
-      error: process.env.NODE_ENV === "production" ? "Failed to regenerate demo taskset" : String(e?.message || e),
-    });
+    return res.status(500).json({ ok: false, error: "Failed to regenerate demo taskset" });
   }
 });
 
