@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/types/MatchingTask.jsx
-// ... (keep all previous imports and code up to the return statement)
+import { useState, useRef, useEffect } from "react";
 
 export default function MatchingTask({ task, onSubmit, disabled, onAnswerChange }) {
   // ... (existing code: leftItems, rightItems, correctMatches, sounds, etc.)
@@ -13,7 +13,7 @@ export default function MatchingTask({ task, onSubmit, disabled, onAnswerChange 
   // Save to history whenever a match is made
   const addMatch = (fromId, toId) => {
     const newMatches = { ...matches, [fromId]: toId };
-    setHistory(prev => [...prev, matches]); // Save previous state
+    setHistory(prev => [...prev, { ...matches }]);
     setMatches(newMatches);
 
     const isCorrect = correctMatches[fromId] === toId;
@@ -33,8 +33,7 @@ export default function MatchingTask({ task, onSubmit, disabled, onAnswerChange 
     if (history.length === 0) return;
 
     const previousMatches = history[history.length - 1];
-    const lastFromId = Object.keys(matches).find(id => !previousMatches.hasOwnProperty(id) || previousMatches[id] !== matches[id]);
-
+    
     setMatches(previousMatches);
     setHistory(prev => prev.slice(0, -1));
 
