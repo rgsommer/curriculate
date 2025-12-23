@@ -3995,6 +3995,7 @@ async function getOrCreateProfileForUser({ ownerId, email } = {}) {
 const DEMO_ADMIN_KEY = String(process.env.DEMO_ADMIN_KEY || "").trim();
 const DEMO_GRADE_LEVEL = process.env.DEMO_GRADE_LEVEL || "7";
 const DEMO_SUBJECT = process.env.DEMO_SUBJECT || "General";
+const DEMO_VOCAB = (process.env.DEMO_VOCAB || "teamwork, integrity, perseverance, importance of doing action-based activities that support educational goals, learning that sticks is fun and engaging").split(",").map(s => s.trim()).filter(Boolean);
 
 // GET /api/demo/taskset
 const reqLike = {
@@ -4003,6 +4004,8 @@ const reqLike = {
     count: 10,
     gradeLevel: DEMO_GRADE_LEVEL,
     subject: DEMO_SUBJECT,
+    vocabulary: DEMO_VOCAB,
+    keyTerms: DEMO_VOCAB,
   },
   user: null,
   headers: {},
@@ -4065,6 +4068,8 @@ app.get("/api/demo/taskset", async (req, res) => {
           force: true,
           gradeLevel: DEMO_GRADE_LEVEL,
           subject: DEMO_SUBJECT,
+          vocabulary: DEMO_VOCAB,
+          keyTerms: DEMO_VOCAB,
         },
         user: null,
         headers: {},
@@ -4103,6 +4108,8 @@ app.post("/api/demo/taskset/regenerate", async (req, res) => {
         force: true,
         gradeLevel: DEMO_GRADE_LEVEL,
         subject: DEMO_SUBJECT,
+        vocabulary: DEMO_VOCAB,
+        keyTerms: DEMO_VOCAB,
       },
       user: null,
       headers: {},
