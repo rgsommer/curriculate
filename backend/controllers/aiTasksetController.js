@@ -489,11 +489,14 @@ export const generateAiTaskset = async (req, res) => {
     const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
     // For demo/testing, allow taskTypes override
-    const requestedTypes = Array.isArray(payload.taskTypes) ? payload.taskTypes.filter(Boolean) : null;
+    const requestedTypes = Array.isArray(req.body?.taskTypes)
+      ? req.body.taskTypes.filter(Boolean)
+      : null;
+
     const targetCount = requestedTypes?.length
       ? requestedTypes.length
-      : Number(payload.numberOfTasks || 8);
-
+      : Number(numberOfTasks || 8);
+      
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({ subject, gradeLevel, difficulty, learningGoal });
 
@@ -558,17 +561,25 @@ export const generateAiTaskset = async (req, res) => {
     const customNotes = (customInstructions || "").trim();
 
     // Demo generates one task per taskType
-    if (requestedTypes) {
-      if (!Array.isArray(taskset.items) || taskset.items.length !== requestedTypes.length) {
-        return res.status(400).json({ ok: false, error: "AI did not return one item per requested task type." });
+    f (requestedTypes) {
+      if (!Array.isArray(aiTasks) || aiTasks.length !== requestedTypes.length) {
+        return res.status(400).json({
+          ok: false,
+          error: "AI did not return one task per requested task type.",
+        });
       }
+
       for (let i = 0; i < requestedTypes.length; i++) {
-        if (taskset.items[i]?.type !== requestedTypes[i]) {
-          return res.status(400).json({ ok: false, error: `Task ${i} type mismatch: expected ${requestedTypes[i]}` });
+        const got = normalizeSelectedType(aiTasks[i]?.taskType || aiTasks[i]?.type);
+        if (got !== requestedTypes[i]) {
+          return res.status(400).json({
+            ok: false,
+            error: `Task ${i} type mismatch: expected ${requestedTypes[i]}, got ${got}`,
+          });
         }
       }
     }
-
+    
     // ---- Allowed types summary for the model ----
     const typeGuidelines = typePool
       .map((t) => {
