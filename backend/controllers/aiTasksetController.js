@@ -551,26 +551,6 @@ export const generateAiTaskset = async (req, res) => {
     const specialConsiderations = (topicDescription || "").trim();
     const customNotes = (customInstructions || "").trim();
 
-    // Demo generates one task per taskType
-    if (requestedTypes) {
-      if (!Array.isArray(aiTasks) || aiTasks.length !== requestedTypes.length) {
-        return res.status(400).json({
-          ok: false,
-          error: "AI did not return one task per requested task type.",
-        });
-      }
-
-      for (let i = 0; i < requestedTypes.length; i++) {
-        const got = normalizeSelectedType(aiTasks[i]?.taskType || aiTasks[i]?.type);
-        if (got !== requestedTypes[i]) {
-          return res.status(400).json({
-            ok: false,
-            error: `Task ${i} type mismatch: expected ${requestedTypes[i]}, got ${got}`,
-          });
-        }
-      }
-    }
-    
     // ---- Allowed types summary for the model ----
     const typeGuidelines = typePool
       .map((t) => {
@@ -723,6 +703,26 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     const targetCount = requestedTypes?.length
       ? requestedTypes.length
       : Number(numberOfTasks || 8);
+
+    // Demo generates one task per taskType
+    if (requestedTypes) {
+      if (!Array.isArray(aiTasks) || aiTasks.length !== requestedTypes.length) {
+        return res.status(400).json({
+          ok: false,
+          error: "AI did not return one task per requested task type.",
+        });
+      }
+
+      for (let i = 0; i < requestedTypes.length; i++) {
+        const got = normalizeSelectedType(aiTasks[i]?.taskType || aiTasks[i]?.type);
+        if (got !== requestedTypes[i]) {
+          return res.status(400).json({
+            ok: false,
+            error: `Task ${i} type mismatch: expected ${requestedTypes[i]}, got ${got}`,
+          });
+        }
+      }
+    }
     
     // ---------- Normalize AI tasks into TaskSet schema ----------
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
