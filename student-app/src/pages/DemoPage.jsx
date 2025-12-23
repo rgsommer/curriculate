@@ -2,25 +2,18 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../../shared/taskTypes.js";
-import cors from "cors";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
-// Allow your frontend origin
-app.use(cors({
-  origin: "https://play.curriculate.net",  // <-- your deployed frontend
-  credentials: true, // if you ever use cookies/auth
-}));
-
-  // Demo socket stub so TaskRunner tasks that expect socket don't crash
-  const demoSocket = useMemo(
-    () => ({
-      on: () => {},
-      off: () => {},
-      emit: () => {},
-    }),
-    []
-  );
+// Demo socket stub so TaskRunner tasks that expect socket don't crash
+const demoSocket = useMemo(
+  () => ({
+    on: () => {},
+    off: () => {},
+    emit: () => {},
+  }),
+  []
+);
 
 // Define which types are “physical” to skip AI scoring + overlay
 const PHYSICAL_TYPES = new Set([
