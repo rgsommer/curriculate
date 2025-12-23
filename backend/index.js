@@ -4059,7 +4059,13 @@ app.get("/api/demo/taskset", async (req, res) => {
   try {
     if (!demoTasksetCache) {
       const reqLike = {
-        body: { mode: "demo", count: 10 },
+        body: {
+          mode: "demo",
+          count: 10,
+          force: true,
+          gradeLevel: DEMO_GRADE_LEVEL,
+          subject: DEMO_SUBJECT,
+        },
         user: null,
         headers: {},
         query: {},
@@ -4091,7 +4097,13 @@ app.post("/api/demo/taskset/regenerate", async (req, res) => {
 
   try {
     const reqLike = {
-      body: { mode: "demo", count: 10, force: true },
+      body: {
+        mode: "demo",
+        count: 10,
+        force: true,
+        gradeLevel: DEMO_GRADE_LEVEL,
+        subject: DEMO_SUBJECT,
+      },
       user: null,
       headers: {},
       query: {},
