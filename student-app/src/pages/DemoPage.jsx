@@ -12,6 +12,16 @@ app.use(cors({
   credentials: true, // if you ever use cookies/auth
 }));
 
+  // Demo socket stub so TaskRunner tasks that expect socket don't crash
+  const demoSocket = useMemo(
+    () => ({
+      on: () => {},
+      off: () => {},
+      emit: () => {},
+    }),
+    []
+  );
+
 // Define which types are “physical” to skip AI scoring + overlay
 const PHYSICAL_TYPES = new Set([
   TASK_TYPES.BODY_BREAK,
@@ -192,7 +202,7 @@ export default function DemoPage() {
             roomCode={"DEMO"}
             playerTeam={{ id: "demo-team", teamName: "Demo Team" }}
             memberNames={["Demo"]}
-            socket={null}
+            socket={demoSocket}
           />
         </div>
       )}
@@ -207,7 +217,7 @@ export default function DemoPage() {
             roomCode={"DEMO"}
             playerTeam={{ id: "demo-team", teamName: "Demo Team" }}
             memberNames={["Demo"]}
-            socket={null}
+            socket={demoSocket}
           />
 
           <div style={{ marginTop: 18, padding: 14, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}>
@@ -295,7 +305,7 @@ export default function DemoPage() {
               roomCode={"DEMO"}
               playerTeam={{ id: "demo-team", teamName: "Demo Team" }}
               memberNames={["Demo"]}
-              socket={null}
+              socket={demoSocket}
             />
           </div>
 
@@ -310,28 +320,6 @@ export default function DemoPage() {
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-function TreasureRunner() {
-  return (
-    <div
-      style={{
-        borderRadius: 16,
-        padding: 18,
-        border: "1px solid rgba(0,0,0,0.12)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
-      }}
-    >
-      <div>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>Treasure Runner</div>
-        <div style={{ opacity: 0.8 }}>Demo mode: waiting for a task selection…</div>
-      </div>
-      <div style={{ fontSize: 34 }}>🏃‍♂️💨💎</div>
     </div>
   );
 }
