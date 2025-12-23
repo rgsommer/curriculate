@@ -469,16 +469,6 @@ export default function DemoPage() {
     };
   }
 
-  // Start a task from the selected bubble.
-  // NOTE: function declaration avoids "not defined" issues if this file is refactored.
-  function startSelectedTask() {
-    if (!selectedType) return;
-    clearReviewLock();
-    const next = pickDemoTask(selectedType);
-    setCurrentTask({ ...next });
-    setPhase("task");
-  }
-
   // -------------------------
   // Bot simulation per task
   // -------------------------
