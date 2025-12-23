@@ -488,15 +488,6 @@ export const generateAiTaskset = async (req, res) => {
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
     const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
-    // For demo/testing, allow taskTypes override
-    const requestedTypes = Array.isArray(req.body?.taskTypes)
-      ? req.body.taskTypes.filter(Boolean)
-      : null;
-
-    const targetCount = requestedTypes?.length
-      ? requestedTypes.length
-      : Number(numberOfTasks || 8);
-      
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({ subject, gradeLevel, difficulty, learningGoal });
 
@@ -724,6 +715,15 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       return res.status(500).json({ error: "AI returned no tasks" });
     }
 
+    // For demo/testing, allow taskTypes override
+    const requestedTypes = Array.isArray(req.body?.taskTypes)
+      ? req.body.taskTypes.filter(Boolean)
+      : null;
+
+    const targetCount = requestedTypes?.length
+      ? requestedTypes.length
+      : Number(numberOfTasks || 8);
+    
     // ---------- Normalize AI tasks into TaskSet schema ----------
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
       const rawTypeToken = t.taskType || t.type || "";
