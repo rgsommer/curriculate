@@ -55,11 +55,8 @@ function normalizeTaskType(raw) {
   if (v === "body-break" || v === "body_break") {
     return TASK_TYPES.BODY_BREAK;
   }
-  if (v === TASK_TYPES.JEOPARDY || v === "jeopardy") {
+  if (v === TASK_TYPES.JEOPARDY || v === "jeopardy" || v === "brain-blitz") {
     return TASK_TYPES.JEOPARDY;
-  }
-  if (v === "brain-blitz" || v === "brain_blitz" || v === TASK_TYPES.BRAIN_BLITZ) {
-    return TASK_TYPES.BRAIN_BLITZ;
   }
 
   // Fallback: if we know this type, keep it, otherwise default to short answer
@@ -204,45 +201,66 @@ export default function TaskSetEditor() {
               if (out.correctAnswer === null || out.correctAnswer === undefined) out.correctAnswer = 0;
             }
 
-            // Flashcards: AI often stores in config.items; student task expects task.cards
-            if (taskType === TASK_TYPES.FLASHCARDS) {
-              if (!Array.isArray(out.cards) && Array.isArray(out.config?.items)) {
-                out.cards = out.config.items.map((it) => ({
-                  question: it?.question ?? "",
-                  answer: it?.answer ?? "",
-                }));
+            // Flashcards: ensure config.items exists
+            if (out.taskType === TASK_TYPES.FLASHCARDS) {
+              const raw =
+                (Array.isArray(out.config?.items) && out.config.items) ||
+                (Array.isArray(out.items) && out.items) ||
+                [];
+              const items = raw
+                .filter(Boolean)
+                .map((c, i) => {
+                  if (typeof c === "string") {
+                    const parts = c.split("|").map((p) => p.trim());
+                    return {
+                      question: String(parts[0] || `Card ${i + 1}`).replace(/^q\s*:\s*/i, "").trim(),
+                      answer: String(parts[1] || "").replace(/^a\s*:\s*/i, "").trim(),
+                    };
+                  }
+                  if (c && typeof c === "object") {
+                    return {
+                      question: String(c.question ?? c.q ?? c.front ?? "").trim(),
+                      answer: String(c.answer ?? c.a ?? c.back ?? "").trim(),
+                    };
+                  }
+                  return { question: `Card ${i + 1}`, answer: "" };
+                })
+                .filter((c) => c.question && c.answer);
+              out.config = { ...out.config, items };
+            }
+
+            // Hangman Duel: keep wordsByStation in config (editor uses it)
+            if (out.taskType === TASK_TYPES.HANGMAN_DUEL) {
+              const wbs =
+                (Array.isArray(out.config?.wordsByStation) && out.config.wordsByStation) ||
+                (Array.isArray(out.wordsByStation) && out.wordsByStation) ||
+                [];
+              out.config = { ...out.config, wordsByStation: wbs };
+            }
+
+            // Word Weaver: keep phrase at top-level (student task expects task.phrase)
+            if (out.taskType === TASK_TYPES.WORD_WEAVER_DUEL) {
+              if (!out.phrase && typeof out.prompt === "string") {
+                const m = out.prompt.match(/phrase\s*:\s*['\"]([^'\"]{4,120})['\"]/i);
+                if (m && m[1]) out.phrase = m[1].trim();
               }
             }
 
-            // Hangman: show wordsByStation if present (AI puts it in config)
-            if (taskType === TASK_TYPES.HANGMAN_DUEL) {
-              if (!Array.isArray(out.wordsByStation) && Array.isArray(out.config?.wordsByStation)) {
-                out.wordsByStation = out.config.wordsByStation;
-              }
+            // Diff Detective: ensure config.textA/textB exist
+            if (out.taskType === TASK_TYPES.DIFF_DETECTIVE) {
+              const textA = String(out.config?.textA ?? out.textA ?? out.config?.a ?? out.a ?? "").trim();
+              const textB = String(out.config?.textB ?? out.textB ?? out.config?.b ?? out.b ?? "").trim();
+              out.config = { ...out.config, textA, textB };
             }
 
-            // BrainBlitz: AI may store clues in config.clues; editor expects task.clues
-            if (taskType === TASK_TYPES.BRAIN_BLITZ) {
-              if (!Array.isArray(out.clues) && Array.isArray(out.config?.clues)) {
-                out.clues = out.config.clues;
-              }
-            }
-
-            // VennSort: ensure categories include Both if prompt expects it
-            if (taskType === TASK_TYPES.VENNSORT) {
-              const cats = Array.isArray(out.config?.categories) ? out.config.categories : [];
-              if (cats.length === 2 && !cats.includes("Both")) {
-                out.config = { ...(out.config || {}), categories: [...cats, "Both"] };
-              }
-            }
-
-            // DiffDetective: normalize fields to what the student task reads
-            if (taskType === TASK_TYPES.DIFF_DETECTIVE) {
-              if (!out.original && out.config?.original) out.original = out.config.original;
-              if (!out.modified && out.config?.modified) out.modified = out.config.modified;
-              if (!Array.isArray(out.differences) && Array.isArray(out.config?.differences)) {
-                out.differences = out.config.differences;
-              }
+            // VennSort: ensure config.correctAnswer mirrors task.correctAnswer
+            if (out.taskType === TASK_TYPES.VENNSORT) {
+              const ca =
+                (out.correctAnswer && typeof out.correctAnswer === "object" && out.correctAnswer) ||
+                (out.config?.correctAnswer && typeof out.config.correctAnswer === "object" && out.config.correctAnswer) ||
+                {};
+              out.correctAnswer = ca;
+              out.config = { ...out.config, correctAnswer: ca };
             }
 
             return out;
@@ -379,6 +397,17 @@ export default function TaskSetEditor() {
     );
   };
 
+  const updateGenericConfig = (tempId, updater) => {
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t._tempId !== tempId) return t;
+        const prevConfig = t.config && typeof t.config === "object" ? t.config : {};
+        const nextConfig = updater(prevConfig);
+        return { ...t, config: nextConfig };
+      })
+    );
+  };
+
   const updateTaskItems = (tempId, updater) => {
     setTasks((prev) =>
       prev.map((t) => {
@@ -474,8 +503,16 @@ export default function TaskSetEditor() {
           correctAnswer = null;
         }
       } else {
-        // Non-objective types shouldn't carry a correctAnswer
-        correctAnswer = null;
+        // Allow objective mapping-style answers for certain types
+        if (normalizedType === TASK_TYPES.VENNSORT) {
+          correctAnswer =
+            base.correctAnswer && typeof base.correctAnswer === "object" ? base.correctAnswer :
+            base.config?.correctAnswer && typeof base.config.correctAnswer === "object" ? base.config.correctAnswer :
+            {};
+        } else {
+          // Non-objective types shouldn't carry a correctAnswer
+          correctAnswer = null;
+        }
       }
 
       // --- BrainBlitz / Jeopardy: persist clues into config.clues (so they survive save/load) ---
@@ -1116,6 +1153,7 @@ export default function TaskSetEditor() {
                           key={i}
                           style={{
                             display: "grid",
+                            // Clue word should be the smaller box; answer (optional) larger.
                             gridTemplateColumns: "1fr 2fr auto",
                             gap: 6,
                             alignItems: "center",
@@ -1193,6 +1231,293 @@ export default function TaskSetEditor() {
                       <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
                         Student BrainBlitz uses <code>task.clues</code>.
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* FLASHCARDS: cards editor */}
+                {task.taskType === TASK_TYPES.FLASHCARDS && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                      Flashcards
+                    </label>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {(Array.isArray(task.config?.items) ? task.config.items : []).map((card, i) => (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, alignItems: "center" }}>
+                          <input
+                            type="text"
+                            value={card?.question || ""}
+                            onChange={(e) =>
+                              updateGenericConfig(task._tempId, (prev) => {
+                                const items = Array.isArray(prev.items) ? [...prev.items] : [];
+                                items[i] = { ...(items[i] || {}), question: e.target.value };
+                                return { ...prev, items };
+                              })
+                            }
+                            placeholder={`Question ${i + 1}`}
+                            style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
+                          />
+                          <input
+                            type="text"
+                            value={card?.answer || ""}
+                            onChange={(e) =>
+                              updateGenericConfig(task._tempId, (prev) => {
+                                const items = Array.isArray(prev.items) ? [...prev.items] : [];
+                                items[i] = { ...(items[i] || {}), answer: e.target.value };
+                                return { ...prev, items };
+                              })
+                            }
+                            placeholder="Answer"
+                            style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateGenericConfig(task._tempId, (prev) => {
+                                const items = Array.isArray(prev.items) ? [...prev.items] : [];
+                                items.splice(i, 1);
+                                return { ...prev, items };
+                              })
+                            }
+                            style={redTextButton}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateGenericConfig(task._tempId, (prev) => {
+                            const items = Array.isArray(prev.items) ? [...prev.items] : [];
+                            items.push({ question: "", answer: "" });
+                            return { ...prev, items };
+                          })
+                        }
+                        style={grayButton}
+                      >
+                        + Add card
+                      </button>
+
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                        Student Flashcards uses <code>task.config.items</code>.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* HANGMAN DUEL: show/edit wordsByStation */}
+                {task.taskType === TASK_TYPES.HANGMAN_DUEL && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                      Hangman words (per station)
+                    </label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {(Array.isArray(task.config?.wordsByStation) ? task.config.wordsByStation : []).map((w, i) => (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "140px 1fr auto", gap: 6, alignItems: "center" }}>
+                          <input
+                            type="text"
+                            value={w?.word || ""}
+                            onChange={(e) =>
+                              updateGenericConfig(task._tempId, (prev) => {
+                                const wordsByStation = Array.isArray(prev.wordsByStation) ? [...prev.wordsByStation] : [];
+                                wordsByStation[i] = { ...(wordsByStation[i] || {}), word: e.target.value };
+                                return { ...prev, wordsByStation };
+                              })
+                            }
+                            placeholder={`WORD ${i + 1}`}
+                            style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+                          />
+                          <input
+                            type="text"
+                            value={w?.hint || ""}
+                            onChange={(e) =>
+                              updateGenericConfig(task._tempId, (prev) => {
+                                const wordsByStation = Array.isArray(prev.wordsByStation) ? [...prev.wordsByStation] : [];
+                                wordsByStation[i] = { ...(wordsByStation[i] || {}), hint: e.target.value };
+                                return { ...prev, wordsByStation };
+                              })
+                            }
+                            placeholder="Hint"
+                            style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateGenericConfig(task._tempId, (prev) => {
+                                const wordsByStation = Array.isArray(prev.wordsByStation) ? [...prev.wordsByStation] : [];
+                                wordsByStation.splice(i, 1);
+                                return { ...prev, wordsByStation };
+                              })
+                            }
+                            style={redTextButton}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateGenericConfig(task._tempId, (prev) => {
+                            const wordsByStation = Array.isArray(prev.wordsByStation) ? [...prev.wordsByStation] : [];
+                            wordsByStation.push({ word: "", hint: "" });
+                            return { ...prev, wordsByStation };
+                          })
+                        }
+                        style={grayButton}
+                      >
+                        + Add station word
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* WORD WEAVER: ensure phrase exists (current component uses task.phrase) */}
+                {task.taskType === TASK_TYPES.WORD_WEAVER_DUEL && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                      Phrase
+                    </label>
+                    <input
+                      type="text"
+                      value={task.phrase || ""}
+                      onChange={(e) => updateTask(task._tempId, "phrase", e.target.value)}
+                      placeholder="e.g., Teamwork and Perseverance"
+                      style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
+                    />
+                    <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
+                      Note: the current WordWeaverDuelTask component rebuilds a phrase (not yet a Scrabble-style grid).
+                    </div>
+                  </div>
+                )}
+
+                {/* DIFF DETECTIVE: two texts */}
+                {task.taskType === TASK_TYPES.DIFF_DETECTIVE && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      Diff Detective texts
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 2 }}>Text A</div>
+                        <textarea
+                          rows={5}
+                          value={task.config?.textA || ""}
+                          onChange={(e) => updateGenericConfig(task._tempId, (prev) => ({ ...prev, textA: e.target.value }))}
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem", resize: "vertical" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 2 }}>Text B</div>
+                        <textarea
+                          rows={5}
+                          value={task.config?.textB || ""}
+                          onChange={(e) => updateGenericConfig(task._tempId, (prev) => ({ ...prev, textB: e.target.value }))}
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem", resize: "vertical" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* VENNSORT: categories + membership checkboxes */}
+                {task.taskType === TASK_TYPES.VENNSORT && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      VennSort setup
+                    </label>
+
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Categories (2–3)</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {(Array.isArray(task.config?.categories) ? task.config.categories : []).map((c, i) => (
+                          <input
+                            key={i}
+                            type="text"
+                            value={c || ""}
+                            onChange={(e) =>
+                              updateGenericConfig(task._tempId, (prev) => {
+                                const categories = Array.isArray(prev.categories) ? [...prev.categories] : [];
+                                categories[i] = e.target.value;
+                                return { ...prev, categories };
+                              })
+                            }
+                            placeholder={`Category ${i + 1}`}
+                            style={{ width: 180, borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {(Array.isArray(task.config?.items) ? task.config.items : []).map((it, i) => {
+                        const id = String(it?.id || `item-${i + 1}`);
+                        const categories = Array.isArray(task.config?.categories) ? task.config.categories : [];
+                        const selected = (task.correctAnswer && typeof task.correctAnswer === "object" ? task.correctAnswer : {})[id] || [];
+
+                        return (
+                          <div key={id} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 8 }}>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                              <input
+                                type="text"
+                                value={it?.text || ""}
+                                onChange={(e) =>
+                                  updateGenericConfig(task._tempId, (prev) => {
+                                    const items = Array.isArray(prev.items) ? [...prev.items] : [];
+                                    items[i] = { ...(items[i] || {}), id, text: e.target.value };
+                                    return { ...prev, items };
+                                  })
+                                }
+                                placeholder={`Item ${i + 1}`}
+                                style={{ flex: 1, borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  // remove item + any correctAnswer entry
+                                  updateGenericConfig(task._tempId, (prev) => {
+                                    const items = Array.isArray(prev.items) ? [...prev.items] : [];
+                                    items.splice(i, 1);
+                                    return { ...prev, items };
+                                  });
+                                  updateTask(task._tempId, "correctAnswer", (prev) => prev); // no-op safeguard
+                                }}
+                                style={redTextButton}
+                              >
+                                Remove
+                              </button>
+                            </div>
+
+                            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                              {categories.map((cat) => (
+                                <label key={cat} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: "0.8rem" }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.includes(cat)}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? Array.from(new Set([...selected, cat]))
+                                        : selected.filter((x) => x !== cat);
+
+                                      const nextMap = {
+                                        ...(task.correctAnswer && typeof task.correctAnswer === "object" ? task.correctAnswer : {}),
+                                        [id]: next,
+                                      };
+                                      updateTask(task._tempId, "correctAnswer", nextMap);
+                                      updateGenericConfig(task._tempId, (prev) => ({ ...prev, correctAnswer: nextMap }));
+                                    }}
+                                  />
+                                  {cat}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
