@@ -4005,6 +4005,7 @@ function buildDemoBody(extra = {}) {
     subject: DEMO_SUBJECT,
     vocabulary: DEMO_VOCAB,
     keyTerms: DEMO_VOCAB,
+    aiWordBank: DEMO_VOCAB,
 
     ...extra,
   };
