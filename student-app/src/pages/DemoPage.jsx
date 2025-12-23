@@ -13,6 +13,11 @@ const PHYSICAL_TYPES = new Set([
   // add the rest of your movement/physical types here
 ].map((x) => String(x).toLowerCase()));
 
+app.use(cors({
+  origin: "https://play.curriculate.net",
+  allowedHeaders: ["Content-Type", "Authorization", "x-demo-admin-key"],
+}));
+
 function isPhysicalTask(task) {
   const t = String(task?.taskType || task?.type || "").toLowerCase();
   return !!(task?.isPhysical || task?.config?.isPhysical || task?.movement || task?.config?.movement) || PHYSICAL_TYPES.has(t);
