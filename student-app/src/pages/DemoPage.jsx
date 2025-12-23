@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../../shared/taskTypes.js";
+import cors from "cors";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
@@ -102,7 +103,7 @@ export default function DemoPage() {
     }
 
     // REVIEW LOCK
-    const lockSeconds = 15;
+    const lockSeconds = 5;
     setTaskLocked(true);
     setPostSubmitSecondsLeft(lockSeconds);
 
