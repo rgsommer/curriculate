@@ -4005,6 +4005,50 @@ async function getOrCreateProfileForUser({ ownerId, email } = {}) {
   return profile;
 }
 
+// ====================================================================
+//  DEMO TASKSET ENDPOINTS
+// ====================================================================
+
+const DEMO_ADMIN_KEY = String(process.env.DEMO_ADMIN_KEY || "").trim();
+
+// GET current demo taskset (from cache or generated)
+app.get("/api/demo/taskset", async (req, res) => {
+  try {
+    // If you already have caching logic, use it here instead.
+    // Minimal: generate fresh each time for now:
+    const fakeReq = { body: { mode: "demo", count: 10 }, user: null };
+    const generated = await generateAiTaskset(fakeReq);
+
+    // normalize: depending on your controller return shape
+    const taskset = generated?.taskset || generated;
+
+    return res.json({ ok: true, taskset });
+  } catch (e) {
+    console.error("[DEMO] GET /api/demo/taskset failed:", e);
+    return res.status(500).json({ ok: false, error: "Failed to load demo taskset" });
+  }
+});
+
+// POST regenerate demo taskset (admin key required)
+app.post("/api/demo/taskset/regenerate", async (req, res) => {
+  try {
+    const key = String(req.headers["x-demo-admin-key"] || "").trim();
+    if (!DEMO_ADMIN_KEY || key !== DEMO_ADMIN_KEY) {
+      return res.status(403).json({ ok: false, error: "Forbidden" });
+    }
+
+    const fakeReq = { body: { mode: "demo", count: 10, force: true }, user: null };
+    const generated = await generateAiTaskset(fakeReq);
+
+    const taskset = generated?.taskset || generated;
+
+    return res.json({ ok: true, taskset });
+  } catch (e) {
+    console.error("[DEMO] POST /api/demo/taskset/regenerate failed:", e);
+    return res.status(500).json({ ok: false, error: "Failed to regenerate demo taskset" });
+  }
+});
+
 // --------------------------------------------------------------------
 // Per-user Teacher Profile (auth required)
 // --------------------------------------------------------------------
