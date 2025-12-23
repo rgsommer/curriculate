@@ -315,7 +315,7 @@ function TeacherApp() {
 
           {/* Admin link (only for admins) */}
           {isAdmin && (
-            <NavLinkButton to="/admin" active={onAdmin}>
+            <NavLinkButton to="/admin/access-codes" active={onAdmin}>
               Admin
             </NavLinkButton>
           )}
@@ -389,9 +389,10 @@ function TeacherApp() {
           />
 
           {/* Admin */}
-          <Route path="/admin" element={requireAuth(<AdminPage />)} />
-          {/* Back-compat */}
-          <Route path="/admin/access-codes" element={requireAuth(<AdminPage />)} />
+          <Route
+            path="/admin/access-codes"
+            element={requireAuth(<AdminAccessCodesPage />)}
+          />
 
           {/* Auth */}
           <Route path="/login" element={<Login />} />
@@ -763,82 +764,7 @@ function PlanDetails({ plan, fallbackTier }) {
  * - GET  /api/admin/access-codes
  * - POST /api/admin/access-codes
  */
-function AdminPage() {
-  // -------------------------
-  // Demo taskset (system-admin only)
-  // -------------------------
-  const DEMO_KEY_STORAGE = "curriculate.demoAdminKey";
-  const [demoBusy, setDemoBusy] = useState(false);
-  const [demoErr, setDemoErr] = useState("");
-  const [demoInfo, setDemoInfo] = useState(null);
-  const [demoKey, setDemoKey] = useState(() => {
-    try {
-      return localStorage.getItem(DEMO_KEY_STORAGE) || "";
-    } catch {
-      return "";
-    }
-  });
-
-  const loadDemoInfo = async () => {
-    setDemoErr("");
-    setDemoBusy(true);
-    try {
-      const res = await apiFetch("/api/demo/taskset");
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        setDemoErr(data?.error || "Could not load demo taskset.");
-        return;
-      }
-      const ts = data.taskset || null;
-      setDemoInfo(
-        ts
-          ? {
-              id: ts._id || null,
-              title: ts.title || ts.name || "Demo Taskset",
-              count: Array.isArray(ts.tasks) ? ts.tasks.length : Array.isArray(ts.items) ? ts.items.length : 0,
-              updatedAt: ts.updatedAt || ts.modifiedAt || ts.createdAt || null,
-            }
-          : null
-      );
-    } catch (e) {
-      console.warn("[AdminPage] load demo taskset failed:", e);
-      setDemoErr("Network error");
-    } finally {
-      setDemoBusy(false);
-    }
-  };
-
-  const regenerateDemoTaskset = async () => {
-    setDemoErr("");
-    setDemoBusy(true);
-    try {
-      try {
-        localStorage.setItem(DEMO_KEY_STORAGE, demoKey || "");
-      } catch {}
-
-      const res = await apiFetch("/api/demo/taskset/regenerate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(demoKey ? { "x-demo-admin-key": demoKey } : {}),
-        },
-        body: JSON.stringify({}),
-      });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        setDemoErr(data?.error || "Could not regenerate demo taskset.");
-        return;
-      }
-      await loadDemoInfo();
-    } catch (e) {
-      console.warn("[AdminPage] regenerate demo taskset failed:", e);
-      setDemoErr("Network error");
-    } finally {
-      setDemoBusy(false);
-    }
-  };
-
+function AdminAccessCodesPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [codes, setCodes] = useState([]);
@@ -867,11 +793,6 @@ function AdminPage() {
 
   useEffect(() => {
     load();
-  }, []);
-
-  useEffect(() => {
-    loadDemoInfo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const create = async () => {
@@ -906,74 +827,10 @@ function AdminPage() {
 
   return (
     <div style={{ padding: 4 }}>
-      <h2 style={{ marginTop: 0 }}>Admin</h2>
+      <h2 style={{ marginTop: 0 }}>Admin • Access Codes</h2>
       <p style={{ opacity: 0.8, marginTop: 6 }}>
-        System-wide controls (shown only to the system admin).
+        Create and manage teacher access codes.
       </p>
-
-      {/* Demo taskset controls */}
-      <div
-        style={{
-          background: "#ffffff",
-          borderRadius: 12,
-          padding: 14,
-          boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
-          border: "1px solid rgba(15,23,42,0.08)",
-          marginBottom: 14,
-          maxWidth: 720,
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontWeight: 900, marginBottom: 4 }}>Demo taskset</div>
-            <div style={{ opacity: 0.75, fontSize: "0.92rem" }}>
-              Stored in Mongo; regenerate only when you add new task types or want different demo content.
-            </div>
-          </div>
-          <div style={{ opacity: 0.75, fontSize: "0.9rem" }}>
-            {demoInfo
-              ? `${demoInfo.count} tasks` + (demoInfo.updatedAt ? ` • updated ${new Date(demoInfo.updatedAt).toLocaleString()}` : "")
-              : "(not loaded)"}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end", marginTop: 12 }}>
-          <div style={{ minWidth: 260, flex: 1 }}>
-            <label style={{ ...ui.labelLight }}>Demo admin key</label>
-            <input
-              value={demoKey}
-              onChange={(e) => setDemoKey(e.target.value)}
-              placeholder="(x-demo-admin-key header)"
-              style={ui.inputLight}
-            />
-          </div>
-
-          <button
-            onClick={regenerateDemoTaskset}
-            disabled={demoBusy}
-            style={{ ...ui.buttonPrimary, minWidth: 220 }}
-          >
-            {demoBusy ? "Working…" : "Regenerate demo taskset"}
-          </button>
-
-          <button
-            onClick={loadDemoInfo}
-            disabled={demoBusy}
-            style={{ ...ui.buttonGhostDark, minWidth: 120 }}
-          >
-            Refresh
-          </button>
-        </div>
-
-        {demoErr && (
-          <div style={{ color: "#b91c1c", marginTop: 10, fontWeight: 800 }}>
-            {demoErr}
-          </div>
-        )}
-      </div>
-
-      {/* Access codes */}
-      <h3 style={{ margin: "8px 0 6px", maxWidth: 720 }}>Access codes</h3>
 
       <div
         style={{
