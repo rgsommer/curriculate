@@ -207,6 +207,32 @@ const corsOptions = {
   optionsSuccessStatus: 204, // 204 is safest for preflight
 };
 
+app.options("/api/demo/taskset/regenerate", (req, res) => {
+  const origin = req.headers.origin;
+
+  const allowed =
+    !origin ||
+    allowedOrigins.includes(origin) ||
+    isVercelPreview(origin);
+
+  console.log("[DEMO PREFLIGHT] options hit", new Date().toISOString(), req.headers.origin);
+
+  // Always respond OK to OPTIONS so browser can proceed.
+  // If not allowed, we simply don't echo Access-Control-Allow-Origin.
+  if (allowed && origin) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, x-demo-admin-key"
+    );
+  }
+
+  return res.sendStatus(204);
+});
+
 // Apply CORS
 app.use(cors(corsOptions));
 
