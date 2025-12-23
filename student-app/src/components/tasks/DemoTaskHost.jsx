@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/DemoTaskHost.jsx
 import React from "react";
-import { TASK_TYPES } from "../../../shared/taskTypes.js";
+import { TASK_TYPES } from "../../../../shared/taskTypes.js";
 
 // import the SAME task components TaskRunner uses:
 import BodyBreakTask from "./types/BodyBreakTask";
