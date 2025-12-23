@@ -247,6 +247,22 @@ app.use("/api/subscription", subscriptionRoutes);
 app.use("/auth", authRoutes);
 app.use("/api/auth", authRoutes);
 
+const res = await fetch(`${API_BASE}/api/demo/taskset`, { credentials: "include" });
+const text = await res.text();
+
+if (!res.ok) {
+  console.error("[DemoPage] demo pool HTTP error:", res.status, text.slice(0, 200));
+  throw new Error(`Demo pool HTTP ${res.status}`);
+}
+
+let data;
+try {
+  data = JSON.parse(text);
+} catch (e) {
+  console.error("[DemoPage] expected JSON, got:", text.slice(0, 200));
+  throw e;
+}
+
 // ====================================================================
 //  SOCKET.IO
 // ====================================================================
