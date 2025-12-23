@@ -396,7 +396,7 @@ export default function DemoPage() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(key ? { "x-demo-admin-key": key } : {}),
+        "x-demo-admin-key": key,
       },
       body: JSON.stringify({}),
     });
@@ -613,41 +613,27 @@ export default function DemoPage() {
   }
 
   // -------------------------
-  // Admin actions
+  // Demo Admin actions
   // -------------------------
   async function onRegeneratePool() {
-    // First click reveals the key field (your request)
+    // 1st click: reveal the admin input
     if (!showAdminKey) {
       setShowAdminKey(true);
-      showToast("Enter admin code to regenerate", true);
       return;
     }
 
+    // 2nd click: actually regenerate
     const key = adminKey.trim();
-    if (!key) return showToast("Enter admin code first", false);
+    if (!key) return;
 
     try {
-      await regenerateDemoTaskset(key);
-      showToast("Demo pool regenerated", true);
+      await regenerateDemoTaskset(key); // this should setDemoTaskset(...) internally
+      // optional: hide the key again after success
+      // setShowAdminKey(false);
+      // setAdminKey("");
     } catch (e) {
-      showToast(e?.message || "Regenerate failed", false);
+      console.warn("[DemoPage] regenerate failed:", e);
     }
-  }
-
-  async function onReloadPool() {
-    try {
-      await loadDemoTaskset();
-      showToast("Pool reloaded", true);
-    } catch (e) {
-      showToast(e?.message || "Reload failed", false);
-    }
-  }
-
-  function startSelectedTask() {
-    if (!selectedType) return;
-    const next = pickDemoTask(selectedType);
-    setCurrentTask(next);
-    setPhase("task");
   }
 
   // -------------------------
@@ -752,10 +738,6 @@ export default function DemoPage() {
 
             <button onClick={onRegeneratePool} style={btn(true)}>
               Regenerate Pool
-            </button>
-
-            <button onClick={onReloadPool} style={btn(false)}>
-              Reload Pool
             </button>
           </div>
 
