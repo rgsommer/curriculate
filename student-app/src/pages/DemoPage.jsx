@@ -17,7 +17,6 @@ const PHYSICAL_TYPES = new Set(
     TASK_TYPES.MAD_DASH,
     TASK_TYPES.MAD_DASH_SEQUENCE,
     TASK_TYPES.MOTION_MISSION,
-    // add more “movement/physical” types here if needed
   ]
     .filter(Boolean)
     .map((s) => String(s).toLowerCase())
@@ -57,9 +56,6 @@ function scoreObjectiveLocally(task, submission) {
   const type = task?.taskType || task?.type;
   const points = typeof task?.points === "number" ? task.points : 10;
 
-  // Multi-part payloads sometimes wrap primitives. We accept:
-  // - submission.answer (primitive or object)
-  // - submission.answers (array)
   const normPrimitive = (raw) => {
     if (raw == null) return null;
     if (typeof raw !== "object") return raw;
@@ -69,7 +65,6 @@ function scoreObjectiveLocally(task, submission) {
     return raw;
   };
 
-  // TRUE/FALSE / MULTIPLE CHOICE / SHORT ANSWER (objective variants)
   if (
     [TASK_TYPES.TRUE_FALSE, TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.SHORT_ANSWER].includes(
       type
@@ -77,9 +72,8 @@ function scoreObjectiveLocally(task, submission) {
   ) {
     const items = Array.isArray(task.items) ? task.items : null;
 
-    // Multi-question
     if (items && items.length) {
-      const per = points; // your system often treats "points" as per-item; keep as-is for demo
+      const per = points;
       let correctCount = 0;
       const studentAnswers = Array.isArray(submission?.answers) ? submission.answers : [];
 
@@ -88,7 +82,6 @@ function scoreObjectiveLocally(task, submission) {
         const c = it?.correctAnswer;
         if (c == null || s == null) return;
 
-        // Index or text matching when options exist
         const opts = Array.isArray(it?.options)
           ? it.options
           : Array.isArray(task.options)
@@ -119,7 +112,6 @@ function scoreObjectiveLocally(task, submission) {
       };
     }
 
-    // Single question
     const s = normPrimitive(submission?.answer ?? submission?.text ?? null);
     const c = task?.correctAnswer;
 
@@ -149,7 +141,6 @@ function scoreObjectiveLocally(task, submission) {
     };
   }
 
-  // SORT (bucketIndex mapping expected)
   if (type === TASK_TYPES.SORT) {
     const cfg = task?.config && typeof task.config === "object" ? task.config : {};
     const correctItems = Array.isArray(cfg.items) ? cfg.items : [];
@@ -176,7 +167,6 @@ function scoreObjectiveLocally(task, submission) {
     };
   }
 
-  // SEQUENCE / TIMELINE (order array of ids or indices)
   if (type === TASK_TYPES.SEQUENCE || type === TASK_TYPES.TIMELINE) {
     const cfg = task?.config && typeof task.config === "object" ? task.config : {};
     const items = Array.isArray(cfg.items) ? cfg.items : [];
@@ -188,10 +178,7 @@ function scoreObjectiveLocally(task, submission) {
       return { scoreDelta: 0, maxPoints: points, correct: false, details: { reason: "no order" } };
     }
 
-    // Correct ids derived from config order
     const correctIds = items.map((it, idx) => it?.id ?? `item-${idx}`);
-
-    // If numeric array, treat as index-per-position
     const allNumeric = order.length === total && order.every((v) => Number.isInteger(v));
     let correctCount = 0;
 
@@ -213,24 +200,20 @@ function scoreObjectiveLocally(task, submission) {
     };
   }
 
-  // Default: unknown objective type → give 0, don’t crash
   return { scoreDelta: 0, maxPoints: points, correct: false, details: { reason: "unsupported objective" } };
 }
 
 /**
- * Very lightweight bot answer generator (good enough for demo/testing).
- * It tries to create plausible shapes that tasks accept.
+ * Lightweight bot answer generator (good enough for demo/testing).
  */
 function makeBotSubmission(task) {
   const type = task?.taskType || task?.type;
 
-  // Multi-part MC/TF/ShortAnswer
   if ([TASK_TYPES.TRUE_FALSE, TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.SHORT_ANSWER].includes(type)) {
     const items = Array.isArray(task.items) ? task.items : null;
 
     if (items && items.length) {
       const answers = items.map((it) => {
-        // choose random option index if options exist, else random boolean/text
         const opts = Array.isArray(it?.options)
           ? it.options
           : Array.isArray(task?.options)
@@ -245,7 +228,6 @@ function makeBotSubmission(task) {
       return { answers };
     }
 
-    // single question
     if (type === TASK_TYPES.TRUE_FALSE) return { answer: Math.random() < 0.5 ? "True" : "False" };
     if (type === TASK_TYPES.MULTIPLE_CHOICE) {
       const opts = Array.isArray(task?.options) ? task.options : [];
@@ -254,12 +236,10 @@ function makeBotSubmission(task) {
     if (type === TASK_TYPES.SHORT_ANSWER) return { answer: "Our best guess." };
   }
 
-  // OPEN_TEXT
   if (type === TASK_TYPES.OPEN_TEXT) {
     return { answer: { text: "We discussed it and wrote a clear explanation with an example." } };
   }
 
-  // PHOTO / PHOTO_JOURNAL / MAKE_AND_SNAP
   if (
     type === TASK_TYPES.PHOTO ||
     type === TASK_TYPES.PHOTO_JOURNAL ||
@@ -268,13 +248,11 @@ function makeBotSubmission(task) {
     return {
       answer: {
         text: "We took a photo that matches the prompt and explained why it fits.",
-        // demo: no raw blobs
         hasPhoto: true,
       },
     };
   }
 
-  // SORT: random mapping
   if (type === TASK_TYPES.SORT) {
     const cfg = task?.config && typeof task.config === "object" ? task.config : {};
     const buckets = Array.isArray(cfg.buckets) ? cfg.buckets : [];
@@ -288,7 +266,6 @@ function makeBotSubmission(task) {
     return { mapping };
   }
 
-  // SEQUENCE/TIMELINE: random order by ids
   if (type === TASK_TYPES.SEQUENCE || type === TASK_TYPES.TIMELINE) {
     const cfg = task?.config && typeof task.config === "object" ? task.config : {};
     const items = Array.isArray(cfg.items) ? cfg.items : [];
@@ -300,33 +277,59 @@ function makeBotSubmission(task) {
     return { order: ids };
   }
 
-  // default generic
   return { answer: "Submitted." };
 }
 
+// -------------------------
+// Safe fetch helper (prevents “Unexpected token '<'”)
+// -------------------------
+async function fetchJsonSafe(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    // Not JSON (likely HTML error page)
+    const head = (text || "").slice(0, 200);
+    const err = new Error(`Expected JSON but got: ${head}`);
+    err.status = res.status;
+    err.raw = text;
+    throw err;
+  }
+
+  if (!res.ok) {
+    const msg = json?.error || json?.message || `HTTP ${res.status}`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.body = json;
+    throw err;
+  }
+
+  return json;
+}
+
 export default function DemoPage() {
-  // -------------------------
-  // Demo session state
-  // -------------------------
   const [phase, setPhase] = useState("mood"); // mood | runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
 
+  // Admin key is hidden until “Regenerate” is clicked
   const [adminKey, setAdminKey] = useState("");
+  const [showAdminKey, setShowAdminKey] = useState(false);
+
   const [selectedType, setSelectedType] = useState("");
   const [currentTask, setCurrentTask] = useState(null);
 
-  // Review lock (non-physical only)
   const [taskLocked, setTaskLocked] = useState(false);
   const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
   const postSubmitTimerRef = useRef(null);
 
-  // Scoring UI
   const [toast, setToast] = useState(null);
 
-  // -------------------------
-  // Team simulator
-  // -------------------------
-  const [botCount, setBotCount] = useState(3); // you + 3 bots = 4 teams
+  // Hidden by default (you asked not to show bot count). Keep a sane default.
+  const [botCount] = useState(3);
+
   const [teams, setTeams] = useState(() => {
     const base = [{ id: "team-you", teamName: "Your Team", isYou: true, score: 0 }];
     for (let i = 1; i <= 3; i++) {
@@ -335,59 +338,61 @@ export default function DemoPage() {
     return base;
   });
 
-  // Update teams when botCount changes (keep scores where possible)
-  useEffect(() => {
-    setTeams((prev) => {
-      const you = prev.find((t) => t.id === "team-you") || {
-        id: "team-you",
-        teamName: "Your Team",
-        isYou: true,
-        score: 0,
-      };
-      const next = [you];
-
-      for (let i = 1; i <= botCount; i++) {
-        const id = `team-bot-${i}`;
-        const existing = prev.find((t) => t.id === id);
-        next.push(
-          existing || { id, teamName: `Bot Team ${i}`, isYou: false, score: 0 }
-        );
-      }
-      return next;
-    });
-  }, [botCount]);
-
+  // Leaderboard + derived totals
   const leaderboard = useMemo(() => {
     return [...teams].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   }, [teams]);
 
-  // -------------------------
+  const yourScore = useMemo(() => {
+    const you = teams.find((t) => t.isYou);
+    return you?.score || 0;
+  }, [teams]);
+
   // Socket stub (TaskRunner-safe)
-  // -------------------------
   const demoSocket = useMemo(
     () => ({
       on: () => {},
       off: () => {},
       emit: (_event, _payload, ack) => {
-        // Some tasks emit with ACK callbacks; don’t let them hang.
         if (typeof ack === "function") ack({ ok: true, demo: true });
       },
     }),
     []
   );
 
+  function showToast(message, positive = true) {
+    setToast({ message, positive });
+    window.clearTimeout(showToast._t);
+    showToast._t = window.setTimeout(() => setToast(null), 2200);
+  }
+
+  function clearReviewLock() {
+    if (postSubmitTimerRef.current) {
+      clearInterval(postSubmitTimerRef.current);
+      postSubmitTimerRef.current = null;
+    }
+    setTaskLocked(false);
+    setPostSubmitSecondsLeft(null);
+  }
+
+  function goBackToRunner() {
+    clearReviewLock();
+    setPhase("runner");
+    setCurrentTask(null);
+  }
+
   // -------------------------
   // Demo pool IO
   // -------------------------
   async function loadDemoTaskset() {
-    const res = await fetch(`${API_BASE}/api/demo/taskset`);
-    const json = await res.json();
+    const json = await fetchJsonSafe(`${API_BASE}/api/demo/taskset`);
     if (!json?.ok) throw new Error(json?.error || "Failed to load demo taskset");
     setDemoTaskset(json.taskset);
+    return json.taskset;
   }
 
   async function regenerateDemoTaskset(key) {
-    const res = await fetch(`${API_BASE}/api/demo/taskset/regenerate`, {
+    const json = await fetchJsonSafe(`${API_BASE}/api/demo/taskset/regenerate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -395,20 +400,27 @@ export default function DemoPage() {
       },
       body: JSON.stringify({}),
     });
-    const json = await res.json();
     if (!json?.ok) throw new Error(json?.error || "Failed to regenerate demo taskset");
     setDemoTaskset(json.taskset);
+    return json.taskset;
   }
 
   // Load once
   useEffect(() => {
-    loadDemoTaskset().catch((e) => console.warn("[DemoPage] load demo pool failed:", e));
+    loadDemoTaskset()
+      .then(() => showToast("Demo pool loaded", true))
+      .catch((e) => {
+        console.warn("[DemoPage] load demo pool failed:", e);
+        showToast(e?.message || "Load demo pool failed", false);
+      });
+
     return () => {
       if (postSubmitTimerRef.current) {
         clearInterval(postSubmitTimerRef.current);
         postSubmitTimerRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // -------------------------
@@ -437,7 +449,6 @@ export default function DemoPage() {
   );
 
   const allTaskTypes = useMemo(() => {
-    // Prefer meta keys (future proof). Fall back to TASK_TYPES values.
     const fromMeta = TASK_TYPE_META ? Object.keys(TASK_TYPE_META) : [];
     const fromConst = Object.values(TASK_TYPES).filter((v) => typeof v === "string");
     const set = new Set([...fromMeta, ...fromConst].filter(Boolean));
@@ -449,7 +460,6 @@ export default function DemoPage() {
     const match = tasks.find((t) => (t.taskType || t.type) === type);
     if (match) return match;
 
-    // Minimal placeholder if demo pool doesn’t include that type yet
     return {
       taskType: type,
       title: `Demo: ${type}`,
@@ -457,31 +467,6 @@ export default function DemoPage() {
       timeLimitSeconds: 60,
       points: 10,
     };
-  }
-
-  // -------------------------
-  // UI helpers
-  // -------------------------
-  function showToast(message, positive = true) {
-    setToast({ message, positive });
-    window.clearTimeout(showToast._t);
-    showToast._t = window.setTimeout(() => setToast(null), 2200);
-  }
-
-  function clearReviewLock() {
-    if (postSubmitTimerRef.current) {
-      clearInterval(postSubmitTimerRef.current);
-      postSubmitTimerRef.current = null;
-    }
-    setTaskLocked(false);
-    setPostSubmitSecondsLeft(null);
-  }
-
-  function goBackToRunner() {
-    clearReviewLock();
-    setPhase("runner");
-    setCurrentTask(null);
-    // keep selectedType so “Try again” works
   }
 
   // -------------------------
@@ -503,7 +488,6 @@ export default function DemoPage() {
     bots.forEach((bot) => {
       const delay = randInt(BOT_THINK_MIN_MS, BOT_THINK_MAX_MS);
       const t = setTimeout(() => {
-        // Physical tasks: bots “complete” instantly with tiny random points
         if (isPhysicalTask(task)) {
           const delta = randInt(0, 2);
           setTeams((prev) =>
@@ -512,7 +496,6 @@ export default function DemoPage() {
           return;
         }
 
-        // Objective: deterministic local scoring
         if (isObjectiveTask(task)) {
           const sub = makeBotSubmission(task);
           const scored = scoreObjectiveLocally(task, sub);
@@ -526,7 +509,6 @@ export default function DemoPage() {
           return;
         }
 
-        // AI-scored: simulate (avoid spamming OpenAI calls)
         const max = typeof task?.points === "number" ? task.points : 10;
         const delta = randInt(Math.floor(max * 0.3), Math.floor(max * 0.9));
         setTeams((prev) =>
@@ -538,7 +520,6 @@ export default function DemoPage() {
     });
   }
 
-  // When entering task phase, trigger bot simulation
   useEffect(() => {
     if (phase === "task" && currentTask) simulateBotsForTask(currentTask);
     return () => clearBotTimers();
@@ -549,9 +530,7 @@ export default function DemoPage() {
   // Player scoring (objective local; AI via backend)
   // -------------------------
   async function scoreWithBackendAI(task, submission) {
-    // You can change this endpoint to your real scoring route if different.
-    // This is intentionally simple: backend decides rubric/scoring based on type.
-    const res = await fetch(`${API_BASE}/api/ai/score`, {
+    const json = await fetchJsonSafe(`${API_BASE}/api/ai/score`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -560,10 +539,9 @@ export default function DemoPage() {
         submission,
       }),
     });
-    const json = await res.json();
+
     if (!json?.ok) throw new Error(json?.error || "AI scoring failed");
 
-    // Normalize a few possible shapes
     const scoreDelta =
       typeof json.scoreDelta === "number"
         ? json.scoreDelta
@@ -587,14 +565,12 @@ export default function DemoPage() {
     const task = currentTask;
     if (!task) return;
 
-    // Physical: no lock, bounce back immediately
     if (isPhysicalTask(task)) {
       showToast("Completed (physical task)", true);
       goBackToRunner();
       return;
     }
 
-    // Score player
     let scoreDelta = 0;
     let maxPoints = typeof task?.points === "number" ? task.points : null;
 
@@ -604,7 +580,6 @@ export default function DemoPage() {
         scoreDelta = result.scoreDelta || 0;
         maxPoints = result.maxPoints ?? maxPoints;
       } else {
-        // AI scoring (server-side)
         const ai = await scoreWithBackendAI(task, submissionPayload);
         scoreDelta = ai.scoreDelta || 0;
         maxPoints = ai.maxPoints ?? maxPoints;
@@ -612,17 +587,12 @@ export default function DemoPage() {
     } catch (e) {
       console.warn("[DemoPage] scoring error:", e);
       showToast(e?.message || "Scoring error", false);
-      // still apply review lock so flow feels consistent
     }
 
-    // Apply score to "your team"
     setTeams((prev) =>
-      prev.map((t) =>
-        t.isYou ? { ...t, score: (t.score || 0) + scoreDelta } : t
-      )
+      prev.map((t) => (t.isYou ? { ...t, score: (t.score || 0) + scoreDelta } : t))
     );
 
-    // Review lock (non-physical)
     const lockSeconds = DEFAULT_REVIEW_SECONDS;
     setTaskLocked(true);
     setPostSubmitSecondsLeft(lockSeconds);
@@ -646,13 +616,30 @@ export default function DemoPage() {
   // Admin actions
   // -------------------------
   async function onRegeneratePool() {
+    // First click reveals the key field (your request)
+    if (!showAdminKey) {
+      setShowAdminKey(true);
+      showToast("Enter admin code to regenerate", true);
+      return;
+    }
+
     const key = adminKey.trim();
-    if (!key) return showToast("Enter admin key first", false);
+    if (!key) return showToast("Enter admin code first", false);
+
     try {
       await regenerateDemoTaskset(key);
       showToast("Demo pool regenerated", true);
     } catch (e) {
       showToast(e?.message || "Regenerate failed", false);
+    }
+  }
+
+  async function onReloadPool() {
+    try {
+      await loadDemoTaskset();
+      showToast("Pool reloaded", true);
+    } catch (e) {
+      showToast(e?.message || "Reload failed", false);
     }
   }
 
@@ -664,90 +651,126 @@ export default function DemoPage() {
   }
 
   // -------------------------
+  // Simple “StudentApp-like” styling bits
+  // -------------------------
+  const pill = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontSize: "0.8rem",
+    fontWeight: 650,
+    background: "rgba(15,23,42,0.65)",
+    border: "1px solid rgba(148,163,184,0.55)",
+    color: "#e5e7eb",
+  };
+
+  const btn = (primary = false) => ({
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: primary ? "1px solid rgba(99,102,241,0.65)" : "1px solid rgba(148,163,184,0.55)",
+    background: primary
+      ? "linear-gradient(135deg, rgba(99,102,241,0.85), rgba(14,165,233,0.85))"
+      : "rgba(255,255,255,0.08)",
+    color: "#fff",
+    fontWeight: 850,
+    cursor: "pointer",
+    boxShadow: primary ? "0 10px 26px rgba(37,99,235,0.35)" : "none",
+  });
+
+  // -------------------------
   // Render
   // -------------------------
   return (
-    <div style={{ minHeight: "100vh", padding: 18, background: "#0b1220", color: "#fff" }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        background: "radial-gradient(circle at top, #0f172a, #020617)",
+        color: "#e5e7eb",
+      }}
+    >
+      {/* HEADER (StudentApp-ish) */}
+      <header
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          marginBottom: 12,
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
         <div>
-          <div style={{ fontSize: 22, fontWeight: 900 }}>Curriculate Demo</div>
-          <div style={{ opacity: 0.8, marginTop: 4, fontSize: 13 }}>
-            Mood → Treasure Runner → Pick a task (TaskRunner renders everything)
+          <div style={{ marginBottom: 6 }}>
+            <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#ffffff" }}>
+              Curriculate – Demo
+            </h1>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "rgba(226,232,240,0.78)" }}>
+              Mood → Treasure Runner → Pick a task type. (No room needed.)
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <span style={pill}>
+              <span style={{ opacity: 0.9 }}>Mode:</span> <strong>Demo</strong>
+            </span>
+            <span style={pill}>
+              <span style={{ opacity: 0.9 }}>Phase:</span> <strong>{phase}</strong>
+            </span>
+            <span style={pill}>
+              <span style={{ opacity: 0.9 }}>Your score:</span>{" "}
+              <strong style={{ fontVariantNumeric: "tabular-nums" }}>{yourScore}</strong>
+            </span>
+            <span style={pill}>
+              <span style={{ opacity: 0.9 }}>Teams:</span>{" "}
+              <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
+            </span>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ opacity: 0.85, fontSize: 13 }}>Bot teams:</div>
-            <input
-              type="number"
-              min={0}
-              max={7}
-              value={botCount}
-              onChange={(e) => setBotCount(clamp(Number(e.target.value || 0), 0, 7))}
-              style={{
-                width: 70,
-                padding: "8px 10px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#fff",
-                fontWeight: 800,
-              }}
-            />
+        <div style={{ textAlign: "right", minWidth: 260 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+            {showAdminKey && (
+              <input
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                placeholder="Admin code"
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(148,163,184,0.55)",
+                  background: "rgba(15,23,42,0.65)",
+                  color: "#fff",
+                  width: 150,
+                  outline: "none",
+                }}
+              />
+            )}
+
+            <button onClick={onRegeneratePool} style={btn(true)}>
+              Regenerate Pool
+            </button>
+
+            <button onClick={onReloadPool} style={btn(false)}>
+              Reload Pool
+            </button>
           </div>
 
-          <input
-            value={adminKey}
-            onChange={(e) => setAdminKey(e.target.value)}
-            placeholder="Admin key"
-            style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.06)",
-              color: "#fff",
-              width: 150,
-            }}
-          />
-          <button
-            onClick={onRegeneratePool}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.10)",
-              color: "#fff",
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Regenerate Pool
-          </button>
-
-          <button
-            onClick={() => loadDemoTaskset().then(() => showToast("Pool refreshed", true)).catch(() => showToast("Refresh failed", false))}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.08)",
-              color: "#fff",
-              fontWeight: 900,
-              cursor: "pointer",
-            }}
-          >
-            Refresh Pool
-          </button>
+          <div style={{ marginTop: 6, fontSize: "0.75rem", color: "rgba(226,232,240,0.7)" }}>
+            Reload = re-fetch saved demo pool. Regenerate = create a new pool (admin).
+          </div>
         </div>
-      </div>
+      </header>
 
       {/* Toast */}
       {toast && (
         <div
           style={{
-            marginTop: 12,
+            marginTop: 10,
+            marginBottom: 10,
             padding: "10px 12px",
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,0.18)",
@@ -762,7 +785,7 @@ export default function DemoPage() {
       {/* Leaderboard */}
       <div
         style={{
-          marginTop: 12,
+          marginTop: 10,
           padding: 12,
           borderRadius: 14,
           border: "1px solid rgba(255,255,255,0.14)",
@@ -772,7 +795,10 @@ export default function DemoPage() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontWeight: 900 }}>Leaderboard</div>
           <div style={{ opacity: 0.8, fontSize: 13 }}>
-            Phase: <span style={{ fontWeight: 900 }}>{phase}</span>
+            Demo pool:{" "}
+            <span style={{ fontWeight: 900 }}>
+              {demoTaskset ? "loaded" : "not loaded"}
+            </span>
           </div>
         </div>
 
@@ -864,9 +890,11 @@ export default function DemoPage() {
                 disabled={!selectedType}
                 style={{
                   padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  background: !selectedType ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.12)",
+                  borderRadius: 999,
+                  border: "1px solid rgba(148,163,184,0.55)",
+                  background: !selectedType
+                    ? "rgba(255,255,255,0.06)"
+                    : "linear-gradient(135deg, rgba(34,197,94,0.65), rgba(14,165,233,0.65))",
                   color: "#fff",
                   fontWeight: 900,
                   cursor: !selectedType ? "not-allowed" : "pointer",
@@ -877,7 +905,8 @@ export default function DemoPage() {
             </div>
 
             <div style={{ marginTop: 10, opacity: 0.78, fontSize: 13 }}>
-              Objective tasks score locally. AI-scored tasks call the backend scoring route for <strong>your team</strong>. Bots simulate AI scores.
+              Objective tasks score locally. AI-scored tasks call the backend scoring route for{" "}
+              <strong>your team</strong>. Bots simulate AI scores.
             </div>
           </div>
         </div>
@@ -886,7 +915,6 @@ export default function DemoPage() {
       {/* Phase: Task */}
       {phase === "task" && currentTask && (
         <div style={{ marginTop: 16, position: "relative" }}>
-          {/* Review overlay (non-physical only) */}
           {taskLocked && !isPhysicalTask(currentTask) && (
             <div
               style={{
@@ -971,8 +999,8 @@ export default function DemoPage() {
               onClick={goBackToRunner}
               style={{
                 padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.18)",
+                borderRadius: 999,
+                border: "1px solid rgba(148,163,184,0.55)",
                 background: "rgba(255,255,255,0.08)",
                 color: "#fff",
                 fontWeight: 900,
@@ -990,8 +1018,8 @@ export default function DemoPage() {
               }}
               style={{
                 padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.18)",
+                borderRadius: 999,
+                border: "1px solid rgba(148,163,184,0.55)",
                 background: "rgba(255,255,255,0.10)",
                 color: "#fff",
                 fontWeight: 900,
