@@ -1,17 +1,19 @@
 // student-app/src/main.jsx
-import React, { useEffect } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./StudentApp.jsx";
+import DemoPage from "./pages/DemoPage.jsx";
 import "./index.css";
 
 // Motion permission request — must be inside a component
-function MotionPermissionWrapper() {
+function MotionPermissionWrapper({ children }) {
   const [permissionAsked, setPermissionAsked] = React.useState(false);
 
   const requestPermission = () => {
-    if (typeof DeviceMotionEvent.requestPermission === "function" && !permissionAsked) {
+    if (typeof DeviceMotionEvent?.requestPermission === "function" && !permissionAsked) {
       DeviceMotionEvent.requestPermission()
-        .then(state => {
+        .then((state) => {
           if (state === "granted") console.log("Motion granted");
         })
         .catch(console.error)
@@ -21,13 +23,20 @@ function MotionPermissionWrapper() {
 
   return (
     <div onClick={requestPermission} onTouchStart={requestPermission}>
-      <App />
+      {children}
     </div>
   );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <MotionPermissionWrapper />
+    <BrowserRouter>
+      <MotionPermissionWrapper>
+        <Routes>
+          <Route path="/demo" element={<DemoPage />} />
+          <Route path="/*" element={<App />} />
+        </Routes>
+      </MotionPermissionWrapper>
+    </BrowserRouter>
   </React.StrictMode>
 );
