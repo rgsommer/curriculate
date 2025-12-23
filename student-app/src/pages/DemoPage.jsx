@@ -455,6 +455,14 @@ export default function DemoPage() {
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
   }, []);
 
+  function startSelectedTask() {
+    if (!selectedType) return;
+    clearReviewLock();
+    const next = pickDemoTask(selectedType);
+    setCurrentTask({ ...next });
+    setPhase("task");
+  }
+
   function pickDemoTask(type) {
     const tasks = demoTaskset?.tasks || demoTaskset?.items || [];
     const match = tasks.find((t) => (t.taskType || t.type) === type);
