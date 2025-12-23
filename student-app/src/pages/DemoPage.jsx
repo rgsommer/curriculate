@@ -1,6 +1,6 @@
 // student-app/src/pages/DemoPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import DemoTaskHost from "../components/tasks/DemoTaskHost.jsx";
+import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../../shared/taskTypes.js";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
@@ -158,6 +158,14 @@ export default function DemoPage() {
     points: 0,
   }), []);
 
+  const runnerTask = useMemo(() => ({
+    taskType: TASK_TYPES.TREASURE_RUNNER,
+    title: "Treasure Runner",
+    prompt: "Warm-up while waiting…",
+    timeLimitSeconds: 0,
+    points: 0,
+  }), []);
+
   return (
     <div style={{ minHeight: "100vh", padding: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -169,17 +177,31 @@ export default function DemoPage() {
 
       {phase === "mood" && (
         <div style={{ marginTop: 16 }}>
-          <DemoTaskHost
+          <TaskRunner
             task={moodTask}
             onSubmit={() => setPhase("runner")}
             disabled={false}
+            mode="play"
+            roomCode={"DEMO"}
+            playerTeam={{ id: "demo-team", teamName: "Demo Team" }}
+            memberNames={["Demo"]}
+            socket={null}
           />
         </div>
       )}
 
       {phase === "runner" && (
         <div style={{ marginTop: 18 }}>
-          <TreasureRunner />
+          <TaskRunner
+            task={runnerTask}
+            onSubmit={() => {}}
+            disabled={false}
+            mode="play"
+            roomCode={"DEMO"}
+            playerTeam={{ id: "demo-team", teamName: "Demo Team" }}
+            memberNames={["Demo"]}
+            socket={null}
+          />
 
           <div style={{ marginTop: 18, padding: 14, borderRadius: 14, border: "1px solid rgba(0,0,0,0.12)" }}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>Choose a task to demo</div>
@@ -257,10 +279,16 @@ export default function DemoPage() {
           )}
 
           <div style={{ opacity: taskLocked ? 0.65 : 1 }}>
-            <DemoTaskHost
+            <TaskRunner
               task={currentTask}
               onSubmit={handleSubmit}
               disabled={taskLocked}
+              submitting={false}
+              mode="play"
+              roomCode={"DEMO"}
+              playerTeam={{ id: "demo-team", teamName: "Demo Team" }}
+              memberNames={["Demo"]}
+              socket={null}
             />
           </div>
 
