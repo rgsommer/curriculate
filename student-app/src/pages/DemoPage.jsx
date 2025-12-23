@@ -3,8 +3,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { TASK_TYPES } from "../../../shared/taskTypes.js";
 
-import adminRoutes from "./routes/admin.js";
-import tasksetRoutes from "./routes/tasksets.js"; // assuming this has the /demo GET
+import adminRoutes from "../../../backend/routes/admin.js";
+import tasksetRoutes from "../../../backend/routes/tasksets.js"; // assuming this has the /demo GET
 
 app.use("/api/admin", adminRoutes);
 app.use("/api/tasksets", tasksetRoutes); // adjust path if different
