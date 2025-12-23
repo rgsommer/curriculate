@@ -185,58 +185,41 @@ function isVercelPreview(origin) {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow non-browser clients
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
       return callback(null, true);
     }
 
-    // ❗ IMPORTANT: do NOT error — deny silently
+    if (process.env.NODE_ENV !== "production") {
+      if (
+        origin.startsWith("http://localhost:") ||
+        origin.startsWith("http://127.0.0.1:")
+      ) {
+        return callback(null, true);
+      }
+    }
+
+    console.warn("Blocked CORS origin:", origin);
+
+    // ✅ IMPORTANT: don't throw an error (causes 500 preflight)
     return callback(null, false);
   },
 
-  credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 
-  allowedHeaders: (req, cb) => {
-    const reqHeaders = req.header("Access-Control-Request-Headers");
-    cb(null, reqHeaders || "Content-Type, Authorization, x-demo-admin-key");
-  },
+  // ✅ keep your custom header here
+  allowedHeaders: ["Content-Type", "Authorization", "x-demo-admin-key"],
 
-  optionsSuccessStatus: 204, // 204 is safest for preflight
+  credentials: true,
+
+  // (Either 200 or 204 is fine; 204 is common)
+  optionsSuccessStatus: 204,
 };
 
-app.options("/api/demo/taskset/regenerate", (req, res) => {
-  const origin = req.headers.origin;
-
-  const allowed =
-    !origin ||
-    allowedOrigins.includes(origin) ||
-    isVercelPreview(origin);
-
-  console.log("[DEMO PREFLIGHT] options hit", new Date().toISOString(), req.headers.origin);
-
-  // Always respond OK to OPTIONS so browser can proceed.
-  // If not allowed, we simply don't echo Access-Control-Allow-Origin.
-  if (allowed && origin) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Credentials", "true");
-    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, x-demo-admin-key"
-    );
-  }
-
-  return res.sendStatus(204);
-});
-
-// Apply CORS
 app.use(cors(corsOptions));
 
-// Explicitly handle preflight for all routes
+// ✅ your regex is good (Express + path-to-regexp friendly)
 app.options(/.*/, cors(corsOptions));
 
 // ====================================================================
