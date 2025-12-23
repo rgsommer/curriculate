@@ -455,6 +455,14 @@ export default function DemoPage() {
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
   }, []);
 
+  function startSelectedTask() {
+    if (!selectedType) return;
+    clearReviewLock();
+    const next = pickDemoTask(selectedType);
+    setCurrentTask({ ...next });
+    setPhase("task");
+  }
+
   function pickDemoTask(type) {
     const tasks = demoTaskset?.tasks || demoTaskset?.items || [];
     const match = tasks.find((t) => (t.taskType || t.type) === type);
@@ -717,42 +725,35 @@ export default function DemoPage() {
           </div>
         </div>
 
-  {/* Controls */}
-  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
-    {showAdminKey && (
-      <input
-        value={adminKey}
-        onChange={(e) => setAdminKey(e.target.value)}
-        placeholder="Admin code"
-        style={{
-          ...pill,
-          padding: "7px 10px",
-          width: 160,
-          textAlign: "left",
-          border: "1px solid rgba(148,163,184,0.55)",
-          background: "rgba(15,23,42,0.65)",
-          color: "#fff",
-          outline: "none",
-        }}
-      />
-    )}
+        <div style={{ textAlign: "right", minWidth: 260 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+            {showAdminKey && (
+              <input
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                placeholder="Admin code"
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(148,163,184,0.55)",
+                  background: "rgba(15,23,42,0.65)",
+                  color: "#fff",
+                  width: 150,
+                  outline: "none",
+                }}
+              />
+            )}
 
-    <button
-      onClick={onRegeneratePool}
-      style={{
-        ...pill,
-        cursor: "pointer",
-        border: "1px solid rgba(255,255,255,0.18)",
-        background: "rgba(59,130,246,0.9)", // blue
-        color: "#fff",
-        fontWeight: 900,
-      }}
-      title="Regenerate demo pool (admin)"
-    >
-      Regenerate
-    </button>
-  </div>
-</header>
+            <button onClick={onRegeneratePool} style={btn(true)}>
+              Regenerate Pool
+            </button>
+          </div>
+
+          <div style={{ marginTop: 6, fontSize: "0.75rem", color: "rgba(226,232,240,0.7)" }}>
+            Reload = re-fetch saved demo pool. Regenerate = create a new pool (admin).
+          </div>
+        </div>
+      </header>
 
       {/* Toast */}
       {toast && (
