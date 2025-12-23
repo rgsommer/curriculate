@@ -4095,26 +4095,40 @@ app.get("/api/demo/taskset", async (req, res) => {
 
 // POST regenerate (admin key required)
 app.post("/api/demo/taskset/regenerate", async (req, res) => {
-  const denied = requireDemoAdmin(req, res);
-  if (denied) return;
+  if (requireDemoAdmin(req, res)) return;
 
   try {
-    const reqLike = { body: buildDemoBody({ force: true }), user: null, headers: {}, query: {}, params: {} };
+    const reqLike = {
+      body: buildDemoBody({ force: true }),
+      user: null,
+      headers: {},
+      query: {},
+      params: {},
+    };
 
     const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
 
     if (status >= 400 || payload?.ok === false) {
-      console.error("[DEMO] generateAiTaskset returned:", status, payload);
-      return res.status(500).json({ ok: false, error: payload?.error || `Generator failed (HTTP ${status})` });
+      return res.status(500).json({
+        ok: false,
+        error: payload?.error || `Generator failed (HTTP ${status})`,
+      });
     }
 
-    demoTasksetCache = normalizeTaskset(payload) || payload;
+    const nextTaskset = normalizeTaskset(payload) || payload;
+
+    // ✅ only commit cache AFTER success
+    demoTasksetCache = nextTaskset;
     demoTasksetUpdatedAt = Date.now();
 
-    return res.json({ ok: true, taskset: demoTasksetCache, updatedAt: demoTasksetUpdatedAt });
+    return res.json({
+      ok: true,
+      taskset: demoTasksetCache,
+      updatedAt: demoTasksetUpdatedAt, // ✅ proves success to client
+    });
   } catch (e) {
-    console.error("[DEMO] POST /api/demo/taskset/regenerate failed:", e);
-    return res.status(500).json({ ok: false, error: "Failed to regenerate demo taskset" });
+    console.error("[DEMO] regenerate failed:", e);
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
 
