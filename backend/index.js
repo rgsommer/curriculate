@@ -185,19 +185,26 @@ function isVercelPreview(origin) {
 
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow non-browser clients
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) return callback(null, true);
-    console.warn("Blocked CORS origin:", origin);
-    return callback(new Error("Not allowed by CORS"));
+
+    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
+      return callback(null, true);
+    }
+
+    // ❗ IMPORTANT: do NOT error — deny silently
+    return callback(null, false);
   },
+
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+
   allowedHeaders: (req, cb) => {
     const reqHeaders = req.header("Access-Control-Request-Headers");
-    // Echo back exactly what the browser asked for (includes x-demo-admin-key)
     cb(null, reqHeaders || "Content-Type, Authorization, x-demo-admin-key");
   },
-  optionsSuccessStatus: 200,
+
+  optionsSuccessStatus: 204, // 204 is safest for preflight
 };
 
 // Apply CORS
