@@ -21,15 +21,21 @@ export default function TreasureRunnerTask({
   const [timeLeftMs, setTimeLeftMs] = useState(60_000);
   const [result, setResult] = useState(null);
 
+  const LANES = [85, 120, 155]; // top, middle, bottom lanes
   const stateRef = useRef({
     t0: performance.now(),
     last: performance.now(),
     // player
     x: 80,
-    y: 120,
-    vx: 140,      // forward speed
+    y: LANES[1], // start in middle lane
+    targetY: LANES[1],
+    currentLane: 1, // 0: top, 1: mid, 2: bottom
+    vx: 140,      // forward speed (base)
+    minVx: 100,   // min speed
+    maxVx: 200,   // max speed
     vy: 0,
     accelHeld: false,
+    decelHeld: false,
     shieldMs: 0,
     // track
     scrollX: 0,
@@ -53,250 +59,265 @@ export default function TreasureRunnerTask({
 
   // Simple spawners
   function spawnObstacle(s) {
-    const laneY = [85, 120, 155][Math.floor(Math.random() * 3)];
+    const laneIndex = Math.floor(Math.random() * 3);
+    const laneY = LANES[laneIndex];
     s.obstacles.push({
       x: s.scrollX + 520 + Math.random() * 220,
       y: laneY,
       w: 26,
       h: 18,
-      kind: Math.random() < 0.5 ? "rock" : "oil",
     });
   }
 
   function spawnTreasure(s) {
-    const laneY = [85, 120, 155][Math.floor(Math.random() * 3)];
+    const laneIndex = Math.floor(Math.random() * 3);
+    const laneY = LANES[laneIndex];
     s.treasures.push({
-      x: s.scrollX + 520 + Math.random() * 260,
+      x: s.scrollX + 520 + Math.random() * 180,
       y: laneY,
-      r: 9,
-      kind: Math.random() < 0.6 ? "boost" : "coin",
+      type: Math.random() > 0.7 ? "boost" : "coin",
+      w: 20,
+      h: 20,
     });
   }
 
-  function rectHit(ax, ay, aw, ah, bx, by, bw, bh) {
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  // Touch controls: divide canvas into zones
+  // - Left half: decelerate
+  // - Right half: accelerate
+  // - Top third: move up lane
+  // - Bottom third: move down lane
+  // (Can combine, e.g. top-left: up + slow)
+  function handleTouchStart(e) {
+    if (!running || disabled) return;
+    e.preventDefault();
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    const s = stateRef.current;
+    s.accelHeld = touchX > rect.width / 2;
+    s.decelHeld = touchX <= rect.width / 2;
+
+    // Lane change based on Y
+    if (touchY < rect.height / 3 && s.currentLane > 0) {
+      s.currentLane -= 1;
+      s.targetY = LANES[s.currentLane];
+    } else if (touchY > (2 * rect.height) / 3 && s.currentLane < 2) {
+      s.currentLane += 1;
+      s.targetY = LANES[s.currentLane];
+    }
   }
 
-  function finishAndAward(s) {
-    if (s.sent) return;
-    s.sent = true;
-
-    // Points model (simple + fun):
-    // - base 10 for finishing the minute
-    // - +2 per collectible
-    // - +5 per boost pickup
-    // - -3 per hit (min 0)
-    const base = 10;
-    const points =
-      Math.max(0, base + s.collectibles * 2 + s.boosts * 5 - s.hits * 3);
-
-    const payload = {
-      type: "treasure-runner",
-      pointsEarned: points,
-      collectibles: s.collectibles,
-      boosts: s.boosts,
-      hits: s.hits,
-      durationMs: 60_000,
-      finishedAt: new Date().toISOString(),
-    };
-
-    setResult(payload);
-    setRunning(false);
-
-    // Let StudentApp do optimistic update too
-    try {
-      onSubmit && onSubmit(payload);
-    } catch {}
-
-    // Ask server to award points (if supported)
-    try {
-      socket?.emit?.("score:add", {
-        roomCode: me.roomCode,
-        teamId: me.teamId,
-        delta: points,
-        reason: "TreasureRunner",
-        meta: payload,
-      });
-      socket?.emit?.("treasure:finish", { roomCode: me.roomCode, teamId: me.teamId, ...payload });
-    } catch {}
+  function handleTouchEnd(e) {
+    if (!running) return;
+    e.preventDefault();
+    const s = stateRef.current;
+    s.accelHeld = false;
+    s.decelHeld = false;
   }
 
-  // Input (tap/hold)
-  useEffect(() => {
-    const onDown = () => {
-      const s = stateRef.current;
-      s.accelHeld = true;
-    };
-    const onUp = () => {
-      const s = stateRef.current;
-      s.accelHeld = false;
-    };
+  // Animation loop
+  function animate() {
+    rafRef.current = requestAnimationFrame(animate);
+    const s = stateRef.current;
+    const now = performance.now();
+    const dt = Math.min(now - s.last, 50) / 1000; // cap dt
+    s.last = now;
 
-    const el = canvasRef.current;
-    if (!el) return;
-
-    el.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-
-    return () => {
-      el.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-    };
-  }, []);
-
-  // Main loop
-  useEffect(() => {
     if (!running) return;
 
-    const ctx = canvasRef.current?.getContext?.("2d");
-    if (!ctx) return;
+    // Speed control
+    if (s.accelHeld) {
+      s.vx = Math.min(s.vx + 120 * dt, s.maxVx); // accel
+    } else if (s.decelHeld) {
+      s.vx = Math.max(s.vx - 120 * dt, s.minVx); // decel
+    } else {
+      // drift back to base
+      if (s.vx > 140) s.vx -= 60 * dt;
+      else if (s.vx < 140) s.vx += 60 * dt;
+    }
 
-    const tick = (now) => {
-      const s = stateRef.current;
-      const dt = Math.min(0.05, (now - s.last) / 1000);
-      s.last = now;
+    // Lane transition (smooth y move)
+    if (s.y !== s.targetY) {
+      const dy = s.targetY - s.y;
+      s.y += Math.sign(dy) * Math.min(Math.abs(dy), 120 * dt); // smooth move
+      if (Math.abs(s.y - s.targetY) < 1) s.y = s.targetY; // snap
+    }
 
-      // Timer
-      const elapsedMs = now - s.t0;
-      const left = Math.max(0, 60_000 - elapsedMs);
-      setTimeLeftMs(left);
+    // Scroll + spawn
+    s.scrollX += s.vx * dt;
+    while (s.obstacles.length < 8 && Math.random() < 0.25) spawnObstacle(s);
+    while (s.treasures.length < 5 && Math.random() < 0.18) spawnTreasure(s);
 
-      // Speed
-      const accel = s.accelHeld ? 320 : -180;
-      s.vx = Math.max(120, Math.min(520, s.vx + accel * dt));
+    // Collision detection
+    const px = s.x;
+    const py = s.y;
+    const pw = 24;
+    const ph = 18;
 
-      // Auto-steer / lane drift: gently oscillate
-      s.y += Math.sin(now / 350) * 10 * dt;
-      s.y = Math.max(72, Math.min(168, s.y));
+    // Treasures
+    s.treasures = s.treasures.filter((t) => {
+      const tx = t.x - s.scrollX;
+      if (tx < -30) return false; // offscreen left
 
-      // Scroll
-      s.scrollX += s.vx * dt;
+      const hit =
+        tx < px + pw &&
+        tx + t.w > px &&
+        t.y < py + ph &&
+        t.y + t.h > py;
 
-      // Spawn
-      if (s.obstacles.length < 6 && Math.random() < 0.07) spawnObstacle(s);
-      if (s.treasures.length < 7 && Math.random() < 0.08) spawnTreasure(s);
-
-      // Move world items left relative to scroll (we store in world-x)
-      // Cull old
-      s.obstacles = s.obstacles.filter((o) => o.x > s.scrollX - 80);
-      s.treasures = s.treasures.filter((t) => t.x > s.scrollX - 80);
-
-      // Collisions (player in world coords = scrollX + x)
-      const px = s.scrollX + s.x;
-      const py = s.y;
-      const pw = 34, ph = 18;
-
-      // shield decay
-      if (s.shieldMs > 0) s.shieldMs = Math.max(0, s.shieldMs - dt * 1000);
-
-      for (const o of s.obstacles) {
-        if (rectHit(px, py, pw, ph, o.x, o.y, o.w, o.h)) {
-          if (s.shieldMs > 0) {
-            // bounce through
-          } else {
-            s.hits += 1;
-            // slow down on hit
-            s.vx = Math.max(120, s.vx * 0.65);
-            // grant a short shield so we don't multi-hit in one frame
-            s.shieldMs = 650;
-          }
-        }
-      }
-
-      for (const t of s.treasures) {
-        const hit = rectHit(px, py, pw, ph, t.x - t.r, t.y - t.r, t.r * 2, t.r * 2);
-        if (!hit) continue;
-
-        if (t.kind === "coin") s.collectibles += 1;
-        if (t.kind === "boost") {
+      if (hit) {
+        if (t.type === "coin") s.collectibles += 1;
+        else if (t.type === "boost") {
           s.boosts += 1;
-          s.vx = Math.min(520, s.vx + 170);
-          s.shieldMs = Math.max(s.shieldMs, 900);
-        }
-        // remove treasure
-        t.x = -1e9;
-      }
-
-      s.treasures = s.treasures.filter((t) => t.x > s.scrollX - 80);
-
-      // Draw
-      const W = 520, H = 240;
-      ctx.clearRect(0, 0, W, H);
-
-      // Track background
-      ctx.fillStyle = "#0b1220";
-      ctx.fillRect(0, 0, W, H);
-
-      // Lane lines
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.fillRect(0, 80, W, 2);
-      ctx.fillRect(0, 120, W, 2);
-      ctx.fillRect(0, 160, W, 2);
-
-      // Draw obstacles/treasures in screen space
-      const worldToScreen = (wx) => wx - s.scrollX;
-
-      for (const o of s.obstacles) {
-        const sx = worldToScreen(o.x);
-        if (sx < -60 || sx > W + 60) continue;
-        ctx.fillStyle = o.kind === "rock" ? "#6b7280" : "#111827";
-        ctx.fillRect(sx, o.y, o.w, o.h);
-        if (o.kind === "oil") {
-          ctx.fillStyle = "rgba(59,130,246,0.35)";
-          ctx.fillRect(sx + 3, o.y + 3, o.w - 6, o.h - 6);
+          s.vx = s.maxVx; // temp boost
         }
       }
+      return !hit;
+    });
 
-      for (const t of s.treasures) {
-        const sx = worldToScreen(t.x);
-        if (sx < -60 || sx > W + 60) continue;
-        ctx.beginPath();
-        ctx.arc(sx, t.y, t.r, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.fillStyle = t.kind === "coin" ? "#facc15" : "#22c55e";
-        ctx.fill();
+    // Obstacles
+    s.obstacles = s.obstacles.filter((o) => {
+      const ox = o.x - s.scrollX;
+      if (ox < -30) return false;
+
+      const hit =
+        ox < px + pw &&
+        ox + o.w > px &&
+        o.y < py + ph &&
+        o.y + o.h > py;
+
+      if (hit && s.shieldMs <= 0) {
+        s.hits += 1;
+        s.vx *= 0.65; // slow down on hit
+        s.shieldMs = 1200; // 1.2s invuln
       }
+      return true;
+    });
 
-      // Draw player
-      const pScreenX = s.x;
-      ctx.fillStyle = s.shieldMs > 0 ? "#60a5fa" : "#f97316";
-      ctx.fillRect(pScreenX, py, pw, ph);
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.fillRect(pScreenX + 6, py + 4, 10, 4);
+    if (s.shieldMs > 0) s.shieldMs -= dt * 1000;
 
-      // HUD
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.font = "12px system-ui, -apple-system, sans-serif";
-      ctx.fillText(`Time: ${Math.ceil(left / 1000)}s`, 12, 20);
-      ctx.fillText(`Coins: ${s.collectibles}`, 12, 38);
-      ctx.fillText(`Boosts: ${s.boosts}`, 12, 56);
-      ctx.fillText(`Hits: ${s.hits}`, 12, 74);
+    // Draw
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.clearRect(0, 0, 520, 240);
 
-      // End
-      if (left <= 0) {
-        finishAndAward(s);
-        cancelAnimationFrame(rafRef.current);
-        return;
-      }
+    // Background
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, 520, 240);
 
-      rafRef.current = requestAnimationFrame(tick);
-    };
+    // Lanes
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 2;
+    LANES.forEach((ly) => {
+      ctx.beginPath();
+      ctx.moveTo(0, ly + 10);
+      ctx.lineTo(520, ly + 10);
+      ctx.stroke();
+    });
 
-    rafRef.current = requestAnimationFrame(tick);
+    // Obstacles
+    ctx.fillStyle = "#ef4444";
+    s.obstacles.forEach((o) => {
+      ctx.fillRect(o.x - s.scrollX, o.y - 9, o.w, o.h);
+    });
+
+    // Treasures
+    s.treasures.forEach((t) => {
+      ctx.fillStyle = t.type === "coin" ? "#facc15" : "#22c55e";
+      ctx.beginPath();
+      ctx.arc(t.x - s.scrollX + 10, t.y, 10, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Player
+    ctx.fillStyle = s.shieldMs > 0 ? "rgba(34,197,94,0.75)" : "#0ea5e9";
+    ctx.fillRect(s.x, s.y - 9, pw, ph);
+
+    // HUD
+    ctx.fillStyle = "#fff";
+    ctx.font = "14px system-ui";
+    ctx.fillText(`Coins: ${s.collectibles}  Boosts: ${s.boosts}  Hits: ${s.hits}`, 12, 28);
+  }
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    canvas.addEventListener("touchstart", handleTouchStart);
+    canvas.addEventListener("touchmove", handleTouchStart); // allow dragging
+    canvas.addEventListener("touchend", handleTouchEnd);
+
+    rafRef.current = requestAnimationFrame(animate);
+
+    const timer = setInterval(() => {
+      setTimeLeftMs((prev) => {
+        if (prev <= 1000) {
+          setRunning(false);
+          return 0;
+        }
+        return prev - 1000;
+      });
+    }, 1000);
+
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      cancelAnimationFrame(rafRef.current);
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchmove", handleTouchStart);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+      clearInterval(timer);
     };
-  }, [running, onSubmit, socket, me.roomCode, me.teamId]);
+  }, [running, disabled]);
+
+  useEffect(() => {
+    if (timeLeftMs <= 0 && running && !result) {
+      setRunning(false);
+      const s = stateRef.current;
+      const points = Math.floor(s.collectibles * 5 + s.boosts * 10 - s.hits * 3);
+      const finalPoints = Math.max(0, points);
+      setResult({
+        pointsEarned: finalPoints,
+        collectibles: s.collectibles,
+        boosts: s.boosts,
+        hits: s.hits,
+      });
+      if (onSubmit && typeof onSubmit === "function") {
+        onSubmit({
+          type: "treasure-runner",
+          pointsEarned: finalPoints,
+          collectibles: s.collectibles,
+          boosts: s.boosts,
+          hits: s.hits,
+        });
+      }
+      if (socket && me.roomCode && me.teamId && !s.sent) {
+        s.sent = true;
+        socket.emit("score:add", {
+          roomCode: me.roomCode,
+          teamId: me.teamId,
+          delta: finalPoints,
+          reason: "TreasureRunner",
+          meta: { collectibles: s.collectibles, boosts: s.boosts, hits: s.hits },
+        });
+        socket.emit("treasure:finish", {
+          roomCode: me.roomCode,
+          teamId: me.teamId,
+          pointsEarned: finalPoints,
+          collectibles: s.collectibles,
+          boosts: s.boosts,
+          hits: s.hits,
+        });
+      }
+    }
+  }, [timeLeftMs, running, result, socket, onSubmit, me]);
 
   const secondsLeft = Math.ceil(timeLeftMs / 1000);
 
   return (
-    <div style={{ padding: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-        <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>🏁 Treasure Runner</div>
-        <div style={{ fontWeight: 800, opacity: 0.85 }}>
+    <div style={{ opacity: disabled ? 0.7 : 1 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontWeight: 900 }}>Treasure Runner</div>
+        <div style={{ fontSize: 14, opacity: 0.85 }}>
           {result ? "Finished!" : `Time left: ${secondsLeft}s`}
         </div>
       </div>
@@ -320,7 +341,7 @@ export default function TreasureRunnerTask({
 
       {!result ? (
         <div style={{ marginTop: 10, opacity: 0.9 }}>
-          Tap/hold anywhere on the track to accelerate. Collect <strong>coins</strong> and <strong>boosts</strong>.
+          Tap left to slow down, right to speed up. Tap top/bottom to move up/down lanes. Collect <strong>coins</strong> and <strong>boosts</strong>.
           Avoid obstacles. Points get awarded when the timer hits 0.
         </div>
       ) : (
