@@ -3993,6 +3993,22 @@ async function getOrCreateProfileForUser({ ownerId, email } = {}) {
 // ====================================================================
 
 const DEMO_ADMIN_KEY = String(process.env.DEMO_ADMIN_KEY || "").trim();
+const DEMO_GRADE_LEVEL = process.env.DEMO_GRADE_LEVEL || "7";
+const DEMO_SUBJECT = process.env.DEMO_SUBJECT || "General";
+
+// GET /api/demo/taskset
+const reqLike = {
+  body: {
+    mode: "demo",
+    count: 10,
+    gradeLevel: DEMO_GRADE_LEVEL,
+    subject: DEMO_SUBJECT,
+  },
+  user: null,
+  headers: {},
+  query: {},
+  params: {},
+};
 let demoTasksetCache = null;
 let demoTasksetUpdatedAt = 0;
 
