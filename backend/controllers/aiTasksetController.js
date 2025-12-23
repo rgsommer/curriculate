@@ -488,6 +488,12 @@ export const generateAiTaskset = async (req, res) => {
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
     const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
+    // For demo/testing, allow taskTypes override
+    const requestedTypes = Array.isArray(payload.taskTypes) ? payload.taskTypes.filter(Boolean) : null;
+    const targetCount = requestedTypes?.length
+      ? requestedTypes.length
+      : Number(payload.numberOfTasks || 8);
+
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({ subject, gradeLevel, difficulty, learningGoal });
 
@@ -550,6 +556,18 @@ export const generateAiTaskset = async (req, res) => {
 
     const specialConsiderations = (topicDescription || "").trim();
     const customNotes = (customInstructions || "").trim();
+
+    // Demo generates one task per taskType
+    if (requestedTypes) {
+      if (!Array.isArray(taskset.items) || taskset.items.length !== requestedTypes.length) {
+        return res.status(400).json({ ok: false, error: "AI did not return one item per requested task type." });
+      }
+      for (let i = 0; i < requestedTypes.length; i++) {
+        if (taskset.items[i]?.type !== requestedTypes[i]) {
+          return res.status(400).json({ ok: false, error: `Task ${i} type mismatch: expected ${requestedTypes[i]}` });
+        }
+      }
+    }
 
     // ---- Allowed types summary for the model ----
     const typeGuidelines = typePool

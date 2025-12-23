@@ -3996,6 +3996,13 @@ const DEMO_ADMIN_KEY = String(process.env.DEMO_ADMIN_KEY || "").trim();
 const DEMO_GRADE_LEVEL = process.env.DEMO_GRADE_LEVEL || "7";
 const DEMO_SUBJECT = process.env.DEMO_SUBJECT || "General";
 const DEMO_VOCAB = (process.env.DEMO_VOCAB || "teamwork, integrity, perseverance, importance of doing action-based activities that support educational goals, learning that sticks is fun and engaging").split(",").map(s => s.trim()).filter(Boolean);
+const DEMO_TASK_TYPES = Object.keys(TASK_TYPE_META)
+  // include only “real” task types you want in demo
+  .filter((t) => TASK_TYPE_META[t]?.enabled !== false);
+const DEMO_WORD_BANK = [
+  "latitude", "longitude", "equator", "hemisphere", "climate", "continent",
+  "scale", "population", "migration", "resources", "economy", "culture", "importance of doing action-based activities that support educational goals", "learning that sticks is fun and engaging"
+];
 
 function buildDemoBody(extra = {}) {
   return {
@@ -4003,9 +4010,13 @@ function buildDemoBody(extra = {}) {
     count: 10,
     gradeLevel: DEMO_GRADE_LEVEL,
     subject: DEMO_SUBJECT,
-    vocabulary: DEMO_VOCAB,
-    keyTerms: DEMO_VOCAB,
-    aiWordBank: DEMO_VOCAB,
+    aiWordBank: DEMO_WORD_BANK,
+    taskTypes: DEMO_TASK_TYPES,
+
+    taskTypes: DEMO_TASK_TYPES,
+    numberOfTasks: DEMO_TASK_TYPES.length,
+
+    difficulty: "medium",
 
     ...extra,
   };
