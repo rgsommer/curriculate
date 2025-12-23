@@ -6,6 +6,12 @@ import cors from "cors";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
+// Allow your frontend origin
+app.use(cors({
+  origin: "https://play.curriculate.net",  // <-- your deployed frontend
+  credentials: true, // if you ever use cookies/auth
+}));
+
 // Define which types are “physical” to skip AI scoring + overlay
 const PHYSICAL_TYPES = new Set([
   TASK_TYPES.BODY_BREAK,
