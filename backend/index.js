@@ -204,7 +204,10 @@ const corsOptions = {
     return callback(new Error("Not allowed by CORS"));
   },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: (req, callback) => {
+    const reqHeaders = req.header("Access-Control-Request-Headers");
+    callback(null, reqHeaders || "Content-Type, Authorization, x-demo-admin-key");
+  },
   credentials: true,
   optionsSuccessStatus: 200, // Important: some browsers choke on 204
 };
@@ -213,7 +216,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Explicitly handle preflight for all routes
-app.options("*", cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 // ====================================================================
 //  EXPRESS MIDDLEWARE
