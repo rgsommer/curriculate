@@ -1,13 +1,12 @@
-import mongoose from "mongoose";
-
 // backend/models/DemoTaskset.js
-// Stores a single persisted demo taskset so /demo loads instantly after first generation.
+
+import mongoose from "mongoose";
 
 const DemoTasksetSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true }, // e.g. "default"
     taskset: { type: Object, required: true },
-    signature: { type: String, default: "" }, // helps auto-regen when schema/inputs change
+    signature: { type: String, default: "" }, // optional
   },
   { timestamps: true }
 );
