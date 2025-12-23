@@ -483,7 +483,6 @@ const buildObjectiveAnswerKey = (task) => {
       };
     }
   }
-
   return null;
 };
 
