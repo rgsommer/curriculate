@@ -12,7 +12,6 @@ import bodyParser from "body-parser";
 import Session from "./models/Session.js"; // Or LiveSession if renamed
 
 import TaskSet from "./models/TaskSet.js";
-import DemoTaskset from "./models/DemoTaskset.js";
 import User from "./models/User.js";
 import TeacherProfile from "./models/TeacherProfile.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
@@ -3991,59 +3990,42 @@ async function getOrCreateProfileForUser({ ownerId, email } = {}) {
 
 // ====================================================================
 //  DEMO TASKSET POOL (for /demo page)
-//  - Stored in Mongo (static) under DemoTaskset.key="default"
-//  - Auto-regenerates ONLY when the signature changes (task types / word bank / grade / subject)
-//  - Manual regenerate endpoint exists (admin key required)
 // ====================================================================
 
 const DEMO_ADMIN_KEY = String(process.env.DEMO_ADMIN_KEY || "").trim();
-const DEMO_GRADE_LEVEL = String(process.env.DEMO_GRADE_LEVEL || "7").trim();
-const DEMO_SUBJECT = String(process.env.DEMO_SUBJECT || "General").trim();
-
-// Default word bank for the demo generator. Override via env if you want.
-const DEMO_WORD_BANK = String(
-  process.env.DEMO_WORD_BANK ||
-    "latitude, longitude, equator, hemisphere, climate, continent, scale, population, migration, resources, economy, culture"
-)
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-// Demo types are derived from TASK_TYPE_META (single source of truth).
-// Keep only implemented + generator-safe types, exclude HIDENSEEK.
-const DEMO_TASK_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([type, meta]) => {
-    if (!type) return false;
-    if (meta?.enabled === false) return false;
-    if (meta?.implemented === false) return false;
-    if (meta?.aiEligible === false) return false;
-    if (meta?.generatorEligible === false) return false;
-    if (type === "hidenseek") return false;
-    return true;
-  })
-  .map(([type]) => type);
-
-// Any change to these inputs should auto-refresh the stored demo pool.
-const DEMO_SIGNATURE = JSON.stringify({
-  gradeLevel: DEMO_GRADE_LEVEL,
-  subject: DEMO_SUBJECT,
-  wordBank: DEMO_WORD_BANK,
-  taskTypes: DEMO_TASK_TYPES,
-});
+const DEMO_GRADE_LEVEL = process.env.DEMO_GRADE_LEVEL || "7";
+const DEMO_SUBJECT = process.env.DEMO_SUBJECT || "General";
+const DEMO_VOCAB = (process.env.DEMO_VOCAB || "teamwork, integrity, perseverance, importance of doing action-based activities that support educational goals, learning that sticks is fun and engaging").split(",").map(s => s.trim()).filter(Boolean);
+const DEMO_TASK_TYPES = Object.keys(TASK_TYPE_META)
+  // include only “real” task types you want in demo
+  .filter((t) => TASK_TYPE_META[t]?.enabled !== false);
+const DEMO_WORD_BANK = [
+  "latitude", "longitude", "equator", "hemisphere", "climate", "continent",
+  "scale", "population", "migration", "resources", "economy", "culture", "importance of doing action-based activities that support educational goals", "learning that sticks is fun and engaging"
+];
 
 function buildDemoBody(extra = {}) {
   return {
     mode: "demo",
+    count: 10,
     gradeLevel: DEMO_GRADE_LEVEL,
     subject: DEMO_SUBJECT,
     aiWordBank: DEMO_WORD_BANK,
     taskTypes: DEMO_TASK_TYPES,
+
+    taskTypes: DEMO_TASK_TYPES,
     numberOfTasks: DEMO_TASK_TYPES.length,
-    difficulty: "MEDIUM",
-    learningGoal: "REVIEW",
+
+    difficulty: "medium",
+
     ...extra,
   };
 }
+// GET /api/demo/taskset
+const reqLike = { body: buildDemoBody(), user: null, headers: {}, query: {}, params: {} };
+
+let demoTasksetCache = null;
+let demoTasksetUpdatedAt = 0;
 
 function requireDemoAdmin(req, res) {
   const key = String(req.headers["x-demo-admin-key"] || "").trim();
@@ -4054,6 +4036,7 @@ function requireDemoAdmin(req, res) {
   return false;
 }
 
+// Run an Express handler and capture JSON output
 // Run an Express handler and capture res.json payload
 async function runJsonHandler(handler, reqLike) {
   return new Promise((resolve, reject) => {
@@ -4083,58 +4066,27 @@ async function runJsonHandler(handler, reqLike) {
 
 function normalizeTaskset(payload) {
   if (!payload) return null;
-  return (
-    payload.taskset ||
-    payload.taskSet ||
-    payload.data?.taskset ||
-    payload.result?.taskset ||
-    null
-  );
+  return payload.taskset || payload.taskSet || payload.data?.taskset || payload.result?.taskset || null;
 }
 
-async function generateAndStoreDemoTaskset({ force = false } = {}) {
-  const existing = await DemoTaskset.findOne({ key: "default" }).lean();
-
-  if (!force && existing?.taskset && existing?.signature === DEMO_SIGNATURE) {
-    return existing;
-  }
-
-  const reqLike = {
-    body: buildDemoBody({ force: true }),
-    user: null,
-    headers: {},
-    query: {},
-    params: {},
-  };
-
-  const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
-
-  if (status >= 400 || payload?.ok === false) {
-    const msg = payload?.error || `Generator failed (HTTP ${status})`;
-    throw new Error(msg);
-  }
-
-  const nextTaskset = normalizeTaskset(payload) || payload;
-
-  const saved = await DemoTaskset.findOneAndUpdate(
-    { key: "default" },
-    { key: "default", taskset: nextTaskset, signature: DEMO_SIGNATURE },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  ).lean();
-
-  return saved;
-}
-
-// GET current demo taskset (Mongo-backed; only regenerates if signature changed)
+// GET current demo taskset (generate once then cache)
 app.get("/api/demo/taskset", async (req, res) => {
   try {
-    const doc = await generateAndStoreDemoTaskset({ force: false });
-    return res.json({
-      ok: true,
-      taskset: doc?.taskset || null,
-      updatedAt: doc?.updatedAt || null,
-      signature: doc?.signature || "",
-    });
+    if (!demoTasksetCache) {
+      const reqLike = { body: buildDemoBody(), user: null, headers: {}, query: {}, params: {} };
+
+      const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
+
+      if (status >= 400 || payload?.ok === false) {
+        console.error("[DEMO] generateAiTaskset returned:", status, payload);
+        return res.status(500).json({ ok: false, error: payload?.error || `Generator failed (HTTP ${status})` });
+      }
+
+      demoTasksetCache = normalizeTaskset(payload) || payload;
+      demoTasksetUpdatedAt = Date.now();
+    }
+
+    return res.json({ ok: true, taskset: demoTasksetCache, updatedAt: demoTasksetUpdatedAt });
   } catch (e) {
     console.error("[DEMO] GET /api/demo/taskset failed:", e);
     return res.status(500).json({ ok: false, error: "Failed to load demo taskset" });
@@ -4146,12 +4098,33 @@ app.post("/api/demo/taskset/regenerate", async (req, res) => {
   if (requireDemoAdmin(req, res)) return;
 
   try {
-    const doc = await generateAndStoreDemoTaskset({ force: true });
+    const reqLike = {
+      body: buildDemoBody({ force: true }),
+      user: null,
+      headers: {},
+      query: {},
+      params: {},
+    };
+
+    const { status, payload } = await runJsonHandler(generateAiTaskset, reqLike);
+
+    if (status >= 400 || payload?.ok === false) {
+      return res.status(500).json({
+        ok: false,
+        error: payload?.error || `Generator failed (HTTP ${status})`,
+      });
+    }
+
+    const nextTaskset = normalizeTaskset(payload) || payload;
+
+    // ✅ only commit cache AFTER success
+    demoTasksetCache = nextTaskset;
+    demoTasksetUpdatedAt = Date.now();
+
     return res.json({
       ok: true,
-      taskset: doc?.taskset || null,
-      updatedAt: doc?.updatedAt || null,
-      signature: doc?.signature || "",
+      taskset: demoTasksetCache,
+      updatedAt: demoTasksetUpdatedAt, // ✅ proves success to client
     });
   } catch (e) {
     console.error("[DEMO] regenerate failed:", e);
