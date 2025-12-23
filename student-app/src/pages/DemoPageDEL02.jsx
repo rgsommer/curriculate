@@ -714,42 +714,44 @@ export default function DemoPage() {
               <span style={{ opacity: 0.9 }}>Teams:</span>{" "}
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
             </span>
-<button
-  onClick={onRegeneratePool}
-  style={{
-    ...pill,
-    cursor: "pointer",
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(59,130,246,0.9)", // blue
-    color: "#fff",
-    fontWeight: 900,
-  }}
-  title="Regenerate demo pool (admin)"
->
-  Regenerate
-</button>
-
-{showAdminKey && (
-  <input
-    value={adminKey}
-    onChange={(e) => setAdminKey(e.target.value)}
-    placeholder="Admin code"
-    style={{
-      ...pill,
-      padding: "7px 10px",
-      width: 160,
-      textAlign: "left",
-      border: "1px solid rgba(148,163,184,0.55)",
-      background: "rgba(15,23,42,0.65)",
-      color: "#fff",
-      outline: "none",
-    }}
-  />
-)}
           </div>
         </div>
 
   {/* Controls */}
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
+    {showAdminKey && (
+      <input
+        value={adminKey}
+        onChange={(e) => setAdminKey(e.target.value)}
+        placeholder="Admin code"
+        style={{
+          ...pill,
+          padding: "7px 10px",
+          width: 160,
+          textAlign: "left",
+          border: "1px solid rgba(148,163,184,0.55)",
+          background: "rgba(15,23,42,0.65)",
+          color: "#fff",
+          outline: "none",
+        }}
+      />
+    )}
+
+    <button
+      onClick={onRegeneratePool}
+      style={{
+        ...pill,
+        cursor: "pointer",
+        border: "1px solid rgba(255,255,255,0.18)",
+        background: "rgba(59,130,246,0.9)", // blue
+        color: "#fff",
+        fontWeight: 900,
+      }}
+      title="Regenerate demo pool (admin)"
+    >
+      Regenerate
+    </button>
+  </div>
 </header>
 
       {/* Toast */}

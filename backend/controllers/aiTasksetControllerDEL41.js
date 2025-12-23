@@ -1,7 +1,7 @@
 // backend/controllers/aiTasksetController.js
 import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
-import { TASK_TYPES, TASK_TYPE_META, normalizeTaskType } from "../../shared/taskTypes.js";
+import { TASK_TYPES, TASK_TYPE_META, normalizeTaskTypeId } from "../../shared/taskTypes.js";
 
 const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
@@ -76,9 +76,9 @@ function validateGeneratePayload(payload = {}) {
  * Example: "Brain Blitz!" => "brain-blitz"
  */
 function normalizeSelectedType(raw) {
-  // Centralized in shared/taskTypes.js so we don’t maintain duplicate v=== maps.
-  // Returns a TASK_TYPES.* string or null.
-  return normalizeTaskType(raw);
+  // Delegate to shared normalizer so we don't maintain duplicate v=== chains here.
+  const normalized = normalizeTaskTypeId(raw);
+  return normalized || null;
 }
 
 function isNonEmptyString(x) {
@@ -397,18 +397,8 @@ export const generateAiTaskset = async (req, res) => {
       displays,
     } = req.body || {};
 
-    const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
     const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
-    // For demo/testing, allow taskTypes override
-    const requestedTypes = Array.isArray(req.body?.taskTypes)
-      ? req.body.taskTypes.filter(Boolean)
-      : null;
-
-    const targetCount = requestedTypes?.length
-      ? requestedTypes.length
-      : Number(numberOfTasks || 8);
-      
     const { errors, difficulty: normDifficulty, learningGoal: normGoal } =
       validateGeneratePayload({ subject, gradeLevel, difficulty, learningGoal });
 
@@ -435,6 +425,11 @@ export const generateAiTaskset = async (req, res) => {
       typePool = normalized.length ? normalized : CORE_TYPES;
     } else {
       typePool = CORE_TYPES;
+    }
+
+    // If demo explicitly requests taskTypes, use that as the pool (and keep its order)
+    if (Array.isArray(requestedTypes) && requestedTypes.length) {
+      typePool = requestedTypes;
     }
 
     // Presenter lenses / perspectives
@@ -472,7 +467,6 @@ export const generateAiTaskset = async (req, res) => {
     const specialConsiderations = (topicDescription || "").trim();
     const customNotes = (customInstructions || "").trim();
 
-    
     // ---- Allowed types summary for the model ----
     const typeGuidelines = typePool
       .map((t) => {
@@ -531,7 +525,6 @@ Rules:
 - Each task has a short clear title and a prompt that students will see.
 - For SORT tasks: include config.buckets (>=2) and config.items (>=3) with {text, bucketIndex|null}
 - For SEQUENCE tasks: include config.items (>=3) with {text}
-- For MATCHING tasks: include config.leftItems (5–7) and config.rightItems (5–7), each item {id,text}. Also include correctAnswer as a map { "leftId": "rightId" }.
 - For VENNSORT tasks: include config.categories (2–3 strings), config.items (5–10 strings or {id,text}), and correctAnswer as a map { "itemId": ["CategoryA", "CategoryB"] } (empty array allowed).
 - For JEOPARDY/BrainBlitz tasks: include clues (>=3) with {clue, answer}
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
@@ -618,26 +611,35 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       return res.status(500).json({ error: "AI returned no tasks" });
     }
 
-// Demo generates one task per requested taskType (strict ordering)
-if (requestedTypes) {
-  if (!Array.isArray(aiTasks) || aiTasks.length !== requestedTypes.length) {
-    return res.status(400).json({
-      ok: false,
-      error: "AI did not return one task per requested task type.",
-    });
-  }
+    // For demo/testing, allow taskTypes override
+    const requestedTypes = Array.isArray(req.body?.taskTypes)
+      ? req.body.taskTypes.filter(Boolean)
+      : null;
 
-  for (let i = 0; i < requestedTypes.length; i++) {
-    const got = normalizeSelectedType(aiTasks[i]?.taskType || aiTasks[i]?.type);
-    if (got !== requestedTypes[i]) {
-      return res.status(400).json({
-        ok: false,
-        error: `Task ${i} type mismatch: expected ${requestedTypes[i]}, got ${got}`,
-      });
+    const targetCount = requestedTypes?.length
+      ? requestedTypes.length
+      : Number(numberOfTasks || 8);
+
+    // Demo generates one task per taskType
+    if (requestedTypes) {
+      if (!Array.isArray(aiTasks) || aiTasks.length !== requestedTypes.length) {
+        return res.status(400).json({
+          ok: false,
+          error: "AI did not return one task per requested task type.",
+        });
+      }
+
+      for (let i = 0; i < requestedTypes.length; i++) {
+        const got = normalizeSelectedType(aiTasks[i]?.taskType || aiTasks[i]?.type);
+        if (got !== requestedTypes[i]) {
+          return res.status(400).json({
+            ok: false,
+            error: `Task ${i} type mismatch: expected ${requestedTypes[i]}, got ${got}`,
+          });
+        }
+      }
     }
-  }
-}
-
+    
     // ---------- Normalize AI tasks into TaskSet schema ----------
     const tasks = aiTasks.slice(0, safeCount).map((t, index) => {
       const rawTypeToken = t.taskType || t.type || "";
