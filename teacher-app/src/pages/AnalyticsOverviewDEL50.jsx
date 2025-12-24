@@ -3,7 +3,6 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
 import { useAuth } from "../auth/useAuth";
-import { socket } from "../socket";
 
 export default function AnalyticsOverview() {
   const navigate = useNavigate();

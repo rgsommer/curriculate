@@ -49,7 +49,7 @@ export default function SessionAnalyticsPage() {
           <p className="mt-2 text-xs sm:text-sm">
             <strong>Class Avg Score:</strong> {session.classAverageScore}%{" "}
             &nbsp;|&nbsp;
-            <strong>Accuracy:</strong> {session.classAverageAccuracy != null ? `${session.classAverageAccuracy}%` : "—"}
+            <strong>Accuracy:</strong> {session.classAverageAccuracy}%
           </p>
         </div>
       </div>
@@ -111,10 +111,10 @@ export default function SessionAnalyticsPage() {
                       {t.prompt}
                     </td>
                     <td className="p-2 align-top text-right">
-                      {t.avgScore != null ? `${t.avgScore}%` : "—"}
+                      {t.avgScore}%
                     </td>
                     <td className="p-2 align-top text-right">
-                      {t.avgCorrectPct != null ? `${t.avgCorrectPct}%` : "—"}
+                      {t.avgCorrectPct}%
                     </td>
                     <td className="p-2 align-top text-right">
                       {t.submissionsCount}
@@ -207,14 +207,10 @@ export default function SessionAnalyticsPage() {
                     {pt.prompt} –{" "}
                     <span
                       className={
-                        pt.isCorrect == null
-                          ? "text-slate-600"
-                          : pt.isCorrect
-                          ? "text-green-600"
-                          : "text-red-600"
+                        pt.isCorrect ? "text-green-600" : "text-red-600"
                       }
                     >
-                      {pt.isCorrect == null ? "Completed" : pt.isCorrect ? "Correct" : "Incorrect"}
+                      {pt.isCorrect ? "Correct" : "Incorrect"}
                     </span>{" "}
                     ({pt.points} pts, {Math.round(pt.latencyMs)} ms)
                   </li>

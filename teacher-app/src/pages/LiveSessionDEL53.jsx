@@ -37,7 +37,6 @@ const QUICK_TASK_TYPES_RAW =
         TASK_TYPES.SHORT_ANSWER,
         TASK_TYPES.OPEN_TEXT,
         TASK_TYPES.ECHO_CHAIN,
-        TASK_TYPES.NARRATION_SYNTHESIZE,
       ];
 
 const QUICK_TASK_TYPES = Array.from(
@@ -744,15 +743,8 @@ export default function LiveSession({ roomCode }) {
   const handleLaunchQuickTask = () => {
     const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
     const isEchoChain = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
-    const isNarration = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
     if (!roomCode) return;
-    if (!isGuessWho && !isEchoChain && !isNarration && !taskConfig.prompt?.trim()) return;
-    if (isNarration) {
-      const pc = Number(taskConfig?.config?.playerCount);
-      const prompts = Array.isArray(taskConfig?.config?.prompts) ? taskConfig.config.prompts : [];
-      if (!(pc > 0) || prompts.length === 0) return;
-      if (prompts.length !== pc) return;
-    }
+    if (!isGuessWho && !isEchoChain && !taskConfig.prompt?.trim()) return;
     if (isEchoChain) {
       const seed = String(taskConfig.seedTerm || taskConfig.startTerm || "").trim();
       if (!seed) return;
@@ -771,7 +763,7 @@ export default function LiveSession({ roomCode }) {
 
     const taskToSend = {
       taskType: taskType || "short-answer",
-      prompt: (taskConfig.prompt || "").trim(),
+      prompt: taskConfig.prompt.trim(),
       correctAnswer: taskConfig.correctAnswer || null,
       options:
         Array.isArray(taskConfig.options) && taskConfig.options.length > 0
@@ -847,46 +839,6 @@ export default function LiveSession({ roomCode }) {
         options: undefined,
         items: undefined,
       }),
-
-
-// Narration Synthesize (teach-back) special fields
-...(isNarration && {
-  prompt:
-    (taskConfig.prompt || "").trim() ||
-    "Take turns narrating these concept prompts to your team. Rate each speaker for clarity/accuracy.",
-  config: {
-    playerCount:
-      Number(taskConfig?.config?.playerCount) > 0
-        ? Number(taskConfig.config.playerCount)
-        : (Array.isArray(taskConfig?.config?.prompts)
-            ? taskConfig.config.prompts.length
-            : 0),
-    prompts: Array.isArray(taskConfig?.config?.prompts)
-      ? taskConfig.config.prompts
-      : [],
-    perTurnSeconds:
-      Number(taskConfig?.config?.perTurnSeconds) >= 0
-        ? Number(taskConfig.config.perTurnSeconds)
-        : 60,
-    ratingScale: taskConfig?.config?.ratingScale || {
-      min: 1,
-      max: 5,
-      label: "Clarity / accuracy",
-    },
-  },
-  timeLimitSeconds:
-    Number(taskConfig?.config?.perTurnSeconds) > 0
-      ? Number(taskConfig.config.perTurnSeconds)
-      : 60,
-  interTeamEnabled: false,
-  intraTeamEnabled: true,
-  objectiveScoring: false,
-  aiScoringRequired: false,
-  // Not used for this type
-  correctAnswer: null,
-  options: undefined,
-  items: undefined,
-}),
 
 
       // Diff Detective special fields
@@ -1151,51 +1103,6 @@ export default function LiveSession({ roomCode }) {
         return;
       }
 
-// 🎙️ Narration Synthesize (teach-back / oral narration)
-if (
-  generatedType === TASK_TYPES.NARRATION_SYNTHESIZE ||
-  generatedType === "narration-synthesize"
-) {
-  const cfg = baseTask?.config && typeof baseTask.config === "object" ? baseTask.config : {};
-  const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(baseTask.prompts) ? baseTask.prompts : [];
-
-  const playerCount =
-    Number(cfg.playerCount) > 0
-      ? Number(cfg.playerCount)
-      : prompts.length > 0
-      ? prompts.length
-      : 0;
-
-  const perTurnSeconds =
-    Number(cfg.perTurnSeconds) >= 0
-      ? Number(cfg.perTurnSeconds)
-      : Number(baseTask.timeLimitSeconds) > 0
-      ? Number(baseTask.timeLimitSeconds)
-      : 60;
-
-  const ratingScale =
-    cfg.ratingScale && typeof cfg.ratingScale === "object"
-      ? cfg.ratingScale
-      : { min: 1, max: 5, label: "Clarity / accuracy" };
-
-  setTaskConfig({
-    prompt:
-      baseTask.prompt ||
-      "Take turns narrating these concept prompts to your team. Rate each speaker for clarity/accuracy.",
-    subject: aiSubject || "Ad-hoc",
-    gradeLevel: gradeStr || "",
-    config: {
-      playerCount,
-      prompts,
-      perTurnSeconds,
-      ratingScale,
-    },
-  });
-
-  setShowAiGen(false);
-  return;
-}
-
       // 🟢 SIMPLE (single-question) CASE
       if (!generatedIsMulti) {
         setTaskConfig({
@@ -1452,7 +1359,6 @@ if (
 
   const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
   const isEchoChainQuick = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
-  const isNarrationQuick = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
   const quickLaunchReady = isGuessWhoQuick
     ? (Array.isArray(taskConfig.secretAnswers)
         ? taskConfig.secretAnswers
@@ -2068,40 +1974,6 @@ Precipitation — rain, snow, hail`}
                       </span>
                     </div>
                   )}
-
-{isNarrationQuick && (
-  <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#075985" }}>
-    <strong>Turns:</strong>{" "}
-    {Number(taskConfig?.config?.playerCount) > 0
-      ? Number(taskConfig.config.playerCount)
-      : Array.isArray(taskConfig?.config?.prompts)
-      ? taskConfig.config.prompts.length
-      : 0}
-    <span style={{ marginLeft: 10, color: "#64748b" }}>
-      · per-turn timer:{" "}
-      {Number(taskConfig?.config?.perTurnSeconds) >= 0
-        ? Number(taskConfig.config.perTurnSeconds)
-        : 60}
-      s
-      {" · "}
-      scale:{" "}
-      {taskConfig?.config?.ratingScale?.min ?? 1}–{taskConfig?.config?.ratingScale?.max ?? 5}
-    </span>
-    {Array.isArray(taskConfig?.config?.prompts) &&
-      taskConfig.config.prompts.length > 0 && (
-        <div style={{ marginTop: 6, color: "#334155" }}>
-          <div style={{ fontWeight: 800, marginBottom: 2 }}>First prompt:</div>
-          <div style={{ fontSize: "0.82rem" }}>
-            <span style={{ fontWeight: 700 }}>
-              {String(taskConfig.config.prompts[0]?.concept || "").trim() || "Concept"}
-              {": "}
-            </span>
-            <span>{String(taskConfig.config.prompts[0]?.prompt || "").trim()}</span>
-          </div>
-        </div>
-      )}
-  </div>
-)}
 
                   {taskConfig.correctAnswer && (
                     <div
