@@ -328,7 +328,6 @@ export default function DemoPage() {
 
   const [toast, setToast] = useState(null);
 
-  // “Generate all types” streaming UI (ProgressFillButton)
   const [generating, setGenerating] = useState(false);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(1);
@@ -336,6 +335,13 @@ export default function DemoPage() {
   const esRef = useRef(null);
 
   const progress = total > 0 ? done / total : 0;
+
+  const startDemoGeneration = async () => {
+    if (generating) return;
+    setGenerating(true);
+    setDone(0);
+    setTotal(1);
+    setStatus("Starting…");
 
   // Hidden by default (you asked not to show bot count). Keep a sane default.
   const [botCount] = useState(3);
@@ -415,90 +421,6 @@ export default function DemoPage() {
     return json.taskset;
   }
 
-  // -------------------------
-  // Streaming generation (ProgressFillButton)
-  // -------------------------
-  function cleanupEventSource() {
-    try {
-      if (esRef.current) esRef.current.close();
-    } catch {}
-    esRef.current = null;
-  }
-
-  const startDemoGeneration = async () => {
-    if (generating) return;
-
-    // We require the admin key to generate the full demo pool.
-    const key = adminKey.trim();
-    if (!showAdminKey) {
-      setShowAdminKey(true);
-      showToast("Enter admin code to regenerate", false);
-      return;
-    }
-    if (!key) {
-      showToast("Admin code required", false);
-      return;
-    }
-
-    setGenerating(true);
-    setDone(0);
-    setTotal(1);
-    setStatus("Starting…");
-
-    cleanupEventSource();
-
-    const payload = {
-      adminKey: key,
-      // room for future: { includeNonEligible: false, ... }
-    };
-
-    const url = `${API_BASE}/api/demo/taskset/stream?payload=${encodeURIComponent(
-      JSON.stringify(payload)
-    )}`;
-
-    const es = new EventSource(url);
-    esRef.current = es;
-
-    es.addEventListener("start", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setTotal(Number(data.total) || 1);
-        setDone(Number(data.done) || 0);
-        setStatus("Generating…");
-      } catch {
-        setStatus("Generating…");
-      }
-    });
-
-    es.addEventListener("progress", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDone(Number(data.done) || 0);
-        setTotal(Number(data.total) || 1);
-        if (data.currentType) setStatus(`Generating: ${data.currentType}`);
-      } catch {}
-    });
-
-    es.addEventListener("done", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data?.taskset) setDemoTaskset(data.taskset);
-      } catch {}
-      setStatus("Done");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Demo pool regenerated", true);
-    });
-
-    es.addEventListener("error", () => {
-      // EventSource fires "error" on disconnect too; handle carefully
-      setStatus("Error / disconnected");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Stream disconnected", false);
-    });
-  };
-
   // Load once
   useEffect(() => {
     loadDemoTaskset()
@@ -509,7 +431,6 @@ export default function DemoPage() {
       });
 
     return () => {
-      cleanupEventSource();
       if (postSubmitTimerRef.current) {
         clearInterval(postSubmitTimerRef.current);
         postSubmitTimerRef.current = null;
@@ -565,6 +486,7 @@ export default function DemoPage() {
   }
 
   // Start a task from the selected bubble.
+  // NOTE: function declaration avoids "not defined" issues if this file is refactored.
   function startSelectedTask() {
     if (!selectedType) return;
     clearReviewLock();
@@ -717,7 +639,7 @@ export default function DemoPage() {
   }
 
   // -------------------------
-  // Demo Admin actions (POST regeneration for legacy)
+  // Demo Admin actions
   // -------------------------
   async function onRegeneratePool() {
     // 1st click: reveal the admin input
@@ -731,11 +653,12 @@ export default function DemoPage() {
     if (!key) return;
 
     try {
-      await regenerateDemoTaskset(key);
-      showToast("Demo pool regenerated", true);
+      await regenerateDemoTaskset(key); // this should setDemoTaskset(...) internally
+      // optional: hide the key again after success
+      // setShowAdminKey(false);
+      // setAdminKey("");
     } catch (e) {
       console.warn("[DemoPage] regenerate failed:", e);
-      showToast(e?.message || "Regenerate failed", false);
     }
   }
 
@@ -755,10 +678,71 @@ export default function DemoPage() {
     color: "#e5e7eb",
   };
 
+  const btn = (primary = false) => ({
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: primary ? "1px solid rgba(99,102,241,0.65)" : "1px solid rgba(148,163,184,0.55)",
+    background: primary
+      ? "linear-gradient(135deg, rgba(99,102,241,0.85), rgba(14,165,233,0.85))"
+      : "rgba(255,255,255,0.08)",
+    color: "#fff",
+    fontWeight: 850,
+    cursor: "pointer",
+    boxShadow: primary ? "0 10px 26px rgba(37,99,235,0.35)" : "none",
+  });
+
+  const url = `/api/demo/taskset/stream?payload=${encodeURIComponent(JSON.stringify(payload))}`;
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.addEventListener("start", (e) => {
+      const data = JSON.parse(e.data);
+      setTotal(Number(data.total) || 1);
+      setStatus("Generating…");
+    });
+
+    es.addEventListener("progress", (e) => {
+      const data = JSON.parse(e.data);
+      setDone(Number(data.done) || 0);
+      setTotal(Number(data.total) || 1);
+      if (data.currentType) setStatus(`Generating: ${data.currentType}`);
+    });
+
+    es.addEventListener("done", (e) => {
+      const data = JSON.parse(e.data);
+      // TODO: use data.taskset in your page (set state / navigate / etc.)
+      setDone((prev) => prev); // already final
+      setStatus("Done");
+      setGenerating(false);
+      es.close();
+      esRef.current = null;
+    });
+
+    es.addEventListener("error", (e) => {
+      // EventSource fires "error" on disconnect too; handle carefully
+      setStatus("Error / disconnected");
+      setGenerating(false);
+      try { es.close(); } catch {}
+      esRef.current = null;
+    });
+  };
+
   // -------------------------
   // Render
   // -------------------------
   return (
+    <div>
+      <ProgressFillButton
+        progress={generating ? progress : 0}
+        disabled={generating}
+        onClick={startDemoGeneration}
+      >
+        {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate"}
+      </ProgressFillButton>
+
+      <div style={{ marginTop: 10, opacity: 0.85 }}>{status}</div>
+    </div>
+  );
     <div
       style={{
         minHeight: "100vh",
@@ -789,7 +773,7 @@ export default function DemoPage() {
             </p>
           </div>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             <span style={pill}>
               <span style={{ opacity: 0.9 }}>Mode:</span> <strong>Demo</strong>
             </span>
@@ -804,54 +788,43 @@ export default function DemoPage() {
               <span style={{ opacity: 0.9 }}>Teams:</span>{" "}
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
             </span>
+<button
+  onClick={onRegeneratePool}
+  style={{
+    ...pill,
+    cursor: "pointer",
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(59,130,246,0.9)", // blue
+    color: "#fff",
+    fontWeight: 900,
+  }}
+  title="Regenerate demo pool (admin)"
+>
+  Regenerate
+</button>
 
-            <button
-              onClick={onRegeneratePool}
-              style={{
-                ...pill,
-                cursor: "pointer",
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(59,130,246,0.9)", // blue
-                color: "#fff",
-                fontWeight: 900,
-              }}
-              title="Regenerate demo pool (admin)"
-              type="button"
-            >
-              Regenerate
-            </button>
-
-            {showAdminKey && (
-              <input
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Admin code"
-                style={{
-                  ...pill,
-                  padding: "7px 10px",
-                  width: 160,
-                  textAlign: "left",
-                  border: "1px solid rgba(148,163,184,0.55)",
-                  background: "rgba(15,23,42,0.65)",
-                  color: "#fff",
-                  outline: "none",
-                }}
-              />
-            )}
-
-            <div style={{ minWidth: 220 }}>
-              <ProgressFillButton
-                progress={generating ? progress : 0}
-                disabled={generating}
-                onClick={startDemoGeneration}
-              >
-                {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
-              </ProgressFillButton>
-              <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
-            </div>
+{showAdminKey && (
+  <input
+    value={adminKey}
+    onChange={(e) => setAdminKey(e.target.value)}
+    placeholder="Admin code"
+    style={{
+      ...pill,
+      padding: "7px 10px",
+      width: 160,
+      textAlign: "left",
+      border: "1px solid rgba(148,163,184,0.55)",
+      background: "rgba(15,23,42,0.65)",
+      color: "#fff",
+      outline: "none",
+    }}
+  />
+)}
           </div>
         </div>
-      </header>
+
+  {/* Controls */}
+</header>
 
       {/* Toast */}
       {toast && (
@@ -880,19 +853,13 @@ export default function DemoPage() {
           background: "rgba(255,255,255,0.06)",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontWeight: 900 }}>Leaderboard</div>
           <div style={{ opacity: 0.8, fontSize: 13 }}>
             Demo pool:{" "}
-            <span style={{ fontWeight: 900 }}>{demoTaskset ? "loaded" : "not loaded"}</span>
+            <span style={{ fontWeight: 900 }}>
+              {demoTaskset ? "loaded" : "not loaded"}
+            </span>
           </div>
         </div>
 
@@ -993,7 +960,6 @@ export default function DemoPage() {
                   fontWeight: 900,
                   cursor: !selectedType ? "not-allowed" : "pointer",
                 }}
-                type="button"
               >
                 Start Task
               </button>
@@ -1025,9 +991,7 @@ export default function DemoPage() {
               {postSubmitSecondsLeft != null && (() => {
                 const lockTotal = DEFAULT_REVIEW_SECONDS;
                 const percent =
-                  lockTotal > 0
-                    ? Math.round((postSubmitSecondsLeft / lockTotal) * 100)
-                    : 0;
+                  lockTotal > 0 ? Math.round((postSubmitSecondsLeft / lockTotal) * 100) : 0;
 
                 return (
                   <div
@@ -1103,7 +1067,6 @@ export default function DemoPage() {
                 fontWeight: 900,
                 cursor: "pointer",
               }}
-              type="button"
             >
               ← Back to Treasure Runner
             </button>
@@ -1123,7 +1086,6 @@ export default function DemoPage() {
                 fontWeight: 900,
                 cursor: "pointer",
               }}
-              type="button"
             >
               Try again (same type)
             </button>
