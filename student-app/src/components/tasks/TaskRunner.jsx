@@ -252,13 +252,13 @@ function normalizeTaskType(raw) {
       return TASK_TYPES.WORD_WEAVER_DUEL;
 
     // already normalized constant coming through
-    case (TASK_TYPES.WORD_WEAVER_DUEL):
+    case TASK_TYPES.WORD_WEAVER_DUEL:
       return TASK_TYPES.WORD_WEAVER_DUEL;
+
     default:
       return raw;
   }
 }
-
 
 function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
   const seed = String(task?.seedTerm || task?.config?.seedTerm || "").trim();
@@ -493,18 +493,13 @@ function MultiPartTask({
   disabled,
 }) {
   const isChoice = mode === "choice";
-  const isShort = mode === "short";
   const isReview = !!readOnly;
 
   const rawItems =
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
-    (Array.isArray(task.questions) &&
-      task.questions.length > 0 &&
-      task.questions) ||
+    (Array.isArray(task.questions) && task.questions.length > 0 && task.questions) ||
     (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
-    (Array.isArray(task.multiQuestions) &&
-      task.multiQuestions.length > 0 &&
-      task.multiQuestions) ||
+    (Array.isArray(task.multiQuestions) && task.multiQuestions.length > 0 && task.multiQuestions) ||
     [];
 
   const items =
@@ -524,12 +519,8 @@ function MultiPartTask({
 
     return items.map((item, idx) => {
       const base =
-        (Array.isArray(item.options) &&
-          item.options.length > 0 &&
-          item.options) ||
-        (Array.isArray(item.choices) &&
-          item.choices.length > 0 &&
-          item.choices) ||
+        (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+        (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
         (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
           ? ["True", "False"]
           : []);
@@ -578,12 +569,8 @@ function MultiPartTask({
       let baseIndex = null;
       if (isChoice && answerVal != null) {
         const base =
-          (Array.isArray(item.options) &&
-            item.options.length > 0 &&
-            item.options) ||
-          (Array.isArray(item.choices) &&
-            item.choices.length > 0 &&
-            item.choices) ||
+          (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+          (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
           (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
             ? ["True", "False"]
             : []);
@@ -644,13 +631,11 @@ function MultiPartTask({
             typeof labelRaw === "string" && labelRaw.trim()
               ? labelRaw.trim()
               : `Question ${idx + 1}`;
-          const opts = isChoice ? itemOptions[idx] || [] : [];
+          const opts = itemOptions[idx] || [];
           const answerVal = answers[idx]?.value ?? "";
           const correctIndex = item?.correctAnswer ?? null;
           const studentIndex =
-            review?.answers?.[idx]?.baseIndex ??
-            review?.studentAnswer?.[idx]?.baseIndex ??
-            null;
+            review?.answers?.[idx]?.baseIndex ?? review?.studentAnswer?.[idx]?.baseIndex ?? null;
 
           return (
             <div
@@ -678,23 +663,12 @@ function MultiPartTask({
               )}
 
               {isChoice ? (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr",
-                    gap: 6,
-                  }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
                   {opts.map((opt, optIndex) => {
                     const base =
-                      (Array.isArray(item.options) &&
-                        item.options.length > 0 &&
-                        item.options) ||
-                      (Array.isArray(item.choices) &&
-                        item.choices.length > 0 &&
-                        item.choices) ||
-                      (task.taskType === TASK_TYPES.TRUE_FALSE ||
-                      task.type === TASK_TYPES.TRUE_FALSE
+                      (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
+                      (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
+                      (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
                         ? ["True", "False"]
                         : []);
 
@@ -731,8 +705,7 @@ function MultiPartTask({
                           background,
                           color,
                           textAlign: "left",
-                          cursor:
-                            submitting || disabled ? "not-allowed" : "pointer",
+                          cursor: submitting || disabled ? "not-allowed" : "pointer",
                           fontSize: "0.9rem",
                           transition: "background 0.15s, border-color 0.15s",
                         }}
@@ -814,29 +787,14 @@ export default function TaskRunner({
 }) {
   if (!task) return null;
 
-  const teamKey = useMemo(() => {
-    const rc = String(roomCode || "").trim().toUpperCase();
-    const tid = playerTeam?.id || "anon";
-    return rc && tid ? `${rc}::${tid}` : null;
-  }, [roomCode, playerTeam?.id]);
-
   const t = task || null;
   const type = t ? normalizeTaskType(t.taskType || t.type) : null;
 
   const handleTaskSubmit = (payload) => {
-    // If a task submits a primitive (ShortAnswerTask submits a string),
-    // wrap it so StudentApp can route it consistently.
     let outgoing = payload;
     if (payload != null && typeof payload !== "object") {
-      outgoing = {
-        type, // normalized type for the current rendered task
-        answer: payload,
-      };
+      outgoing = { type, answer: payload };
     }
-
-    const pType =
-      outgoing && typeof outgoing === "object" ? outgoing.type || outgoing.taskType : null;
-
     try {
       onSubmit && onSubmit(outgoing);
     } catch {}
@@ -850,8 +808,7 @@ export default function TaskRunner({
 
   const isReview = mode === "review";
 
-  const isChoiceType =
-    type === TASK_TYPES.MULTIPLE_CHOICE || type === TASK_TYPES.TRUE_FALSE;
+  const isChoiceType = type === TASK_TYPES.MULTIPLE_CHOICE || type === TASK_TYPES.TRUE_FALSE;
   const isShortType = type === TASK_TYPES.SHORT_ANSWER;
 
   const hasMultiItems =
@@ -867,8 +824,7 @@ export default function TaskRunner({
     if (!socket) return;
 
     const isDiffDetective =
-      (t.taskType || t.type) === TASK_TYPES.DIFF_DETECTIVE ||
-      (t.taskType || t.type) === "diff-detective";
+      (t.taskType || t.type) === TASK_TYPES.DIFF_DETECTIVE || (t.taskType || t.type) === "diff-detective";
 
     if (!isDiffDetective) {
       setDiffRaceStatus(null);
@@ -933,18 +889,12 @@ export default function TaskRunner({
   const effectiveDisabled = disabled || submitting;
 
   const currentDisplay =
-    Array.isArray(t.displays) && t.displayKey
-      ? t.displays.find((d) => d.key === t.displayKey) || null
-      : null;
+    Array.isArray(t.displays) && t.displayKey ? t.displays.find((d) => d.key === t.displayKey) || null : null;
 
   let displayTitle = "";
-  if (meta?.label) {
-    displayTitle = toTitleCase(meta.label);
-  } else if (t.title) {
-    displayTitle = toTitleCase(t.title);
-  } else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) {
-    displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
-  }
+  if (meta?.label) displayTitle = toTitleCase(meta.label);
+  else if (t.title) displayTitle = toTitleCase(t.title);
+  else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
 
   console.log("[TaskRunner] Task received:", {
     rawTask: t,
@@ -955,9 +905,7 @@ export default function TaskRunner({
   if (meta && meta.implemented === false) {
     return (
       <div className="p-4 text-center text-red-600 space-y-2">
-        <div className="font-semibold">
-          ⚠ This task type is not available yet on student devices.
-        </div>
+        <div className="font-semibold">⚠ This task type is not available yet on student devices.</div>
         <div className="text-sm text-red-500">
           Task type: <strong>{meta.label || type}</strong>
         </div>
@@ -965,54 +913,63 @@ export default function TaskRunner({
     );
   }
 
+  // ✅ IMPORTANT: Height-aware wrapper so tasks like Flashcards can truly "fill the task card section"
+  const Wrap = ({ children }) => (
+    <div className="h-full flex flex-col">
+      {/* header blocks should not steal flex space from the task itself */}
+      {displayTitle && (
+        <div
+          className="task-title-fun text-center mb-1 shrink-0"
+          style={{
+            fontFamily: '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontSize: "1.4rem",
+            letterSpacing: "1px",
+          }}
+        >
+          {displayTitle}
+        </div>
+      )}
+
+      {currentDisplay && (
+        <div
+          className="rounded-lg border px-3 py-2 text-sm shrink-0"
+          style={{
+            borderColor: CONTRAST_BORDER,
+            background: CONTRAST_BG_LIGHT,
+            color: CONTRAST_TEXT_DARK,
+          }}
+        >
+          <div className="font-semibold">Look at this station object:</div>
+          <div>{currentDisplay.name || currentDisplay.key}</div>
+          {currentDisplay.description && (
+            <div className="mt-1 text-xs" style={{ color: "#4b5563" }}>
+              {currentDisplay.description}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* This is the key: gives children a real height to fill */}
+      <div className="flex-1 min-h-0">{children}</div>
+    </div>
+  );
+
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
-
     return (
-      <div className="space-y-3">
-        {displayTitle && (
-          <div
-            className="task-title-fun text-center mb-1"
-            style={{
-              fontFamily:
-                '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-              fontSize: "1.4rem",
-              letterSpacing: "1px",
-            }}
-          >
-            {displayTitle}
-          </div>
-        )}
-
-        {currentDisplay && (
-          <div
-            className="rounded-lg border px-3 py-2 text-sm"
-            style={{
-              borderColor: CONTRAST_BORDER,
-              background: CONTRAST_BG_LIGHT,
-              color: CONTRAST_TEXT_DARK,
-            }}
-          >
-            <div className="font-semibold">Look at this station object:</div>
-            <div>{currentDisplay.name || currentDisplay.key}</div>
-            {currentDisplay.description && (
-              <div className="mt-1 text-xs" style={{ color: "#4b5563" }}>
-                {currentDisplay.description}
-              </div>
-            )}
-          </div>
-        )}
-
-        <MultiPartTask
-          mode={multiMode}
-          readOnly={isReview}
-          task={t}
-          review={review}
-          onSubmit={isReview ? () => {} : handleTaskSubmit}
-          submitting={submitting}
-          disabled={effectiveDisabled || isReview}
-        />
-      </div>
+      <Wrap>
+        <div className="h-full overflow-auto">
+          <MultiPartTask
+            mode={multiMode}
+            readOnly={isReview}
+            task={t}
+            review={review}
+            onSubmit={isReview ? () => {} : handleTaskSubmit}
+            submitting={submitting}
+            disabled={effectiveDisabled || isReview}
+          />
+        </div>
+      </Wrap>
     );
   }
 
@@ -1022,14 +979,13 @@ export default function TaskRunner({
     // ✅ Mood Check-in (NEW)
     case TASK_TYPES.MOOD_CHECKIN:
     case "mood-checkin": {
-      const effectiveTeamId =
-        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
 
       content = (
         <MoodCheckInTask
           task={t}
           onSubmit={handleTaskSubmit}
-          socket={socketRef}     // if your MoodCheckInTask emits its own event
+          socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
           memberNames={memberNames}
@@ -1057,33 +1013,24 @@ export default function TaskRunner({
     // ✅ Guess Who (NEW)
     case TASK_TYPES.GUESS_WHO:
     case "guess-who": {
+      content = <GuessWhoTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled || isReview} />;
+      break;
+    }
+
+    // ✅ Echo Chain (NEW)
+    case TASK_TYPES.ECHO_CHAIN:
+    case "echo-chain": {
       content = (
-        <GuessWhoTask
+        <EchoChainInline
           task={t}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}
+          readOnly={isReview}
         />
       );
       break;
-
-// ✅ Echo Chain (NEW)
-case TASK_TYPES.ECHO_CHAIN:
-case "echo-chain": {
-  content = (
-    <EchoChainInline
-      task={t}
-      onSubmit={handleTaskSubmit}
-      disabled={effectiveDisabled || isReview}
-      readOnly={isReview}
-    />
-  );
-  break;
-}
-
     }
 
-    // ✅ Competitive (NEW)
-    // case TASK_TYPES.COMPETITIVE: (removed; category-only)
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask
@@ -1202,9 +1149,7 @@ case "echo-chain": {
 
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
-      content = (
-        <DrawMimeTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <DrawMimeTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.DRAW_MIME:
@@ -1220,9 +1165,7 @@ case "echo-chain": {
       break;
 
     case TASK_TYPES.BODY_BREAK:
-      content = (
-        <BodyBreakTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <BodyBreakTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.OPEN_TEXT:
@@ -1250,27 +1193,20 @@ case "echo-chain": {
       break;
 
     case TASK_TYPES.SPEECH_RECOGNITION:
-      content = (
-        <SpeechRecognitionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <SpeechRecognitionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.JEOPARDY:
-      content = (
-        <BrainBlitzTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
-      );
+      content = <BrainBlitzTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
       break;
 
     case TASK_TYPES.PRONUNCIATION:
-      content = (
-        <PronunciationTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
-      );
+      content = <PronunciationTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
       break;
 
     case TASK_TYPES.WORD_WEAVER_DUEL:
     case "word-weaver-duel": {
-      const effectiveTeamId =
-        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
 
       content = (
         <WordWeaverDuelTask
@@ -1317,15 +1253,11 @@ case "echo-chain": {
       break;
 
     case TASK_TYPES.MUSICAL_CHAIRS:
-      content = (
-        <MusicalChairsTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
-      );
+      content = <MusicalChairsTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
       break;
 
     case TASK_TYPES.MYSTERY_CLUES:
-      content = (
-        <MysteryCluesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <MysteryCluesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
@@ -1344,9 +1276,7 @@ case "echo-chain": {
 
     case TASK_TYPES.MAD_DASH:
     case TASK_TYPES.MAD_DASH_SEQUENCE:
-      content = (
-        <MadDashSequenceTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
-      );
+      content = <MadDashSequenceTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
       break;
 
     case TASK_TYPES.LIVE_DEBATE:
@@ -1376,47 +1306,50 @@ case "echo-chain": {
 
     case TASK_TYPES.FLASHCARDS:
       content = (
-        <FlashcardsTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+        <FlashcardsTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          socket={socket}
+        />
       );
       break;
 
     case TASK_TYPES.FLASHCARDS_RACE:
-      return <FlashcardsRaceTask socket={socket} roomCode={roomCode} playerTeam={playerTeam} />;
+      // ✅ no early return; keep consistent wrapper/theming
+      content = (
+        <FlashcardsRaceTask
+          task={t}
+          socket={socket}
+          roomCode={roomCode}
+          playerTeam={playerTeam}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
 
     case TASK_TYPES.TIMELINE:
-      content = (
-        <TimelineTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
-      );
+      content = <TimelineTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
       break;
 
     case TASK_TYPES.PET_FEEDING:
-      content = (
-        <PetFeedingTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <PetFeedingTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.MOTION_MISSION:
-      content = (
-        <MotionMissionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <MotionMissionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.BRAINSTORM_BATTLE:
-      content = (
-        <BrainstormBattleTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
-      );
+      content = <BrainstormBattleTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
       break;
 
     case TASK_TYPES.MIND_MAPPER:
-      content = (
-        <MindMapperTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <MindMapperTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.SPEED_DRAW:
-      content = (
-        <SpeedDrawTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
-      );
+      content = <SpeedDrawTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
       break;
 
     case TASK_TYPES.DIFF_DETECTIVE:
@@ -1434,24 +1367,18 @@ case "echo-chain": {
       break;
 
     case TASK_TYPES.BRAIN_SPARK_NOTES:
-      content = (
-        <BrainSparkNotesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <BrainSparkNotesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.HIDENSEEK:
-      content = (
-        <HideNSeekTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
+      content = <HideNSeekTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
     case TASK_TYPES.HANGMAN_DUEL:
     case "hangman-duel": {
-      const effectiveTeamId =
-        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
 
-      const stationIndex =
-        Number.isFinite(t?.stationIndex) ? t.stationIndex : null;
+      const stationIndex = Number.isFinite(t?.stationIndex) ? t.stationIndex : null;
 
       const wordFromItems =
         Array.isArray(t?.items) && stationIndex != null
@@ -1488,9 +1415,7 @@ case "echo-chain": {
     default:
       return (
         <div className="p-4 text-center text-red-600 space-y-2">
-          <div className="font-semibold">
-            ⚠ Unsupported task type from server.
-          </div>
+          <div className="font-semibold">⚠ Unsupported task type from server.</div>
           <div className="text-sm text-red-500">
             Received type: <strong>{String(type)}</strong>
           </div>
@@ -1498,42 +1423,5 @@ case "echo-chain": {
       );
   }
 
-  return (
-    <div className="space-y-3">
-      {displayTitle && (
-        <div
-          className="task-title-fun text-center mb-1"
-          style={{
-            fontFamily:
-              '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-            fontSize: "1.4rem",
-            letterSpacing: "1px",
-          }}
-        >
-          {displayTitle}
-        </div>
-      )}
-
-      {currentDisplay && (
-        <div
-          className="rounded-lg border px-3 py-2 text-sm"
-          style={{
-            borderColor: CONTRAST_BORDER,
-            background: CONTRAST_BG_LIGHT,
-            color: CONTRAST_TEXT_DARK,
-          }}
-        >
-          <div className="font-semibold">Look at this station object:</div>
-          <div>{currentDisplay.name || currentDisplay.key}</div>
-          {currentDisplay.description && (
-            <div className="mt-1 text-xs" style={{ color: "#4b5563" }}>
-              {currentDisplay.description}
-            </div>
-          )}
-        </div>
-      )}
-
-      {content}
-    </div>
-  );
+  return <Wrap>{content}</Wrap>;
 }

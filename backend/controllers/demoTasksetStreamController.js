@@ -1,23 +1,32 @@
 // backend/controllers/demoTasksetStreamController.js
-import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
 // reuse your normalizeSelectedType / retryMustHave / regenerateSingleTask logic
-// easiest: import from aiTasksetController.js if you export them,
-// or copy the needed helpers (recommended: export helpers from aiTasksetController).
-
 import {
   normalizeSelectedType,
   retryMustHave,
   regenerateSingleTask,
-  buildVocabularyLines,
 } from "./aiTasksetController.js";
-
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 function sseWrite(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+// Local helper (do NOT import from aiTasksetController; avoids export mismatch)
+function buildVocabularyLines(aiWordBank) {
+  const list = Array.isArray(aiWordBank) ? aiWordBank : [];
+  if (!list.length) return "";
+  return list
+    .map((w) => {
+      if (typeof w === "string") return `- ${w}`;
+      const term = String(w?.term ?? w?.word ?? w?.vocab ?? "").trim();
+      const def = String(w?.definition ?? w?.meaning ?? w?.def ?? "").trim();
+      if (!term && !def) return "";
+      return def ? `- ${term}: ${def}` : `- ${term}`;
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 export const generateDemoTasksetStreaming = async (req, res) => {
@@ -67,7 +76,18 @@ export const generateDemoTasksetStreaming = async (req, res) => {
       const allowedType = typePool[i];
       sseWrite(res, "progress", { done: i, total, currentType: allowedType });
 
-      const mustHave = retryMustHave?.[allowedType] || `Produce a valid ${allowedType} task with all required fields.`;
+      // Default mustHave (from aiTasksetController), with a Flashcards override to enforce schema + size.
+      let mustHave = retryMustHave?.[allowedType] || `Produce a valid ${allowedType} task with all required fields.`;
+
+      if (allowedType === TASK_TYPES.FLASHCARDS) {
+        mustHave = [
+          "Return a FLASHCARDS task.",
+          "Include 8–12 flashcards with {question, answer}.",
+          "Put them in task.cards OR task.config.items (each item must have question and answer).",
+          "Questions and answers must be short and readable on a big card UI.",
+          "No inter-team elements; intra-team ‘pass the device / shout answer’ is fine.",
+        ].join(" ");
+      }
 
       const task = await regenerateSingleTask({
         allowedType,

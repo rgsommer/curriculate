@@ -120,9 +120,9 @@ function metaBase(overrides = {}) {
 
     // Capabilities
     implemented: false,
-    aiEligible: false,          // may be AI-generated
-    generatorEligible: false,   // safe for generator to produce reliably (schema enforced)
-    objectiveScoring: false,    // can be scored without AI judgement
+    aiEligible: false, // may be AI-generated
+    generatorEligible: false, // safe for generator to produce reliably (schema enforced)
+    objectiveScoring: false, // can be scored without AI judgement
     defaultAiScoringRequired: false,
     quickTaskEligible: false,
 
@@ -138,7 +138,7 @@ function metaBase(overrides = {}) {
     maxTimeSeconds: 0,
 
     // Schema hints (optional; helps AI generator + admin UI)
-    correctAnswerShape: null,      // e.g., "single-option" | "string-or-list" | "map" | "array" | ...
+    correctAnswerShape: null, // e.g., "single-option" | "string-or-list" | "map" | "array" | ...
     multiItemCapable: false,
     preferredItemsPerTask: null,
 
@@ -340,7 +340,7 @@ export const TASK_TYPE_META = {
     label: "Record Audio Answer",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: false,           // typically teacher-reviewed
+    aiEligible: false,
     generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
@@ -416,7 +416,7 @@ export const TASK_TYPE_META = {
     label: "Body Break",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,             // AI can generate the prompt/moves list
+    aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
@@ -434,7 +434,7 @@ export const TASK_TYPE_META = {
     label: "Motion Mission",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: false,            // often hand-authored; can be flipped later
+    aiEligible: false,
     generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
@@ -484,11 +484,10 @@ export const TASK_TYPE_META = {
       "High-energy physical race (scan/find/complete) under time pressure. Can be used for sequencing/procedure or QR races. Builds teamwork and urgency while reinforcing order/steps.",
   }),
 
-  // Back-compat placeholder: treat as Mad Dash unless you implement a distinct task type.
   [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
     label: "Mad Dash Sequence",
     category: CATEGORY.MOVEMENT,
-    implemented: false,          // define it so references don’t crash; implement later if needed
+    implemented: false,
     aiEligible: false,
     generatorEligible: false,
     objectiveScoring: false,
@@ -551,7 +550,7 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: false,
     quickTaskEligible: false,
     hasOptions: false,
-    expectsText: true,   // optional shared textbox
+    expectsText: true,
     maxTimeSeconds: 0,
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -619,7 +618,7 @@ export const TASK_TYPE_META = {
     label: "True/False Tic-Tac-Toe",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: false,           // can be turned on later when schema is stable
+    aiEligible: false,
     generatorEligible: false,
     objectiveScoring: true,
     defaultAiScoringRequired: false,
@@ -632,14 +631,15 @@ export const TASK_TYPE_META = {
       "A tic-tac-toe grid where each square contains a True/False question; correct answers claim squares. Combines retrieval practice with strategy and motivating repetition.",
   }),
 
+  // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
   [TASK_TYPES.FLASHCARDS]: metaBase({
     label: "Flashcards",
     category: CATEGORY.RECALL,
     implemented: true,
     aiEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: true, // if using voice recognition; otherwise can be false
+    objectiveScoring: false, // typically not graded; just tracked / completion
+    defaultAiScoringRequired: false, // voice/AI optional, not required
     quickTaskEligible: true,
     expectsText: false,
     maxTimeSeconds: 120,
@@ -647,33 +647,35 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: true,
     correctAnswerShape: "string-or-list",
     description:
-      "Standard flashcard review with {question, answer}. Intended flow is ‘shout to answer’ with optional speech recognition support. Focus is mastery and repeated retrieval, not rivalry.",
+      "Standard flashcard review (8–12 cards) with {question, answer}. Intended flow is ‘shout to answer’ with optional speech recognition / AI transcription support. Focus is mastery and repeated retrieval, not competition. Intra-team play enabled; inter-team play disabled.",
   }),
 
+  // ✅ Updated: this mode is inherently inter-team (A vs B scoring / winner events)
   [TASK_TYPES.FLASHCARDS_RACE]: metaBase({
     label: "Flashcards Race",
     category: CATEGORY.COMPETITIVE,
-    implemented: true,          // set true if TaskRunner + component exists in your repo
-    aiEligible: false,          // typically session-driven, not AI-generated
+    implemented: true,
+    aiEligible: false,
     generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     quickTaskEligible: false,
     expectsText: false,
     maxTimeSeconds: 0,
-    interTeamEnabled: false,
+    interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "Competitive rapid-retrieval flashcards. Teams/players race to answer quickly with live scoring/leaderboard and optional streak bonuses. Builds speeded retrieval and automaticity.",
+      "Competitive rapid-retrieval flashcards. Teams race to answer quickly with live scoring/leaderboard and optional streak bonuses. Builds speeded retrieval and automaticity.",
   }),
 
+  // (rest unchanged from your file)
   [TASK_TYPES.GUESS_WHO]: metaBase({
     label: "Guess Who",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
     aiEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,     // scored by time/guesses (not content rubric)
+    objectiveScoring: true,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 60,
     interTeamEnabled: false,
@@ -688,7 +690,7 @@ export const TASK_TYPE_META = {
     implemented: true,
     aiEligible: true,
     generatorEligible: true,
-    objectiveScoring: false, // game-scored rather than answer-key scored
+    objectiveScoring: false,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 300,
     interTeamEnabled: false,
@@ -719,7 +721,7 @@ export const TASK_TYPE_META = {
     implemented: true,
     aiEligible: true,
     generatorEligible: true,
-    objectiveScoring: true, // can be objective if differences known; AI-assisted by mode
+    objectiveScoring: true,
     defaultAiScoringRequired: true,
     expectsText: true,
     maxTimeSeconds: 120,
@@ -759,10 +761,6 @@ export const TASK_TYPE_META = {
       "A motivational loop: correct answers or task success ‘feeds’/powers up a virtual pet. Encourages repeated retrieval and positive reinforcement without changing academic rigor.",
   }),
 
-  // =========================
-  // COLLABORATION / DISCUSSION
-  // =========================
-
   [TASK_TYPES.COLLABORATION]: metaBase({
     label: "Collaboration (Pair & Respond)",
     category: CATEGORY.COLLABORATION,
@@ -783,7 +781,7 @@ export const TASK_TYPE_META = {
     label: "Live Debate",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    aiEligible: false,           // usually not AI-generated
+    aiEligible: false,
     generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: true,
@@ -825,17 +823,13 @@ export const TASK_TYPE_META = {
       "Fast-paced ‘shout ideas’ brainstorm. Device presents a topic/seed prompt and the team rapidly contributes ideas aloud (optionally captured). May include quick voting/ranking. Great for activating prior knowledge and lowering fear of being wrong.",
   }),
 
-  // =========================
-  // DEDUCTION / CLUE-BASED
-  // =========================
-
   [TASK_TYPES.MYSTERY_CLUES]: metaBase({
     label: "Mystery Clues",
     category: CATEGORY.DEDUCTION,
     implemented: true,
     aiEligible: false,
     generatorEligible: false,
-    objectiveScoring: true, // if you provide a known solution
+    objectiveScoring: true,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 180,
     interTeamEnabled: false,
@@ -847,10 +841,10 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.FAKE_OUT]: metaBase({
     label: "Fake Out",
     category: CATEGORY.DEDUCTION,
-    implemented: false,          // define now; implement Task + TaskRunner later
+    implemented: false,
     aiEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,      // one correct definition/statement
+    objectiveScoring: true,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 90,
     interTeamEnabled: false,
@@ -862,7 +856,7 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: metaBase({
     label: "Physical Mystery Clues",
     category: CATEGORY.DEDUCTION,
-    implemented: false,          // define now; implement later
+    implemented: false,
     aiEligible: false,
     generatorEligible: false,
     objectiveScoring: false,
@@ -873,10 +867,6 @@ export const TASK_TYPE_META = {
     description:
       "Physical clue hunt. Students move around to find real-world clues (stations/objects/pages) and piece them together to solve a mystery concept. Encourages inquiry, persistence, and applying deduction outside a seated worksheet.",
   }),
-
-  // =========================
-  // SYNTHESIS / CREATIVE EXTENSIONS
-  // =========================
 
   [TASK_TYPES.BRAIN_SPARK_NOTES]: metaBase({
     label: "Brain Spark Notes",
@@ -916,7 +906,7 @@ export const TASK_TYPE_META = {
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
-    defaultAiScoringRequired: false, // can be peer-rated; AI optional
+    defaultAiScoringRequired: false,
     maxTimeSeconds: 60,
     interTeamEnabled: false,
     intraTeamEnabled: true,
@@ -953,10 +943,6 @@ export const TASK_TYPE_META = {
     description:
       "AI-generated script performance. Device shows current speaker’s lines; students pass device and perform. Builds fluency, comprehension, and retention through performance.",
   }),
-
-  // =========================
-  // DRAW / MIME (non-objective)
-  // =========================
 
   [TASK_TYPES.DRAW_MIME]: metaBase({
     label: "Draw or Mime",
@@ -1003,30 +989,25 @@ export const TASK_TYPE_META = {
       "Charades-style acting response. Students act out a concept without words. Great for vocabulary and concept visualization through movement.",
   }),
 
-  // =========================
-  // LANGUAGE / SPEAKING
-  // =========================
+  [TASK_TYPES.ECHO_CHAIN]: metaBase({
+    label: "Echo Chain",
+    category: CATEGORY.RECALL,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 0,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "Oral memory-chain game. The device starts with a subject-related seed term. Players take turns repeating the full chain aloud and adding one related term. Optional per-turn timer and bonuses for completing a full rotation. Builds retrieval practice, working memory, listening accuracy, and vocabulary association networks.",
+  }),
 
-  
-[TASK_TYPES.ECHO_CHAIN]: metaBase({
-  label: "Echo Chain",
-  category: CATEGORY.RECALL,
-  implemented: true,
-  aiEligible: true,
-  generatorEligible: true,
-  objectiveScoring: false,
-  defaultAiScoringRequired: false,
-  quickTaskEligible: true,
-  hasOptions: false,
-  expectsText: false,
-  // The game itself typically runs per-turn; timer is optional (perTurnSeconds).
-  maxTimeSeconds: 0,
-  interTeamEnabled: false,
-  intraTeamEnabled: true,
-  description:
-    "Oral memory-chain game. The device starts with a subject-related seed term. Players take turns repeating the full chain aloud and adding one related term. Optional per-turn timer and bonuses for completing a full rotation. Builds retrieval practice, working memory, listening accuracy, and vocabulary association networks.",
-}),
-[TASK_TYPES.PRONUNCIATION]: metaBase({
+  [TASK_TYPES.PRONUNCIATION]: metaBase({
     label: "Pronunciation Practice",
     category: CATEGORY.OTHER,
     implemented: true,

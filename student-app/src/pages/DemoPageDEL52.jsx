@@ -281,17 +281,6 @@ function makeBotSubmission(task) {
   return { answer: "Submitted." };
 }
 
-// EchoChain (demo-only) SFX
-function playEchoChime() {
-  try {
-    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
-    a.volume = 0.18;
-    a.play();
-  } catch {
-    // ignore
-  }
-}
-
 // -------------------------
 // Safe fetch helper (prevents “Unexpected token '<'”)
 // -------------------------
@@ -566,24 +555,6 @@ export default function DemoPage() {
     const match = tasks.find((t) => (t.taskType || t.type) === type);
     if (match) return match;
 
-    // EchoChain: provide a rich fallback so the TaskRunner can render it properly in demo mode.
-    if (type === TASK_TYPES.ECHO_CHAIN) {
-      return {
-        taskType: TASK_TYPES.ECHO_CHAIN,
-        title: "Echo Chain",
-        prompt:
-          "Say the chain aloud. Player 1 repeats the starter word and adds one related word. Player 2 repeats the whole chain and adds one. Keep going until someone forgets a word or changes the order.",
-        timeLimitSeconds: 0,
-        points: 12,
-        config: {
-          perTurnSeconds: 10,
-          rotationBonus: 5,
-          seed: "Photosynthesis",
-          examples: ["chlorophyll", "sunlight", "glucose"],
-        },
-      };
-    }
-
     return {
       taskType: type,
       title: `Demo: ${type}`,
@@ -600,10 +571,6 @@ export default function DemoPage() {
     const next = pickDemoTask(selectedType);
     setCurrentTask({ ...next });
     setPhase("task");
-    if ((next?.taskType || next?.type) === TASK_TYPES.ECHO_CHAIN) {
-      showToast("Echo Chain! Say it aloud and add one.", true);
-      playEchoChime();
-    }
   }
 
   // -------------------------
