@@ -41,6 +41,7 @@ import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
 import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
 import VennSortTask from "./types/VennSortTask";
+import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (GuessWho)
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -137,7 +138,7 @@ function normalizeTaskType(raw) {
     case "venndiagram":
       return TASK_TYPES.VENNSORT;
 
-      // Photo / Media
+    // Photo / Media
     case "photo":
       return TASK_TYPES.PHOTO;
 
@@ -178,6 +179,13 @@ function normalizeTaskType(raw) {
     case "moodcheckin":
     case "mood_check_in":
       return TASK_TYPES.MOOD_CHECKIN;
+
+    // ✅ GuessWho (NEW)
+    case "guesswho":
+    case "guess-who":
+    case "guess_who":
+    case "guess-who-task":
+      return "guess-who";
 
     // Draw-only tasks
     case "Draw":
@@ -237,8 +245,9 @@ function normalizeTaskType(raw) {
       return TASK_TYPES.WORD_WEAVER_DUEL;
 
     // already normalized constant coming through
-    case (TASK_TYPES.WORD_WEAVER_DUEL):
+    case TASK_TYPES.WORD_WEAVER_DUEL:
       return TASK_TYPES.WORD_WEAVER_DUEL;
+
     default:
       return raw;
   }
@@ -258,7 +267,6 @@ function MultiPartTask({
   disabled,
 }) {
   const isChoice = mode === "choice";
-  const isShort = mode === "short";
   const isReview = !!readOnly;
 
   const rawItems =
@@ -409,7 +417,7 @@ function MultiPartTask({
             typeof labelRaw === "string" && labelRaw.trim()
               ? labelRaw.trim()
               : `Question ${idx + 1}`;
-          const opts = isChoice ? itemOptions[idx] || [] : [];
+          const opts = mode === "choice" ? itemOptions[idx] || [] : [];
           const answerVal = answers[idx]?.value ?? "";
           const correctIndex = item?.correctAnswer ?? null;
           const studentIndex =
@@ -442,14 +450,8 @@ function MultiPartTask({
                 </div>
               )}
 
-              {isChoice ? (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr",
-                    gap: 6,
-                  }}
-                >
+              {mode === "choice" ? (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
                   {opts.map((opt, optIndex) => {
                     const base =
                       (Array.isArray(item.options) &&
@@ -496,8 +498,7 @@ function MultiPartTask({
                           background,
                           color,
                           textAlign: "left",
-                          cursor:
-                            submitting || disabled ? "not-allowed" : "pointer",
+                          cursor: submitting || disabled ? "not-allowed" : "pointer",
                           fontSize: "0.9rem",
                           transition: "background 0.15s, border-color 0.15s",
                         }}
@@ -579,34 +580,25 @@ export default function TaskRunner({
 }) {
   if (!task) return null;
 
-const teamKey = useMemo(() => {
-  const rc = String(roomCode || "").trim().toUpperCase();
-  const tid = playerTeam?.id || "anon";
-  return rc && tid ? `${rc}::${tid}` : null;
-}, [roomCode, playerTeam?.id]);
+  const teamKey = useMemo(() => {
+    const rc = String(roomCode || "").trim().toUpperCase();
+    const tid = playerTeam?.id || "anon";
+    return rc && tid ? `${rc}::${tid}` : null;
+  }, [roomCode, playerTeam?.id]);
 
-const t = task || null;
-const type = t ? normalizeTaskType(t.taskType || t.type) : null;
+  const t = task || null;
+  const type = t ? normalizeTaskType(t.taskType || t.type) : null;
 
-const handleTaskSubmit = (payload) => {
-  // If a task submits a primitive (ShortAnswerTask submits a string),
-  // wrap it so StudentApp can route it consistently.
-  let outgoing = payload;
-  if (payload != null && typeof payload !== "object") {
-    outgoing = {
-      type, // normalized type for the current rendered task
-      answer: payload,
-    };
-  }
+  const handleTaskSubmit = (payload) => {
+    let outgoing = payload;
+    if (payload != null && typeof payload !== "object") {
+      outgoing = { type, answer: payload };
+    }
 
-  const pType =
-    outgoing && typeof outgoing === "object" ? outgoing.type || outgoing.taskType : null;
-
-    
-  try {
-    onSubmit && onSubmit(outgoing);
-  } catch {}
-};
+    try {
+      onSubmit && onSubmit(outgoing);
+    } catch {}
+  };
 
   // Hangman expects socket.current; keep existing socket usage for other tasks.
   const socketRef = useRef(null);
@@ -710,6 +702,8 @@ const handleTaskSubmit = (payload) => {
     displayTitle = toTitleCase(t.title);
   } else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) {
     displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
+  } else if (type) {
+    displayTitle = toTitleCase(String(type));
   }
 
   console.log("[TaskRunner] Task received:", {
@@ -785,17 +779,36 @@ const handleTaskSubmit = (payload) => {
   let content = null;
 
   switch (type) {
+    // ✅ GuessWho (NEW) — intra-team, single device
+    case "guess-who":
+    case "guesswho": {
+      const effectiveTeamId =
+        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+
+      content = (
+        <GuessWhoTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          socket={socket}
+          roomCode={roomCode}
+          teamId={effectiveTeamId}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    }
+
     // ✅ Mood Check-in (NEW)
     case TASK_TYPES.MOOD_CHECKIN:
     case "mood-checkin": {
-    const effectiveTeamId =
+      const effectiveTeamId =
         t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
 
       content = (
         <MoodCheckInTask
           task={t}
           onSubmit={handleTaskSubmit}
-          socket={socketRef}     // if your MoodCheckInTask emits its own event
+          socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
           memberNames={memberNames}
@@ -804,7 +817,7 @@ const handleTaskSubmit = (payload) => {
       );
       break;
     }
-        
+
     // ✅ Treasure Runner (warm-up while waiting)
     case TASK_TYPES.TREASURE_RUNNER:
     case "treasure-runner": {

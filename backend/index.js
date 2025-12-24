@@ -31,6 +31,7 @@ import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import AccessCode from "./models/AccessCode.js";
+import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
@@ -75,6 +76,7 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
+app.use("/api/demo", demoTasksetStreamRoutes);
 
 app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-16" });

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
+import ProgressFillButton from "../components/ProgressFillButton";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
@@ -326,6 +327,21 @@ export default function DemoPage() {
   const postSubmitTimerRef = useRef(null);
 
   const [toast, setToast] = useState(null);
+
+  const [generating, setGenerating] = useState(false);
+  const [done, setDone] = useState(0);
+  const [total, setTotal] = useState(1);
+  const [status, setStatus] = useState("");
+  const esRef = useRef(null);
+
+  const progress = total > 0 ? done / total : 0;
+
+  const startDemoGeneration = async () => {
+    if (generating) return;
+    setGenerating(true);
+    setDone(0);
+    setTotal(1);
+    setStatus("Starting…");
 
   // Hidden by default (you asked not to show bot count). Keep a sane default.
   const [botCount] = useState(3);
@@ -675,10 +691,58 @@ export default function DemoPage() {
     boxShadow: primary ? "0 10px 26px rgba(37,99,235,0.35)" : "none",
   });
 
+  const url = `/api/demo/taskset/stream?payload=${encodeURIComponent(JSON.stringify(payload))}`;
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.addEventListener("start", (e) => {
+      const data = JSON.parse(e.data);
+      setTotal(Number(data.total) || 1);
+      setStatus("Generating…");
+    });
+
+    es.addEventListener("progress", (e) => {
+      const data = JSON.parse(e.data);
+      setDone(Number(data.done) || 0);
+      setTotal(Number(data.total) || 1);
+      if (data.currentType) setStatus(`Generating: ${data.currentType}`);
+    });
+
+    es.addEventListener("done", (e) => {
+      const data = JSON.parse(e.data);
+      // TODO: use data.taskset in your page (set state / navigate / etc.)
+      setDone((prev) => prev); // already final
+      setStatus("Done");
+      setGenerating(false);
+      es.close();
+      esRef.current = null;
+    });
+
+    es.addEventListener("error", (e) => {
+      // EventSource fires "error" on disconnect too; handle carefully
+      setStatus("Error / disconnected");
+      setGenerating(false);
+      try { es.close(); } catch {}
+      esRef.current = null;
+    });
+  };
+
   // -------------------------
   // Render
   // -------------------------
   return (
+    <div>
+      <ProgressFillButton
+        progress={generating ? progress : 0}
+        disabled={generating}
+        onClick={startDemoGeneration}
+      >
+        {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate"}
+      </ProgressFillButton>
+
+      <div style={{ marginTop: 10, opacity: 0.85 }}>{status}</div>
+    </div>
+  );
     <div
       style={{
         minHeight: "100vh",
