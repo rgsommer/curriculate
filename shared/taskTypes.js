@@ -902,16 +902,17 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.NARRATION_SYNTHESIZE]: metaBase({
     label: "Narration Synthesize",
     category: CATEGORY.SYNTHESIS,
-    implemented: false,
+    implemented: true,
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
+    quickTaskEligible: true,
     maxTimeSeconds: 60,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Turn-based oral teach-back. Each player gets a concept prompt and narrates aloud; others can rate clarity/accuracy. Builds synthesis, verbal articulation, and learning-by-explaining.",
+      "Turn-based oral teach-back. Each player gets an AI-generated concept prompt and narrates aloud to the group. Others rate the explanation on a simple slider (clarity/accuracy/quality). Builds synthesis, verbal articulation, and learning-by-explaining.",
   }),
 
   [TASK_TYPES.ROLE_PLAY]: metaBase({

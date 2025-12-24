@@ -1643,7 +1643,7 @@ export default function TaskSetEditor() {
                   </div>
                 )}
 
-                {/* Multi-part items editor (MC / TF / Short Answer) */
+                {/* Multi-part items editor (MC / TF / Short Answer) */}
                 {/* ECHO CHAIN: config editor */}
                 {task.taskType === (TASK_TYPES.ECHO_CHAIN || "echo-chain") && (
                   <div
@@ -1868,7 +1868,6 @@ export default function TaskSetEditor() {
                   </div>
                 )}
 
-}
                 {[TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(task.taskType) && (
                   <div style={{ marginBottom: 6, border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10, padding: 10 }}>
                     <label

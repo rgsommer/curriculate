@@ -42,6 +42,7 @@ import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
 import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
 import VennSortTask from "./types/VennSortTask";
 import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
+import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
 
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
@@ -990,6 +991,20 @@ export default function TaskRunner({
           teamId={effectiveTeamId}
           memberNames={memberNames}
           disabled={effectiveDisabled || isReview}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.NARRATION_SYNTHESIZE:
+    case "narration-synthesize": {
+      content = (
+        <NarrationSynthesizeTask
+          task={t}
+          onSubmit={handleSubmit}
+          socket={socket}
+          roomCode={roomCode}
+          teamId={playerTeam?.id || playerTeamId || teamId}
         />
       );
       break;

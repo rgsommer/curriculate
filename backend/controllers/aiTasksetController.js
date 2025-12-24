@@ -6,6 +6,8 @@ import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 export const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
     'MULTIPLE_CHOICE must include items[] with 3–5 questions. Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index).',
+  [TASK_TYPES.NARRATION_SYNTHESIZE]:
+    "NARRATION_SYNTHESIZE must include config.prompts (one per player) with each prompt having { id, concept, prompt }. Include config.playerCount (2–8) and optional config.perTurnSeconds (0 or 60). Intra-team only; include config.ratingScale { min:1, max:5, label:'Clarity/Accuracy/Quality' }.",
   [TASK_TYPES.TRUE_FALSE]:
     "TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 0=True, 1=False.",
   [TASK_TYPES.SORT]:
@@ -41,10 +43,9 @@ export function buildVocabularyLines(aiWordBank) {
   const vocab = Array.isArray(aiWordBank)
     ? aiWordBank
     : String(aiWordBank || "")
-        .split(/[
-,;]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+    .split(/[\n,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   return vocab.map((w) => `- ${w}`).join("\n");
 }
@@ -134,6 +135,15 @@ export function normalizeSelectedType(raw) {
 
   if (v === "sequence" || v === "timeline" || v === "order")
     return TASK_TYPES.SEQUENCE;
+
+  if (
+    v === "narration-synthesize" ||
+    v === "narrationsynthesize" ||
+    v === "narration" ||
+    v === "teach-back" ||
+    v === "teachback"
+  )
+    return TASK_TYPES.NARRATION_SYNTHESIZE;
 
   if (
     v === "vennsort" ||
@@ -1027,6 +1037,86 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             style: hangmanTask.style || "classic",
             playerCount: hangmanTask.playerCount || 4,
           },
+        };
+      }
+
+      // ✅ NARRATION SYNTHESIZE normalization (turn-based oral teach-back)
+      // Accept AI output in:
+      // - t.config.prompts: [{ id, concept, prompt }]
+      // - t.prompts: same
+      // - t.items: [{ prompt, concept }] (legacy)
+      if (taskType === TASK_TYPES.NARRATION_SYNTHESIZE) {
+        const playerCount = clampInt(
+          t?.playerCount ?? config?.playerCount ?? 4,
+          2,
+          8,
+          4
+        );
+
+        const perTurnSecondsRaw = t?.perTurnSeconds ?? config?.perTurnSeconds ?? 60;
+        const perTurnSeconds = clampInt(perTurnSecondsRaw, 0, 300, 60);
+
+        const namesRaw =
+          Array.isArray(t?.playerNames) ? t.playerNames :
+          Array.isArray(config?.playerNames) ? config.playerNames :
+          [];
+
+        const playerNames =
+          namesRaw.length >= playerCount
+            ? namesRaw.slice(0, playerCount).map((x, i) => String(x || `Player ${i + 1}`).trim())
+            : Array.from({ length: playerCount }, (_, i) => String(namesRaw[i] || `Player ${i + 1}`).trim());
+
+        const promptsRaw =
+          (Array.isArray(config?.prompts) && config.prompts) ||
+          (Array.isArray(t?.prompts) && t.prompts) ||
+          (Array.isArray(t?.items) && t.items) ||
+          [];
+
+        // Build exactly one prompt per player
+        const prompts = Array.from({ length: playerCount }, (_, i) => {
+          const p = promptsRaw[i] || promptsRaw[i % (promptsRaw.length || 1)] || {};
+          const concept = String(p?.concept ?? p?.title ?? p?.term ?? "").trim();
+          const prompt = String(p?.prompt ?? p?.text ?? p?.question ?? "").trim();
+
+          const finalConcept = concept || `Concept ${i + 1}`;
+          const finalPrompt =
+            prompt ||
+            `Explain "${finalConcept}" to your group in your own words. Include what it is, how it works, and one real example.`;
+
+          return {
+            id: String(p?.id ?? `p${i + 1}`),
+            concept: finalConcept.slice(0, 80),
+            prompt: finalPrompt.slice(0, 320),
+          };
+        });
+
+        const ratingScaleRaw = config?.ratingScale && typeof config.ratingScale === "object" ? config.ratingScale : {};
+        const ratingScale = {
+          min: clampInt(ratingScaleRaw.min, 1, 5, 1),
+          max: clampInt(ratingScaleRaw.max, 1, 10, 5),
+          label: String(ratingScaleRaw.label || "Clarity / Accuracy / Quality").trim().slice(0, 60),
+        };
+
+        return {
+          taskType,
+          title: isNonEmptyString(t.title) ? String(t.title).trim().slice(0, 120) : "Narration Synthesize",
+          prompt: isNonEmptyString(t.prompt)
+            ? String(t.prompt).trim().slice(0, 240)
+            : "Take turns teaching back a concept out loud. Others rate the explanation.",
+          timeLimitSeconds: perTurnSeconds > 0 ? perTurnSeconds * playerCount : 0,
+          config: {
+            ...config,
+            playerCount,
+            playerNames,
+            perTurnSeconds,
+            prompts,
+            ratingScale,
+            interTeamEnabled: false,
+            intraTeamEnabled: true,
+          },
+          objectiveScoring: false,
+          correctAnswer: null,
+          items: [],
         };
       }
 
