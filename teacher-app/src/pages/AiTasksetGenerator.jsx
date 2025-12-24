@@ -363,14 +363,29 @@ export default function AiTasksetGenerator() {
     const meta = TASK_TYPE_META[type] || {};
     const label = meta.label || type;
     const category = meta.category || "other";
+    const selected = selectedTaskTypes.includes(type);
 
     return (
       <button
         key={type}
         type="button"
-        onClick={() =>
-        <span style={{ marginRight: 6 }}>{typeIcon(type)}</span>
-        <span style={{ fontWeight: 600 }}>{label}</span>{" "}
+        onClick={() => toggleTaskType(type)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: selected ? "2px solid #2563eb" : "1px solid #d1d5db",
+          background: selected ? "#eff6ff" : "#ffffff",
+          cursor: "pointer",
+          fontSize: "0.85rem",
+        }}
+      >
+        <span style={{ marginRight: 4 }}>{typeIcon(type)}</span>
+
+        <span style={{ fontWeight: 600 }}>{label}</span>
+
         <span
           style={{
             fontSize: "0.7rem",
@@ -380,23 +395,25 @@ export default function AiTasksetGenerator() {
         >
           · {category}
         </span>
-        {meta.intraTeamEnabled === true && meta.interTeamEnabled !== true && (
-          <span
-            style={{
-              marginLeft: 8,
-              fontSize: "0.7rem",
-              color: "#065f46",
-              background: "rgba(16,185,129,0.10)",
-              border: "1px solid rgba(16,185,129,0.25)",
-              padding: "2px 8px",
-              borderRadius: 999,
-              fontWeight: 700,
-            }}
-          >
-            intra-team
-          </span>
-        )}
-</button>
+
+        {meta.intraTeamEnabled === true &&
+          meta.interTeamEnabled !== true && (
+            <span
+              style={{
+                marginLeft: 6,
+                fontSize: "0.7rem",
+                color: "#065f46",
+                background: "rgba(16,185,129,0.10)",
+                border: "1px solid rgba(16,185,129,0.25)",
+                padding: "2px 8px",
+                borderRadius: 999,
+                fontWeight: 700,
+              }}
+            >
+              intra-team
+            </span>
+          )}
+      </button>
     );
   };
 
