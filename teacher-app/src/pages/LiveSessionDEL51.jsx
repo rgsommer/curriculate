@@ -36,7 +36,6 @@ const QUICK_TASK_TYPES_RAW =
         TASK_TYPES.TRUE_FALSE,
         TASK_TYPES.SHORT_ANSWER,
         TASK_TYPES.OPEN_TEXT,
-        TASK_TYPES.ECHO_CHAIN,
       ];
 
 const QUICK_TASK_TYPES = Array.from(
@@ -184,10 +183,6 @@ export default function LiveSession({ roomCode }) {
   // When true, we have requested a taskset launch and are waiting for
   // "tasksetLoaded" before calling teacher:launchNextTask.
   const [launchAfterLoad, setLaunchAfterLoad] = useState(false);
-
-  // Taskset launch progress (for the "Generate/Launch Taskset" green-fill button effect)
-  const [tasksetLaunchProgress, setTasksetLaunchProgress] = useState(0); // 0..100
-  const [tasksetLaunchAnimating, setTasksetLaunchAnimating] = useState(false);
 
   const activeTasksetName =
     activeTasksetMeta?.name ||
@@ -460,21 +455,10 @@ export default function LiveSession({ roomCode }) {
         const code = roomCode.toUpperCase();
         setStatus("Launching first task…");
 
-        setTasksetLaunchProgress(92);
-
         socket.emit("teacher:launchNextTask", {
           roomCode: code,
           selectedRooms,
         });
-
-        // Smoothly fill to 100% and then reset
-        setTimeout(() => {
-          setTasksetLaunchProgress(100);
-          setTimeout(() => {
-            setTasksetLaunchAnimating(false);
-            setTasksetLaunchProgress(0);
-          }, 650);
-        }, 250);
         setLaunchAfterLoad(false);
         setStatus("Taskset launched.");
       }
@@ -702,13 +686,8 @@ export default function LiveSession({ roomCode }) {
 
   const handleLaunchQuickTask = () => {
     const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
-    const isEchoChain = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
     if (!roomCode) return;
-    if (!isGuessWho && !isEchoChain && !taskConfig.prompt?.trim()) return;
-    if (isEchoChain) {
-      const seed = String(taskConfig.seedTerm || taskConfig.startTerm || "").trim();
-      if (!seed) return;
-    }
+    if (!isGuessWho && !taskConfig.prompt?.trim()) return;
     if (isGuessWho) {
       const secrets = Array.isArray(taskConfig.secretAnswers)
         ? taskConfig.secretAnswers
@@ -768,36 +747,6 @@ export default function LiveSession({ roomCode }) {
         // Ensure this stays deterministic / rule-scored
         objectiveScoring: false,
         aiScoringRequired: false,
-      }),
-
-
-      // Echo Chain (oral memory chain) special fields
-      ...(isEchoChain && {
-        prompt:
-          (taskConfig.prompt || "").trim() ||
-          "Repeat the chain aloud and add one related term each turn.",
-        seedTerm: String(taskConfig.seedTerm || taskConfig.startTerm || "").trim(),
-        config: {
-          perTurnSeconds:
-            Number(taskConfig.perTurnSeconds) > 0 ? Number(taskConfig.perTurnSeconds) : 10,
-          pointsPerCorrectAdd:
-            Number(taskConfig.pointsPerCorrectAdd) > 0 ? Number(taskConfig.pointsPerCorrectAdd) : 2,
-          rotationBonusPoints:
-            Number(taskConfig.rotationBonusPoints) > 0 ? Number(taskConfig.rotationBonusPoints) : 10,
-          maxChainLength:
-            Number(taskConfig.maxChainLength) > 0 ? Number(taskConfig.maxChainLength) : 30,
-          requireVocabOnly: !!taskConfig.requireVocabOnly,
-        },
-        timeLimitSeconds:
-          Number(taskConfig.perTurnSeconds) > 0 ? Number(taskConfig.perTurnSeconds) : 10,
-        interTeamEnabled: false,
-        intraTeamEnabled: true,
-        objectiveScoring: false,
-        aiScoringRequired: false,
-        // Not used for this type
-        correctAnswer: null,
-        options: undefined,
-        items: undefined,
       }),
 
 
@@ -1022,47 +971,6 @@ export default function LiveSession({ roomCode }) {
         return;
       }
 
-      // 🔁 Echo Chain (oral memory chain)
-      if (generatedType === TASK_TYPES.ECHO_CHAIN || generatedType === "echo-chain") {
-        const seed =
-          baseTask.seedTerm ||
-          baseTask.startTerm ||
-          baseTask.seed ||
-          (Array.isArray(baseTask.aiWordBank) && baseTask.aiWordBank[0]) ||
-          (Array.isArray(rawWords) && rawWords[0]) ||
-          "";
-
-        setTaskConfig({
-          prompt: baseTask.prompt || "Repeat the chain aloud and add one related term each turn.",
-          seedTerm: String(seed || "").trim(),
-          perTurnSeconds:
-            Number(baseTask?.config?.perTurnSeconds) > 0
-              ? Number(baseTask.config.perTurnSeconds)
-              : Number(baseTask.timeLimitSeconds) > 0
-              ? Number(baseTask.timeLimitSeconds)
-              : 10,
-          pointsPerCorrectAdd:
-            Number(baseTask?.config?.pointsPerCorrectAdd) > 0
-              ? Number(baseTask.config.pointsPerCorrectAdd)
-              : 2,
-          rotationBonusPoints:
-            Number(baseTask?.config?.rotationBonusPoints) > 0
-              ? Number(baseTask.config.rotationBonusPoints)
-              : 10,
-          maxChainLength:
-            Number(baseTask?.config?.maxChainLength) > 0
-              ? Number(baseTask.config.maxChainLength)
-              : 30,
-          requireVocabOnly: !!baseTask?.config?.requireVocabOnly,
-          points: typeof baseTask.points === "number" ? baseTask.points : 10,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-        });
-
-        setShowAiGen(false);
-        return;
-      }
-
       // 🟢 SIMPLE (single-question) CASE
       if (!generatedIsMulti) {
         setTaskConfig({
@@ -1145,15 +1053,11 @@ export default function LiveSession({ roomCode }) {
     if (!roomCode || !activeTasksetMeta?._id) return;
     const code = roomCode.toUpperCase();
 
-    setTasksetLaunchAnimating(true);
-    setTasksetLaunchProgress(8);
-
     const token =
       typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
     setLaunchingTaskset(true);
     setStatus("Preparing taskset…");
-    setTasksetLaunchProgress(20);
 
     try {
       const res = await fetch(
@@ -1201,14 +1105,11 @@ export default function LiveSession({ roomCode }) {
         setShowHideNSeekModal(true);
         setStatus("Enter Hide & Seek page references before launching.");
         setLaunchingTaskset(false);
-        setTasksetLaunchAnimating(false);
-        setTasksetLaunchProgress(0);
         return;
       }
 
       setStatus("Loading taskset…");
       setLaunchAfterLoad(true);
-      setTasksetLaunchProgress(70);
 
       socket.emit("teacher:loadTaskset", {
         roomCode: code,
@@ -1218,8 +1119,6 @@ export default function LiveSession({ roomCode }) {
     } catch (err) {
       console.error("[LiveSession] Launch taskset error:", err);
       setStatus(err.message || "Failed to launch taskset.");
-      setTasksetLaunchAnimating(false);
-      setTasksetLaunchProgress(0);
     } finally {
       setLaunchingTaskset(false);
     }
@@ -1318,7 +1217,6 @@ export default function LiveSession({ roomCode }) {
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
 
   const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
-  const isEchoChainQuick = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
   const quickLaunchReady = isGuessWhoQuick
     ? (Array.isArray(taskConfig.secretAnswers)
         ? taskConfig.secretAnswers
@@ -1326,8 +1224,6 @@ export default function LiveSession({ roomCode }) {
         ? [taskConfig.secretAnswer]
         : [])
         .some((s) => String(s ?? "").trim())
-    : isEchoChainQuick
-    ? !!String(taskConfig.seedTerm || taskConfig.startTerm || "").trim()
     : !!taskConfig.prompt?.trim();
 
   // --- Treat gating: require at least 30% of tasks completed ---
@@ -1778,7 +1674,7 @@ export default function LiveSession({ roomCode }) {
                     padding: "6px 8px",
                     borderRadius: 6,
                     border: "none",
-                    background: tasksetLaunchAnimating ? `linear-gradient(90deg, #22c55e 0%, #22c55e ${tasksetLaunchProgress}%, ${launchBtnBg} ${tasksetLaunchProgress}%, ${launchBtnBg} 100%)` : launchBtnBg,
+                    background: launchBtnBg,
                     color: "#ffffff",
                     fontSize: "0.85rem",
                     cursor: launchBtnDisabled ? "not-allowed" : "pointer",
@@ -1918,19 +1814,6 @@ Precipitation — rain, snow, hail`}
                         {" · "}
                         timer:{" "}
                         {Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60}s
-                      </span>
-                    </div>
-                  )}
-
-                  {isEchoChainQuick && (
-                    <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#075985" }}>
-                      <strong>Seed term:</strong> {String(taskConfig.seedTerm || taskConfig.startTerm || "").trim() || "(none)"}
-                      <span style={{ marginLeft: 10, color: "#64748b" }}>
-                        · per-turn timer:{" "}
-                        {Number(taskConfig.perTurnSeconds) > 0 ? Number(taskConfig.perTurnSeconds) : 10}s
-                        {" · "}
-                        rotation bonus:{" "}
-                        {Number(taskConfig.rotationBonusPoints) > 0 ? Number(taskConfig.rotationBonusPoints) : 10} pts
                       </span>
                     </div>
                   )}

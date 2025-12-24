@@ -3,7 +3,7 @@ import TaskSet from "../models/TaskSet.js";
 import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
-export const retryMustHave = {
+const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
     'MULTIPLE_CHOICE must include items[] with 3–5 questions. Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index).',
   [TASK_TYPES.TRUE_FALSE]:
@@ -32,23 +32,7 @@ export const retryMustHave = {
   [TASK_TYPES.GUESS_WHO]:
     'GUESS_WHO must include config.playerCount (2–6), config.secretAnswers (array length = playerCount), config.category (string), config.maxGuesses (<=15), and config.timerSeconds (<=180). Intra-team only. Hold-to-reveal secret for answerer, yes/no Q&A, and limited guesses.',
 
-[TASK_TYPES.ECHO_CHAIN]:
-  "ECHO_CHAIN must include: seedTerm (string from aiWordBank), prompt (clear turn-by-turn rules), and config with optional perTurnSeconds (5–20), rotationBonusPoints, pointsPerCorrectAdd, and maxChainLength (optional). Intra-team only.",
-
 };
-
-export function buildVocabularyLines(aiWordBank) {
-  const vocab = Array.isArray(aiWordBank)
-    ? aiWordBank
-    : String(aiWordBank || "")
-        .split(/[
-,;]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-  return vocab.map((w) => `- ${w}`).join("\n");
-}
-
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -105,7 +89,7 @@ function validateGeneratePayload(payload = {}) {
  * - strip punctuation
  * Example: "Brain Blitz!" => "brain-blitz"
  */
-export function normalizeSelectedType(raw) {
+function normalizeSelectedType(raw) {
   if (!raw) return null;
 
   const v = String(raw)
@@ -199,8 +183,6 @@ export function normalizeSelectedType(raw) {
 
   if (v === "guess-who" || v === "guesswho" || v === "guess_who")
     return TASK_TYPES.GUESS_WHO;
-
-  if (v === "echochain" || v === "echo-chain" || v === "echo_chain" || v === "echo chain") return TASK_TYPES.ECHO_CHAIN;
 
   return null;
 }
@@ -470,7 +452,7 @@ function shuffleArray(arr) {
 }
 
 // Targeted regeneration for one broken task (same type, more content)
-export async function regenerateSingleTask({
+async function regenerateSingleTask({
   allowedType,
   mustHave,
   subject,
@@ -1102,78 +1084,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         items = [];
         correctAnswer = null;
       }
-
-
-// -------- ECHO CHAIN normalization --------
-else if (taskType === TASK_TYPES.ECHO_CHAIN) {
-  const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
-  const seedFromAi = isNonEmptyString(t.seedTerm)
-    ? String(t.seedTerm).trim()
-    : isNonEmptyString(aiConfig.seedTerm)
-    ? String(aiConfig.seedTerm).trim()
-    : "";
-
-  const bank = rawWordBank.map((w) => String(w || "").trim()).filter(Boolean);
-  const fallbackSeed = bank.length ? bank[index % bank.length] : "concept";
-
-  const seedTerm = (seedFromAi && bank.includes(seedFromAi)) ? seedFromAi : (seedFromAi || fallbackSeed);
-
-  const perTurnSeconds = clampInt(
-    t.perTurnSeconds ?? aiConfig.perTurnSeconds ?? aiConfig.turnSeconds,
-    0,
-    60,
-    10
-  );
-
-  const rotationBonusPoints = clampInt(
-    t.rotationBonusPoints ?? aiConfig.rotationBonusPoints,
-    0,
-    500,
-    25
-  );
-
-  const pointsPerCorrectAdd = clampInt(
-    t.pointsPerCorrectAdd ?? aiConfig.pointsPerCorrectAdd,
-    0,
-    50,
-    5
-  );
-
-  const maxChainLength = clampInt(
-    t.maxChainLength ?? aiConfig.maxChainLength,
-    0,
-    100,
-    0
-  );
-
-  const title = isNonEmptyString(t.title)
-    ? String(t.title).trim().slice(0, 120)
-    : `Echo Chain: ${seedTerm}`;
-
-  const prompt =
-    isNonEmptyString(t.prompt)
-      ? String(t.prompt).trim()
-      : `Echo Chain! Start with “${seedTerm}”. Player 1 repeats it aloud and adds one related term. Player 2 repeats the full chain and adds one. Keep going around your team. If you forget a word or change the order, the chain breaks—laugh it off and restart!`;
-
-  return {
-    _localId: `t${index + 1}`,
-    index,
-    title,
-    prompt,
-    taskType,
-    seedTerm,
-    config: {
-      seedTerm,
-      perTurnSeconds,
-      rotationBonusPoints,
-      pointsPerCorrectAdd,
-      maxChainLength: maxChainLength > 0 ? maxChainLength : undefined,
-    },
-    // Echo Chain is typically oral; no answer-key fields.
-    options: [],
-    objectiveScoring: false,
-  };
-}
 
 // -------- MULTIPLE CHOICE normalization (single vs multi) --------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {

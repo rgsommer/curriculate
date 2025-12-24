@@ -10,7 +10,6 @@ import {
   normalizeSelectedType,
   retryMustHave,
   regenerateSingleTask,
-  buildVocabularyLines,
 } from "./aiTasksetController.js";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -54,7 +53,14 @@ export const generateDemoTasksetStreaming = async (req, res) => {
           .map(([type]) => type)
           .filter((t) => t !== TASK_TYPES.HIDENSEEK);
 
-    const vocabularyLines = buildVocabularyLines(aiWordBank);
+    const vocab = Array.isArray(aiWordBank)
+      ? aiWordBank
+      : String(aiWordBank || "").split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+
+    if (!subject || !gradeLevel) throw new Error("subject and gradeLevel required");
+    if (!vocab.length) throw new Error("aiWordBank is required");
+
+    const vocabularyLines = vocab.map((w) => `- ${w}`).join("\n");
     const topicLabel = (topicTitle || "").trim() || `${subject} – Grade ${gradeLevel} review`;
     const specialConsiderations = [topicDescription, customInstructions].filter(Boolean).join("\n\n");
 

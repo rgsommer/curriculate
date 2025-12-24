@@ -64,7 +64,6 @@ export const TASK_TYPES = {
   HANGMAN_DUEL: "hangman-duel",
   WORD_WEAVER_DUEL: "word-weaver-duel",
   GUESS_WHO: "guess-who",
-  ECHO_CHAIN: "echo-chain",
 
   // Collaboration / discussion
   COLLABORATION: "collaboration",
@@ -1007,26 +1006,7 @@ export const TASK_TYPE_META = {
   // LANGUAGE / SPEAKING
   // =========================
 
-  
-[TASK_TYPES.ECHO_CHAIN]: metaBase({
-  label: "Echo Chain",
-  category: CATEGORY.RECALL,
-  implemented: true,
-  aiEligible: true,
-  generatorEligible: true,
-  objectiveScoring: false,
-  defaultAiScoringRequired: false,
-  quickTaskEligible: true,
-  hasOptions: false,
-  expectsText: false,
-  // The game itself typically runs per-turn; timer is optional (perTurnSeconds).
-  maxTimeSeconds: 0,
-  interTeamEnabled: false,
-  intraTeamEnabled: true,
-  description:
-    "Oral memory-chain game. The device starts with a subject-related seed term. Players take turns repeating the full chain aloud and adding one related term. Optional per-turn timer and bonuses for completing a full rotation. Builds retrieval practice, working memory, listening accuracy, and vocabulary association networks.",
-}),
-[TASK_TYPES.PRONUNCIATION]: metaBase({
+  [TASK_TYPES.PRONUNCIATION]: metaBase({
     label: "Pronunciation Practice",
     category: CATEGORY.OTHER,
     implemented: true,

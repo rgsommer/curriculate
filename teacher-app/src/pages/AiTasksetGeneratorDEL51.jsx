@@ -348,17 +348,6 @@ export default function AiTasksetGenerator() {
     });
   };
 
-
-  const typeIcon = (type) => {
-    const t = String(type || "");
-    if (t === (TASK_TYPES.ECHO_CHAIN || "echo-chain")) return "🔁";
-    if (t === TASK_TYPES.HANGMAN_DUEL) return "🧩";
-    if (t === TASK_TYPES.JEOPARDY) return "⚡";
-    if (t === TASK_TYPES.FLASHCARDS) return "🗂️";
-    if (t === TASK_TYPES.HIDENSEEK) return "🕵️";
-    return "✨";
-  };
-
   const renderTaskTypeBadge = (type) => {
     const meta = TASK_TYPE_META[type] || {};
     const label = meta.label || type;
@@ -368,9 +357,22 @@ export default function AiTasksetGenerator() {
       <button
         key={type}
         type="button"
-        onClick={() =>
-        <span style={{ marginRight: 6 }}>{typeIcon(type)}</span>
-        <span style={{ fontWeight: 600 }}>{label}</span>{" "}
+        onClick={() => toggleTaskType(type)}
+        style={{
+          borderRadius: 999,
+          padding: "4px 10px",
+          fontSize: "0.8rem",
+          border: selectedTaskTypes.includes(type)
+            ? "1px solid #2563eb"
+            : "1px solid #d1d5db",
+          background: selectedTaskTypes.includes(type)
+            ? "rgba(37,99,235,0.08)"
+            : "#ffffff",
+          color: "#111827",
+          cursor: "pointer",
+        }}
+      >
+        {label}{" "}
         <span
           style={{
             fontSize: "0.7rem",
@@ -380,23 +382,7 @@ export default function AiTasksetGenerator() {
         >
           · {category}
         </span>
-        {meta.intraTeamEnabled === true && meta.interTeamEnabled !== true && (
-          <span
-            style={{
-              marginLeft: 8,
-              fontSize: "0.7rem",
-              color: "#065f46",
-              background: "rgba(16,185,129,0.10)",
-              border: "1px solid rgba(16,185,129,0.25)",
-              padding: "2px 8px",
-              borderRadius: 999,
-              fontWeight: 700,
-            }}
-          >
-            intra-team
-          </span>
-        )}
-</button>
+      </button>
     );
   };
 
