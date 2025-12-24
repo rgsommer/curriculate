@@ -840,8 +840,6 @@ export default function TaskRunner({
       break;
     }
 
-    // ✅ Competitive (NEW)
-    // case TASK_TYPES.COMPETITIVE: (removed; category-only)
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask

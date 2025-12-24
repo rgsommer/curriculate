@@ -1,15 +1,17 @@
 // student-app/src/components/tasks/types/GuessWhoTask.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSound from "use-sound";
 
 const DEFAULT_MAX_GUESSES = 10;
 const DEFAULT_TIMER_SECONDS = 60;
 
-// High-contrast neutrals consistent with TaskRunner inner task styling
+// Local “Curriculate-ish” neutrals (kept self-contained)
 const CONTRAST_TEXT_DARK = "#0f172a";
 const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
-const CONTRAST_ACCENT = "#0ea5e9";
+const ACCENT = "#6366f1";
+const GOOD = "#16a34a";
+const BAD = "#dc2626";
 
 function clampInt(n, min, max, fallback) {
   const v = Number(n);
@@ -17,604 +19,665 @@ function clampInt(n, min, max, fallback) {
   return Math.max(min, Math.min(max, Math.round(v)));
 }
 
-function normalizeList(v) {
-  if (Array.isArray(v)) return v.filter(Boolean).map((x) => String(x).trim()).filter(Boolean);
-  if (typeof v === "string") {
-    return v
-      .split(/[\n,;]+/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-  }
-  return [];
+function normalizeStr(s) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase();
 }
 
-export default function GuessWhoTask({
-  task,
-  onSubmit,
-  disabled = false,
-
-  // kept for signature compatibility across tasks (even if unused here)
-  socket,
-  roomCode,
-  teamId,
-}) {
+export default function GuessWhoTask({ task, onSubmit }) {
+  // Config (robust defaults)
   const cfg = task?.config && typeof task.config === "object" ? task.config : {};
 
-  const maxGuesses = clampInt(cfg.maxGuesses ?? task?.maxGuesses, 1, 50, DEFAULT_MAX_GUESSES);
-  const timerSeconds = clampInt(
-    cfg.timerSeconds ?? cfg.timeLimitSeconds ?? task?.timeLimitSeconds,
-    10,
-    600,
-    DEFAULT_TIMER_SECONDS
-  );
+  const playerCount = clampInt(cfg.playerCount ?? task?.playerCount, 1, 12, 1);
+  const maxGuesses = clampInt(cfg.maxGuesses, 1, 50, DEFAULT_MAX_GUESSES);
+  const timerSeconds = clampInt(task?.timeLimitSeconds ?? cfg.timerSeconds, 10, 600, DEFAULT_TIMER_SECONDS);
 
+  // Secret answers can be per-round (rotating answerer) or a single secret.
   const secretAnswers = useMemo(() => {
-    const fromCfg = normalizeList(cfg.secretAnswers);
-    const fromTop = normalizeList(task?.secretAnswers);
-    const fromPrompt = normalizeList(cfg.answerPool);
-    const list = fromCfg.length ? fromCfg : fromTop.length ? fromTop : fromPrompt;
-    return list.length ? list : ["Mystery"];
-  }, [cfg.secretAnswers, cfg.answerPool, task?.secretAnswers]);
+    const raw =
+      Array.isArray(cfg.secretAnswers) && cfg.secretAnswers.length
+        ? cfg.secretAnswers
+        : normalizeStr(cfg.secretAnswer)
+        ? [String(cfg.secretAnswer).trim()]
+        : ["Mystery"];
 
-  const allowSkip = cfg.allowSkip !== false;
-  const holdToReveal = cfg.holdToReveal !== false;
+    // Ensure we have at least playerCount entries if you want “one per answerer/round”
+    // (If you only provide one, it just repeats.)
+    const out = [];
+    for (let i = 0; i < Math.max(1, playerCount); i++) out.push(raw[i] ?? raw[0]);
+    return out;
+  }, [cfg.secretAnswers, cfg.secretAnswer, playerCount]);
 
-  const [roundIndex, setRoundIndex] = useState(0);
-  const secret = secretAnswers[roundIndex] || secretAnswers[0] || "Mystery";
+  // Optional category/theme label
+  const categoryLabel = (cfg.category && String(cfg.category).trim()) || "";
+  const revealHint = (cfg.revealHint && String(cfg.revealHint).trim()) || "Hold to reveal";
 
-  const [timerStarted, setTimerStarted] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(timerSeconds);
-  const timerRef = useRef(null);
+  // Player identity (intra-team only)
+  const myPlayerNumber = clampInt(task?.myPlayerNumber ?? cfg.myPlayerNumber, 1, 99, 1);
 
-  const [showSecret, setShowSecret] = useState(false);
-  const [questions, setQuestions] = useState([]); // { text, answer: "Yes"|"No"|null }
+  // Rounds (default: rotate answerer through playerCount; “round” is per answerer)
+  const [currentRound, setCurrentRound] = useState(0);
+
+  const currentAnswerer = useMemo(() => (currentRound % playerCount) + 1, [currentRound, playerCount]);
+  const isAnswerer = currentAnswerer === myPlayerNumber;
+  const canAskOrGuess = !isAnswerer;
+
+  const secretAnswer = useMemo(() => {
+    const v = secretAnswers[currentRound] ?? secretAnswers[0] ?? "Mystery";
+    return String(v || "Mystery").trim();
+  }, [secretAnswers, currentRound]);
+
+  // Q/A + guesses
+  const [questions, setQuestions] = useState([]); // { text, player, answer: "Yes"|"No"|null }
   const [questionInput, setQuestionInput] = useState("");
   const [guessInput, setGuessInput] = useState("");
   const [guessCount, setGuessCount] = useState(0);
 
+  // Timing + overlays
+  const [showSecret, setShowSecret] = useState(false);
+  const [timerStarted, setTimerStarted] = useState(false);
+  const [timer, setTimer] = useState(timerSeconds);
+
   const [roundOver, setRoundOver] = useState(false);
-  const [result, setResult] = useState(null); // { ok:boolean, message:string }
-  const [overlaySeconds, setOverlaySeconds] = useState(0);
+  const [winnerThisRound, setWinnerThisRound] = useState(false);
+
+  const [submissionFeedback, setSubmissionFeedback] = useState(null); // { message, positive }
+  const [overlayTimer, setOverlayTimer] = useState(0);
+
+  const countdownRef = useRef(null);
   const overlayRef = useRef(null);
 
-  // Sounds (safe defaults; if files missing, use-sound won’t crash hard, but it may warn)
-  const [playBeep] = useSound("/sounds/beep.mp3", { volume: 0.35 });
-  const [playBuzzer] = useSound("/sounds/buzzer.mp3", { volume: 0.5 });
-  const [playYes] = useSound("/sounds/yes-ding.mp3", { volume: 0.6 });
-  const [playNo] = useSound("/sounds/no-buzzer.mp3", { volume: 0.6 });
-  const [playCorrect] = useSound("/sounds/correct.mp3", { volume: 0.65 });
-  const [playWrong] = useSound("/sounds/wrong.mp3", { volume: 0.65 });
+  // Sounds (keep existing paths)
+  const [playBeep] = useSound("/sounds/beep.mp3", { volume: 0.6 });
+  const [playBuzzer] = useSound("/sounds/buzzer.mp3", { volume: 0.7 });
+  const [playYes] = useSound("/sounds/yes-ding.mp3", { volume: 0.7 });
+  const [playNo] = useSound("/sounds/no-buzzer.mp3", { volume: 0.7 });
+  const [playCorrect] = useSound("/sounds/correct.mp3", { volume: 0.8 });
+  const [playWrong] = useSound("/sounds/wrong.mp3", { volume: 0.8 });
 
-  // Reset round state when roundIndex changes
-  useEffect(() => {
-    setTimerStarted(false);
-    setTimeLeft(timerSeconds);
-    setShowSecret(false);
-    setQuestions([]);
-    setQuestionInput("");
-    setGuessInput("");
-    setGuessCount(0);
-    setRoundOver(false);
-    setResult(null);
-    setOverlaySeconds(0);
+  const clearCountdown = useCallback(() => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+  }, []);
 
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
-
+  const clearOverlay = useCallback(() => {
     if (overlayRef.current) clearInterval(overlayRef.current);
     overlayRef.current = null;
-  }, [roundIndex, timerSeconds]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (overlayRef.current) clearInterval(overlayRef.current);
+      clearCountdown();
+      clearOverlay();
     };
-  }, []);
+  }, [clearCountdown, clearOverlay]);
 
-  const startOverlay = (seconds = 10) => {
-    const s = clampInt(seconds, 3, 30, 10);
-    setOverlaySeconds(s);
-    if (overlayRef.current) clearInterval(overlayRef.current);
-    overlayRef.current = setInterval(() => {
-      setOverlaySeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(overlayRef.current);
-          overlayRef.current = null;
-          return 0;
-        }
-        return prev - 1;
+  const resetRoundState = useCallback(
+    (nextRoundIndex) => {
+      setQuestions([]);
+      setGuessCount(0);
+      setRoundOver(false);
+      setWinnerThisRound(false);
+      setShowSecret(false);
+      setTimerStarted(false);
+      setTimer(timerSeconds);
+      setSubmissionFeedback(null);
+      setOverlayTimer(0);
+      clearCountdown();
+      clearOverlay();
+
+      // Ensure any per-round secret array lookup stays coherent
+      setCurrentRound(nextRoundIndex);
+    },
+    [timerSeconds, clearCountdown, clearOverlay]
+  );
+
+  const endRoundWithOverlay = useCallback(
+    ({ message, positive, correct }) => {
+      setSubmissionFeedback({ message, positive: !!positive });
+      setRoundOver(true);
+      setWinnerThisRound(!!correct);
+      clearCountdown();
+
+      setOverlayTimer(15);
+      clearOverlay();
+      overlayRef.current = setInterval(() => {
+        setOverlayTimer((prev) => {
+          if (prev <= 1) {
+            clearOverlay();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    },
+    [clearCountdown, clearOverlay]
+  );
+
+  // When overlay timer hits 0, advance rounds or submit completion
+  useEffect(() => {
+    if (!submissionFeedback) return;
+    if (overlayTimer !== 0) return;
+
+    // If we had feedback and overlay finished, advance.
+    setSubmissionFeedback(null);
+
+    setCurrentRound((prev) => {
+      const next = prev + 1;
+
+      if (next < playerCount) {
+        // next round
+        // We must reset AFTER the state update; easiest: do it in a microtask.
+        queueMicrotask(() => resetRoundState(next));
+        return prev; // resetRoundState will set it
+      }
+
+      // Done: submit completion payload
+      queueMicrotask(() => {
+        onSubmit?.({
+          type: task?.taskType || "guess-who",
+          gameComplete: true,
+          roundsPlayed: playerCount,
+        });
       });
-    }, 1000);
-  };
+      return prev;
+    });
+  }, [overlayTimer, submissionFeedback, playerCount, onSubmit, resetRoundState, task?.taskType]);
 
-  const endRound = ({ ok, message }) => {
-    setRoundOver(true);
-    setResult({ ok: !!ok, message: String(message || "") });
-    setShowSecret(false);
-
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
-
-    startOverlay(10);
-  };
-
-  const maybeStartTimer = () => {
-    if (timerStarted || roundOver) return;
-
+  const startCountdownIfNeeded = useCallback(() => {
+    if (timerStarted) return;
     setTimerStarted(true);
-    setTimeLeft(timerSeconds);
 
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
+    countdownRef.current = setInterval(() => {
+      setTimer((prev) => {
         if (prev <= 1) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
+          clearCountdown();
           playBuzzer();
-          endRound({ ok: false, message: `Time’s up! The answer was: ${secret}` });
+          endRoundWithOverlay({
+            message: `Time’s up! The answer was: ${secretAnswer}`,
+            positive: false,
+            correct: false,
+          });
           return 0;
         }
         if (prev <= 11) playBeep();
         return prev - 1;
       });
     }, 1000);
-  };
+  }, [timerStarted, clearCountdown, endRoundWithOverlay, playBuzzer, playBeep, secretAnswer]);
 
-  const onRevealDown = () => {
-    if (disabled || roundOver) return;
+  const handleRevealPress = useCallback(() => {
+    if (!isAnswerer || roundOver) return;
     setShowSecret(true);
-    maybeStartTimer();
-  };
+    startCountdownIfNeeded();
+  }, [isAnswerer, roundOver, startCountdownIfNeeded]);
 
-  const onRevealUp = () => {
+  const handleRevealRelease = useCallback(() => {
     setShowSecret(false);
-  };
+  }, []);
 
-  const handleAsk = () => {
-    if (disabled || roundOver) return;
+  const handleAskQuestion = useCallback(() => {
+    if (!canAskOrGuess || roundOver) return;
     const q = String(questionInput || "").trim();
     if (!q) return;
 
-    setQuestions((prev) => [...prev, { text: q, answer: null }]);
+    setQuestions((prev) => [...prev, { text: q, player: myPlayerNumber, answer: null }]);
     setQuestionInput("");
-  };
+  }, [canAskOrGuess, roundOver, questionInput, myPlayerNumber]);
 
-  const handleAnswerYesNo = (val) => {
-    if (disabled || roundOver) return;
-    setQuestions((prev) => {
-      if (!prev.length) return prev;
-      const last = prev[prev.length - 1];
-      if (!last || last.answer) return prev;
+  const handleAnswerYesNo = useCallback(
+    (answer) => {
+      if (!isAnswerer || roundOver) return;
 
-      const next = [...prev];
-      next[next.length - 1] = { ...last, answer: val };
-      return next;
-    });
+      setQuestions((prev) => {
+        if (!prev.length) return prev;
+        const last = prev[prev.length - 1];
+        if (!last || last.answer) return prev;
 
-    if (val === "Yes") playYes();
-    else playNo();
-  };
+        const updated = [...prev];
+        updated[updated.length - 1] = { ...last, answer };
 
-  const handleGuess = () => {
-    if (disabled || roundOver) return;
+        if (answer === "Yes") playYes();
+        else playNo();
+
+        return updated;
+      });
+    },
+    [isAnswerer, roundOver, playYes, playNo]
+  );
+
+  const handleMakeGuess = useCallback(() => {
+    if (!canAskOrGuess || roundOver) return;
+    const guess = String(guessInput || "").trim();
+    if (!guess) return;
     if (guessCount >= maxGuesses) return;
 
-    const g = String(guessInput || "").trim();
-    if (!g) return;
-
-    const nextCount = guessCount + 1;
-    setGuessCount(nextCount);
-
-    const correct = g.toLowerCase() === String(secret).trim().toLowerCase();
+    const correct = normalizeStr(guess) === normalizeStr(secretAnswer);
+    const nextGuessCount = guessCount + 1;
+    setGuessCount(nextGuessCount);
     setGuessInput("");
 
     if (correct) {
       playCorrect();
-      endRound({
-        ok: true,
-        message: `✅ Correct! You got it in ${nextCount} guess${nextCount === 1 ? "" : "es"}.`,
+
+      // Optional points model: reward speed + fewer guesses (purely informational unless backend uses it)
+      const timeRemaining = Math.max(0, timer);
+      const base = 10;
+      const timeBonus = Math.floor(timeRemaining / 10); // 0..6 if 60s
+      const guessBonus = Math.max(0, Math.floor((maxGuesses - nextGuessCount) / 2)); // modest
+      const pointsEarned = base + timeBonus + guessBonus;
+
+      endRoundWithOverlay({
+        message: `✅ Correct! You got it in ${nextGuessCount}/${maxGuesses} guesses.`,
+        positive: true,
+        correct: true,
       });
+
+      // Fire a useful “round result” payload immediately (optional; safe)
+      onSubmit?.({
+        type: task?.taskType || "guess-who",
+        roundComplete: true,
+        correct: true,
+        secretAnswer,
+        guessesUsed: nextGuessCount,
+        maxGuesses,
+        timeRemaining,
+        pointsEarned,
+        roundIndex: currentRound,
+      });
+
       return;
     }
 
     playWrong();
 
-    if (nextCount >= maxGuesses) {
-      endRound({ ok: false, message: `Out of guesses! The answer was: ${secret}` });
-    }
-  };
+    if (nextGuessCount >= maxGuesses) {
+      endRoundWithOverlay({
+        message: `❌ Out of guesses! The answer was: ${secretAnswer}`,
+        positive: false,
+        correct: false,
+      });
 
-  const canAnswerYesNo = !roundOver && questions.length > 0 && !questions[questions.length - 1]?.answer;
-
-  const goNext = () => {
-    if (overlaySeconds > 0) return; // don’t skip overlay countdown
-    if (roundIndex < secretAnswers.length - 1) {
-      setRoundIndex((r) => r + 1);
-    } else {
-      // Send a compact completion payload (TaskRunner will wrap if needed)
       onSubmit?.({
-        type: "guess-who",
-        gameComplete: true,
-        rounds: secretAnswers.length,
+        type: task?.taskType || "guess-who",
+        roundComplete: true,
+        correct: false,
+        secretAnswer,
+        guessesUsed: nextGuessCount,
+        maxGuesses,
+        timeRemaining: Math.max(0, timer),
+        pointsEarned: 0,
+        roundIndex: currentRound,
       });
     }
-  };
+  }, [
+    canAskOrGuess,
+    roundOver,
+    guessInput,
+    guessCount,
+    maxGuesses,
+    secretAnswer,
+    timer,
+    currentRound,
+    endRoundWithOverlay,
+    onSubmit,
+    playCorrect,
+    playWrong,
+    task?.taskType,
+  ]);
 
-  const skipRound = () => {
-    if (disabled || roundOver) return;
-    if (!allowSkip) return;
-    endRound({ ok: false, message: `Skipped. The answer was: ${secret}` });
-  };
+  // UI helpers
+  const topBadge = useMemo(() => {
+    const parts = [];
+    parts.push(`Round ${currentRound + 1}/${playerCount}`);
+    parts.push(`Answerer: Player ${currentAnswerer}`);
+    if (categoryLabel) parts.push(`Category: ${categoryLabel}`);
+    return parts.join(" • ");
+  }, [currentRound, playerCount, currentAnswerer, categoryLabel]);
 
-  const remainingGuesses = Math.max(0, maxGuesses - guessCount);
+  const guessesLeft = Math.max(0, maxGuesses - guessCount);
 
   return (
     <div style={{ padding: 16 }}>
-      {/* Header */}
       <div
         style={{
-          border: `1px solid ${CONTRAST_BORDER}`,
-          background: CONTRAST_BG_LIGHT,
           borderRadius: 16,
-          padding: 14,
-          color: CONTRAST_TEXT_DARK,
-          textAlign: "center",
+          border: `1px solid ${CONTRAST_BORDER}`,
+          background: "#ffffff",
+          boxShadow: "0 6px 18px rgba(15,23,42,0.06)",
+          padding: 16,
+          maxWidth: 980,
+          margin: "0 auto",
         }}
       >
-        <div style={{ fontSize: "1.15rem", fontWeight: 800, letterSpacing: 0.2 }}>
-          🕵️ Guess Who?
-        </div>
-        <div style={{ marginTop: 6, fontSize: "0.95rem", opacity: 0.85 }}>
-          Ask only <strong>Yes/No</strong> questions. The answerer can reveal the secret safely.
-        </div>
-
-        <div style={{ marginTop: 10, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        <div style={{ textAlign: "center", marginBottom: 10 }}>
           <div
             style={{
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: `1px solid ${CONTRAST_BORDER}`,
-              background: "#fff",
-              fontSize: "0.9rem",
-              fontWeight: 700,
+              fontFamily:
+                '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+              fontSize: "1.55rem",
+              letterSpacing: "1px",
+              color: CONTRAST_TEXT_DARK,
+              marginBottom: 8,
             }}
           >
-            Round {roundIndex + 1} / {secretAnswers.length}
+            Guess Who?
           </div>
 
           <div
             style={{
-              padding: "6px 10px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 12px",
               borderRadius: 999,
               border: `1px solid ${CONTRAST_BORDER}`,
-              background: "#fff",
-              fontSize: "0.9rem",
-              fontWeight: 700,
+              background: CONTRAST_BG_LIGHT,
+              color: CONTRAST_TEXT_DARK,
+              fontWeight: 600,
+              fontSize: "0.95rem",
             }}
           >
-            Guesses left: {remainingGuesses}
+            {topBadge}
           </div>
+        </div>
 
-          {timerStarted ? (
+        {/* Timer */}
+        {timerStarted && (
+          <div style={{ textAlign: "center", margin: "12px 0 6px" }}>
             <div
               style={{
-                padding: "6px 10px",
+                display: "inline-block",
+                padding: "8px 14px",
                 borderRadius: 999,
                 border: `1px solid ${CONTRAST_BORDER}`,
-                background: "#fff",
-                fontSize: "0.9rem",
-                fontWeight: 800,
-                color: timeLeft <= 10 ? "#dc2626" : CONTRAST_TEXT_DARK,
-              }}
-            >
-              ⏱ {timeLeft}s
-            </div>
-          ) : (
-            <div
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: `1px solid ${CONTRAST_BORDER}`,
-                background: "#fff",
-                fontSize: "0.9rem",
-                fontWeight: 700,
-              }}
-            >
-              ⏱ Starts on reveal
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Reveal button */}
-      {!roundOver && (
-        <div style={{ marginTop: 14, textAlign: "center" }}>
-          <button
-            type="button"
-            disabled={disabled}
-            onMouseDown={holdToReveal ? onRevealDown : undefined}
-            onMouseUp={holdToReveal ? onRevealUp : undefined}
-            onMouseLeave={holdToReveal ? onRevealUp : undefined}
-            onTouchStart={holdToReveal ? onRevealDown : undefined}
-            onTouchEnd={holdToReveal ? onRevealUp : undefined}
-            onClick={!holdToReveal ? () => { setShowSecret((s) => !s); maybeStartTimer(); } : undefined}
-            style={{
-              width: "100%",
-              maxWidth: 520,
-              padding: "14px 18px",
-              borderRadius: 999,
-              border: "none",
-              background: showSecret ? "#16a34a" : CONTRAST_ACCENT,
-              color: "#fff",
-              fontWeight: 900,
-              fontSize: "1.05rem",
-              cursor: disabled ? "not-allowed" : "pointer",
-              boxShadow: "0 8px 22px rgba(0,0,0,0.08)",
-            }}
-          >
-            {holdToReveal
-              ? showSecret
-                ? `SECRET: ${secret}`
-                : "Hold to Reveal Secret (starts timer)"
-              : showSecret
-              ? `SECRET: ${secret} (tap to hide)`
-              : "Tap to Reveal Secret (starts timer)"}
-          </button>
-
-          {allowSkip && (
-            <div style={{ marginTop: 10 }}>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={skipRound}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  border: `1px solid ${CONTRAST_BORDER}`,
-                  background: "#fff",
-                  color: CONTRAST_TEXT_DARK,
-                  fontWeight: 700,
-                  cursor: disabled ? "not-allowed" : "pointer",
-                }}
-              >
-                Skip round
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Q/A log */}
-      <div
-        style={{
-          marginTop: 14,
-          border: `1px solid ${CONTRAST_BORDER}`,
-          background: "#fff",
-          borderRadius: 16,
-          padding: 12,
-          color: CONTRAST_TEXT_DARK,
-        }}
-      >
-        <div style={{ fontWeight: 900, marginBottom: 8 }}>Questions</div>
-
-        <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-          {questions.length === 0 ? (
-            <div style={{ opacity: 0.7, fontSize: "0.95rem" }}>
-              No questions yet. Start with a broad yes/no question.
-            </div>
-          ) : (
-            questions.map((q, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: 10,
-                  borderRadius: 14,
-                  border: `1px solid ${CONTRAST_BORDER}`,
-                  background: CONTRAST_BG_LIGHT,
-                }}
-              >
-                <div style={{ fontWeight: 800 }}>{q.text}</div>
-                <div style={{ marginTop: 6, fontSize: "0.95rem" }}>
-                  {q.answer ? (
-                    <span>
-                      Answer:{" "}
-                      <strong style={{ color: q.answer === "Yes" ? "#16a34a" : "#dc2626" }}>
-                        {q.answer}
-                      </strong>
-                    </span>
-                  ) : (
-                    <span style={{ opacity: 0.75 }}>Awaiting answer…</span>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Yes/No buttons for latest unanswered */}
-        {!roundOver && (
-          <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              disabled={disabled || !canAnswerYesNo}
-              onClick={() => handleAnswerYesNo("Yes")}
-              style={{
-                padding: "10px 16px",
-                borderRadius: 999,
-                border: "none",
-                background: disabled || !canAnswerYesNo ? "#cbd5e1" : "#16a34a",
-                color: "#fff",
+                background: timer <= 10 ? "#fee2e2" : CONTRAST_BG_LIGHT,
+                color: timer <= 10 ? BAD : CONTRAST_TEXT_DARK,
                 fontWeight: 900,
-                cursor: disabled || !canAnswerYesNo ? "not-allowed" : "pointer",
-                minWidth: 120,
+                fontSize: "1.6rem",
+                minWidth: 110,
               }}
             >
-              Yes
-            </button>
-            <button
-              type="button"
-              disabled={disabled || !canAnswerYesNo}
-              onClick={() => handleAnswerYesNo("No")}
-              style={{
-                padding: "10px 16px",
-                borderRadius: 999,
-                border: "none",
-                background: disabled || !canAnswerYesNo ? "#cbd5e1" : "#dc2626",
-                color: "#fff",
-                fontWeight: 900,
-                cursor: disabled || !canAnswerYesNo ? "not-allowed" : "pointer",
-                minWidth: 120,
-              }}
-            >
-              No
-            </button>
+              {timer}s
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Ask + Guess controls */}
-      {!roundOver && (
+        {/* Answerer reveal */}
+        {isAnswerer && !roundOver && (
+          <div style={{ textAlign: "center", margin: "12px 0 16px" }}>
+            <button
+              onMouseDown={handleRevealPress}
+              onMouseUp={handleRevealRelease}
+              onMouseLeave={handleRevealRelease}
+              onTouchStart={handleRevealPress}
+              onTouchEnd={handleRevealRelease}
+              style={{
+                padding: "16px 22px",
+                fontSize: "1.05rem",
+                fontWeight: 800,
+                background: showSecret ? GOOD : ACCENT,
+                color: "#fff",
+                border: "none",
+                borderRadius: 999,
+                cursor: "pointer",
+                boxShadow: "0 8px 18px rgba(99,102,241,0.25)",
+                maxWidth: "100%",
+              }}
+            >
+              {showSecret ? `SECRET: ${secretAnswer}` : `${revealHint} (starts timer)`}
+            </button>
+
+            <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#475569" }}>
+              Tip: Keep your finger down so teammates can’t peek.
+            </div>
+          </div>
+        )}
+
+        {/* Guess/Question controls */}
         <div
           style={{
-            marginTop: 14,
-            border: `1px solid ${CONTRAST_BORDER}`,
-            background: "#fff",
-            borderRadius: 16,
-            padding: 12,
-            color: CONTRAST_TEXT_DARK,
+            display: "grid",
+            gridTemplateColumns: "1fr",
+            gap: 12,
+            marginTop: 6,
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
-            <div>
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Ask a yes/no question</div>
-              <div style={{ display: "flex", gap: 8 }}>
+          {/* Question list */}
+          <div
+            style={{
+              borderRadius: 14,
+              border: `1px solid ${CONTRAST_BORDER}`,
+              background: CONTRAST_BG_LIGHT,
+              padding: 12,
+              maxHeight: 320,
+              overflowY: "auto",
+            }}
+          >
+            <div style={{ fontWeight: 800, color: CONTRAST_TEXT_DARK, marginBottom: 8 }}>
+              Yes/No Questions
+            </div>
+
+            {questions.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: "0.95rem" }}>
+                Ask smart yes/no questions to eliminate possibilities.
+              </div>
+            ) : (
+              questions.map((q, i) => (
+                <div
+                  key={i}
+                  style={{
+                    margin: "10px 0",
+                    padding: 10,
+                    borderRadius: 12,
+                    background: "#ffffff",
+                    border: `1px solid ${CONTRAST_BORDER}`,
+                  }}
+                >
+                  <div style={{ color: CONTRAST_TEXT_DARK, fontWeight: 700 }}>
+                    Player {q.player}:{" "}
+                    <span style={{ fontWeight: 600 }}>{q.text}</span>
+                  </div>
+
+                  <div style={{ marginTop: 8 }}>
+                    {q.answer ? (
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          background: q.answer === "Yes" ? "#dcfce7" : "#fee2e2",
+                          color: q.answer === "Yes" ? GOOD : BAD,
+                          fontWeight: 900,
+                          border: `1px solid ${CONTRAST_BORDER}`,
+                        }}
+                      >
+                        {q.answer}
+                      </span>
+                    ) : isAnswerer && !roundOver ? (
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => handleAnswerYesNo("Yes")}
+                          style={{
+                            padding: "10px 16px",
+                            borderRadius: 999,
+                            border: "none",
+                            background: GOOD,
+                            color: "#fff",
+                            fontWeight: 900,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={() => handleAnswerYesNo("No")}
+                          style={{
+                            padding: "10px 16px",
+                            borderRadius: 999,
+                            border: "none",
+                            background: BAD,
+                            color: "#fff",
+                            fontWeight: 900,
+                            cursor: "pointer",
+                          }}
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ color: "#64748b" }}>Waiting for answerer…</span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Ask question */}
+          {canAskOrGuess && !roundOver && (
+            <div
+              style={{
+                borderRadius: 14,
+                border: `1px solid ${CONTRAST_BORDER}`,
+                background: "#ffffff",
+                padding: 12,
+              }}
+            >
+              <div style={{ fontWeight: 800, color: CONTRAST_TEXT_DARK, marginBottom: 8 }}>
+                Ask a yes/no question
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <input
+                  placeholder="Example: Is it a person? Is it in Canada?"
                   value={questionInput}
                   onChange={(e) => setQuestionInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleAsk()}
-                  placeholder="e.g., Is it a person? Is it found in Canada?"
-                  disabled={disabled}
+                  onKeyDown={(e) => e.key === "Enter" && handleAskQuestion()}
                   style={{
-                    flex: 1,
-                    padding: "10px 12px",
+                    flex: "1 1 320px",
+                    padding: 12,
                     borderRadius: 12,
                     border: `1px solid ${CONTRAST_BORDER}`,
-                    outline: "none",
-                    fontSize: "0.95rem",
+                    fontSize: "1rem",
                   }}
                 />
                 <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={handleAsk}
+                  onClick={handleAskQuestion}
                   style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
+                    padding: "12px 16px",
+                    borderRadius: 999,
                     border: "none",
-                    background: disabled ? "#94a3b8" : CONTRAST_ACCENT,
+                    background: ACCENT,
                     color: "#fff",
                     fontWeight: 900,
-                    cursor: disabled ? "not-allowed" : "pointer",
+                    cursor: "pointer",
                   }}
                 >
                   Ask
                 </button>
               </div>
             </div>
+          )}
 
-            <div>
-              <div style={{ fontWeight: 900, marginBottom: 6 }}>Make a guess</div>
-              <div style={{ display: "flex", gap: 8 }}>
+          {/* Guess */}
+          {canAskOrGuess && !roundOver && (
+            <div
+              style={{
+                borderRadius: 14,
+                border: `1px solid ${CONTRAST_BORDER}`,
+                background: "#ffffff",
+                padding: 12,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ fontWeight: 800, color: CONTRAST_TEXT_DARK }}>
+                  Make a guess
+                </div>
+                <div style={{ color: "#475569", fontWeight: 700 }}>
+                  Guesses: {guessCount}/{maxGuesses} • Left: {guessesLeft}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <input
+                  placeholder="Type your guess…"
                   value={guessInput}
                   onChange={(e) => setGuessInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleGuess()}
-                  placeholder="Type your guess…"
-                  disabled={disabled || guessCount >= maxGuesses}
+                  onKeyDown={(e) => e.key === "Enter" && handleMakeGuess()}
                   style={{
-                    flex: 1,
-                    padding: "10px 12px",
+                    flex: "1 1 260px",
+                    padding: 12,
                     borderRadius: 12,
                     border: `1px solid ${CONTRAST_BORDER}`,
-                    outline: "none",
-                    fontSize: "0.95rem",
+                    fontSize: "1rem",
                   }}
                 />
                 <button
-                  type="button"
-                  disabled={disabled || guessCount >= maxGuesses}
-                  onClick={handleGuess}
+                  onClick={handleMakeGuess}
+                  disabled={guessCount >= maxGuesses}
                   style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
+                    padding: "12px 16px",
+                    borderRadius: 999,
                     border: "none",
-                    background: disabled || guessCount >= maxGuesses ? "#94a3b8" : "#111827",
+                    background: guessCount >= maxGuesses ? "#9ca3af" : GOOD,
                     color: "#fff",
                     fontWeight: 900,
-                    cursor: disabled || guessCount >= maxGuesses ? "not-allowed" : "pointer",
+                    cursor: guessCount >= maxGuesses ? "not-allowed" : "pointer",
                   }}
                 >
-                  Guess
+                  Guess!
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* End-of-round overlay */}
-      {roundOver && result && (
+          {/* End state */}
+          {roundOver && (
+            <div style={{ textAlign: "center", marginTop: 6 }}>
+              <div style={{ fontSize: "1.6rem", fontWeight: 900, color: CONTRAST_TEXT_DARK }}>
+                {winnerThisRound ? "🎉 Correct!" : "⏳ Round Over"}
+              </div>
+              <div style={{ marginTop: 8, color: "#475569", fontWeight: 700 }}>
+                {winnerThisRound ? "Nice deduction." : `Answer was: ${secretAnswer}`}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Overlay */}
+      {submissionFeedback && (
         <div
           style={{
             position: "fixed",
             inset: 0,
             background: "rgba(0,0,0,0.88)",
-            zIndex: 2000,
+            zIndex: 1000,
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            padding: 18,
-            textAlign: "center",
             color: "#fff",
+            textAlign: "center",
+            padding: 20,
           }}
         >
-          <div style={{ width: "min(680px, 100%)" }}>
-            <div style={{ fontSize: "2.1rem", fontWeight: 1000, lineHeight: 1.1 }}>
-              {result.ok ? "🎉 Nice work!" : "⏳ Round over"}
-            </div>
-            <div style={{ marginTop: 14, fontSize: "1.25rem", opacity: 0.95 }}>
-              {result.message}
-            </div>
-
-            <div style={{ marginTop: 18, fontSize: "1.05rem", opacity: 0.9 }}>
-              {overlaySeconds > 0 ? (
-                <>Next round in <strong>{overlaySeconds}s</strong>…</>
-              ) : (
-                <>Ready.</>
-              )}
-            </div>
-
-            <div style={{ marginTop: 18 }}>
-              <button
-                type="button"
-                onClick={goNext}
-                disabled={overlaySeconds > 0}
-                style={{
-                  padding: "12px 18px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: overlaySeconds > 0 ? "#64748b" : "#16a34a",
-                  color: "#fff",
-                  fontWeight: 1000,
-                  cursor: overlaySeconds > 0 ? "not-allowed" : "pointer",
-                  minWidth: 220,
-                }}
-              >
-                {roundIndex < secretAnswers.length - 1 ? "Next round →" : "Finish →"}
-              </button>
-            </div>
+          <div style={{ fontSize: "2.2rem", fontWeight: 900, marginBottom: 18 }}>
+            {submissionFeedback.message}
+          </div>
+          <div style={{ fontSize: "1.1rem", color: "#e2e8f0" }}>
+            Next round in <span style={{ fontWeight: 900 }}>{overlayTimer}s</span>…
           </div>
         </div>
       )}

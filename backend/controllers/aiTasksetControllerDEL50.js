@@ -29,9 +29,6 @@ const retryMustHave = {
 
   [TASK_TYPES.DIFF_DETECTIVE]:
     'DIFF_DETECTIVE must include two short texts to compare: config.textA and config.textB (3–6 sentences each) with 5–8 subtle but detectable differences.',
-  [TASK_TYPES.GUESS_WHO]:
-    'GUESS_WHO must include config.playerCount (2–6), config.secretAnswers (array length = playerCount), config.category (string), config.maxGuesses (<=15), and config.timerSeconds (<=180). Intra-team only. Hold-to-reveal secret for answerer, yes/no Q&A, and limited guesses.',
-
 };
 
 const client = new OpenAI({
@@ -179,10 +176,6 @@ function normalizeSelectedType(raw) {
   // Post-taskset
   if (v === "multi-player-feedback" || v === "multiplayerfeedback" || v === "feedback")
     return TASK_TYPES.MULTI_PLAYER_FEEDBACK;
-
-
-  if (v === "guess-who" || v === "guesswho" || v === "guess_who")
-    return TASK_TYPES.GUESS_WHO;
 
   return null;
 }
@@ -727,7 +720,6 @@ ${coverAllLine}
 - For JEOPARDY/BrainBlitz tasks: include clues (>=3) with {clue, answer}
 - For FLASHCARDS tasks: include config.items (>=5) with {question, answer}
 - For DIFF_DETECTIVE tasks: include config.textA and config.textB (3–6 sentences each) with 5–8 subtle differences.
-- For GUESS_WHO tasks: include config.playerCount (2–6), config.secretAnswers (array length = playerCount; each is a single concept), config.category (string), config.maxGuesses (<=15, default 10), config.timerSeconds (<=180, default 60). The secretAnswers should be chosen ONLY from aiWordBank when possible. Do NOT include inter-team gameplay.
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
 - TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
 - For HANGMAN_DUEL tasks:
@@ -1012,80 +1004,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         };
       }
 
-      
-      // -------- GUESS WHO normalization --------
-      else if (taskType === TASK_TYPES.GUESS_WHO) {
-        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
-        const playerCount = clampInt(
-          t.playerCount ?? aiConfig.playerCount ?? aiConfig.players,
-          2,
-          6,
-          4
-        );
-
-        // secretAnswers: one per round/player
-        let secretAnswers =
-          Array.isArray(aiConfig.secretAnswers) ? aiConfig.secretAnswers
-          : Array.isArray(t.secretAnswers) ? t.secretAnswers
-          : Array.isArray(t.answers) ? t.answers
-          : [];
-
-        secretAnswers = secretAnswers
-          .map((s) => String(s || "").trim())
-          .filter(Boolean);
-
-        // If insufficient, choose from word bank (unique, shuffled)
-        if (secretAnswers.length < playerCount) {
-          const pool = shuffleArray(rawWordBank.map((w) => String(w).trim()).filter(Boolean));
-          for (const w of pool) {
-            if (secretAnswers.length >= playerCount) break;
-            if (!secretAnswers.includes(w)) secretAnswers.push(w);
-          }
-        }
-
-        // Absolute fallback placeholders
-        while (secretAnswers.length < playerCount) {
-          secretAnswers.push(`Mystery ${secretAnswers.length + 1}`);
-        }
-
-        const timerSeconds = clampInt(
-          t.timerSeconds ?? aiConfig.timerSeconds ?? t.timeLimitSeconds,
-          15,
-          180,
-          60
-        );
-
-        const maxGuesses = clampInt(
-          t.maxGuesses ?? aiConfig.maxGuesses,
-          3,
-          15,
-          10
-        );
-
-        const category = isNonEmptyString(aiConfig.category)
-          ? String(aiConfig.category).trim().slice(0, 60)
-          : isNonEmptyString(t.category)
-          ? String(t.category).trim().slice(0, 60)
-          : "Guess Who";
-
-        config = {
-          ...aiConfig,
-          playerCount,
-          secretAnswers: secretAnswers.slice(0, playerCount),
-          timerSeconds,
-          maxGuesses,
-          category,
-          interTeamEnabled: false,
-          intraTeamEnabled: true,
-        };
-
-        // GuessWho is an in-device deduction game; no AI scoring required.
-        options = [];
-        items = [];
-        correctAnswer = null;
-      }
-
-// -------- MULTIPLE CHOICE normalization (single vs multi) --------
+      // -------- MULTIPLE CHOICE normalization (single vs multi) --------
       if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
         if (Array.isArray(t.items) && t.items.length) {
           t.__needsRetry = true;
@@ -1871,8 +1790,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         taskType === TASK_TYPES.SEQUENCE ||
         taskType === TASK_TYPES.MIND_MAPPER ||
         taskType === TASK_TYPES.JEOPARDY ||
-        taskType === TASK_TYPES.BRAIN_SPARK_NOTES ||
-        taskType === TASK_TYPES.GUESS_WHO
+        taskType === TASK_TYPES.BRAIN_SPARK_NOTES
       ) {
         correctAnswer = null;
       }
@@ -1880,8 +1798,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       // --- aiScoringRequired: objective types default false ---
       let aiScoringRequired;
       if (typeof t.aiScoringRequired === "boolean") aiScoringRequired = t.aiScoringRequired;
-      else if \(objective\) aiScoringRequired = false;
-      else if (taskType === TASK_TYPES.GUESS_WHO) aiScoringRequired = false;
+      else if (objective) aiScoringRequired = false;
       else if (typeof meta.defaultAiScoringRequired === "boolean")
         aiScoringRequired = meta.defaultAiScoringRequired;
       else aiScoringRequired = true;

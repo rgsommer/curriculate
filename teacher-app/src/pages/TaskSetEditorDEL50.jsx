@@ -75,17 +75,6 @@ function prettyCategory(typeValue) {
   return cat.charAt(0).toUpperCase() + cat.slice(1);
 }
 
-function playModeLabel(typeValue) {
-  const meta = TASK_TYPE_META[typeValue] || {};
-  const intra = meta.intraTeamEnabled === true;
-  const inter = meta.interTeamEnabled === true;
-
-  if (inter && intra) return "inter + intra";
-  if (inter) return "inter-team";
-  if (intra) return "intra-team";
-  return "solo";
-}
-
 export default function TaskSetEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -973,10 +962,7 @@ export default function TaskSetEditor() {
                     >
                       {prettyCategory(task.taskType)} •{" "}
                       {TASK_TYPE_META[task.taskType]?.label ||
-                        task.taskType}{" "}
-                      <span style={{ color: "#9ca3af" }}>
-                        · {playModeLabel(task.taskType)}
-                      </span>
+                        task.taskType}
                     </span>
                   </div>
                   <div

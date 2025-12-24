@@ -11,17 +11,9 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
-// AI-eligible *generator* types (mirror backend intent):
-// - implemented: must have a working student UI + schema
-// - generatorEligible: safe for AI to generate as a standalone task
-// - aiEligible: can be produced by the AI pipeline (some types are manual/teacher-only)
+// AI-eligible types (same filter as backend)
 const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(
-    ([, meta]) =>
-      meta.implemented !== false &&
-      meta.generatorEligible !== false &&
-      meta.aiEligible !== false
-  )
+  .filter(([, meta]) => meta.implemented !== false && meta.aiEligible !== false)
   .map(([type]) => type);
 
 export default function AiTasksetGenerator() {
@@ -60,12 +52,6 @@ export default function AiTasksetGenerator() {
 
   const [limitTasks, setLimitTasks] = useState(false);
   const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
-
-  // Task-type filters (UI-only). "Competitive" is a category, not a taskType.
-  const [taskTypeCategory, setTaskTypeCategory] = useState("all"); // e.g., "competitive"
-  const [onlyIntraTeam, setOnlyIntraTeam] = useState(false);
-  const [onlyInterTeam, setOnlyInterTeam] = useState(false);
-
 
   // Vocabulary / key terms (REQUIRED)
   const [wordListText, setWordListText] = useState(prefillWordText);
@@ -312,40 +298,6 @@ export default function AiTasksetGenerator() {
     } finally {
       setGenerating(false);
     }
-  };
-
-
-  const ALL_CATEGORIES = Array.from(
-    new Set(
-      Object.values(TASK_TYPE_META)
-        .map((m) => String(m?.category || "other").toLowerCase())
-        .filter(Boolean)
-    )
-  ).sort();
-
-  const filteredEligibleTypes = AI_ELIGIBLE_TYPES.filter((type) => {
-    const meta = TASK_TYPE_META[type] || {};
-    const cat = String(meta.category || "other").toLowerCase();
-    if (taskTypeCategory !== "all" && cat !== taskTypeCategory) return false;
-    if (onlyIntraTeam && meta.intraTeamEnabled !== true) return false;
-    if (onlyInterTeam && meta.interTeamEnabled !== true) return false;
-    return true;
-  });
-
-  const toggleAllFiltered = () => {
-    setSelectedTaskTypes((prev) => {
-      const set = new Set(prev);
-      const all = filteredEligibleTypes;
-      const everySelected = all.length > 0 && all.every((t) => set.has(t));
-      if (everySelected) {
-        // remove all filtered
-        all.forEach((t) => set.delete(t));
-      } else {
-        // add all filtered
-        all.forEach((t) => set.add(t));
-      }
-      return Array.from(set);
-    });
   };
 
   const renderTaskTypeBadge = (type) => {
@@ -797,105 +749,14 @@ export default function AiTasksetGenerator() {
             </span>
           </label>
           {limitTasks && (
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  gap: 10,
-                  marginBottom: 10,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: "0.85rem", color: "#374151" }}>
-                    Filter:
-                  </span>
-                  <select
-                    value={taskTypeCategory}
-                    onChange={(e) => setTaskTypeCategory(e.target.value)}
-                    style={{
-                      borderRadius: 8,
-                      border: "1px solid #d1d5db",
-                      padding: "6px 10px",
-                      fontSize: "0.85rem",
-                      background: "#ffffff",
-                    }}
-                  >
-                    <option value="all">All categories</option>
-                    {ALL_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c.charAt(0).toUpperCase() + c.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: "0.85rem",
-                    color: "#374151",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={onlyIntraTeam}
-                    onChange={(e) => setOnlyIntraTeam(e.target.checked)}
-                  />
-                  Only intra-team
-                </label>
-
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: "0.85rem",
-                    color: "#374151",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={onlyInterTeam}
-                    onChange={(e) => setOnlyInterTeam(e.target.checked)}
-                  />
-                  Only inter-team
-                </label>
-
-                <button
-                  type="button"
-                  onClick={toggleAllFiltered}
-                  style={{
-                    borderRadius: 999,
-                    padding: "6px 12px",
-                    fontSize: "0.85rem",
-                    border: "1px solid #d1d5db",
-                    background: "#ffffff",
-                    cursor: "pointer",
-                  }}
-                >
-                  Toggle all shown
-                </button>
-
-                <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                  Showing {filteredEligibleTypes.length} types
-                </span>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                }}
-              >
-              {filteredEligibleTypes.map(renderTaskTypeBadge)}
-              </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              {AI_ELIGIBLE_TYPES.map(renderTaskTypeBadge)}
             </div>
           )}
         </div>

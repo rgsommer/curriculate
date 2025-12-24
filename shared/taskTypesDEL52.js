@@ -70,9 +70,6 @@ export const TASK_TYPES = {
   LIVE_DEBATE: "live-debate",
   AI_DEBATE_JUDGE: "ai-debate-judge",
 
-  // Brainstorming
-  BRAINSTORM_BATTLE: "brainstorm-battle",
-
   // Deduction / clue-based
   MYSTERY_CLUES: "mystery-clues",
   FAKE_OUT: "fake-out",
@@ -92,6 +89,10 @@ export const TASK_TYPES = {
   // Physical / scavenger
   HIDENSEEK: "hidenseek",
   MULTI_ROOM_SCAVENGER_HUNT: "multi-room-scavenger-hunt",
+
+  // NEW (placeholder): “Competitive” wrapper task (only if you truly use it as a taskType)
+  // If Competitive is intended to be a CATEGORY only (recommended), do NOT use this type in live task sets.
+  COMPETITIVE: "competitive",
 };
 
 // Category labels (for grouping & UI)
@@ -106,7 +107,6 @@ const CATEGORY = {
   FEEDBACK: "feedback/meta",
   SYNTHESIS: "synthesis",
   OTHER: "other",
-  RECALL: "recall",
 };
 
 // Small helper: ensure all meta objects include the same “capability surface”.
@@ -633,7 +633,7 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.FLASHCARDS]: metaBase({
     label: "Flashcards",
-    category: CATEGORY.RECALL,
+    category: CATEGORY.REVIEW,
     implemented: true,
     aiEligible: true,
     generatorEligible: true,
@@ -1039,6 +1039,20 @@ export const TASK_TYPE_META = {
   // =========================
   // COMPETITIVE (placeholder type)
   // =========================
+
+  [TASK_TYPES.COMPETITIVE]: metaBase({
+    label: "Competitive (Wrapper)",
+    category: CATEGORY.COMPETITIVE,
+    implemented: false,
+    aiEligible: false,
+    generatorEligible: false,
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    description:
+      "Placeholder taskType. Prefer using COMPETITIVE as a CATEGORY, not a taskType. Only keep this if you truly emit taskType='competitive' from the backend.",
+  }),
 };
 
 // Flat map of taskType → human-readable label
