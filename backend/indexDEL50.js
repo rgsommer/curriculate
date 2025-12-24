@@ -390,10 +390,6 @@ async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom")
     madDashSequence: null,
     diffDetectiveRace: null,
     flashcardsRace: null,
-    // ==== GUESS WHO (YES/NO DEDUCTION) STATE ====
-    // Per-taskKey state; each team has its own timer/guess count.
-    // { [taskKey]: { taskKey, timeLimitSeconds, maxGuesses, startedAtByTeam: { [teamId]: ms }, guessesByTeam: { [teamId]: number }, revealedByTeam: { [teamId]: boolean } } }
-    guessWhoGames: {},
   };
 
   // Load existing teams from DB
@@ -855,35 +851,6 @@ function sendTaskToTeam(room, teamId, index) {
       });
     }
   }
-
-
-// If this is a Guess Who (yes/no deduction) task, initialise per-team state
-if (task.taskType === "guess-who") {
-  const taskKey = `${room.code}:guess-who:${index}`;
-  if (!room.guessWhoGames) room.guessWhoGames = {};
-  if (!room.guessWhoGames[taskKey]) {
-    room.guessWhoGames[taskKey] = {
-      taskKey,
-      taskIndex: index,
-      timeLimitSeconds:
-        Number(task.timeLimitSeconds) > 0 ? Number(task.timeLimitSeconds) : 60,
-      maxGuesses: Number(task.maxGuesses) > 0 ? Number(task.maxGuesses) : 10,
-      startedAtByTeam: {},
-      guessesByTeam: {},
-      revealedByTeam: {},
-    };
-  }
-  // Ensure team counters exist
-  const game = room.guessWhoGames[taskKey];
-  if (game && teamId) {
-    if (typeof game.guessesByTeam?.[teamId] !== "number") {
-      game.guessesByTeam[teamId] = 0;
-    }
-    if (typeof game.revealedByTeam?.[teamId] !== "boolean") {
-      game.revealedByTeam[teamId] = false;
-    }
-  }
-}
 
   room.teams[teamId].taskIndex = index;
 
@@ -2637,107 +2604,6 @@ const code = (roomCode || "").toUpperCase();
     // ----------------------------
     const isVennSort = task.taskType === "vennsort" || task.taskType === "venn-sort";
 
-// Guess Who (yes/no deduction) – custom scoring: points scale by time + guess count
-if (!isMultiPack && task.taskType === "guess-who") {
-  const normalizeText = (v) =>
-    String(v ?? "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, " ");
-
-  const correctAnswer =
-    task.secretConcept ??
-    task.secret ??
-    task.concept ??
-    task.answer ??
-    task.correctAnswer ??
-    (task.payload && (task.payload.secretConcept || task.payload.correctAnswer)) ??
-    "";
-
-  const submitted = normalizeText(answerText || answer);
-  const expected = normalizeText(correctAnswer);
-
-  // Establish per-team game state
-  const taskKey = `${room.code}:guess-who:${idx}`;
-  if (!room.guessWhoGames) room.guessWhoGames = {};
-  if (!room.guessWhoGames[taskKey]) {
-    room.guessWhoGames[taskKey] = {
-      taskKey,
-      taskIndex: idx,
-      timeLimitSeconds:
-        Number(task.timeLimitSeconds) > 0 ? Number(task.timeLimitSeconds) : 60,
-      maxGuesses: Number(task.maxGuesses) > 0 ? Number(task.maxGuesses) : 10,
-      startedAtByTeam: {},
-      guessesByTeam: {},
-      revealedByTeam: {},
-    };
-  }
-  const game = room.guessWhoGames[taskKey];
-
-  if (!game.startedAtByTeam[effectiveTeamId]) {
-    // If the client didn't emit reveal (edge case), start timer on first guess
-    game.startedAtByTeam[effectiveTeamId] = Date.now();
-  }
-  const startedAt = game.startedAtByTeam[effectiveTeamId];
-  const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000);
-
-  const prevGuesses = typeof game.guessesByTeam[effectiveTeamId] === "number" ? game.guessesByTeam[effectiveTeamId] : 0;
-  const guessNum = prevGuesses + 1;
-  game.guessesByTeam[effectiveTeamId] = guessNum;
-
-  const isCorrect = expected.length > 0 && submitted.length > 0 && submitted === expected;
-
-  // Scoring: start with time-based score then apply per-guess penalty
-  const limit = Number(game.timeLimitSeconds) > 0 ? Number(game.timeLimitSeconds) : 60;
-  const maxGuesses = Number(game.maxGuesses) > 0 ? Number(game.maxGuesses) : 10;
-
-  let timeFactor = 1;
-  if (limit > 0) timeFactor = Math.max(0, Math.min(1, 1 - elapsedSec / limit));
-
-  // More points for quicker identification; keep at least 1 for a correct answer
-  const timeScore = Math.round(basePoints * timeFactor);
-
-  // Penalize extra guesses (first guess is "free" in this model)
-  const guessPenalty = Math.max(0, guessNum - 1);
-
-  let numericScore = 0;
-  if (isCorrect) {
-    numericScore = Math.max(1, timeScore - guessPenalty);
-  } else {
-    // Wrong guess: 0 points
-    numericScore = 0;
-  }
-
-  // If they exceed max guesses, force 0 unless they already got it correct on/before max
-  const maxReached = guessNum >= maxGuesses;
-  if (!isCorrect && guessNum > maxGuesses) numericScore = 0;
-
-  aiScore = {
-    strategy: "guess-who-rule-based",
-    correct: !!isCorrect,
-    numericScore,
-    elapsedSec: Math.round(elapsedSec * 10) / 10,
-    guessesUsed: guessNum,
-    maxGuesses,
-    timeLimitSeconds: limit,
-    maxReached,
-    expected: correctAnswer || null,
-  };
-
-  correct = !!isCorrect;
-
-  // Let the client update its UI (guess count, timer start, etc.)
-  io.to(effectiveTeamId).emit("guess-who:state", {
-    taskKey,
-    taskIndex: idx,
-    startedAt,
-    guessesUsed: guessNum,
-    maxGuesses,
-    timeLimitSeconds: limit,
-    lastGuessCorrect: !!isCorrect,
-  });
-}
-
     if (!isMultiPack && task.taskType === "matching") {
       const scored = scoreMatchingTask(task, answer, basePoints);
       aiScore = scored.aiScore;
@@ -2752,7 +2618,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
       pointsEarned = scored.pointsEarned;
     }
 
-    if (!isMultiPack && !isObjective && !aiScore) {
+    if (!isMultiPack && !isObjective) {
       try {
         aiScore = await generateAIScore({
           task,
@@ -3001,71 +2867,6 @@ if (!isMultiPack && task.taskType === "guess-who") {
     // sendTaskToTeam(room, teamId, (team.taskIndex ?? -1) + 1);
 
   });
-
-// Guess Who (yes/no deduction) – start timer on first reveal (hold-to-reveal on client)
-socket.on("guess-who:reveal", (payload = {}, ack) => {
-  try {
-    const { roomCode, teamId, taskIndex } = payload || {};
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room || !teamId) {
-      if (typeof ack === "function") ack({ ok: false, error: "Room or team not found" });
-      return;
-    }
-
-    const idx = Number.isFinite(Number(taskIndex)) ? Number(taskIndex) : room.teams?.[teamId]?.taskIndex ?? 0;
-    const taskKey = `${room.code}:guess-who:${idx}`;
-
-    if (!room.guessWhoGames) room.guessWhoGames = {};
-    if (!room.guessWhoGames[taskKey]) {
-      // Fallback init in case sendTaskToTeam didn't run (e.g., resume edge cases)
-      const tasks = Array.isArray(room.taskset?.tasks) ? room.taskset.tasks : [];
-      const task = tasks[idx] || {};
-      room.guessWhoGames[taskKey] = {
-        taskKey,
-        taskIndex: idx,
-        timeLimitSeconds:
-          Number(task.timeLimitSeconds) > 0 ? Number(task.timeLimitSeconds) : 60,
-        maxGuesses: Number(task.maxGuesses) > 0 ? Number(task.maxGuesses) : 10,
-        startedAtByTeam: {},
-        guessesByTeam: {},
-        revealedByTeam: {},
-      };
-    }
-
-    const game = room.guessWhoGames[taskKey];
-    if (!game.startedAtByTeam[teamId]) {
-      game.startedAtByTeam[teamId] = Date.now();
-    }
-    game.revealedByTeam[teamId] = true;
-    if (typeof game.guessesByTeam[teamId] !== "number") game.guessesByTeam[teamId] = 0;
-
-    // Notify only this team (teacher can still see via submissions/host view if desired)
-    io.to(teamId).emit("guess-who:state", {
-      taskKey,
-      taskIndex: idx,
-      startedAt: game.startedAtByTeam[teamId],
-      guessesUsed: game.guessesByTeam[teamId],
-      maxGuesses: game.maxGuesses,
-      timeLimitSeconds: game.timeLimitSeconds,
-    });
-
-    if (typeof ack === "function") {
-      ack({
-        ok: true,
-        taskKey,
-        startedAt: game.startedAtByTeam[teamId],
-        guessesUsed: game.guessesByTeam[teamId],
-        maxGuesses: game.maxGuesses,
-        timeLimitSeconds: game.timeLimitSeconds,
-      });
-    }
-  } catch (e) {
-    console.error("[guess-who:reveal] error", e);
-    if (typeof ack === "function") ack({ ok: false, error: "Server error" });
-  }
-});
-
 
   socket.on("task:submit", (payload, ack) => {
     handleStudentSubmit(payload, ack);
