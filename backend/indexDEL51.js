@@ -2753,6 +2753,35 @@ if (!isMultiPack && task.taskType === "guess-who") {
     }
 
     if (!isMultiPack && !isObjective && !aiScore) {
+      try {
+        aiScore = await generateAIScore({
+          task,
+          rubric: task.aiRubric || null,
+          submission: submissionForScoring,
+        });
+      } catch (e) {
+        console.error("AI / rule-based scoring failed:", e);
+      }
+
+      const submittedAt = Date.now();
+
+      const aiNumericScore =
+        aiScore && typeof aiScore.score === "number"
+          ? aiScore.score
+          : aiScore && typeof aiScore.totalScore === "number"
+          ? aiScore.totalScore
+          : null;
+
+      correct = (() => {
+        // Prefer AI / central scorer when available (AI or rule-based)
+        if (aiNumericScore != null) {
+          return aiNumericScore > 0;
+        }
+        // Fallback: legacy behaviour for simple correctAnswer tasks
+        if (task.correctAnswer == null) return null;
+        return String(answer).trim() === String(task.correctAnswer).trim();
+      })();
+
       // “Evidence tasks” are ones that don’t expect text and don’t have options,
       // e.g. photo, make-and-snap, body-break, etc.
       const isEvidenceTask =
@@ -2767,76 +2796,30 @@ if (!isMultiPack && task.taskType === "guess-who") {
           ? Object.keys(answer).length > 0
           : true);
 
-      // Some tasks should *never* auto-score (AI or rule-based). Example: NarrationSynthesize.
-      // These are participation / peer-evaluation tasks. Award points on evidence.
-      const noAutoScoring = meta?.noAutoScoring === true;
-
-      if (noAutoScoring) {
-        const submittedAt = Date.now();
-        correct = null;
-        pointsEarned = hasEvidence ? basePoints : 0;
-        aiScore = {
-          strategy: "participation-no-auto-scoring",
-          maxPoints: basePoints,
-          totalScore: pointsEarned,
-        };
-        // We'll use submittedAt again below, so keep it in scope:
-        var submittedAtNonMulti = submittedAt;
+      // 🔹 Special: SORT tasks send a percentage score from the front-end
+      if (
+        task.taskType === "sort" &&
+        answer &&
+        typeof answer === "object" &&
+        typeof answer.score === "number"
+      ) {
+        const pct = Math.max(0, Math.min(100, answer.score));
+        pointsEarned = Math.round((pct / 100) * basePoints);
+      } else if (aiNumericScore != null) {
+        // Use the central scorer's numeric score (may be partial credit)
+        pointsEarned = aiNumericScore;
+      } else if (correct === true) {
+        // Normal case: exact match says it's correct → full points
+        pointsEarned = basePoints;
+      } else if (correct === null && isEvidenceTask && hasEvidence) {
+        // Evidence tasks with "something" submitted get full credit.
+        pointsEarned = basePoints;
       } else {
-        try {
-          aiScore = await generateAIScore({
-            task,
-            rubric: task.aiRubric || null,
-            submission: submissionForScoring,
-          });
-        } catch (e) {
-          console.error("AI / rule-based scoring failed:", e);
-        }
-
-        const submittedAt = Date.now();
-
-        const aiNumericScore =
-          aiScore && typeof aiScore.score === "number"
-            ? aiScore.score
-            : aiScore && typeof aiScore.totalScore === "number"
-            ? aiScore.totalScore
-            : null;
-
-        correct = (() => {
-          // Prefer AI / central scorer when available (AI or rule-based)
-          if (aiNumericScore != null) {
-            return aiNumericScore > 0;
-          }
-          // Fallback: legacy behaviour for simple correctAnswer tasks
-          if (task.correctAnswer == null) return null;
-          return String(answer).trim() === String(task.correctAnswer).trim();
-        })();
-
-        // 🔹 Special: SORT tasks send a percentage score from the front-end
-        if (
-          task.taskType === "sort" &&
-          answer &&
-          typeof answer === "object" &&
-          typeof answer.score === "number"
-        ) {
-          const pct = Math.max(0, Math.min(100, answer.score));
-          pointsEarned = Math.round((pct / 100) * basePoints);
-        } else if (aiNumericScore != null) {
-          // Use the central scorer's numeric score (may be partial credit)
-          pointsEarned = aiNumericScore;
-        } else if (correct === true) {
-          // Normal case: exact match says it's correct → full points
-          pointsEarned = basePoints;
-        } else if (correct === null && isEvidenceTask && hasEvidence) {
-          // Evidence tasks with "something" submitted get full credit.
-          pointsEarned = basePoints;
-        } else {
-          pointsEarned = 0;
-        }
-
-        // We'll use submittedAt again below, so keep it in scope:
-        var submittedAtNonMulti = submittedAt;
+        pointsEarned = 0;
       }
+
+      // We'll use submittedAt again below, so keep it in scope:
+      var submittedAtNonMulti = submittedAt;
     }
 
     // If we’re in the multi-pack path, we still need a timestamp

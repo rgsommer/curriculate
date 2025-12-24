@@ -99,46 +99,6 @@ function buildLatestPhotoByTeam(submissions = []) {
   return out;
 }
 
-
-function summarizeNarrationSubmission(sub) {
-  // Supports various shapes: sub.ratings, sub.data.ratings, sub.data.peerRatings
-  const ratings =
-    (Array.isArray(sub?.ratings) ? sub.ratings : null) ||
-    (Array.isArray(sub?.data?.ratings) ? sub.data.ratings : null) ||
-    (Array.isArray(sub?.data?.peerRatings) ? sub.data.peerRatings : null) ||
-    null;
-
-  if (!ratings || ratings.length === 0) return null;
-
-  const nums = ratings
-    .map((v) => Number(v))
-    .filter((n) => Number.isFinite(n));
-
-  if (nums.length === 0) return null;
-
-  const sum = nums.reduce((a, b) => a + b, 0);
-  const avg = sum / nums.length;
-
-  // Determine scale if present
-  const scale =
-    sub?.ratingScale ||
-    sub?.data?.ratingScale ||
-    sub?.task?.config?.ratingScale ||
-    sub?.taskConfig?.ratingScale ||
-    null;
-
-  const max =
-    scale && Number(scale.max) > 0 ? Number(scale.max) :
-    // common default
-    5;
-
-  return {
-    avg,
-    count: nums.length,
-    max,
-  };
-}
-
 function stationIdToColor(id) {
   const m = /^station-(\d+)$/.exec(id || "");
   const idx = m ? parseInt(m[1], 10) - 1 : -1;
@@ -2834,17 +2794,11 @@ Precipitation — rain, snow, hail`}
                     packSummary = `${s.aiScore.correctCount}/${s.aiScore.totalItems} correct`;
                   }
 
-                  const narrationSummary = summarizeNarrationSubmission(s);
-
                   const trimmedAnswer =
                     s.answerText && s.answerText.length > 120
                       ? s.answerText.slice(0, 117) + "…"
                       : s.answerText || "";
 
-                  const narrationLine =
-                    narrationSummary
-                      ? `Narration ratings: ${narrationSummary.avg.toFixed(1)} / ${narrationSummary.max} (${narrationSummary.count} ratings)`
-                      : "";
                   return (
                     <div
                       key={`${s.teamId}-${s.taskIndex}`}
@@ -2882,20 +2836,7 @@ Precipitation — rain, snow, hail`}
                           {packSummary}
                         </div>
                       )}
-                                          {narrationLine && (
-                      <div
-                        style={{
-                          fontSize: "0.75rem",
-                          color: "#0369a1",
-                          marginBottom: 4,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {narrationLine}
-                      </div>
-                    )}
-
-{trimmedAnswer && (
+                     {trimmedAnswer && (
                       <div
                         style={{
                           fontSize: "0.75rem",

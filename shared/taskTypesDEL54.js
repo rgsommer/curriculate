@@ -903,16 +903,16 @@ export const TASK_TYPE_META = {
     label: "Narration Synthesize",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
-    noAutoScoring: true,
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
+    quickTaskEligible: true,
     maxTimeSeconds: 60,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Turn-based oral teach-back / narration. Each player receives a DIFFERENT AI-generated concept prompt (an explainable concept or process, not just a single word). Players read their prompt out loud, then narrate/teach it to their teammates. When finished, they tap “Finished” to advance to the next player. After each narration, the other players quickly rate the narration using a simple slider (e.g., clarity/accuracy/quality).\n\nTASK DATA SHAPE (IMPORTANT): Put all per-player prompts in task.config.prompts as an array, one per player: [{ id, concept, prompt }]. Also set task.config.playerCount (number) and optional task.config.perTurnSeconds (0 disables the timer). Rating config goes in task.config.ratingScale: { min, max, label }.\n\nAI GENERATION GUIDANCE: Generate prompts that require synthesis (explain steps, causes/effects, compare/contrast, how-to processes). Make each prompt distinct so every player teaches something different. Keep each prompt short enough to read quickly but deep enough to require real explanation (2–4 sentences). This is INTRA-TEAM only; do not create inter-team mechanics.",
+      "Turn-based oral teach-back. Each player gets an AI-generated concept prompt and narrates aloud to the group. Others rate the explanation on a simple slider (clarity/accuracy/quality). Builds synthesis, verbal articulation, and learning-by-explaining.",
   }),
 
   [TASK_TYPES.ROLE_PLAY]: metaBase({

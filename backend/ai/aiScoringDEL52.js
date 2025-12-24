@@ -1311,81 +1311,6 @@ async function scoreSpeechRecognition({ task, submission, rubric }) {
   };
 }
 
-// --- SPECIAL CASE: NARRATION SYNTHESIZE (PEER-RATED, NO OPENAI) ---
-// NarrationSynthesize is an oral, intra-team teach-back. It should NOT be AI-scored.
-// The client submits peer ratings (slider) and completion signals; we translate that
-// into a demo-friendly score and a short, encouraging feedback message.
-// Expected (flexible) submission shapes:
-//   { ratings: number[] }
-//   { data: { ratings: number[] } }
-//   { answer: { ratings: number[] } }
-// Rating scale is taken from task.config.ratingScale: { min, max, label } (defaults 1..5).
-function scoreNarrationSynthesize({ task, submission }) {
-  const points = typeof task.points === "number" ? task.points : 10;
-
-  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
-  const scale = cfg?.ratingScale && typeof cfg.ratingScale === "object" ? cfg.ratingScale : {};
-  const min = Number.isFinite(Number(scale.min)) ? Number(scale.min) : 1;
-  const max = Number.isFinite(Number(scale.max)) ? Number(scale.max) : 5;
-
-  const ratings =
-    (Array.isArray(submission?.ratings) && submission.ratings) ||
-    (Array.isArray(submission?.data?.ratings) && submission.data.ratings) ||
-    (Array.isArray(submission?.answer?.ratings) && submission.answer.ratings) ||
-    (Array.isArray(submission?.data?.peerRatings) && submission.data.peerRatings) ||
-    [];
-
-  const nums = (Array.isArray(ratings) ? ratings : [])
-    .map((v) => Number(v))
-    .filter((n) => Number.isFinite(n));
-
-  if (!nums.length) {
-    return {
-      score: 0,
-      maxPoints: points,
-      method: "peer-rating",
-      correct: null,
-      reason:
-        "Thanks for the teach-back! (No peer ratings were submitted, so no points were calculated.)",
-      details: {
-        type: TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize",
-        ratingsCount: 0,
-        scale: { min, max },
-      },
-    };
-  }
-
-  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
-
-  // Map average rating to points (min -> 0, max -> full points)
-  const denom = Math.max(1e-6, max - min);
-  const normalized = clamp((avg - min) / denom, 0, 1);
-  const score = clamp(Math.round(normalized * points), 0, points);
-
-  const label = String(scale.label || "Clarity / Accuracy / Quality").trim();
-  const reason =
-    score >= Math.round(points * 0.8)
-      ? `Strong teach-back! Your teammates rated your ${label.toLowerCase()} highly (avg ${avg.toFixed(1)}/${max}).`
-      : score >= Math.round(points * 0.45)
-      ? `Nice work! Your teammates rated your ${label.toLowerCase()} at ${avg.toFixed(1)}/${max}. Next time, add one extra example or restate the key steps clearly.`
-      : `Good start—keep practicing! Your teammates rated your ${label.toLowerCase()} at ${avg.toFixed(1)}/${max}. Try organizing your explanation into 2–3 clear steps.`;
-
-  return {
-    score,
-    maxPoints: points,
-    method: "peer-rating",
-    correct: null,
-    reason,
-    details: {
-      type: TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize",
-      avgRating: avg,
-      ratingsCount: nums.length,
-      scale: { min, max, label },
-      normalized,
-    },
-  };
-}
-
 // --- PUBLIC ENTRYPOINT ---
 
 export async function generateAIScore({ task, submission, rubric }) {
@@ -1410,17 +1335,6 @@ export async function generateAIScore({ task, submission, rubric }) {
   ) {
     return scoreGuessWho({ task, submission });
   }
-
-
-// Specialized path: Narration Synthesize (peer-rated; no OpenAI call)
-if (
-  task?.taskType === TASK_TYPES.NARRATION_SYNTHESIZE ||
-  task?.taskType === "narration-synthesize" ||
-  task?.taskType === "narration_synthesize" ||
-  task?.taskType === "narrationsynthesize"
-) {
-  return scoreNarrationSynthesize({ task, submission });
-}
 
   // Specialized path: Mind Mapper
   if (task?.taskType === TASK_TYPES.MIND_MAPPER || task?.taskType === "mind-mapper") {

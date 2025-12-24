@@ -996,6 +996,26 @@ export default function TaskRunner({
       break;
     }
 
+    case TASK_TYPES.NARRATION_SYNTHESIZE:
+    case "narration-synthesize": {
+      const effectiveTeamId =
+        t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+
+      content = (
+        <NarrationSynthesizeTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          socket={socketRef}
+          roomCode={roomCode}
+          teamId={effectiveTeamId}
+          disabled={effectiveDisabled || isReview}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
+        />
+      );
+      break;
+    }
+
     // ✅ Treasure Runner (warm-up while waiting)
     case TASK_TYPES.TREASURE_RUNNER:
     case "treasure-runner": {
@@ -1023,21 +1043,6 @@ export default function TaskRunner({
     case "echo-chain": {
       content = (
         <EchoChainInline
-          task={t}
-          onSubmit={handleTaskSubmit}
-          disabled={effectiveDisabled || isReview}
-          readOnly={isReview}
-        />
-      );
-      break;
-    }
-
-
-    // ✅ Narration Synthesize (NEW)
-    case TASK_TYPES.NARRATION_SYNTHESIZE:
-    case "narration-synthesize": {
-      content = (
-        <NarrationSynthesizeTask
           task={t}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}

@@ -292,19 +292,6 @@ function playEchoChime() {
   }
 }
 
-// NarrationSynthesize (demo-only) SFX
-function playNarrationChime() {
-  try {
-    const a = new Audio(
-      "https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg"
-    );
-    a.volume = 0.14;
-    a.play();
-  } catch {
-    // ignore
-  }
-}
-
 // -------------------------
 // Safe fetch helper (prevents “Unexpected token '<'”)
 // -------------------------
@@ -725,18 +712,7 @@ export default function DemoPage() {
     let maxPoints = typeof task?.points === "number" ? task.points : null;
 
     try {
-      const type = task?.taskType || task?.type;
-
-      if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
-        const scored = scoreNarrationLocally(task, submissionPayload);
-        scoreDelta = scored.scoreDelta || 0;
-        maxPoints = scored.maxPoints ?? maxPoints;
-        showToast(
-          `Teach-back scored: +${scoreDelta}${maxPoints != null ? `/${maxPoints}` : ""} (avg ${Number(scored.avgRating).toFixed(1)})`,
-          true
-        );
-        // continue with normal flow below (team score update + return to runner)
-      } else if (isObjectiveTask(task)) {
+      if (isObjectiveTask(task)) {
         const result = scoreObjectiveLocally(task, submissionPayload);
         scoreDelta = result.scoreDelta || 0;
         maxPoints = result.maxPoints ?? maxPoints;
