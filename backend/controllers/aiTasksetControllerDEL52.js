@@ -1880,7 +1880,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       // --- aiScoringRequired: objective types default false ---
       let aiScoringRequired;
       if (typeof t.aiScoringRequired === "boolean") aiScoringRequired = t.aiScoringRequired;
-      else if (objective) aiScoringRequired = false;
+      else if \(objective\) aiScoringRequired = false;
       else if (taskType === TASK_TYPES.GUESS_WHO) aiScoringRequired = false;
       else if (typeof meta.defaultAiScoringRequired === "boolean")
         aiScoringRequired = meta.defaultAiScoringRequired;

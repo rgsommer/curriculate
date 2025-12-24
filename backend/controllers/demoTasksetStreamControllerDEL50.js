@@ -10,6 +10,7 @@ import {
   normalizeSelectedType,
   retryMustHave,
   regenerateSingleTask,
+  buildVocabularyLines, // if you factor it out
 } from "./aiTasksetController.js";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });

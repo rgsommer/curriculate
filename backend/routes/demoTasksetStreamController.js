@@ -1,11 +1,5 @@
 // backend/controllers/demoTasksetStreamController.js
 import OpenAI from "openai";
-import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
-
-// reuse your normalizeSelectedType / retryMustHave / regenerateSingleTask logic
-// easiest: import from aiTasksetController.js if you export them,
-// or copy the needed helpers (recommended: export helpers from aiTasksetController).
-
 import {
   normalizeSelectedType,
   retryMustHave,

@@ -794,89 +794,6 @@ function buildStudentWorkDescription(task, submission) {
   };
 }
 
-// --- SPECIAL CASE: GUESS WHO (YES/NO DEDUCTION, RULE-BASED) ---
-// GuessWho is not AI-scored; it is deterministically scored from submission state.
-// Expected submission shape (flexible):
-//   { correct: boolean, timeLeftSeconds?: number, guessesUsed?: number, maxGuesses?: number }
-// The UI/gameplay (hold-to-reveal, timer start on first reveal, guess counter) is handled client-side;
-// backend scoring only needs correctness + time/guesses for bonus.
-function scoreGuessWho({ task, submission }) {
-  const points = typeof task.points === "number" ? task.points : 20;
-
-  const correct = submission?.correct === true;
-
-  // Support several common field names to be resilient.
-  const timeLeftRaw =
-    submission?.timeLeftSeconds ??
-    submission?.timeLeft ??
-    submission?.secondsLeft ??
-    submission?.timeRemaining ??
-    null;
-
-  const guessesUsedRaw =
-    submission?.guessesUsed ??
-    submission?.guessCount ??
-    submission?.guesses ??
-    null;
-
-  const maxGuessesRaw =
-    submission?.maxGuesses ??
-    task?.maxGuesses ??
-    task?.config?.maxGuesses ??
-    task?.config?.guessLimit ??
-    task?.guessLimit ??
-    10;
-
-  const timeLeftSeconds =
-    timeLeftRaw == null ? null : clamp(Number(timeLeftRaw) || 0, 0, 3600);
-  const guessesUsed =
-    guessesUsedRaw == null ? null : clamp(Number(guessesUsedRaw) || 0, 0, 999);
-  const maxGuesses = clamp(Number(maxGuessesRaw) || 10, 1, 999);
-
-  // Bonus model: reward quick solves + efficient guessing. Keep simple & transparent.
-  let bonus = 0;
-
-  // Time bonus (matches your suggested tiers, but safe if time is unknown)
-  if (correct && typeof timeLeftSeconds === "number") {
-    if (timeLeftSeconds >= 40) bonus += 20;
-    else if (timeLeftSeconds >= 20) bonus += 15;
-    else if (timeLeftSeconds > 0) bonus += 10;
-  }
-
-  // Guess-efficiency bonus (small; prevents time bonus from dominating)
-  if (correct && typeof guessesUsed === "number") {
-    // best: <= 3 guesses, good: <= 6 guesses
-    if (guessesUsed <= 3) bonus += 8;
-    else if (guessesUsed <= 6) bonus += 4;
-  }
-
-  const score = correct ? points + bonus : 0;
-
-  const reason = correct
-    ? `Correct! +${points}${bonus ? ` (bonus +${bonus})` : ""}.` +
-      (typeof guessesUsed === "number"
-        ? ` Guesses used: ${guessesUsed}/${maxGuesses}.`
-        : "") +
-      (typeof timeLeftSeconds === "number" ? ` Time left: ${timeLeftSeconds}s.` : "")
-    : "Not quite. Keep narrowing it down using only yes/no questions, then make your best guess.";
-
-  return {
-    score,
-    maxPoints: points + 28, // theoretical max with current bonus caps (20 time + 8 guesses)
-    method: "rule-based",
-    correct,
-    reason,
-    details: {
-      type: TASK_TYPES.GUESS_WHO || "guess-who",
-      timeLeftSeconds,
-      guessesUsed,
-      maxGuesses,
-      basePoints: points,
-      bonus,
-    },
-  };
-}
-
 // --- SPECIAL CASE: DIFF DETECTIVE ---
 
 async function scoreDiffDetective({ task, submission }) {
@@ -1176,14 +1093,6 @@ async function scoreSpeechRecognition({ task, submission, rubric }) {
 export async function generateAIScore({ task, submission, rubric }) {
   if (!task) {
     throw new Error("generateAIScore requires a task.");
-  }  // Specialized path: Guess Who (rule-based, no rubric / no OpenAI call)
-  if (
-    task?.taskType === TASK_TYPES.GUESS_WHO ||
-    task?.taskType === "guess-who" ||
-    task?.taskType === "guess_who" ||
-    task?.taskType === "guesswho"
-  ) {
-    return scoreGuessWho({ task, submission });
   }
 
   // Specialized path: Mind Mapper

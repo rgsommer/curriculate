@@ -2331,6 +2331,3 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 };
 
 export default { generateAiTaskset };
-
-// Export helpers for demoTasksetStreamController (and other internal controllers)
-export { normalizeSelectedType, retryMustHave, regenerateSingleTask };

@@ -25,10 +25,7 @@ const COLORS = [
 ];
 
 // Quick AI task types we actually support in LiveSession
-// Note: "Competitive" is a category (not a taskType). Quick Launch types must be real task types.
-// We always include GUESS_WHO here because it is a single-screen, intra-team deduction game
-// that works well as an ad-hoc quick task.
-const QUICK_TASK_TYPES_RAW =
+const QUICK_TASK_TYPES =
   QUICK_TASK_ELIGIBLE_TYPES && QUICK_TASK_ELIGIBLE_TYPES.length
     ? QUICK_TASK_ELIGIBLE_TYPES
     : [
@@ -37,15 +34,6 @@ const QUICK_TASK_TYPES_RAW =
         TASK_TYPES.SHORT_ANSWER,
         TASK_TYPES.OPEN_TEXT,
       ];
-
-const QUICK_TASK_TYPES = Array.from(
-  new Set([
-    ...QUICK_TASK_TYPES_RAW,
-    // Ensure GuessWho is selectable even if QUICK_TASK_ELIGIBLE_TYPES isn't updated yet.
-    TASK_TYPES.GUESS_WHO,
-  ].filter(Boolean))
-);
-
 
 const PURPOSE_OPTIONS = [
   "Introduction",
@@ -685,17 +673,7 @@ export default function LiveSession({ roomCode }) {
   };
 
   const handleLaunchQuickTask = () => {
-    const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
-    if (!roomCode) return;
-    if (!isGuessWho && !taskConfig.prompt?.trim()) return;
-    if (isGuessWho) {
-      const secrets = Array.isArray(taskConfig.secretAnswers)
-        ? taskConfig.secretAnswers
-        : taskConfig.secretAnswer
-        ? [taskConfig.secretAnswer]
-        : [];
-      if (secrets.length === 0 || !String(secrets[0] ?? "").trim()) return;
-    }
+    if (!roomCode || !taskConfig.prompt?.trim()) return;
 
     setIsLaunchingQuick(true);
     setQuickStatus(null);
@@ -718,37 +696,6 @@ export default function LiveSession({ roomCode }) {
       clue: taskConfig.clue || undefined,
       timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
       reviewPauseSeconds: reviewPauseSeconds || 15,
-
-      // GuessWho (Yes/No deduction) special fields
-      ...(isGuessWho && {
-        // prompt is optional; secretAnswers is required
-        prompt:
-          (taskConfig.prompt || "").trim() ||
-          "Ask yes/no questions to identify the secret concept.",
-        secretAnswers: Array.isArray(taskConfig.secretAnswers)
-          ? taskConfig.secretAnswers
-              .map((s) => String(s || "").trim())
-              .filter(Boolean)
-          : taskConfig.secretAnswer
-          ? [String(taskConfig.secretAnswer).trim()].filter(Boolean)
-          : undefined,
-        category:
-          (taskConfig.category || taskConfig.topic || taskConfig.subject || "")
-            .toString()
-            .trim() || undefined,
-        maxGuesses:
-          Number(taskConfig.maxGuesses) > 0 ? Number(taskConfig.maxGuesses) : 10,
-        timeLimitSeconds:
-          Number(taskConfig.timeLimitSeconds) > 0
-            ? Number(taskConfig.timeLimitSeconds)
-            : 60,
-        interTeamEnabled: false,
-        intraTeamEnabled: true,
-        // Ensure this stays deterministic / rule-scored
-        objectiveScoring: false,
-        aiScoringRequired: false,
-      }),
-
 
       // Diff Detective special fields
       ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
@@ -937,35 +884,6 @@ export default function LiveSession({ roomCode }) {
           subject: aiSubject || "Ad-hoc",
           gradeLevel: gradeStr || "",
           bullets: Array.isArray(baseTask.bullets) ? baseTask.bullets : [],
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-
-      // 🟠 GuessWho (Yes/No deduction) – map to quick-launch config
-      if (generatedType === TASK_TYPES.GUESS_WHO || generatedType === "guess-who") {
-        const secrets =
-          Array.isArray(baseTask.secretAnswers) && baseTask.secretAnswers.length
-            ? baseTask.secretAnswers
-            : baseTask.secretAnswer
-            ? [baseTask.secretAnswer]
-            : baseTask.secretConcept
-            ? [baseTask.secretConcept]
-            : baseTask.answer
-            ? [baseTask.answer]
-            : [];
-
-        setTaskConfig({
-          prompt: baseTask.prompt || "",
-          secretAnswers: secrets.map((s) => String(s || "").trim()).filter(Boolean),
-          category: baseTask.category || baseTask.topic || aiSubject || "Ad-hoc",
-          maxGuesses: Number(baseTask.maxGuesses) > 0 ? Number(baseTask.maxGuesses) : 10,
-          timeLimitSeconds:
-            Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 60,
-          points: typeof baseTask.points === "number" ? baseTask.points : 20,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
         });
         setShowAiGen(false);
         return;
@@ -1215,16 +1133,6 @@ export default function LiveSession({ roomCode }) {
   const teamIdsForGrid = teamOrder.filter((id) => teams[id]);
   const taskFlowActive =
     typeof roomState.taskIndex === "number" && roomState.taskIndex >= 0;
-
-  const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
-  const quickLaunchReady = isGuessWhoQuick
-    ? (Array.isArray(taskConfig.secretAnswers)
-        ? taskConfig.secretAnswers
-        : taskConfig.secretAnswer
-        ? [taskConfig.secretAnswer]
-        : [])
-        .some((s) => String(s ?? "").trim())
-    : !!taskConfig.prompt?.trim();
 
   // --- Treat gating: require at least 30% of tasks completed ---
   const minTasksBeforeTreat =
@@ -1756,7 +1664,7 @@ export default function LiveSession({ roomCode }) {
                 tap <strong>Launch Task</strong>.
               </p>
 
-              {quickLaunchReady ? (
+              {taskConfig.prompt?.trim() ? (
                 <>
                   {/* FLASHCARDS Quick Input */}
                   {taskType === TASK_TYPES.FLASHCARDS && (
@@ -1803,21 +1711,6 @@ Precipitation — rain, snow, hail`}
                     Ready to launch:
                   </div>
                   <div>{taskConfig.prompt}</div>
-                  {isGuessWhoQuick && (
-                    <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#075985" }}>
-                      <strong>Secret concept:</strong>{" "}
-                      <span style={{ letterSpacing: 2 }}>••••••</span>
-                      <span style={{ marginLeft: 8, color: "#64748b" }}>(hidden)</span>
-                      <span style={{ marginLeft: 10, color: "#64748b" }}>
-                        max guesses:{" "}
-                        {Number(taskConfig.maxGuesses) > 0 ? Number(taskConfig.maxGuesses) : 10}
-                        {" · "}
-                        timer:{" "}
-                        {Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60}s
-                      </span>
-                    </div>
-                  )}
-
                   {taskConfig.correctAnswer && (
                     <div
                       style={{
@@ -2029,18 +1922,18 @@ Precipitation — rain, snow, hail`}
 
                 <button
                   onClick={handleLaunchQuickTask}
-                  disabled={!quickLaunchReady}
+                  disabled={!taskConfig.prompt?.trim()}
                   style={{
                     width: "100%",
                     padding: "12px",
                     borderRadius: 999,
-                    background: quickLaunchReady ? "#0ea5e9" : "#94a3b8",
+                    background: taskConfig.prompt?.trim() ? "#0ea5e9" : "#94a3b8",
                     color: "white",
                     border: "none",
                     fontSize: "0.9rem",
                     fontWeight: 900,
-                    cursor: quickLaunchReady ? "pointer" : "not-allowed",
-                    opacity: quickLaunchReady ? 1 : 0.75,
+                    cursor: taskConfig.prompt?.trim() ? "pointer" : "not-allowed",
+                    opacity: taskConfig.prompt?.trim() ? 1 : 0.75,
                   }}
                 >
                   {isLaunchingQuick ? "Launching…" : "Launch Quick Task"}

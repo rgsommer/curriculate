@@ -662,7 +662,7 @@ export default function DemoPage() {
         ? task.points
         : null;
 
-    return { scoreDelta, maxPoints, aiFeedback: json.aiFeedback || json.reason || null, correct: json.correct ?? json.isCorrect ?? null };
+    return { scoreDelta, maxPoints, aiFeedback: json.aiFeedback || json.reason || null };
   }
 
   async function handleSubmit(submissionPayload) {
@@ -687,11 +687,6 @@ export default function DemoPage() {
         const ai = await scoreWithBackendAI(task, submissionPayload);
         scoreDelta = ai.scoreDelta || 0;
         maxPoints = ai.maxPoints ?? maxPoints;
-        // If backend provided feedback (especially for GuessWho), surface it to the student.
-        if (ai.aiFeedback) {
-          const ok = ai.correct === true;
-          showToast(ai.aiFeedback, ok);
-        }
       }
     } catch (e) {
       console.warn("[DemoPage] scoring error:", e);
