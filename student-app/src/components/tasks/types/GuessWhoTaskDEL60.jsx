@@ -83,9 +83,10 @@ export default function GuessWhoTask({ task, onSubmit }) {
   const [winnerThisRound, setWinnerThisRound] = useState(false);
 
   const [submissionFeedback, setSubmissionFeedback] = useState(null); // { message, positive }
-  const [overlayTimer, setOverlayTimer] = useState(null); // null = manual advance
+  const [overlayTimer, setOverlayTimer] = useState(0);
 
   const countdownRef = useRef(null);
+  const overlayRef = useRef(null);
 
   // Sounds (keep existing paths)
   const [playBeep] = useSound("/sounds/beep.mp3", { volume: 0.6 });
@@ -99,14 +100,19 @@ export default function GuessWhoTask({ task, onSubmit }) {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = null;
   }, []);
+
+  const clearOverlay = useCallback(() => {
+    if (overlayRef.current) clearInterval(overlayRef.current);
     overlayRef.current = null;
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      clearCountdown();    };
-  }, [clearCountdown]);
+      clearCountdown();
+      clearOverlay();
+    };
+  }, [clearCountdown, clearOverlay]);
 
   const resetRoundState = useCallback(
     (nextRoundIndex) => {
@@ -118,12 +124,14 @@ export default function GuessWhoTask({ task, onSubmit }) {
       setTimerStarted(false);
       setTimer(timerSeconds);
       setSubmissionFeedback(null);
-      setOverlayTimer(null);
+      setOverlayTimer(0);
       clearCountdown();
+      clearOverlay();
+
       // Ensure any per-round secret array lookup stays coherent
       setCurrentRound(nextRoundIndex);
     },
-    [timerSeconds, clearCountdown]
+    [timerSeconds, clearCountdown, clearOverlay]
   );
 
   const endRoundWithOverlay = useCallback(
@@ -133,46 +141,50 @@ export default function GuessWhoTask({ task, onSubmit }) {
       setWinnerThisRound(!!correct);
       clearCountdown();
 
-      setOverlayTimer(15);      overlayRef.current = setInterval(() => {
+      setOverlayTimer(15);
+      clearOverlay();
+      overlayRef.current = setInterval(() => {
         setOverlayTimer((prev) => {
-          if (prev <= 1) {            return 0;
+          if (prev <= 1) {
+            clearOverlay();
+            return 0;
           }
           return prev - 1;
         });
       }, 1000);
     },
-    [clearCountdown]
+    [clearCountdown, clearOverlay]
   );
 
+  // When overlay timer hits 0, advance rounds or submit completion
+  useEffect(() => {
+    if (!submissionFeedback) return;
+    if (overlayTimer !== 0) return;
 
-// Manual advance (no forced review timer for GuessWho)
-const handleContinue = useCallback(() => {
-  if (!submissionFeedback) return;
+    // If we had feedback and overlay finished, advance.
+    setSubmissionFeedback(null);
 
-  // Clear overlay
-  setSubmissionFeedback(null);
+    setCurrentRound((prev) => {
+      const next = prev + 1;
 
-  // Advance rounds (answerer rotates)
-  setCurrentRound((prev) => {
-    const next = prev + 1;
+      if (next < playerCount) {
+        // next round
+        // We must reset AFTER the state update; easiest: do it in a microtask.
+        queueMicrotask(() => resetRoundState(next));
+        return prev; // resetRoundState will set it
+      }
 
-    if (next < playerCount) {
-      queueMicrotask(() => resetRoundState(next));
-      return prev; // resetRoundState will set it
-    }
-
-    // Done: submit completion payload
-    queueMicrotask(() => {
-      onSubmit?.({
-        type: task?.taskType || "guess-who",
-        gameComplete: true,
-        roundsPlayed: playerCount,
+      // Done: submit completion payload
+      queueMicrotask(() => {
+        onSubmit?.({
+          type: task?.taskType || "guess-who",
+          gameComplete: true,
+          roundsPlayed: playerCount,
+        });
       });
+      return prev;
     });
-    return prev;
-  });
-}, [submissionFeedback, playerCount, onSubmit, resetRoundState, task?.taskType]);
-
+  }, [overlayTimer, submissionFeedback, playerCount, onSubmit, resetRoundState, task?.taskType]);
 
   const startCountdownIfNeeded = useCallback(() => {
     if (timerStarted) return;
@@ -228,43 +240,6 @@ const handleContinue = useCallback(() => {
         updated[updated.length - 1] = { ...last, answer };
 
         if (answer === "Yes") playYes();
-
-
-  const handleYouGuessedIt = useCallback(() => {
-    if (!isAnswerer || roundOver) return;
-    playCorrect();
-    endRoundWithOverlay({
-      message: `🎉 You guessed it! The answer was: ${secretAnswer}`,
-      positive: true,
-      correct: true,
-    });
-
-    // Record a round result (answerer-confirmed)
-    onSubmit?.({
-      type: task?.taskType || "guess-who",
-      roundComplete: true,
-      correct: true,
-      secretAnswer,
-      guessesUsed: guessCount,
-      maxGuesses,
-      timeRemaining: Math.max(0, timer),
-      pointsEarned: 0,
-      roundIndex: currentRound,
-      confirmedByAnswerer: true,
-    });
-  }, [
-    isAnswerer,
-    roundOver,
-    playCorrect,
-    endRoundWithOverlay,
-    onSubmit,
-    task?.taskType,
-    secretAnswer,
-    guessCount,
-    maxGuesses,
-    timer,
-    currentRound,
-  ]);
         else playNo();
 
         return updated;
@@ -458,26 +433,6 @@ const handleContinue = useCallback(() => {
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#475569" }}>
               Tip: Keep your finger down so teammates can’t peek.
             </div>
-
-
-<div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
-  <button
-    onClick={handleYouGuessedIt}
-    style={{
-      padding: "12px 16px",
-      fontSize: "1.0rem",
-      fontWeight: 900,
-      background: GOOD,
-      color: "#fff",
-      border: "none",
-      borderRadius: 999,
-      cursor: "pointer",
-      boxShadow: "0 10px 22px rgba(22,163,74,0.22)",
-    }}
-  >
-    You Guessed It! 🎉
-  </button>
-</div>
           </div>
         )}
 
@@ -721,26 +676,9 @@ const handleContinue = useCallback(() => {
           <div style={{ fontSize: "2.2rem", fontWeight: 900, marginBottom: 18 }}>
             {submissionFeedback.message}
           </div>
-          <div style={{ fontSize: "1.05rem", color: "#e2e8f0", marginTop: 8 }}>
-            Ready to continue?
+          <div style={{ fontSize: "1.1rem", color: "#e2e8f0" }}>
+            Next round in <span style={{ fontWeight: 900 }}>{overlayTimer}s</span>…
           </div>
-
-          <button
-            onClick={handleContinue}
-            style={{
-              marginTop: 18,
-              padding: "14px 18px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.18)",
-              background: "rgba(255,255,255,0.10)",
-              color: "#fff",
-              fontWeight: 900,
-              fontSize: "1.05rem",
-              cursor: "pointer",
-            }}
-          >
-            Next Round ▶
-          </button>
         </div>
       )}
     </div>

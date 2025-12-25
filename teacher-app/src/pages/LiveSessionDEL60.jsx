@@ -45,9 +45,8 @@ const QUICK_TASK_TYPES = Array.from(
     ...QUICK_TASK_TYPES_RAW,
     // Ensure GuessWho is selectable even if QUICK_TASK_ELIGIBLE_TYPES isn't updated yet.
     TASK_TYPES.GUESS_WHO,
-  ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
+  ].filter(Boolean))
 );
-
 
 
 const PURPOSE_OPTIONS = [
