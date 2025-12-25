@@ -1117,7 +1117,6 @@ useEffect(() => {
     });
 
     // UI reset
-    setLastQuickTask(taskToSend);
     setTimeout(() => {
       setIsLaunchingQuick(false);
       setQuickStatus("Quick task launched!");

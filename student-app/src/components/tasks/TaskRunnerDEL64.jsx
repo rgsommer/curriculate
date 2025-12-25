@@ -275,13 +275,6 @@ function normalizeTaskType(raw) {
     case "role-play-task":
       return TASK_TYPES.ROLE_PLAY_DECK;
 
-    // ✅ Fake Out (NEW)
-    case "fakeout":
-    case "fake-out":
-    case "fake_out":
-    case "fake out":
-      return TASK_TYPES.FAKE_OUT;
-
     default:
       return raw;
   }

@@ -20,10 +20,10 @@ export const retryMustHave = {
     "JEOPARDY (BrainBlitz) must include clues (>=3). Each clue: { clue, answer }.",
   [TASK_TYPES.HANGMAN_DUEL]:
     "HANGMAN_DUEL must include wordsByStation[] (4–8 entries). Each entry: { word, hint }. Each word must come ONLY from aiWordBank, all words must be different, and lengths must be similar (max length difference ≤ 2).",
-
+  [TASK_TYPES.FAKE_OUT]:
+  "FAKE_OUT must include config.playerCount (2–8), config.playerNames (optional), and config.rounds (>=1). Each round: { statement:string, options:[4 strings], correctIndex:0|1|2 }. Options 1–3 must be verbose, plausible, and difficult-to-discern variations where ONLY ONE is fully correct. Option 4 must be hilarious and obviously false (a clear joke). Intra-team only.",
   [TASK_TYPES.FLASHCARDS]:
     'FLASHCARDS must include config.items (>=5). Each item: { question, answer }.',
-
   [TASK_TYPES.WORD_WEAVER_DUEL]:
     'WORD_WEAVER_DUEL must include phrase (string) and should include wordBank (array of words from the phrase, shuffled).',
 
@@ -42,6 +42,30 @@ export const retryMustHave = {
 
 
 };
+
+function validateGeneratePayload(payload = {}) {
+  const errors = [];
+
+  if (!payload.gradeLevel) errors.push("gradeLevel is required");
+  if (!payload.subject) errors.push("subject is required");
+
+  const difficultiesAllowed = ["EASY", "MEDIUM", "HARD"];
+  const goalsAllowed = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
+
+  const difficulty = (payload.difficulty || "MEDIUM").toString().toUpperCase();
+  const learningGoal = (payload.learningGoal || "REVIEW")
+    .toString()
+    .toUpperCase();
+
+  if (!difficultiesAllowed.includes(difficulty)) {
+    errors.push(`difficulty must be one of: ${difficultiesAllowed.join(", ")}`);
+  }
+  if (!goalsAllowed.includes(learningGoal)) {
+    errors.push(`learningGoal must be one of: ${goalsAllowed.join(", ")}`);
+  }
+
+  return { ok: errors.length === 0, errors, difficulty, learningGoal };
+}
 
 export function buildVocabularyLines(aiWordBank) {
   const vocab = Array.isArray(aiWordBank)
@@ -184,6 +208,8 @@ export function normalizeSelectedType(raw) {
   if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
     return TASK_TYPES.DIFF_DETECTIVE;
 
+  if (v === "fakeout" || v === "fake-out" || v === "fake_out" || v === "fake out")
+    return TASK_TYPES.FAKE_OUT;
   if (v === "photo") return TASK_TYPES.PHOTO;
   if (v === "photo-journal" || v === "photojournal")
     return TASK_TYPES.PHOTO_JOURNAL;
@@ -206,9 +232,22 @@ export function normalizeSelectedType(raw) {
 
   if (v === "echochain" || v === "echo-chain" || v === "echo_chain" || v === "echo chain") return TASK_TYPES.ECHO_CHAIN;
 
-  if (v === "fakeout" || v === "fake-out" || v === "fake_out" || v === "fake out")
-    return TASK_TYPES.FAKE_OUT;
+  return null;
+}
 
+function tryParseJsonLoose(raw = "") {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    return JSON.parse(raw);
+  } catch {}
+  const o0 = raw.indexOf("{");
+  const o1 = raw.lastIndexOf("}");
+  if (o0 >= 0 && o1 > o0) {
+    const sub = raw.slice(o0, o1 + 1);
+    try {
+      return JSON.parse(sub);
+    } catch {}
+  }
   return null;
 }
 
@@ -477,7 +516,7 @@ function shuffleArray(arr) {
 }
 
 // Targeted regeneration for one broken task (same type, more content)
-export async function regenerateSingleTask({
+async function regenerateSingleTask({
   allowedType,
   mustHave,
   subject,
@@ -1110,81 +1149,6 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
         items = [];
         correctAnswer = null;
       }
-
-      // -------- FAKE OUT normalization --------
-      else if (taskType === TASK_TYPES.FAKE_OUT) {
-        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
-
-        const playerCount = clampInt(
-          t.playerCount ?? aiConfig.playerCount ?? aiConfig.players ?? aiConfig.numPlayers,
-          2,
-          8,
-          4
-        );
-
-        const playerNames = Array.isArray(aiConfig.playerNames)
-          ? aiConfig.playerNames.map((n, i) => String(n || "").trim() || `Player ${i + 1}`)
-          : [];
-
-        const rawRounds = Array.isArray(aiConfig.rounds)
-          ? aiConfig.rounds
-          : Array.isArray(t.rounds)
-          ? t.rounds
-          : [];
-
-        const rounds = rawRounds
-          .map((r) => {
-            const statement = String(r?.statement || r?.prompt || "").trim();
-            const options = Array.isArray(r?.options)
-              ? r.options.map((x) => String(x || "").trim()).filter(Boolean)
-              : Array.isArray(r?.choices)
-              ? r.choices.map((x) => String(x || "").trim()).filter(Boolean)
-              : [];
-            const correctIndex =
-              typeof r?.correctIndex === "number"
-                ? r.correctIndex
-                : typeof r?.answerIndex === "number"
-                ? r.answerIndex
-                : typeof r?.correctAnswer === "number"
-                ? r.correctAnswer
-                : null;
-
-            return { statement, options, correctIndex };
-          })
-          .filter((r) => r.statement && Array.isArray(r.options) && r.options.length >= 4);
-
-        const fixedRounds = rounds.map((r) => ({
-          statement: r.statement,
-          options: r.options.slice(0, 4),
-          // IMPORTANT: correctIndex is only among the "serious" 3; option 4 is the obvious joke
-          correctIndex:
-            typeof r.correctIndex === "number" && r.correctIndex >= 0 && r.correctIndex <= 2
-              ? r.correctIndex
-              : 0,
-        }));
-
-        config = {
-          ...aiConfig,
-          playerCount,
-          playerNames: playerNames.length ? playerNames.slice(0, playerCount) : undefined,
-          rounds: fixedRounds,
-          pointsPerCorrect: clampInt(aiConfig.pointsPerCorrect ?? 10, 1, 50, 10),
-          readerBonusPoints: clampInt(aiConfig.readerBonusPoints ?? aiConfig.foolBonusPoints ?? 5, 0, 50, 5),
-          interTeamEnabled: false,
-          intraTeamEnabled: true,
-        };
-
-        // FakeOut is in-device; no AI scoring required.
-        options = [];
-        items = [];
-        correctAnswer = null;
-
-        if (!Array.isArray(fixedRounds) || fixedRounds.length < 1) {
-          t.__needsRetry = true;
-          t.__retryType = TASK_TYPES.FAKE_OUT;
-        }
-      }
-
 
 
 // -------- ECHO CHAIN normalization --------
@@ -2181,64 +2145,6 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
                     it.text || it.label || it.name || it.prompt || `Step ${idx + 1}`;
                   return { text: String(text).trim() };
                 }
-
-
-          if (allowedType === TASK_TYPES.FAKE_OUT) {
-            const cfg =
-              regenerated?.config && typeof regenerated.config === "object"
-                ? regenerated.config
-                : {};
-
-            const playerCount = clampInt(cfg.playerCount ?? 4, 2, 8, 4);
-
-            const rawRounds = Array.isArray(cfg.rounds) ? cfg.rounds : [];
-            const rounds = rawRounds
-              .map((r) => ({
-                statement: String(r?.statement || "").trim(),
-                options: Array.isArray(r?.options)
-                  ? r.options.map((x) => String(x || "").trim()).filter(Boolean)
-                  : [],
-                correctIndex: typeof r?.correctIndex === "number" ? r.correctIndex : null,
-              }))
-              .filter((r) => r.statement && Array.isArray(r.options) && r.options.length >= 4);
-
-            if (rounds.length >= 1) {
-              replaced = {
-                ...t,
-                title:
-                  typeof regenerated?.title === "string" && regenerated.title.trim()
-                    ? regenerated.title.trim()
-                    : t.title,
-                prompt:
-                  typeof regenerated?.prompt === "string" && regenerated.prompt.trim()
-                    ? regenerated.prompt.trim()
-                    : t.prompt,
-                taskType: TASK_TYPES.FAKE_OUT,
-                options: [],
-                items: [],
-                correctAnswer: null,
-                config: {
-                  ...cfg,
-                  playerCount,
-                  rounds: rounds.map((r) => ({
-                    statement: r.statement,
-                    options: r.options.slice(0, 4),
-                    correctIndex:
-                      typeof r.correctIndex === "number" && r.correctIndex >= 0 && r.correctIndex <= 2
-                        ? r.correctIndex
-                        : 0,
-                  })),
-                  interTeamEnabled: false,
-                  intraTeamEnabled: true,
-                },
-                aiScoringRequired: t.aiScoringRequired ?? false,
-              };
-              break;
-            }
-
-            // invalid fake-out; continue retry loop
-            continue;
-          }
                 return { text: String(it || `Step ${idx + 1}`).trim() };
               })
               .filter((x) => isNonEmptyString(x.text));

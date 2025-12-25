@@ -16,7 +16,6 @@ import DrawMimeTask from "./types/DrawMimeTask";
 import CollaborationTask from "./types/CollaborationTask";
 import MusicalChairsTask from "./types/MusicalChairsTask";
 import MysteryCluesTask from "./types/MysteryCluesTask";
-import FakeOutTask from "./types/FakeOutTask";
 import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
 import MadDashSequenceTask from "./types/MadDashSequenceTask";
 import LiveDebateTask from "./types/LiveDebateTask";
@@ -44,6 +43,7 @@ import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
 import VennSortTask from "./types/VennSortTask";
 import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
+import FakeOutTask from "./types/FakeOutTask";
 
 import ScriptPlayTask from "./types/ScriptPlayTask";
 import RolePlayDeckTask from "./types/RolePlayDeckTask";
@@ -101,6 +101,11 @@ function normalizeTaskType(raw) {
     case "true_false":
     case "true-false":
       return TASK_TYPES.TRUE_FALSE;
+
+    case "fakeout":
+    case "fake-out":
+    case "fake_out":
+      return TASK_TYPES.FAKE_OUT;
 
     case "short":
     case "short-answer":
@@ -274,13 +279,6 @@ function normalizeTaskType(raw) {
     case "roleplaydeck":
     case "role-play-task":
       return TASK_TYPES.ROLE_PLAY_DECK;
-
-    // ✅ Fake Out (NEW)
-    case "fakeout":
-    case "fake-out":
-    case "fake_out":
-    case "fake out":
-      return TASK_TYPES.FAKE_OUT;
 
     default:
       return raw;
@@ -1338,17 +1336,18 @@ case "script-play": {
       content = <MysteryCluesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
       break;
 
-
     case TASK_TYPES.FAKE_OUT:
       content = (
         <FakeOutTask
           task={t}
           onSubmit={handleTaskSubmit}
-          disabled={effectiveDisabled || isReview}
-          readOnly={isReview}
+          socket={socketRef}
+          roomCode={roomCode}
+          teamId={t?.teamId || playerTeam?.id || playerTeam?.teamId || null}
         />
       );
       break;
+
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
       content = (
         <TrueFalseTicTacToeTask

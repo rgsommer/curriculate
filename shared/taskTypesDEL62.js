@@ -65,6 +65,7 @@ export const TASK_TYPES = {
   WORD_WEAVER_DUEL: "word-weaver-duel",
   GUESS_WHO: "guess-who",
   ECHO_CHAIN: "echo-chain",
+  FAKE_OUT: "fake-out",
 
   // Collaboration / discussion
   COLLABORATION: "collaboration",
@@ -319,6 +320,21 @@ export const TASK_TYPE_META = {
   // OPEN RESPONSE / MEDIA (AI or teacher-reviewed)
   // =========================
 
+  [TASK_TYPES.FAKE_OUT]: metaBase({
+    label: "Fake Out",
+    category: CATEGORY.DEDUCTION,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,
+    defaultAiScoringRequired: false,
+    maxTimeSeconds: 90,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "Turn-based oral reading + listening ‘truth vs fake’ game where one player reads a statement aloud, then the team listens and votes. AI provides 4 options: three verbose, hard-to-discern variations (only one correct) plus a 4th hilarious, obviously false joke option to keep the room laughing. Builds oral fluency, listening comprehension, precision with meaning, and great discussion at reveal.",
+  }),
+  
   [TASK_TYPES.OPEN_TEXT]: metaBase({
     label: "Open-text Response",
     category: CATEGORY.QUESTION,
@@ -842,7 +858,7 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.FAKE_OUT]: metaBase({
     label: "Fake Out",
     category: CATEGORY.DEDUCTION,
-    implemented: true,
+    implemented: false,
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: true,
@@ -851,7 +867,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Turn-based oral reading + listening ‘truth vs fake’ game (Balderdash-style). One player is the Reader and holds the device, reading the statement aloud. AI provides 4 options: (1–3) long, plausible, hard-to-discern variations where ONLY ONE is fully correct, plus (4) a hilarious, obviously false ‘joke’ option that should never be correct. The Reader records each teammate’s vote (tap/check under names), then the reveal triggers discussion. Scoring: points for correct picks; optional Reader bonus for each teammate fooled. Schema: config.playerCount (2–8), optional config.playerNames[], and config.rounds[] where each round has { statement, options[4], correctIndex (0–2) }. Intra-team only; inter-team disabled.",
+      "Turn-based oral reading + listening ‘truth vs fake’ game (Balderdash-style). One player reads a prompt aloud; AI provides 3 hard-to-discern options (1 correct, 2 clever fakes). Others listen and vote. Builds listening comprehension and precision with meaning.",
   }),
 
   [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: metaBase({

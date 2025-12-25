@@ -347,7 +347,6 @@ export default function AiTasksetGenerator() {
     if (t === TASK_TYPES.JEOPARDY) return "⚡";
     if (t === TASK_TYPES.FLASHCARDS) return "🗂️";
     if (t === TASK_TYPES.HIDENSEEK) return "🕵️";
-    if (t === TASK_TYPES.FAKE_OUT) return "🃏";
     return "✨";
   };
 

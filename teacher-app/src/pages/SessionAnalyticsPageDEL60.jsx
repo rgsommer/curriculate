@@ -216,7 +216,7 @@ export default function SessionAnalyticsPage() {
                     >
                       {pt.isCorrect == null ? "Completed" : pt.isCorrect ? "Correct" : "Incorrect"}
                     </span>{" "}
-                    ({pt.points != null ? `${pt.points} pts` : "—"}, {pt.latencyMs != null ? `${Math.round(pt.latencyMs)} ms` : "—"})
+                    ({pt.points} pts, {Math.round(pt.latencyMs)} ms)
                   </li>
                 ))}
               </ul>

@@ -190,50 +190,16 @@ export const streamDemoTaskset = async (req, res) => {
         const msg = err?.message || String(err) || "Generation error";
         sseWrite(res, "error", { ok: false, error: msg, taskType, index: i, total });
 
-        if (taskType === TASK_TYPES.FAKE_OUT) {
-          tasks.push({
-            title: `${taskType} (placeholder)`,
-            prompt:
-              "Demo placeholder for Fake Out. Reader reads the statement aloud, team listens, reader records votes, then reveal.",
-            taskType,
-            timeLimitSeconds: 90,
-            options: [],
-            correctAnswer: null,
-            items: [],
-            clues: [],
-            config: {
-              playerCount: 4,
-              playerNames: ["Player 1", "Player 2", "Player 3", "Player 4"],
-              pointsPerCorrect: 10,
-              readerBonusPoints: 5,
-              rounds: [
-                {
-                  statement: "Demo: The definition of magnetism is…",
-                  options: [
-                    "A force produced by moving electric charges that creates a field pulling or pushing certain materials (like iron) without contact; it has north and south poles and can be induced or permanent.",
-                    "A chemical reaction in metals where heat causes atoms to swap places, creating an invisible pull that works on all materials equally, especially plastics and wood.",
-                    "A kind of gravity that only appears when objects are warmed by friction, making them attract anything nearby until they cool down again.",
-                    "A mystical banana-powered magnet unicorn that only works on Tuesdays and is fueled by laughter (obviously false).",
-                  ],
-                  correctIndex: 0,
-                },
-              ],
-              interTeamEnabled: false,
-              intraTeamEnabled: true,
-            },
-          });
-        } else {
-          tasks.push({
-            title: `${taskType} (placeholder)`,
-            prompt: `Demo placeholder for ${taskType}. Please regenerate this task.`,
-            taskType,
-            options: [],
-            correctAnswer: null,
-            items: [],
-            clues: [],
-            config: {},
-          });
-        }
+        tasks.push({
+          title: `${taskType} (placeholder)`,
+          prompt: `Demo placeholder for ${taskType}. Please regenerate this task.`,
+          taskType,
+          options: [],
+          correctAnswer: null,
+          items: [],
+          clues: [],
+          config: {},
+        });
 
         sseWrite(res, "progress", { index: i, total, taskType, status: "placeholder" });
       }

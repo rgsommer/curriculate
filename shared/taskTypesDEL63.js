@@ -851,7 +851,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Turn-based oral reading + listening ‘truth vs fake’ game (Balderdash-style). One player is the Reader and holds the device, reading the statement aloud. AI provides 4 options: (1–3) long, plausible, hard-to-discern variations where ONLY ONE is fully correct, plus (4) a hilarious, obviously false ‘joke’ option that should never be correct. The Reader records each teammate’s vote (tap/check under names), then the reveal triggers discussion. Scoring: points for correct picks; optional Reader bonus for each teammate fooled. Schema: config.playerCount (2–8), optional config.playerNames[], and config.rounds[] where each round has { statement, options[4], correctIndex (0–2) }. Intra-team only; inter-team disabled.",
+      "Turn-based oral reading + listening ‘truth vs fake’ game. One player reads the statement aloud, then teammates listen and vote. The AI provides 4 options: three verbose, difficult-to-discern variations (only one correct) plus a 4th hilarious, obviously false joke option to keep it lively. Great for oral fluency, listening comprehension, and careful meaning.",
   }),
 
   [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: metaBase({

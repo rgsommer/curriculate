@@ -7,7 +7,7 @@ const FakeOutTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
   const rounds = task.config.rounds || [];
   const [currentRound, setCurrentRound] = useState(0);
   const [currentTurn, setCurrentTurn] = useState(1); // Reader turn
-  const [votes, setVotes] = useState(Array(playerCount).fill(null)); // null or 0-2
+  const [votes, setVotes] = useState(Array(playerCount).fill(null)); // null or 0-3 (option 4 is the obvious joke)
   const [submissionFeedback, setSubmissionFeedback] = useState(null);
   const [overlayTimer, setOverlayTimer] = useState(0);
   const overlayTimerRef = useRef(null);
@@ -71,6 +71,10 @@ const FakeOutTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
         Round {currentRound + 1} of {rounds.length} • Reader: Player {currentTurn}
       </div>
 
+      <div style={{ marginTop: -6, marginBottom: 14, color: "#6b7280" }}>
+        Options 1–3 are serious (only one correct). Option 4 is 🤪 obviously false (never correct).
+      </div>
+
       <div style={{ margin: "24px 0", padding: 20, background: "#f3f4f6", borderRadius: 16 }}>
         <strong style={{ fontSize: "1.3rem" }}>{round.statement}</strong>
       </div>
@@ -88,7 +92,25 @@ const FakeOutTask = ({ task, onSubmit, socket, roomCode, teamId }) => {
               boxShadow: "0 8px 20px rgba(0,0,0,0.1)",
             }}
           >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Option {i + 1}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 10 }}>
+              <div style={{ fontWeight: 700 }}>Option {i + 1}</div>
+              {i === 3 && (
+                <div
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    background: "#fff7ed",
+                    border: "2px solid #fdba74",
+                    color: "#9a3412",
+                    fontWeight: 900,
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  🤪 Obviously False
+                </div>
+              )}
+            </div>
             <div style={{ fontSize: "1.1rem" }}>{opt}</div>
 
             {/* Vote Indicators */}
