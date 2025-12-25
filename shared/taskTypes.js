@@ -84,6 +84,7 @@ export const TASK_TYPES = {
   MIND_MAPPER: "mind-mapper",
   NARRATION_SYNTHESIZE: "narration-synthesize",
   ROLE_PLAY: "role-play",
+  ROLE_PLAY_DECK: "role-play-deck",
   SCRIPT_PLAY: "script-play",
 
   // Language / speaking
@@ -916,9 +917,24 @@ export const TASK_TYPE_META = {
   }),
 
   [TASK_TYPES.ROLE_PLAY]: metaBase({
-    label: "Role Play",
+    label: "Role Play (Legacy)",
     category: CATEGORY.SYNTHESIS,
     implemented: false,
+    aiEligible: false,
+    generatorEligible: false,
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    maxTimeSeconds: 300,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "Legacy alias for Role Play Deck. Prefer taskType \"role-play-deck\" (TASK_TYPES.ROLE_PLAY_DECK). This id is kept for backwards compatibility and normalizes to ROLE_PLAY_DECK.",
+  }),
+
+  [TASK_TYPES.ROLE_PLAY_DECK]: metaBase({
+    label: "Role Play Deck",
+    category: CATEGORY.COLLABORATION,
+    implemented: true,
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
@@ -927,7 +943,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "AI-generated role deck + scenario. Teams role-play subject-related situations. Builds empathy, perspective-taking, and application of content in realistic contexts.",
+      "Role-based scenario role-play using an AI-generated “role deck.”\n\nHow it works:\n- Choose a mode: Mystery (hidden roles) or Classic (open roles).\n- Each player draws ONE role card: { name, role, characteristics[] }.\n- Read the subject-linked scenario aloud and role-play it as a team.\n- Submit marks completion (no objective scoring).\n\nConstraints:\n- School-appropriate and morally appropriate; no mocking, cruelty, or unsafe behavior.\n- Characteristics are short, positive traits (3–5 per role).\n- Scenario must connect to the subject/lesson and invite perspective-taking.\n- INTRA-team only (no inter-team mechanics).\n\nExpected payload:\n{ taskType: "role-play-deck", title: string, prompt: string, timeLimitSeconds?: number, config: { mode?: "mystery" | "classic" | "choose", playerCount?: number, playerNames?: string[], roles: Array<{ name: string, role: string, characteristics: string[] }>, scenario: string } }",
   }),
 
   [TASK_TYPES.SCRIPT_PLAY]: metaBase({
