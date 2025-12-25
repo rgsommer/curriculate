@@ -303,17 +303,6 @@ function playScriptPlayChime() {
   }
 }
 
-function playRolePlayChime() {
-  try {
-    const a = new Audio("https://actions.google.com/sounds/v1/foley/card_shuffle.ogg");
-    a.volume = 0.16;
-    a.play();
-  } catch {
-    // ignore
-  }
-}
-
-
 function playNarrationChime() {
   try {
     const a = new Audio(
@@ -668,46 +657,6 @@ export default function DemoPage() {
           scoring: { expressiveBonus: true, maxExpressiveBonus: 4 }
         },
       };
-
-    // RolePlayDeck: rich fallback so TaskRunner can render it in demo mode.
-    if (type === TASK_TYPES.ROLE_PLAY_DECK || type === "role-play-deck") {
-      return {
-        taskType: TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck",
-        title: "RolePlay Deck",
-        prompt:
-          "Choose Mystery (hidden roles) or Classic (open roles). Each player draws ONE role card, then role-play the scenario as a team. Tap Finished when done.",
-        timeLimitSeconds: 180,
-        points: 12,
-        config: {
-          mode: "choose",
-          roles: [
-            {
-              name: "Amira",
-              role: "Community helper",
-              characteristics: ["Kind", "Truthful", "Brave", "Patient"],
-            },
-            {
-              name: "Noah",
-              role: "Question-asker",
-              characteristics: ["Curious", "Respectful", "Careful thinker", "Fair"],
-            },
-            {
-              name: "Sofia",
-              role: "Peacemaker",
-              characteristics: ["Empathetic", "Calm", "Listening", "Humble"],
-            },
-            {
-              name: "Eli",
-              role: "Planner",
-              characteristics: ["Wise", "Organized", "Self-controlled", "Honest"],
-            },
-          ],
-          scenario:
-            "Your class is planning a new rule for fair group work. Act out a meeting where each role helps decide what the rule should be and why it matters.",
-        },
-      };
-    }
-
     }
 
     return {
@@ -733,10 +682,6 @@ export default function DemoPage() {
     if ((next?.taskType || next?.type) === TASK_TYPES.ECHO_CHAIN) {
       showToast("Echo Chain! Say it aloud and add one.", true);
       playEchoChime();
-    }
-    if ((next?.taskType || next?.type) === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck")) {
-      showToast("🎭 RolePlay Deck! Draw roles, then act it out.", true);
-      playRolePlayChime();
     }
   }
 

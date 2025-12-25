@@ -32,11 +32,11 @@ export const retryMustHave = {
   [TASK_TYPES.GUESS_WHO]:
     'GUESS_WHO must include config.playerCount (2–6), config.secretAnswers (array length = playerCount), config.category (string), config.maxGuesses (<=15), and config.timerSeconds (<=180). Intra-team only. Hold-to-reveal secret for answerer, yes/no Q&A, and limited guesses.',
 
-[TASK_TYPES.ECHO_CHAIN]:
-  "ECHO_CHAIN must include: seedTerm (string from aiWordBank), prompt (clear turn-by-turn rules), and config with optional perTurnSeconds (5–20), rotationBonusPoints, pointsPerCorrectAdd, and maxChainLength (optional). Intra-team only.",
+  [TASK_TYPES.ECHO_CHAIN]:
+    "ECHO_CHAIN must include: seedTerm (string from aiWordBank), prompt (clear turn-by-turn rules), and config with optional perTurnSeconds (5–20), rotationBonusPoints, pointsPerCorrectAdd, and maxChainLength (optional). Intra-team only.",
 
   [TASK_TYPES.NARRATION_SYNTHESIZE]:
-    "NARRATION_SYNTHESIZE must include config.playerCount (2–8), config.prompts (array length == playerCount) where each element is { id, concept, prompt }. Each prompt must be an explainable concept or process (not a single word). Optional config.perTurnSeconds (0 disables). Optional config.ratingScale: { min, max, label }. Intra-team only.",  ,
+    "NARRATION_SYNTHESIZE must include config.playerCount (2–8), config.prompts (array length == playerCount) where each element is { id, concept, prompt }. Each prompt must be an explainable concept or process (not a single word). Optional config.perTurnSeconds (0 disables). Optional config.ratingScale: { min, max, label }. Intra-team only.",
   [TASK_TYPES.ROLE_PLAY_DECK]:
     "ROLE_PLAY_DECK must include config.playerCount (2–6), config.playerNames (array length playerCount), config.mode (mystery|classic or allow choice), config.roles (array length playerCount) each with { name, role, characteristics: [3–6 morally appropriate traits] }, and config.scenario (subject/grade appropriate, 2–5 sentences). Intra-team only; do NOT include inter-team gameplay."
 

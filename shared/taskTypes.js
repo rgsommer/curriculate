@@ -912,9 +912,23 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 60,
     interTeamEnabled: false,
     intraTeamEnabled: true,
-    description:
-      "Turn-based oral teach-back / narration. Each player receives a DIFFERENT AI-generated concept prompt (an explainable concept or process, not just a single word). Players read their prompt out loud, then narrate/teach it to their teammates. When finished, they tap “Finished” to advance to the next player. After each narration, the other players quickly rate the narration using a simple slider (e.g., clarity/accuracy/quality).\n\nTASK DATA SHAPE (IMPORTANT): Put all per-player prompts in task.config.prompts as an array, one per player: [{ id, concept, prompt }]. Also set task.config.playerCount (number) and optional task.config.perTurnSeconds (0 disables the timer). Rating config goes in task.config.ratingScale: { min, max, label }.\n\nAI GENERATION GUIDANCE: Generate prompts that require synthesis (explain steps, causes/effects, compare/contrast, how-to processes). Make each prompt distinct so every player teaches something different. Keep each prompt short enough to read quickly but deep enough to require real explanation (2–4 sentences). This is INTRA-TEAM only; do not create inter-team mechanics.",
-  }),
+    description: `
+      NARRATION_SYNTHESIZE (Intra-team only)
+
+      Must include:
+      - config.playerCount: number (2–8)
+      - config.prompts: array length == playerCount
+        Each element: { id, concept, prompt }
+        - concept and prompt must describe an explainable concept or process (not a single word).
+        - prompt should invite a short spoken explanation, with steps/causes/effects/examples.
+
+      Optional:
+      - config.perTurnSeconds: number (0 disables)
+      - config.ratingScale: { min, max, label }
+
+      Intra-team only.
+      `.trim(),
+    }),
 
   [TASK_TYPES.ROLE_PLAY]: metaBase({
     label: "Role Play (Legacy)",

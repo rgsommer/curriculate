@@ -665,13 +665,11 @@ function StudentApp() {
   const sndEcho = useRef(null);
   const sndNarration = useRef(null);
   const sndScriptPlay = useRef(null);
-  const sndRolePlay = useRef(null);
 
   // EchoChain micro-theme pulse (purely visual)
   const [echoPulse, setEchoPulse] = useState(false);
   const [narrationSpark, setNarrationSpark] = useState(false);
   const [scriptSpotlight, setScriptSpotlight] = useState(false);
-  const [rolePlayGlow, setRolePlayGlow] = useState(false);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
@@ -929,17 +927,6 @@ function StudentApp() {
         setNarrationSpark(true);
         window.setTimeout(() => setNarrationSpark(false), 1200);
         setTreatMessage("🗣️ Teach-back time — explain it out loud, then tap Finished.");
-      }
-
-      // RolePlayDeck: subtle reveal cue + glow theme
-      if (
-        assignedType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-        assignedType === "role-play-deck"
-      ) {
-        tryPlayRolePlaySound();
-        setRolePlayGlow(true);
-        window.setTimeout(() => setRolePlayGlow(false), 1200);
-        setTreatMessage("🎭 RolePlay — draw roles, then act it out together.");
       }
 
       setCurrentTask(assignedTask);
@@ -1266,14 +1253,6 @@ function StudentApp() {
       );
       scriptAudio.volume = 0.16;
       sndScriptPlay.current = scriptAudio;
-
-
-      // RolePlayDeck: "card draw" / gentle reveal cue (safe to fail)
-      const rolePlayAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/card_shuffle.ogg"
-      );
-      rolePlayAudio.volume = 0.16;
-      sndRolePlay.current = rolePlayAudio;
     } catch (err) {
       console.warn("Could not preload audio:", err);
     }
@@ -1301,7 +1280,6 @@ function StudentApp() {
     } catch (err) {
       console.warn("EchoChain sound play blocked:", err);
     }
-  }
 
   function tryPlayNarrationSound() {
     try {
@@ -1310,21 +1288,13 @@ function StudentApp() {
       console.warn("Narration sound play blocked:", err);
     }
   }
+  }
 
   function tryPlayScriptPlaySound() {
     try {
       sndScriptPlay.current && sndScriptPlay.current.play();
     } catch (err) {
       console.warn("ScriptPlay sound play blocked:", err);
-    }
-  }
-
-
-  function tryPlayRolePlaySound() {
-    try {
-      sndRolePlay.current && sndRolePlay.current.play();
-    } catch (err) {
-      console.warn("RolePlay sound play blocked:", err);
     }
   }
 
@@ -1913,10 +1883,6 @@ function StudentApp() {
   const isNarrationSynthesize =
     currentTask?.taskType === TASK_TYPES.NARRATION_SYNTHESIZE ||
     currentTask?.taskType === "narration-synthesize";
-
-  const isRolePlayDeck =
-    currentTask?.taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-    currentTask?.taskType === "role-play-deck";
 
   const isMindMapper = currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
 
@@ -3379,22 +3345,6 @@ function StudentApp() {
           }}
         />
       )}
-
-      {rolePlayGlow && isRolePlayDeck && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: 18,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(circle at 30% 30%, rgba(34,197,94,0.16), transparent 55%), radial-gradient(circle at 70% 25%, rgba(59,130,246,0.16), transparent 55%), radial-gradient(circle at 50% 85%, rgba(168,85,247,0.14), transparent 58%)",
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset",
-            animation: "echo-pulse 1.4s ease-out 1",
-          }}
-        />
-      ))}
 
       <TaskErrorBoundary onError={(err) => setTaskRenderError(err)} fallback={
         <div style={{ marginTop: 12 }}>
