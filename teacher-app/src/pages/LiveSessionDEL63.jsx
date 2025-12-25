@@ -45,7 +45,6 @@ const QUICK_TASK_TYPES = Array.from(
     ...QUICK_TASK_TYPES_RAW,
     // Ensure GuessWho is selectable even if QUICK_TASK_ELIGIBLE_TYPES isn't updated yet.
     TASK_TYPES.GUESS_WHO,
-    (TASK_TYPES.FAKE_OUT || "fake-out"),
     (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
@@ -880,7 +879,7 @@ useEffect(() => {
   const handleLaunchQuickTask = () => {
     const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
     const isEchoChain = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
-    const isFakeOut = taskType === TASK_TYPES.FAKE_OUT || taskType === "fake-out" || taskType === "fakeout";
+    const isFakeOut = taskType === TASK_TYPES.FAKE_OUT || taskType === \"fake-out\" || taskType === \"fakeout\";
     const isNarration = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
     const isRolePlay =
       taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
@@ -1826,7 +1825,6 @@ if (
 
   const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
   const isEchoChainQuick = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
-  const isFakeOutQuick = taskType === (TASK_TYPES.FAKE_OUT || "fake-out") || taskType === "fake-out" || taskType === "fakeout";
   const isNarrationQuick = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
   const isRolePlayQuick =
     taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
@@ -1844,20 +1842,6 @@ if (
         .some((s) => String(s ?? "").trim())
     : isEchoChainQuick
     ? !!String(taskConfig.seedTerm || taskConfig.startTerm || "").trim()
-    : isFakeOutQuick
-    ? (() => {
-        const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-        const pc = Number(cfg.playerCount);
-        const rounds = Array.isArray(cfg.rounds) ? cfg.rounds : [];
-        if (!(pc > 0)) return false;
-        if (rounds.length === 0) return false;
-        return rounds.every((r) => {
-          const statement = String(r?.statement ?? "").trim();
-          const options = Array.isArray(r?.options) ? r.options : [];
-          return statement.length > 0 && options.length >= 4;
-        });
-      })()
-
     : isNarrationQuick
     ? (() => {
         const pc = Number(taskConfig?.config?.playerCount);
