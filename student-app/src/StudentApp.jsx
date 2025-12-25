@@ -3394,7 +3394,7 @@ function StudentApp() {
             animation: "echo-pulse 1.4s ease-out 1",
           }}
         />
-      ))}
+      )}
 
       <TaskErrorBoundary onError={(err) => setTaskRenderError(err)} fallback={
         <div style={{ marginTop: 12 }}>
