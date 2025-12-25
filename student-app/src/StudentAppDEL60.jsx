@@ -662,6 +662,12 @@ function StudentApp() {
   const [audioContext, setAudioContext] = useState(null);
   const sndAlert = useRef(null);
   const sndTreat = useRef(null);
+  const sndEcho = useRef(null);
+  const sndNarration = useRef(null);
+
+  // EchoChain micro-theme pulse (purely visual)
+  const [echoPulse, setEchoPulse] = useState(false);
+  const [narrationSpark, setNarrationSpark] = useState(false);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
@@ -899,7 +905,29 @@ function StudentApp() {
         setPostPhase("tasks");
         setScannerActive(false);
         setWaitingForLaunch(false);
-      setCurrentTask(payload.task || payload || null);
+      const assignedTask = payload.task || payload || null;
+      const assignedType = String(assignedTask?.taskType || assignedTask?.type || "");
+
+      // EchoChain: quick audio + subtle pulse so the team knows it's a "say-it-aloud" round.
+      if (assignedType === TASK_TYPES.ECHO_CHAIN) {
+        tryPlayEchoSound();
+        setEchoPulse(true);
+        window.setTimeout(() => setEchoPulse(false), 1200);
+        setTreatMessage("🔁 Echo Chain — say it aloud, add one, and keep the chain going!");
+        window.setTimeout(() => setTreatMessage(null), 3200);
+      }
+
+      if (
+        assignedType === TASK_TYPES.NARRATION_SYNTHESIZE ||
+        assignedType === "narration-synthesize"
+      ) {
+        tryPlayNarrationSound();
+        setNarrationSpark(true);
+        window.setTimeout(() => setNarrationSpark(false), 1200);
+        setTreatMessage("🗣️ Teach-back time — explain it out loud, then tap Finished.");
+      }
+
+      setCurrentTask(assignedTask);
       setPostPhase("tasks"); // Clear mood
       const idx =
         typeof payload.taskIndex === "number"
@@ -1203,6 +1231,19 @@ function StudentApp() {
       const treatAudio = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
       treatAudio.volume = 0.2;
       sndTreat.current = treatAudio;
+
+      // EchoChain: subtle "chain" chime (non-blocking; safe to fail)
+      const echoAudio = new Audio(
+        "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
+      );
+      echoAudio.volume = 0.18;
+      sndEcho.current = echoAudio;
+
+      const narrationAudio = new Audio(
+        "https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg"
+      );
+      narrationAudio.volume = 0.16;
+      sndNarration.current = narrationAudio;
     } catch (err) {
       console.warn("Could not preload audio:", err);
     }
@@ -1222,6 +1263,22 @@ function StudentApp() {
     } catch (err) {
       console.warn("Treat sound play blocked:", err);
     }
+  }
+
+  function tryPlayEchoSound() {
+    try {
+      sndEcho.current && sndEcho.current.play();
+    } catch (err) {
+      console.warn("EchoChain sound play blocked:", err);
+    }
+
+  function tryPlayNarrationSound() {
+    try {
+      sndNarration.current && sndNarration.current.play();
+    } catch (err) {
+      console.warn("Narration sound play blocked:", err);
+    }
+  }
   }
 
   // ─────────────────────────────────────────────
@@ -1800,6 +1857,12 @@ function StudentApp() {
 
   const isMakeAndSnap = currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
 
+  const isEchoChain = currentTask?.taskType === TASK_TYPES.ECHO_CHAIN;
+
+  const isNarrationSynthesize =
+    currentTask?.taskType === TASK_TYPES.NARRATION_SYNTHESIZE ||
+    currentTask?.taskType === "narration-synthesize";
+
   const isMindMapper = currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
 
   const isHangman =
@@ -1820,6 +1883,18 @@ function StudentApp() {
   const mysteryHeaderStyle = isMysteryClues
     ? {
         animation: "mystery-glow 1.6s ease-in-out infinite",
+      }
+    : {};
+
+  const echoHeaderStyle = isEchoChain
+    ? {
+        animation: "echo-glow 1.35s ease-in-out infinite",
+      }
+    : {};
+
+  const narrationHeaderStyle = isNarrationSynthesize
+    ? {
+        animation: "narration-glow 1.5s ease-in-out infinite",
       }
     : {};
 
@@ -1882,6 +1957,8 @@ function StudentApp() {
     ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #facc15 70%, #f97316 100%)"
     : isBrainSparkNotes
     ? "linear-gradient(135deg, #fef9c3 0%, #fee2e2 40%, #f9fafb 100%)"
+    : isNarrationSynthesize
+    ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 32%, #f59e0b 70%, #fef3c7 100%)"
     : "linear-gradient(135deg, #eef2ff 0%, #eff6ff 40%, #f9fafb 100%)";
 
   // Taskset progress
@@ -2392,6 +2469,47 @@ function StudentApp() {
           100% {
             text-shadow: 0 0 4px rgba(56,189,248,0.3);
           }
+        }
+
+        /* ECHO CHAIN header animation */
+        @keyframes echo-glow {
+          0% {
+            text-shadow: 0 0 6px rgba(34,197,94,0.25), 0 0 2px rgba(14,165,233,0.18);
+          }
+          50% {
+            text-shadow: 0 0 14px rgba(34,197,94,0.75), 0 0 10px rgba(14,165,233,0.55);
+          }
+          100% {
+            text-shadow: 0 0 6px rgba(34,197,94,0.25), 0 0 2px rgba(14,165,233,0.18);
+          }
+        }
+
+        /* EchoChain "pulse" overlay */
+        @keyframes echo-pulse {
+          0% { opacity: 0; transform: scale(0.98); }
+          35% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.01); }
+        }
+
+
+        /* NARRATION SYNTHESIZE header animation */
+        @keyframes narration-glow {
+          0% {
+            text-shadow: 0 0 6px rgba(245,158,11,0.22), 0 0 2px rgba(29,78,216,0.18);
+          }
+          50% {
+            text-shadow: 0 0 16px rgba(245,158,11,0.78), 0 0 10px rgba(29,78,216,0.55);
+          }
+          100% {
+            text-shadow: 0 0 6px rgba(245,158,11,0.22), 0 0 2px rgba(29,78,216,0.18);
+          }
+        }
+
+        /* Narration sparkle overlay */
+        @keyframes narration-spark {
+          0% { opacity: 0; transform: scale(0.985); }
+          30% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.01); }
         }
 
         /* HANGMAN header pulse */
@@ -3143,6 +3261,8 @@ function StudentApp() {
         ...(musicalChairsHeaderStyle || {}),
         ...(mysteryHeaderStyle || {}),
         ...(hangmanHeaderStyle || {}),
+        ...(echoHeaderStyle || {}),
+        ...(narrationHeaderStyle || {}),
       }}
     >
       {currentTaskNumber && (
@@ -3159,6 +3279,35 @@ function StudentApp() {
         minHeight: isMotionMission || isPetFeeding ? "60vh" : undefined,
       }}
     >
+      {echoPulse && isEchoChain && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 20% 10%, rgba(34,197,94,0.18), transparent 55%), radial-gradient(circle at 80% 0%, rgba(14,165,233,0.14), transparent 60%), radial-gradient(circle at 50% 90%, rgba(168,85,247,0.10), transparent 60%)",
+            animation: "echo-pulse 1.2s ease-out 1",
+          }}
+        />
+      )}
+      {narrationSpark && isNarrationSynthesize && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 20% 20%, rgba(245,158,11,0.20), transparent 55%), radial-gradient(circle at 80% 15%, rgba(29,78,216,0.18), transparent 60%), radial-gradient(circle at 50% 90%, rgba(56,189,248,0.10), transparent 60%)",
+            animation: "narration-spark 1.05s ease-out both",
+          }}
+        />
+      )}
+
       <TaskErrorBoundary onError={(err) => setTaskRenderError(err)} fallback={
         <div style={{ marginTop: 12 }}>
           <button

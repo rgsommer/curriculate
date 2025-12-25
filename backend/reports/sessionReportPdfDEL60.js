@@ -166,7 +166,15 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
   bullets(report.summary?.conceptsCovered || report.summary?.concepts || []);
 
   sectionTitle("Activities Completed");
-  bullets(report.summary?.activities || report.summary?.activityHighlights || []);
+  const activitiesList = report.summary?.activities || report.summary?.activityHighlights || [];
+  const fallbackTaskList = Array.isArray(report.summary?.taskList)
+    ? report.summary.taskList.map((t) => {
+        const type = t?.type || t?.taskType || "";
+        const title = t?.title || "";
+        return [title, type].filter(Boolean).join(" — ");
+      })
+    : [];
+  bullets((Array.isArray(activitiesList) && activitiesList.length ? activitiesList : fallbackTaskList) || []);
 
   ensureSpace(640);
 
@@ -208,6 +216,22 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
         doc.text(`Improvements: ${fb.improvements || "—"}`);
         doc.text(`Favorite task: ${fb.favoriteTask || "—"}`);
       }
+
+      // Peer-rated / narration-style tasks (optional)
+      const narrationRaw =
+        t.narrationRatings ||
+        t.peerRatings ||
+        t.narrationScores ||
+        (t.narration && t.narration.ratings) ||
+        null;
+      const narrationSummary = summarizeRatings(narrationRaw);
+      if (narrationSummary) {
+        doc.moveDown(0.15);
+        doc.text(
+          `Narration / peer rating avg: ${narrationSummary.avg.toFixed(1)} (n=${narrationSummary.count})`
+        );
+      }
+
       doc.moveDown(0.45);
 
       doc
@@ -280,6 +304,17 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
 
   doc.end();
   return done;
+}
+
+
+function summarizeRatings(raw) {
+  const arr = Array.isArray(raw) ? raw : [];
+  const values = arr
+    .map((r) => (typeof r === "number" ? r : Number(r?.score ?? r?.value ?? r?.rating)))
+    .filter((n) => Number.isFinite(n));
+  if (!values.length) return null;
+  const sum = values.reduce((a, b) => a + b, 0);
+  return { avg: sum / values.length, count: values.length };
 }
 
 function formatMood(moodEntry) {

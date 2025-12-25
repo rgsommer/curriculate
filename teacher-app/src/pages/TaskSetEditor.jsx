@@ -62,6 +62,17 @@ if (
   return TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize";
 }
 
+
+// Script Play aliases
+if (
+  v === "scriptplay" ||
+  v === "script-play" ||
+  v === "script_play" ||
+  v === "script play" ||
+  v === "script"
+) {
+  return TASK_TYPES.SCRIPT_PLAY || "script-play";
+}
   if (v === "photo" || v === "photo-evidence") {
     return TASK_TYPES.PHOTO;
   }
@@ -261,6 +272,63 @@ if (out.taskType === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize")
   };
 }
 
+
+// Script Play: normalize config so editor can render controls
+if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
+  const cfg = out.config && typeof out.config === "object" ? out.config : {};
+  const rawRoles =
+    (Array.isArray(cfg.roles) && cfg.roles) ||
+    (Array.isArray(out.roles) && out.roles) ||
+    [];
+  const roles = (Array.isArray(rawRoles) ? rawRoles : []).map((r, i) => {
+    if (typeof r === "string") return { id: `r${i + 1}`, name: r };
+    if (r && typeof r === "object") {
+      return {
+        id: String(r.id ?? r._id ?? `r${i + 1}`),
+        name: String(r.name ?? r.role ?? r.speaker ?? `Role ${i + 1}`).trim(),
+      };
+    }
+    return { id: `r${i + 1}`, name: `Role ${i + 1}` };
+  });
+
+  const rawLines =
+    (Array.isArray(cfg.lines) && cfg.lines) ||
+    (Array.isArray(cfg.script) && cfg.script) ||
+    (Array.isArray(out.lines) && out.lines) ||
+    (Array.isArray(out.script) && out.script) ||
+    [];
+
+  const lines = (Array.isArray(rawLines) ? rawLines : []).map((ln, i) => {
+    if (typeof ln === "string") {
+      return {
+        id: `l${i + 1}`,
+        speaker: "",
+        text: ln,
+        stage: "",
+        tone: "",
+      };
+    }
+    if (ln && typeof ln === "object") {
+      return {
+        id: String(ln.id ?? ln._id ?? `l${i + 1}`),
+        speaker: String(ln.speaker ?? ln.role ?? ln.character ?? "").trim(),
+        text: String(ln.text ?? ln.line ?? ln.dialogue ?? "").trim(),
+        stage: String(ln.stage ?? ln.stageDirection ?? ln.stageDirections ?? "").trim(),
+        tone: String(ln.tone ?? ln.toneCue ?? "").trim(),
+      };
+    }
+    return { id: `l${i + 1}`, speaker: "", text: "", stage: "", tone: "" };
+  });
+
+  out.config = {
+    ...cfg,
+    sceneTitle: String(cfg.sceneTitle ?? out.sceneTitle ?? "").trim(),
+    contextBefore: String(cfg.contextBefore ?? out.contextBefore ?? "").trim(),
+    contextAfter: String(cfg.contextAfter ?? out.contextAfter ?? "").trim(),
+    roles,
+    lines,
+  };
+}
 
             // BrainBlitz / Jeopardy: accept clues from several legacy shapes
             if (out.taskType === TASK_TYPES.JEOPARDY) {
@@ -731,6 +799,56 @@ if (out.taskType === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize")
         base.options = [];
         base.correctAnswer = null;
       }
+
+
+// --- Script Play: persist roles/lines into config (structured performance script) ---
+if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
+  const prevCfg = base.config && typeof base.config === "object" ? base.config : {};
+
+  const roles = Array.isArray(prevCfg.roles) ? prevCfg.roles : (Array.isArray(base.roles) ? base.roles : []);
+  const lines = Array.isArray(prevCfg.lines) ? prevCfg.lines : (Array.isArray(base.lines) ? base.lines : []);
+
+  const cleanRoles = (Array.isArray(roles) ? roles : [])
+    .map((r, i) => {
+      if (typeof r === "string") return { id: `r${i + 1}`, name: r.trim() };
+      if (r && typeof r === "object") {
+        return { id: String(r.id ?? r._id ?? `r${i + 1}`), name: String(r.name ?? r.role ?? r.speaker ?? "").trim() };
+      }
+      return { id: `r${i + 1}`, name: "" };
+    })
+    .filter((r) => (r.name || "").trim().length > 0);
+
+  const cleanLines = (Array.isArray(lines) ? lines : [])
+    .map((ln, i) => {
+      if (typeof ln === "string") {
+        return { id: `l${i + 1}`, speaker: "", text: ln.trim(), stage: "", tone: "" };
+      }
+      if (ln && typeof ln === "object") {
+        return {
+          id: String(ln.id ?? ln._id ?? `l${i + 1}`),
+          speaker: String(ln.speaker ?? ln.role ?? ln.character ?? "").trim(),
+          text: String(ln.text ?? ln.line ?? ln.dialogue ?? "").trim(),
+          stage: String(ln.stage ?? ln.stageDirection ?? ln.stageDirections ?? "").trim(),
+          tone: String(ln.tone ?? ln.toneCue ?? "").trim(),
+        };
+      }
+      return { id: `l${i + 1}`, speaker: "", text: "", stage: "", tone: "" };
+    })
+    .filter((ln) => (ln.text || "").trim().length > 0);
+
+  base.config = {
+    ...prevCfg,
+    sceneTitle: String(prevCfg.sceneTitle ?? base.sceneTitle ?? "").trim(),
+    contextBefore: String(prevCfg.contextBefore ?? base.contextBefore ?? "").trim(),
+    contextAfter: String(prevCfg.contextAfter ?? base.contextAfter ?? "").trim(),
+    roles: cleanRoles,
+    lines: cleanLines,
+  };
+
+  // ScriptPlay is performance / rubric / fun points: don't carry objective correctAnswer
+  base.correctAnswer = null;
+  base.options = [];
+}
 
       // Infer aiScoringRequired if not explicitly set.
       // We want objective tasks (MC, TF, Sort, Sequence, etc.) to be scored
@@ -1984,6 +2102,368 @@ if (out.taskType === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize")
       >
         + Add prompt
       </button>
+    </div>
+  </div>
+)}
+
+
+
+{/* SCRIPT PLAY: structured script editor (intra-team performance) */}
+{task.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play") && (
+  <div
+    style={{
+      marginBottom: 6,
+      border: "1px solid rgba(245,158,11,0.25)",
+      background:
+        "linear-gradient(180deg, rgba(255,247,237,0.75), rgba(255,255,255,0.95))",
+      borderRadius: 12,
+      padding: 12,
+      boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
+    }}
+  >
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+      <div>
+        <div style={{ fontSize: "0.9rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              width: 28,
+              height: 28,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 999,
+              background: "rgba(245,158,11,0.14)",
+              border: "1px solid rgba(245,158,11,0.25)",
+              fontSize: "0.95rem",
+            }}
+          >
+            🎭
+          </span>
+          Script Play settings
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 2 }}>
+          Intra-team only. Pass the device from speaker to speaker. Each line can include a tone cue and stage direction.
+        </div>
+      </div>
+
+      <span
+        style={{
+          fontSize: "0.72rem",
+          color: "#92400e",
+          background: "rgba(245,158,11,0.10)",
+          border: "1px solid rgba(245,158,11,0.18)",
+          padding: "4px 10px",
+          borderRadius: 999,
+          fontWeight: 700,
+        }}
+      >
+        🎬 perform + read
+      </span>
+    </div>
+
+    <div style={{ height: 10 }} />
+
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+          Scene title (optional)
+        </label>
+        <input
+          type="text"
+          value={String(task.config?.sceneTitle ?? "")}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              sceneTitle: e.target.value,
+            }))
+          }
+          placeholder="e.g., 'The Council at Jerusalem'"
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(245,158,11,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+          }}
+        />
+      </div>
+
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+          Optional bonus points (performance)
+        </label>
+        <input
+          type="number"
+          min={0}
+          value={Number(task.config?.expressiveBonusPoints ?? 0)}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              expressiveBonusPoints: Number(e.target.value),
+            }))
+          }
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(245,158,11,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+          }}
+        />
+        <div style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: 2 }}>
+          Purely a scoring hint; your student ScriptPlay UI can decide how to use it.
+        </div>
+      </div>
+    </div>
+
+    <div style={{ height: 10 }} />
+
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+          Context before (shown briefly)
+        </label>
+        <textarea
+          rows={3}
+          value={String(task.config?.contextBefore ?? "")}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              contextBefore: e.target.value,
+            }))
+          }
+          placeholder="1–2 lines: where we are in the story, what's happening…"
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(245,158,11,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+            resize: "vertical",
+          }}
+        />
+      </div>
+
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+          Context after (shown briefly)
+        </label>
+        <textarea
+          rows={3}
+          value={String(task.config?.contextAfter ?? "")}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              contextAfter: e.target.value,
+            }))
+          }
+          placeholder="1–2 lines: what happens next…"
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(245,158,11,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+            resize: "vertical",
+          }}
+        />
+      </div>
+    </div>
+
+    <div style={{ height: 10 }} />
+
+    <div style={{ fontSize: "0.8rem", fontWeight: 700, marginBottom: 6 }}>
+      Roles / speakers
+    </div>
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {(Array.isArray(task.config?.roles) ? task.config.roles : []).map((r, i) => (
+        <div key={r?.id || i} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}>
+          <input
+            type="text"
+            value={String(r?.name ?? "")}
+            onChange={(e) =>
+              updateGenericConfig(task._tempId, (prev) => {
+                const roles = Array.isArray(prev.roles) ? [...prev.roles] : [];
+                roles[i] = { ...(roles[i] || {}), id: String(roles[i]?.id || `r${i + 1}`), name: e.target.value };
+                return { ...prev, roles };
+              })
+            }
+            placeholder={`Role ${i + 1} (e.g., Narrator)`}
+            style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(245,158,11,0.25)", padding: 10, fontSize: "0.9rem" }}
+          />
+          <button
+            type="button"
+            onClick={() =>
+              updateGenericConfig(task._tempId, (prev) => {
+                const roles = Array.isArray(prev.roles) ? [...prev.roles] : [];
+                roles.splice(i, 1);
+                return { ...prev, roles };
+              })
+            }
+            style={redTextButton}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+    </div>
+
+    <div style={{ marginTop: 8 }}>
+      <button
+        type="button"
+        onClick={() =>
+          updateGenericConfig(task._tempId, (prev) => {
+            const roles = Array.isArray(prev.roles) ? [...prev.roles] : [];
+            roles.push({ id: `r${roles.length + 1}`, name: "" });
+            return { ...prev, roles };
+          })
+        }
+        style={grayButton}
+      >
+        + Add role
+      </button>
+    </div>
+
+    <div style={{ height: 10 }} />
+
+    <div style={{ fontSize: "0.8rem", fontWeight: 700, marginBottom: 6 }}>
+      Script lines
+    </div>
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {(Array.isArray(task.config?.lines) ? task.config.lines : []).map((ln, i) => {
+        const roles = Array.isArray(task.config?.roles) ? task.config.roles : [];
+        const roleNames = roles.map((r) => String(r?.name || "").trim()).filter(Boolean);
+
+        return (
+          <div
+            key={ln?.id || i}
+            style={{
+              border: "1px solid rgba(245,158,11,0.18)",
+              background: "#ffffff",
+              borderRadius: 10,
+              padding: 10,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Line {i + 1}</div>
+              <button
+                type="button"
+                onClick={() =>
+                  updateGenericConfig(task._tempId, (prev) => {
+                    const lines = Array.isArray(prev.lines) ? [...prev.lines] : [];
+                    lines.splice(i, 1);
+                    return { ...prev, lines };
+                  })
+                }
+                style={redTextButton}
+              >
+                Remove
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>Speaker</label>
+                <input
+                  list={`scriptplay-roles-${task._tempId}`}
+                  value={String(ln?.speaker ?? "")}
+                  onChange={(e) =>
+                    updateGenericConfig(task._tempId, (prev) => {
+                      const lines = Array.isArray(prev.lines) ? [...prev.lines] : [];
+                      lines[i] = { ...(lines[i] || {}), id: String(lines[i]?.id || `l${i + 1}`), speaker: e.target.value };
+                      return { ...prev, lines };
+                    })
+                  }
+                  placeholder="Pick or type a role"
+                  style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(245,158,11,0.25)", padding: 10, fontSize: "0.9rem" }}
+                />
+                <datalist id={`scriptplay-roles-${task._tempId}`}>
+                  {roleNames.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>Tone cue (optional)</label>
+                <input
+                  type="text"
+                  value={String(ln?.tone ?? "")}
+                  onChange={(e) =>
+                    updateGenericConfig(task._tempId, (prev) => {
+                      const lines = Array.isArray(prev.lines) ? [...prev.lines] : [];
+                      lines[i] = { ...(lines[i] || {}), id: String(lines[i]?.id || `l${i + 1}`), tone: e.target.value };
+                      return { ...prev, lines };
+                    })
+                  }
+                  placeholder="e.g., 'whisper', 'excited', 'serious'"
+                  style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(245,158,11,0.25)", padding: 10, fontSize: "0.9rem" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ height: 8 }} />
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>Line text</label>
+              <textarea
+                rows={2}
+                value={String(ln?.text ?? "")}
+                onChange={(e) =>
+                  updateGenericConfig(task._tempId, (prev) => {
+                    const lines = Array.isArray(prev.lines) ? [...prev.lines] : [];
+                    lines[i] = { ...(lines[i] || {}), id: String(lines[i]?.id || `l${i + 1}`), text: e.target.value };
+                    return { ...prev, lines };
+                  })
+                }
+                placeholder="What the speaker says…"
+                style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(245,158,11,0.25)", padding: 10, fontSize: "0.9rem", resize: "vertical" }}
+              />
+            </div>
+
+            <div style={{ height: 8 }} />
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>Stage direction (optional)</label>
+              <input
+                type="text"
+                value={String(ln?.stage ?? "")}
+                onChange={(e) =>
+                  updateGenericConfig(task._tempId, (prev) => {
+                    const lines = Array.isArray(prev.lines) ? [...prev.lines] : [];
+                    lines[i] = { ...(lines[i] || {}), id: String(lines[i]?.id || `l${i + 1}`), stage: e.target.value };
+                    return { ...prev, lines };
+                  })
+                }
+                placeholder="e.g., '(points to the map)', '(steps back)'"
+                style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(245,158,11,0.25)", padding: 10, fontSize: "0.9rem" }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    <div style={{ marginTop: 10 }}>
+      <button
+        type="button"
+        onClick={() =>
+          updateGenericConfig(task._tempId, (prev) => {
+            const lines = Array.isArray(prev.lines) ? [...prev.lines] : [];
+            lines.push({ id: `l${lines.length + 1}`, speaker: "", text: "", stage: "", tone: "" });
+            return { ...prev, lines };
+          })
+        }
+        style={grayButton}
+      >
+        + Add line
+      </button>
+    </div>
+
+    <div style={{ marginTop: 8, fontSize: "0.75rem", color: "#6b7280" }}>
+      Student ScriptPlay UI reads <code>task.config.roles</code> + <code>task.config.lines</code>.
     </div>
   </div>
 )}

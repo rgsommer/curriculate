@@ -46,6 +46,22 @@ function normalizeTaskType(raw) {
   if (v === "sequence" || v === "seq" || v === "timeline") {
     return TASK_TYPES.SEQUENCE;
   }
+
+  // Echo Chain aliases
+  if (v === "echochain" || v === "echo-chain" || v === "echo_chain") {
+    return TASK_TYPES.ECHO_CHAIN || "echo-chain";
+  }
+
+// Narration Synthesize aliases
+if (
+  v === "narrationsynthesize" ||
+  v === "narration-synthesize" ||
+  v === "narration_synthesize" ||
+  v === "narration synthesize"
+) {
+  return TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize";
+}
+
   if (v === "photo" || v === "photo-evidence") {
     return TASK_TYPES.PHOTO;
   }
@@ -73,6 +89,17 @@ function categoryLabelFor(typeValue) {
 function prettyCategory(typeValue) {
   const cat = categoryLabelFor(typeValue);
   return cat.charAt(0).toUpperCase() + cat.slice(1);
+}
+
+function playModeLabel(typeValue) {
+  const meta = TASK_TYPE_META[typeValue] || {};
+  const intra = meta.intraTeamEnabled === true;
+  const inter = meta.interTeamEnabled === true;
+
+  if (inter && intra) return "inter + intra";
+  if (inter) return "inter-team";
+  if (intra) return "intra-team";
+  return "solo";
 }
 
 export default function TaskSetEditor() {
@@ -144,6 +171,96 @@ export default function TaskSetEditor() {
             };
 
             // ---- Type-specific display normalization (editor-only) ----
+
+            // Echo Chain: ensure config defaults so editor can render controls
+            if (out.taskType === (TASK_TYPES.ECHO_CHAIN || "echo-chain")) {
+              const cfg = out.config && typeof out.config === "object" ? out.config : {};
+              const seedTerm =
+                String(cfg.seedTerm ?? out.seedTerm ?? "").trim() ||
+                // best-effort: pull a single word from the prompt, if present
+                (typeof out.prompt === "string"
+                  ? (out.prompt.match(/“([^”]{2,40})”/)?.[1] || out.prompt.match(/"([^"]{2,40})"/)?.[1] || "")
+                  : "");
+              out.config = {
+                ...cfg,
+                seedTerm: seedTerm || cfg.seedTerm || "",
+                perTurnSeconds:
+                  Number.isFinite(Number(cfg.perTurnSeconds)) && Number(cfg.perTurnSeconds) > 0
+                    ? Number(cfg.perTurnSeconds)
+                    : 10,
+                maxChainLength:
+                  Number.isFinite(Number(cfg.maxChainLength)) && Number(cfg.maxChainLength) > 0
+                    ? Number(cfg.maxChainLength)
+                    : 30,
+                pointsPerCorrectAdd:
+                  Number.isFinite(Number(cfg.pointsPerCorrectAdd)) && Number(cfg.pointsPerCorrectAdd) >= 0
+                    ? Number(cfg.pointsPerCorrectAdd)
+                    : 1,
+                rotationBonusPoints:
+                  Number.isFinite(Number(cfg.rotationBonusPoints)) && Number(cfg.rotationBonusPoints) >= 0
+                    ? Number(cfg.rotationBonusPoints)
+                    : 5,
+                requireVocabOnly: cfg.requireVocabOnly === true,
+              };
+            }
+
+// Narration Synthesize: normalize config so editor can render controls
+if (out.taskType === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize")) {
+  const cfg = out.config && typeof out.config === "object" ? out.config : {};
+  const playerCount =
+    Number.isFinite(Number(cfg.playerCount)) && Number(cfg.playerCount) > 0
+      ? Number(cfg.playerCount)
+      : Number.isFinite(Number(out.playerCount)) && Number(out.playerCount) > 0
+      ? Number(out.playerCount)
+      : 4;
+
+  const perTurnSeconds =
+    Number.isFinite(Number(cfg.perTurnSeconds)) && Number(cfg.perTurnSeconds) >= 0
+      ? Number(cfg.perTurnSeconds)
+      : Number.isFinite(Number(out.perTurnSeconds)) && Number(out.perTurnSeconds) >= 0
+      ? Number(out.perTurnSeconds)
+      : 60;
+
+  const ratingScaleRaw =
+    cfg.ratingScale && typeof cfg.ratingScale === "object"
+      ? cfg.ratingScale
+      : out.ratingScale && typeof out.ratingScale === "object"
+      ? out.ratingScale
+      : null;
+
+  const ratingScale = {
+    min: Number.isFinite(Number(ratingScaleRaw?.min)) ? Number(ratingScaleRaw.min) : 1,
+    max: Number.isFinite(Number(ratingScaleRaw?.max)) ? Number(ratingScaleRaw.max) : 5,
+    label: String(ratingScaleRaw?.label || "Clarity / Accuracy / Quality").trim(),
+  };
+
+  const rawPrompts =
+    (Array.isArray(cfg.prompts) && cfg.prompts) ||
+    (Array.isArray(out.prompts) && out.prompts) ||
+    (Array.isArray(out.items) && out.items) ||
+    [];
+
+  const prompts = (Array.isArray(rawPrompts) ? rawPrompts : []).map((p, i) => {
+    if (typeof p === "string") return { id: `p${i + 1}`, concept: "", prompt: p };
+    if (p && typeof p === "object") {
+      return {
+        id: String(p.id ?? p._id ?? `p${i + 1}`),
+        concept: String(p.concept ?? p.topic ?? p.term ?? "").trim(),
+        prompt: String(p.prompt ?? p.text ?? p.question ?? "").trim(),
+      };
+    }
+    return { id: `p${i + 1}`, concept: "", prompt: "" };
+  });
+
+  out.config = {
+    ...cfg,
+    playerCount,
+    prompts,
+    perTurnSeconds,
+    ratingScale,
+  };
+}
+
 
             // BrainBlitz / Jeopardy: accept clues from several legacy shapes
             if (out.taskType === TASK_TYPES.JEOPARDY) {
@@ -962,7 +1079,10 @@ export default function TaskSetEditor() {
                     >
                       {prettyCategory(task.taskType)} •{" "}
                       {TASK_TYPE_META[task.taskType]?.label ||
-                        task.taskType}
+                        task.taskType}{" "}
+                      <span style={{ color: "#9ca3af" }}>
+                        · {playModeLabel(task.taskType)}
+                      </span>
                     </span>
                   </div>
                   <div
@@ -1591,7 +1711,508 @@ export default function TaskSetEditor() {
                   </div>
                 )}
 
-                {/* Multi-part items editor (MC / TF / Short Answer) */}
+                {/* NARRATION SYNTHESIZE: config editor */}
+{task.taskType === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize") && (
+  <div
+    style={{
+      marginBottom: 6,
+      border: "1px solid rgba(14,116,144,0.25)",
+      background:
+        "linear-gradient(180deg, rgba(224,242,254,0.65), rgba(255,255,255,0.95))",
+      borderRadius: 12,
+      padding: 12,
+      boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
+    }}
+  >
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+      <div>
+        <div style={{ fontSize: "0.9rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              width: 28,
+              height: 28,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 999,
+              background: "rgba(14,116,144,0.12)",
+              border: "1px solid rgba(14,116,144,0.25)",
+              fontSize: "0.95rem",
+            }}
+          >
+            🎙️
+          </span>
+          Narration Synthesize settings
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 2 }}>
+          Turn-based oral teach-back. Intra-team only. One concept prompt per player + peer rating slider.
+        </div>
+      </div>
+
+      <span
+        style={{
+          fontSize: "0.72rem",
+          color: "#0e7490",
+          background: "rgba(14,116,144,0.10)",
+          border: "1px solid rgba(14,116,144,0.20)",
+          padding: "4px 10px",
+          borderRadius: 999,
+          fontWeight: 700,
+        }}
+      >
+        🗣️ speak + rate
+      </span>
+    </div>
+
+    <div style={{ height: 10 }} />
+
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr)", gap: 10 }}>
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+          Player count (prompts should match)
+        </label>
+        <input
+          type="number"
+          min={2}
+          max={12}
+          value={Number(task.config?.playerCount ?? 4)}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              playerCount: Number(e.target.value),
+            }))
+          }
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(14,116,144,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+          }}
+        />
+      </div>
+
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+          Turn timer (sec)
+        </label>
+        <input
+          type="number"
+          min={0}
+          value={Number(task.config?.perTurnSeconds ?? 60)}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              perTurnSeconds: Number(e.target.value),
+            }))
+          }
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(14,116,144,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+          }}
+        />
+        <div style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: 2 }}>Set 0 to disable.</div>
+      </div>
+
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+          Rating slider label
+        </label>
+        <input
+          type="text"
+          value={String(task.config?.ratingScale?.label ?? "Clarity / Accuracy / Quality")}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              ratingScale: {
+                ...(prev.ratingScale && typeof prev.ratingScale === "object" ? prev.ratingScale : {}),
+                label: e.target.value,
+              },
+            }))
+          }
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(14,116,144,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+          }}
+        />
+      </div>
+    </div>
+
+    <div style={{ height: 10 }} />
+
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>Rating min</label>
+        <input
+          type="number"
+          value={Number(task.config?.ratingScale?.min ?? 1)}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              ratingScale: {
+                ...(prev.ratingScale && typeof prev.ratingScale === "object" ? prev.ratingScale : {}),
+                min: Number(e.target.value),
+              },
+            }))
+          }
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(14,116,144,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+          }}
+        />
+      </div>
+      <div>
+        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>Rating max</label>
+        <input
+          type="number"
+          value={Number(task.config?.ratingScale?.max ?? 5)}
+          onChange={(e) =>
+            updateGenericConfig(task._tempId, (prev) => ({
+              ...prev,
+              ratingScale: {
+                ...(prev.ratingScale && typeof prev.ratingScale === "object" ? prev.ratingScale : {}),
+                max: Number(e.target.value),
+              },
+            }))
+          }
+          style={{
+            width: "100%",
+            borderRadius: 10,
+            border: "1px solid rgba(14,116,144,0.25)",
+            padding: 10,
+            fontSize: "0.9rem",
+          }}
+        />
+      </div>
+    </div>
+
+    <div style={{ height: 10 }} />
+
+    <div style={{ fontSize: "0.8rem", fontWeight: 700, marginBottom: 6 }}>
+      Player prompts (one per player)
+    </div>
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {(Array.isArray(task.config?.prompts) ? task.config.prompts : []).map((p, i) => (
+        <div
+          key={p?.id || i}
+          style={{
+            border: "1px solid rgba(14,116,144,0.18)",
+            background: "#ffffff",
+            borderRadius: 10,
+            padding: 10,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Prompt {i + 1}</div>
+            <button
+              type="button"
+              onClick={() =>
+                updateGenericConfig(task._tempId, (prev) => {
+                  const prompts = Array.isArray(prev.prompts) ? [...prev.prompts] : [];
+                  prompts.splice(i, 1);
+                  return { ...prev, prompts };
+                })
+              }
+              style={redTextButton}
+            >
+              Remove
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)", gap: 8 }}>
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>Concept (short label)</label>
+              <input
+                type="text"
+                value={p?.concept || ""}
+                onChange={(e) =>
+                  updateGenericConfig(task._tempId, (prev) => {
+                    const prompts = Array.isArray(prev.prompts) ? [...prev.prompts] : [];
+                    const cur = prompts[i] && typeof prompts[i] === "object" ? { ...prompts[i] } : {};
+                    prompts[i] = { id: cur.id || `p${i + 1}`, ...cur, concept: e.target.value };
+                    return { ...prev, prompts };
+                  })
+                }
+                placeholder="e.g., Photosynthesis"
+                style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(14,116,144,0.25)", padding: 10, fontSize: "0.9rem" }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>Player prompt (read aloud)</label>
+              <textarea
+                rows={2}
+                value={p?.prompt || ""}
+                onChange={(e) =>
+                  updateGenericConfig(task._tempId, (prev) => {
+                    const prompts = Array.isArray(prev.prompts) ? [...prev.prompts] : [];
+                    const cur = prompts[i] && typeof prompts[i] === "object" ? { ...prompts[i] } : {};
+                    prompts[i] = { id: cur.id || `p${i + 1}`, ...cur, prompt: e.target.value };
+                    return { ...prev, prompts };
+                  })
+                }
+                placeholder="Explain this concept/process in your own words to your teammates…"
+                style={{ width: "100%", borderRadius: 10, border: "1px solid rgba(14,116,144,0.25)", padding: 10, fontSize: "0.9rem", resize: "vertical" }}
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div style={{ marginTop: 10 }}>
+      <button
+        type="button"
+        onClick={() =>
+          updateGenericConfig(task._tempId, (prev) => {
+            const prompts = Array.isArray(prev.prompts) ? [...prev.prompts] : [];
+            prompts.push({ id: `p${prompts.length + 1}`, concept: "", prompt: "" });
+            return { ...prev, prompts };
+          })
+        }
+        style={grayButton}
+      >
+        + Add prompt
+      </button>
+    </div>
+  </div>
+)}
+
+{/* Multi-part items editor (MC / TF / Short Answer) */}
+                {/* ECHO CHAIN: config editor */}
+                {task.taskType === (TASK_TYPES.ECHO_CHAIN || "echo-chain") && (
+                  <div
+                    style={{
+                      marginBottom: 6,
+                      border: "1px solid #ddd6fe",
+                      background: "linear-gradient(180deg, rgba(237,233,254,0.65), rgba(255,255,255,0.95))",
+                      borderRadius: 12,
+                      padding: 12,
+                      boxShadow: "0 1px 2px rgba(15,23,42,0.06)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: "0.9rem", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                          <span
+                            style={{
+                              width: 28,
+                              height: 28,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              borderRadius: 999,
+                              background: "rgba(109,40,217,0.12)",
+                              border: "1px solid rgba(109,40,217,0.25)",
+                              fontSize: "0.95rem",
+                            }}
+                          >
+                            🔁
+                          </span>
+                          Echo Chain settings
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 2 }}>
+                          Oral memory-chain game. Intra-team only. Great for retrieval practice + listening accuracy.
+                        </div>
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: "0.72rem",
+                          color: "#4c1d95",
+                          background: "rgba(109,40,217,0.10)",
+                          border: "1px solid rgba(109,40,217,0.20)",
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          fontWeight: 700,
+                        }}
+                      >
+                        🗣️ speak + listen
+                      </span>
+                    </div>
+
+                    <div style={{ height: 10 }} />
+
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.5fr) repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+                          Starting seed term (what the AI starts the chain with)
+                        </label>
+                        <input
+                          type="text"
+                          value={task.config?.seedTerm || ""}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              seedTerm: e.target.value,
+                            }))
+                          }
+                          placeholder="e.g., photosynthesis"
+                          style={{
+                            width: "100%",
+                            borderRadius: 10,
+                            border: "1px solid rgba(109,40,217,0.25)",
+                            padding: 10,
+                            fontSize: "0.9rem",
+                            boxShadow: "inset 0 1px 2px rgba(15,23,42,0.05)",
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+                          Turn timer (sec)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={Number(task.config?.perTurnSeconds ?? 10)}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              perTurnSeconds: Number(e.target.value),
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            borderRadius: 10,
+                            border: "1px solid rgba(109,40,217,0.25)",
+                            padding: 10,
+                            fontSize: "0.9rem",
+                          }}
+                        />
+                        <div style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: 2 }}>
+                          Set 0 to disable.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+                          Points / correct add
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={Number(task.config?.pointsPerCorrectAdd ?? 1)}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              pointsPerCorrectAdd: Number(e.target.value),
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            borderRadius: 10,
+                            border: "1px solid rgba(109,40,217,0.25)",
+                            padding: 10,
+                            fontSize: "0.9rem",
+                          }}
+                        />
+                        <div style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: 2 }}>
+                          Scales by chain length.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+                          Rotation bonus
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={Number(task.config?.rotationBonusPoints ?? 5)}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              rotationBonusPoints: Number(e.target.value),
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            borderRadius: 10,
+                            border: "1px solid rgba(109,40,217,0.25)",
+                            padding: 10,
+                            fontSize: "0.9rem",
+                          }}
+                        />
+                        <div style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: 2 }}>
+                          Awarded for a full rotation.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ height: 10 }} />
+
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", marginBottom: 4 }}>
+                          Max chain length (optional cap)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={Number(task.config?.maxChainLength ?? 30)}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              maxChainLength: Number(e.target.value),
+                            }))
+                          }
+                          style={{
+                            width: "100%",
+                            borderRadius: 10,
+                            border: "1px solid rgba(109,40,217,0.25)",
+                            padding: 10,
+                            fontSize: "0.9rem",
+                          }}
+                        />
+                        <div style={{ fontSize: "0.7rem", color: "#6b7280", marginTop: 2 }}>
+                          Set 0 for “no cap”.
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            cursor: "pointer",
+                            fontSize: "0.85rem",
+                            color: "#111827",
+                            userSelect: "none",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={task.config?.requireVocabOnly === true}
+                            onChange={(e) =>
+                              updateGenericConfig(task._tempId, (prev) => ({
+                                ...prev,
+                                requireVocabOnly: e.target.checked,
+                              }))
+                            }
+                          />
+                          Require additions to come from the AI word bank
+                        </label>
+                        <div style={{ fontSize: "0.72rem", color: "#6b7280", marginTop: 4 }}>
+                          Helps keep the chain tightly on-topic (great for review days).
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {[TASK_TYPES.MULTIPLE_CHOICE, TASK_TYPES.TRUE_FALSE, TASK_TYPES.SHORT_ANSWER].includes(task.taskType) && (
                   <div style={{ marginBottom: 6, border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10, padding: 10 }}>
                     <label

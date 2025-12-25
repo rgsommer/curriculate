@@ -353,6 +353,7 @@ export default function AiTasksetGenerator() {
     const t = String(type || "");
     if (t === (TASK_TYPES.ECHO_CHAIN || "echo-chain")) return "🔁";
     if (t === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize")) return "🎙️";
+    if (t === (TASK_TYPES.SCRIPT_PLAY || "script-play")) return "🎭";
     if (t === TASK_TYPES.HANGMAN_DUEL) return "🧩";
     if (t === TASK_TYPES.JEOPARDY) return "⚡";
     if (t === TASK_TYPES.FLASHCARDS) return "🗂️";

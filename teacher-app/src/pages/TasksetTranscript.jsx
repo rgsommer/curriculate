@@ -48,6 +48,41 @@ function summarizeNarrationRatings(sub, task) {
   return { avg, count: values.length, min, max, detailed };
 }
 
+
+function summarizeScriptPlay(sub, task) {
+  // Accept multiple shapes:
+  // - sub.answerPayload.expressiveRating
+  // - sub.answerPayload.expressive (boolean)
+  // - sub.data.expressiveRating
+  const rating =
+    (Number.isFinite(Number(sub?.answerPayload?.expressiveRating)) ? Number(sub.answerPayload.expressiveRating) : null) ??
+    (Number.isFinite(Number(sub?.data?.expressiveRating)) ? Number(sub.data.expressiveRating) : null) ??
+    null;
+
+  const expressive =
+    typeof sub?.answerPayload?.expressive === "boolean"
+      ? sub.answerPayload.expressive
+      : typeof sub?.data?.expressive === "boolean"
+      ? sub.data.expressive
+      : null;
+
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+  const scenes = Array.isArray(cfg.scenes) ? cfg.scenes : null;
+  const lines = Array.isArray(cfg.lines) ? cfg.lines : null;
+
+  const totalTurns =
+    scenes
+      ? scenes.reduce((sum, s) => sum + (Array.isArray(s?.turns) ? s.turns.length : 0), 0)
+      : lines
+      ? lines.length
+      : null;
+
+  const rolesCount =
+    Array.isArray(cfg.roles) ? cfg.roles.length : Number.isFinite(Number(cfg.playerCount)) ? Number(cfg.playerCount) : null;
+
+  return { rating, expressive, totalTurns, rolesCount };
+}
+
 /**
  * Simple transcript viewer.
  * Props:
@@ -306,6 +341,90 @@ export default function TasksetTranscript({ transcript }) {
           ))}
         </div>
       )}
+    </div>
+  );
+
+
+{/* Script Play performance summary (if present) */}
+{(() => {
+  const isScriptPlay =
+    task.taskType === "script-play" ||
+    task.taskType === "script_play" ||
+    task.taskType === "scriptplay" ||
+    task.taskType === "script";
+  if (!isScriptPlay) return null;
+
+  const summary = summarizeScriptPlay(sub, task);
+  if (!summary) return null;
+
+  const hasAny =
+    summary.rating != null ||
+    summary.expressive != null ||
+    summary.totalTurns != null ||
+    summary.rolesCount != null;
+
+  if (!hasAny) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: 4,
+        padding: 10,
+        borderRadius: 10,
+        border: "1px solid rgba(245,158,11,0.35)",
+        background: "rgba(255,247,237,0.9)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "0.78rem",
+          fontWeight: 900,
+          color: "#92400e",
+          marginBottom: 4,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 999,
+            background: "rgba(245,158,11,0.14)",
+            border: "1px solid rgba(245,158,11,0.25)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          🎭
+        </span>
+        Script Play details
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        {summary.rolesCount != null && (
+          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+            <strong>Roles:</strong> {summary.rolesCount}
+          </div>
+        )}
+        {summary.totalTurns != null && (
+          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+            <strong>Lines:</strong> {summary.totalTurns}
+          </div>
+        )}
+        {summary.rating != null && (
+          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+            <strong>Expressiveness:</strong> {summary.rating}/5
+          </div>
+        )}
+        {summary.expressive != null && (
+          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+            <strong>Expressive:</strong> {summary.expressive ? "Yes" : "No"}
+          </div>
+        )}
+      </div>
     </div>
   );
 })()}

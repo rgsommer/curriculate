@@ -293,6 +293,16 @@ function playEchoChime() {
 }
 
 // NarrationSynthesize (demo-only) SFX
+function playScriptPlayChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/foley/page_turn.ogg");
+    a.volume = 0.16;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
 function playNarrationChime() {
   try {
     const a = new Audio(
@@ -597,6 +607,58 @@ export default function DemoPage() {
       };
     }
 
+    // ScriptPlay: rich fallback so TaskRunner can render it in demo mode.
+    if (type === TASK_TYPES.SCRIPT_PLAY) {
+      return {
+        taskType: TASK_TYPES.SCRIPT_PLAY,
+        title: "Script Play",
+        prompt:
+          "Pass the device speaker-to-speaker. Read your lines with the tone cues. Add a little acting for bonus points!",
+        timeLimitSeconds: 120,
+        points: 14,
+        config: {
+          sceneTitle: "The Lost Map",
+          setting: "A candlelit library, late at night",
+          roles: ["Narrator", "Ava", "Noah"],
+          beats: [
+            {
+              speaker: "Narrator",
+              cue: "Calm, mysterious",
+              lines: [
+                "The old library creaks as a storm taps the windows.",
+                "Ava finds a folded map hidden inside a dusty book."
+              ],
+              before: "You are setting the scene.",
+              after: "Hand the device to Ava."
+            },
+            {
+              speaker: "Ava",
+              cue: "Whispering, excited",
+              stageDirections: ["(leans in)", "(speaks softly)"],
+              lines: [
+                "Noah… look. This map has today’s date on it.",
+                "Why would someone hide it here?"
+              ],
+              before: "You just discovered something important.",
+              after: "Hand the device to Noah."
+            },
+            {
+              speaker: "Noah",
+              cue: "Skeptical but curious",
+              stageDirections: ["(raises an eyebrow)"],
+              lines: [
+                "Either it’s a prank… or it’s a clue.",
+                "Let’s follow it—carefully."
+              ],
+              before: "Respond to Ava and decide what to do.",
+              after: "Group: act out the next step together."
+            }
+          ],
+          scoring: { expressiveBonus: true, maxExpressiveBonus: 4 }
+        },
+      };
+    }
+
     return {
       taskType: type,
       title: `Demo: ${type}`,
@@ -613,6 +675,10 @@ export default function DemoPage() {
     const next = pickDemoTask(selectedType);
     setCurrentTask({ ...next });
     setPhase("task");
+    if ((next?.taskType || next?.type) === TASK_TYPES.SCRIPT_PLAY) {
+      showToast("🎭 Script Play! Pass the device speaker-to-speaker.", true);
+      playScriptPlayChime();
+    }
     if ((next?.taskType || next?.type) === TASK_TYPES.ECHO_CHAIN) {
       showToast("Echo Chain! Say it aloud and add one.", true);
       playEchoChime();

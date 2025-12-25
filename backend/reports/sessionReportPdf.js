@@ -108,7 +108,28 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
     if (doc.y > minY) doc.addPage();
   }
 
-  function formatDate(d) {
+  
+function taskTypeEmoji(typeRaw) {
+  const t = String(typeRaw || "").toLowerCase();
+  if (!t) return "🧩";
+  if (t.includes("multiple")) return "✅";
+  if (t.includes("true")) return "☑️";
+  if (t.includes("short")) return "✍️";
+  if (t.includes("matching")) return "🔗";
+  if (t.includes("hangman")) return "🪢";
+  if (t.includes("flash")) return "🃏";
+  if (t.includes("role")) return "🎭";
+  if (t.includes("script-play") || t.includes("script_play") || t.includes("scriptplay") || t === "script") return "🎭";
+  if (t.includes("narration")) return "🎙️";
+  if (t.includes("echo")) return "🔁";
+  if (t.includes("mystery")) return "🕵️";
+  if (t.includes("debate")) return "🗣️";
+  if (t.includes("photo")) return "📷";
+  if (t.includes("audio")) return "🎧";
+  return "🧩";
+}
+
+function formatDate(d) {
     const x = d ? new Date(d) : null;
     if (!x || !Number.isFinite(x.getTime())) return "";
     return x.toLocaleString("en-CA", {
@@ -171,7 +192,7 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
     ? report.summary.taskList.map((t) => {
         const type = t?.type || t?.taskType || "";
         const title = t?.title || "";
-        return [title, type].filter(Boolean).join(" — ");
+        return [`${taskTypeEmoji(type)} ${title}`.trim(), type].filter(Boolean).join(" — ");
       })
     : [];
   bullets((Array.isArray(activitiesList) && activitiesList.length ? activitiesList : fallbackTaskList) || []);

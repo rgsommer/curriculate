@@ -664,10 +664,12 @@ function StudentApp() {
   const sndTreat = useRef(null);
   const sndEcho = useRef(null);
   const sndNarration = useRef(null);
+  const sndScriptPlay = useRef(null);
 
   // EchoChain micro-theme pulse (purely visual)
   const [echoPulse, setEchoPulse] = useState(false);
   const [narrationSpark, setNarrationSpark] = useState(false);
+  const [scriptSpotlight, setScriptSpotlight] = useState(false);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
@@ -1244,6 +1246,13 @@ function StudentApp() {
       );
       narrationAudio.volume = 0.16;
       sndNarration.current = narrationAudio;
+
+      // ScriptPlay: page-turn / stage cue (safe to fail)
+      const scriptAudio = new Audio(
+        "https://actions.google.com/sounds/v1/foley/page_turn.ogg"
+      );
+      scriptAudio.volume = 0.16;
+      sndScriptPlay.current = scriptAudio;
     } catch (err) {
       console.warn("Could not preload audio:", err);
     }
@@ -1279,6 +1288,14 @@ function StudentApp() {
       console.warn("Narration sound play blocked:", err);
     }
   }
+  }
+
+  function tryPlayScriptPlaySound() {
+    try {
+      sndScriptPlay.current && sndScriptPlay.current.play();
+    } catch (err) {
+      console.warn("ScriptPlay sound play blocked:", err);
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -1858,6 +1875,10 @@ function StudentApp() {
   const isMakeAndSnap = currentTask?.taskType === TASK_TYPES.MAKE_AND_SNAP;
 
   const isEchoChain = currentTask?.taskType === TASK_TYPES.ECHO_CHAIN;
+
+  const isScriptPlay =
+    currentTask?.taskType === TASK_TYPES.SCRIPT_PLAY ||
+    currentTask?.taskType === "script-play";
 
   const isNarrationSynthesize =
     currentTask?.taskType === TASK_TYPES.NARRATION_SYNTHESIZE ||
@@ -3293,6 +3314,23 @@ function StudentApp() {
           }}
         />
       )}
+
+      {scriptSpotlight && isScriptPlay && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 50% 20%, rgba(250,204,21,0.20), transparent 55%), radial-gradient(circle at 20% 80%, rgba(59,130,246,0.18), transparent 60%), radial-gradient(circle at 80% 80%, rgba(236,72,153,0.14), transparent 62%)",
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset",
+            animation: "echo-pulse 1.4s ease-out 1",
+          }}
+        />
+      )}
+
       {narrationSpark && isNarrationSynthesize && (
         <div
           aria-hidden="true"
