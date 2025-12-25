@@ -155,34 +155,41 @@ export default function GuessWhoTask({ task, onSubmit }) {
   );
 
 
-// Manual advance (no forced review timer for GuessWho)
-const handleContinue = useCallback(() => {
-  if (!submissionFeedback) return;
+  // Manual advance (no forced review timer for GuessWho)
+  const handleContinue = useCallback(() => {
+    if (!submissionFeedback) return;
 
-  // Clear overlay
-  setSubmissionFeedback(null);
+    // Clear overlay
+    setSubmissionFeedback(null);
 
-  // Advance rounds (answerer rotates)
-  setCurrentRound((prev) => {
-    const next = prev + 1;
+    // Advance rounds (answerer rotates)
+    setCurrentRound((prev) => {
+      const next = prev + 1;
 
-    if (next < playerCount) {
-      queueMicrotask(() => resetRoundState(next));
-      return prev; // resetRoundState will set it
-    }
+      if (next < playerCount) {
+        queueMicrotask(() => resetRoundState(next));
+        return prev; // resetRoundState will set it
+      }
 
-    // Done: submit completion payload
-    queueMicrotask(() => {
-      onSubmit?.({
-        type: task?.taskType || "guess-who",
-        gameComplete: true,
-        roundsPlayed: playerCount,
+      // Done: submit completion payload
+      queueMicrotask(() => {
+        onSubmit?.({
+          type: task?.taskType || "guess-who",
+          gameComplete: true,
+          roundsPlayed: playerCount,
+        });
       });
+      return prev;
     });
-    return prev;
-  });
-}, [submissionFeedback, playerCount, onSubmit, resetRoundState, task?.taskType]);
+  }, [submissionFeedback, playerCount, onSubmit, resetRoundState, task?.taskType]);
 
+  // Audio stubs (replace with real useSound hooks when ready)
+  const playYes = useCallback(() => {}, []);
+  const playNo = useCallback(() => {}, []);
+  const playCorrect = useCallback(() => {}, []);
+  const playWrong = useCallback(() => {}, []);
+  const playBeep = useCallback(() => {}, []);
+  const playBuzzer = useCallback(() => {}, []);
 
   const startCountdownIfNeeded = useCallback(() => {
     if (timerStarted) return;
@@ -225,7 +232,7 @@ const handleContinue = useCallback(() => {
     setQuestionInput("");
   }, [canAskOrGuess, roundOver, questionInput, myPlayerNumber]);
 
-    const handleYouGuessedIt = useCallback(() => {
+  const handleYouGuessedIt = useCallback(() => {
     if (!isAnswerer || roundOver) return;
 
     playCorrect?.();
