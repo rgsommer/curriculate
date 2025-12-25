@@ -48,7 +48,6 @@ function summarizeNarrationRatings(sub, task) {
   return { avg, count: values.length, min, max, detailed };
 }
 
-
 function summarizeScriptPlay(sub, task) {
   // Accept multiple shapes:
   // - sub.answerPayload.expressiveRating
@@ -70,17 +69,39 @@ function summarizeScriptPlay(sub, task) {
   const scenes = Array.isArray(cfg.scenes) ? cfg.scenes : null;
   const lines = Array.isArray(cfg.lines) ? cfg.lines : null;
 
-  const totalTurns =
-    scenes
-      ? scenes.reduce((sum, s) => sum + (Array.isArray(s?.turns) ? s.turns.length : 0), 0)
-      : lines
-      ? lines.length
-      : null;
+  const totalTurns = scenes
+    ? scenes.reduce((sum, s) => sum + (Array.isArray(s?.turns) ? s.turns.length : 0), 0)
+    : lines
+    ? lines.length
+    : null;
 
   const rolesCount =
     Array.isArray(cfg.roles) ? cfg.roles.length : Number.isFinite(Number(cfg.playerCount)) ? Number(cfg.playerCount) : null;
 
   return { rating, expressive, totalTurns, rolesCount };
+}
+
+function summarizeRolePlayDeck(sub, task) {
+  // Prefer task.config; fallback to submission payloads for backward compatibility.
+  const cfg =
+    (task?.config && typeof task.config === "object" ? task.config : null) ||
+    (sub?.answerPayload?.config && typeof sub.answerPayload.config === "object" ? sub.answerPayload.config : null) ||
+    (sub?.data?.config && typeof sub.data.config === "object" ? sub.data.config : null) ||
+    null;
+
+  if (!cfg) return null;
+
+  const mode = cfg.mode ? String(cfg.mode) : null;
+  const scenario = cfg.scenario ? String(cfg.scenario) : null;
+
+  const roles = Array.isArray(cfg.roles) ? cfg.roles : null;
+  const rolesCount =
+    roles ? roles.length : Number.isFinite(Number(cfg.playerCount)) ? Number(cfg.playerCount) : null;
+
+  const hasAny = Boolean(mode || scenario || rolesCount != null);
+  if (!hasAny) return null;
+
+  return { mode, scenario, rolesCount };
 }
 
 /**
@@ -101,9 +122,7 @@ export default function TasksetTranscript({ transcript }) {
 
   const { roomCode, tasksetName, tasks, teams, submissions } = transcript;
 
-  const teamsById = Object.fromEntries(
-    (teams || []).map((t) => [t.teamId, t])
-  );
+  const teamsById = Object.fromEntries((teams || []).map((t) => [t.teamId, t]));
 
   // Group submissions by taskIndex
   const subsByTask = {};
@@ -133,7 +152,7 @@ export default function TasksetTranscript({ transcript }) {
         </p>
       </header>
 
-      {tasks.map((task) => {
+      {(tasks || []).map((task) => {
         const idx = task.index ?? 0;
         const taskSubs = subsByTask[idx] || [];
 
@@ -161,29 +180,24 @@ export default function TasksetTranscript({ transcript }) {
             </p>
 
             {taskSubs.length === 0 ? (
-              <p style={{ color: "#9ca3af", margin: 0 }}>
-                No submissions for this task.
-              </p>
+              <p style={{ color: "#9ca3af", margin: 0 }}>No submissions for this task.</p>
             ) : (
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(260px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
                   gap: 12,
                 }}
               >
                 {taskSubs.map((sub) => {
                   const team = teamsById[sub.teamId];
+
                   const displayScore =
-                    sub.teacherOverride?.isOverridden &&
-                    typeof sub.teacherOverride.overrideScore ===
-                      "number"
+                    sub.teacherOverride?.isOverridden && typeof sub.teacherOverride.overrideScore === "number"
                       ? sub.teacherOverride.overrideScore
                       : sub.aiScore?.totalScore ?? null;
 
-                  const maxPoints =
-                    sub.aiScore?.maxPoints ?? task.points ?? null;
+                  const maxPoints = sub.aiScore?.maxPoints ?? task.points ?? null;
 
                   return (
                     <div
@@ -218,32 +232,14 @@ export default function TasksetTranscript({ transcript }) {
                             {team?.teamName || "Team"}
                           </div>
                           {sub.playerId && (
-                            <div
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "#6b7280",
-                              }}
-                            >
-                              {sub.playerId}
-                            </div>
+                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{sub.playerId}</div>
                           )}
                         </div>
+
                         {displayScore != null && maxPoints != null && (
                           <div style={{ textAlign: "right" }}>
-                            <div
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "#6b7280",
-                              }}
-                            >
-                              Score
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "1.1rem",
-                                fontWeight: 700,
-                              }}
-                            >
+                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Score</div>
+                            <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>
                               {displayScore} / {maxPoints}
                             </div>
                           </div>
@@ -254,11 +250,7 @@ export default function TasksetTranscript({ transcript }) {
                       {sub.mediaUrl && (
                         <div style={{ marginTop: 4 }}>
                           {task.taskType === "record-audio" ? (
-                            <audio
-                              controls
-                              src={sub.mediaUrl}
-                              style={{ width: "100%" }}
-                            />
+                            <audio controls src={sub.mediaUrl} style={{ width: "100%" }} />
                           ) : (
                             <img
                               src={sub.mediaUrl}
@@ -275,209 +267,265 @@ export default function TasksetTranscript({ transcript }) {
                         </div>
                       )}
 
+                      {/* Narration Synthesize peer ratings (if present) */}
+                      {(() => {
+                        const isNarration =
+                          task.taskType === "narration-synthesize" ||
+                          task.taskType === "narration_synthesize" ||
+                          task.taskType === "narrationSynthesize" ||
+                          task.taskType === "narrationSynthesizeTask";
+                        if (!isNarration) return null;
 
-{/* Narration Synthesize peer ratings (if present) */}
-{(() => {
-  const isNarration =
-    task.taskType === "narration-synthesize" ||
-    task.taskType === "narration_synthesize" ||
-    task.taskType === "narrationSynthesize" ||
-    task.taskType === "narrationSynthesizeTask";
-  if (!isNarration) return null;
+                        const summary = summarizeNarrationRatings(sub, task);
+                        if (!summary) return null;
 
-  const summary = summarizeNarrationRatings(sub, task);
-  if (!summary) return null;
+                        return (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid #bae6fd",
+                              background: "#ecfeff",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "0.78rem",
+                                fontWeight: 900,
+                                color: "#075985",
+                                marginBottom: 4,
+                              }}
+                            >
+                              Narration ratings
+                            </div>
 
-  return (
-    <div
-      style={{
-        marginTop: 4,
-        padding: 10,
-        borderRadius: 10,
-        border: "1px solid #bae6fd",
-        background: "#ecfeff",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "0.78rem",
-          fontWeight: 900,
-          color: "#075985",
-          marginBottom: 4,
-        }}
-      >
-        Narration ratings
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ fontSize: "0.85rem", color: "#0f172a", fontWeight: 800 }}>
-          Avg: {summary.avg.toFixed(1)} / {summary.max}
-        </div>
-        <div style={{ fontSize: "0.8rem", color: "#0f172a" }}>
-          {summary.count} ratings • scale {summary.min}–{summary.max}
-        </div>
-      </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                              <div style={{ fontSize: "0.85rem", color: "#0f172a", fontWeight: 800 }}>
+                                Avg: {summary.avg.toFixed(1)} / {summary.max}
+                              </div>
+                              <div style={{ fontSize: "0.8rem", color: "#0f172a" }}>
+                                {summary.count} ratings • scale {summary.min}–{summary.max}
+                              </div>
+                            </div>
 
-      {Array.isArray(summary.detailed) && summary.detailed.length > 0 && (
-        <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-          {summary.detailed.slice(0, 12).map((r, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: "1px solid #e2e8f0",
-                background: "rgba(255,255,255,0.85)",
-                fontSize: "0.82rem",
-              }}
-            >
-              <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                {r.playerName || (r.playerIndex != null ? `Player ${r.playerIndex + 1}` : "Player")}
-              </div>
-              <div style={{ fontWeight: 900, color: "#0f172a" }}>{r.score}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+                            {Array.isArray(summary.detailed) && summary.detailed.length > 0 && (
+                              <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                                {summary.detailed.slice(0, 12).map((r, i) => (
+                                  <div
+                                    key={i}
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      padding: "6px 8px",
+                                      borderRadius: 8,
+                                      border: "1px solid #e2e8f0",
+                                      background: "rgba(255,255,255,0.85)",
+                                      fontSize: "0.82rem",
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 800, color: "#0f172a" }}>
+                                      {r.playerName || (r.playerIndex != null ? `Player ${r.playerIndex + 1}` : "Player")}
+                                    </div>
+                                    <div style={{ fontWeight: 900, color: "#0f172a" }}>{r.score}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
+                      {/* Script Play performance summary (if present) */}
+                      {(() => {
+                        const isScriptPlay =
+                          task.taskType === "script-play" ||
+                          task.taskType === "script_play" ||
+                          task.taskType === "scriptplay" ||
+                          task.taskType === "script";
+                        if (!isScriptPlay) return null;
 
-{/* Script Play performance summary (if present) */}
-{(() => {
-  const isScriptPlay =
-    task.taskType === "script-play" ||
-    task.taskType === "script_play" ||
-    task.taskType === "scriptplay" ||
-    task.taskType === "script";
-  if (!isScriptPlay) return null;
+                        const summary = summarizeScriptPlay(sub, task);
+                        if (!summary) return null;
 
-  const summary = summarizeScriptPlay(sub, task);
-  if (!summary) return null;
+                        const hasAny =
+                          summary.rating != null ||
+                          summary.expressive != null ||
+                          summary.totalTurns != null ||
+                          summary.rolesCount != null;
 
-  const hasAny =
-    summary.rating != null ||
-    summary.expressive != null ||
-    summary.totalTurns != null ||
-    summary.rolesCount != null;
+                        if (!hasAny) return null;
 
-  if (!hasAny) return null;
+                        return (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid rgba(245,158,11,0.35)",
+                              background: "rgba(255,247,237,0.9)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "0.78rem",
+                                fontWeight: 900,
+                                color: "#92400e",
+                                marginBottom: 4,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  borderRadius: 999,
+                                  background: "rgba(245,158,11,0.14)",
+                                  border: "1px solid rgba(245,158,11,0.25)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                🎭
+                              </span>
+                              Script Play details
+                            </div>
 
-  return (
-    <div
-      style={{
-        marginTop: 4,
-        padding: 10,
-        borderRadius: 10,
-        border: "1px solid rgba(245,158,11,0.35)",
-        background: "rgba(255,247,237,0.9)",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "0.78rem",
-          fontWeight: 900,
-          color: "#92400e",
-          marginBottom: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 999,
-            background: "rgba(245,158,11,0.14)",
-            border: "1px solid rgba(245,158,11,0.25)",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          🎭
-        </span>
-        Script Play details
-      </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                              {summary.rolesCount != null && (
+                                <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+                                  <strong>Roles:</strong> {summary.rolesCount}
+                                </div>
+                              )}
+                              {summary.totalTurns != null && (
+                                <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+                                  <strong>Lines:</strong> {summary.totalTurns}
+                                </div>
+                              )}
+                              {summary.rating != null && (
+                                <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+                                  <strong>Expressiveness:</strong> {summary.rating}/5
+                                </div>
+                              )}
+                              {summary.expressive != null && (
+                                <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+                                  <strong>Expressive:</strong> {summary.expressive ? "Yes" : "No"}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        {summary.rolesCount != null && (
-          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
-            <strong>Roles:</strong> {summary.rolesCount}
-          </div>
-        )}
-        {summary.totalTurns != null && (
-          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
-            <strong>Lines:</strong> {summary.totalTurns}
-          </div>
-        )}
-        {summary.rating != null && (
-          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
-            <strong>Expressiveness:</strong> {summary.rating}/5
-          </div>
-        )}
-        {summary.expressive != null && (
-          <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
-            <strong>Expressive:</strong> {summary.expressive ? "Yes" : "No"}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-})()}
+                      {/* Role Play Deck summary (scenario / roles / mode) */}
+                      {(() => {
+                        const isRolePlay =
+                          task.taskType === "role-play-deck" ||
+                          task.taskType === "role_play_deck" ||
+                          task.taskType === "roleplaydeck" ||
+                          task.taskType === "role-play" ||
+                          task.taskType === "role_play" ||
+                          task.taskType === "roleplay";
+                        if (!isRolePlay) return null;
+
+                        const summary = summarizeRolePlayDeck(sub, task);
+                        if (!summary) return null;
+
+                        const modeLabel =
+                          summary.mode === "mystery"
+                            ? "Mystery (hidden)"
+                            : summary.mode === "classic"
+                            ? "Classic (open)"
+                            : summary.mode
+                            ? String(summary.mode)
+                            : "Choose";
+
+                        return (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid rgba(59,130,246,0.28)",
+                              background: "rgba(239,246,255,0.9)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "0.78rem",
+                                fontWeight: 900,
+                                color: "#1d4ed8",
+                                marginBottom: 4,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  borderRadius: 999,
+                                  background: "rgba(59,130,246,0.12)",
+                                  border: "1px solid rgba(59,130,246,0.22)",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                🎴
+                              </span>
+                              Role Play Deck
+                            </div>
+
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                              <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+                                <strong>Mode:</strong> {modeLabel}
+                              </div>
+                              {summary.rolesCount != null && (
+                                <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
+                                  <strong>Roles:</strong> {summary.rolesCount}
+                                </div>
+                              )}
+                            </div>
+
+                            {summary.scenario && (
+                              <div style={{ marginTop: 6, fontSize: "0.84rem", color: "#0f172a" }}>
+                                <strong>Scenario:</strong> {summary.scenario}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {sub.answerText && (
-                        <div
-                          style={{
-                            fontSize: "0.85rem",
-                            color: "#111827",
-                            marginTop: 4,
-                          }}
-                        >
-                          <strong>Response:</strong>{" "}
-                          {sub.answerText}
+                        <div style={{ fontSize: "0.85rem", color: "#111827", marginTop: 4 }}>
+                          <strong>Response:</strong> {sub.answerText}
                         </div>
                       )}
 
                       {/* AI rubric breakdown (if present) */}
-                      {sub.aiScore?.criteria &&
-                        sub.aiScore.criteria.length > 0 && (
-                          <details
-                            style={{
-                              marginTop: 6,
-                              fontSize: "0.8rem",
-                            }}
-                          >
-                            <summary
-                              style={{
-                                cursor: "pointer",
-                                color: "#2563eb",
-                              }}
-                            >
-                              View rubric breakdown
-                            </summary>
-                            <ul
-                              style={{
-                                paddingLeft: 18,
-                                margin: "4px 0 0",
-                              }}
-                            >
-                              {sub.aiScore.criteria.map((c) => (
-                                <li key={c.id}>
-                                  <strong>
-                                    {c.id} ({c.score}/{c.maxPoints})
-                                  </strong>
-                                  {c.comment
-                                    ? ` – ${c.comment}`
-                                    : ""}
-                                </li>
-                              ))}
-                            </ul>
-                          </details>
-                        )}
+                      {sub.aiScore?.criteria && sub.aiScore.criteria.length > 0 && (
+                        <details style={{ marginTop: 6, fontSize: "0.8rem" }}>
+                          <summary style={{ cursor: "pointer", color: "#2563eb" }}>
+                            View rubric breakdown
+                          </summary>
+                          <ul style={{ paddingLeft: 18, margin: "4px 0 0" }}>
+                            {sub.aiScore.criteria.map((c) => (
+                              <li key={c.id}>
+                                <strong>
+                                  {c.id} ({c.score}/{c.maxPoints})
+                                </strong>
+                                {c.comment ? ` – ${c.comment}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
 
                       {sub.aiScore?.overallComment && (
                         <div
