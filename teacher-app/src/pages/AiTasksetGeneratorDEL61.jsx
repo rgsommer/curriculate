@@ -366,14 +366,11 @@ export default function AiTasksetGenerator() {
     const label = meta.label || type;
     const category = meta.category || "other";
     const selected = selectedTaskTypes.includes(type);
-    const desc = String(meta.description || "").trim();
-    const shortDesc = desc ? desc.split("\n")[0].replace(/^[-•]\s*/, "").trim() : "";
 
     return (
       <button
         key={type}
         type="button"
-        title={desc || label}
         onClick={() => toggleTaskType(type)}
         style={{
           display: "inline-flex",
@@ -419,62 +416,6 @@ export default function AiTasksetGenerator() {
             </span>
           )}
       </button>
-    );
-          <span style={{ fontSize: "0.95rem" }}>{typeIcon(type)}</span>
-
-        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-          <span style={{ fontWeight: 700 }}>{label}</span>
-          {shortDesc && (
-            <span style={{ fontSize: "0.72rem", color: "#6b7280", maxWidth: 340 }}>
-              {shortDesc}
-            </span>
-          )}
-        </span>
-
-        <span
-          style={{
-            fontSize: "0.7rem",
-            color: "#6b7280",
-            textTransform: "capitalize",
-            marginLeft: 2,
-          }}
-        >
-          · {category}
-        </span>
-
-        {meta.intraTeamEnabled === true && (
-          <span
-            style={{
-              fontSize: "0.68rem",
-              fontWeight: 700,
-              padding: "2px 6px",
-              borderRadius: 999,
-              border: "1px solid rgba(16,185,129,0.35)",
-              background: "rgba(16,185,129,0.10)",
-              color: "#065f46",
-              marginLeft: 2,
-            }}
-          >
-            Intra-team
-          </span>
-        )}
-
-        {meta.interTeamEnabled === true && (
-          <span
-            style={{
-              fontSize: "0.68rem",
-              fontWeight: 700,
-              padding: "2px 6px",
-              borderRadius: 999,
-              border: "1px solid rgba(59,130,246,0.35)",
-              background: "rgba(59,130,246,0.10)",
-              color: "#1d4ed8",
-              marginLeft: 2,
-            }}
-          >
-            Inter-team
-          </span>
-        )}      </button>
     );
   };
 
