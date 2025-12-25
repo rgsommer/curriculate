@@ -933,7 +933,7 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.SCRIPT_PLAY]: metaBase({
     label: "Script Play",
     category: CATEGORY.SYNTHESIS,
-    implemented: true,
+    implemented: false,
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
@@ -942,7 +942,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "AI-generated Script Play: a structured performance task. The device shows the CURRENT speaker’s line in large text, plus optional tone cues (e.g., serious, excited) and stage directions (e.g., whispering, pointing). It also shows brief context lines for ‘just before’ and ‘up next’ so the team understands the story flow. Students PASS the device from speaker to speaker and read/act their lines. Intra-team only (no inter-team). Pedagogical benefits: reading fluency, expressive oral language, comprehension, narrative reasoning, collaboration, and deeper retention through performance.",
+      "AI-generated script performance. Device shows current speaker’s lines; students pass device and perform. Builds fluency, comprehension, and retention through performance.",
   }),
 
   [TASK_TYPES.DRAW_MIME]: metaBase({

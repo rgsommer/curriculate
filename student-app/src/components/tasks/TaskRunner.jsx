@@ -44,6 +44,7 @@ import VennSortTask from "./types/VennSortTask";
 import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
 
+import ScriptPlayTask from "./types/ScriptPlayTask";
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
 const CONTRAST_BG_LIGHT = "#f9fafb";
@@ -255,6 +256,13 @@ function normalizeTaskType(raw) {
     // already normalized constant coming through
     case TASK_TYPES.WORD_WEAVER_DUEL:
       return TASK_TYPES.WORD_WEAVER_DUEL;
+
+    // ✅ Script Play
+    case "script-play":
+    case "script_play":
+    case "scriptplay":
+    case "script":
+      return TASK_TYPES.SCRIPT_PLAY;
 
     default:
       return raw;
@@ -1047,6 +1055,20 @@ export default function TaskRunner({
       break;
     }
 
+
+// ✅ Script Play (NEW)
+case TASK_TYPES.SCRIPT_PLAY:
+case "script-play": {
+  content = (
+    <ScriptPlayTask
+      task={t}
+      onSubmit={handleTaskSubmit}
+      disabled={effectiveDisabled || isReview}
+      readOnly={isReview}
+    />
+  );
+  break;
+}
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask
