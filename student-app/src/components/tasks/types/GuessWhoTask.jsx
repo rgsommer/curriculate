@@ -86,62 +86,72 @@ export default function GuessWhoTask({ task, onSubmit }) {
   const [overlayTimer, setOverlayTimer] = useState(null); // null = manual advance
 
   const countdownRef = useRef(null);
-
-  // Sounds (keep existing paths)
-  const [playBeep] = useSound("/sounds/beep.mp3", { volume: 0.6 });
-  const [playBuzzer] = useSound("/sounds/buzzer.mp3", { volume: 0.7 });
-  const [playYes] = useSound("/sounds/yes-ding.mp3", { volume: 0.7 });
-  const [playNo] = useSound("/sounds/no-buzzer.mp3", { volume: 0.7 });
-  const [playCorrect] = useSound("/sounds/correct.mp3", { volume: 0.8 });
-  const [playWrong] = useSound("/sounds/wrong.mp3", { volume: 0.8 });
+  const overlayIntervalRef = useRef(null);
 
   const clearCountdown = useCallback(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = null;
   }, []);
-    overlayRef.current = null;
+
+  const clearOverlayInterval = useCallback(() => {
+    if (overlayIntervalRef.current) clearInterval(overlayIntervalRef.current);
+    overlayIntervalRef.current = null;
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      clearCountdown();    };
-  }, [clearCountdown]);
-
-  const resetRoundState = useCallback(
-    (nextRoundIndex) => {
-      setQuestions([]);
-      setGuessCount(0);
-      setRoundOver(false);
-      setWinnerThisRound(false);
-      setShowSecret(false);
-      setTimerStarted(false);
-      setTimer(timerSeconds);
-      setSubmissionFeedback(null);
-      setOverlayTimer(null);
       clearCountdown();
-      // Ensure any per-round secret array lookup stays coherent
-      setCurrentRound(nextRoundIndex);
-    },
-    [timerSeconds, clearCountdown]
-  );
+      clearOverlayInterval();
+    };
+  }, [clearCountdown, clearOverlayInterval]);
 
   const endRoundWithOverlay = useCallback(
     ({ message, positive, correct }) => {
       setSubmissionFeedback({ message, positive: !!positive });
       setRoundOver(true);
       setWinnerThisRound(!!correct);
-      clearCountdown();
 
-      setOverlayTimer(15);      overlayRef.current = setInterval(() => {
+      // stop timers
+      clearCountdown();
+      clearOverlayInterval();
+
+      // Optional overlay countdown (kept, but now well-formed)
+      setOverlayTimer(15);
+      overlayIntervalRef.current = setInterval(() => {
         setOverlayTimer((prev) => {
-          if (prev <= 1) {            return 0;
-          }
+          if (prev == null) return prev;
+          if (prev <= 1) return 0;
           return prev - 1;
         });
       }, 1000);
     },
-    [clearCountdown]
+    [clearCountdown, clearOverlayInterval]
+  );
+
+  const resetRoundState = useCallback(
+    (nextRoundIndex) => {
+      // stop any running timers
+      clearCountdown();
+      clearOverlayInterval();
+
+      setShowSecret(false);
+      setTimerStarted(false);
+      setTimer(timerSeconds);
+
+      setQuestions([]);
+      setQuestionInput("");
+      setGuessInput("");
+      setGuessCount(0);
+
+      setRoundOver(false);
+      setWinnerThisRound(false);
+      setOverlayTimer(null);
+      setSubmissionFeedback(null);
+
+      setCurrentRound(nextRoundIndex);
+    },
+    [clearCountdown, clearOverlayInterval, timerSeconds]
   );
 
 
@@ -215,31 +225,16 @@ const handleContinue = useCallback(() => {
     setQuestionInput("");
   }, [canAskOrGuess, roundOver, questionInput, myPlayerNumber]);
 
-  const handleAnswerYesNo = useCallback(
-    (answer) => {
-      if (!isAnswerer || roundOver) return;
-
-      setQuestions((prev) => {
-        if (!prev.length) return prev;
-        const last = prev[prev.length - 1];
-        if (!last || last.answer) return prev;
-
-        const updated = [...prev];
-        updated[updated.length - 1] = { ...last, answer };
-
-        if (answer === "Yes") playYes();
-
-
-  const handleYouGuessedIt = useCallback(() => {
+    const handleYouGuessedIt = useCallback(() => {
     if (!isAnswerer || roundOver) return;
-    playCorrect();
+
+    playCorrect?.();
     endRoundWithOverlay({
       message: `🎉 You guessed it! The answer was: ${secretAnswer}`,
       positive: true,
       correct: true,
     });
 
-    // Record a round result (answerer-confirmed)
     onSubmit?.({
       type: task?.taskType || "guess-who",
       roundComplete: true,
@@ -255,7 +250,6 @@ const handleContinue = useCallback(() => {
   }, [
     isAnswerer,
     roundOver,
-    playCorrect,
     endRoundWithOverlay,
     onSubmit,
     task?.taskType,
@@ -265,7 +259,21 @@ const handleContinue = useCallback(() => {
     timer,
     currentRound,
   ]);
-        else playNo();
+
+  const handleAnswerYesNo = useCallback(
+    (answer) => {
+      if (!isAnswerer || roundOver) return;
+
+      setQuestions((prev) => {
+        if (!prev.length) return prev;
+        const last = prev[prev.length - 1];
+        if (!last || last.answer) return prev;
+
+        const updated = [...prev];
+        updated[updated.length - 1] = { ...last, answer };
+
+        if (answer === "Yes") playYes?.();
+        else playNo?.();
 
         return updated;
       });
