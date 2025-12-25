@@ -36,10 +36,7 @@ export const retryMustHave = {
   "ECHO_CHAIN must include: seedTerm (string from aiWordBank), prompt (clear turn-by-turn rules), and config with optional perTurnSeconds (5–20), rotationBonusPoints, pointsPerCorrectAdd, and maxChainLength (optional). Intra-team only.",
 
   [TASK_TYPES.NARRATION_SYNTHESIZE]:
-    "NARRATION_SYNTHESIZE must include config.playerCount (2–8), config.prompts (array length == playerCount) where each element is { id, concept, prompt }. Each prompt must be an explainable concept or process (not a single word). Optional config.perTurnSeconds (0 disables). Optional config.ratingScale: { min, max, label }. Intra-team only.",  ,
-  [TASK_TYPES.ROLE_PLAY_DECK]:
-    "ROLE_PLAY_DECK must include config.playerCount (2–6), config.playerNames (array length playerCount), config.mode (mystery|classic or allow choice), config.roles (array length playerCount) each with { name, role, characteristics: [3–6 morally appropriate traits] }, and config.scenario (subject/grade appropriate, 2–5 sentences). Intra-team only; do NOT include inter-team gameplay."
-
+    "NARRATION_SYNTHESIZE must include config.playerCount (2–8), config.prompts (array length == playerCount) where each element is { id, concept, prompt }. Each prompt must be an explainable concept or process (not a single word). Optional config.perTurnSeconds (0 disables). Optional config.ratingScale: { min, max, label }. Intra-team only.",
 
 };
 
@@ -750,7 +747,6 @@ ${coverAllLine}
 - For FLASHCARDS tasks: include config.items (>=5) with {question, answer}
 - For DIFF_DETECTIVE tasks: include config.textA and config.textB (3–6 sentences each) with 5–8 subtle differences.
 - For GUESS_WHO tasks: include config.playerCount (2–6), config.secretAnswers (array length = playerCount; each is a single concept), config.category (string), config.maxGuesses (<=15, default 10), config.timerSeconds (<=180, default 60). The secretAnswers should be chosen ONLY from aiWordBank when possible. Do NOT include inter-team gameplay.
-- For ROLE_PLAY_DECK tasks: include config.playerCount (2–6), config.playerNames (length playerCount), config.mode ("mystery" or "classic" or "choose"), config.roles (length playerCount) each { name, role, characteristics: [3–6 traits] }, and config.scenario (2–5 sentences, subject/grade appropriate). Intra-team only; do NOT include inter-team gameplay.
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
 - TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
 - For HANGMAN_DUEL tasks:

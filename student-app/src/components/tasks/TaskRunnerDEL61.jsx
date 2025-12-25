@@ -45,7 +45,6 @@ import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
 
 import ScriptPlayTask from "./types/ScriptPlayTask";
-import RolePlayDeckTask from "./types/RolePlayDeckTask";
 // High-contrast neutrals for inner task cards / text
 const CONTRAST_TEXT_DARK = "#0f172a";
 const CONTRAST_BG_LIGHT = "#f9fafb";
@@ -264,15 +263,6 @@ function normalizeTaskType(raw) {
     case "scriptplay":
     case "script":
       return TASK_TYPES.SCRIPT_PLAY;
-
-    // ✅ Role Play Deck
-    case "role-play":
-    case "roleplay":
-    case "role-play-deck":
-    case "role_play_deck":
-    case "roleplaydeck":
-    case "role-play-task":
-      return TASK_TYPES.ROLE_PLAY_DECK;
 
     default:
       return raw;
@@ -1079,28 +1069,6 @@ case "script-play": {
   );
   break;
 }
-
-    // ✅ Role Play Deck (NEW)
-    case TASK_TYPES.ROLE_PLAY_DECK:
-    case "role-play":
-    case "role-play-deck":
-    case "roleplay": {
-      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
-
-      content = (
-        <RolePlayDeckTask
-          task={t}
-          onSubmit={handleTaskSubmit}
-          socket={socketRef}
-          roomCode={roomCode}
-          teamId={effectiveTeamId}
-          memberNames={memberNames}
-          disabled={effectiveDisabled || isReview}
-        />
-      );
-      break;
-    }
-
     case TASK_TYPES.MULTIPLE_CHOICE:
       content = (
         <MultiPartTask

@@ -31,7 +31,7 @@ import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import AccessCode from "./models/AccessCode.js";
-//import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
+import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
