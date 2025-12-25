@@ -45,7 +45,6 @@ const QUICK_TASK_TYPES = Array.from(
     ...QUICK_TASK_TYPES_RAW,
     // Ensure GuessWho is selectable even if QUICK_TASK_ELIGIBLE_TYPES isn't updated yet.
     TASK_TYPES.GUESS_WHO,
-    (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 
@@ -58,81 +57,6 @@ const PURPOSE_OPTIONS = [
   "Enrichment",
   "Assessment",
 ];
-
-// --- RolePlay Deck parsing helpers ---
-function parseRolePlayRolesText(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return [];
-  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-
-  const roles = [];
-  for (const line of lines) {
-    // Accept separators: |, —, -, ;  (prefer 3 parts: name, role, traits)
-    // Examples:
-    //  - Alex | Governor | fair, cautious, decisive
-    //  - Marie — Merchant — persuasive, curious, generous
-    //  - "Priest: Shepherd | humble, bold, kind" (still works decently)
-    const parts = line.split(/\s*(\||—|–|-|;|:)\s*/).filter((p) => p && !/^(\||—|–|-|;|:)$/.test(p));
-    let name = "";
-    let role = "";
-    let traits = "";
-
-    if (parts.length >= 3) {
-      name = parts[0];
-      role = parts[1];
-      traits = parts.slice(2).join(" ");
-    } else if (parts.length === 2) {
-      name = parts[0];
-      role = parts[1];
-    } else {
-      // Fallback: treat entire line as role name
-      role = parts[0] || line;
-    }
-
-    const characteristics = String(traits || "")
-      .split(/[,/]+/)
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .slice(0, 7);
-
-    roles.push({
-      name: String(name || "").trim() || "Player",
-      role: String(role || "").trim() || String(line || "").trim(),
-      characteristics,
-    });
-  }
-
-  // Filter empty
-  return roles
-    .map((r) => ({
-      name: String(r.name || "").trim() || "Player",
-      role: String(r.role || "").trim(),
-      characteristics: Array.isArray(r.characteristics) ? r.characteristics : [],
-    }))
-    .filter((r) => r.role);
-}
-
-function buildRolePlayQuickConfig({ mode, scenario, rolesText }) {
-  const roles = parseRolePlayRolesText(rolesText);
-  const scenarioStr = String(scenario || "").trim();
-  const prompt =
-    scenarioStr ||
-    "Draw roles and role-play the scenario together. Stay respectful and on-topic.";
-  return {
-    prompt,
-    timeLimitSeconds: 180,
-    config: {
-      mode: mode || "choose",
-      scenario: scenarioStr,
-      roles,
-    },
-    // meta flags used in other parts of LiveSession
-    intraTeamEnabled: true,
-    interTeamEnabled: false,
-    objectiveScoring: false,
-    aiScoringRequired: false,
-  };
-}
 
 const PHOTO_TASK_TYPES = new Set([
   "photo-task",
@@ -279,10 +203,6 @@ export default function LiveSession({ roomCode }) {
   const [aiSubject, setAiSubject] = useState("");
   const [aiWordList, setAiWordList] = useState("");
   const [quickFlashcardsText, setQuickFlashcardsText] = useState("");
-  // RolePlay Deck quick-entry fields
-  const [rolePlayMode, setRolePlayMode] = useState("choose"); // choose | mystery | classic
-  const [rolePlayScenarioText, setRolePlayScenarioText] = useState("");
-  const [rolePlayRolesText, setRolePlayRolesText] = useState("");
 
   // Quick AI task / error state
   const [isGenerating, setIsGenerating] = useState(false);
@@ -290,60 +210,6 @@ export default function LiveSession({ roomCode }) {
 
   // Keep track of the most recently launched quick task
   const [lastQuickTask, setLastQuickTask] = useState(null);
-
-// Keep quick-launch config in sync for RolePlay Deck when teacher edits fields (no JSON needed)
-useEffect(() => {
-  const isRolePlay =
-    taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-    taskType === "role-play-deck" ||
-    taskType === TASK_TYPES.ROLE_PLAY ||
-    taskType === "role-play" ||
-    taskType === "roleplay";
-
-  if (!isRolePlay) return;
-
-  const built = buildRolePlayQuickConfig({
-    mode: rolePlayMode,
-    scenario: rolePlayScenarioText,
-    rolesText: rolePlayRolesText,
-  });
-
-  setTaskConfig((prev) => {
-    // Avoid unnecessary rerenders if nothing changed materially
-    const prevRoles = Array.isArray(prev?.config?.roles) ? prev.config.roles : [];
-    const nextRoles = Array.isArray(built?.config?.roles) ? built.config.roles : [];
-    const prevScenario = String(prev?.config?.scenario || "").trim();
-    const nextScenario = String(built?.config?.scenario || "").trim();
-    const prevMode = String(prev?.config?.mode || "choose");
-    const nextMode = String(built?.config?.mode || "choose");
-
-    if (
-      prevScenario === nextScenario &&
-      prevMode === nextMode &&
-      prevRoles.length === nextRoles.length &&
-      String(prev?.prompt || "") === String(built?.prompt || "")
-    ) {
-      return prev;
-    }
-
-    return {
-      ...(prev || {}),
-      prompt: built.prompt,
-      timeLimitSeconds: built.timeLimitSeconds,
-      config: {
-        ...(prev?.config || {}),
-        mode: built.config.mode,
-        scenario: built.config.scenario,
-        roles: built.config.roles,
-      },
-      intraTeamEnabled: true,
-      interTeamEnabled: false,
-      objectiveScoring: false,
-      aiScoringRequired: false,
-    };
-  });
-}, [taskType, rolePlayMode, rolePlayScenarioText, rolePlayRolesText]);
-
 
   // Active taskset meta
   const [activeTasksetMeta, setActiveTasksetMeta] = useState(() => {
@@ -880,14 +746,8 @@ useEffect(() => {
     const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
     const isEchoChain = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
     const isNarration = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
-    const isRolePlay =
-      taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-      taskType === "role-play-deck" ||
-      taskType === TASK_TYPES.ROLE_PLAY ||
-      taskType === "role-play" ||
-      taskType === "roleplay";
     if (!roomCode) return;
-    if (!isGuessWho && !isEchoChain && !isNarration && !isRolePlay && !taskConfig.prompt?.trim()) return;
+    if (!isGuessWho && !isEchoChain && !isNarration && !taskConfig.prompt?.trim()) return;
     if (isNarration) {
       const pc = Number(taskConfig?.config?.playerCount);
       const prompts = Array.isArray(taskConfig?.config?.prompts) ? taskConfig.config.prompts : [];
@@ -898,12 +758,6 @@ useEffect(() => {
       const seed = String(taskConfig.seedTerm || taskConfig.startTerm || "").trim();
       if (!seed) return;
     }
-    if (isRolePlay) {
-      const roles = Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [];
-      const scenario = String(taskConfig?.config?.scenario || "").trim();
-      if (roles.length === 0 || !scenario) return;
-    }
-
     if (isGuessWho) {
       const secrets = Array.isArray(taskConfig.secretAnswers)
         ? taskConfig.secretAnswers
@@ -995,39 +849,6 @@ useEffect(() => {
         items: undefined,
       }),
 
-
-// RolePlay Deck (intra-team role play) special fields
-...(isRolePlay && {
-  taskType: TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck",
-  prompt:
-    String(taskConfig?.prompt || "").trim() ||
-    String(taskConfig?.config?.scenario || "").trim() ||
-    "Draw roles and role-play the scenario together.",
-  timeLimitSeconds:
-    Number(taskConfig?.timeLimitSeconds) > 0
-      ? Number(taskConfig.timeLimitSeconds)
-      : 180,
-  interTeamEnabled: false,
-  intraTeamEnabled: true,
-  objectiveScoring: false,
-  aiScoringRequired: false,
-  config: {
-    mode: taskConfig?.config?.mode || "choose",
-    scenario: String(taskConfig?.config?.scenario || "").trim(),
-    roles: Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [],
-    playerCount:
-      Number(taskConfig?.config?.playerCount) > 0
-        ? Number(taskConfig.config.playerCount)
-        : undefined,
-    playerNames: Array.isArray(taskConfig?.config?.playerNames)
-      ? taskConfig.config.playerNames
-      : undefined,
-  },
-  // Not used for this type
-  correctAnswer: null,
-  options: undefined,
-  items: undefined,
-}),
 
 // Narration Synthesize (teach-back) special fields
 ...(isNarration && {
@@ -1195,30 +1016,6 @@ useEffect(() => {
         mode: "quick-live-session",
       };
 
-// If RolePlay Deck, fold any teacher-entered scenario/roles into the description as strong guidance.
-const isRolePlayRequested =
-  taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-  taskType === "role-play-deck" ||
-  taskType === TASK_TYPES.ROLE_PLAY ||
-  taskType === "role-play" ||
-  taskType === "roleplay";
-
-if (isRolePlayRequested) {
-  const rolesHint = String(rolePlayRolesText || "").trim();
-  const scenarioHint = String(rolePlayScenarioText || "").trim();
-  const modeHint = String(rolePlayMode || "choose").trim();
-
-  const guidanceParts = [];
-  guidanceParts.push("This is a RolePlay Deck task (intra-team only).");
-  guidanceParts.push(`Mode: ${modeHint}.`);
-  if (scenarioHint) guidanceParts.push(`Scenario seed: ${scenarioHint}`);
-  if (rolesHint) guidanceParts.push(`Roles seed list (teacher provided):\n${rolesHint}`);
-  guidanceParts.push("Return config.roles[] and config.scenario. Keep it school-appropriate and respectful.");
-
-  // Append to description (backend uses this as prompt context)
-  payload.description = [payload.description || "", guidanceParts.join("\n\n")].filter(Boolean).join("\n\n");
-}
-
       console.log("[LiveSession] AI quick-task payload:", payload);
 
       const res = await fetch(`${API_BASE}/api/ai/tasksets`, {
@@ -1314,81 +1111,7 @@ if (isRolePlayRequested) {
         return;
       }
 
-      
-
-// 🎴 RolePlay Deck – map to quick-launch config
-if (
-  generatedType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-  generatedType === "role-play-deck" ||
-  generatedType === TASK_TYPES.ROLE_PLAY ||
-  generatedType === "role-play" ||
-  generatedType === "roleplay"
-) {
-  const cfg = (baseTask && typeof baseTask.config === "object" && baseTask.config) || {};
-  const roles =
-    Array.isArray(cfg.roles) && cfg.roles.length
-      ? cfg.roles
-      : Array.isArray(baseTask.roles) && baseTask.roles.length
-      ? baseTask.roles
-      : [];
-
-  const scenario =
-    String(cfg.scenario || baseTask.scenario || baseTask.prompt || "").trim();
-
-  const mode =
-    String(cfg.mode || baseTask.mode || "choose").trim() || "choose";
-
-  // Also sync UI fields so teacher can tweak without JSON
-  setRolePlayMode(mode);
-  setRolePlayScenarioText(scenario);
-  // Put roles back into editable text form
-  try {
-    const rolesText = Array.isArray(roles)
-      ? roles
-          .map((r) => {
-            const n = String(r?.name || "").trim();
-            const ro = String(r?.role || "").trim();
-            const ch = Array.isArray(r?.characteristics) ? r.characteristics.join(", ") : "";
-            return [n, ro, ch].filter(Boolean).join(" | ");
-          })
-          .join("\n")
-      : "";
-    setRolePlayRolesText(rolesText);
-  } catch {
-    // ignore
-  }
-
-  const built = buildRolePlayQuickConfig({
-    mode,
-    scenario,
-    rolesText: Array.isArray(roles)
-      ? roles
-          .map((r) => {
-            const n = String(r?.name || "").trim();
-            const ro = String(r?.role || "").trim();
-            const ch = Array.isArray(r?.characteristics) ? r.characteristics.join(", ") : "";
-            return [n, ro, ch].filter(Boolean).join(" | ");
-          })
-          .join("\n")
-      : "",
-  });
-
-  setTaskConfig({
-    prompt: built.prompt,
-    timeLimitSeconds:
-      Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : built.timeLimitSeconds,
-    config: {
-      ...(built.config || {}),
-    },
-    subject: aiSubject || "Ad-hoc",
-    gradeLevel: gradeStr || "",
-  });
-
-  setShowAiGen(false);
-  return;
-}
-
-// 🔁 Echo Chain (oral memory chain)
+      // 🔁 Echo Chain (oral memory chain)
       if (generatedType === TASK_TYPES.ECHO_CHAIN || generatedType === "echo-chain") {
         const seed =
           baseTask.seedTerm ||
@@ -1731,13 +1454,6 @@ if (
   const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
   const isEchoChainQuick = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
   const isNarrationQuick = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
-  const isRolePlayQuick =
-    taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-    taskType === "role-play-deck" ||
-    taskType === TASK_TYPES.ROLE_PLAY ||
-    taskType === "role-play" ||
-    taskType === "roleplay";
-
   const quickLaunchReady = isGuessWhoQuick
     ? (Array.isArray(taskConfig.secretAnswers)
         ? taskConfig.secretAnswers
@@ -1747,18 +1463,6 @@ if (
         .some((s) => String(s ?? "").trim())
     : isEchoChainQuick
     ? !!String(taskConfig.seedTerm || taskConfig.startTerm || "").trim()
-    : isNarrationQuick
-    ? (() => {
-        const pc = Number(taskConfig?.config?.playerCount);
-        const prompts = Array.isArray(taskConfig?.config?.prompts) ? taskConfig.config.prompts : [];
-        return pc > 0 && prompts.length === pc;
-      })()
-    : isRolePlayQuick
-    ? (() => {
-        const roles = Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [];
-        const scenario = String(taskConfig?.config?.scenario || "").trim();
-        return roles.length > 0 && !!scenario;
-      })()
     : !!taskConfig.prompt?.trim();
 
   // --- Treat gating: require at least 30% of tasks completed ---
@@ -3854,128 +3558,6 @@ Precipitation — rain, snow, hail`}
                 }}
               />
             </div>
-
-            {/* RolePlay Deck quick-entry (no JSON) */}
-            {(taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-              taskType === "role-play-deck" ||
-              taskType === TASK_TYPES.ROLE_PLAY ||
-              taskType === "role-play" ||
-              taskType === "roleplay") && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 12,
-                  border: "1px solid #e2e8f0",
-                  background: "#f8fafc",
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                  🎴 RolePlay Deck quick setup
-                </div>
-                <div style={{ fontSize: "0.8rem", color: "#475569", marginBottom: 10 }}>
-                  Enter a scenario and roles here to launch immediately — or click <strong>Generate Quick Task</strong> to have AI improve/fill it.
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4, color: "#334155" }}>
-                      Mode
-                    </div>
-                    <select
-                      value={rolePlayMode}
-                      onChange={(e) => setRolePlayMode(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px solid #cbd5e1",
-                        background: "white",
-                      }}
-                    >
-                      <option value="choose">Choose on student device</option>
-                      <option value="mystery">Mystery (hidden roles)</option>
-                      <option value="classic">Classic (open roles)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4, color: "#334155" }}>
-                      Suggested time
-                    </div>
-                    <div style={{ fontSize: "0.78rem", color: "#64748b", lineHeight: 1.3 }}>
-                      Recommended 3 minutes (180s). You can change this after generation or in the quick preview.
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4, color: "#334155" }}>
-                    Scenario (what they role-play)
-                  </div>
-                  <textarea
-                    rows={3}
-                    placeholder="Example: You are settlers and Mi'kmaq leaders negotiating land use near a new fort. Each role has different goals—work toward a fair agreement."
-                    value={rolePlayScenarioText}
-                    onChange={(e) => setRolePlayScenarioText(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: 10,
-                      borderRadius: 10,
-                      border: "1px solid #cbd5e1",
-                      resize: "vertical",
-                      background: "white",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                    <div style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: 4, color: "#334155" }}>
-                      Roles (one per line)
-                    </div>
-                    <div style={{ fontSize: "0.72rem", color: "#64748b" }}>
-                      Format: <code>Name | Role | traits, traits</code>
-                    </div>
-                  </div>
-                  <textarea
-                    rows={5}
-                    placeholder={`Alex | Governor | fair, cautious, decisive
-Marie | Merchant | persuasive, curious, generous
-Thomas | Soldier | loyal, brave, disciplined`}
-                    value={rolePlayRolesText}
-                    onChange={(e) => setRolePlayRolesText(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: 10,
-                      borderRadius: 10,
-                      border: "1px solid #cbd5e1",
-                      resize: "vertical",
-                      background: "white",
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                      fontSize: "0.82rem",
-                    }}
-                  />
-                  <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#475569" }}>
-                    Parsed roles: <strong>{parseRolePlayRolesText(rolePlayRolesText).length}</strong>
-                    {parseRolePlayRolesText(rolePlayRolesText).length === 0 && (
-                      <span style={{ marginLeft: 8, color: "#b91c1c" }}>
-                        · add at least 1 role line
-                      </span>
-                    )}
-                    {String(rolePlayScenarioText || "").trim() === "" && (
-                      <span style={{ marginLeft: 8, color: "#b91c1c" }}>
-                        · scenario required for Launch
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 10, fontSize: "0.78rem", color: "#64748b" }}>
-                  Student view: players draw a card, then the scenario appears and they role-play as a team. No objective scoring.
-                </div>
-              </div>
-            )}
 
             <div
               style={{

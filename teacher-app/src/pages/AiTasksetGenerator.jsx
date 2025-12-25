@@ -2,10 +2,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { fetchMyProfile } from "../api/profile";
-import {
-  TASK_TYPES,
-  TASK_TYPE_META,
-} from "../../../shared/taskTypes.js";
+import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
@@ -66,7 +64,6 @@ export default function AiTasksetGenerator() {
   const [onlyIntraTeam, setOnlyIntraTeam] = useState(false);
   const [onlyInterTeam, setOnlyInterTeam] = useState(false);
 
-
   // Vocabulary / key terms (REQUIRED)
   const [wordListText, setWordListText] = useState(prefillWordText);
 
@@ -91,7 +88,8 @@ export default function AiTasksetGenerator() {
           ...prev,
           gradeLevel: prev.gradeLevel || defaultGrade,
           subject: prev.subject || defaultSubject,
-          roomLocation: prev.roomLocation || data?.defaultRoomLocation || "Classroom",
+          roomLocation:
+            prev.roomLocation || data?.defaultRoomLocation || "Classroom",
         }));
       } catch (err) {
         console.error("Failed to load profile for AI generator:", err);
@@ -226,9 +224,7 @@ export default function AiTasksetGenerator() {
       }
 
       const curriculumLenses =
-        (profile &&
-          (profile.curriculumLenses || profile.perspectives)) ||
-        [];
+        (profile && (profile.curriculumLenses || profile.perspectives)) || [];
 
       const payload = {
         // Core planning context
@@ -257,8 +253,7 @@ export default function AiTasksetGenerator() {
         locationCode: form.roomLocation || "Classroom",
 
         // Fixed-station
-        isFixedStationTaskset:
-          form.isFixedStation || cleanedDisplays.length > 0,
+        isFixedStationTaskset: form.isFixedStation || cleanedDisplays.length > 0,
         displays: cleanedDisplays.length ? cleanedDisplays : undefined,
 
         // NEW: multi-room scavenger hunt behaviour
@@ -306,14 +301,11 @@ export default function AiTasksetGenerator() {
       setResult(data);
     } catch (err) {
       console.error("AI Taskset generation error:", err);
-      setError(
-        err?.message || "Something went wrong while generating the task set."
-      );
+      setError(err?.message || "Something went wrong while generating the task set.");
     } finally {
       setGenerating(false);
     }
   };
-
 
   const ALL_CATEGORIES = Array.from(
     new Set(
@@ -338,16 +330,13 @@ export default function AiTasksetGenerator() {
       const all = filteredEligibleTypes;
       const everySelected = all.length > 0 && all.every((t) => set.has(t));
       if (everySelected) {
-        // remove all filtered
         all.forEach((t) => set.delete(t));
       } else {
-        // add all filtered
         all.forEach((t) => set.add(t));
       }
       return Array.from(set);
     });
   };
-
 
   const typeIcon = (type) => {
     const t = String(type || "");
@@ -361,6 +350,7 @@ export default function AiTasksetGenerator() {
     return "✨";
   };
 
+  // ✅ FIXED: renderTaskTypeBadge now returns exactly one JSX block (no orphan JSX after return)
   const renderTaskTypeBadge = (type) => {
     const meta = TASK_TYPE_META[type] || {};
     const label = meta.label || type;
@@ -378,49 +368,17 @@ export default function AiTasksetGenerator() {
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 6,
-          padding: "6px 10px",
-          borderRadius: 999,
+          gap: 10,
+          padding: "10px 12px",
+          borderRadius: 14,
           border: selected ? "2px solid #2563eb" : "1px solid #d1d5db",
           background: selected ? "#eff6ff" : "#ffffff",
           cursor: "pointer",
-          fontSize: "0.85rem",
+          textAlign: "left",
+          minWidth: 260,
         }}
       >
-        <span style={{ marginRight: 4 }}>{typeIcon(type)}</span>
-
-        <span style={{ fontWeight: 600 }}>{label}</span>
-
-        <span
-          style={{
-            fontSize: "0.7rem",
-            color: "#6b7280",
-            textTransform: "capitalize",
-          }}
-        >
-          · {category}
-        </span>
-
-        {meta.intraTeamEnabled === true &&
-          meta.interTeamEnabled !== true && (
-            <span
-              style={{
-                marginLeft: 6,
-                fontSize: "0.7rem",
-                color: "#065f46",
-                background: "rgba(16,185,129,0.10)",
-                border: "1px solid rgba(16,185,129,0.25)",
-                padding: "2px 8px",
-                borderRadius: 999,
-                fontWeight: 700,
-              }}
-            >
-              intra-team
-            </span>
-          )}
-      </button>
-    );
-          <span style={{ fontSize: "0.95rem" }}>{typeIcon(type)}</span>
+        <span style={{ fontSize: "0.95rem" }}>{typeIcon(type)}</span>
 
         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
           <span style={{ fontWeight: 700 }}>{label}</span>
@@ -437,6 +395,7 @@ export default function AiTasksetGenerator() {
             color: "#6b7280",
             textTransform: "capitalize",
             marginLeft: 2,
+            whiteSpace: "nowrap",
           }}
         >
           · {category}
@@ -447,12 +406,13 @@ export default function AiTasksetGenerator() {
             style={{
               fontSize: "0.68rem",
               fontWeight: 700,
-              padding: "2px 6px",
+              padding: "2px 8px",
               borderRadius: 999,
               border: "1px solid rgba(16,185,129,0.35)",
               background: "rgba(16,185,129,0.10)",
               color: "#065f46",
               marginLeft: 2,
+              whiteSpace: "nowrap",
             }}
           >
             Intra-team
@@ -464,17 +424,19 @@ export default function AiTasksetGenerator() {
             style={{
               fontSize: "0.68rem",
               fontWeight: 700,
-              padding: "2px 6px",
+              padding: "2px 8px",
               borderRadius: 999,
               border: "1px solid rgba(59,130,246,0.35)",
               background: "rgba(59,130,246,0.10)",
               color: "#1d4ed8",
               marginLeft: 2,
+              whiteSpace: "nowrap",
             }}
           >
             Inter-team
           </span>
-        )}      </button>
+        )}
+      </button>
     );
   };
 
@@ -482,9 +444,8 @@ export default function AiTasksetGenerator() {
     <div style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
       <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
       <p style={{ marginTop: 0, color: "#4b5563", fontSize: "0.95rem" }}>
-        Give the AI your topic, vocabulary list, and any special
-        considerations. It will build a station-based task set that stays on
-        that exact content.
+        Give the AI your topic, vocabulary list, and any special considerations.
+        It will build a station-based task set that stays on that exact content.
       </p>
 
       {error && (
@@ -496,6 +457,7 @@ export default function AiTasksetGenerator() {
             background: "#fef2f2",
             color: "#b91c1c",
             fontSize: "0.85rem",
+            whiteSpace: "pre-wrap",
           }}
         >
           {error}
@@ -513,13 +475,7 @@ export default function AiTasksetGenerator() {
           }}
         >
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Task set title (topic)
             </label>
             <input
@@ -538,13 +494,7 @@ export default function AiTasksetGenerator() {
           </div>
 
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Default room / location
             </label>
             <input
@@ -560,6 +510,7 @@ export default function AiTasksetGenerator() {
                 fontSize: "0.9rem",
               }}
             />
+
             {/* Multi-room switch */}
             <label
               style={{
@@ -574,22 +525,14 @@ export default function AiTasksetGenerator() {
               <input
                 type="checkbox"
                 checked={form.isMultiRoomScavenger}
-                onChange={(e) =>
-                  handleChange("isMultiRoomScavenger", e.target.checked)
-                }
+                onChange={(e) => handleChange("isMultiRoomScavenger", e.target.checked)}
               />
               <span>Multi-room scavenger hunt</span>
             </label>
-            <p
-              style={{
-                marginTop: 2,
-                fontSize: "0.75rem",
-                color: "#6b7280",
-              }}
-            >
-              Leave unchecked if the whole activity stays in one room. When
-              checked, you can specify multiple locations (e.g., Classroom,
-              Hallway, Library) for a multi-room scavenger hunt.
+            <p style={{ marginTop: 2, fontSize: "0.75rem", color: "#6b7280" }}>
+              Leave unchecked if the whole activity stays in one room. When checked,
+              you can specify multiple locations (e.g., Classroom, Hallway, Library)
+              for a multi-room scavenger hunt.
             </p>
           </div>
         </div>
@@ -604,13 +547,7 @@ export default function AiTasksetGenerator() {
           }}
         >
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Grade level
             </label>
             <input
@@ -629,13 +566,7 @@ export default function AiTasksetGenerator() {
           </div>
 
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Subject
             </label>
             <input
@@ -654,13 +585,7 @@ export default function AiTasksetGenerator() {
           </div>
 
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Difficulty
             </label>
             <select
@@ -683,13 +608,7 @@ export default function AiTasksetGenerator() {
           </div>
 
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Learning goal
             </label>
             <select
@@ -722,13 +641,7 @@ export default function AiTasksetGenerator() {
           }}
         >
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Approx lesson duration (minutes)
             </label>
             <input
@@ -736,9 +649,7 @@ export default function AiTasksetGenerator() {
               min={5}
               max={120}
               value={form.durationMinutes}
-              onChange={(e) =>
-                handleChange("durationMinutes", Number(e.target.value))
-              }
+              onChange={(e) => handleChange("durationMinutes", Number(e.target.value))}
               style={{
                 width: "100%",
                 borderRadius: 8,
@@ -750,20 +661,12 @@ export default function AiTasksetGenerator() {
 
             <div style={{ height: 8 }} />
 
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Special considerations (optional)
             </label>
             <textarea
               value={form.topicDescription}
-              onChange={(e) =>
-                handleChange("topicDescription", e.target.value)
-              }
+              onChange={(e) => handleChange("topicDescription", e.target.value)}
               rows={5}
               placeholder="e.g., 'Reviewing for a test', 'Keep it low-noise', 'They just did a quiz—keep it lighter'..."
               style={{
@@ -779,22 +682,14 @@ export default function AiTasksetGenerator() {
             {/* Multi-room list text area - only when enabled */}
             {form.isMultiRoomScavenger && (
               <div style={{ marginTop: 10 }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.85rem",
-                    marginBottom: 4,
-                  }}
-                >
+                <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
                   Rooms / locations for this scavenger hunt
                 </label>
                 <textarea
                   value={multiRoomText}
                   onChange={(e) => setMultiRoomText(e.target.value)}
                   rows={4}
-                  placeholder={
-                    "One per line or separated by commas, e.g.\nClassroom\nHallway\nLibrary\nGym"
-                  }
+                  placeholder={"One per line or separated by commas, e.g.\nClassroom\nHallway\nLibrary\nGym"}
                   style={{
                     width: "100%",
                     borderRadius: 8,
@@ -804,16 +699,9 @@ export default function AiTasksetGenerator() {
                     resize: "vertical",
                   }}
                 />
-                <p
-                  style={{
-                    marginTop: 4,
-                    fontSize: "0.8rem",
-                    color: "#6b7280",
-                  }}
-                >
-                  These rooms are *options* for where stations might be
-                  located. LiveSession can later decide which of these are
-                  active for a particular run.
+                <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
+                  These rooms are *options* for where stations might be located. LiveSession can later
+                  decide which of these are active for a particular run.
                 </p>
               </div>
             )}
@@ -821,13 +709,7 @@ export default function AiTasksetGenerator() {
 
           {/* Vocabulary / key terms */}
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: "0.85rem",
-                marginBottom: 4,
-              }}
-            >
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
               Vocabulary / key terms <span style={{ color: "#b91c1c" }}>*</span>
             </label>
             <textarea
@@ -846,16 +728,9 @@ export default function AiTasksetGenerator() {
                 resize: "vertical",
               }}
             />
-            <p
-              style={{
-                marginTop: 4,
-                fontSize: "0.8rem",
-                color: "#6b7280",
-              }}
-            >
-              These words define the topic. The AI is required to stay within
-              them, and we’ll track which ones are “used” vs “not yet used”
-              so you can quickly generate a second set with the leftovers.
+            <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
+              These words define the topic. The AI is required to stay within them, and we’ll track
+              which ones are “used” vs “not yet used” so you can quickly generate a second set with the leftovers.
             </p>
           </div>
         </div>
@@ -870,24 +745,13 @@ export default function AiTasksetGenerator() {
             background: "#f9fafb",
           }}
         >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              cursor: "pointer",
-              marginBottom: 8,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={limitTasks}
-              onChange={(e) => setLimitTasks(e.target.checked)}
-            />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+            <input type="checkbox" checked={limitTasks} onChange={(e) => setLimitTasks(e.target.checked)} />
             <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
               Limit which task types the AI can use
             </span>
           </label>
+
           {limitTasks && (
             <div>
               <div
@@ -900,9 +764,7 @@ export default function AiTasksetGenerator() {
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: "0.85rem", color: "#374151" }}>
-                    Filter:
-                  </span>
+                  <span style={{ fontSize: "0.85rem", color: "#374151" }}>Filter:</span>
                   <select
                     value={taskTypeCategory}
                     onChange={(e) => setTaskTypeCategory(e.target.value)}
@@ -923,39 +785,13 @@ export default function AiTasksetGenerator() {
                   </select>
                 </div>
 
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: "0.85rem",
-                    color: "#374151",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={onlyIntraTeam}
-                    onChange={(e) => setOnlyIntraTeam(e.target.checked)}
-                  />
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}>
+                  <input type="checkbox" checked={onlyIntraTeam} onChange={(e) => setOnlyIntraTeam(e.target.checked)} />
                   Only intra-team
                 </label>
 
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: "0.85rem",
-                    color: "#374151",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={onlyInterTeam}
-                    onChange={(e) => setOnlyInterTeam(e.target.checked)}
-                  />
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}>
+                  <input type="checkbox" checked={onlyInterTeam} onChange={(e) => setOnlyInterTeam(e.target.checked)} />
                   Only inter-team
                 </label>
 
@@ -979,14 +815,8 @@ export default function AiTasksetGenerator() {
                 </span>
               </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                }}
-              >
-              {filteredEligibleTypes.map(renderTaskTypeBadge)}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {filteredEligibleTypes.map(renderTaskTypeBadge)}
               </div>
             </div>
           )}
@@ -1002,20 +832,11 @@ export default function AiTasksetGenerator() {
             background: "#f9fafb",
           }}
         >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              cursor: "pointer",
-            }}
-          >
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
             <input
               type="checkbox"
               checked={form.isFixedStation}
-              onChange={(e) =>
-                handleChange("isFixedStation", e.target.checked)
-              }
+              onChange={(e) => handleChange("isFixedStation", e.target.checked)}
             />
             <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
               Attach this task set to specific displays / stations
@@ -1059,12 +880,7 @@ export default function AiTasksetGenerator() {
                       marginBottom: 4,
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: "0.85rem",
-                        fontWeight: 500,
-                      }}
-                    >
+                    <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
                       Display {index + 1}
                     </div>
                     <button
@@ -1090,21 +906,13 @@ export default function AiTasksetGenerator() {
                     }}
                   >
                     <div>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.75rem",
-                          marginBottom: 2,
-                        }}
-                      >
+                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
                         Name
                       </label>
                       <input
                         type="text"
                         value={d.name || ""}
-                        onChange={(e) =>
-                          updateDisplay(index, "name", e.target.value)
-                        }
+                        onChange={(e) => updateDisplay(index, "name", e.target.value)}
                         style={{
                           width: "100%",
                           borderRadius: 6,
@@ -1115,21 +923,13 @@ export default function AiTasksetGenerator() {
                       />
                     </div>
                     <div>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.75rem",
-                          marginBottom: 2,
-                        }}
-                      >
+                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
                         Station color
                       </label>
                       <input
                         type="text"
                         value={d.stationColor || ""}
-                        onChange={(e) =>
-                          updateDisplay(index, "stationColor", e.target.value)
-                        }
+                        onChange={(e) => updateDisplay(index, "stationColor", e.target.value)}
                         placeholder="red, blue..."
                         style={{
                           width: "100%",
@@ -1141,25 +941,13 @@ export default function AiTasksetGenerator() {
                       />
                     </div>
                     <div>
-                      <label
-                        style={{
-                          display: "block",
-                          fontSize: "0.75rem",
-                          marginBottom: 2,
-                        }}
-                      >
+                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
                         Notes for you
                       </label>
                       <input
                         type="text"
                         value={d.notesForTeacher || ""}
-                        onChange={(e) =>
-                          updateDisplay(
-                            index,
-                            "notesForTeacher",
-                            e.target.value
-                          )
-                        }
+                        onChange={(e) => updateDisplay(index, "notesForTeacher", e.target.value)}
                         style={{
                           width: "100%",
                           borderRadius: 6,
@@ -1177,14 +965,7 @@ export default function AiTasksetGenerator() {
         </div>
 
         {/* ACTION BUTTONS */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-            marginTop: 12,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
           <button
             type="button"
             onClick={() => navigate("/tasksets")}
@@ -1233,9 +1014,7 @@ export default function AiTasksetGenerator() {
           </div>
           <button
             type="button"
-            onClick={() =>
-              navigate(`/tasksets/${result.tasksetId || result.taskset._id}`)
-            }
+            onClick={() => navigate(`/tasksets/${result.tasksetId || result.taskset._id}`)}
             style={{
               borderRadius: 999,
               padding: "4px 10px",
