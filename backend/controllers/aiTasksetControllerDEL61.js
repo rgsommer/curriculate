@@ -656,7 +656,9 @@ export const generateAiTaskset = async (req, res) => {
     if (Array.isArray(aiWordBank)) rawWordBank = aiWordBank;
     else if (typeof aiWordBank === "string") {
       rawWordBank = aiWordBank
-        .split(/\r?\n+/)
+        .split(/
+?
++/)
         .map((w) => w.trim())
         .filter(Boolean);
     }
