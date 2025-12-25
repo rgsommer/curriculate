@@ -1386,6 +1386,110 @@ function scoreNarrationSynthesize({ task, submission }) {
   };
 }
 
+
+// --- SPECIAL CASE: SCRIPT PLAY (PERFORMANCE, NO OPENAI) ---
+// ScriptPlay is a structured, intra-team performance. It should NOT be AI-scored via OpenAI.
+// The client submits completion + (optional) expressiveness rating; we translate that into
+// a fun, encouraging score and clear feedback.
+//
+// Expected (flexible) submission shapes:
+//   { completed: boolean, expressiveRating?: 1..5 }
+//   { answer: { completed: boolean, expressiveRating?: 1..5 } }
+//   { data: { completed: boolean, expressiveRating?: 1..5 } }
+//
+// Task config may include:
+//   config.bonusExpressivePoints (boolean)
+//   config.expressiveBonusPoints (number)  // from editor
+//   config.scenes (array) OR config.lines (array)  // editor-friendly
+function scoreScriptPlay({ task, submission }) {
+  const points = typeof task.points === "number" ? task.points : 12;
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  const s = submission?.answer && typeof submission.answer === "object" ? submission.answer : submission;
+  const data = s?.data && typeof s.data === "object" ? s.data : s;
+
+  const completed = data?.completed === true || data?.done === true || data?.finished === true;
+
+  // Expressiveness rating: 1..5 (optional)
+  let rating = Number(data?.expressiveRating ?? data?.expressiveness ?? data?.rating ?? null);
+  if (!Number.isFinite(rating)) rating = null;
+  if (rating != null) rating = clamp(Math.round(rating), 1, 5);
+
+  // Estimate how much content they performed (for nicer feedback)
+  const scenes = Array.isArray(cfg.scenes) ? cfg.scenes : null;
+  const turnsFromScenes = scenes
+    ? scenes.reduce((sum, sc) => sum + (Array.isArray(sc?.turns) ? sc.turns.length : 0), 0)
+    : 0;
+
+  const lines = Array.isArray(cfg.lines) ? cfg.lines : null;
+  const linesCount = lines ? lines.filter(Boolean).length : 0;
+
+  const totalLines = Math.max(0, turnsFromScenes || linesCount || Number(data?.totalTurns) || 0);
+
+  // Bonus points:
+  // - prefer explicit numeric `config.expressiveBonusPoints` if provided from editor
+  // - otherwise if boolean bonusExpressivePoints is true, use up to 3 points
+  const bonusCap =
+    Number.isFinite(Number(cfg.expressiveBonusPoints)) && Number(cfg.expressiveBonusPoints) >= 0
+      ? Number(cfg.expressiveBonusPoints)
+      : cfg.bonusExpressivePoints
+      ? 3
+      : 0;
+
+  const hasBonus = bonusCap > 0;
+
+  // Base score for completion
+  let score = completed ? points : 0;
+
+  // Add optional bonus from rating (only if completed)
+  let bonus = 0;
+  if (completed && hasBonus && rating != null) {
+    // Map 1..5 => 0..bonusCap
+    bonus = Math.round(((rating - 1) / 4) * bonusCap);
+    bonus = clamp(bonus, 0, bonusCap);
+    score = clamp(score + bonus, 0, points + bonusCap);
+  }
+
+  const correct = completed ? true : false;
+
+  let reason = "";
+  if (!completed) {
+    reason =
+      "Not finished yet — tap “Finish Performance” after the final line. Pass the device speaker-to-speaker and complete the scene.";
+  } else if (hasBonus && rating != null) {
+    const vibe =
+      rating >= 5
+        ? "Outstanding expression!"
+        : rating >= 4
+        ? "Great expression!"
+        : rating >= 3
+        ? "Nice expression!"
+        : rating >= 2
+        ? "Good effort—try a stronger voice and clear tone cues next time."
+        : "Good start—try slowing down, projecting your voice, and using the tone cue.";
+    reason = `${vibe} Completed Script Play${totalLines ? ` (${totalLines} line${totalLines === 1 ? "" : "s"})` : ""}.`;
+  } else {
+    reason = `Completed Script Play${totalLines ? ` (${totalLines} line${totalLines === 1 ? "" : "s"})` : ""}. Great teamwork passing the device and staying in character!`;
+  }
+
+  return {
+    score,
+    maxPoints: points + (hasBonus ? bonusCap : 0),
+    method: "performance",
+    correct,
+    reason,
+    aiFeedback: reason,
+    details: {
+      type: TASK_TYPES.SCRIPT_PLAY || "script-play",
+      completed,
+      expressiveRating: rating,
+      bonusAwarded: bonus,
+      totalLines: totalLines || null,
+    },
+  };
+}
+
+
 // --- PUBLIC ENTRYPOINT ---
 
 export async function generateAIScore({ task, submission, rubric }) {
@@ -1450,7 +1554,12 @@ if (
     return scoreHideNSeek({ task, submission, rubric });
   }
 
-  // Specialized path: Brain Spark Notes (completion-based, no rubric needed)
+  // Specialized path: Script Play (performance-based, no rubric / no OpenAI call)
+if (task?.taskType === TASK_TYPES.SCRIPT_PLAY || task?.taskType === "script-play") {
+  return scoreScriptPlay({ task, submission });
+}
+
+// Specialized path: Brain Spark Notes (completion-based, no rubric needed)
   if (
     task?.taskType === TASK_TYPES.BRAIN_SPARK_NOTES ||
     task?.taskType === "brain-spark-notes"

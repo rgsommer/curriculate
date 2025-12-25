@@ -40,6 +40,16 @@ function normalizeStudentAnswerPrimitive(raw) {
 
 function scoreSubmissionRuleBased({ task, submission }) {
   const meta = TASK_TYPE_META[task.taskType] || {};
+
+  // If the caller accidentally sends an objective task here, skip AI scoring.
+  if (meta.objectiveScoring) {
+    return {
+      score: null,
+      maxPoints: typeof task.points === "number" ? task.points : null,
+      method: "skipped-objective",
+      details: { reason: "Objective task types should be scored deterministically (not via aiScoring)." },
+    };
+  }
   if (!meta.objectiveScoring) return null;
 
   const points = typeof task.points === "number" ? task.points : 1;
@@ -784,6 +794,229 @@ function buildStudentWorkDescription(task, submission) {
   };
 }
 
+// --- SPECIAL CASE: ECHO CHAIN (ORAL MEMORY CHAIN, RULE-BASED) ---
+// EchoChain is primarily an oral, intra-team game. The client tracks the chain and submits
+// a summary payload. Scoring here is deterministic and focuses on:
+// - chain length achieved
+// - whether a full rotation was completed without errors (optional bonus)
+// Expected flexible submission shapes (we accept several common fields):
+//   {
+//     chain: string[],
+//     chainLength?: number,
+//     errors?: number,
+//     mistakes?: number,
+//     completedRotation?: boolean,
+//     rotationsCompleted?: number,
+//     timeLeftSeconds?: number
+//   }
+// Notes:
+// - We do NOT attempt semantic correctness of each added term here (that would require
+//   speech-to-text + subject knowledge). Instead we score the teamwork/working-memory
+//   completion signal. If you later add speech recognition, you can route through AI.
+function scoreEchoChain({ task, submission }) {
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  const chain =
+    (Array.isArray(submission?.chain) && submission.chain) ||
+    (Array.isArray(submission?.answer?.chain) && submission.answer.chain) ||
+    [];
+
+  const chainLengthRaw =
+    submission?.chainLength ??
+    submission?.answer?.chainLength ??
+    (Array.isArray(chain) ? chain.length : 0);
+
+  const chainLength = clamp(Number(chainLengthRaw) || 0, 0, 999);
+
+  const errorsRaw =
+    submission?.errors ??
+    submission?.mistakes ??
+    submission?.answer?.errors ??
+    submission?.answer?.mistakes ??
+    0;
+
+  const errors = clamp(Number(errorsRaw) || 0, 0, 999);
+
+  const rotationsCompletedRaw =
+    submission?.rotationsCompleted ??
+    submission?.answer?.rotationsCompleted ??
+    (submission?.completedRotation === true || submission?.answer?.completedRotation === true ? 1 : 0);
+
+  const rotationsCompleted = clamp(Number(rotationsCompletedRaw) || 0, 0, 999);
+
+  const completedRotation =
+    submission?.completedRotation === true ||
+    submission?.answer?.completedRotation === true ||
+    rotationsCompleted >= 1;
+
+  const timeLeftRaw =
+    submission?.timeLeftSeconds ??
+    submission?.answer?.timeLeftSeconds ??
+    submission?.timeLeft ??
+    submission?.secondsLeft ??
+    null;
+
+  const timeLeftSeconds =
+    timeLeftRaw == null ? null : clamp(Number(timeLeftRaw) || 0, 0, 3600);
+
+  const basePoints = typeof cfg.basePoints === "number" ? cfg.basePoints : 0;
+  const perAdd =
+    typeof cfg.pointsPerCorrectAdd === "number"
+      ? cfg.pointsPerCorrectAdd
+      : typeof cfg.pointsPerAdd === "number"
+      ? cfg.pointsPerAdd
+      : 1;
+
+  const rotationBonus =
+    typeof cfg.rotationBonusPoints === "number"
+      ? cfg.rotationBonusPoints
+      : typeof cfg.fullRotationBonus === "number"
+      ? cfg.fullRotationBonus
+      : 5;
+
+  const maxChainLength =
+    typeof cfg.maxChainLength === "number"
+      ? clamp(cfg.maxChainLength, 1, 999)
+      : 999;
+
+  const cappedChainLen = clamp(chainLength, 0, maxChainLength);
+
+  const points = typeof task.points === "number" ? task.points : 15;
+
+  // Score model: reward building the chain; subtract a small penalty per error;
+  // add a bonus for completing a clean full rotation.
+  let score = basePoints + cappedChainLen * perAdd;
+
+  // Small penalty for mistakes (doesn't nuke the whole attempt)
+  if (errors > 0) score -= errors * Math.max(1, Math.round(perAdd / 2));
+
+  // Rotation bonus only if the team completed a rotation and had zero errors.
+  if (completedRotation && errors === 0) score += rotationBonus;
+
+  // Time bonus (optional): small extra for finishing with time remaining.
+  if (errors === 0 && typeof timeLeftSeconds === "number") {
+    if (timeLeftSeconds >= 20) score += 2;
+    else if (timeLeftSeconds > 0) score += 1;
+  }
+
+  score = clamp(Math.round(score), 0, points);
+
+  const correct = completedRotation && errors === 0;
+
+  const reason = correct
+    ? `Great job—your team completed a full rotation with no mistakes! Chain length: ${cappedChainLen}.`
+    : errors > 0
+    ? `Nice attempt. You reached a chain length of ${cappedChainLen}, but there ${errors === 1 ? 'was 1 mistake' : `${errors} mistakes`}. Try again and focus on repeating the full chain accurately.`
+    : completedRotation
+    ? `You completed a rotation, but the system couldn't confirm a clean run. Chain length: ${cappedChainLen}.`
+    : `Good start! Chain length: ${cappedChainLen}. Aim for a full rotation with no mistakes for a bonus.`;
+
+  return {
+    score,
+    maxPoints: points,
+    method: "rule-based",
+    correct,
+    reason,
+    details: {
+      type: TASK_TYPES.ECHO_CHAIN || "echo-chain",
+      chainLength: cappedChainLen,
+      errors,
+      completedRotation,
+      rotationsCompleted,
+      timeLeftSeconds,
+      config: {
+        basePoints,
+        perAdd,
+        rotationBonus,
+        maxChainLength,
+      },
+    },
+  };
+}
+
+// --- SPECIAL CASE: GUESS WHO (YES/NO DEDUCTION, RULE-BASED) ---
+// GuessWho is not AI-scored; it is deterministically scored from submission state.
+// Expected submission shape (flexible):
+//   { correct: boolean, timeLeftSeconds?: number, guessesUsed?: number, maxGuesses?: number }
+// The UI/gameplay (hold-to-reveal, timer start on first reveal, guess counter) is handled client-side;
+// backend scoring only needs correctness + time/guesses for bonus.
+function scoreGuessWho({ task, submission }) {
+  const points = typeof task.points === "number" ? task.points : 20;
+
+  const correct = submission?.correct === true;
+
+  // Support several common field names to be resilient.
+  const timeLeftRaw =
+    submission?.timeLeftSeconds ??
+    submission?.timeLeft ??
+    submission?.secondsLeft ??
+    submission?.timeRemaining ??
+    null;
+
+  const guessesUsedRaw =
+    submission?.guessesUsed ??
+    submission?.guessCount ??
+    submission?.guesses ??
+    null;
+
+  const maxGuessesRaw =
+    submission?.maxGuesses ??
+    task?.maxGuesses ??
+    task?.config?.maxGuesses ??
+    task?.config?.guessLimit ??
+    task?.guessLimit ??
+    10;
+
+  const timeLeftSeconds =
+    timeLeftRaw == null ? null : clamp(Number(timeLeftRaw) || 0, 0, 3600);
+  const guessesUsed =
+    guessesUsedRaw == null ? null : clamp(Number(guessesUsedRaw) || 0, 0, 999);
+  const maxGuesses = clamp(Number(maxGuessesRaw) || 10, 1, 999);
+
+  // Bonus model: reward quick solves + efficient guessing. Keep simple & transparent.
+  let bonus = 0;
+
+  // Time bonus (matches your suggested tiers, but safe if time is unknown)
+  if (correct && typeof timeLeftSeconds === "number") {
+    if (timeLeftSeconds >= 40) bonus += 20;
+    else if (timeLeftSeconds >= 20) bonus += 15;
+    else if (timeLeftSeconds > 0) bonus += 10;
+  }
+
+  // Guess-efficiency bonus (small; prevents time bonus from dominating)
+  if (correct && typeof guessesUsed === "number") {
+    // best: <= 3 guesses, good: <= 6 guesses
+    if (guessesUsed <= 3) bonus += 8;
+    else if (guessesUsed <= 6) bonus += 4;
+  }
+
+  const score = correct ? points + bonus : 0;
+
+  const reason = correct
+    ? `Correct! +${points}${bonus ? ` (bonus +${bonus})` : ""}.` +
+      (typeof guessesUsed === "number"
+        ? ` Guesses used: ${guessesUsed}/${maxGuesses}.`
+        : "") +
+      (typeof timeLeftSeconds === "number" ? ` Time left: ${timeLeftSeconds}s.` : "")
+    : "Not quite. Keep narrowing it down using only yes/no questions, then make your best guess.";
+
+  return {
+    score,
+    maxPoints: points + 28, // theoretical max with current bonus caps (20 time + 8 guesses)
+    method: "rule-based",
+    correct,
+    reason,
+    details: {
+      type: TASK_TYPES.GUESS_WHO || "guess-who",
+      timeLeftSeconds,
+      guessesUsed,
+      maxGuesses,
+      basePoints: points,
+      bonus,
+    },
+  };
+}
+
 // --- SPECIAL CASE: DIFF DETECTIVE ---
 
 async function scoreDiffDetective({ task, submission }) {
@@ -1078,12 +1311,116 @@ async function scoreSpeechRecognition({ task, submission, rubric }) {
   };
 }
 
+// --- SPECIAL CASE: NARRATION SYNTHESIZE (PEER-RATED, NO OPENAI) ---
+// NarrationSynthesize is an oral, intra-team teach-back. It should NOT be AI-scored.
+// The client submits peer ratings (slider) and completion signals; we translate that
+// into a demo-friendly score and a short, encouraging feedback message.
+// Expected (flexible) submission shapes:
+//   { ratings: number[] }
+//   { data: { ratings: number[] } }
+//   { answer: { ratings: number[] } }
+// Rating scale is taken from task.config.ratingScale: { min, max, label } (defaults 1..5).
+function scoreNarrationSynthesize({ task, submission }) {
+  const points = typeof task.points === "number" ? task.points : 10;
+
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+  const scale = cfg?.ratingScale && typeof cfg.ratingScale === "object" ? cfg.ratingScale : {};
+  const min = Number.isFinite(Number(scale.min)) ? Number(scale.min) : 1;
+  const max = Number.isFinite(Number(scale.max)) ? Number(scale.max) : 5;
+
+  const ratings =
+    (Array.isArray(submission?.ratings) && submission.ratings) ||
+    (Array.isArray(submission?.data?.ratings) && submission.data.ratings) ||
+    (Array.isArray(submission?.answer?.ratings) && submission.answer.ratings) ||
+    (Array.isArray(submission?.data?.peerRatings) && submission.data.peerRatings) ||
+    [];
+
+  const nums = (Array.isArray(ratings) ? ratings : [])
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n));
+
+  if (!nums.length) {
+    return {
+      score: 0,
+      maxPoints: points,
+      method: "peer-rating",
+      correct: null,
+      reason:
+        "Thanks for the teach-back! (No peer ratings were submitted, so no points were calculated.)",
+      details: {
+        type: TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize",
+        ratingsCount: 0,
+        scale: { min, max },
+      },
+    };
+  }
+
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+
+  // Map average rating to points (min -> 0, max -> full points)
+  const denom = Math.max(1e-6, max - min);
+  const normalized = clamp((avg - min) / denom, 0, 1);
+  const score = clamp(Math.round(normalized * points), 0, points);
+
+  const label = String(scale.label || "Clarity / Accuracy / Quality").trim();
+  const reason =
+    score >= Math.round(points * 0.8)
+      ? `Strong teach-back! Your teammates rated your ${label.toLowerCase()} highly (avg ${avg.toFixed(1)}/${max}).`
+      : score >= Math.round(points * 0.45)
+      ? `Nice work! Your teammates rated your ${label.toLowerCase()} at ${avg.toFixed(1)}/${max}. Next time, add one extra example or restate the key steps clearly.`
+      : `Good start—keep practicing! Your teammates rated your ${label.toLowerCase()} at ${avg.toFixed(1)}/${max}. Try organizing your explanation into 2–3 clear steps.`;
+
+  return {
+    score,
+    maxPoints: points,
+    method: "peer-rating",
+    correct: null,
+    reason,
+    details: {
+      type: TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize",
+      avgRating: avg,
+      ratingsCount: nums.length,
+      scale: { min, max, label },
+      normalized,
+    },
+  };
+}
+
 // --- PUBLIC ENTRYPOINT ---
 
 export async function generateAIScore({ task, submission, rubric }) {
   if (!task) {
     throw new Error("generateAIScore requires a task.");
   }
+  // Specialized path: Echo Chain (rule-based, no rubric / no OpenAI call)
+  if (
+    task?.taskType === TASK_TYPES.ECHO_CHAIN ||
+    task?.taskType === "echo-chain" ||
+    task?.taskType === "echo_chain" ||
+    task?.taskType === "echochain"
+  ) {
+    return scoreEchoChain({ task, submission });
+  }
+  // Specialized path: Guess Who (rule-based, no rubric / no OpenAI call)
+  if (
+    task?.taskType === TASK_TYPES.GUESS_WHO ||
+    task?.taskType === "guess-who" ||
+    task?.taskType === "guess_who" ||
+    task?.taskType === "guesswho"
+  ) {
+    return scoreGuessWho({ task, submission });
+  }
+
+
+// Specialized path: Narration Synthesize (peer-rated; no OpenAI call)
+if (
+  task?.taskType === TASK_TYPES.NARRATION_SYNTHESIZE ||
+  task?.taskType === "narration-synthesize" ||
+  task?.taskType === "narration_synthesize" ||
+  task?.taskType === "narrationsynthesize"
+) {
+  return scoreNarrationSynthesize({ task, submission });
+}
 
   // Specialized path: Mind Mapper
   if (task?.taskType === TASK_TYPES.MIND_MAPPER || task?.taskType === "mind-mapper") {
@@ -1131,6 +1468,16 @@ export async function generateAIScore({ task, submission, rubric }) {
   }
 
   const meta = TASK_TYPE_META[task.taskType] || {};
+
+  // If the caller accidentally sends an objective task here, skip AI scoring.
+  if (meta.objectiveScoring) {
+    return {
+      score: null,
+      maxPoints: typeof task.points === "number" ? task.points : null,
+      method: "skipped-objective",
+      details: { reason: "Objective task types should be scored deterministically (not via aiScoring)." },
+    };
+  }
   const hasCorrect =
     task.correctAnswer != null ||
     (Array.isArray(task.items) &&
@@ -1144,15 +1491,11 @@ export async function generateAIScore({ task, submission, rubric }) {
         : meta.defaultAiScoringRequired,
   };
 
-  // 1) Try rule-based if objective and correct answers exist
-  const ruleResult = scoreSubmissionRuleBased({ task: safeTask, submission });
-  if (ruleResult) return ruleResult;
-
-  // 2) If AI is not required and no rubric, skip
-  const hasExplicitFlag = typeof safeTask.aiScoringRequired === "boolean";
-  const requiresAI = hasExplicitFlag
-    ? safeTask.aiScoringRequired
-    : !hasCorrect && !!rubric;
+  // 2) Determine whether AI scoring is required for this (non-objective) task type.
+  const requiresAI =
+    task?.aiScoringRequired === true ||
+    meta.defaultAiScoringRequired === true ||
+    !!rubric;
 
   if (!requiresAI) {
     return {
@@ -1161,7 +1504,7 @@ export async function generateAIScore({ task, submission, rubric }) {
       method: "none",
       details: {
         reason:
-          "AI scoring not required and no objective rule-based scoring available.",
+          "AI scoring not required and no rubric was provided.",
       },
     };
   }
