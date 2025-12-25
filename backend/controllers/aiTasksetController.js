@@ -44,8 +44,8 @@ export function buildVocabularyLines(aiWordBank) {
   const vocab = Array.isArray(aiWordBank)
     ? aiWordBank
     : String(aiWordBank || "")
-        .split(/[
-,;]+/)
+        .split(/?
++/)
         .map((s) => s.trim())
         .filter(Boolean);
 
@@ -658,7 +658,8 @@ export const generateAiTaskset = async (req, res) => {
     if (Array.isArray(aiWordBank)) rawWordBank = aiWordBank;
     else if (typeof aiWordBank === "string") {
       rawWordBank = aiWordBank
-        .split(/[\n,;]+/)
+        .split(/?
++/)
         .map((w) => w.trim())
         .filter(Boolean);
     }
