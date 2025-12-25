@@ -124,7 +124,6 @@ function taskTypeEmoji(typeRaw) {
   if (t.includes("echo")) return "🔁";
   if (t.includes("mystery")) return "🕵️";
   if (t.includes("debate")) return "🗣️";
-  if (t.includes("fake-out") || t.includes("fakeout") || t.includes("fake_out") || t.includes("balderdash") || t.includes("bluff")) return "🤥";
   if (t.includes("photo")) return "📷";
   if (t.includes("audio")) return "🎧";
   return "🧩";

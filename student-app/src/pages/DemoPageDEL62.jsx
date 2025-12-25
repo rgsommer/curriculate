@@ -313,16 +313,6 @@ function playRolePlayChime() {
   }
 }
 
-function playFakeOutChime() {
-  try {
-    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
-    a.volume = 0.14;
-    a.play();
-  } catch {
-    // ignore
-  }
-}
-
 
 function playNarrationChime() {
   try {

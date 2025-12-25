@@ -879,7 +879,6 @@ useEffect(() => {
   const handleLaunchQuickTask = () => {
     const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
     const isEchoChain = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
-    const isFakeOut = taskType === TASK_TYPES.FAKE_OUT || taskType === \"fake-out\" || taskType === \"fakeout\";
     const isNarration = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
     const isRolePlay =
       taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
@@ -888,22 +887,7 @@ useEffect(() => {
       taskType === "role-play" ||
       taskType === "roleplay";
     if (!roomCode) return;
-    if (!isGuessWho && !isEchoChain && !isNarration && !isRolePlay && !isFakeOut && !taskConfig.prompt?.trim()) return;
-    if (isFakeOut) {
-      const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-      const pc = Number(cfg.playerCount);
-      const rounds = Array.isArray(cfg.rounds) ? cfg.rounds : [];
-      if (!(pc > 0)) return;
-      if (rounds.length === 0) return;
-      // ensure each round has at least statement + 4 options
-      const ok = rounds.every((r) => {
-        const statement = String(r?.statement ?? "").trim();
-        const options = Array.isArray(r?.options) ? r.options : [];
-        return statement.length > 0 && options.length >= 4;
-      });
-      if (!ok) return;
-    }
-
+    if (!isGuessWho && !isEchoChain && !isNarration && !isRolePlay && !taskConfig.prompt?.trim()) return;
     if (isNarration) {
       const pc = Number(taskConfig?.config?.playerCount);
       const prompts = Array.isArray(taskConfig?.config?.prompts) ? taskConfig.config.prompts : [];
@@ -950,35 +934,6 @@ useEffect(() => {
       clue: taskConfig.clue || undefined,
       timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
       reviewPauseSeconds: reviewPauseSeconds || 15,
-      // FakeOut (Balderdash-style) special fields
-      ...(isFakeOut && {
-        prompt:
-          (taskConfig.prompt || "").trim() ||
-          "Fake Out: One player reads aloud; everyone else listens and votes.",
-        config: (() => {
-          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-          const pc = Number(cfg.playerCount) > 0 ? Number(cfg.playerCount) : 4;
-          const playerNames = Array.isArray(cfg.playerNames) && cfg.playerNames.length === pc ? cfg.playerNames : undefined;
-          const rounds = Array.isArray(cfg.rounds) ? cfg.rounds : [];
-          return {
-            ...(cfg || {}),
-            playerCount: pc,
-            playerNames,
-            rounds,
-            // Safety defaults
-            perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 45,
-            readerBonusPoints:
-              Number(cfg.readerBonusPoints) > 0 ? Number(cfg.readerBonusPoints) : 5,
-          };
-        })(),
-        timeLimitSeconds:
-          Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90,
-        points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
-        interTeamEnabled: false,
-        intraTeamEnabled: true,
-        objectiveScoring: true,
-      }),
-
 
       // GuessWho (Yes/No deduction) special fields
       ...(isGuessWho && {
@@ -1359,57 +1314,6 @@ if (isRolePlayRequested) {
       }
 
       
-
-
-
-      // 🟣 FakeOut (Balderdash-style truth vs fake)
-      if (generatedType === TASK_TYPES.FAKE_OUT || generatedType === "fake-out" || generatedType === "fakeout") {
-        const cfg = (baseTask && typeof baseTask.config === "object" && baseTask.config) || {};
-        const rounds =
-          Array.isArray(cfg.rounds) && cfg.rounds.length
-            ? cfg.rounds
-            : Array.isArray(baseTask.rounds) && baseTask.rounds.length
-            ? baseTask.rounds
-            : [];
-
-        const playerCount =
-          Number(cfg.playerCount) > 0
-            ? Number(cfg.playerCount)
-            : Number(baseTask.playerCount) > 0
-            ? Number(baseTask.playerCount)
-            : 4;
-
-        const playerNames =
-          Array.isArray(cfg.playerNames) && cfg.playerNames.length === playerCount
-            ? cfg.playerNames
-            : undefined;
-
-        setTaskConfig({
-          prompt:
-            String(baseTask.prompt || "").trim() ||
-            "Fake Out: One player reads aloud; everyone else listens and votes.",
-          config: {
-            ...(cfg || {}),
-            playerCount,
-            playerNames,
-            rounds,
-            perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 45,
-            readerBonusPoints:
-              Number(cfg.readerBonusPoints) > 0 ? Number(cfg.readerBonusPoints) : 5,
-          },
-          timeLimitSeconds:
-            Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 90,
-          points: typeof baseTask.points === "number" ? baseTask.points : 10,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: true,
-          objectiveScoring: true,
-          aiScoringRequired: false,
-        });
-        setShowAiGen(false);
-        return;
-      }
 
 // 🎴 RolePlay Deck – map to quick-launch config
 if (

@@ -666,14 +666,12 @@ function StudentApp() {
   const sndNarration = useRef(null);
   const sndScriptPlay = useRef(null);
   const sndRolePlay = useRef(null);
-  const sndFakeOut = useRef(null);
 
   // EchoChain micro-theme pulse (purely visual)
   const [echoPulse, setEchoPulse] = useState(false);
   const [narrationSpark, setNarrationSpark] = useState(false);
   const [scriptSpotlight, setScriptSpotlight] = useState(false);
   const [rolePlayGlow, setRolePlayGlow] = useState(false);
-  const [fakeOutFlash, setFakeOutFlash] = useState(false);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
@@ -941,19 +939,7 @@ function StudentApp() {
         tryPlayRolePlaySound();
         setRolePlayGlow(true);
         window.setTimeout(() => setRolePlayGlow(false), 1200);
-  
-      // FakeOut: listening + voting round (intra-team only)
-      if (assignedType === TASK_TYPES.FAKE_OUT || assignedType === "fake-out") {
-        tryPlayFakeOutSound();
-        setFakeOutFlash(true);
-        window.setTimeout(() => setFakeOutFlash(false), 1200);
-        setTreatMessage(
-          "🃏 Fake Out — one player reads aloud; everyone else LISTENS and votes!"
-        );
-        window.setTimeout(() => setTreatMessage(null), 3800);
-      }
-
-      setTreatMessage("🎭 RolePlay — draw roles, then act it out together.");
+        setTreatMessage("🎭 RolePlay — draw roles, then act it out together.");
       }
 
       setCurrentTask(assignedTask);
@@ -1291,13 +1277,6 @@ function StudentApp() {
     } catch (err) {
       console.warn("Could not preload audio:", err);
     }
-
-      // FakeOut: playful "gotcha" cue
-      const fakeOutAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
-      fakeOutAudio.volume = 0.14;
-      sndFakeOut.current = fakeOutAudio;
   }, []);
 
   function tryPlayAlertSound() {
@@ -1346,14 +1325,6 @@ function StudentApp() {
       sndRolePlay.current && sndRolePlay.current.play();
     } catch (err) {
       console.warn("RolePlay sound play blocked:", err);
-    }
-  }
-
-  function tryPlayFakeOutSound() {
-    try {
-      sndFakeOut.current && sndFakeOut.current.play();
-    } catch (err) {
-      console.warn("FakeOut sound play blocked:", err);
     }
   }
 
@@ -1946,10 +1917,6 @@ function StudentApp() {
   const isRolePlayDeck =
     currentTask?.taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
     currentTask?.taskType === "role-play-deck";
-
-  const isFakeOut =
-    currentTask?.taskType === TASK_TYPES.FAKE_OUT ||
-    currentTask?.taskType === "fake-out";
 
   const isMindMapper = currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
 
@@ -3425,23 +3392,6 @@ function StudentApp() {
               "radial-gradient(circle at 30% 30%, rgba(34,197,94,0.16), transparent 55%), radial-gradient(circle at 70% 25%, rgba(59,130,246,0.16), transparent 55%), radial-gradient(circle at 50% 85%, rgba(168,85,247,0.14), transparent 58%)",
             boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset",
             animation: "echo-pulse 1.4s ease-out 1",
-          }}
-        />
-      )}
-
-      {fakeOutFlash && isFakeOut && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: 18,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(circle at 30% 25%, rgba(251,191,36,0.22), transparent 55%), radial-gradient(circle at 70% 60%, rgba(59,130,246,0.16), transparent 58%), radial-gradient(circle at 55% 95%, rgba(236,72,153,0.12), transparent 60%)",
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.08) inset, 0 18px 60px rgba(0,0,0,0.35)",
-            animation: "echo-pulse 1.1s ease-out 1",
           }}
         />
       )}
