@@ -942,8 +942,36 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 300,
     interTeamEnabled: false,
     intraTeamEnabled: true,
-    description:
-      "Role-based scenario role-play using an AI-generated “role deck.”\n\nHow it works:\n- Choose a mode: Mystery (hidden roles) or Classic (open roles).\n- Each player draws ONE role card: { name, role, characteristics[] }.\n- Read the subject-linked scenario aloud and role-play it as a team.\n- Submit marks completion (no objective scoring).\n\nConstraints:\n- School-appropriate and morally appropriate; no mocking, cruelty, or unsafe behavior.\n- Characteristics are short, positive traits (3–5 per role).\n- Scenario must connect to the subject/lesson and invite perspective-taking.\n- INTRA-team only (no inter-team mechanics).\n\nExpected payload:\n{ taskType: "role-play-deck", title: string, prompt: string, timeLimitSeconds?: number, config: { mode?: "mystery" | "classic" | "choose", playerCount?: number, playerNames?: string[], roles: Array<{ name: string, role: string, characteristics: string[] }>, scenario: string } }",
+    description: `
+    Role-based scenario role-play using an AI-generated role deck.
+
+    How it works:
+    - Choose a mode: Mystery (hidden roles) or Classic (open roles).
+    - Each player draws ONE role card: { name, role, characteristics[] }.
+    - Read the subject-linked scenario aloud and role-play it as a team.
+    - Submit marks completion (no objective scoring).
+
+    Constraints:
+    - School-appropriate and morally appropriate; no mocking, cruelty, or unsafe behavior.
+    - Characteristics are short, positive traits (3–5 per role).
+    - Scenario must connect to the subject/lesson and invite perspective-taking.
+    - INTRA-team only (no inter-team mechanics).
+
+    Expected payload:
+    {
+      taskType: "role-play-deck",
+      title: string,
+      prompt: string,
+      timeLimitSeconds?: number,
+      config: {
+        mode?: "mystery" | "classic" | "choose",
+        playerCount?: number,
+        playerNames?: string[],
+        roles: Array<{ name: string, role: string, characteristics: string[] }>,
+        scenario: string
+      }
+    }
+    `.trim(),
   }),
 
   [TASK_TYPES.SCRIPT_PLAY]: metaBase({
