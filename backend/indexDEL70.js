@@ -2401,7 +2401,60 @@ socket.on("station:scan", handleStationScan);
     const { roomCode, teamId, taskIndex, timeMs } = payload || {};
     let { answer } = payload || {};
 
-    // ✅ Normalize multi-pack answers sent as JSON strings from StudentApp/TaskRunner
+    // ✅ Normalize TaskRunner-style wrapped answers:
+    // TaskRunner often sends: answer = { type: <taskType>, answer: <string|object> }
+    // and multi-question tasks may send JSON strings like:
+    //   { kind: "multi-short-answer", answers: [...] }
+    //   { kind: "multi-true-false",  answers: [...] }
+    const unwrapRunnerAnswer = (val) => {
+      if (
+        val &&
+        typeof val === "object" &&
+        Object.prototype.hasOwnProperty.call(val, "answer") &&
+        Object.prototype.hasOwnProperty.call(val, "type") &&
+        typeof val.type === "string"
+      ) {
+        return val.answer;
+      }
+      return val;
+    };
+
+    answer = unwrapRunnerAnswer(answer);
+
+    // If answer is a JSON string for multi-question packs, parse it.
+    if (typeof answer === "string") {
+      const s = answer.trim();
+      if (s.startsWith("{") && s.endsWith("}")) {
+        try {
+          const parsed = JSON.parse(s);
+          if (parsed && typeof parsed === "object") {
+            answer = parsed;
+          }
+        } catch {
+          // ignore JSON parse failures
+        }
+      }
+    }
+
+    // Normalize legacy multi-pack shapes into the scoring engine shape.
+    // Our central scorer expects: { type: "multi-choice"|"multi-short", answers: [{ itemId, value, baseIndex? }] }
+    if (answer && typeof answer === "object" && Array.isArray(answer.answers) && typeof answer.kind === "string") {
+      if (answer.kind === "multi-short-answer") {
+        const vals = Array.isArray(answer.answers) ? answer.answers : [];
+        answer = {
+          type: "multi-short",
+          answers: vals.map((v, i) => ({ itemId: String(i), value: v })),
+        };
+      } else if (answer.kind === "multi-true-false") {
+        const vals = Array.isArray(answer.answers) ? answer.answers : [];
+        answer = {
+          type: "multi-choice",
+          answers: vals.map((v, i) => ({ itemId: String(i), value: v })),
+        };
+      }
+    }
+
+    // ✅  Normalize multi-pack answers sent as JSON strings from StudentApp/TaskRunner
     if (typeof answer === "string") {
       try {
         const parsed = JSON.parse(answer);
@@ -2468,7 +2521,11 @@ const code = (roomCode || "").toUpperCase();
       typeof answer === "object" &&
       Array.isArray(answer.answers) &&
       answer.answers.length > 0 &&
-      (answer.type === "multi-choice" || answer.type === "multi-short");
+      (answer.type === "multi-choice" ||
+        answer.type === "multi-short" ||
+        answer.type === "multi-true-false" ||
+        answer.kind === "multi-short-answer" ||
+        answer.kind === "multi-true-false");
 
     // Build answerText for transcripts/logging
     const answerText = (() => {
@@ -2636,6 +2693,143 @@ const code = (roomCode || "").toUpperCase();
     // 2) Non-multi tasks → Matching (objective)
     // ----------------------------
     const isVennSort = task.taskType === "vennsort" || task.taskType === "venn-sort";
+
+    // ----------------------------
+    // 2a) Non-multi objective tasks (MC / TF / Short Answer)
+    // ----------------------------
+    const normalizeTF = (v) => {
+      if (typeof v === "boolean") return v ? "true" : "false";
+      if (typeof v === "number") return v === 0 ? "true" : v === 1 ? "false" : String(v);
+      const s = String(v ?? "").trim().toLowerCase();
+      if (["true", "t", "yes", "y", "1"].includes(s)) return "true";
+      if (["false", "f", "no", "n", "0"].includes(s)) return "false";
+      return s;
+    };
+
+    const normalizeText = (v) =>
+      String(v ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+    const awardObjective = (isCorrect) => {
+      correct = isCorrect;
+      pointsEarned = isCorrect ? basePoints : 0;
+      aiScore = {
+        strategy: "objective",
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+        correct: isCorrect,
+      };
+    };
+
+    // Non-multi TRUE_FALSE
+    if (!isMultiPack && task.taskType === "true-false") {
+      const given = normalizeTF(answerText ?? answer);
+      const expected = (() => {
+        const ca = task.correctAnswer ?? (task.payload && task.payload.correctAnswer);
+        // Correct answer might be 0/1, boolean, or "true"/"false"
+        const exp = normalizeTF(ca);
+        // Some generators use 0=True, 1=False; normalizeTF already maps 0->true,1->false
+        return exp;
+      })();
+      if (given === "true" || given === "false") {
+        awardObjective(given === expected);
+      }
+    }
+
+    // Non-multi MULTIPLE_CHOICE
+    if (!isMultiPack && task.taskType === "multiple-choice" && pointsEarned === 0 && correct === null) {
+      const options = Array.isArray(task.options)
+        ? task.options
+        : Array.isArray(task.choices)
+        ? task.choices
+        : [];
+      const ca = task.correctAnswer ?? (task.payload && task.payload.correctAnswer);
+      const expectedIndex =
+        typeof ca === "number"
+          ? ca
+          : typeof ca === "string" && /^\d+$/.test(ca.trim())
+          ? Number(ca.trim())
+          : null;
+
+      // Answer may be index, numeric string, or option text.
+      const givenRaw = answerText ?? answer;
+      const givenIndex =
+        typeof givenRaw === "number"
+          ? givenRaw
+          : typeof givenRaw === "string" && /^\d+$/.test(givenRaw.trim())
+          ? Number(givenRaw.trim())
+          : null;
+
+      if (typeof expectedIndex === "number" && typeof givenIndex === "number") {
+        awardObjective(givenIndex === expectedIndex);
+      } else if (typeof expectedIndex === "number" && typeof givenRaw === "string") {
+        const expectedText = options[expectedIndex] != null ? String(options[expectedIndex]) : "";
+        awardObjective(normalizeText(givenRaw) === normalizeText(expectedText));
+      } else if (typeof ca === "string" && typeof givenRaw === "string") {
+        awardObjective(normalizeText(givenRaw) === normalizeText(ca));
+      }
+    }
+
+    // Non-multi SHORT_ANSWER (objective with AI assist when mismatch)
+    if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && correct === null) {
+      const given = normalizeText(answerText ?? answer);
+      const expected = task.correctAnswer ?? (task.payload && task.payload.correctAnswer);
+      const acceptable =
+        Array.isArray(task.acceptableAnswers)
+          ? task.acceptableAnswers
+          : task.payload && Array.isArray(task.payload.acceptableAnswers)
+          ? task.payload.acceptableAnswers
+          : null;
+
+      const candidates = [];
+      if (typeof expected === "string" && expected.trim()) candidates.push(expected);
+      if (Array.isArray(expected)) expected.forEach((x) => candidates.push(x));
+      if (Array.isArray(acceptable)) acceptable.forEach((x) => candidates.push(x));
+
+      const match = candidates
+        .map((c) => normalizeText(c))
+        .filter(Boolean)
+        .some((c) => c === given);
+
+      if (match) {
+        awardObjective(true);
+      } else if (given.length > 0) {
+        // AI assist: allow partial credit for close answers / reject nonsense.
+        try {
+          aiScore = await generateAIScore({
+            task: {
+              ...task,
+              objectiveHint: candidates.filter(Boolean).slice(0, 8),
+            },
+            rubric: task.aiRubric || null,
+            submission: {
+              ...submissionForScoring,
+              objectiveHint: candidates.filter(Boolean).slice(0, 8),
+            },
+          });
+
+          const aiNumericScore =
+            aiScore && typeof aiScore.score === "number"
+              ? aiScore.score
+              : aiScore && typeof aiScore.totalScore === "number"
+              ? aiScore.totalScore
+              : null;
+
+          if (typeof aiNumericScore === "number") {
+            pointsEarned = Math.max(0, Math.min(basePoints, aiNumericScore));
+            correct = pointsEarned === basePoints ? true : pointsEarned === 0 ? false : null;
+            if (aiScore && aiScore.maxPoints == null) aiScore.maxPoints = basePoints;
+            if (aiScore && aiScore.totalScore == null) aiScore.totalScore = pointsEarned;
+          }
+        } catch (e) {
+          // If AI scoring fails, just mark incorrect.
+          awardObjective(false);
+        }
+      }
+    }
+
 
 // Guess Who (yes/no deduction) – custom scoring: points scale by time + guess count
 if (!isMultiPack && task.taskType === "guess-who") {

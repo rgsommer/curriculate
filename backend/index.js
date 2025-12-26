@@ -829,33 +829,24 @@ function sendTaskToTeam(room, teamId, index) {
   // If this is a Flashcards Race task, initialise race state the first time
   // any team is sent this particular index.
   if (task.taskType === "flashcards-race") {
-    if (
-      !room.flashcardsRace ||
-      room.flashcardsRace.taskIndex !== index
-    ) {
-      const deck =
-        (Array.isArray(task.cards) && task.cards.length > 0
-          ? task.cards
-          : Array.isArray(task.items) && task.items.length > 0
-          ? task.items
-          : []) || [];
+    _fcEnsureRaceState(io, room, task, index);
 
-      room.flashcardsRace = {
-        active: deck.length > 0,
-        taskIndex: index,
-        deck,
-        currentIndex: 0,
-      };
+    const r = room.flashcardsRace || {};
+    const deck = Array.isArray(r.deck) ? r.deck : [];
 
-      // Broadcast initial "start" event so FlashcardsRaceTask can show card 0
-      io.to(room.code).emit("flashcards-race:start", {
-        card: deck[0] || null,
-        cardIndex: 0,
-        totalCards: deck.length,
-      });
-    }
+    // Broadcast initial "start" event so FlashcardsRaceTask can show card 0 + shared leaderboard
+    io.to(room.code).emit("flashcards-race:start", {
+      taskIndex: index,
+      card: deck[0] || null,
+      cardIndex: 0,
+      totalCards: deck.length,
+      secondsPerCard: r.secondsPerCard || 20,
+      startedAt: r.cardStartedAt || r.startedAt || Date.now(),
+      scores: r.scores || {},
+      interTeam: true,
+      intraTeam: false,
+    });
   }
-
 
 // If this is a Guess Who (yes/no deduction) task, initialise per-team state
 if (task.taskType === "guess-who") {
@@ -1351,6 +1342,178 @@ function advanceTaskNow({ io, session, roomCode, reason = "manual", baseTaskInde
   io.to(roomCode).emit("task:advance", { taskIndex: nextIndex, reason });
 }
 
+
+// ====================================================================
+//  FLASHCARDS RACE – SERVER-SIDE INTER-TEAM COORDINATION
+// ====================================================================
+// Notes:
+// - This is intentionally lightweight: it coordinates buzz + answer + shared leaderboard
+//   across teams in the same room (inter-team enabled).
+// - The client can still run locally if these events are never used, but when used, the
+//   server becomes the source of truth for who buzzed first, scoring, and advancing cards.
+
+function _fcNormalizeAnswer(s) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function _fcCardMatchesAnswer(card, answerText) {
+  const a = _fcNormalizeAnswer(answerText);
+  if (!a) return false;
+
+  const correct = _fcNormalizeAnswer(card?.answer ?? card?.a ?? "");
+  if (correct && a === correct) return true;
+
+  const alts = card?.acceptableAnswers || card?.acceptable || card?.altAnswers;
+  if (Array.isArray(alts) && alts.some((x) => _fcNormalizeAnswer(x) === a)) return true;
+
+  return false;
+}
+
+function _fcGetDeckFromTask(task) {
+  const cfg = task && typeof task === "object" ? (task.config || {}) : {};
+  const deck =
+    (Array.isArray(cfg.items) && cfg.items.length > 0
+      ? cfg.items
+      : Array.isArray(task.cards) && task.cards.length > 0
+      ? task.cards
+      : Array.isArray(task.items) && task.items.length > 0
+      ? task.items
+      : []) || [];
+  return deck;
+}
+
+function _fcGetSecondsPerCardFromTask(task) {
+  const cfg = task && typeof task === "object" ? (task.config || {}) : {};
+  const raw = cfg.secondsPerCard ?? task.secondsPerCard ?? 20;
+  const n = Number(raw);
+  return n > 0 ? n : 20;
+}
+
+function _fcGetPointsFromTask(task) {
+  const cfg = task && typeof task === "object" ? (task.config || {}) : {};
+  const pts = cfg.points && typeof cfg.points === "object" ? cfg.points : {};
+  const correct = Number(pts.correct ?? cfg.pointsCorrect ?? task.pointsCorrect ?? 10);
+  const firstBuzzBonus = Number(
+    pts.firstBuzzBonus ?? cfg.pointsFirstBuzzBonus ?? task.pointsFirstBuzzBonus ?? 5
+  );
+  return {
+    correct: Number.isFinite(correct) ? correct : 10,
+    firstBuzzBonus: Number.isFinite(firstBuzzBonus) ? firstBuzzBonus : 5,
+  };
+}
+
+function _fcClearTimer(room) {
+  if (room?.flashcardsRace?.timer) {
+    try {
+      clearTimeout(room.flashcardsRace.timer);
+    } catch {}
+  }
+  if (room?.flashcardsRace) room.flashcardsRace.timer = null;
+}
+
+function _fcBroadcastState(io, room, eventName, extra = {}) {
+  const r = room?.flashcardsRace;
+  const deck = r?.deck || [];
+  const safeCard = deck[r?.cardIndex ?? 0] || null;
+
+  io.to(room.code).emit(eventName, {
+    taskIndex: r?.taskIndex ?? null,
+    card: safeCard ? { question: safeCard.question ?? safeCard.q ?? "", answer: safeCard.answer ?? safeCard.a ?? "" } : null,
+    cardIndex: r?.cardIndex ?? 0,
+    totalCards: deck.length,
+    secondsPerCard: r?.secondsPerCard ?? 20,
+    startedAt: r?.cardStartedAt ?? r?.startedAt ?? Date.now(),
+    scores: r?.scores || {},
+    buzz: r?.currentBuzz || null,
+    ...extra,
+  });
+}
+
+function _fcAdvanceCard(io, room, reason = "next") {
+  const r = room.flashcardsRace;
+  const deck = r.deck || [];
+
+  _fcClearTimer(room);
+
+  r.currentBuzz = null;
+  r.buzzedOutTeams = {};
+  r.firstBuzzTeamId = null;
+
+  r.cardIndex = (r.cardIndex ?? 0) + 1;
+
+  if (r.cardIndex >= deck.length) {
+    r.active = false;
+    _fcBroadcastState(io, room, "flashcards-race:end", { reason, done: true });
+    return;
+  }
+
+  r.cardStartedAt = Date.now();
+  _fcBroadcastState(io, room, "flashcards-race:next", { reason, done: false });
+
+  // Schedule server-side timeout to advance the card if nobody wins it in time.
+  const ms = Math.max(3, Number(r.secondsPerCard || 20)) * 1000;
+  r.timer = setTimeout(() => {
+    const roomNow = rooms[room.code];
+    if (!roomNow?.flashcardsRace) return;
+    const rr = roomNow.flashcardsRace;
+    if (!rr.active) return;
+    if (rr.taskIndex !== r.taskIndex) return;
+
+    // Advance due to timeout
+    _fcBroadcastState(io, roomNow, "flashcards-race:timeout", { reason: "timeout" });
+    _fcAdvanceCard(io, roomNow, "timeout");
+  }, ms);
+}
+
+function _fcEnsureRaceState(io, room, task, taskIndex) {
+  const deck = _fcGetDeckFromTask(task);
+  const secondsPerCard = _fcGetSecondsPerCardFromTask(task);
+
+  if (!room.flashcardsRace || room.flashcardsRace.taskIndex !== taskIndex) {
+    room.flashcardsRace = {
+      active: deck.length > 0,
+      taskIndex,
+      deck,
+      secondsPerCard,
+      startedAt: Date.now(),
+      cardStartedAt: Date.now(),
+      cardIndex: 0,
+      scores: {},
+      points: _fcGetPointsFromTask(task),
+      currentBuzz: null,
+      buzzedOutTeams: {},
+      firstBuzzTeamId: null,
+      timer: null,
+    };
+  } else {
+    // Keep scores between re-sends, but update deck/settings.
+    room.flashcardsRace.deck = deck;
+    room.flashcardsRace.secondsPerCard = secondsPerCard;
+    room.flashcardsRace.points = _fcGetPointsFromTask(task);
+    if (typeof room.flashcardsRace.cardIndex !== "number") room.flashcardsRace.cardIndex = 0;
+    if (!room.flashcardsRace.scores) room.flashcardsRace.scores = {};
+  }
+
+  // Start / restart timer
+  room.flashcardsRace.cardStartedAt = Date.now();
+  _fcClearTimer(room);
+
+  const ms = Math.max(3, Number(secondsPerCard || 20)) * 1000;
+  room.flashcardsRace.timer = setTimeout(() => {
+    const roomNow = rooms[room.code];
+    if (!roomNow?.flashcardsRace) return;
+    const rr = roomNow.flashcardsRace;
+    if (!rr.active) return;
+    if (rr.taskIndex !== taskIndex) return;
+
+    _fcBroadcastState(io, roomNow, "flashcards-race:timeout", { reason: "timeout" });
+    _fcAdvanceCard(io, roomNow, "timeout");
+  }, ms);
+}
+
 // ====================================================================
 //  SOCKET.IO – EVENT HANDLERS
 // ====================================================================
@@ -1366,6 +1529,176 @@ io.on("connection", (socket) => {
 
 socket.on("submit:answer", (payload, ack) => {
   handleStudentSubmit(payload, ack);
+});
+
+// --------------------------------------------------------------------
+// Flashcards Race (inter-team) events
+// --------------------------------------------------------------------
+socket.on("flashcards-race:buzz", (payload = {}, ack) => {
+  try {
+    const roomCode = String(payload.roomCode || payload.code || "").trim();
+    const taskIndex = Number(payload.taskIndex);
+    const teamId = String(payload.teamId || payload.teamSessionId || payload.team || "").trim();
+    const playerIndex = Number(payload.playerIndex ?? 0);
+    const playerName = String(payload.playerName || "").trim();
+
+    const room = rooms[roomCode];
+    if (!room || !room.flashcardsRace) {
+      ack && ack({ ok: false, error: "Race not ready." });
+      return;
+    }
+
+    const r = room.flashcardsRace;
+    if (Number.isFinite(taskIndex) && r.taskIndex !== taskIndex) {
+      ack && ack({ ok: false, error: "Race index mismatch." });
+      return;
+    }
+
+    if (!r.active) {
+      ack && ack({ ok: false, error: "Race not active." });
+      return;
+    }
+
+    // If someone already has the buzz, deny.
+    if (r.currentBuzz && r.currentBuzz.teamId) {
+      ack && ack({ ok: false, error: "Already buzzed.", currentBuzz: r.currentBuzz });
+      return;
+    }
+
+    // Team may have already buzzed out on this card.
+    if (teamId && r.buzzedOutTeams && r.buzzedOutTeams[teamId]) {
+      ack && ack({ ok: false, error: "Team already missed this card." });
+      return;
+    }
+
+    // Record first buzz of card for bonus logic
+    if (!r.firstBuzzTeamId && teamId) r.firstBuzzTeamId = teamId;
+
+    r.currentBuzz = {
+      teamId: teamId || null,
+      playerIndex: Number.isFinite(playerIndex) ? playerIndex : 0,
+      playerName: playerName || null,
+      at: Date.now(),
+    };
+
+    _fcBroadcastState(io, room, "flashcards-race:buzzed", { buzz: r.currentBuzz });
+
+    ack && ack({ ok: true, buzz: r.currentBuzz });
+  } catch (e) {
+    console.error("[flashcards-race:buzz] error:", e);
+    ack && ack({ ok: false, error: "Server error." });
+  }
+});
+
+socket.on("flashcards-race:answer", (payload = {}, ack) => {
+  try {
+    const roomCode = String(payload.roomCode || payload.code || "").trim();
+    const taskIndex = Number(payload.taskIndex);
+    const teamId = String(payload.teamId || payload.teamSessionId || payload.team || "").trim();
+    const answerText = payload.answer ?? payload.text ?? payload.value ?? "";
+
+    const room = rooms[roomCode];
+    if (!room || !room.flashcardsRace) {
+      ack && ack({ ok: false, error: "Race not ready." });
+      return;
+    }
+
+    const r = room.flashcardsRace;
+    if (Number.isFinite(taskIndex) && r.taskIndex !== taskIndex) {
+      ack && ack({ ok: false, error: "Race index mismatch." });
+      return;
+    }
+
+    if (!r.active) {
+      ack && ack({ ok: false, error: "Race not active." });
+      return;
+    }
+
+    if (!r.currentBuzz || (r.currentBuzz.teamId && teamId !== r.currentBuzz.teamId)) {
+      ack && ack({ ok: false, error: "Not your buzz." });
+      return;
+    }
+
+    const deck = Array.isArray(r.deck) ? r.deck : [];
+    const card = deck[r.cardIndex] || null;
+
+    if (!card) {
+      ack && ack({ ok: false, error: "No active card." });
+      return;
+    }
+
+    const correct = _fcCardMatchesAnswer(card, answerText);
+    const serverPts = (r.points && typeof r.points === "object") ? r.points : _fcGetPointsFromTask({});
+
+    if (correct) {
+      // Award points
+      const pointsBase = serverPts.correct || 10;
+      const bonus =
+        r.firstBuzzTeamId && teamId && r.firstBuzzTeamId === teamId ? serverPts.firstBuzzBonus || 5 : 0;
+
+      const award = pointsBase + bonus;
+
+      if (!r.scores) r.scores = {};
+      r.scores[teamId || "unknown"] = Number(r.scores[teamId || "unknown"] || 0) + award;
+
+      _fcBroadcastState(io, room, "flashcards-race:winner", {
+        teamId: teamId || null,
+        award,
+        correct: true,
+        answer: String(answerText ?? ""),
+        cardIndex: r.cardIndex,
+      });
+
+      ack && ack({ ok: true, correct: true, award, scores: r.scores });
+
+      // Advance
+      _fcAdvanceCard(io, room, "winner");
+      return;
+    }
+
+    // Wrong answer: mark team as buzzed-out for this card and clear buzz
+    if (!r.buzzedOutTeams) r.buzzedOutTeams = {};
+    if (teamId) r.buzzedOutTeams[teamId] = true;
+
+    const wrongTeam = teamId || null;
+    r.currentBuzz = null;
+
+    _fcBroadcastState(io, room, "flashcards-race:wrong", {
+      teamId: wrongTeam,
+      correct: false,
+      answer: String(answerText ?? ""),
+      cardIndex: r.cardIndex,
+    });
+
+    ack && ack({ ok: true, correct: false });
+
+  } catch (e) {
+    console.error("[flashcards-race:answer] error:", e);
+    ack && ack({ ok: false, error: "Server error." });
+  }
+});
+
+// Optional: allow a teacher/admin to force-advance (or a client when timer UI hits 0)
+socket.on("flashcards-race:advance", (payload = {}, ack) => {
+  try {
+    const roomCode = String(payload.roomCode || payload.code || "").trim();
+    const taskIndex = Number(payload.taskIndex);
+    const room = rooms[roomCode];
+    if (!room || !room.flashcardsRace) {
+      ack && ack({ ok: false, error: "Race not ready." });
+      return;
+    }
+    const r = room.flashcardsRace;
+    if (Number.isFinite(taskIndex) && r.taskIndex !== taskIndex) {
+      ack && ack({ ok: false, error: "Race index mismatch." });
+      return;
+    }
+    _fcAdvanceCard(io, room, String(payload.reason || "advance"));
+    ack && ack({ ok: true });
+  } catch (e) {
+    console.error("[flashcards-race:advance] error:", e);
+    ack && ack({ ok: false, error: "Server error." });
+  }
 });
 
 socket.on("task:force-advance", ({ roomCode }) => {
