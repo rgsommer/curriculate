@@ -913,7 +913,8 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students produce concise notes on a key prompt (often written on paper) and may submit a photo. AI scoring evaluates completeness and clarity. Builds summarization and study skills.",
+      "Students view a clean “model notes” page on-screen (title + 3–5 bullets; Grades 8+ uses ~6–10 bullets). They copy the notes into their notebook/paper in real handwriting, then submit proof (button or photo workflow if enabled). AI scoring can evaluate completeness (hit the key points), clarity, and basic organization. 
+GENERATOR RULES: Provide task.title, task.prompt (topic), and task.bullets (array of concise definitions/jot-notes). Bullets must be short (1–2 lines each) and concrete; avoid duplicates. Inter-team: NO. Intra-team: NO.",
   }),
 
   [TASK_TYPES.MIND_MAPPER]: metaBase({
@@ -928,7 +929,8 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students create a mind map / concept web (often on paper) around a central concept and photograph it. AI scoring can use a rubric for breadth, accuracy, and relationships.",
+      "Students build a mind map / concept web around a central idea (usually on paper), then submit a photo if enabled. On-screen, the task shows the organizer style and the 5–7 required ideas to include (Easy may hint “main vs sub ideas”; Hard may ask for a couple extra sub‑points of their own). AI scoring can judge accuracy, breadth, and relationships. 
+GENERATOR RULES: Provide task.prompt (central concept), task.organizerType (one of: mind-map, hierarchy, fishbone, flowchart, venn, web), and config.items (5–7 idea strings/objects). Keep ideas distinct; avoid duplicates. Inter-team: NO. Intra-team: NO.",
   }),
 
   [TASK_TYPES.NARRATION_SYNTHESIZE]: metaBase({

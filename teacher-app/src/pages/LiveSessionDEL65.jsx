@@ -2588,7 +2588,6 @@ Precipitation — rain, snow, hail`}
 
                           const isChoiceType =
                             lastQuickTask.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-                            lastQuickTask.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
                             lastQuickTask.taskType === TASK_TYPES.TRUE_FALSE;
 
                           let ansText = "(no correct answer set)";
@@ -2657,7 +2656,6 @@ Precipitation — rain, snow, hail`}
                             : null;
                           const isChoiceType =
                             lastQuickTask.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-                            lastQuickTask.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
                             lastQuickTask.taskType === TASK_TYPES.TRUE_FALSE;
 
                           if (isChoiceType && baseOptions) {

@@ -1989,102 +1989,31 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
 
       // -------- BRAIN SPARK NOTES normalization --------
       else if (taskType === TASK_TYPES.BRAIN_SPARK_NOTES) {
-        // Expected shape for student UI:
-        //  - t.title (string)
-        //  - t.bullets: 3–5 bullets (Grades < 8) OR 6–10 bullets (Grades 8+)
-        //  - Optional: t.prompt (topic prompt), used by teachers / transcripts
-        const gradeRaw = t.gradeLevel ?? t.grade ?? t.config?.gradeLevel ?? null;
-        const gradeLevel = Number.isFinite(Number(gradeRaw)) ? Number(gradeRaw) : null;
-
-        const minBullets = gradeLevel != null && gradeLevel >= 8 ? 6 : 3;
-        const maxBullets = gradeLevel != null && gradeLevel >= 8 ? 10 : 5;
-
         const rawBullets =
           (Array.isArray(t.bullets) && t.bullets.length && t.bullets) ||
           (Array.isArray(t.items) && t.items.length && t.items) ||
-          (Array.isArray(t.options) && t.options.length && t.options) ||
           [];
 
-        let bullets = rawBullets
+        const bullets = rawBullets
           .map((b, idx) => {
             if (typeof b === "string") return b.trim();
             if (b && typeof b === "object") {
               const text =
-                b.text ||
-                b.prompt ||
-                b.title ||
-                b.note ||
-                b.description ||
-                b.value ||
-                `Note ${idx + 1}`;
+                b.text || b.prompt || b.title || b.note || b.description || `Note ${idx + 1}`;
               return String(text).trim();
             }
             return String(b || `Note ${idx + 1}`).trim();
           })
-          .filter(Boolean)
-          .map((s) => String(s).trim())
           .filter(Boolean);
 
-        // De-dupe while preserving order
-        const seen = new Set();
-        bullets = bullets.filter((s) => {
-          const k = s.toLowerCase();
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        });
-
-        // Clamp size (but do not invent content if AI provided too little)
-        if (bullets.length > maxBullets) bullets = bullets.slice(0, maxBullets);
-
-        // Always keep bullets on the root object for the task component.
         t.bullets = bullets;
-
-        // Normalize generic task fields
         options = [];
         items = [];
-        correctAnswer = null;
-
-        // Ensure ai scoring defaults if not explicitly set by task authoring
-        if (t.aiScoringRequired == null) t.aiScoringRequired = true;
       }
 
       // -------- Mind Mapper normalization (keeps config.items) --------
       else if (taskType === TASK_TYPES.MIND_MAPPER) {
-        // Expected shape for student UI:
-        //  - t.organizerType: one of a known set (mind-map, hierarchy, fishbone, flowchart, venn, web)
-        //  - t.config.items: 5–7 idea cards (strings or objects with text)
-        //  - Optional: t.shuffledItems pre-randomized (the UI supports it)
         const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
-
-        const gradeRaw = t.gradeLevel ?? t.grade ?? aiConfig.gradeLevel ?? null;
-        const gradeLevel = Number.isFinite(Number(gradeRaw)) ? Number(gradeRaw) : null;
-
-        // Medium/Hard can omit hierarchy hints; the UI itself shuffles and lets kids drag-sort.
-        // We'll still cap item counts to keep the task readable.
-        const minIdeas = 5;
-        const maxIdeas = 7;
-
-        const organizerTypeRaw =
-          t.organizerType ||
-          aiConfig.organizerType ||
-          aiConfig.organizer ||
-          aiConfig.template ||
-          "mind-map";
-
-        const allowedOrganizers = new Set([
-          "mind-map",
-          "hierarchy",
-          "fishbone",
-          "flowchart",
-          "venn",
-          "web",
-        ]);
-
-        const organizerType = allowedOrganizers.has(String(organizerTypeRaw))
-          ? String(organizerTypeRaw)
-          : "mind-map";
-
         const rawItems = Array.isArray(aiConfig.items)
           ? aiConfig.items
           : Array.isArray(t.items)
@@ -2093,66 +2022,22 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
           ? t.options
           : [];
 
-        let mapped = rawItems
-          .map((it, idx) => {
-            if (typeof it === "string") return { text: it.trim(), correctIndex: idx };
-            if (it && typeof it === "object") {
-              const text =
-                it.text || it.label || it.name || it.prompt || it.value || `Idea ${idx + 1}`;
-              let correctIndex = it.correctIndex;
-              if (typeof correctIndex !== "number") correctIndex = idx;
-              return { text: String(text).trim(), correctIndex };
-            }
-            return { text: String(it || `Idea ${idx + 1}`).trim(), correctIndex: idx };
-          })
-          .filter((x) => x && x.text && String(x.text).trim());
-
-        // De-dupe ideas (case-insensitive), preserve order
-        const seen = new Set();
-        mapped = mapped.filter((x) => {
-          const k = String(x.text).trim().toLowerCase();
-          if (!k) return false;
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
+        const mapped = rawItems.map((it, idx) => {
+          if (typeof it === "string") return { text: it, correctIndex: idx };
+          if (it && typeof it === "object") {
+            const text = it.text || it.label || it.name || it.prompt || `Idea ${idx + 1}`;
+            let correctIndex = it.correctIndex;
+            if (typeof correctIndex !== "number") correctIndex = idx;
+            return { text: String(text), correctIndex };
+          }
+          return { text: String(it), correctIndex: idx };
         });
 
-        // Clamp ideas to 5–7, but don't invent content if AI under-generated
-        if (mapped.length > maxIdeas) mapped = mapped.slice(0, maxIdeas);
-
-        // Ensure correctIndex forms 0..n-1 (canonical order)
-        mapped = mapped.map((x, idx) => ({ ...x, correctIndex: idx }));
-
-        config = { ...aiConfig, organizerType, items: mapped };
-        t.organizerType = organizerType;
-        t.config = config;
-
-        // Pre-randomize for the UI (it will still normalize if absent).
-        // We keep deterministic shuffle so two students on the same task get the same order.
-        if (!Array.isArray(t.shuffledItems) || t.shuffledItems.length === 0) {
-          const seedStr = String(t._id || t.id || t.taskId || "mind-mapper");
-          const shuffled = [...mapped];
-          let seed = 0;
-          for (let i = 0; i < seedStr.length; i++) seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
-          const rand = () => {
-            seed ^= seed << 13; seed >>>= 0;
-            seed ^= seed >> 17; seed >>>= 0;
-            seed ^= seed << 5; seed >>>= 0;
-            return (seed >>> 0) / 4294967296;
-          };
-          for (let i = shuffled.length - 1; i > 0; i -= 1) {
-            const j = Math.floor(rand() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-          }
-          t.shuffledItems = shuffled.map((x, idx) => ({ id: `item-${idx}`, text: x.text, correctIndex: x.correctIndex }));
-        }
-
+        config = { ...aiConfig, items: mapped };
         options = [];
         items = [];
-        correctAnswer = null;
-
-        if (t.aiScoringRequired == null) t.aiScoringRequired = true;
       }
+
 
       // -------- MATCHING normalization --------
       else if (taskType === TASK_TYPES.MATCHING) {

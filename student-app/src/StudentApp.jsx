@@ -1046,10 +1046,9 @@ function StudentApp() {
         correctAnswer: correctAnswer ?? null,
       });
 
-        setTimeout(() => {
-          setPointToast(null);
-        }, 2500);
-      }
+      setTimeout(() => {
+        setPointToast(null);
+      }, 2500);
     };
 
     const handleNoiseUpdate = (payload) => {
