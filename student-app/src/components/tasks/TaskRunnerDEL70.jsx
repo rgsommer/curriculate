@@ -1909,9 +1909,7 @@ export default function TaskRunner({
           socket={socket}
           roomCode={roomCode}
           playerTeam={playerTeam}
-          memberNames={memberNames}
           disabled={effectiveDisabled || isReview}
-          onSubmit={isReview ? () => {} : handleTaskSubmit}
         />
       );
       break;

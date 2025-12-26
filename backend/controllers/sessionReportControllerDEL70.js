@@ -22,21 +22,6 @@ function clamp(n, a, b) {
 function inferAttachmentType(taskType) {
   const t = String(taskType || "").toLowerCase();
   if (t.includes("photo") || t.includes("snap")) return "photo";
-  // Paper-based artifacts that are typically submitted as a photo.
-  // (e.g., BrainSparkNotes / MindMapper and similar hand-written tasks)
-  if (
-    t.includes("mind") ||
-    t.includes("mapper") ||
-    t.includes("mind-mapper") ||
-    t.includes("mind_mapper") ||
-    t.includes("brain") ||
-    t.includes("spark") ||
-    t.includes("notes") ||
-    t.includes("graphic") ||
-    t.includes("organizer")
-  ) {
-    return "photo";
-  }
   if (t.includes("record") || t.includes("audio") || t.includes("speech")) return "audio";
   if (t.includes("video")) return "video";
   return "file";

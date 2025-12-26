@@ -31,7 +31,10 @@ export const retryMustHave = {
   [TASK_TYPES.FLASHCARDS]:
     'FLASHCARDS must include config.items (>=5). Each item: { question, answer }.',
 
-  [TASK_TYPES.WORD_WEAVER_DUEL]:
+  
+  [TASK_TYPES.FLASHCARDS_RACE]:
+    'FLASHCARDS_RACE must include config.items (>=5). Each item: { question, answer }. May include config.secondsPerCard (default 20), config.playerCount (1–4), and config.interTeam (boolean).',
+[TASK_TYPES.WORD_WEAVER_DUEL]:
     'WORD_WEAVER_DUEL must include phrase (string) and should include wordBank (array of words from the phrase, shuffled).',
 
   [TASK_TYPES.DIFF_DETECTIVE]:
@@ -196,6 +199,7 @@ export function normalizeSelectedType(raw) {
     return TASK_TYPES.WORD_WEAVER_DUEL;
 
   if (v === "flashcards") return TASK_TYPES.FLASHCARDS;
+  if (v === "flashcards-race" || v === "flashcardsrace" || v === "flashcard-race" || v === "flashcardrace") return TASK_TYPES.FLASHCARDS_RACE;
   if (v === "diff-detective" || v === "spot-the-difference" || v === "diff")
     return TASK_TYPES.DIFF_DETECTIVE;
 
@@ -1909,7 +1913,91 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
         correctAnswer = null;
       }
 
-      // -------- WORD WEAVER normalization --------
+      
+      // -------- FLASHCARDS RACE normalization --------
+      else if (taskType === TASK_TYPES.FLASHCARDS_RACE) {
+        const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
+
+        const rawCards =
+          (Array.isArray(aiConfig.items) && aiConfig.items) ||
+          (Array.isArray(aiConfig.cards) && aiConfig.cards) ||
+          (Array.isArray(t.cards) && t.cards) ||
+          (Array.isArray(t.items) && t.items) ||
+          [];
+
+        const cards = rawCards
+          .filter(Boolean)
+          .slice(0, 12)
+          .map((c, idx) => {
+            if (typeof c === "string") {
+              const s = c.trim();
+              const parts = s.split("|").map((p) => p.trim());
+              const q =
+                parts[0]?.replace(/^q\s*:\s*/i, "").trim() || `Card ${idx + 1}`;
+              const a = parts[1]?.replace(/^a\s*:\s*/i, "").trim() || "";
+              return { question: q, answer: a };
+            }
+            if (c && typeof c === "object") {
+              const question = String(
+                c.question || c.q || c.front || c.prompt || ""
+              ).trim();
+              const answer = String(
+                c.answer || c.a || c.back || c.response || ""
+              ).trim();
+              return { question, answer };
+            }
+            return { question: `Card ${idx + 1}`, answer: "" };
+          })
+          .filter((c) => isNonEmptyString(c.question) && isNonEmptyString(c.answer));
+
+        const valid = cards.length >= 5;
+        if (!valid) {
+          t.__needsRetry = true;
+          t.__retryType = TASK_TYPES.FLASHCARDS_RACE;
+
+          const safeCards = rawWordBank.slice(0, 5).map((w, i) => ({
+            question: `Define: ${String(w || `Term ${i + 1}`).trim()}`,
+            answer: "",
+          }));
+
+          config = { ...aiConfig, items: safeCards };
+        } else {
+          // Enforce simple, predictable race defaults
+          const secondsPerCardRaw = Number(
+            aiConfig.secondsPerCard ?? aiConfig.timePerCard ?? aiConfig.seconds ?? 20
+          );
+          const secondsPerCard = Number.isFinite(secondsPerCardRaw) && secondsPerCardRaw > 5
+            ? Math.round(secondsPerCardRaw)
+            : 20;
+
+          const playerCountRaw = Number(aiConfig.playerCount ?? aiConfig.players ?? 2);
+          const playerCount =
+            Number.isFinite(playerCountRaw) && playerCountRaw >= 1 && playerCountRaw <= 4
+              ? Math.round(playerCountRaw)
+              : 2;
+
+          config = {
+            ...aiConfig,
+            items: cards,
+            secondsPerCard,
+            playerCount,
+            interTeam: aiConfig.interTeam !== false, // default true
+            intraTeam: false,
+            pointsCorrect: Number.isFinite(Number(aiConfig.pointsCorrect))
+              ? Number(aiConfig.pointsCorrect)
+              : 10,
+            pointsFirstBuzzBonus: Number.isFinite(Number(aiConfig.pointsFirstBuzzBonus))
+              ? Number(aiConfig.pointsFirstBuzzBonus)
+              : 5,
+          };
+        }
+
+        options = [];
+        items = [];
+        correctAnswer = null;
+      }
+
+// -------- WORD WEAVER normalization --------
       else if (taskType === TASK_TYPES.WORD_WEAVER_DUEL) {
         const aiConfig = t.config && typeof t.config === "object" ? t.config : {};
         let phrase =

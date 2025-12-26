@@ -108,13 +108,170 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
     if (doc.y > minY) doc.addPage();
   }
 
+  // ---------- Written response sampler (OpenText / ShortAnswer) ----------
+  function coerceTruthyStr(x) {
+    if (typeof x === "string") return x.trim();
+    if (x == null) return "";
+    // common shapes: { text }, { response }, { value }, etc.
+    if (typeof x === "object") {
+      for (const k of ["answerText", "text", "response", "value", "answer"]) {
+        if (typeof x[k] === "string" && x[k].trim()) return x[k].trim();
+      }
+    }
+    return "";
+  }
+
+  function normalizeTF(val) {
+    if (typeof val === "boolean") return val ? "True" : "False";
+    if (typeof val === "number") return val === 0 ? "True" : val === 1 ? "False" : "";
+    const s = String(val ?? "").trim().toLowerCase();
+    if (s === "true" || s === "t" || s === "yes" || s === "y") return "True";
+    if (s === "false" || s === "f" || s === "no" || s === "n") return "False";
+    if (s === "0") return "True";
+    if (s === "1") return "False";
+    return "";
+  }
+
+  function deepCollectWrittenSamples(root) {
+    const samples = [];
+    const seen = new Set();
+
+    const pushSample = (s) => {
+      if (!s || !s.text) return;
+      const key = `${s.type}|${s.taskTitle}|${s.teamName}|${s.participantName}|${s.text}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      samples.push(s);
+    };
+
+    const visit = (node, path = "") => {
+      if (!node || typeof node !== "object") return;
+
+      // common submission-ish node shapes
+      const type = String(node.taskType || node.type || node.task_type || "").trim();
+      const title = String(node.taskTitle || node.title || node.taskName || "").trim();
+      const teamName = String(node.teamName || node.team || node.groupName || "").trim();
+      const participantName = String(node.participantName || node.studentName || node.name || "").trim();
+
+      // single answer text
+      const directText = coerceTruthyStr(node.answerText || node.answerPayload || node.data || node.response || node.text);
+      if (directText) {
+        if (type.includes("open-text") || type.includes("open_text") || type.includes("opentext")) {
+          pushSample({ type: "open-text", taskTitle: title, teamName, participantName, text: directText });
+        } else if (type.includes("short-answer") || type.includes("short_answer") || type.includes("shortanswer")) {
+          pushSample({ type: "short-answer", taskTitle: title, teamName, participantName, text: directText });
+        }
+      }
+
+      // multi answers arrays
+      const answersArr =
+        (Array.isArray(node.answers) && node.answers) ||
+        (Array.isArray(node.subAnswers) && node.subAnswers) ||
+        (Array.isArray(node.items) && node.items) ||
+        (Array.isArray(node.responses) && node.responses) ||
+        null;
+
+      if (answersArr && (type.includes("short") || type.includes("open"))) {
+        for (const a of answersArr.slice(0, 12)) {
+          const v = coerceTruthyStr(a?.value ?? a?.response ?? a?.text ?? a?.answer ?? a);
+          if (!v) continue;
+          if (type.includes("open")) {
+            pushSample({ type: "open-text", taskTitle: title, teamName, participantName, text: v });
+          } else {
+            pushSample({ type: "short-answer", taskTitle: title, teamName, participantName, text: v });
+          }
+        }
+      }
+
+      // recurse shallowly with guard
+      const keys = Object.keys(node);
+      for (const k of keys) {
+        const child = node[k];
+        if (!child) continue;
+        if (typeof child !== "object") continue;
+        // avoid cycles / giant blobs
+        if (k === "pdf" || k === "html" || k === "raw" || k === "debug") continue;
+        visit(child, `${path}.${k}`);
+      }
+    };
+
+    visit(root, "report");
+    return samples;
+  }
+
+  function renderWrittenSamplesSection() {
+    const rawSamples = deepCollectWrittenSamples(report);
+
+    // Filter and rank
+    const openText = rawSamples
+      .filter((s) => s.type === "open-text" && s.text && s.text.length >= 20)
+      .sort((a, b) => (b.text.length || 0) - (a.text.length || 0))
+      .slice(0, 3);
+
+    const shortAns = rawSamples
+      .filter((s) => s.type === "short-answer" && s.text && s.text.length >= 1)
+      .sort((a, b) => (b.text.length || 0) - (a.text.length || 0))
+      .slice(0, 5);
+
+    if (openText.length === 0 && shortAns.length === 0) return;
+
+    doc.addPage();
+    sectionTitle("Sample Written Responses");
+
+    doc
+      .font("Helvetica")
+      .fontSize(10)
+      .fillColor("#111111")
+      .text(
+        "A few anonymized examples captured during the session. (Availability depends on what the session stored.)"
+      );
+    doc.moveDown(0.5);
+
+    const renderSample = (s, idx) => {
+      ensureSpace(720);
+      const who = [s.teamName, s.participantName].filter(Boolean).join(" • ");
+      const headerBits = [];
+      if (s.taskTitle) headerBits.push(s.taskTitle);
+      if (who) headerBits.push(who);
+
+      doc.font("Helvetica-Bold").fontSize(11).fillColor("#111111").text(`${idx}. ${headerBits.join(" — ") || "Response"}`);
+      doc.font("Helvetica").fontSize(10).fillColor("#111111").text(s.text);
+      doc.moveDown(0.6);
+      doc
+        .moveTo(54, doc.y)
+        .lineTo(pageWidth - 54, doc.y)
+        .lineWidth(0.5)
+        .strokeColor("#E6E6E6")
+        .stroke();
+      doc.moveDown(0.4);
+    };
+
+    if (openText.length > 0) {
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#111111").text("📝 Open-text (Top 3)");
+      doc.moveDown(0.35);
+      openText.forEach((s, i) => renderSample(s, i + 1));
+      doc.moveDown(0.2);
+    }
+
+    if (shortAns.length > 0) {
+      ensureSpace(700);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#111111").text("✍️ Short Answer (Top 5)");
+      doc.moveDown(0.35);
+      shortAns.forEach((s, i) => renderSample(s, i + 1));
+    }
+  }
+
   
 function taskTypeEmoji(typeRaw) {
   const t = String(typeRaw || "").toLowerCase();
   if (!t) return "🧩";
   if (t.includes("multiple")) return "✅";
   if (t.includes("true")) return "☑️";
-  if (t.includes("short")) return "✍️";
+  
+  if (t.includes("short") && t.includes("answer")) return "✍️";
+  if (t.includes("open") && t.includes("text")) return "📝";
+  if (t.includes("open-text")) return "📝";
+if (t.includes("short")) return "✍️";
   if (t.includes("matching")) return "🔗";
   if (t.includes("hangman")) return "🪢";
   if (t.includes("flash")) return "🃏";
@@ -266,7 +423,11 @@ function formatDate(d) {
     }
   }
 
-  // ---------- Attachments page ----------
+  
+  // ---------- Written response samples (optional) ----------
+  renderWrittenSamplesSection();
+
+// ---------- Attachments page ----------
   const attachments = Array.isArray(report.attachments) ? report.attachments : [];
   if (attachments.length > 0) {
     doc.addPage();
