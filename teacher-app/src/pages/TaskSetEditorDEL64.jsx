@@ -86,30 +86,6 @@ if (
     return TASK_TYPES.JEOPARDY;
   }
 
-
-  if (
-    v === TASK_TYPES.BRAIN_SPARK_NOTES ||
-    v === "brain-spark-notes" ||
-    v === "brain spark notes" ||
-    v === "brain-spark" ||
-    v === "spark-notes" ||
-    v === "spark notes"
-  ) {
-    return TASK_TYPES.BRAIN_SPARK_NOTES;
-  }
-
-  if (
-    v === TASK_TYPES.MIND_MAPPER ||
-    v === "mind-mapper" ||
-    v === "mind mapper" ||
-    v === "mind-map" ||
-    v === "mind map" ||
-    v === "concept-map" ||
-    v === "concept map"
-  ) {
-    return TASK_TYPES.MIND_MAPPER;
-  }
-
   // Fallback: if we know this type, keep it, otherwise default to short answer
   if (Object.values(TASK_TYPES).includes(v)) return v;
   return TASK_TYPES.SHORT_ANSWER;
@@ -820,60 +796,6 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
           base.correctAnswer = null;
         }
 
-
-        if (nextType === TASK_TYPES.BRAIN_SPARK_NOTES) {
-          // Notes model: title + bullets; no objective correctAnswer/options
-          base.options = [];
-          base.correctAnswer = null;
-          delete base.items;
-
-          const prevBullets = Array.isArray(t.bullets) ? t.bullets : [];
-          base.bullets =
-            prevBullets.length > 0
-              ? prevBullets.map((b) => String(b ?? "").trim()).filter(Boolean).slice(0, 12)
-              : ["", "", "", ""];
-          base.aiScoringRequired =
-            typeof t.aiScoringRequired === "boolean"
-              ? t.aiScoringRequired
-              : typeof meta.defaultAiScoringRequired === "boolean"
-                ? meta.defaultAiScoringRequired
-                : true;
-
-          return base;
-        }
-
-        if (nextType === TASK_TYPES.MIND_MAPPER) {
-          // Organizer template + ideas bank
-          base.options = [];
-          base.correctAnswer = null;
-
-          const prevItems = Array.isArray(t.items) ? t.items : [];
-          base.items =
-            prevItems.length > 0
-              ? prevItems
-                  .map((it) => {
-                    if (typeof it === "string") return it.trim();
-                    return String(it?.text ?? it?.label ?? it?.name ?? "").trim();
-                  })
-                  .filter(Boolean)
-                  .slice(0, 10)
-              : ["", "", "", "", "", ""];
-
-          base.organizerType =
-            typeof t.organizerType === "string" && t.organizerType.trim()
-              ? t.organizerType.trim()
-              : "mind-map";
-
-          base.aiScoringRequired =
-            typeof t.aiScoringRequired === "boolean"
-              ? t.aiScoringRequired
-              : typeof meta.defaultAiScoringRequired === "boolean"
-                ? meta.defaultAiScoringRequired
-                : true;
-
-          return base;
-        }
-
         return base;
       })
     );
@@ -1065,41 +987,6 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
           Array.isArray(base.rubricFocus) && base.rubricFocus.length
             ? base.rubricFocus
             : ["clarity", "accuracy", "reasoning", "evidence"];
-
-      } else if (normalizedType === TASK_TYPES.BRAIN_SPARK_NOTES) {
-        // Notes model (AI scored): no objective correctAnswer/options
-        correctAnswer = null;
-        base.options = [];
-        delete base.items;
-
-        const rawBullets = Array.isArray(base.bullets) ? base.bullets : [];
-        base.bullets = rawBullets
-          .map((b) => String(b ?? "").trim())
-          .filter(Boolean)
-          .slice(0, 12);
-
-        // Keep AI scoring on by default for this task family
-        if (typeof base.aiScoringRequired !== "boolean") base.aiScoringRequired = true;
-      } else if (normalizedType === TASK_TYPES.MIND_MAPPER) {
-        // Organizer (AI scored): no objective correctAnswer/options
-        correctAnswer = null;
-        base.options = [];
-
-        const rawItems = Array.isArray(base.items) ? base.items : [];
-        base.items = rawItems
-          .map((it) => {
-            if (typeof it === "string") return it.trim();
-            return String(it?.text ?? it?.label ?? it?.name ?? "").trim();
-          })
-          .filter(Boolean)
-          .slice(0, 12);
-
-        base.organizerType =
-          typeof base.organizerType === "string" && base.organizerType.trim()
-            ? base.organizerType.trim()
-            : "mind-map";
-
-        if (typeof base.aiScoringRequired !== "boolean") base.aiScoringRequired = true;
       } else {
         // Allow objective mapping-style answers for certain types
         if (normalizedType === TASK_TYPES.VENNSORT) {
@@ -1746,119 +1633,6 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                     }}
                   />
 
-
-
-                {/* Brain Spark Notes (bullets) */}
-                {task.taskType === TASK_TYPES.BRAIN_SPARK_NOTES && (() => {
-                  const bullets = Array.isArray(task.bullets) ? task.bullets : [];
-                  const text = bullets.join("\n");
-                  const setBulletsFromText = (val) => {
-                    const next = String(val || "")
-                      .split(/\r?\n/)
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                      .slice(0, 12);
-                    updateTask(task._tempId, "bullets", next);
-                  };
-
-                  return (
-                    <div style={{ marginBottom: 10 }}>
-                      <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
-                        Bullets (one per line)
-                      </label>
-                      <textarea
-                        value={text}
-                        onChange={(e) => setBulletsFromText(e.target.value)}
-                        rows={6}
-                        placeholder={"Definition/jot-note 1\nDefinition/jot-note 2\n..."}
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                          resize: "vertical",
-                        }}
-                      />
-                      <div style={{ fontSize: "0.75rem", opacity: 0.8, marginTop: 4 }}>
-                        Tip: keep bullets concise (definitions/jot-notes). Grades 8+ can use more bullets.
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Mind Mapper (organizer + items) */}
-                {task.taskType === TASK_TYPES.MIND_MAPPER && (() => {
-                  const items = Array.isArray(task.items) ? task.items : [];
-                  const text = items
-                    .map((it) => (typeof it === "string" ? it : String(it?.text ?? it?.label ?? it?.name ?? "")))
-                    .join("\n");
-
-                  const setItemsFromText = (val) => {
-                    const next = String(val || "")
-                      .split(/\r?\n/)
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                      .slice(0, 12);
-                    updateTask(task._tempId, "items", next);
-                  };
-
-                  const organizerType = typeof task.organizerType === "string" ? task.organizerType : "mind-map";
-                  const setOrganizerType = (val) => updateTask(task._tempId, "organizerType", val);
-
-                  return (
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        <div>
-                          <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
-                            Organizer Type
-                          </label>
-                          <select
-                            value={organizerType}
-                            onChange={(e) => setOrganizerType(e.target.value)}
-                            style={{
-                              width: "100%",
-                              borderRadius: 6,
-                              border: "1px solid #d1d5db",
-                              padding: 6,
-                              fontSize: "0.8rem",
-                            }}
-                          >
-                            <option value="mind-map">Mind Map</option>
-                            <option value="concept-web">Concept Web</option>
-                            <option value="hierarchy">Hierarchy</option>
-                            <option value="fishbone">Fishbone</option>
-                            <option value="flow">Flow</option>
-                          </select>
-                        </div>
-
-                        <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                          <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                            Items = 5–7 ideas (one per line). Use Prompt as the central concept.
-                          </div>
-                        </div>
-                      </div>
-
-                      <label style={{ display: "block", fontSize: "0.8rem", margin: "8px 0 2px" }}>
-                        Ideas / Labels (one per line)
-                      </label>
-                      <textarea
-                        value={text}
-                        onChange={(e) => setItemsFromText(e.target.value)}
-                        rows={6}
-                        placeholder={"Idea 1\nIdea 2\n..."}
-                        style={{
-                          width: "100%",
-                          borderRadius: 6,
-                          border: "1px solid #d1d5db",
-                          padding: 6,
-                          fontSize: "0.8rem",
-                          resize: "vertical",
-                        }}
-                      />
-                    </div>
-                  );
-                })()}
 
                 {/* Open-text response settings */}
                 {task.taskType === TASK_TYPES.OPEN_TEXT && (() => {
