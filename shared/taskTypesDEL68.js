@@ -173,7 +173,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Classic multiple-choice question set (3\u20135 items). Students read each question and choose one of four visible options (A\u2013D). Submit by tapping an option on-screen. Great for quick checks for understanding and fast feedback.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133, explanation?: string }\n- optional: title, prompt, timeLimitSeconds, points\nScoring: objective (correctIndex) \u2014 no AI scoring required.",
+      "Classic multiple-choice knowledge check. The device shows 3–5 items per task; each item has 3–5 options and exactly one correct option. Great for quick checks and fast feedback; supports discussion after reveal.",
   }),
 
   [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: metaBase({
@@ -194,7 +194,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Physical Multiple Choice (kinesthetic). Looks exactly like standard multiple-choice on the device (full question + four fully visible options A\u2013D), but students cannot submit by tapping.\nTo submit, they must walk to one of the classroom\u2019s 8 permanent colored QR stations and scan the station whose color matches the color displayed beside their chosen option.\n\nHow it works:\n- The system randomly selects 4 of the 8 station colors and maps them to A/B/C/D each question (randomized every play).\n- Each option shows a large color chip (e.g., A \u25cf Red, B \u25cf Teal, C \u25cf Purple, D \u25cf Green).\n- Student decides the answer, walks to that color station, scans, and the scan auto-submits that letter.\n- Typically 3\u20135 questions per task \u2192 3\u20135 trips across the room.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133 }\n- system provides per-question colorMap (generated at runtime; not required from AI)\nScoring: objective (correctIndex). Inter-team: NO. Intra-team: NO.",
+      "A multiple-choice task that looks and works like a normal 4-option question on the device (A, B, C, D) — full prompt + four visible options — but students cannot submit by tapping. Instead, each option shows a large colored badge that matches one of your 8 permanent classroom QR stations (Red, Orange, Yellow, Green, Blue, Teal, Purple, Pink). For each question, the system randomly selects 4 of the 8 station colors and assigns them to A–D (randomized every play, and can vary per question). Students choose their answer on-screen, then physically walk to the station color shown beside their chosen option and scan that station’s QR code. A correct scan auto-submits the selected letter and advances to the next question. Typical task: 3–5 questions, encouraging repeated movement. Objective scoring: points per correct answer. Solo-only (no inter-team / intra-team modes).",
   }),
 
   [TASK_TYPES.TRUE_FALSE]: metaBase({
