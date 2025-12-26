@@ -98,6 +98,19 @@ function normalizeTaskType(raw) {
     case "multiple-choice":
       return TASK_TYPES.MULTIPLE_CHOICE;
 
+    case "brain-spark-notes":
+    case "brain_spark_notes":
+    case "brainsparknotes":
+    case "brain spark notes":
+      return TASK_TYPES.BRAIN_SPARK_NOTES;
+
+    case "mind-mapper":
+    case "mind_mapper":
+    case "mindmapper":
+    case "mind map":
+    case "mind-map":
+      return TASK_TYPES.MIND_MAPPER;
+
     case "physical-multiple-choice":
     case "physical_multiple_choice":
     case "physical-mc":
