@@ -323,27 +323,6 @@ function playFakeOutChime() {
   }
 }
 
-// Universal (demo) submit feedback SFX
-function playCorrectChime() {
-  try {
-    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
-    a.volume = 0.16;
-    a.play();
-  } catch {
-    // ignore
-  }
-}
-
-function playWrongChime() {
-  try {
-    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/boing.ogg");
-    a.volume = 0.14;
-    a.play();
-  } catch {
-    // ignore
-  }
-}
-
 
 function playNarrationChime() {
   try {
@@ -699,7 +678,6 @@ export default function DemoPage() {
           scoring: { expressiveBonus: true, maxExpressiveBonus: 4 }
         },
       };
-    }
 
     // RolePlayDeck: rich fallback so TaskRunner can render it in demo mode.
     if (type === TASK_TYPES.ROLE_PLAY_DECK || type === "role-play-deck") {
@@ -740,6 +718,7 @@ export default function DemoPage() {
       };
     }
 
+    }
 
     return {
       taskType: type,
@@ -875,7 +854,6 @@ export default function DemoPage() {
 
     let scoreDelta = 0;
     let maxPoints = typeof task?.points === "number" ? task.points : null;
-    let wasCorrect = null; // true/false/null
 
     try {
       const type = task?.taskType || task?.type;
@@ -884,8 +862,6 @@ export default function DemoPage() {
         const scored = scoreNarrationLocally(task, submissionPayload);
         scoreDelta = scored.scoreDelta || 0;
         maxPoints = scored.maxPoints ?? maxPoints;
-        // treat "correct" as "earned meaningful points"
-        wasCorrect = scoreDelta > 0;
         showToast(
           `Teach-back scored: +${scoreDelta}${maxPoints != null ? `/${maxPoints}` : ""} (avg ${Number(scored.avgRating).toFixed(1)})`,
           true
@@ -895,13 +871,10 @@ export default function DemoPage() {
         const result = scoreObjectiveLocally(task, submissionPayload);
         scoreDelta = result.scoreDelta || 0;
         maxPoints = result.maxPoints ?? maxPoints;
-        wasCorrect = result.correct === true;
       } else {
         const ai = await scoreWithBackendAI(task, submissionPayload);
         scoreDelta = ai.scoreDelta || 0;
         maxPoints = ai.maxPoints ?? maxPoints;
-        if (typeof ai.correct === "boolean") wasCorrect = ai.correct;
-        else wasCorrect = scoreDelta > 0;
         // If backend provided feedback (especially for GuessWho), surface it to the student.
         if (ai.aiFeedback) {
           const ok = ai.correct === true;
@@ -916,10 +889,6 @@ export default function DemoPage() {
     setTeams((prev) =>
       prev.map((t) => (t.isYou ? { ...t, score: (t.score || 0) + scoreDelta } : t))
     );
-
-    // Consistent Curriculate feedback (SFX) – especially noticeable on core Q&A tasks.
-    if (wasCorrect === true || scoreDelta > 0) playCorrectChime();
-    else playWrongChime();
 
     const lockSeconds = DEFAULT_REVIEW_SECONDS;
     setTaskLocked(true);

@@ -16,7 +16,6 @@
 export const TASK_TYPES = {
   // Core Q&A
   MULTIPLE_CHOICE: "multiple-choice",
-  PHYSICAL_MULTIPLE_CHOICE: "physical-multiple-choice",
   TRUE_FALSE: "true-false",
   SHORT_ANSWER: "short-answer",
 
@@ -174,27 +173,6 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Classic multiple-choice knowledge check. The device shows 3–5 items per task; each item has 3–5 options and exactly one correct option. Great for quick checks and fast feedback; supports discussion after reveal.",
-  }),
-
-  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: metaBase({
-    label: "Physical Multiple Choice",
-    category: CATEGORY.QUESTION,
-    implemented: true,
-    aiEligible: true,
-    generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
-    quickTaskEligible: true,
-    hasOptions: true,
-    expectsText: false,
-    maxTimeSeconds: 90,
-    correctAnswerShape: "single-option-index",
-    multiItemCapable: true,
-    preferredItemsPerTask: { min: 3, max: 5 },
-    interTeamEnabled: false,
-    intraTeamEnabled: false,
-    description:
-      "A standard 4-option multiple choice format, but students must walk to one of 8 fixed colored QR stations to submit their answer. Each question randomizes the color-to-letter mapping to ensure movement and prevent memorization.",
   }),
 
   [TASK_TYPES.TRUE_FALSE]: metaBase({
@@ -357,15 +335,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      [
-        "Students type a longer explanation/argument/reflection (multi-sentence; can be multi-paragraph).",
-        "Difficulty-based minimum length discourages one-word responses when reasoning is expected:",
-        "• MEDIUM: settings.minWords = 2 × gradeLevel",
-        "• HARD: settings.minWords = 3 × gradeLevel",
-        "Not objectively scored. AI-scored using a rubric focus: clarity, accuracy, reasoning, evidence (and optionally a short teacher-facing comment).",
-        "No inter-team or intra-team gameplay—this is individual writing within the station flow.",
-        "Benefits: writing development, articulation of reasoning, deeper thinking, assessment beyond multiple choice."
-      ].join("\n"),
+      "Students write a longer explanation/argument/reflection. Medium/hard difficulties enforce a minimum word count to discourage one-word answers. Not objectively scored; AI-scored with a rubric (clarity, accuracy, reasoning, evidence) to assess deeper understanding and writing development.",
   }),
 
   [TASK_TYPES.RECORD_AUDIO]: metaBase({

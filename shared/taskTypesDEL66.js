@@ -16,7 +16,6 @@
 export const TASK_TYPES = {
   // Core Q&A
   MULTIPLE_CHOICE: "multiple-choice",
-  PHYSICAL_MULTIPLE_CHOICE: "physical-multiple-choice",
   TRUE_FALSE: "true-false",
   SHORT_ANSWER: "short-answer",
 
@@ -174,27 +173,6 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Classic multiple-choice knowledge check. The device shows 3–5 items per task; each item has 3–5 options and exactly one correct option. Great for quick checks and fast feedback; supports discussion after reveal.",
-  }),
-
-  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: metaBase({
-    label: "Physical Multiple Choice",
-    category: CATEGORY.QUESTION,
-    implemented: true,
-    aiEligible: true,
-    generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
-    quickTaskEligible: true,
-    hasOptions: true,
-    expectsText: false,
-    maxTimeSeconds: 90,
-    correctAnswerShape: "single-option-index",
-    multiItemCapable: true,
-    preferredItemsPerTask: { min: 3, max: 5 },
-    interTeamEnabled: false,
-    intraTeamEnabled: false,
-    description:
-      "A standard 4-option multiple choice format, but students must walk to one of 8 fixed colored QR stations to submit their answer. Each question randomizes the color-to-letter mapping to ensure movement and prevent memorization.",
   }),
 
   [TASK_TYPES.TRUE_FALSE]: metaBase({

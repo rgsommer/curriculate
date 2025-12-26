@@ -183,61 +183,6 @@ function summarizeFakeOut(sub, task) {
 }
 
 
-
-function extractAnswerText(sub, task) {
-  // Prefer canonical flattened field if present
-  if (sub?.answerText) return String(sub.answerText);
-
-  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : null;
-  const data = sub?.data && typeof sub.data === "object" ? sub.data : null;
-
-  // Common shapes across TaskRunner + backend normalization
-  const candidates = [
-    ap?.text,
-    ap?.answer,
-    ap?.response,
-    ap?.value,
-    data?.text,
-    data?.answer,
-    data?.response,
-    data?.value,
-  ].filter((v) => v != null);
-
-  if (candidates.length) {
-    const v = candidates[0];
-    if (typeof v === "string") return v;
-    if (typeof v === "number" || typeof v === "boolean") return String(v);
-  }
-
-  // Multi-pack answers (arrays)
-  const multi =
-    (Array.isArray(ap?.answers) ? ap.answers : null) ||
-    (Array.isArray(data?.answers) ? data.answers : null) ||
-    null;
-
-  if (Array.isArray(multi) && multi.length) {
-    // Show a compact “Q1: …” list (first 6)
-    const lines = multi
-      .slice(0, 6)
-      .map((a, i) => {
-        const val = a?.value ?? a?.answer ?? a;
-        const id = a?.itemId || a?.id || null;
-        const label = id ? String(id) : `Q${i + 1}`;
-        return `${label}: ${val == null ? "—" : String(val)}`;
-      });
-    return lines.join(" • ");
-  }
-
-  // True/False sometimes comes through as numeric index 0/1
-  const tfVal = ap?.selected ?? ap?.choice ?? data?.selected ?? data?.choice ?? null;
-  if (tfVal != null) {
-    const n = Number(tfVal);
-    if (Number.isFinite(n)) return n === 0 ? "True" : n === 1 ? "False" : String(tfVal);
-  }
-
-  return "";
-}
-
 /**
  * Simple transcript viewer.
  * Props:
@@ -756,15 +701,11 @@ export default function TasksetTranscript({ transcript }) {
   );
 })()}
 
-                      {(() => {
-                        const txt = extractAnswerText(sub, task);
-                        if (!txt) return null;
-                        return (
-                          <div style={{ fontSize: "0.85rem", color: "#111827", marginTop: 4 }}>
-                            <strong>Response:</strong> {txt}
-                          </div>
-                        );
-                      })()}
+                      {sub.answerText && (
+                        <div style={{ fontSize: "0.85rem", color: "#111827", marginTop: 4 }}>
+                          <strong>Response:</strong> {sub.answerText}
+                        </div>
+                      )}
 
                       {/* AI rubric breakdown (if present) */}
                       {sub.aiScore?.criteria && sub.aiScore.criteria.length > 0 && (

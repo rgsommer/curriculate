@@ -933,23 +933,8 @@ useEffect(() => {
     setIsLaunchingQuick(true);
     setQuickStatus(null);
 
-    // Default scoring + gameplay flags derived from TASK_TYPE_META.
-    // For the three core quick tasks in this request (OPEN_TEXT, SHORT_ANSWER, TRUE_FALSE)
-    // we keep inter-team and intra-team disabled, and let the backend + student UI handle
-    // scoring/review based on objective vs AI scoring.
-    const typeMetaForLaunch = TASK_TYPE_META[taskType] || {};
-    const objectiveScoringDefault = !!typeMetaForLaunch.objectiveScoring;
-    const aiScoringRequiredDefault =
-      typeof typeMetaForLaunch.aiScoringRequired === "boolean"
-        ? typeMetaForLaunch.aiScoringRequired
-        : taskType === TASK_TYPES.OPEN_TEXT || taskType === TASK_TYPES.SHORT_ANSWER;
-
     const taskToSend = {
       taskType: taskType || "short-answer",
-      interTeamEnabled: false,
-      intraTeamEnabled: false,
-      objectiveScoring: objectiveScoringDefault,
-      aiScoringRequired: aiScoringRequiredDefault,
       prompt: (taskConfig.prompt || "").trim(),
       correctAnswer: taskConfig.correctAnswer || null,
       options:

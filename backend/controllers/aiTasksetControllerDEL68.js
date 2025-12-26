@@ -133,14 +133,6 @@ export function normalizeSelectedType(raw) {
     v === "mc"
   )
     return TASK_TYPES.MULTIPLE_CHOICE;
-  if (
-    v === "physical-multiple-choice" ||
-    v === "physical-multiplechoice" ||
-    v === "physical-mc" ||
-    v === "pmc" ||
-    v === "physicalmc"
-  )
-    return TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
   if (v === "true-false" || v === "truefalse" || v === "tf")
     return TASK_TYPES.TRUE_FALSE;
   if (v === "short-answer" || v === "shortanswer" || v === "sa")
@@ -472,23 +464,6 @@ function mcItemsAreValid(items) {
         it.correctAnswer < it.options.length
     )
   );
-
-function physicalMcItemsAreValid(items) {
-  return (
-    Array.isArray(items) &&
-    items.length >= 3 &&
-    items.every(
-      (it) =>
-        isNonEmptyString(it?.prompt) &&
-        Array.isArray(it?.options) &&
-        it.options.length === 4 &&
-        Number.isInteger(it?.correctAnswer) &&
-        it.correctAnswer >= 0 &&
-        it.correctAnswer < it.options.length
-    )
-  );
-}
-
 }
 
 function cluesAreValid(clues) {
@@ -553,7 +528,6 @@ Hard requirements:
 - VENNSORT must include config: { categories: ["A","B"(,"C")], items: [{ id?, text }] } and correctAnswer: { "itemId": ["A","B"] } (empty array allowed for belongs nowhere).
 - JEOPARDY (BrainBlitz) must include clues: [{ clue, answer }]
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
-- PHYSICAL_MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions, and EACH question must have exactly 4 options.
 - HANGMAN_DUEL must include wordsByStation[]
 - WORD_WEAVER_DUEL must include phrase (string). Optionally include targetWords[] (array of words) for objective checking.
  (4–8 entries). Each entry: { word, hint }. Each word must come ONLY from the vocabulary list (aiWordBank), all words must be different, and lengths must be similar (max length difference ≤ 2).
@@ -788,7 +762,6 @@ ${coverAllLine}
 - For GUESS_WHO tasks: include config.playerCount (2–6), config.secretAnswers (array length = playerCount; each is a single concept), config.category (string), config.maxGuesses (<=15, default 10), config.timerSeconds (<=180, default 60). The secretAnswers should be chosen ONLY from aiWordBank when possible. Do NOT include inter-team gameplay.
 - For ROLE_PLAY_DECK tasks: include config.playerCount (2–6), config.playerNames (length playerCount), config.mode ("mystery" or "classic" or "choose"), config.roles (length playerCount) each { name, role, characteristics: [3–6 traits] }, and config.scenario (2–5 sentences, subject/grade appropriate). Intra-team only; do NOT include inter-team gameplay.
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
-- PHYSICAL_MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions, and EACH question must have exactly 4 options.
 - TRUE_FALSE multi-item: include items[] with >=3 statements when prompt says "each statement".
 - For HANGMAN_DUEL tasks:
 - For WORD_WEAVER_DUEL tasks: include phrase (string) and (optional) targetWords[].
@@ -1375,98 +1348,7 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
         }
       }
 
-      
-// -------- PHYSICAL MULTIPLE CHOICE normalization (multi only) --------
-      if (taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
-        if (Array.isArray(t.items) && t.items.length) {
-          t.__needsRetry = true;
-          t.__retryType = TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
-
-          items = t.items.map((it, idx) => {
-            const id = it.id || `q${idx + 1}`;
-            const prompt =
-              (it.prompt && String(it.prompt).trim()) ||
-              (it.question && String(it.question).trim()) ||
-              (it.text && String(it.text).trim()) ||
-              `Question ${idx + 1}`;
-
-            let ioptions = Array.isArray(it.options) ? it.options : [];
-            // Enforce exactly 4 visible options for the physical station format
-            if (ioptions.length < 4) {
-              // pad deterministically (UI will still shuffle/present)
-              const base = [...ioptions];
-              while (base.length < 4) base.push(`Option ${String.fromCharCode(65 + base.length)}`);
-              ioptions = base.slice(0, 4);
-            } else if (ioptions.length > 4) {
-              ioptions = ioptions.slice(0, 4);
-            }
-
-            let correctAnswer = it.correctAnswer;
-            if (!Number.isInteger(correctAnswer)) {
-              if (typeof correctAnswer === "string") {
-                const idxFound = ioptions.findIndex(
-                  (o) => String(o).trim() === String(correctAnswer).trim()
-                );
-                correctAnswer = idxFound >= 0 ? idxFound : 0;
-              } else {
-                correctAnswer = 0;
-              }
-            }
-
-            if (correctAnswer < 0 || correctAnswer >= ioptions.length) {
-              correctAnswer = 0;
-            }
-
-            return { id, prompt, options: ioptions, correctAnswer };
-          });
-
-          if (!physicalMcItemsAreValid(items)) {
-            t.__needsRetry = true;
-            t.__retryType = TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
-
-            const padded = Array.isArray(items) ? [...items] : [];
-            while (padded.length < 3) {
-              padded.push({
-                id: `q${padded.length + 1}`,
-                prompt: `Question ${padded.length + 1}`,
-                options: ["Option A", "Option B", "Option C", "Option D"],
-                correctAnswer: 0,
-              });
-            }
-            items = padded.slice(0, 5);
-          }
-
-          options = [];
-          correctAnswer = null;
-        } else {
-          t.__needsRetry = true;
-          t.__retryType = TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
-          items = [
-            {
-              id: "q1",
-              prompt: "Question 1",
-              options: ["Option A", "Option B", "Option C", "Option D"],
-              correctAnswer: 0,
-            },
-            {
-              id: "q2",
-              prompt: "Question 2",
-              options: ["Option A", "Option B", "Option C", "Option D"],
-              correctAnswer: 0,
-            },
-            {
-              id: "q3",
-              prompt: "Question 3",
-              options: ["Option A", "Option B", "Option C", "Option D"],
-              correctAnswer: 0,
-            },
-          ];
-          options = [];
-          correctAnswer = null;
-        }
-      }
-
-// -------- TRUE/FALSE normalization (single vs multi) --------
+      // -------- TRUE/FALSE normalization (single vs multi) --------
       else if (taskType === TASK_TYPES.TRUE_FALSE) {
         // We want AI-generated TRUE/FALSE to be multi-item (3–5 statements).
         // Accept a few common shapes, then normalize into items[] = [{id,prompt,options,correctAnswer}]

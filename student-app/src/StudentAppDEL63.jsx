@@ -667,8 +667,6 @@ function StudentApp() {
   const sndScriptPlay = useRef(null);
   const sndRolePlay = useRef(null);
   const sndFakeOut = useRef(null);
-  const sndCorrect = useRef(null);
-  const sndWrong = useRef(null);
 
   // EchoChain micro-theme pulse (purely visual)
   const [echoPulse, setEchoPulse] = useState(false);
@@ -1093,20 +1091,6 @@ function StudentApp() {
           setTimeout(() => setShowConfetti(false), 2200);
         }
 
-        // Consistent Curriculate feedback SFX for core response tasks
-        // (OpenText/ShortAnswer/TrueFalse included) – skip for warm-ups.
-        const scoredType =
-          payload?.taskType || payload?.type || currentTaskRef.current?.taskType || currentTaskRef.current?.type;
-        const isWarmup =
-          scoredType === TASK_TYPES.MOOD_CHECKIN ||
-          scoredType === TASK_TYPES.TREASURE_RUNNER ||
-          scoredType === "mood-checkin" ||
-          scoredType === "treasure-runner";
-        if (!isWarmup) {
-          if (scoreDelta > 0) tryPlayCorrectSound();
-          else tryPlayWrongSound();
-        }
-
         setTimeout(() => {
           setPointToast(null);
         }, 2500);
@@ -1304,33 +1288,16 @@ function StudentApp() {
       );
       rolePlayAudio.volume = 0.16;
       sndRolePlay.current = rolePlayAudio;
-
-      // Universal feedback (correct / incorrect)
-      const correctAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
-      correctAudio.volume = 0.16;
-      sndCorrect.current = correctAudio;
-
-      const wrongAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/boing.ogg"
-      );
-      wrongAudio.volume = 0.14;
-      sndWrong.current = wrongAudio;
     } catch (err) {
       console.warn("Could not preload audio:", err);
     }
 
-    // FakeOut: playful "gotcha" cue (separate try so one failure doesn't block others)
-    try {
+      // FakeOut: playful "gotcha" cue
       const fakeOutAudio = new Audio(
         "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
       );
       fakeOutAudio.volume = 0.14;
       sndFakeOut.current = fakeOutAudio;
-    } catch {
-      // ignore
-    }
   }, []);
 
   function tryPlayAlertSound() {
@@ -1354,22 +1321,6 @@ function StudentApp() {
       sndEcho.current && sndEcho.current.play();
     } catch (err) {
       console.warn("EchoChain sound play blocked:", err);
-    }
-  }
-
-  function tryPlayCorrectSound() {
-    try {
-      sndCorrect.current && sndCorrect.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-  function tryPlayWrongSound() {
-    try {
-      sndWrong.current && sndWrong.current.play();
-    } catch {
-      // ignore
     }
   }
 
