@@ -921,7 +921,7 @@ function StudentApp() {
       setScannerActive(assignedIsPhysicalMC);
       if (assignedIsPhysicalMC) {
         tryPlayAlertSound();
-        setTreatMessage(\"🚶‍♂️ Physical Multiple Choice — pick A/B/C/D, then scan the matching color station!\");
+        setTreatMessage("🚶‍♂️ Physical Multiple Choice — pick A/B/C/D, then scan the matching color station!");
         window.setTimeout(() => setTreatMessage(null), 4200);
       }
 // EchoChain: quick audio + subtle pulse so the team knows it's a "say-it-aloud" round.
