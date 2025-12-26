@@ -29,11 +29,6 @@ export default function MultiPlayerFeedbackTask({
       teamId,
       teamName: teamName || null,
       rating: Number(rating) || 0,
-      // Legacy/alternate keys (server + reporting compatibility)
-      highlights: String(note || "").trim() || null,
-      improvements: String(improve || "").trim() || null,
-      favoriteTask: String(favorite || "").trim() || null,
-      whatILearned: String(learned || "").trim() || null,
       favorite: String(favorite || "").trim() || null,
       improve: String(improve || "").trim() || null,
       note: String(note || "").trim() || null,

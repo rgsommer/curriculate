@@ -398,8 +398,6 @@ function formatDate(d) {
         doc.text(`Highlights: ${fb.highlights || "—"}`);
         doc.text(`Improvements: ${fb.improvements || "—"}`);
         doc.text(`Favorite task: ${fb.favoriteTask || "—"}`);
-        doc.text(`Learned: ${fb.learned || "—"}`);
-
       }
 
       // Peer-rated / narration-style tasks (optional)

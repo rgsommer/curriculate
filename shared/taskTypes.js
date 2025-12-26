@@ -335,7 +335,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Drag 5–10 items into a 2–3 circle Venn diagram with overlapping regions (including outside). Objective scoring maps item → which circle(s). Builds nuanced classification and relational reasoning beyond simple categories.",
+      "Drag 5\u201310 items into a 2\u20133 circle Venn diagram (including overlaps and the outside pool). Objective-scored using correctAnswer mapping each itemId \u2192 [categories it belongs to]. Supports partial credit for multi-category items: award points per correctly-included category (e.g., an item in A\u2229B\u2229C can earn up to 6 points if each category is worth 2). Builds nuanced classification and relational reasoning beyond simple categories.",
   }),
 
   // =========================
@@ -519,17 +519,20 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
     label: "Mad Dash Sequence",
     category: CATEGORY.MOVEMENT,
-    implemented: false,
-    aiEligible: false,
-    generatorEligible: false,
-    objectiveScoring: false,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,
     defaultAiScoringRequired: false,
-    quickTaskEligible: false,
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    correctAnswerShape: "object",
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "High-energy ‘sequence under pressure’ variant of Mad Dash. If used, should require correct order of steps/events plus speed.",
+      "High-energy sequence race: memorize 3–4 color-linked steps, then scan stations in order as fast as possible. Supports academic sequences by attaching a short label to each color (process steps, timeline events, procedure order). Score = correct order + speed bonus.",
   }),
 
   [TASK_TYPES.HIDENSEEK]: metaBase({
@@ -604,7 +607,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "End-of-taskset reflection: each player rates the set (emoji scale) and the team can leave an optional comment. No scoring. Drives iterative improvement and metacognition.",
+      "End-of-taskset reflection: the team rates the taskset (emoji/1\u20135) and can leave optional comments/suggestions. Optional \u2018what we learned\u2019 note can grant a small bonus point. Not AI-generated; not scored beyond participation/bonus. Improves student voice and metacognition.",
   }),
 
   [TASK_TYPES.TREASURE_RUNNER]: metaBase({
@@ -643,24 +646,24 @@ export const TASK_TYPE_META = {
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "Jeopardy-like rapid trivia in reverse format (response as a question). Competitive feel; excellent for retrieval + reformulation and precision with academic language.",
+      "Brain Blitz (Jeopardy-style) rapid review in reverse format: the device shows an answer/clue and students respond in question form. Can be typed or spoken (mic) where available. Great for retrieval + reformulation, precision with academic language, and high-engagement review.",
   }),
 
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]: metaBase({
     label: "True/False Tic-Tac-Toe",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: false,
-    generatorEligible: false,
+    aiEligible: true,
+    generatorEligible: true,
     objectiveScoring: true,
     defaultAiScoringRequired: false,
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 180,
-    interTeamEnabled: false,
-    intraTeamEnabled: true,
+    interTeamEnabled: true,
+    intraTeamEnabled: false,
     description:
-      "A tic-tac-toe grid where each square contains a True/False question; correct answers claim squares. Combines retrieval practice with strategy and motivating repetition.",
+      "True/False Tic-Tac-Toe duel. A tic-tac-toe grid is paired with short True/False statements. Players are assigned TRUE or FALSE and race to place marks by correctly matching their assigned truthiness. Wrong truthiness helps the opponent. Objective-scored; motivates fast, accurate retrieval with strategy.",
   }),
 
   // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
@@ -833,18 +836,18 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     expectsText: true,
     maxTimeSeconds: 180,
-    interTeamEnabled: false,
+    interTeamEnabled: true,
     intraTeamEnabled: false,
     description:
-      "Pair-and-respond workflow: students write an initial response, then see a partner’s response and write a thoughtful reply/extension (agree/disagree, add evidence, ask a question, build on an idea). Builds accountable talk in writing and synthesis.",
+      "Pair-and-respond collaboration. Students write an initial response to a prompt, then view another team’s response and write a thoughtful reply (agree/disagree with reasons, add evidence, ask a question, or extend an idea). AI-scored with a rubric for clarity, reasoning, and engagement. Builds accountable talk in writing, perspective-taking, synthesis, and peer feedback.",
   }),
 
   [TASK_TYPES.LIVE_DEBATE]: metaBase({
     label: "Live Debate",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    aiEligible: false,
-    generatorEligible: false,
+    aiEligible: true,
+    generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: true,
     expectsText: true,
@@ -852,7 +855,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "Team debate format. Players take sides on a prompt, speak in timed turns, and offer rebuttals. Typically rubric/AI-scored rather than objective. Builds argumentation, evidence use, and respectful discourse.",
+      "Team debate format. Students prepare arguments, then speak in timed turns with rebuttals and a clear ‘for/against’ side. Curriculate pairs teams and assigns speaker roles; audio can be recorded and AI-scored for argument quality, evidence, and respectful discourse. Builds argumentation, critical thinking, and oral confidence.",
   }),
 
   [TASK_TYPES.AI_DEBATE_JUDGE]: metaBase({
@@ -879,10 +882,10 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 120,
-    interTeamEnabled: false,
+    interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "Fast-paced ‘shout ideas’ brainstorm. Device presents a topic/seed prompt and the team rapidly contributes ideas aloud (optionally captured). May include quick voting/ranking. Great for activating prior knowledge and lowering fear of being wrong.",
+      "Fast-paced ‘shout ideas’ collaborative brainstorm. The device shows a topic/seed prompt and your team rapidly contributes many ideas (spoken aloud and/or typed as short entries). No single correct answer — the goal is divergent thinking. Optional quick vote/rank at the end to highlight strongest ideas. Builds creative ideation, background knowledge, verbal participation, and lowers fear of being wrong.",
   }),
 
   [TASK_TYPES.MYSTERY_CLUES]: metaBase({
@@ -1092,7 +1095,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Teams represent a concept non-verbally—either drawing or acting it out—while teammates guess. Reinforces vocabulary and builds multi-modal memory traces.",
+      "Teams represent a concept non-verbally\u2014either by drawing (on device) or acting it out charades-style\u2014while teammates guess. Tap by names to mark who guessed. 1\u20132\u20133 GO starts a ~60s round; bonus to actor and first correct guess. Not objective-scored (participation/round points). Reinforces vocabulary, multi-modal encoding, and collaboration.",
   }),
 
   [TASK_TYPES.DRAW]: metaBase({

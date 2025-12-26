@@ -278,82 +278,6 @@ function summarizeFlashcardsRace(sub, task, teamsById = {}) {
 
 
 
-function summarizeWordWeaver(sub, task) {
-  // Word Weaver Duel can appear in two modes:
-  // 1) Scrabble/grid placement: answerPayload has placements / placedWords / scores.
-  // 2) Phrase rebuild: answerPayload has phraseAttempt / filled / selectedWords etc.
-  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
-  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
-  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
-
-  const mode =
-    (ap.mode ? String(ap.mode) : null) ||
-    (data.mode ? String(data.mode) : null) ||
-    (task?.mode ? String(task.mode) : null) ||
-    (cfg.mode ? String(cfg.mode) : null) ||
-    null;
-
-  const placements =
-    (Array.isArray(ap.placements) ? ap.placements : null) ||
-    (Array.isArray(ap.boardPlacements) ? ap.boardPlacements : null) ||
-    (Array.isArray(data.placements) ? data.placements : null) ||
-    (Array.isArray(data.boardPlacements) ? data.boardPlacements : null) ||
-    null;
-
-  const placedWords =
-    (Array.isArray(ap.placedWords) ? ap.placedWords : null) ||
-    (Array.isArray(ap.wordsPlaced) ? ap.wordsPlaced : null) ||
-    (Array.isArray(data.placedWords) ? data.placedWords : null) ||
-    (Array.isArray(data.wordsPlaced) ? data.wordsPlaced : null) ||
-    null;
-
-  const scores =
-    (ap.scores && typeof ap.scores === "object" ? ap.scores : null) ||
-    (data.scores && typeof data.scores === "object" ? data.scores : null) ||
-    null;
-
-  const totalPoints =
-    (Number.isFinite(Number(scores?.totalPoints)) ? Number(scores.totalPoints) : null) ??
-    (Number.isFinite(Number(scores?.points)) ? Number(scores.points) : null) ??
-    (Number.isFinite(Number(ap.totalPoints)) ? Number(ap.totalPoints) : null) ??
-    (Number.isFinite(Number(data.totalPoints)) ? Number(data.totalPoints) : null) ??
-    null;
-
-  // Phrase mode attempt (legacy)
-  const targetPhrase = task?.targetPhrase || task?.phrase || cfg?.phrase || "";
-  const attempt =
-    (typeof ap.phraseAttempt === "string" ? ap.phraseAttempt : null) ||
-    (typeof ap.attempt === "string" ? ap.attempt : null) ||
-    (typeof data.phraseAttempt === "string" ? data.phraseAttempt : null) ||
-    (typeof data.attempt === "string" ? data.attempt : null) ||
-    null;
-
-  const filled =
-    (Array.isArray(ap.filled) ? ap.filled : null) ||
-    (Array.isArray(data.filled) ? data.filled : null) ||
-    null;
-
-  const phraseAttempt =
-    attempt ||
-    (filled && filled.length ? filled.filter(Boolean).join(" ").trim() : "") ||
-    "";
-
-  const looksLikeScrabble = Boolean((placements && placements.length) || (placedWords && placedWords.length));
-  const looksLikePhrase = Boolean(phraseAttempt || targetPhrase);
-
-  if (!looksLikeScrabble && !looksLikePhrase) return null;
-
-  return {
-    mode: mode || (looksLikeScrabble ? "scrabble" : "phrase"),
-    placementsCount: placements ? placements.length : 0,
-    placedWords: (placedWords || []).map((w) => String(w)).filter(Boolean),
-    totalPoints,
-    targetPhrase: targetPhrase ? String(targetPhrase) : "",
-    phraseAttempt: phraseAttempt ? String(phraseAttempt) : "",
-  };
-}
-
-
 function extractAnswerText(sub, task) {
   // Prefer canonical flattened field if present
   if (sub?.answerText) return String(sub.answerText);
@@ -367,16 +291,10 @@ function extractAnswerText(sub, task) {
     ap?.answer,
     ap?.response,
     ap?.value,
-    ap?.comment,
-    ap?.feedback,
-    ap?.learned,
     data?.text,
     data?.answer,
     data?.response,
     data?.value,
-    data?.comment,
-    data?.feedback,
-    data?.learned,
   ].filter((v) => v != null);
 
   if (candidates.length) {
@@ -1024,97 +942,7 @@ export default function TasksetTranscript({ transcript }) {
   );
 })()}
 
-                                            {/* Word Weaver Duel summary (Scrabble / Phrase) */}
                       {(() => {
-                        const isWordWeaver =
-                          task.taskType === "word-weaver-duel" ||
-                          task.taskType === "word_weaver_duel" ||
-                          task.taskType === "wordweaverduel" ||
-                          task.taskType === "word-weaver" ||
-                          task.taskType === "word_weaver" ||
-                          task.taskType === "wordweaver";
-
-                        if (!isWordWeaver) return null;
-
-                        const summary = summarizeWordWeaver(sub, task);
-                        if (!summary) return null;
-
-                        const modeLabel =
-                          summary.mode === "scrabble"
-                            ? "Scrabble grid"
-                            : summary.mode === "phrase"
-                            ? "Phrase rebuild"
-                            : summary.mode;
-
-                        const chips = [];
-                        if (summary.totalPoints != null) chips.push(`${summary.totalPoints} pts`);
-                        if (summary.mode === "scrabble" && summary.placementsCount != null)
-                          chips.push(`${summary.placementsCount} placed`);
-                        if (summary.mode !== "scrabble" && summary.targetPhrase)
-                          chips.push(`Target: ${summary.targetPhrase}`);
-
-                        return (
-                          <div
-                            style={{
-                              marginTop: 6,
-                              padding: 10,
-                              borderRadius: 12,
-                              border: "1px solid rgba(16,185,129,0.30)",
-                              background: "rgba(16,185,129,0.07)",
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: "0.78rem",
-                                fontWeight: 900,
-                                color: "#065f46",
-                                marginBottom: 6,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  width: 26,
-                                  height: 26,
-                                  borderRadius: 999,
-                                  background: "rgba(16,185,129,0.12)",
-                                  border: "1px solid rgba(16,185,129,0.22)",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                              >
-                                🔤
-                              </span>
-                              Word Weaver Duel — {modeLabel}
-                            </div>
-
-                            {chips.length > 0 && (
-                              <div style={{ fontSize: "0.82rem", color: "#064e3b", marginBottom: 6 }}>
-                                {chips.join(" • ")}
-                              </div>
-                            )}
-
-                            {summary.mode === "scrabble" && summary.placedWords && summary.placedWords.length > 0 && (
-                              <div style={{ fontSize: "0.82rem", color: "#0f172a" }}>
-                                <strong>Words:</strong> {summary.placedWords.slice(0, 12).join(", ")}
-                                {summary.placedWords.length > 12 ? "…" : ""}
-                              </div>
-                            )}
-
-                            {summary.mode !== "scrabble" && summary.phraseAttempt && (
-                              <div style={{ fontSize: "0.84rem", color: "#0f172a" }}>
-                                <strong>Attempt:</strong> {summary.phraseAttempt}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-
-{(() => {
                         const txt = extractAnswerText(sub, task);
                         if (!txt) return null;
                         return (

@@ -13,9 +13,6 @@ export const retryMustHave = {
 
   [TASK_TYPES.OPEN_TEXT]:
     'OPEN_TEXT must include a clear prompt plus settings: { gradeLevel:number, difficulty:"EASY"|"MEDIUM"|"HARD" }. For MEDIUM/HARD, include settings.minWords computed as 2×gradeLevel (MEDIUM) or 3×gradeLevel (HARD). Do NOT include correctAnswer. Include rubricFocus: ["clarity","accuracy","reasoning","evidence"] to guide AI scoring and teacher reporting. Response box should allow multi-paragraph answers.',
-  [TASK_TYPES.DRAW_MIME]:
-    "DRAW_MIME must include a short concept prompt (what to draw/act). Optional: config.mode \"DRAW\"|\"MIME\" or \"EITHER\". Include timeLimitSeconds ~60 and encourage teammates to guess. Not objective-scored.",
-
 
   [TASK_TYPES.SORT]:
     "SORT must include config.buckets (>=2) and config.items (>=3). Each item: { text, bucketIndex:number|null }.",
@@ -3192,8 +3189,5 @@ if (allowedType === TASK_TYPES.JEOPARDY) {
     });
   }
 };
-
-export { normalizeSelectedType, retryMustHave, regenerateSingleTask };
-
 
 export default { generateAiTaskset };

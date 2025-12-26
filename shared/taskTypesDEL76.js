@@ -519,17 +519,20 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
     label: "Mad Dash Sequence",
     category: CATEGORY.MOVEMENT,
-    implemented: false,
-    aiEligible: false,
-    generatorEligible: false,
-    objectiveScoring: false,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,
     defaultAiScoringRequired: false,
-    quickTaskEligible: false,
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    correctAnswerShape: "object",
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "High-energy ‘sequence under pressure’ variant of Mad Dash. If used, should require correct order of steps/events plus speed.",
+      "High-energy sequence race: memorize 3–4 color-linked steps, then scan stations in order as fast as possible. Supports academic sequences by attaching a short label to each color (process steps, timeline events, procedure order). Score = correct order + speed bonus.",
   }),
 
   [TASK_TYPES.HIDENSEEK]: metaBase({
@@ -727,7 +730,7 @@ export const TASK_TYPE_META = {
         "",
         "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
         "with motivating game-show energy (sounds, confetti, live score).",
-	      ].join("\n"),
+      ].join("\n"),
   }),
 
   // (rest unchanged from your file)
@@ -774,7 +777,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Teams reconstruct a target phrase by entering each word (turn-based competition feel). Rewards accuracy and speed; reinforces vocabulary, syntax awareness, and phrase structure.",
+      "Scrabble-style, turn-based team duel: players drag/place 5–10 short words onto a grid (horizontal/vertical), earning points for each valid placement and intersections. Builds vocabulary, phrase structure, syntax awareness, and cooperative competition.",
   }),
 
   [TASK_TYPES.DIFF_DETECTIVE]: metaBase({

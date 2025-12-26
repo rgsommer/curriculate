@@ -43,7 +43,6 @@ const TeamSchema = new mongoose.Schema(
       highlights: { type: String, default: "" },
       improvements: { type: String, default: "" },
       favoriteTask: { type: String, default: "" },
-      learned: { type: String, default: "" },
       submittedAt: { type: Date, default: null },
     },
 

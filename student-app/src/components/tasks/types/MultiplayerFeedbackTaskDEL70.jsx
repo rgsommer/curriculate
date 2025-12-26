@@ -12,7 +12,6 @@ export default function MultiPlayerFeedbackTask({
   const [favorite, setFavorite] = useState("");
   const [improve, setImprove] = useState("");
   const [note, setNote] = useState("");
-  const [learned, setLearned] = useState("");
   const [sending, setSending] = useState(false);
 
   const canSend = useMemo(() => {
@@ -29,18 +28,9 @@ export default function MultiPlayerFeedbackTask({
       teamId,
       teamName: teamName || null,
       rating: Number(rating) || 0,
-      // Legacy/alternate keys (server + reporting compatibility)
-      highlights: String(note || "").trim() || null,
-      improvements: String(improve || "").trim() || null,
-      favoriteTask: String(favorite || "").trim() || null,
-      whatILearned: String(learned || "").trim() || null,
       favorite: String(favorite || "").trim() || null,
       improve: String(improve || "").trim() || null,
       note: String(note || "").trim() || null,
-      learned: String(learned || "").trim() || null,
-      bonusLearned: String(learned || "").trim().length > 0,
-      bonusPoints: String(learned || "").trim().length > 0 ? 1 : 0,
-      bonusReason: String(learned || "").trim().length > 0 ? "learned" : null,
       submittedAt: new Date().toISOString(),
     };
 
@@ -132,37 +122,6 @@ export default function MultiPlayerFeedbackTask({
               border: "1px solid rgba(15,23,42,0.2)",
               outline: "none",
               resize: "vertical",
-            }}
-          />
-        </label>
-
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
-            What did you learn?
-            <span
-              style={{
-                fontSize: 12,
-                padding: "2px 8px",
-                borderRadius: 999,
-                background: "rgba(34,197,94,0.12)",
-                border: "1px solid rgba(34,197,94,0.25)",
-                color: "rgba(21,128,61,0.95)",
-                fontWeight: 900,
-              }}
-              title="If you add a learning takeaway, Curriculate can award a +1 bonus point."
-            >
-              +1 bonus
-            </span>
-          </span>
-          <input
-            value={learned}
-            onChange={(e) => setLearned(e.target.value)}
-            placeholder="Optional (but worth a bonus point!)"
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(15,23,42,0.2)",
-              outline: "none",
             }}
           />
         </label>

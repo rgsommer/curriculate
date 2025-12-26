@@ -1959,35 +1959,9 @@ socket.on("task:force-advance", ({ roomCode }) => {
       const safe = {
         submittedAt: Date.now(),
         rating: Number(payload.rating) || null,
-
-        // Backward/forward compatible field names:
-        // - older clients: highlights/improvements/favoriteTask
-        // - newer MultiPlayerFeedbackTask: note/improve/favorite (+ optional learned)
-        highlights:
-          typeof payload.highlights === "string"
-            ? payload.highlights.slice(0, 500)
-            : typeof payload.note === "string"
-            ? payload.note.slice(0, 500)
-            : "",
-        improvements:
-          typeof payload.improvements === "string"
-            ? payload.improvements.slice(0, 500)
-            : typeof payload.improve === "string"
-            ? payload.improve.slice(0, 500)
-            : "",
-        favoriteTask:
-          typeof payload.favoriteTask === "string"
-            ? payload.favoriteTask.slice(0, 200)
-            : typeof payload.favorite === "string"
-            ? payload.favorite.slice(0, 200)
-            : "",
-
-        learned:
-          typeof payload.learned === "string"
-            ? payload.learned.slice(0, 500)
-            : typeof payload.whatILearned === "string"
-            ? payload.whatILearned.slice(0, 500)
-            : "",
+        highlights: typeof payload.highlights === "string" ? payload.highlights.slice(0, 500) : "",
+        improvements: typeof payload.improvements === "string" ? payload.improvements.slice(0, 500) : "",
+        favoriteTask: typeof payload.favoriteTask === "string" ? payload.favoriteTask.slice(0, 200) : "",
       };
 
       room.feedback[String(effectiveTeamId)] = safe;
@@ -3470,11 +3444,70 @@ if (!isMultiPack && task.taskType === "guess-who") {
           ? Object.keys(answer).length > 0
           : true);
 
+      // ---- Task-specific participation scoring overrides ----
+      // Some tasks should award participation/bonus points deterministically (no AI, no objective key).
+      let handledNonAuto = false;
+
+      // MULTI_PLAYER_FEEDBACK: default 0 points; +1 bonus if "what we learned" is provided.
+      const _taskTypeLower = String(task.taskType || "").toLowerCase();
+      if (!isMultiPack && (_taskTypeLower === "multi-player-feedback" || _taskTypeLower === "multiplayer-feedback")) {
+        const submittedAt = Date.now();
+        correct = null;
+
+        const learnedRaw =
+          (answer && typeof answer === "object" ? answer.learned : null) ??
+          payload?.learned ??
+          payload?.bonusReason ??
+          null;
+
+        const learnedText = typeof learnedRaw === "string" ? learnedRaw.trim() : "";
+        const bonusFromFlag =
+          Number(
+            (answer && typeof answer === "object" ? answer.bonusPoints : null) ??
+              payload?.bonusPoints ??
+              0
+          ) > 0;
+
+        const bonusPoints = learnedText.length > 0 || bonusFromFlag ? 1 : 0;
+
+        pointsEarned = bonusPoints;
+        aiScore = {
+          strategy: "multi-player-feedback",
+          maxPoints: 1,
+          totalScore: pointsEarned,
+          bonusPoints,
+          bonusReason: bonusPoints ? "learned" : null,
+        };
+
+        handledNonAuto = true;
+        // We'll use submittedAt again below, so keep it in scope:
+        var submittedAtNonMulti = submittedAt;
+      }
+
+      // DRAW_MIME: participation points if anything was submitted (buttons/guesses/etc.)
+      if (
+        !handledNonAuto &&
+        !isMultiPack &&
+        (_taskTypeLower === "draw-mime" || _taskTypeLower === "drawmime")
+      ) {
+        const submittedAt = Date.now();
+        correct = null;
+        pointsEarned = hasEvidence ? basePoints : 0;
+        aiScore = {
+          strategy: "participation-draw-mime",
+          maxPoints: basePoints,
+          totalScore: pointsEarned,
+        };
+        handledNonAuto = true;
+        var submittedAtNonMulti = submittedAt;
+      }
+
+
       // Some tasks should *never* auto-score (AI or rule-based). Example: NarrationSynthesize.
       // These are participation / peer-evaluation tasks. Award points on evidence.
       const noAutoScoring = meta?.noAutoScoring === true;
 
-      if (noAutoScoring) {
+      if (!handledNonAuto && noAutoScoring) {
         const submittedAt = Date.now();
         correct = null;
         pointsEarned = hasEvidence ? basePoints : 0;

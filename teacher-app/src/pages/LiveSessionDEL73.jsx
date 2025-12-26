@@ -51,7 +51,6 @@ const QUICK_TASK_TYPES = Array.from(
     (TASK_TYPES.FAKE_OUT || "fake-out"),
     (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck"),
     (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"),
-    (TASK_TYPES.MAD_DASH_SEQUENCE || "mad-dash-sequence"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 

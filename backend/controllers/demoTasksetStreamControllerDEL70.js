@@ -222,32 +222,6 @@ export const streamDemoTaskset = async (req, res) => {
               intraTeamEnabled: true,
             },
           });
-        } else if (taskType === TASK_TYPES.MAD_DASH_SEQUENCE) {
-          // Provide a sensible demo placeholder for Mad Dash Sequence so it can still render nicely.
-          tasks.push({
-            title: "Mad Dash Sequence (demo placeholder)",
-            prompt:
-              "Scan the stations in the correct order as fast as you can. The last scan stops the timer!",
-            taskType,
-            timeLimitSeconds: 120,
-            sequence: ["red", "blue", "green", "yellow"],
-            sequenceItems: [
-              { color: "red", label: "Step 1" },
-              { color: "blue", label: "Step 2" },
-              { color: "green", label: "Step 3" },
-              { color: "yellow", label: "Finish" },
-            ],
-            config: {
-              interTeamEnabled: true,
-              intraTeamEnabled: true,
-              scoring: {
-                correctOrderPoints: 100,
-                outOfOrderPenalty: 25,
-                timeBonusMax: 25,
-              },
-            },
-          });
-
         } else {
           tasks.push({
             title: `${taskType} (placeholder)`,

@@ -517,19 +517,45 @@ export const TASK_TYPE_META = {
   }),
 
   [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
-    label: "Mad Dash Sequence",
+    label: "Mad Dash Sequence – Scan in Order!",
     category: CATEGORY.MOVEMENT,
-    implemented: false,
-    aiEligible: false,
-    generatorEligible: false,
-    objectiveScoring: false,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true, // order accuracy + speed bonus (student payload includes points/time)
     defaultAiScoringRequired: false,
-    quickTaskEligible: false,
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    correctAnswerShape: "object",
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "High-energy ‘sequence under pressure’ variant of Mad Dash. If used, should require correct order of steps/events plus speed.",
+      'High-energy ‘sequence under pressure’ scan race. Teams are shown a 3–4 step sequence and must scan those station colors in the correct order as fast as possible.
+
+How it works (student view):
+- Reveal the target sequence (3–4 items).
+- Countdown: 3-2-1 GO.
+- Students run and scan station QR codes in order.
+- If a scan is out of order, it does not advance the sequence (and can apply a small points penalty).
+- When the final scan is correct, the round ends and time is recorded.
+
+Easy vs Hard:
+- Easy: sequence is just colors (e.g., Red → Teal → Purple).
+- Harder: each step is an academic item linked to a color (timeline events, process steps, lab procedure order, math solution steps). Students must determine the correct order, then scan that color sequence.
+
+Scoring (recommended):
+- Start with base points (e.g., 10).
+- +Full points if order is fully correct.
+- Partial credit if some steps were scanned correctly in position.
+- Speed bonus: subtract time (or add bonus) so faster correct teams earn more.
+
+AI generation (task schema expectations):
+- Provide `sequence` as an array of 3–4 colors from the station palette.
+- Optionally provide `sequenceItems` as an array of 3–4 objects `{ color, label }` where label is the academic step/event that maps to that color.
+- Keep labels short (4–10 words) and age/subject appropriate.
+- Include `timeLimitSeconds` (60–180) and `points` (default 10).',
   }),
 
   [TASK_TYPES.HIDENSEEK]: metaBase({
@@ -727,8 +753,7 @@ export const TASK_TYPE_META = {
         "",
         "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
         "with motivating game-show energy (sounds, confetti, live score).",
-      ].join("
-"),
+      ].join("\n"),
   }),
 
   // (rest unchanged from your file)
@@ -775,7 +800,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Teams reconstruct a target phrase by entering each word (turn-based competition feel). Rewards accuracy and speed; reinforces vocabulary, syntax awareness, and phrase structure.",
+      "Scrabble-style, turn-based team duel: players drag/place 5–10 short words onto a grid (horizontal/vertical), earning points for each valid placement and intersections. Builds vocabulary, phrase structure, syntax awareness, and cooperative competition.",
   }),
 
   [TASK_TYPES.DIFF_DETECTIVE]: metaBase({

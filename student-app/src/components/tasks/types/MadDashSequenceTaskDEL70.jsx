@@ -27,29 +27,10 @@ export default function MadDashSequenceTask({
   disabled,
   socket, // reserved for future inter-team effects
 }) {
-  // Normalise sequence once from task.
-// Supports either:
-// - task.sequence: ["Red","Blue",...]
-// - task.sequenceItems: [{ color:"Red", label:"Step 1: ..."}, ...]
-  const [sequenceItems] = useState(() => {
-    const itemsRaw = Array.isArray(task?.sequenceItems) ? task.sequenceItems : [];
-    const cleanedItems = itemsRaw
-      .map((it) => ({
-        color: String(it?.color || it?.stationColor || "").trim(),
-        label: String(it?.label || it?.text || it?.name || it?.color || "").trim(),
-      }))
-      .filter((it) => it.color);
-
-    if (cleanedItems.length) return cleanedItems;
-
-    const seqRaw = Array.isArray(task?.sequence) ? task.sequence : [];
-    return seqRaw
-      .map((c) => String(c).trim())
-      .filter(Boolean)
-      .map((c) => ({ color: c, label: c }));
-  });
-
-  const sequence = sequenceItems.map((s) => s.color);
+  // Normalise sequence once from task (e.g., ["Red","Blue",...])
+  const [sequence] = useState(() =>
+    (task.sequence || []).map((c) => String(c).trim())
+  );
 
   const [scanned, setScanned] = useState([]);
   const [showSequence, setShowSequence] = useState(true);
@@ -239,7 +220,7 @@ export default function MadDashSequenceTask({
           fontSize: 34,
           opacity: 0.9,
           whiteSpace: "nowrap",
-          animation: "mdRun 3.5s linear infinite",
+          animation: "md-run 3.5s linear infinite",
         }}
         aria-hidden="true"
       >
@@ -254,7 +235,7 @@ export default function MadDashSequenceTask({
           </p>
 
           <div className="flex flex-wrap justify-center gap-6 md:gap-12 lg:gap-16">
-            {sequenceItems.map((step, i) => (
+            {sequence.map((color, i) => (
               <div
                 key={i}
                 className="relative animate__animated animate__bounceIn"
@@ -263,14 +244,14 @@ export default function MadDashSequenceTask({
                 {/* Outer glow ring */}
                 <div
                   className={`absolute inset-0 rounded-full bg-gradient-to-br ${getColorClass(
-                    step.color
+                    color
                   )} blur-3xl scale-150 opacity-70 animate-ping`}
                 />
 
                 {/* Main bubble */}
                 <div
                   className={`relative w-32 h-32 md:w-40 md:h-40 lg:w-52 lg:h-52 rounded-full bg-gradient-to-br ${getColorClass(
-                    step.color
+                    color
                   )} shadow-2xl border-4 md:border-8 border-white/30 flex items-center justify-center transform hover:scale-110 transition-all`}
                 >
                   <span className="text-3xl md:text-4xl lg:text-5xl font-black drop-shadow-2xl">

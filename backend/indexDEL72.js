@@ -1959,35 +1959,9 @@ socket.on("task:force-advance", ({ roomCode }) => {
       const safe = {
         submittedAt: Date.now(),
         rating: Number(payload.rating) || null,
-
-        // Backward/forward compatible field names:
-        // - older clients: highlights/improvements/favoriteTask
-        // - newer MultiPlayerFeedbackTask: note/improve/favorite (+ optional learned)
-        highlights:
-          typeof payload.highlights === "string"
-            ? payload.highlights.slice(0, 500)
-            : typeof payload.note === "string"
-            ? payload.note.slice(0, 500)
-            : "",
-        improvements:
-          typeof payload.improvements === "string"
-            ? payload.improvements.slice(0, 500)
-            : typeof payload.improve === "string"
-            ? payload.improve.slice(0, 500)
-            : "",
-        favoriteTask:
-          typeof payload.favoriteTask === "string"
-            ? payload.favoriteTask.slice(0, 200)
-            : typeof payload.favorite === "string"
-            ? payload.favorite.slice(0, 200)
-            : "",
-
-        learned:
-          typeof payload.learned === "string"
-            ? payload.learned.slice(0, 500)
-            : typeof payload.whatILearned === "string"
-            ? payload.whatILearned.slice(0, 500)
-            : "",
+        highlights: typeof payload.highlights === "string" ? payload.highlights.slice(0, 500) : "",
+        improvements: typeof payload.improvements === "string" ? payload.improvements.slice(0, 500) : "",
+        favoriteTask: typeof payload.favoriteTask === "string" ? payload.favoriteTask.slice(0, 200) : "",
       };
 
       room.feedback[String(effectiveTeamId)] = safe;

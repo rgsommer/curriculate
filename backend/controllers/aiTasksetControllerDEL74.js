@@ -13,9 +13,6 @@ export const retryMustHave = {
 
   [TASK_TYPES.OPEN_TEXT]:
     'OPEN_TEXT must include a clear prompt plus settings: { gradeLevel:number, difficulty:"EASY"|"MEDIUM"|"HARD" }. For MEDIUM/HARD, include settings.minWords computed as 2×gradeLevel (MEDIUM) or 3×gradeLevel (HARD). Do NOT include correctAnswer. Include rubricFocus: ["clarity","accuracy","reasoning","evidence"] to guide AI scoring and teacher reporting. Response box should allow multi-paragraph answers.',
-  [TASK_TYPES.DRAW_MIME]:
-    "DRAW_MIME must include a short concept prompt (what to draw/act). Optional: config.mode \"DRAW\"|\"MIME\" or \"EITHER\". Include timeLimitSeconds ~60 and encourage teammates to guess. Not objective-scored.",
-
 
   [TASK_TYPES.SORT]:
     "SORT must include config.buckets (>=2) and config.items (>=3). Each item: { text, bucketIndex:number|null }.",
@@ -180,40 +177,6 @@ export function normalizeSelectedType(raw) {
     v === "jeopardy_game"
   )
     return TASK_TYPES.JEOPARDY;
-
-
-// Brainstorm Battle
-if (
-  v === "brainstorm-battle" ||
-  v === "brainstormbattle" ||
-  v === "brainstorm" ||
-  v === "brain-storm-battle"
-)
-  return TASK_TYPES.BRAINSTORM_BATTLE;
-
-// Collaboration (Pair & Respond)
-if (
-  v === "collaboration" ||
-  v === "collab" ||
-  v === "pair-and-respond" ||
-  v === "pair-respond"
-)
-  return TASK_TYPES.COLLABORATION;
-
-// Live Debate
-if (v === "live-debate" || v === "livedebate" || v === "debate" || v === "live_debate")
-  return TASK_TYPES.LIVE_DEBATE;
-
-// True/False TicTacToe
-if (
-  v === "true-false-tictactoe" ||
-  v === "true-false-tic-tac-toe" ||
-  v === "truefalsetictactoe" ||
-  v === "tictactoe" ||
-  v === "tic-tac-toe"
-)
-  return TASK_TYPES.TRUE_FALSE_TICTACTOE;
-
 
   if (
     v === "brain-spark-notes" ||
@@ -599,11 +562,6 @@ Hard requirements:
 - MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions (each with prompt, options[], correctAnswer index).
 - PHYSICAL_MULTIPLE_CHOICE must be multi-item: include items[] with 3–5 questions, and EACH question must have exactly 4 options.
 - HANGMAN_DUEL must include wordsByStation[]
-- BRAINSTORM_BATTLE must be a divergent brainstorm: include a clear prompt/topic; NO single correct answer; include timeLimitSeconds (60–150).
-- COLLABORATION must include a clear prompt for a written response, and should encourage point-form or sentences; it's AI-scored with a rubric.
-- LIVE_DEBATE must include a debate motion/postulate (task.postulate or prompt) suitable for grades 7+ and a short structure reminder (timed turns, rebuttals). Do NOT hardcode team names; pairing/sides are handled by Curriculate at runtime.
-- TRUE_FALSE_TICTACTOE must include statements[] with boolean isFalse (mix true/false). Provide at least 8 statements.
-
 - WORD_WEAVER_DUEL must include phrase (string). Optionally include targetWords[] (array of words) for objective checking.
  (4–8 entries). Each entry: { word, hint }. Each word must come ONLY from the vocabulary list (aiWordBank), all words must be different, and lengths must be similar (max length difference ≤ 2).
 
@@ -617,10 +575,6 @@ Return the task in this normalized shape:
   "items": [],
   "clues": [],
   "wordsByStation": [],
-  "statements": [],
-  "board": [],
-  "postulate": "",
-  "config": {},
   "config": {}
 }
 
@@ -2819,192 +2773,7 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
             }
           }
 
-          
-
-if (allowedType === TASK_TYPES.BRAINSTORM_BATTLE) {
-  // Divergent idea list; no single correct answer required.
-  const tl = clampInt(
-    regenerated?.timeLimitSeconds ?? t.timeLimitSeconds ?? 90,
-    60,
-    150,
-    90
-  );
-
-  fixed = {
-    ...t,
-    title: isNonEmptyString(regenerated?.title)
-      ? String(regenerated.title).trim().slice(0, 120)
-      : t.title,
-    prompt: isNonEmptyString(regenerated?.prompt)
-      ? String(regenerated.prompt).trim()
-      : t.prompt,
-    taskType: TASK_TYPES.BRAINSTORM_BATTLE,
-    options: [],
-    items: [],
-    correctAnswer: null,
-    aiScoringRequired: false,
-    timeLimitSeconds: tl,
-    points: t.points,
-    config:
-      regenerated?.config && typeof regenerated.config === "object"
-        ? regenerated.config
-        : {},
-  };
-  break;
-}
-
-if (allowedType === TASK_TYPES.COLLABORATION) {
-  const tl = clampInt(
-    regenerated?.timeLimitSeconds ?? t.timeLimitSeconds ?? 180,
-    60,
-    300,
-    180
-  );
-
-  const cfg =
-    regenerated?.config && typeof regenerated.config === "object"
-      ? regenerated.config
-      : {};
-
-  fixed = {
-    ...t,
-    title: isNonEmptyString(regenerated?.title)
-      ? String(regenerated.title).trim().slice(0, 120)
-      : t.title,
-    prompt: isNonEmptyString(regenerated?.prompt)
-      ? String(regenerated.prompt).trim()
-      : t.prompt,
-    taskType: TASK_TYPES.COLLABORATION,
-    options: [],
-    items: [],
-    correctAnswer: null,
-    aiScoringRequired: true,
-    timeLimitSeconds: tl,
-    points: t.points,
-    config: { ...cfg, aiRubricHint: cfg.aiRubricHint || "Score for completeness, clarity, evidence, and thoughtfulness. If replying to another team's answer, score for specific engagement and constructive extension." },
-  };
-  break;
-}
-
-if (allowedType === TASK_TYPES.LIVE_DEBATE) {
-  const tl = clampInt(
-    regenerated?.timeLimitSeconds ?? t.timeLimitSeconds ?? 135,
-    90,
-    180,
-    135
-  );
-
-  const postulate =
-    (isNonEmptyString(regenerated?.postulate) && String(regenerated.postulate).trim()) ||
-    (isNonEmptyString(regenerated?.motion) && String(regenerated.motion).trim()) ||
-    (isNonEmptyString(regenerated?.prompt) && String(regenerated.prompt).trim()) ||
-    (isNonEmptyString(t?.postulate) && String(t.postulate).trim()) ||
-    (isNonEmptyString(t?.prompt) && String(t.prompt).trim()) ||
-    "";
-
-  const cfg =
-    regenerated?.config && typeof regenerated.config === "object"
-      ? regenerated.config
-      : {};
-
-  fixed = {
-    ...t,
-    title: isNonEmptyString(regenerated?.title)
-      ? String(regenerated.title).trim().slice(0, 120)
-      : t.title || "Live Debate",
-    prompt: isNonEmptyString(regenerated?.prompt)
-      ? String(regenerated.prompt).trim()
-      : t.prompt,
-    postulate,
-    taskType: TASK_TYPES.LIVE_DEBATE,
-    options: [],
-    items: [],
-    correctAnswer: null,
-    aiScoringRequired: true,
-    timeLimitSeconds: tl,
-    points: t.points,
-    config: {
-      prepSeconds: clampInt(cfg.prepSeconds ?? 300, 60, 600, 300),
-      minSpeakSeconds: clampInt(cfg.minSpeakSeconds ?? 105, 30, 180, 105),
-      maxSpeakSeconds: clampInt(cfg.maxSpeakSeconds ?? 135, 45, 180, 135),
-      graceSeconds: clampInt(cfg.graceSeconds ?? 15, 0, 60, 15),
-      ...cfg,
-    },
-  };
-  break;
-}
-
-if (allowedType === TASK_TYPES.TRUE_FALSE_TICTACTOE) {
-  const rawStatements =
-    (Array.isArray(regenerated?.statements) && regenerated.statements) ||
-    (Array.isArray(regenerated?.config?.statements) && regenerated.config.statements) ||
-    (Array.isArray(regenerated?.items) && regenerated.items) ||
-    [];
-
-  const statements = rawStatements
-    .map((s, idx) => {
-      if (typeof s === "string") {
-        const txt = s.trim();
-        return txt ? { text: txt, isFalse: idx % 2 === 0 } : null;
-      }
-      if (s && typeof s === "object") {
-        const txt = String(s.text || s.statement || s.prompt || "").trim();
-        if (!txt) return null;
-        const isFalse =
-          typeof s.isFalse === "boolean"
-            ? s.isFalse
-            : typeof s.isTrue === "boolean"
-            ? !s.isTrue
-            : idx % 2 === 0;
-        return { text: txt, isFalse };
-      }
-      return null;
-    })
-    .filter(Boolean);
-
-  // Ensure a mix of true/false and a minimum count
-  const tfCount = {
-    true: statements.filter((x) => x && x.isFalse === false).length,
-    false: statements.filter((x) => x && x.isFalse === true).length,
-  };
-
-  if (statements.length < 8 || tfCount.true === 0 || tfCount.false === 0) {
-    continue; // force retry
-  }
-
-  fixed = {
-    ...t,
-    title: isNonEmptyString(regenerated?.title)
-      ? String(regenerated.title).trim().slice(0, 120)
-      : t.title || "True/False Tic-Tac-Toe",
-    prompt: isNonEmptyString(regenerated?.prompt)
-      ? String(regenerated.prompt).trim()
-      : t.prompt,
-    taskType: TASK_TYPES.TRUE_FALSE_TICTACTOE,
-    options: [],
-    items: [],
-    correctAnswer: null,
-    aiScoringRequired: false,
-    timeLimitSeconds: clampInt(
-      regenerated?.timeLimitSeconds ?? t.timeLimitSeconds ?? 180,
-      60,
-      240,
-      180
-    ),
-    points: t.points,
-    board: Array.isArray(regenerated?.board) && regenerated.board.length === 9
-      ? regenerated.board
-      : Array(9).fill(null),
-    statements,
-    config:
-      regenerated?.config && typeof regenerated.config === "object"
-        ? regenerated.config
-        : {},
-  };
-  break;
-}
-
-if (allowedType === TASK_TYPES.JEOPARDY) {
+          if (allowedType === TASK_TYPES.JEOPARDY) {
             const rawClues =
               (Array.isArray(regenerated?.clues) && regenerated.clues) ||
               (Array.isArray(regenerated?.config?.clues) && regenerated.config.clues) ||
@@ -3192,8 +2961,5 @@ if (allowedType === TASK_TYPES.JEOPARDY) {
     });
   }
 };
-
-export { normalizeSelectedType, retryMustHave, regenerateSingleTask };
-
 
 export default { generateAiTaskset };

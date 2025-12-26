@@ -517,19 +517,40 @@ export const TASK_TYPE_META = {
   }),
 
   [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
-    label: "Mad Dash Sequence",
+    label: "Mad Dash Sequence – Scan in Order!",
     category: CATEGORY.MOVEMENT,
-    implemented: false,
-    aiEligible: false,
-    generatorEligible: false,
-    objectiveScoring: false,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: false, // scored by order + time bonus
     defaultAiScoringRequired: false,
     quickTaskEligible: false,
+    hasOptions: false,
+    expectsText: false,
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "High-energy ‘sequence under pressure’ variant of Mad Dash. If used, should require correct order of steps/events plus speed.",
+      "High-energy sequence under pressure: teams are shown a 3–4 step color-linked sequence (easy) or academic steps linked to colors (harder). On ‘Go’, they must scan stations in the correct order; the final scan records time. Reinforces procedural thinking, timelines, teamwork, and memory through movement.",
+  }),
+
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
+    label: "Mad Dash Sequence",
+    category: CATEGORY.MOVEMENT,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,
+    defaultAiScoringRequired: false,
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    correctAnswerShape: "object",
+    maxTimeSeconds: 180,
+    interTeamEnabled: true,
+    intraTeamEnabled: true,
+    description:
+      "High-energy sequence race: memorize 3–4 color-linked steps, then scan stations in order as fast as possible. Supports academic sequences by attaching a short label to each color (process steps, timeline events, procedure order). Score = correct order + speed bonus.",
   }),
 
   [TASK_TYPES.HIDENSEEK]: metaBase({
@@ -687,17 +708,47 @@ export const TASK_TYPE_META = {
     label: "Flashcards Race",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: false,
-    generatorEligible: false,
-    objectiveScoring: false,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,
     defaultAiScoringRequired: false,
-    quickTaskEligible: false,
-    expectsText: false,
-    maxTimeSeconds: 0,
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: true, // buzzer winner types the answer
+    maxTimeSeconds: 420, // ~5–7 min typical, but depends on deck size + pace
     interTeamEnabled: true,
-    intraTeamEnabled: true,
+    intraTeamEnabled: false, // per spec: inter-team YES, intra-team NO
+    correctAnswerShape: "string-or-list",
+    multiItemCapable: true,
+    preferredItemsPerTask: { min: 5, max: 8 },
     description:
-      "Competitive rapid-retrieval flashcards. Teams race to answer quickly with live scoring/leaderboard and optional streak bonuses. Builds speeded retrieval and automaticity.",
+      [
+        "High-energy competitive recall: teams race to answer flashcard questions correctly.",
+        "",
+        "Core loop:",
+        "• A card shows a QUESTION (large, high-contrast).",
+        "• 20s countdown per card (config.secondsPerCard; AI-adjustable).",
+        "• Players/teams BUZZ IN (tap) — first buzz earns the right to answer.",
+        "• Correct → +10 points (optional +5 first-buzz bonus). Wrong → answer right passes.",
+        "• Rounds continue until all cards are won or the round timer ends.",
+        "• Live leaderboard / score banner updates after every point.",
+        "• End screen + 15s post-task overlay auto-advances to the next scan/task.",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: \"flashcards-race\"",
+        "config: {",
+        "  items: [ // 5–8 cards",
+        "    { question: string, answer: string, acceptableAnswers?: string[] }",
+        "  ],",
+        "  secondsPerCard?: number, // default 20",
+        "  playerCount?: number, // 1–4 (optional)",
+        "  interTeam?: true, // must be true for this mode",
+        "  points?: { correct?: 10, firstBuzzBonus?: 5 }",
+        "}",
+        "",
+        "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
+        "with motivating game-show energy (sounds, confetti, live score).",
+      ].join("\n"),
   }),
 
   // (rest unchanged from your file)
@@ -744,7 +795,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Teams reconstruct a target phrase by entering each word (turn-based competition feel). Rewards accuracy and speed; reinforces vocabulary, syntax awareness, and phrase structure.",
+      "Scrabble-style, turn-based team duel: players drag/place 5–10 short words onto a grid (horizontal/vertical), earning points for each valid placement and intersections. Builds vocabulary, phrase structure, syntax awareness, and cooperative competition.",
   }),
 
   [TASK_TYPES.DIFF_DETECTIVE]: metaBase({

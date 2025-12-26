@@ -519,17 +519,20 @@ export const TASK_TYPE_META = {
   [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
     label: "Mad Dash Sequence",
     category: CATEGORY.MOVEMENT,
-    implemented: false,
-    aiEligible: false,
-    generatorEligible: false,
-    objectiveScoring: false,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,
     defaultAiScoringRequired: false,
-    quickTaskEligible: false,
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    correctAnswerShape: "object",
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "High-energy ‘sequence under pressure’ variant of Mad Dash. If used, should require correct order of steps/events plus speed.",
+      "High-energy sequence race: memorize 3–4 color-linked steps, then scan stations in order as fast as possible. Supports academic sequences by attaching a short label to each color (process steps, timeline events, procedure order). Score = correct order + speed bonus.",
   }),
 
   [TASK_TYPES.HIDENSEEK]: metaBase({
@@ -643,24 +646,24 @@ export const TASK_TYPE_META = {
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "Jeopardy-like rapid trivia in reverse format (response as a question). Competitive feel; excellent for retrieval + reformulation and precision with academic language.",
+      "Brain Blitz (Jeopardy-style) rapid review in reverse format: the device shows an answer/clue and students respond in question form. Can be typed or spoken (mic) where available. Great for retrieval + reformulation, precision with academic language, and high-engagement review.",
   }),
 
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]: metaBase({
     label: "True/False Tic-Tac-Toe",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: false,
-    generatorEligible: false,
+    aiEligible: true,
+    generatorEligible: true,
     objectiveScoring: true,
     defaultAiScoringRequired: false,
     hasOptions: true,
     expectsText: false,
     maxTimeSeconds: 180,
-    interTeamEnabled: false,
-    intraTeamEnabled: true,
+    interTeamEnabled: true,
+    intraTeamEnabled: false,
     description:
-      "A tic-tac-toe grid where each square contains a True/False question; correct answers claim squares. Combines retrieval practice with strategy and motivating repetition.",
+      "True/False Tic-Tac-Toe duel. A tic-tac-toe grid is paired with short True/False statements. Players are assigned TRUE or FALSE and race to place marks by correctly matching their assigned truthiness. Wrong truthiness helps the opponent. Objective-scored; motivates fast, accurate retrieval with strategy.",
   }),
 
   // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
@@ -700,20 +703,34 @@ export const TASK_TYPE_META = {
     correctAnswerShape: "string-or-list",
     multiItemCapable: true,
     preferredItemsPerTask: { min: 5, max: 8 },
-    description: [
-      "Flashcards Race is a fast-paced, competitive recall game where teams race",
-      "to answer flashcard questions correctly using a buzz-in mechanic.",
-      "",
-      "How it works:",
-      "• AI generates 5–8 flashcards (question + answer).",
-      "• One card appears at a time with a countdown timer.",
-      "• Teams buzz in; first buzz earns the right to answer.",
-      "• Correct answers score points and win the card.",
-      "• Incorrect answers allow other teams to buzz.",
-      "",
-      "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
-      "with motivating game-show energy (sounds, confetti, live score).",
-    ].join("\n"),
+    description:
+      [
+        "High-energy competitive recall: teams race to answer flashcard questions correctly.",
+        "",
+        "Core loop:",
+        "• A card shows a QUESTION (large, high-contrast).",
+        "• 20s countdown per card (config.secondsPerCard; AI-adjustable).",
+        "• Players/teams BUZZ IN (tap) — first buzz earns the right to answer.",
+        "• Correct → +10 points (optional +5 first-buzz bonus). Wrong → answer right passes.",
+        "• Rounds continue until all cards are won or the round timer ends.",
+        "• Live leaderboard / score banner updates after every point.",
+        "• End screen + 15s post-task overlay auto-advances to the next scan/task.",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: \"flashcards-race\"",
+        "config: {",
+        "  items: [ // 5–8 cards",
+        "    { question: string, answer: string, acceptableAnswers?: string[] }",
+        "  ],",
+        "  secondsPerCard?: number, // default 20",
+        "  playerCount?: number, // 1–4 (optional)",
+        "  interTeam?: true, // must be true for this mode",
+        "  points?: { correct?: 10, firstBuzzBonus?: 5 }",
+        "}",
+        "",
+        "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
+        "with motivating game-show energy (sounds, confetti, live score).",
+      ].join("\n"),
   }),
 
   // (rest unchanged from your file)
@@ -760,7 +777,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Teams reconstruct a target phrase by entering each word (turn-based competition feel). Rewards accuracy and speed; reinforces vocabulary, syntax awareness, and phrase structure.",
+      "Scrabble-style, turn-based team duel: players drag/place 5–10 short words onto a grid (horizontal/vertical), earning points for each valid placement and intersections. Builds vocabulary, phrase structure, syntax awareness, and cooperative competition.",
   }),
 
   [TASK_TYPES.DIFF_DETECTIVE]: metaBase({
@@ -819,18 +836,18 @@ export const TASK_TYPE_META = {
     defaultAiScoringRequired: true,
     expectsText: true,
     maxTimeSeconds: 180,
-    interTeamEnabled: false,
+    interTeamEnabled: true,
     intraTeamEnabled: false,
     description:
-      "Pair-and-respond workflow: students write an initial response, then see a partner’s response and write a thoughtful reply/extension (agree/disagree, add evidence, ask a question, build on an idea). Builds accountable talk in writing and synthesis.",
+      "Pair-and-respond collaboration. Students write an initial response to a prompt, then view another team’s response and write a thoughtful reply (agree/disagree with reasons, add evidence, ask a question, or extend an idea). AI-scored with a rubric for clarity, reasoning, and engagement. Builds accountable talk in writing, perspective-taking, synthesis, and peer feedback.",
   }),
 
   [TASK_TYPES.LIVE_DEBATE]: metaBase({
     label: "Live Debate",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    aiEligible: false,
-    generatorEligible: false,
+    aiEligible: true,
+    generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: true,
     expectsText: true,
@@ -838,7 +855,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "Team debate format. Players take sides on a prompt, speak in timed turns, and offer rebuttals. Typically rubric/AI-scored rather than objective. Builds argumentation, evidence use, and respectful discourse.",
+      "Team debate format. Students prepare arguments, then speak in timed turns with rebuttals and a clear ‘for/against’ side. Curriculate pairs teams and assigns speaker roles; audio can be recorded and AI-scored for argument quality, evidence, and respectful discourse. Builds argumentation, critical thinking, and oral confidence.",
   }),
 
   [TASK_TYPES.AI_DEBATE_JUDGE]: metaBase({
@@ -865,10 +882,10 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 120,
-    interTeamEnabled: false,
+    interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "Fast-paced ‘shout ideas’ brainstorm. Device presents a topic/seed prompt and the team rapidly contributes ideas aloud (optionally captured). May include quick voting/ranking. Great for activating prior knowledge and lowering fear of being wrong.",
+      "Fast-paced ‘shout ideas’ collaborative brainstorm. The device shows a topic/seed prompt and your team rapidly contributes many ideas (spoken aloud and/or typed as short entries). No single correct answer — the goal is divergent thinking. Optional quick vote/rank at the end to highlight strongest ideas. Builds creative ideation, background knowledge, verbal participation, and lowers fear of being wrong.",
   }),
 
   [TASK_TYPES.MYSTERY_CLUES]: metaBase({
