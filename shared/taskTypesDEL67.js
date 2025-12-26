@@ -194,7 +194,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "A multiple-choice task that looks and works like a normal 4-option question on the device (A, B, C, D) — full prompt + four visible options — but students cannot submit by tapping. Instead, each option shows a large colored badge that matches one of your 8 permanent classroom QR stations (Red, Orange, Yellow, Green, Blue, Teal, Purple, Pink). For each question, the system randomly selects 4 of the 8 station colors and assigns them to A–D (randomized every play, and can vary per question). Students choose their answer on-screen, then physically walk to the station color shown beside their chosen option and scan that station’s QR code. A correct scan auto-submits the selected letter and advances to the next question. Typical task: 3–5 questions, encouraging repeated movement. Objective scoring: points per correct answer. Solo-only (no inter-team / intra-team modes).",
+      "A standard 4-option multiple choice format, but students must walk to one of 8 fixed colored QR stations to submit their answer. Each question randomizes the color-to-letter mapping to ensure movement and prevent memorization.",
   }),
 
   [TASK_TYPES.TRUE_FALSE]: metaBase({

@@ -1192,7 +1192,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
           options: r.options.slice(0, 4),
           // IMPORTANT: correctIndex is only among the "serious" 3; option 4 is the obvious joke
           correctIndex:
-            typeof r.correctIndex === "number" && r.correctIndex >= 0 && r.correctIndex <= 2
+            typeof r.correctIndex === "number" && r.correctIndex >= 0 && r.correctIndex <= 3
               ? r.correctIndex
               : 0,
         }));
@@ -2308,6 +2308,7 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
                 }
 
 
+          // ---- FAKE OUT ----
           if (allowedType === TASK_TYPES.FAKE_OUT) {
             const cfg =
               regenerated?.config && typeof regenerated.config === "object"
@@ -2348,8 +2349,11 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
                   rounds: rounds.map((r) => ({
                     statement: r.statement,
                     options: r.options.slice(0, 4),
+
+                    // IMPORTANT FIX:
+                    // FakeOut options length is 4, so correctIndex must be 0..3 (not 0..2)
                     correctIndex:
-                      typeof r.correctIndex === "number" && r.correctIndex >= 0 && r.correctIndex <= 2
+                      typeof r.correctIndex === "number" && r.correctIndex >= 0 && r.correctIndex <= 3
                         ? r.correctIndex
                         : 0,
                   })),
@@ -2364,7 +2368,24 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
             // invalid fake-out; continue retry loop
             continue;
           }
-                return { text: String(it || `Step ${idx + 1}`).trim() };
+
+          // ---- SEQUENCE ----
+          if (allowedType === TASK_TYPES.SEQUENCE) {
+            const cfg =
+              regenerated?.config && typeof regenerated.config === "object"
+                ? regenerated.config
+                : {};
+
+            const rawItems = Array.isArray(cfg.items) ? cfg.items : [];
+            const fixedItems = rawItems
+              .slice(0, 10)
+              .map((it, idx) => {
+                if (typeof it === "string") {
+                  return { text: String(it || `Step ${idx + 1}`).trim() };
+                }
+                return {
+                  text: String(it?.text || it?.label || it?.name || it?.value || `Step ${idx + 1}`).trim(),
+                };
               })
               .filter((x) => isNonEmptyString(x.text));
 
@@ -2390,6 +2411,9 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
               };
               break;
             }
+
+            // invalid sequence; continue retry loop
+            continue;
           }
 
           if (allowedType === TASK_TYPES.VENNSORT) {

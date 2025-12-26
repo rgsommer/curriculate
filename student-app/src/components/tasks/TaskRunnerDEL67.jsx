@@ -1533,14 +1533,13 @@ export default function TaskRunner({
     case TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE:
       content = (
         <PhysicalMultipleChoiceTask
-          task={t}
-          onSubmit={handleTaskSubmit}
-          disabled={effectiveDisabled || isReview}
-          onAnswerChange={onAnswerChange}
-          answerDraft={answerDraft}
-          socket={socket}
+          task={task}
           mode={isReview ? "review" : "play"}
-          review={isReview ? review : null}
+          review={review}
+          disabled={taskLocked}
+          answerDraft={answerDraft}
+          onAnswerChange={setAnswerDraft}
+          onSubmit={(payload) => submitAnswer(payload)}
         />
       );
       break;
