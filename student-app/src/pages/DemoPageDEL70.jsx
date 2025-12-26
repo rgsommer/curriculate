@@ -293,6 +293,58 @@ function playEchoChime() {
 }
 
 // NarrationSynthesize (demo-only) SFX
+function playScriptPlayChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/foley/page_turn.ogg");
+    a.volume = 0.16;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+function playRolePlayChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/foley/card_shuffle.ogg");
+    a.volume = 0.16;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+function playFakeOutChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+    a.volume = 0.14;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+// Universal (demo) submit feedback SFX
+function playCorrectChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+    a.volume = 0.16;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+function playWrongChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/boing.ogg");
+    a.volume = 0.14;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+
 function playNarrationChime() {
   try {
     const a = new Audio(
@@ -597,6 +649,98 @@ export default function DemoPage() {
       };
     }
 
+    // ScriptPlay: rich fallback so TaskRunner can render it in demo mode.
+    if (type === TASK_TYPES.SCRIPT_PLAY) {
+      return {
+        taskType: TASK_TYPES.SCRIPT_PLAY,
+        title: "Script Play",
+        prompt:
+          "Pass the device speaker-to-speaker. Read your lines with the tone cues. Add a little acting for bonus points!",
+        timeLimitSeconds: 120,
+        points: 14,
+        config: {
+          sceneTitle: "The Lost Map",
+          setting: "A candlelit library, late at night",
+          roles: ["Narrator", "Ava", "Noah"],
+          beats: [
+            {
+              speaker: "Narrator",
+              cue: "Calm, mysterious",
+              lines: [
+                "The old library creaks as a storm taps the windows.",
+                "Ava finds a folded map hidden inside a dusty book."
+              ],
+              before: "You are setting the scene.",
+              after: "Hand the device to Ava."
+            },
+            {
+              speaker: "Ava",
+              cue: "Whispering, excited",
+              stageDirections: ["(leans in)", "(speaks softly)"],
+              lines: [
+                "Noah… look. This map has today’s date on it.",
+                "Why would someone hide it here?"
+              ],
+              before: "You just discovered something important.",
+              after: "Hand the device to Noah."
+            },
+            {
+              speaker: "Noah",
+              cue: "Skeptical but curious",
+              stageDirections: ["(raises an eyebrow)"],
+              lines: [
+                "Either it’s a prank… or it’s a clue.",
+                "Let’s follow it—carefully."
+              ],
+              before: "Respond to Ava and decide what to do.",
+              after: "Group: act out the next step together."
+            }
+          ],
+          scoring: { expressiveBonus: true, maxExpressiveBonus: 4 }
+        },
+      };
+    }
+
+    // RolePlayDeck: rich fallback so TaskRunner can render it in demo mode.
+    if (type === TASK_TYPES.ROLE_PLAY_DECK || type === "role-play-deck") {
+      return {
+        taskType: TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck",
+        title: "RolePlay Deck",
+        prompt:
+          "Choose Mystery (hidden roles) or Classic (open roles). Each player draws ONE role card, then role-play the scenario as a team. Tap Finished when done.",
+        timeLimitSeconds: 180,
+        points: 12,
+        config: {
+          mode: "choose",
+          roles: [
+            {
+              name: "Amira",
+              role: "Community helper",
+              characteristics: ["Kind", "Truthful", "Brave", "Patient"],
+            },
+            {
+              name: "Noah",
+              role: "Question-asker",
+              characteristics: ["Curious", "Respectful", "Careful thinker", "Fair"],
+            },
+            {
+              name: "Sofia",
+              role: "Peacemaker",
+              characteristics: ["Empathetic", "Calm", "Listening", "Humble"],
+            },
+            {
+              name: "Eli",
+              role: "Planner",
+              characteristics: ["Wise", "Organized", "Self-controlled", "Honest"],
+            },
+          ],
+          scenario:
+            "Your class is planning a new rule for fair group work. Act out a meeting where each role helps decide what the rule should be and why it matters.",
+        },
+      };
+    }
+
+
     return {
       taskType: type,
       title: `Demo: ${type}`,
@@ -613,9 +757,17 @@ export default function DemoPage() {
     const next = pickDemoTask(selectedType);
     setCurrentTask({ ...next });
     setPhase("task");
+    if ((next?.taskType || next?.type) === TASK_TYPES.SCRIPT_PLAY) {
+      showToast("🎭 Script Play! Pass the device speaker-to-speaker.", true);
+      playScriptPlayChime();
+    }
     if ((next?.taskType || next?.type) === TASK_TYPES.ECHO_CHAIN) {
       showToast("Echo Chain! Say it aloud and add one.", true);
       playEchoChime();
+    }
+    if ((next?.taskType || next?.type) === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck")) {
+      showToast("🎭 RolePlay Deck! Draw roles, then act it out.", true);
+      playRolePlayChime();
     }
   }
 
@@ -723,6 +875,7 @@ export default function DemoPage() {
 
     let scoreDelta = 0;
     let maxPoints = typeof task?.points === "number" ? task.points : null;
+    let wasCorrect = null; // true/false/null
 
     try {
       const type = task?.taskType || task?.type;
@@ -731,6 +884,8 @@ export default function DemoPage() {
         const scored = scoreNarrationLocally(task, submissionPayload);
         scoreDelta = scored.scoreDelta || 0;
         maxPoints = scored.maxPoints ?? maxPoints;
+        // treat "correct" as "earned meaningful points"
+        wasCorrect = scoreDelta > 0;
         showToast(
           `Teach-back scored: +${scoreDelta}${maxPoints != null ? `/${maxPoints}` : ""} (avg ${Number(scored.avgRating).toFixed(1)})`,
           true
@@ -740,10 +895,13 @@ export default function DemoPage() {
         const result = scoreObjectiveLocally(task, submissionPayload);
         scoreDelta = result.scoreDelta || 0;
         maxPoints = result.maxPoints ?? maxPoints;
+        wasCorrect = result.correct === true;
       } else {
         const ai = await scoreWithBackendAI(task, submissionPayload);
         scoreDelta = ai.scoreDelta || 0;
         maxPoints = ai.maxPoints ?? maxPoints;
+        if (typeof ai.correct === "boolean") wasCorrect = ai.correct;
+        else wasCorrect = scoreDelta > 0;
         // If backend provided feedback (especially for GuessWho), surface it to the student.
         if (ai.aiFeedback) {
           const ok = ai.correct === true;
@@ -758,6 +916,10 @@ export default function DemoPage() {
     setTeams((prev) =>
       prev.map((t) => (t.isYou ? { ...t, score: (t.score || 0) + scoreDelta } : t))
     );
+
+    // Consistent Curriculate feedback (SFX) – especially noticeable on core Q&A tasks.
+    if (wasCorrect === true || scoreDelta > 0) playCorrectChime();
+    else playWrongChime();
 
     const lockSeconds = DEFAULT_REVIEW_SECONDS;
     setTaskLocked(true);
@@ -1151,6 +1313,58 @@ export default function DemoPage() {
               memberNames={["Demo"]}
               socket={demoSocket}
             />
+
+            {/* Demo helper: simulate a station scan (no camera in demo) */}
+            {((currentTask?.taskType || currentTask?.type) === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 14,
+                  border: "1px solid rgba(148,163,184,0.45)",
+                  background: "rgba(15,23,42,0.55)",
+                  color: "#e5e7eb",
+                }}
+              >
+                <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                  Demo: tap a station color to simulate scanning that QR
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {["Red","Orange","Yellow","Green","Blue","Teal","Purple","Pink"].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        try {
+                          window.dispatchEvent(
+                            new CustomEvent("curriculate:stationScan", {
+                              detail: { color: c.toLowerCase(), stationColor: c.toLowerCase() },
+                            })
+                          );
+                        } catch {}
+                      }}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 12,
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        background: "rgba(255,255,255,0.10)",
+                        color: "#fff",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+                  In real sessions, students scan the classroom’s fixed colored QR stations.
+                </div>
+              </div>
+            )}
+
           </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>

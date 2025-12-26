@@ -667,7 +667,6 @@ function StudentApp() {
   const sndScriptPlay = useRef(null);
   const sndRolePlay = useRef(null);
   const sndFakeOut = useRef(null);
-  const sndWordWeaver = useRef(null);
   const sndCorrect = useRef(null);
   const sndWrong = useRef(null);
 
@@ -676,7 +675,6 @@ function StudentApp() {
   const [narrationSpark, setNarrationSpark] = useState(false);
   const [scriptSpotlight, setScriptSpotlight] = useState(false);
   const [rolePlayGlow, setRolePlayGlow] = useState(false);
-  const [wordWeaverGlow, setWordWeaverGlow] = useState(false);
   const [fakeOutFlash, setFakeOutFlash] = useState(false);
 
   // Timer refs
@@ -965,18 +963,7 @@ function StudentApp() {
         window.setTimeout(() => setTreatMessage(null), 3800);
       }
 
-      // WordWeaver Duel: Scrabble-style, turn-based intra-team play
-      if (
-        assignedType === TASK_TYPES.WORD_WEAVER_DUEL ||
-        assignedType === "word-weaver-duel" ||
-        assignedType === "word-weaver" ||
-        assignedType === "wordweaver"
-      ) {
-        tryPlayWordWeaverSound();
-        setWordWeaverGlow(true);
-        window.setTimeout(() => setWordWeaverGlow(false), 1300);
-        setTreatMessage("🧩 Word Weaver Duel — take turns placing words on the grid for points!");
-        window.setTimeout(() => setTreatMessage(null), 4200);
+      setTreatMessage("🎭 RolePlay — draw roles, then act it out together.");
       }
 
       setCurrentTask(assignedTask);
@@ -1279,13 +1266,6 @@ function StudentApp() {
       );
       fakeOutAudio.volume = 0.14;
       sndFakeOut.current = fakeOutAudio;
-
-      // WordWeaver: subtle "tile tap" cue
-      const wordWeaverAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      wordWeaverAudio.volume = 0.14;
-      sndWordWeaver.current = wordWeaverAudio;
     } catch {
       // ignore
     }
@@ -1997,12 +1977,6 @@ const norm = normalizeStationId(data);
   const isFakeOut =
     currentTask?.taskType === TASK_TYPES.FAKE_OUT ||
     currentTask?.taskType === "fake-out";
-
-  const isWordWeaver =
-    currentTask?.taskType === TASK_TYPES.WORD_WEAVER_DUEL ||
-    currentTask?.taskType === "word-weaver-duel" ||
-    currentTask?.taskType === "word-weaver" ||
-    currentTask?.taskType === "wordweaver";
 
   const isMindMapper = currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
 
@@ -3480,21 +3454,6 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
               "radial-gradient(circle at 30% 30%, rgba(34,197,94,0.16), transparent 55%), radial-gradient(circle at 70% 25%, rgba(59,130,246,0.16), transparent 55%), radial-gradient(circle at 50% 85%, rgba(168,85,247,0.14), transparent 58%)",
             boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset",
             animation: "echo-pulse 1.4s ease-out 1",
-          }}
-        />
-      )}
-
-      {wordWeaverGlow && isWordWeaver && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: 18,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(circle at 25% 15%, rgba(34,197,94,0.18), transparent 55%), radial-gradient(circle at 80% 35%, rgba(59,130,246,0.14), transparent 60%), radial-gradient(circle at 50% 92%, rgba(245,158,11,0.10), transparent 60%)",
-            animation: "echo-pulse 1.25s ease-out 1",
           }}
         />
       )}

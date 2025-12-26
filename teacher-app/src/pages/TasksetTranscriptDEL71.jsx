@@ -182,100 +182,6 @@ function summarizeFakeOut(sub, task) {
   };
 }
 
-function summarizeFlashcardsRace(sub, task, teamsById = {}) {
-  // Flashcards Race is an inter-team buzzer race.
-  // Depending on deployment version, the backend may store results in one or more submissions.
-  // Accept multiple shapes to stay backward compatible.
-  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
-  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
-  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
-
-  const scoresRaw =
-    (ap.finalScores && typeof ap.finalScores === "object" ? ap.finalScores : null) ||
-    (ap.scores && typeof ap.scores === "object" ? ap.scores : null) ||
-    (data.finalScores && typeof data.finalScores === "object" ? data.finalScores : null) ||
-    (data.scores && typeof data.scores === "object" ? data.scores : null) ||
-    (cfg.scores && typeof cfg.scores === "object" ? cfg.scores : null) ||
-    null;
-
-  const winnerTeamId =
-    (ap.winnerTeamId ? String(ap.winnerTeamId) : null) ||
-    (data.winnerTeamId ? String(data.winnerTeamId) : null) ||
-    (ap.winnerTeam ? String(ap.winnerTeam) : null) ||
-    (data.winnerTeam ? String(data.winnerTeam) : null) ||
-    null;
-
-  const totalCards =
-    (Number.isFinite(Number(ap.totalCards)) ? Number(ap.totalCards) : null) ??
-    (Number.isFinite(Number(data.totalCards)) ? Number(data.totalCards) : null) ??
-    (Array.isArray(ap.deck) ? ap.deck.length : null) ??
-    (Array.isArray(data.deck) ? data.deck.length : null) ??
-    (Array.isArray(cfg.deck) ? cfg.deck.length : null) ??
-    null;
-
-  const secondsPerCard =
-    (Number.isFinite(Number(ap.secondsPerCard)) ? Number(ap.secondsPerCard) : null) ??
-    (Number.isFinite(Number(data.secondsPerCard)) ? Number(data.secondsPerCard) : null) ??
-    (Number.isFinite(Number(cfg.secondsPerCard)) ? Number(cfg.secondsPerCard) : null) ??
-    null;
-
-  const cardsWon =
-    (Array.isArray(ap.cardsWon) ? ap.cardsWon : null) ||
-    (Array.isArray(data.cardsWon) ? data.cardsWon : null) ||
-    (Array.isArray(ap.rounds) ? ap.rounds : null) ||
-    (Array.isArray(data.rounds) ? data.rounds : null) ||
-    null;
-
-  // Normalize scoreboard into [{ teamId, teamName, points }]
-  let board = [];
-  if (scoresRaw) {
-    board = Object.entries(scoresRaw)
-      .map(([teamId, pts]) => {
-        const n = Number(pts);
-        if (!Number.isFinite(n)) return null;
-        const teamName = teamsById?.[String(teamId)]?.teamName || null;
-        return { teamId: String(teamId), teamName, points: n };
-      })
-      .filter(Boolean)
-      .sort((a, b) => (b.points || 0) - (a.points || 0));
-  }
-
-  const winnerLabel = winnerTeamId
-    ? teamsById?.[String(winnerTeamId)]?.teamName || `Team ${String(winnerTeamId).slice(-4)}`
-    : null;
-
-  const hasAny = Boolean(board.length || winnerTeamId || totalCards != null || secondsPerCard != null || (cardsWon && cardsWon.length));
-  if (!hasAny) return null;
-
-  // Cards won summary (teamId -> count)
-  const wonCounts = {};
-  if (Array.isArray(cardsWon)) {
-    for (const c of cardsWon) {
-      const tid = c?.teamId || c?.winnerTeamId || c?.team || c?.winner;
-      if (!tid) continue;
-      const k = String(tid);
-      wonCounts[k] = (wonCounts[k] || 0) + 1;
-    }
-  }
-
-  const wonSummary = Object.entries(wonCounts)
-    .map(([teamId, count]) => ({
-      teamId,
-      teamName: teamsById?.[teamId]?.teamName || `Team ${teamId.slice(-4)}`,
-      count,
-    }))
-    .sort((a, b) => (b.count || 0) - (a.count || 0));
-
-  return {
-    board,
-    winnerTeamId,
-    winnerLabel,
-    totalCards,
-    secondsPerCard,
-    wonSummary,
-  };
-}
-
 
 
 function extractAnswerText(sub, task) {
@@ -408,27 +314,7 @@ export default function TasksetTranscript({ transcript }) {
             </p>
 
             {taskSubs.length === 0 ? (
-              task.taskType === "flashcards-race" || task.taskType === "flashcards_race" || task.taskType === "flashcardsRace" ? (
-                <div
-                  style={{
-                    marginTop: 6,
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px dashed rgba(255,255,255,0.0)",
-                    background: "rgba(59,130,246,0.06)",
-                    color: "#374151",
-                    fontSize: "0.9rem",
-                  }}
-                >
-                  <div style={{ fontWeight: 800, marginBottom: 2 }}>Flashcards Race (live inter-team)</div>
-                  <div style={{ color: "#6b7280", fontSize: "0.85rem" }}>
-                    This task is typically driven by live socket events (buzz/answer/advance). If your backend is
-                    configured to persist the race outcome, you’ll see a scoreboard submission here.
-                  </div>
-                </div>
-              ) : (
-                <p style={{ color: "#9ca3af", margin: 0 }}>No submissions for this task.</p>
-              )
+              <p style={{ color: "#9ca3af", margin: 0 }}>No submissions for this task.</p>
             ) : (
               <div
                 style={{
@@ -514,78 +400,6 @@ export default function TasksetTranscript({ transcript }) {
                           )}
                         </div>
                       )}
-
-                      {/* Flashcards Race summary (if present) */}
-                      {(() => {
-                        const isFlashcardsRace =
-                          task.taskType === "flashcards-race" ||
-                          task.taskType === "flashcards_race" ||
-                          task.taskType === "flashcardsRace";
-                        if (!isFlashcardsRace) return null;
-
-                        const summary = summarizeFlashcardsRace(sub, task, teamsById);
-                        if (!summary) return null;
-
-                        return (
-                          <div
-                            style={{
-                              marginTop: 6,
-                              padding: 10,
-                              borderRadius: 12,
-                              border: "1px solid rgba(99,102,241,0.25)",
-                              background: "rgba(99,102,241,0.08)",
-                            }}
-                          >
-                            <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#3730a3", marginBottom: 6 }}>
-                              Flashcards Race outcome
-                            </div>
-
-                            {(summary.winnerLabel || summary.winnerTeamId) && (
-                              <div style={{ fontWeight: 900, color: "#111827", marginBottom: 6 }}>
-                                Winner: {summary.winnerLabel || `Team ${String(summary.winnerTeamId).slice(-4)}`}
-                              </div>
-                            )}
-
-                            {(summary.totalCards != null || summary.secondsPerCard != null) && (
-                              <div style={{ fontSize: "0.82rem", color: "#374151", marginBottom: 6 }}>
-                                {summary.totalCards != null ? `${summary.totalCards} cards` : ""}
-                                {summary.totalCards != null && summary.secondsPerCard != null ? " • " : ""}
-                                {summary.secondsPerCard != null ? `${summary.secondsPerCard}s per card` : ""}
-                              </div>
-                            )}
-
-                            {Array.isArray(summary.board) && summary.board.length > 0 && (
-                              <div style={{ display: "grid", gap: 6 }}>
-                                {summary.board.slice(0, 8).map((row) => (
-                                  <div
-                                    key={row.teamId}
-                                    style={{
-                                      display: "flex",
-                                      justifyContent: "space-between",
-                                      alignItems: "center",
-                                      padding: "6px 8px",
-                                      borderRadius: 10,
-                                      border: "1px solid rgba(0,0,0,0.08)",
-                                      background: "rgba(255,255,255,0.85)",
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: 900, color: "#111827" }}>
-                                      {row.teamName || `Team ${row.teamId.slice(-4)}`}
-                                    </div>
-                                    <div style={{ fontWeight: 900, color: "#111827" }}>{row.points} pts</div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {Array.isArray(summary.wonSummary) && summary.wonSummary.length > 0 && (
-                              <div style={{ marginTop: 8, fontSize: "0.82rem", color: "#374151" }}>
-                                Cards won: {summary.wonSummary.map((w) => `${w.teamName}: ${w.count}`).join(" • ")}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
 
                       {/* Narration Synthesize peer ratings (if present) */}
                       {(() => {

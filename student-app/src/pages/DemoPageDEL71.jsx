@@ -323,6 +323,27 @@ function playFakeOutChime() {
   }
 }
 
+// Universal (demo) submit feedback SFX
+function playCorrectChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+    a.volume = 0.16;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+function playWrongChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/boing.ogg");
+    a.volume = 0.14;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
 
 function playNarrationChime() {
   try {
@@ -678,6 +699,7 @@ export default function DemoPage() {
           scoring: { expressiveBonus: true, maxExpressiveBonus: 4 }
         },
       };
+    }
 
     // RolePlayDeck: rich fallback so TaskRunner can render it in demo mode.
     if (type === TASK_TYPES.ROLE_PLAY_DECK || type === "role-play-deck") {
@@ -718,6 +740,27 @@ export default function DemoPage() {
       };
     }
 
+
+
+    // Flashcards Race: rich fallback so TaskRunner can render it in demo mode.
+    if (type === TASK_TYPES.FLASHCARDS_RACE) {
+      return {
+        taskType: TASK_TYPES.FLASHCARDS_RACE,
+        title: "Flashcards Race",
+        prompt:
+          "Buzz in first, answer fast, and win the card. (Demo mode runs locally; live mode uses inter-team events.)",
+        timeLimitSeconds: 0,
+        points: 15,
+        demoMode: true,
+        cards: [
+          { question: "What is 7 × 8?", answer: "56" },
+          { question: "Who discovered gravity (classic story)?", answer: "Isaac Newton" },
+          { question: "Define 'ecosystem'.", answer: "A community of living organisms interacting with their environment." },
+          { question: "What is the capital of Canada?", answer: "Ottawa" },
+          { question: "What is π to 2 decimals?", answer: "3.14" },
+          { question: "Name the first book of the Bible.", answer: "Genesis" }
+        ],
+      };
     }
 
     return {
@@ -748,7 +791,12 @@ export default function DemoPage() {
       showToast("🎭 RolePlay Deck! Draw roles, then act it out.", true);
       playRolePlayChime();
     }
-  }
+  
+    if ((next?.taskType || next?.type) === TASK_TYPES.FLASHCARDS_RACE) {
+      showToast("🔔 Flashcards Race! Buzz in and answer fast.", true);
+      playFakeOutChime();
+    }
+}
 
   // -------------------------
   // Bot simulation per task
@@ -854,14 +902,31 @@ export default function DemoPage() {
 
     let scoreDelta = 0;
     let maxPoints = typeof task?.points === "number" ? task.points : null;
+    let wasCorrect = null; // true/false/null
 
     try {
       const type = task?.taskType || task?.type;
 
-      if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
+      
+      if (type === TASK_TYPES.FLASHCARDS_RACE) {
+        // Demo/local scoring: if your team wins, award full task points; otherwise 0.
+        const w = submissionPayload?.answer?.winner;
+        const youWon =
+          (w && typeof w === "object" && (w.teamId === "team-you" || w.teamName === "Your Team")) ||
+          (typeof w === "string" && String(w).toLowerCase().includes("your")) ||
+          ((submissionPayload?.answer?.scores?.you ?? 0) >= (submissionPayload?.answer?.scores?.other ?? Infinity));
+
+        scoreDelta = youWon ? (typeof task?.points === "number" ? task.points : 15) : 0;
+        maxPoints = typeof task?.points === "number" ? task.points : maxPoints;
+        wasCorrect = youWon;
+        showToast(youWon ? "You won the race! 🏁" : "Race complete! 🏁", youWon);
+      } else
+if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
         const scored = scoreNarrationLocally(task, submissionPayload);
         scoreDelta = scored.scoreDelta || 0;
         maxPoints = scored.maxPoints ?? maxPoints;
+        // treat "correct" as "earned meaningful points"
+        wasCorrect = scoreDelta > 0;
         showToast(
           `Teach-back scored: +${scoreDelta}${maxPoints != null ? `/${maxPoints}` : ""} (avg ${Number(scored.avgRating).toFixed(1)})`,
           true
@@ -871,10 +936,13 @@ export default function DemoPage() {
         const result = scoreObjectiveLocally(task, submissionPayload);
         scoreDelta = result.scoreDelta || 0;
         maxPoints = result.maxPoints ?? maxPoints;
+        wasCorrect = result.correct === true;
       } else {
         const ai = await scoreWithBackendAI(task, submissionPayload);
         scoreDelta = ai.scoreDelta || 0;
         maxPoints = ai.maxPoints ?? maxPoints;
+        if (typeof ai.correct === "boolean") wasCorrect = ai.correct;
+        else wasCorrect = scoreDelta > 0;
         // If backend provided feedback (especially for GuessWho), surface it to the student.
         if (ai.aiFeedback) {
           const ok = ai.correct === true;
@@ -889,6 +957,10 @@ export default function DemoPage() {
     setTeams((prev) =>
       prev.map((t) => (t.isYou ? { ...t, score: (t.score || 0) + scoreDelta } : t))
     );
+
+    // Consistent Curriculate feedback (SFX) – especially noticeable on core Q&A tasks.
+    if (wasCorrect === true || scoreDelta > 0) playCorrectChime();
+    else playWrongChime();
 
     const lockSeconds = DEFAULT_REVIEW_SECONDS;
     setTaskLocked(true);
@@ -1282,6 +1354,58 @@ export default function DemoPage() {
               memberNames={["Demo"]}
               socket={demoSocket}
             />
+
+            {/* Demo helper: simulate a station scan (no camera in demo) */}
+            {((currentTask?.taskType || currentTask?.type) === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 14,
+                  border: "1px solid rgba(148,163,184,0.45)",
+                  background: "rgba(15,23,42,0.55)",
+                  color: "#e5e7eb",
+                }}
+              >
+                <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                  Demo: tap a station color to simulate scanning that QR
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {["Red","Orange","Yellow","Green","Blue","Teal","Purple","Pink"].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        try {
+                          window.dispatchEvent(
+                            new CustomEvent("curriculate:stationScan", {
+                              detail: { color: c.toLowerCase(), stationColor: c.toLowerCase() },
+                            })
+                          );
+                        } catch {}
+                      }}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 12,
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        background: "rgba(255,255,255,0.10)",
+                        color: "#fff",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+                  In real sessions, students scan the classroom’s fixed colored QR stations.
+                </div>
+              </div>
+            )}
+
           </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>

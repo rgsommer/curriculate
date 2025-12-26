@@ -1,192 +1,229 @@
 // student-app/src/components/tasks/types/FlashcardsRaceTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import useSound from "use-sound";
 import confetti from "canvas-confetti";
 
 /**
- * FlashcardsRaceTask
- * - Works in "local mode" (cards come from task.config.items) OR "socket mode" (server broadcasts events).
- * - Designed to feel consistent with other Curriculate modules: rounded cards, bold headings, subtle gradients.
+ * Flashcards Race
+ * - Inter-team: YES (race vs other teams via socket events)
+ * - Intra-team rotation: NO (your team collaborates on one buzz/answer)
  *
- * Props (back/forward compatible):
- * - task: { config: { items:[{question,answer}], secondsPerCard, playerCount, pointsCorrect, pointsFirstBuzzBonus } }
- * - socket, roomCode, playerTeam
- * - memberNames: string[] (optional, for naming buzzer buttons)
- * - disabled: boolean
- * - onSubmit: function (optional) – send a completion snapshot back up to TaskRunner/backend
+ * Socket-driven (real session):
+ *   - server emits: flashcards-race:start { cards, totalCards }
+ *   - server emits: flashcards-race:next { card, cardIndex, totalCards }
+ *   - server emits: flashcards-race:winner { winner, scores, cardIndex, totalCards }
+ *   - server emits: flashcards-race:end { winner, scores, totalCards }
+ *
+ * Demo/local fallback:
+ *   - If no socket OR roomCode === "DEMO" OR task.demoMode === true, runs locally.
  */
 export default function FlashcardsRaceTask(props) {
-  const {
-    task,
-    socket,
-    roomCode,
-    playerTeam,
-    memberNames = [],
-    disabled = false,
-    onSubmit,
-  } = props || {};
+  const { task, socket, roomCode, playerTeam, disabled, onSubmit } = props || {};
 
-  const cfg = (task?.config && typeof task.config === "object") ? task.config : {};
-  const cards = useMemo(() => {
-    const raw =
-      (Array.isArray(cfg.items) && cfg.items) ||
-      (Array.isArray(cfg.cards) && cfg.cards) ||
-      (Array.isArray(task?.items) && task.items) ||
-      [];
-    return raw
-      .filter(Boolean)
-      .map((c, i) => ({
-        question: String(c?.question ?? c?.q ?? c?.front ?? c?.prompt ?? `Card ${i + 1}`).trim(),
-        answer: String(c?.answer ?? c?.a ?? c?.back ?? c?.response ?? "").trim(),
-      }))
-      .filter((c) => c.question && c.answer)
-      .slice(0, 12);
-  }, [cfg.items, cfg.cards, task?.items]);
+  const isDemoLocal = useMemo(() => {
+    const rc = String(roomCode || "").trim().toUpperCase();
+    return !socket || rc === "DEMO" || task?.demoMode === true;
+  }, [socket, roomCode, task]);
 
-  const secondsPerCard = Number.isFinite(Number(cfg.secondsPerCard)) ? Math.max(8, Number(cfg.secondsPerCard)) : 20;
-  const pointsCorrect = Number.isFinite(Number(cfg.pointsCorrect)) ? Number(cfg.pointsCorrect) : 10;
-  const pointsFirstBuzzBonus = Number.isFinite(Number(cfg.pointsFirstBuzzBonus)) ? Number(cfg.pointsFirstBuzzBonus) : 5;
-
-  // 1–4 players on device (buzzers)
-  const playerCount = useMemo(() => {
-    const n = Number(cfg.playerCount ?? cfg.players ?? (Array.isArray(memberNames) ? memberNames.length : 2) ?? 2);
-    if (Number.isFinite(n) && n >= 1 && n <= 4) return Math.round(n);
-    return Math.min(4, Math.max(1, Array.isArray(memberNames) ? memberNames.length : 2)) || 2;
-  }, [cfg.playerCount, cfg.players, memberNames]);
-
-  const playerLabels = useMemo(() => {
-    const base = (Array.isArray(memberNames) ? memberNames : []).filter(Boolean).map((s) => String(s).trim()).filter(Boolean);
-    const labels = [];
-    for (let i = 0; i < playerCount; i++) {
-      labels.push(base[i] || `Player ${i + 1}`);
-    }
-    return labels;
-  }, [memberNames, playerCount]);
-
-  // SFX
-  const [playShuffle] = useSound("/sounds/shuffle.mp3", { volume: 0.75 });
-  const [playPointWin] = useSound("/sounds/point-win.mp3", { volume: 0.9 });
-  const [playPointLose] = useSound("/sounds/point-lose.mp3", { volume: 0.7 });
-  const [playBuzzer] = useSound("/sounds/buzzer.mp3", { volume: 0.9 });
-
-  // Local game state
+  const [cards, setCards] = useState(() => []);
   const [cardIndex, setCardIndex] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(secondsPerCard);
-  const [showShuffle, setShowShuffle] = useState(false);
+  const [card, setCard] = useState(null);
+  const [totalCards, setTotalCards] = useState(0);
 
-  const [buzzedBy, setBuzzedBy] = useState(null); // player index
-  const [attemptedPlayers, setAttemptedPlayers] = useState([]); // indices who already tried on this card
-  const [answerText, setAnswerText] = useState("");
+  const [phase, setPhase] = useState("waiting"); // waiting | show | buzzed | reveal | done
+  const [secondsLeft, setSecondsLeft] = useState(null);
 
-  const [scores, setScores] = useState(() => {
-    const obj = {};
-    for (let i = 0; i < 4; i++) obj[i] = 0;
-    return obj;
-  });
+  const [buzzedBy, setBuzzedBy] = useState(null); // "you" | "other"
+  const [answer, setAnswer] = useState("");
+  const [winner, setWinner] = useState(null); // { teamId, teamName } or string
+  const [scores, setScores] = useState({ you: 0, other: 0 });
 
-  const [roundWinners, setRoundWinners] = useState([]); // {cardIndex, playerIndex, correct, answer}
-  const [gameOver, setGameOver] = useState(false);
+  const tickRef = useRef(null);
 
-  const firstBuzzRef = useRef(null); // player index of first buzz for the card
-  const answeredThisCardRef = useRef(false);
+  const youName = playerTeam?.teamName || "Your Team";
+  const otherName = "Other Teams";
 
-  const localMode = !socket || !roomCode || !cfg.interTeam; // practical default: local
+  const pointsPerCard = 10;
+  const firstBuzzBonus = 5;
 
-  const currentCard = cards[cardIndex] || null;
+  const sfx = useMemo(() => {
+    const safe = (url, volume = 0.15) => {
+      try {
+        const a = new Audio(url);
+        a.volume = volume;
+        a.play().catch(() => {});
+      } catch {
+        // ignore
+      }
+    };
 
-  // Reset when task changes
-  useEffect(() => {
-    setCardIndex(0);
-    setTimeLeft(secondsPerCard);
-    setShowShuffle(false);
-    setBuzzedBy(null);
-    setAttemptedPlayers([]);
-    setAnswerText("");
-    setScores(() => {
-      const obj = {};
-      for (let i = 0; i < 4; i++) obj[i] = 0;
-      return obj;
-    });
-    setRoundWinners([]);
-    setGameOver(false);
-    firstBuzzRef.current = null;
-    answeredThisCardRef.current = false;
-  }, [task?._id, task?.id, secondsPerCard]);
+    return {
+      buzz: () =>
+        safe("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg", 0.18),
+      correct: () =>
+        safe("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg", 0.16),
+      wrong: () => safe("https://actions.google.com/sounds/v1/cartoon/boing.ogg", 0.14),
+      shuffle: () => safe("https://actions.google.com/sounds/v1/foley/card_shuffle.ogg", 0.14),
+      win: () => safe("https://actions.google.com/sounds/v1/cartoon/ascending_whistle.ogg", 0.18),
+      lose: () => safe("https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg", 0.14),
+      tick: () => safe("https://actions.google.com/sounds/v1/alarms/beep_short.ogg", 0.06),
+      buzzer: () => safe("https://actions.google.com/sounds/v1/alarms/buzzer.ogg", 0.12),
+    };
+  }, []);
 
-  // Card timer (local mode only)
-  useEffect(() => {
-    if (!localMode) return undefined;
-    if (disabled) return undefined;
-    if (gameOver) return undefined;
-    if (!currentCard) return undefined;
-    if (showShuffle) return undefined;
-    if (buzzedBy != null) return undefined; // pause timer while someone is answering
+  const normalizedCards = useMemo(() => {
+    const raw =
+      (Array.isArray(task?.cards) && task.cards) ||
+      (Array.isArray(task?.flashcards) && task.flashcards) ||
+      (Array.isArray(task?.config?.cards) && task.config.cards) ||
+      (Array.isArray(task?.config?.flashcards) && task.config.flashcards) ||
+      [];
+    const cleaned = raw
+      .map((c, i) => ({
+        id: c?.id || `card-${i}`,
+        question: String(c?.question || c?.q || "").trim(),
+        answer: String(c?.answer || c?.a || "").trim(),
+      }))
+      .filter((c) => c.question && c.answer);
+    return cleaned;
+  }, [task]);
 
-    if (timeLeft <= 0) {
-      // nobody answered in time
-      setRoundWinners((prev) => [
-        ...prev,
-        { cardIndex, playerIndex: null, correct: false, answer: "" , timeout: true },
-      ]);
+  const fallbackCards = useMemo(
+    () => [
+      { id: "demo-1", question: "What is 7 × 8?", answer: "56" },
+      { id: "demo-2", question: "Who discovered gravity (classic story)?", answer: "Isaac Newton" },
+      { id: "demo-3", question: "Define ecosystem.", answer: "A community of living organisms interacting with their environment" },
+      { id: "demo-4", question: "What is the capital of Canada?", answer: "Ottawa" },
+      { id: "demo-5", question: "What is the value of π to 2 decimals?", answer: "3.14" },
+      { id: "demo-6", question: "Name the first book of the Bible.", answer: "Genesis" },
+    ],
+    []
+  );
 
-      nextCard();
-      return undefined;
+  // ------------- helpers -------------
+  function clearTimer() {
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
     }
+  }
 
-    const t = setTimeout(() => setTimeLeft((s) => Math.max(0, s - 1)), 1000);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localMode, disabled, gameOver, currentCard, showShuffle, buzzedBy, timeLeft]);
+  function norm(s) {
+    return String(s ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
 
-  // Optional: socket mode (keep legacy events so existing backend can drive it)
+  function isCorrect(student, correct) {
+    const s = norm(student);
+    const c = norm(correct);
+    if (!s || !c) return false;
+    if (s === c) return true;
+    // tolerate small punctuation differences
+    const strip = (x) => x.replace(/[^\w\s]/g, "");
+    return strip(s) === strip(c);
+  }
+
+  function celebrate() {
+    try {
+      confetti({
+        particleCount: 90,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  function finishGame(finalWinner, finalScores, total) {
+    clearTimer();
+    setPhase("done");
+    setWinner(finalWinner);
+    setScores(finalScores);
+    setTotalCards(total ?? totalCards);
+
+    // Notify TaskRunner / StudentApp so it can show review overlay + advance.
+    try {
+      if (typeof onSubmit === "function") {
+        onSubmit({
+          answer: {
+            mode: isDemoLocal ? "demo" : "live",
+            winner: finalWinner,
+            scores: finalScores,
+            totalCards: total ?? totalCards,
+          },
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // ------------- socket wiring (live sessions) -------------
   useEffect(() => {
-    if (!socket) return undefined;
+    if (!socket || isDemoLocal) return;
 
-    const onStart = (data) => {
-      playShuffle();
-      setShowShuffle(true);
+    const onStart = (payload) => {
+      const incoming = Array.isArray(payload?.cards) ? payload.cards : [];
+      const clean = incoming
+        .map((c, i) => ({
+          id: c?.id || `card-${i}`,
+          question: String(c?.question || c?.q || "").trim(),
+          answer: String(c?.answer || c?.a || "").trim(),
+        }))
+        .filter((c) => c.question && c.answer);
 
-      setTimeout(() => {
-        setShowShuffle(false);
-        setCardIndex(Number(data?.cardIndex || 0));
-        setTimeLeft(Number(data?.secondsPerCard || secondsPerCard));
-        setBuzzedBy(null);
-        setAttemptedPlayers([]);
-        setAnswerText("");
-        firstBuzzRef.current = null;
-        answeredThisCardRef.current = false;
-      }, 900);
-    };
-
-    const onNext = (data) => {
-      setCardIndex(Number(data?.cardIndex || 0));
-      setTimeLeft(Number(data?.secondsPerCard || secondsPerCard));
+      setCards(clean);
+      setTotalCards(Number(payload?.totalCards) || clean.length || 0);
+      setCardIndex(0);
+      setCard(clean[0] || null);
       setBuzzedBy(null);
-      setAttemptedPlayers([]);
-      setAnswerText("");
-      firstBuzzRef.current = null;
-      answeredThisCardRef.current = false;
+      setAnswer("");
+      setWinner(null);
+      setScores({ you: 0, other: 0 });
+      setPhase(clean.length ? "show" : "waiting");
+      setSecondsLeft(20);
+      sfx.shuffle();
     };
 
-    const onWinner = (data) => {
-      // legacy: winner payload uses team letters A/B, we just show confetti + basic score bump
-      const team = data?.team;
-      if (!team) return;
-
-      if (String(team) === String(playerTeam)) {
-        playPointWin();
-        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      } else {
-        playPointLose();
-      }
+    const onNext = (payload) => {
+      const c = payload?.card || null;
+      setCard({
+        id: c?.id || `card-${payload?.cardIndex ?? 0}`,
+        question: String(c?.question || c?.q || "").trim(),
+        answer: String(c?.answer || c?.a || "").trim(),
+      });
+      setCardIndex(Number(payload?.cardIndex) || 0);
+      setTotalCards(Number(payload?.totalCards) || totalCards);
+      setBuzzedBy(null);
+      setAnswer("");
+      setPhase("show");
+      setSecondsLeft(20);
+      sfx.shuffle();
     };
 
-    const onEnd = (data) => {
-      setGameOver(true);
-      // If server provides finalScores, we keep local scores displayed but can show server too
-      if (data?.finalScores && typeof data.finalScores === "object") {
-        // no-op; keep compatibility, but we don't overwrite local player scores
-      }
+    const onWinner = (payload) => {
+      // payload.winner may be { teamId, teamName } OR string
+      const w = payload?.winner ?? null;
+      const sc = payload?.scores || {};
+      setWinner(w);
+      setScores({
+        you: Number(sc?.you ?? sc?.A ?? 0),
+        other: Number(sc?.other ?? sc?.B ?? 0),
+      });
+      celebrate();
+      sfx.win();
+    };
+
+    const onEnd = (payload) => {
+      const w = payload?.winner ?? winner;
+      const sc = payload?.scores || {};
+      const finalScores = {
+        you: Number(sc?.you ?? sc?.A ?? scores.you ?? 0),
+        other: Number(sc?.other ?? sc?.B ?? scores.other ?? 0),
+      };
+      finishGame(w, finalScores, Number(payload?.totalCards) || totalCards);
     };
 
     socket.on("flashcards-race:start", onStart);
@@ -195,534 +232,417 @@ export default function FlashcardsRaceTask(props) {
     socket.on("flashcards-race:end", onEnd);
 
     return () => {
-      socket.off("flashcards-race:start", onStart);
-      socket.off("flashcards-race:next", onNext);
-      socket.off("flashcards-race:winner", onWinner);
-      socket.off("flashcards-race:end", onEnd);
+      try {
+        socket.off("flashcards-race:start", onStart);
+        socket.off("flashcards-race:next", onNext);
+        socket.off("flashcards-race:winner", onWinner);
+        socket.off("flashcards-race:end", onEnd);
+      } catch {
+        // ignore
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, secondsPerCard, playerTeam]);
+  }, [socket, isDemoLocal]);
 
-  const normalize = (s) =>
-    String(s ?? "")
-      .trim()
-      .toLowerCase()
-      .replace(/[“”]/g, '"')
-      .replace(/[’]/g, "'")
-      .replace(/[^a-z0-9]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+  // ------------- demo/local init -------------
+  useEffect(() => {
+    if (!isDemoLocal) return;
 
-  const isCorrectAnswer = (input, correct) => {
-    const a = normalize(input);
-    const b = normalize(correct);
-    if (!a || !b) return false;
-    if (a === b) return true;
+    const deck = (normalizedCards && normalizedCards.length ? normalizedCards : fallbackCards).slice(
+      0,
+      8
+    );
 
-    // Allow numeric equivalence (e.g., "56" vs "56.0")
-    const na = Number(a);
-    const nb = Number(b);
-    if (Number.isFinite(na) && Number.isFinite(nb) && na === nb) return true;
+    setCards(deck);
+    setTotalCards(deck.length);
+    setCardIndex(0);
+    setCard(deck[0] || null);
+    setBuzzedBy(null);
+    setAnswer("");
+    setWinner(null);
+    setScores({ you: 0, other: 0 });
+    setPhase(deck.length ? "show" : "waiting");
+    setSecondsLeft(deck.length ? 20 : null);
+    sfx.shuffle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoLocal]);
 
-    // Allow very small typo tolerance for single-word answers (optional)
-    if (b.split(" ").length === 1 && a.split(" ").length === 1) {
-      const dist = levenshtein(a, b);
-      if (dist <= 1 && b.length >= 5) return true;
-    }
-    return false;
-  };
+  // ------------- countdown -------------
+  useEffect(() => {
+    clearTimer();
 
-  const buzz = (playerIdx) => {
+    if (phase !== "show" && phase !== "buzzed") return;
     if (disabled) return;
-    if (gameOver) return;
-    if (!currentCard) return;
-    if (showShuffle) return;
-    if (buzzedBy != null) return;
-    if (attemptedPlayers.includes(playerIdx)) return;
+    if (typeof secondsLeft !== "number") return;
 
-    playBuzzer();
-    setBuzzedBy(playerIdx);
-    if (firstBuzzRef.current == null) firstBuzzRef.current = playerIdx;
+    tickRef.current = setInterval(() => {
+      setSecondsLeft((prev) => {
+        const next = (typeof prev === "number" ? prev : 0) - 1;
 
-    // If you later wire inter-team mode, emit a buzz event (best-effort; server may ignore)
-    socket?.emit?.("flashcards-race:buzz", {
-      roomCode,
-      teamId: playerTeam?.id || playerTeam?.teamId || null,
-      playerIdx,
-      cardIndex,
-      at: Date.now(),
-    });
-  };
-
-  const submitAttempt = () => {
-    if (disabled) return;
-    if (gameOver) return;
-    if (!currentCard) return;
-    if (buzzedBy == null) return;
-
-    const correct = isCorrectAnswer(answerText, currentCard.answer);
-
-    setRoundWinners((prev) => [
-      ...prev,
-      {
-        cardIndex,
-        playerIndex: buzzedBy,
-        correct,
-        answer: answerText,
-        expected: currentCard.answer,
-      },
-    ]);
-
-    if (correct) {
-      answeredThisCardRef.current = true;
-
-      const isFirstBuzz = firstBuzzRef.current === buzzedBy;
-      const earned = pointsCorrect + (isFirstBuzz ? pointsFirstBuzzBonus : 0);
-
-      setScores((prev) => ({ ...prev, [buzzedBy]: (prev?.[buzzedBy] || 0) + earned }));
-
-      playPointWin();
-      confetti({ particleCount: 90, spread: 65, origin: { y: 0.62 } });
-
-      // tell server (optional)
-      socket?.emit?.("flashcards-race:answer", {
-        roomCode,
-        teamId: playerTeam?.id || playerTeam?.teamId || null,
-        playerIdx: buzzedBy,
-        cardIndex,
-        answer: answerText,
-        correct: true,
-        earned,
-        at: Date.now(),
-      });
-
-      // advance after a short win moment
-      setTimeout(() => nextCard(), 650);
-    } else {
-      playPointLose();
-
-      // tell server (optional)
-      socket?.emit?.("flashcards-race:answer", {
-        roomCode,
-        teamId: playerTeam?.id || playerTeam?.teamId || null,
-        playerIdx: buzzedBy,
-        cardIndex,
-        answer: answerText,
-        correct: false,
-        earned: 0,
-        at: Date.now(),
-      });
-
-      setAttemptedPlayers((prev) => [...prev, buzzedBy]);
-      setBuzzedBy(null);
-      setAnswerText("");
-      // timer resumes with remaining time
-    }
-  };
-
-  const nextCard = () => {
-    setShowShuffle(true);
-    playShuffle();
-
-    setTimeout(() => {
-      setShowShuffle(false);
-      setBuzzedBy(null);
-      setAttemptedPlayers([]);
-      setAnswerText("");
-      firstBuzzRef.current = null;
-      answeredThisCardRef.current = false;
-
-      setCardIndex((prev) => {
-        const next = prev + 1;
-        if (next >= cards.length) {
-          finishGame();
-          return prev;
+        if (next <= 0) {
+          clearTimer();
+          sfx.buzzer();
+          // If nobody buzzed, other team “wins by default” (demo/local)
+          if (isDemoLocal && phase === "show") {
+            setBuzzedBy("other");
+            setPhase("reveal");
+            const nextScores = { ...scores, other: (scores.other || 0) + pointsPerCard };
+            setScores(nextScores);
+            return 0;
+          }
+          setPhase((p) => (p === "show" ? "reveal" : p));
+          return 0;
         }
+
+        if (next <= 10) sfx.tick();
         return next;
       });
+    }, 1000);
 
-      setTimeLeft(secondsPerCard);
-    }, 650);
+    return () => clearTimer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, disabled, isDemoLocal]);
+
+  // ------------- actions (demo/local) -------------
+  function nextCardOrFinish(nextScores) {
+    const nextIdx = cardIndex + 1;
+    if (nextIdx >= (totalCards || cards.length || 0)) {
+      const w =
+        (nextScores.you || 0) >= (nextScores.other || 0)
+          ? { teamId: playerTeam?.id || "you", teamName: youName }
+          : { teamId: "other", teamName: otherName };
+
+      if ((nextScores.you || 0) >= (nextScores.other || 0)) {
+        sfx.win();
+        celebrate();
+      } else {
+        sfx.lose();
+      }
+
+      finishGame(w, nextScores, totalCards || cards.length);
+      return;
+    }
+
+    setCardIndex(nextIdx);
+    setCard(cards[nextIdx] || null);
+    setBuzzedBy(null);
+    setAnswer("");
+    setSecondsLeft(20);
+    setPhase("show");
+    sfx.shuffle();
+  }
+
+  function buzzYou() {
+    if (disabled) return;
+    if (!isDemoLocal) return; // in live mode, server should manage buzz
+    if (phase !== "show") return;
+    setBuzzedBy("you");
+    setPhase("buzzed");
+    sfx.buzz();
+    try { if (navigator?.vibrate) navigator.vibrate(20); } catch {}
+  }
+
+  function submitAnswer() {
+    if (disabled) return;
+    if (!isDemoLocal) return;
+    if (phase !== "buzzed") return;
+
+    const ok = isCorrect(answer, card?.answer);
+    const base = pointsPerCard;
+    const bonus = firstBuzzBonus;
+
+    if (ok) {
+      sfx.correct();
+      celebrate();
+      const nextScores = {
+        ...scores,
+        you: (scores.you || 0) + base + bonus,
+      };
+      setScores(nextScores);
+      setPhase("reveal");
+      window.setTimeout(() => nextCardOrFinish(nextScores), 900);
+    } else {
+      sfx.wrong();
+      // pass to other team (quick AI-ish attempt)
+      setPhase("reveal");
+      window.setTimeout(() => {
+        const otherGetsIt = Math.random() < 0.6;
+        const nextScores = otherGetsIt
+          ? { ...scores, other: (scores.other || 0) + base }
+          : scores;
+        setScores(nextScores);
+        window.setTimeout(() => nextCardOrFinish(nextScores), 600);
+      }, 750);
+    }
+  }
+
+  // ------------- styles -------------
+  const shell = {
+    position: "relative",
+    width: "100%",
+    minHeight: 520,
+    borderRadius: 18,
+    padding: 16,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background:
+      "radial-gradient(1200px 520px at 30% 0%, rgba(56,189,248,0.16), rgba(15,23,42,0.72) 55%, rgba(2,6,23,0.85))",
+    color: "#e5e7eb",
+    overflow: "hidden",
   };
 
-  const finishGame = () => {
-    setGameOver(true);
-
-    const ranked = Object.entries(scores)
-      .map(([k, v]) => ({ playerIndex: Number(k), score: Number(v) }))
-      .filter((x) => Number.isFinite(x.playerIndex))
-      .sort((a, b) => b.score - a.score);
-
-    const top = ranked[0]?.playerIndex ?? null;
-
-    const snapshot = {
-      kind: "flashcards-race",
-      roomCode: roomCode || null,
-      teamId: playerTeam?.id || playerTeam?.teamId || null,
-      playerCount,
-      playerLabels,
-      scores,
-      winnerPlayerIndex: top,
-      rounds: roundWinners,
-      cardsUsed: cards.map((c, i) => ({ index: i, question: c.question, answer: c.answer })),
-      pointsCorrect,
-      pointsFirstBuzzBonus,
-      secondsPerCard,
-      completed: true,
-    };
-
-    onSubmit?.(snapshot);
-    socket?.emit?.("flashcards-race:complete", snapshot);
+  const header = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    flexWrap: "wrap",
+    marginBottom: 12,
   };
 
-  const sortedLeaderboard = useMemo(() => {
-    return playerLabels
-      .map((name, idx) => ({ idx, name, score: scores?.[idx] || 0 }))
-      .slice(0, playerCount)
-      .sort((a, b) => b.score - a.score);
-  }, [playerLabels, scores, playerCount]);
+  const title = {
+    fontWeight: 1000,
+    letterSpacing: 0.2,
+    fontSize: "1.25rem",
+    color: "#fff",
+  };
 
-  const title = "🏁 Flashcards Race";
+  const pill = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    background: "rgba(15,23,42,0.55)",
+    border: "1px solid rgba(148,163,184,0.5)",
+    color: "#e5e7eb",
+  };
+
+  const scorePill = (isYou) => ({
+    ...pill,
+    background: isYou ? "rgba(59,130,246,0.18)" : "rgba(0,0,0,0.20)",
+  });
+
+  const bigQ = {
+    fontSize: "clamp(22px, 3.6vw, 40px)",
+    fontWeight: 1000,
+    lineHeight: 1.08,
+    color: "#fff",
+    textShadow: "0 2px 10px rgba(0,0,0,0.45)",
+    marginTop: 10,
+  };
+
+  const cardBox = {
+    marginTop: 14,
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.06)",
+    padding: 16,
+  };
+
+  const btn = (variant) => ({
+    border: "1px solid rgba(148,163,184,0.55)",
+    background:
+      variant === "primary"
+        ? "linear-gradient(135deg, rgba(34,197,94,0.65), rgba(14,165,233,0.65))"
+        : "rgba(255,255,255,0.08)",
+    color: "#fff",
+    fontWeight: 1000,
+    borderRadius: 999,
+    padding: "10px 14px",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.6 : 1,
+  });
+
+  // ------------- render -------------
+  if (!card && phase === "waiting") {
+    return (
+      <div style={shell}>
+        <div style={header}>
+          <div style={title}>Flashcards Race</div>
+          <span style={pill}>Waiting for the race…</span>
+        </div>
+        <div style={cardBox}>
+          <div style={{ fontWeight: 900, opacity: 0.85 }}>
+            Waiting for your next task… Get ready to Curriculate!
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const progressText =
+    totalCards > 0 ? `${Math.min(cardIndex + 1, totalCards)} / ${totalCards}` : "";
+
+  const timerPercent =
+    typeof secondsLeft === "number" ? Math.max(0, Math.min(100, Math.round((secondsLeft / 20) * 100))) : 0;
 
   return (
-    <div
-      className="h-full flex flex-col"
-      style={{
-        borderRadius: 18,
-        border: "1px solid rgba(148,163,184,0.55)",
-        background: "linear-gradient(180deg, #f8fafc 0%, #ffffff 60%)",
-        padding: 14,
-        color: "#0f172a",
-        boxShadow: "0 10px 28px rgba(15,23,42,0.06)",
-      }}
-    >
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>{title}</div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Pill text={`${Math.min(cardIndex + 1, cards.length)}/${Math.max(cards.length, 1)} cards`} />
-          {!gameOver && <Pill text={`⏱ ${timeLeft}s`} tone={timeLeft <= 5 ? "danger" : "neutral"} />}
+    <div style={shell}>
+      {/* top glow */}
+      <div
+        style={{
+          position: "absolute",
+          inset: "-40% -10% auto -10%",
+          height: 260,
+          background:
+            "radial-gradient(circle at 30% 50%, rgba(34,197,94,0.18), rgba(59,130,246,0.12), transparent 60%)",
+          filter: "blur(8px)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div style={header}>
+        <div>
+          <div style={title}>Flashcards Race</div>
+          <div style={{ opacity: 0.8, fontSize: 13, marginTop: 2 }}>
+            Buzz in first. Answer fast. Win the card.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={pill}>Card: {progressText || "—"}</span>
+          <span style={scorePill(true)}>
+            {youName}: <span style={{ fontVariantNumeric: "tabular-nums" }}>{scores.you || 0}</span>
+          </span>
+          <span style={scorePill(false)}>
+            {otherName}:{" "}
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{scores.other || 0}</span>
+          </span>
         </div>
       </div>
 
-      {/* Body */}
-      <div style={{ flex: 1, minHeight: 0, marginTop: 12, display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 12 }}>
-        {/* Main card */}
-        <div
-          style={{
-            borderRadius: 18,
-            border: "1px solid rgba(203,213,225,0.7)",
-            background: "#ffffff",
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 0,
-          }}
-        >
-          {showShuffle ? (
-            <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "2rem" }}>🃏</div>
-                <div style={{ fontWeight: 900, marginTop: 6 }}>Shuffling…</div>
-                <div style={{ color: "#64748b", fontSize: "0.95rem", marginTop: 4 }}>
-                  Get ready to buzz!
-                </div>
-              </div>
-            </div>
-          ) : gameOver ? (
-            <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "2.2rem" }}>🏆</div>
-                <div style={{ fontWeight: 950, fontSize: "1.2rem", marginTop: 6 }}>Race complete!</div>
-                <div style={{ color: "#475569", marginTop: 6 }}>
-                  Winner:{" "}
-                  <span style={{ fontWeight: 900 }}>
-                    {sortedLeaderboard[0]?.name || "—"}
-                  </span>
-                </div>
-                <div style={{ color: "#64748b", marginTop: 8, fontSize: "0.95rem" }}>
-                  Waiting for your next task… Get ready to Curriculate!
-                </div>
-              </div>
-            </div>
-          ) : currentCard ? (
-            <>
-              <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>Question</div>
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: 14,
-                  borderRadius: 18,
-                  background: "linear-gradient(180deg, rgba(14,165,233,0.12) 0%, rgba(99,102,241,0.08) 100%)",
-                  border: "1px solid rgba(99,102,241,0.20)",
-                  fontSize: "1.35rem",
-                  fontWeight: 900,
-                  lineHeight: 1.15,
-                  flex: "0 0 auto",
-                }}
-              >
-                {currentCard.question}
-              </div>
+      {/* timer bar */}
+      {phase !== "done" && (
+        <div style={{ marginTop: 6 }}>
+          <div
+            style={{
+              height: 6,
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.14)",
+              overflow: "hidden",
+              border: "1px solid rgba(255,255,255,0.10)",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${timerPercent}%`,
+                background: "rgba(255,255,255,0.85)",
+                transition: "width 240ms linear",
+              }}
+            />
+          </div>
+          <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>
+            Time left:{" "}
+            <strong style={{ fontVariantNumeric: "tabular-nums" }}>
+              {typeof secondsLeft === "number" ? secondsLeft : "—"}s
+            </strong>
+          </div>
+        </div>
+      )}
 
-              <div style={{ marginTop: 12, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>
-                  {buzzedBy == null ? "Buzz in!" : `${playerLabels[buzzedBy] || "Player"} answers`}
-                </div>
+      <div style={cardBox}>
+        {phase === "done" ? (
+          <div>
+            <div style={{ fontWeight: 1000, fontSize: 22, color: "#fff" }}>
+              Winner:{" "}
+              <span style={{ color: "rgba(34,197,94,0.95)" }}>
+                {winner?.teamName || String(winner || "") || youName}
+              </span>
+            </div>
+            <div style={{ marginTop: 10, opacity: 0.85, fontWeight: 900 }}>
+              Great race. The session will advance automatically.
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={bigQ}>{card?.question}</div>
 
-                {buzzedBy == null ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    {playerLabels.slice(0, playerCount).map((name, idx) => (
-                      <button
-                        key={`buzz:${idx}`}
-                        type="button"
-                        onClick={() => buzz(idx)}
-                        disabled={disabled || attemptedPlayers.includes(idx)}
-                        style={{
-                          padding: "12px 12px",
-                          borderRadius: 18,
-                          border: attemptedPlayers.includes(idx)
-                            ? "1px solid rgba(148,163,184,0.65)"
-                            : "1px solid rgba(14,165,233,0.45)",
-                          background: attemptedPlayers.includes(idx)
-                            ? "#f1f5f9"
-                            : "linear-gradient(180deg, #ffffff 0%, #eff6ff 100%)",
-                          fontWeight: 950,
-                          cursor: disabled ? "not-allowed" : "pointer",
-                          boxShadow: attemptedPlayers.includes(idx)
-                            ? "none"
-                            : "0 10px 22px rgba(14,165,233,0.10)",
-                        }}
-                        title={attemptedPlayers.includes(idx) ? "Already tried this card" : "Tap to buzz"}
-                      >
-                        🔔 {name}
-                      </button>
-                    ))}
+            {phase === "show" && (
+              <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button type="button" style={btn("primary")} onClick={buzzYou} disabled={disabled || !isDemoLocal}>
+                  🔔 Buzz!
+                </button>
+
+                {!isDemoLocal ? (
+                  <div style={{ opacity: 0.8, fontWeight: 900 }}>
+                    Live race: waiting for server buzz/next events…
                   </div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <input
-                      value={answerText}
-                      onChange={(e) => setAnswerText(e.target.value)}
-                      disabled={disabled}
-                      placeholder="Type the answer…"
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px",
-                        borderRadius: 16,
-                        border: "1px solid rgba(148,163,184,0.65)",
-                        fontSize: "1.05rem",
-                        outline: "none",
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          submitAttempt();
-                        }
-                      }}
-                      autoFocus
-                    />
-
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={submitAttempt}
-                        disabled={disabled || !String(answerText || "").trim()}
-                        style={{
-                          padding: "10px 14px",
-                          borderRadius: 999,
-                          border: "none",
-                          background: !String(answerText || "").trim() ? "#94a3b8" : "#16a34a",
-                          color: "#ffffff",
-                          fontWeight: 950,
-                          cursor: disabled ? "not-allowed" : "pointer",
-                        }}
-                      >
-                        Submit ✅
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAttemptedPlayers((prev) => [...prev, buzzedBy]);
-                          setBuzzedBy(null);
-                          setAnswerText("");
-                        }}
-                        disabled={disabled}
-                        style={{
-                          padding: "10px 14px",
-                          borderRadius: 999,
-                          border: "1px solid rgba(148,163,184,0.65)",
-                          background: "#ffffff",
-                          color: "#0f172a",
-                          fontWeight: 900,
-                          cursor: disabled ? "not-allowed" : "pointer",
-                        }}
-                        title="Pass (lets someone else buzz)"
-                      >
-                        Pass ↩
-                      </button>
-
-                      <div style={{ color: "#64748b", fontWeight: 800 }}>
-                        Bonus: +{pointsFirstBuzzBonus} for first-buzz correct
-                      </div>
-                    </div>
-
-                    <div style={{ color: "#64748b", fontSize: "0.95rem" }}>
-                      Tip: Answer fast — the timer resumes if you miss!
-                    </div>
+                  <div style={{ opacity: 0.8, fontWeight: 900 }}>
+                    First to buzz gets to answer (+{firstBuzzBonus} bonus).
                   </div>
                 )}
               </div>
+            )}
 
-              <div style={{ marginTop: 12, color: "#64748b", fontSize: "0.92rem", fontWeight: 700 }}>
-                {localMode ? "Local race mode" : "Live race mode"} • +{pointsCorrect} per correct
+            {phase === "buzzed" && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 1000, marginBottom: 8 }}>
+                  {buzzedBy === "you" ? "You buzzed first!" : "Other team buzzed first!"}
+                </div>
+
+                {buzzedBy === "you" ? (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      value={answer}
+                      onChange={(e) => setAnswer(e.target.value)}
+                      placeholder="Type your answer…"
+                      disabled={disabled}
+                      style={{
+                        flex: "1 1 320px",
+                        minWidth: 240,
+                        padding: 10,
+                        borderRadius: 12,
+                        border: "1px solid rgba(148,163,184,0.55)",
+                        background: "rgba(15,23,42,0.55)",
+                        color: "#fff",
+                        fontWeight: 900,
+                        outline: "none",
+                      }}
+                    />
+                    <button type="button" style={btn("primary")} onClick={submitAnswer} disabled={disabled}>
+                      Submit
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ opacity: 0.8, fontWeight: 900 }}>
+                    Waiting for their answer…
+                  </div>
+                )}
               </div>
-            </>
-          ) : (
-            <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "2rem" }}>📭</div>
-                <div style={{ fontWeight: 900, marginTop: 6 }}>No flashcards provided</div>
-                <div style={{ color: "#64748b", marginTop: 6 }}>
-                  This task needs config.items with at least 5 Q/A cards.
+            )}
+
+            {phase === "reveal" && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 900, opacity: 0.9 }}>Answer:</div>
+                <div
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 1000,
+                    color: "#fff",
+                    marginTop: 6,
+                    textShadow: "0 1px 10px rgba(0,0,0,0.4)",
+                  }}
+                >
+                  {card?.answer}
+                </div>
+                <div style={{ marginTop: 10, opacity: 0.75, fontSize: 13, fontWeight: 800 }}>
+                  Next card…
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Leaderboard */}
-        <div
-          style={{
-            borderRadius: 18,
-            border: "1px solid rgba(203,213,225,0.7)",
-            background: "#ffffff",
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 0,
-          }}
-        >
-          <div style={{ fontWeight: 950, marginBottom: 10 }}>Leaderboard</div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {sortedLeaderboard.slice(0, playerCount).map((p, rank) => (
-              <div
-                key={`lb:${p.idx}`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  padding: "10px 12px",
-                  borderRadius: 16,
-                  border: "1px solid rgba(148,163,184,0.35)",
-                  background: rank === 0 ? "rgba(34,197,94,0.10)" : "#f8fafc",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 12,
-                      display: "grid",
-                      placeItems: "center",
-                      fontWeight: 950,
-                      background: rank === 0 ? "rgba(34,197,94,0.18)" : "rgba(14,165,233,0.14)",
-                      border: "1px solid rgba(148,163,184,0.35)",
-                      flex: "0 0 auto",
-                    }}
-                  >
-                    {rank + 1}
-                  </div>
-                  <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {p.name}
-                  </div>
-                </div>
-                <div style={{ fontWeight: 950 }}>{p.score}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed rgba(148,163,184,0.6)", color: "#64748b", fontSize: "0.92rem" }}>
-            {gameOver
-              ? "Nice work — scan for your next station when prompted."
-              : "Fast recall wins. Buzz smart!"}
-          </div>
-
-          {!gameOver && localMode && cards.length > 0 && (
-            <button
-              type="button"
-              onClick={() => finishGame()}
-              disabled={disabled}
-              style={{
-                marginTop: 12,
-                padding: "10px 12px",
-                borderRadius: 999,
-                border: "1px solid rgba(148,163,184,0.65)",
-                background: "#ffffff",
-                color: "#0f172a",
-                fontWeight: 900,
-                cursor: disabled ? "not-allowed" : "pointer",
-              }}
-              title="End early (sends a completion snapshot)"
-            >
-              End Race (early)
-            </button>
-          )}
-        </div>
+            )}
+          </>
+        )}
       </div>
+
+      {disabled ? (
+        <div style={{ position: "absolute", bottom: 12, right: 14, opacity: 0.65, fontWeight: 900 }}>
+          Locked…
+        </div>
+      ) : null}
     </div>
   );
-}
-
-/* ─────────────────────────────────────────────
-   Small UI helpers
-   ───────────────────────────────────────────── */
-
-function Pill({ text, tone = "neutral" }) {
-  const styles =
-    tone === "danger"
-      ? { background: "rgba(220,38,38,0.10)", border: "1px solid rgba(220,38,38,0.35)", color: "#991b1b" }
-      : { background: "rgba(14,165,233,0.10)", border: "1px solid rgba(14,165,233,0.35)", color: "#0f172a" };
-
-  return (
-    <div
-      style={{
-        padding: "5px 10px",
-        borderRadius: 999,
-        fontWeight: 900,
-        fontSize: "0.9rem",
-        ...styles,
-      }}
-    >
-      {text}
-    </div>
-  );
-}
-
-// Tiny Levenshtein for single-word tolerance
-function levenshtein(a, b) {
-  const s = String(a || "");
-  const t = String(b || "");
-  const m = s.length;
-  const n = t.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-
-  const dp = new Array(n + 1);
-  for (let j = 0; j <= n; j++) dp[j] = j;
-
-  for (let i = 1; i <= m; i++) {
-    let prev = dp[0];
-    dp[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const temp = dp[j];
-      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
-      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
-      prev = temp;
-    }
-  }
-  return dp[n];
 }

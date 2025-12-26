@@ -313,6 +313,16 @@ function playRolePlayChime() {
   }
 }
 
+function playWordWeaverChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/foley/wood_tap.ogg");
+    a.volume = 0.14;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
 function playFakeOutChime() {
   try {
     const a = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
@@ -741,6 +751,44 @@ export default function DemoPage() {
     }
 
 
+
+    // Word Weaver Duel: rich fallback (Scrabble-style words on grid)
+    if (type === TASK_TYPES.WORD_WEAVER_DUEL || type === "word-weaver-duel") {
+      return {
+        taskType: TASK_TYPES.WORD_WEAVER_DUEL,
+        title: "Word Weaver Duel",
+        prompt:
+          "Take turns placing whole words onto the grid (horizontal or vertical). Try to intersect existing letters for bonus points.",
+        timeLimitSeconds: 180,
+        points: 18,
+        mode: "scrabble",
+        gridSize: 11,
+        words: ["anchor", "harbor", "navigate", "compass", "current", "voyage", "island", "tide"],
+        turnkeeper: { playerCount: 4, perTurnSeconds: 12 },
+      };
+    }
+
+    // Flashcards Race: rich fallback so TaskRunner can render it in demo mode.
+    if (type === TASK_TYPES.FLASHCARDS_RACE) {
+      return {
+        taskType: TASK_TYPES.FLASHCARDS_RACE,
+        title: "Flashcards Race",
+        prompt:
+          "Buzz in first, answer fast, and win the card. (Demo mode runs locally; live mode uses inter-team events.)",
+        timeLimitSeconds: 0,
+        points: 15,
+        demoMode: true,
+        cards: [
+          { question: "What is 7 × 8?", answer: "56" },
+          { question: "Who discovered gravity (classic story)?", answer: "Isaac Newton" },
+          { question: "Define 'ecosystem'.", answer: "A community of living organisms interacting with their environment." },
+          { question: "What is the capital of Canada?", answer: "Ottawa" },
+          { question: "What is π to 2 decimals?", answer: "3.14" },
+          { question: "Name the first book of the Bible.", answer: "Genesis" }
+        ],
+      };
+    }
+
     return {
       taskType: type,
       title: `Demo: ${type}`,
@@ -769,7 +817,17 @@ export default function DemoPage() {
       showToast("🎭 RolePlay Deck! Draw roles, then act it out.", true);
       playRolePlayChime();
     }
-  }
+  
+    if ((next?.taskType || next?.type) === TASK_TYPES.WORD_WEAVER_DUEL) {
+      showToast("🧩 Word Weaver Duel! Take turns placing words for points.", true);
+      playWordWeaverChime();
+    }
+
+    if ((next?.taskType || next?.type) === TASK_TYPES.FLASHCARDS_RACE) {
+      showToast("🔔 Flashcards Race! Buzz in and answer fast.", true);
+      playFakeOutChime();
+    }
+}
 
   // -------------------------
   // Bot simulation per task
@@ -880,7 +938,39 @@ export default function DemoPage() {
     try {
       const type = task?.taskType || task?.type;
 
-      if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
+      
+      if (type === TASK_TYPES.WORD_WEAVER_DUEL) {
+        // Local scoring: use the task's own computed score payload.
+        if (submissionPayload?.mode === "phrase") {
+          const phrase = String(task?.targetPhrase ?? task?.phrase ?? task?.solution ?? "").trim();
+          const ans = String(submissionPayload?.answer ?? "").trim();
+          const ok = phrase && ans && phrase.toLowerCase() === ans.toLowerCase();
+          scoreDelta = ok ? (typeof task?.points === "number" ? task.points : 12) : 0;
+          maxPoints = typeof task?.points === "number" ? task.points : maxPoints;
+          wasCorrect = ok;
+          showToast(ok ? "Correct phrase! ✨" : "Submitted ✍️", ok);
+        } else {
+          const scoresObj = submissionPayload?.scores && typeof submissionPayload.scores === "object" ? submissionPayload.scores : {};
+          const totalPts = Object.values(scoresObj).reduce((sum, v) => sum + (Number(v) || 0), 0);
+          scoreDelta = totalPts;
+          maxPoints = null;
+          wasCorrect = totalPts > 0;
+          showToast(`Placed words scored: +${totalPts}`, true);
+        }
+      } else if (type === TASK_TYPES.FLASHCARDS_RACE) {
+        // Demo/local scoring: if your team wins, award full task points; otherwise 0.
+        const w = submissionPayload?.answer?.winner;
+        const youWon =
+          (w && typeof w === "object" && (w.teamId === "team-you" || w.teamName === "Your Team")) ||
+          (typeof w === "string" && String(w).toLowerCase().includes("your")) ||
+          ((submissionPayload?.answer?.scores?.you ?? 0) >= (submissionPayload?.answer?.scores?.other ?? Infinity));
+
+        scoreDelta = youWon ? (typeof task?.points === "number" ? task.points : 15) : 0;
+        maxPoints = typeof task?.points === "number" ? task.points : maxPoints;
+        wasCorrect = youWon;
+        showToast(youWon ? "You won the race! 🏁" : "Race complete! 🏁", youWon);
+      } else
+if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
         const scored = scoreNarrationLocally(task, submissionPayload);
         scoreDelta = scored.scoreDelta || 0;
         maxPoints = scored.maxPoints ?? maxPoints;

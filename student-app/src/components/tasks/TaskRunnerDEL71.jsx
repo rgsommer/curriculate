@@ -1775,7 +1775,6 @@ export default function TaskRunner({
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
-          memberNames={memberNames}
           disabled={effectiveDisabled || isReview}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
@@ -1907,11 +1906,12 @@ export default function TaskRunner({
       content = (
         <FlashcardsRaceTask
           task={t}
-          onSubmit={handleTaskSubmit}
           socket={socket}
           roomCode={roomCode}
           playerTeam={playerTeam}
+          memberNames={memberNames}
           disabled={effectiveDisabled || isReview}
+          onSubmit={isReview ? () => {} : handleTaskSubmit}
         />
       );
       break;

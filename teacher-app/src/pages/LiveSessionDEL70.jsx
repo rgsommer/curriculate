@@ -45,12 +45,8 @@ const QUICK_TASK_TYPES = Array.from(
     ...QUICK_TASK_TYPES_RAW,
     // Ensure GuessWho is selectable even if QUICK_TASK_ELIGIBLE_TYPES isn't updated yet.
     TASK_TYPES.GUESS_WHO,
-    // Ensure Flashcards + Flashcards Race are selectable even if shared meta is stale.
-    (TASK_TYPES.FLASHCARDS || "flashcards"),
-    (TASK_TYPES.FLASHCARDS_RACE || "flashcards-race"),
     (TASK_TYPES.FAKE_OUT || "fake-out"),
     (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck"),
-    (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 
@@ -884,8 +880,6 @@ useEffect(() => {
   const handleLaunchQuickTask = () => {
     const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
     const isEchoChain = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
-    const isWordWeaver =
-      taskType === TASK_TYPES.WORD_WEAVER_DUEL || taskType === "word-weaver-duel";
     const isFakeOut = taskType === TASK_TYPES.FAKE_OUT || taskType === "fake-out" || taskType === "fakeout";
     const isNarration = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
     const isRolePlay =
@@ -935,16 +929,6 @@ useEffect(() => {
         : [];
       if (secrets.length === 0 || !String(secrets[0] ?? "").trim()) return;
     }
-    if (isWordWeaver) {
-      const phrase =
-        (taskConfig.targetPhrase ||
-          taskConfig.phrase ||
-          taskConfig.solution ||
-          taskConfig.answerPhrase ||
-          "").toString().trim();
-      if (!phrase) return;
-    }
-
 
     setIsLaunchingQuick(true);
     setQuickStatus(null);
@@ -1072,53 +1056,6 @@ useEffect(() => {
         items: undefined,
       }),
 
-
-      // Word Weaver Duel (intra-team phrase reconstruction) special fields
-      ...(isWordWeaver && {
-        prompt:
-          (taskConfig.prompt || "").trim() ||
-          "Rebuild the phrase by placing the correct words in order.",
-        targetPhrase: String(
-          taskConfig.targetPhrase ||
-            taskConfig.phrase ||
-            taskConfig.solution ||
-            taskConfig.answerPhrase ||
-            ""
-        ).trim(),
-        wordBank: (() => {
-          const raw =
-            taskConfig.wordBank ||
-            taskConfig.words ||
-            taskConfig.bank ||
-            taskConfig.aiWordBank ||
-            taskConfig.aiWords ||
-            null;
-
-          const bank = Array.isArray(raw)
-            ? raw.map((w) => String(w || "").trim()).filter(Boolean)
-            : [];
-
-          if (bank.length) return bank;
-
-          const phrase = String(
-            taskConfig.targetPhrase ||
-              taskConfig.phrase ||
-              taskConfig.solution ||
-              taskConfig.answerPhrase ||
-              ""
-          ).trim();
-
-          return phrase ? phrase.split(/\s+/).filter(Boolean) : [];
-        })(),
-        timeLimitSeconds:
-          Number(taskConfig.timeLimitSeconds) > 0
-            ? Number(taskConfig.timeLimitSeconds)
-            : 240,
-        interTeamEnabled: false,
-        intraTeamEnabled: true,
-        objectiveScoring: false,
-        aiScoringRequired: false,
-      }),
 
 // RolePlay Deck (intra-team role play) special fields
 ...(isRolePlay && {
@@ -1563,52 +1500,7 @@ if (
 }
 
 // 🔁 Echo Chain (oral memory chain)
-      if (
-  generatedType === TASK_TYPES.WORD_WEAVER_DUEL ||
-  generatedType === "word-weaver-duel"
-) {
-  const phrase = String(
-    baseTask?.targetPhrase ??
-      baseTask?.phrase ??
-      baseTask?.solution ??
-      baseTask?.answerPhrase ??
-      ""
-  ).trim();
-
-  const wb =
-    baseTask?.wordBank ??
-    baseTask?.words ??
-    baseTask?.bank ??
-    baseTask?.config?.wordBank ??
-    baseTask?.config?.words ??
-    baseTask?.config?.bank ??
-    null;
-
-  const wordBank = Array.isArray(wb)
-    ? wb.map((w) => String(w || "")).map((w) => w.trim()).filter(Boolean)
-    : phrase
-        ? phrase.split(/\s+/).filter(Boolean)
-        : [];
-
-  setTaskConfig({
-    prompt:
-      baseTask.prompt ||
-      baseTask.instructions ||
-      "Rebuild the phrase by placing the correct words in order.",
-    targetPhrase: phrase,
-    wordBank,
-    timeLimitSeconds:
-      Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 240,
-    interTeamEnabled: false,
-    intraTeamEnabled: true,
-    objectiveScoring: false,
-    aiScoringRequired: false,
-  });
-  setShowAiGen(false);
-  return;
-}
-
-if (generatedType === TASK_TYPES.ECHO_CHAIN || generatedType === "echo-chain") {
+      if (generatedType === TASK_TYPES.ECHO_CHAIN || generatedType === "echo-chain") {
         const seed =
           baseTask.seedTerm ||
           baseTask.startTerm ||
@@ -1949,8 +1841,6 @@ if (
 
   const isGuessWhoQuick = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
   const isEchoChainQuick = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
-  const isWordWeaverQuick =
-    taskType === TASK_TYPES.WORD_WEAVER_DUEL || taskType === "word-weaver-duel";
   const isFakeOutQuick = taskType === (TASK_TYPES.FAKE_OUT || "fake-out") || taskType === "fake-out" || taskType === "fakeout";
   const isNarrationQuick = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
   const isRolePlayQuick =
@@ -1969,14 +1859,6 @@ if (
         .some((s) => String(s ?? "").trim())
     : isEchoChainQuick
     ? !!String(taskConfig.seedTerm || taskConfig.startTerm || "").trim()
-    : isWordWeaverQuick
-    ? !!String(
-        taskConfig.targetPhrase ||
-          taskConfig.phrase ||
-          taskConfig.solution ||
-          taskConfig.answerPhrase ||
-          ""
-      ).trim()
     : isFakeOutQuick
     ? (() => {
         const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
@@ -2596,22 +2478,6 @@ Precipitation — rain, snow, hail`}
                       </span>
                     </div>
                   )}
-                  {isWordWeaverQuick && (
-                    <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#075985" }}>
-                      <strong>Target phrase:</strong>{" "}
-                      {String(
-                        taskConfig.targetPhrase ||
-                          taskConfig.phrase ||
-                          taskConfig.solution ||
-                          taskConfig.answerPhrase ||
-                          ""
-                      ).trim()}
-                      <span style={{ marginLeft: 10, color: "#64748b" }}>
-                        ({Array.isArray(taskConfig.wordBank) ? taskConfig.wordBank.length : 0} words in bank)
-                      </span>
-                    </div>
-                  )}
-
 
                   {isEchoChainQuick && (
                     <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#075985" }}>

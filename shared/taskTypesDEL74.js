@@ -727,7 +727,7 @@ export const TASK_TYPE_META = {
         "",
         "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
         "with motivating game-show energy (sounds, confetti, live score).",
-      ].join("\n"),
+	      ].join("\n"),
   }),
 
   // (rest unchanged from your file)
@@ -774,7 +774,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Scrabble-style, turn-based team duel: players drag/place 5–10 short words onto a grid (horizontal/vertical), earning points for each valid placement and intersections. Builds vocabulary, phrase structure, syntax awareness, and cooperative competition.",
+      "Teams reconstruct a target phrase by entering each word (turn-based competition feel). Rewards accuracy and speed; reinforces vocabulary, syntax awareness, and phrase structure.",
   }),
 
   [TASK_TYPES.DIFF_DETECTIVE]: metaBase({

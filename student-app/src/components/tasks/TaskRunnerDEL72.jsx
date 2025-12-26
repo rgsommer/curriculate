@@ -1775,7 +1775,6 @@ export default function TaskRunner({
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
-          memberNames={memberNames}
           disabled={effectiveDisabled || isReview}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}

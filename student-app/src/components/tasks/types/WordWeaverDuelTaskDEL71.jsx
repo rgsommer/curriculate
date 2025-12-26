@@ -22,7 +22,6 @@ export default function WordWeaverDuelTask({
   socket, // socketRef OR socket instance
   roomCode,
   teamId,
-  memberNames,
   disabled = false,
   mode = "play", // "play" | "review"
   review = null,
@@ -65,23 +64,14 @@ export default function WordWeaverDuelTask({
   }, [task]);
 
   const players = useMemo(() => {
-    // Prefer explicit memberNames (from TaskRunner) for the turn labels.
-    const namesRaw =
-      Array.isArray(memberNames) && memberNames.length
-        ? memberNames
-        : Array.isArray(task?.turnkeeper?.players)
-          ? task.turnkeeper.players
-          : Array.isArray(task?.config?.players)
-            ? task.config.players
-            : null;
-
+    // We can't rely on memberNames being passed in yet, so we synthesize labels.
+    const namesRaw = Array.isArray(task?.turnkeeper?.players) ? task.turnkeeper.players : Array.isArray(task?.config?.players) ? task.config.players : null;
     const base =
       Array.isArray(namesRaw) && namesRaw.length
         ? namesRaw.map((x) => String(x || "").trim()).filter(Boolean)
         : new Array(turnkeeper.playerCount).fill(0).map((_, i) => `Player ${i + 1}`);
-
     return base.slice(0, Math.max(1, turnkeeper.playerCount));
-  }, [memberNames, task, turnkeeper.playerCount]);
+  }, [task, turnkeeper.playerCount]);
 
   const [activePlayer, setActivePlayer] = useState(0);
   const [scores, setScores] = useState(() => ({})); // {playerIndex: number}

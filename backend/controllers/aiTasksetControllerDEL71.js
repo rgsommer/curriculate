@@ -35,7 +35,7 @@ export const retryMustHave = {
   [TASK_TYPES.FLASHCARDS_RACE]:
     'FLASHCARDS_RACE must include config.items (>=5). Each item: { question, answer }. May include config.secondsPerCard (default 20), config.playerCount (1–4), and config.interTeam (boolean).',
 [TASK_TYPES.WORD_WEAVER_DUEL]:
-    'WORD_WEAVER_DUEL should include words (array of 5–10 short words) and a gridSize (number, e.g. 11). It may optionally include phrase/wordBank for fallback phrase-rebuild mode.',
+    'WORD_WEAVER_DUEL must include phrase (string) and should include wordBank (array of words from the phrase, shuffled).',
 
   [TASK_TYPES.DIFF_DETECTIVE]:
     'DIFF_DETECTIVE must include two short texts to compare: config.textA and config.textB (3–6 sentences each) with 5–8 subtle but detectable differences.',
@@ -2039,47 +2039,9 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
           phrase = rawWordBank.slice(0, 4).join(" ") || "Teamwork and Perseverance";
         }
 
-        // Keep legacy fields as TOP-LEVEL for backward compatibility
+        // Keep phrase as a TOP-LEVEL field (student task component expects task.phrase)
         t.phrase = phrase;
         t.wordBank = wordBank;
-
-        // Preferred new mode: Scrabble-like word placement on a grid.
-        // If AI provided `words`, respect them; otherwise derive from wordBank/tokens.
-        const aiWordsRaw = Array.isArray(t.words) ? t.words : Array.isArray(aiConfig.words) ? aiConfig.words : null;
-        const derivedWords =
-          Array.isArray(aiWordsRaw) && aiWordsRaw.length
-            ? aiWordsRaw
-            : (wordBank.length ? wordBank : tokens).slice(0, 10);
-
-        const words = derivedWords
-          .map((w) => String(w || "").trim())
-          .filter(Boolean)
-          .slice(0, 10);
-
-        if (words.length >= 5) {
-          t.mode = t.mode || "scrabble";
-          t.words = words;
-          t.gridSize =
-            Number.isFinite(Number(t.gridSize)) && Number(t.gridSize) >= 7
-              ? Number(t.gridSize)
-              : Number.isFinite(Number(aiConfig.gridSize)) && Number(aiConfig.gridSize) >= 7
-                ? Number(aiConfig.gridSize)
-                : 11;
-
-          t.turnkeeper =
-            typeof t.turnkeeper === "object" && t.turnkeeper
-              ? t.turnkeeper
-              : typeof aiConfig.turnkeeper === "object" && aiConfig.turnkeeper
-                ? aiConfig.turnkeeper
-                : {
-                    playerCount: Number(aiConfig.playerCount) > 0 ? Number(aiConfig.playerCount) : 2,
-                    perTurnSeconds: Number(aiConfig.perTurnSeconds) > 0 ? Number(aiConfig.perTurnSeconds) : 25,
-                  };
-        } else {
-          // If we can't form a real scrabble round, fall back to phrase rebuild mode.
-          t.mode = t.mode || "phrase";
-        }
-
         config = { ...aiConfig };
         options = [];
         items = [];

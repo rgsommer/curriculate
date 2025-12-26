@@ -1405,152 +1405,6 @@ function _fcGetPointsFromTask(task) {
   };
 }
 
-// Record a Flashcards Race win as a normal submission so reports/analytics/transcripts pick it up.
-function _fcRecordWinSubmission(room, teamId, taskIndex, cardIndex, answerText, award, card) {
-  try {
-    if (!room || !room.teams || !room.teams[teamId]) return false;
-
-    const pts = Number(award) || 0;
-    if (!Number.isFinite(pts) || pts < 0) return false;
-
-    // Legacy per-team score field (some older UIs still read this)
-    updateTeamScore(room, teamId, pts);
-
-    const team = room.teams[teamId];
-    const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-
-    if (!Array.isArray(room.submissions)) room.submissions = [];
-
-    const q = card && typeof card === "object" ? String(card.question ?? card.prompt ?? "") : "";
-    const expected = card && typeof card === "object" ? (card.answer ?? card.correctAnswer ?? "") : "";
-    const acceptable = card && typeof card === "object" ? (card.acceptableAnswers ?? card.acceptable ?? null) : null;
-
-    room.submissions.push({
-      roomCode: room.code,
-      teamId,
-      teamName,
-      playerId: null,
-      taskIndex: typeof taskIndex === "number" ? taskIndex : -1,
-      answer: {
-        type: "flashcards-race",
-        kind: "card-win",
-        cardIndex: typeof cardIndex === "number" ? cardIndex : null,
-        question: q,
-        answer: String(answerText ?? ""),
-        expected,
-        acceptableAnswers: acceptable,
-      },
-      photoUrl: null,
-      correct: true,
-      points: pts,
-      aiScore: {
-        strategy: "objective-flashcards-race",
-        totalScore: pts,
-        maxPoints: pts,
-        correct: true,
-      },
-      timeMs: null,
-      submittedAt: Date.now(),
-    });
-
-    return true;
-  } catch (e) {
-    console.error("[flashcards-race] record win submission error:", e);
-    return false;
-  }
-}
-
-// Record a per-team summary submission (0 pts) when the race ends so transcripts show the outcome.
-function _fcRecordSummarySubmission(room, teamId, taskIndex, summary) {
-  try {
-    if (!room || !room.teams || !room.teams[teamId]) return false;
-
-    const team = room.teams[teamId];
-    const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-
-    if (!Array.isArray(room.submissions)) room.submissions = [];
-
-    room.submissions.push({
-      roomCode: room.code,
-      teamId,
-      teamName,
-      playerId: null,
-      taskIndex: typeof taskIndex === "number" ? taskIndex : -1,
-      answer: {
-        type: "flashcards-race",
-        kind: "race-summary",
-        summary: summary && typeof summary === "object" ? summary : {},
-      },
-      photoUrl: null,
-      correct: null,
-      points: 0,
-      aiScore: {
-        strategy: "flashcards-race-summary",
-        totalScore: 0,
-        maxPoints: 0,
-      },
-      timeMs: null,
-      submittedAt: Date.now(),
-    });
-
-    return true;
-  } catch (e) {
-    console.error("[flashcards-race] record summary submission error:", e);
-    return false;
-  }
-}
-
-function _fcFinalizeRace(io, room, reason = "end") {
-  try {
-    const r = room.flashcardsRace;
-    if (!r) return;
-
-    const scores = r.scores && typeof r.scores === "object" ? r.scores : {};
-    const teamIds = Object.keys(room.teams || {});
-    const winnerTeamId =
-      teamIds.length > 0
-        ? teamIds.reduce((best, id) => {
-            const s = Number(scores[id] || 0);
-            const b = Number(scores[best] || 0);
-            return s > b ? id : best;
-          }, teamIds[0])
-        : null;
-
-    const summary = {
-      reason: String(reason || "end"),
-      taskIndex: r.taskIndex,
-      totalCards: Array.isArray(r.deck) ? r.deck.length : null,
-      finalScores: scores,
-      winnerTeamId,
-      secondsPerCard: r.secondsPerCard ?? null,
-      points: r.points ?? null,
-    };
-
-    // Persist one summary per team (0 pts) so transcripts show a coherent outcome even for teams with 0 wins.
-    for (const id of teamIds) {
-      _fcRecordSummarySubmission(room, id, r.taskIndex, summary);
-    }
-
-    // Unlock the next task for ALL teams (scan-gated), consistent with other race-style tasks.
-    advanceTaskNow({
-      io,
-      session: room,
-      roomCode: room.code,
-      reason: `flashcards-race:${summary.reason}`,
-      baseTaskIndex: r.taskIndex,
-    });
-
-    // Broadcast the updated room state so teacher + students see updated scores/submissions-derived totals.
-    const state = buildRoomState(room);
-    io.to(room.code).emit("room:state", state);
-    io.to(room.code).emit("roomState", state);
-  } catch (e) {
-    console.error("[flashcards-race] finalize error:", e);
-  }
-}
-
-
-
 function _fcClearTimer(room) {
   if (room?.flashcardsRace?.timer) {
     try {
@@ -1593,7 +1447,6 @@ function _fcAdvanceCard(io, room, reason = "next") {
   if (r.cardIndex >= deck.length) {
     r.active = false;
     _fcBroadcastState(io, room, "flashcards-race:end", { reason, done: true });
-    _fcFinalizeRace(io, room, reason);
     return;
   }
 
@@ -1787,9 +1640,6 @@ socket.on("flashcards-race:answer", (payload = {}, ack) => {
 
       if (!r.scores) r.scores = {};
       r.scores[teamId || "unknown"] = Number(r.scores[teamId || "unknown"] || 0) + award;
-
-      // Persist this win for reporting/analytics/transcripts
-      _fcRecordWinSubmission(room, String(teamId || "unknown"), r.taskIndex, r.cardIndex, answerText, award, card);
 
       _fcBroadcastState(io, room, "flashcards-race:winner", {
         teamId: teamId || null,
