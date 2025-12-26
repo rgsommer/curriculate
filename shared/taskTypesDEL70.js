@@ -900,24 +900,8 @@ export const TASK_TYPE_META = {
       "Physical clue hunt. Students move around to find real-world clues (stations/objects/pages) and piece them together to solve a mystery concept. Encourages inquiry, persistence, and applying deduction outside a seated worksheet.",
   }),
 
-  [TASK_TYPES.BRAIN_SPARK_NOTES]: metaBase({
+    [TASK_TYPES.BRAIN_SPARK_NOTES]: metaBase({
     label: "Brain Spark Notes",
-    category: CATEGORY.SYNTHESIS,
-    implemented: true,
-    aiEligible: true,
-    generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
-    expectsText: true,
-    maxTimeSeconds: 180,
-    interTeamEnabled: false,
-    intraTeamEnabled: false,
-    description:
-      `Students view a clean “model notes” page on-screen (title + 3–5 bullets; Grades 8+ uses ~6–10 bullets). Students copy these notes into a notebook and submit a photo. AI scoring evaluates completeness (key points covered), clarity, and organization.\n\nGENERATOR RULES: Provide task.title, task.prompt (topic), and task.bullets (array of concise definition-style jot notes). Bullets must be accurate, non-duplicate, and short. Inter-team: NO. Intra-team: NO.`
-  }),
-
-  [TASK_TYPES.MIND_MAPPER]: metaBase({
-    label: "Mind Mapper",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
     aiEligible: true,
@@ -928,9 +912,41 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      `Students create a mind map / concept web on paper around a central concept and submit a photo. On-screen, show a template/organizer with blanks plus 5–7 ideas to place. Easy indicates main vs sub-ideas; Medium/Hard do not; Hard also expects 1–2 student-added subpoints.\n\nGENERATOR RULES: Provide task.prompt (central concept) and task.items (5–7 distinct ideas). Provide config.organizerType from: mind-map, hierarchy, fishbone, flowchart, venn, web. Inter-team: NO. Intra-team: NO.`
+      [
+        "Students see a clean, on-screen ‘model notes’ page (like real class notes): a title plus concise bullets.",
+        "They copy the notes into a notebook/paper, then confirm completion (or submit a photo, if enabled in your flow).",
+        "Bullets are short definitions/jot-notes that summarize key ideas from the topic/prompt.",
+        "Suggested count: 3–5 bullets (Grades 8+ can use ~6–10).",
+        "AI scoring can evaluate completeness, clarity, and organization.",
+        "Benefits: summarization, distillation, study-skill building, and synthesis of main ideas.",
+        "GENERATOR RULES: Provide task.title, task.prompt (topic), and task.bullets (array of concise definitions/jot-notes).",
+        "Inter-team: NO. Intra-team: NO."
+      ].join("\n"),
   }),
 
+  [TASK_TYPES.MIND_MAPPER]: metaBase({
+    label: "Mind Mapper",
+    category: CATEGORY.SYNTHESIS,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: false,
+    defaultAiScoringRequired: true,
+    maxTimeSeconds: 300,
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    description:
+      [
+        "Students build a mind map / concept web around a central concept, using an on-screen organizer template as a guide.",
+        "On-screen: an organizer with blanks plus a bank of 5–7 ideas; students recreate the organizer on paper and fill it in.",
+        "Easy: indicates main ideas vs sub-ideas. Medium/Hard: does not label main vs sub-ideas.",
+        "Hard: expects 1–3 additional student-generated sub-points beyond the provided ideas.",
+        "AI scoring can evaluate completeness, structure/relationships, and clarity of organization.",
+        "To support variety, use multiple organizer styles (e.g., mind map, concept web, fishbone, hierarchy, flow).",
+        "GENERATOR RULES: Provide task.title, task.prompt (central concept), task.organizerType, and task.items (array of 5–7 ideas; each can optionally include a ‘level’ hint for Easy).",
+        "Inter-team: NO. Intra-team: NO."
+      ].join("\n"),
+  }),
   [TASK_TYPES.NARRATION_SYNTHESIZE]: metaBase({
     label: "Narration Synthesize",
     category: CATEGORY.SYNTHESIS,
