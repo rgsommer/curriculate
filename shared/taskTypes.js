@@ -109,6 +109,7 @@ const CATEGORY = {
   SYNTHESIS: "synthesis",
   OTHER: "other",
   RECALL: "recall",
+  ROLE_PLAY: "role-play"
 };
 
 // Small helper: ensure all meta objects include the same “capability surface”.
@@ -188,11 +189,11 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 45,
     correctAnswerShape: "single-option-index",
     multiItemCapable: true,
-    preferredItemsPerTask: { min: 3, max: 5 },
+    preferredItemsPerTask: { min: 3, max: 6 },
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students judge statements as True or False. Designed to be ‘tricky but fair’ so students must reason rather than guess. Excellent for misconception checks and rapid retrieval practice.",
+      "Students judge statements as True or False. Objective-scored and designed to be tricky-but-fair so students must think rather than guess. Great for quick misconception checks, conceptual clarity, and efficient review.",
   }),
 
   [TASK_TYPES.SHORT_ANSWER]: metaBase({
@@ -202,7 +203,7 @@ export const TASK_TYPE_META = {
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    defaultAiScoringRequired: true,
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: true,
@@ -213,7 +214,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students type a one-word or one-sentence response. Objective scoring uses a reference answer (and optional acceptable variants). Great for precision recall without guesswork from options.",
+      "Students type a single word or one-sentence answer. Objective scoring checks against a reference answer (and optional acceptable answers), with AI scoring as a safety net to reject nonsense and award partial credit for close answers. Great for quick, precise checks for understanding without multiple-choice guesswork.",
   }),
 
   // =========================
@@ -334,7 +335,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students type a longer explanation/argument/reflection. Best evaluated with a rubric and AI scoring (clarity, accuracy, evidence, reasoning). Useful for deeper thinking beyond multiple choice.",
+      "Students write a longer explanation/argument/reflection. Medium/hard difficulties enforce a minimum word count to discourage one-word answers. Not objectively scored; AI-scored with a rubric (clarity, accuracy, reasoning, evidence) to assess deeper understanding and writing development.",
   }),
 
   [TASK_TYPES.RECORD_AUDIO]: metaBase({

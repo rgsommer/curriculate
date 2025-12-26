@@ -104,9 +104,9 @@ function normalizeTaskType(raw) {
 
     case "short":
     case "short-answer":
-    case "open":
       return TASK_TYPES.SHORT_ANSWER;
 
+    case "open":
     case "open-text":
     case "open_text":
       return TASK_TYPES.OPEN_TEXT;
@@ -289,7 +289,8 @@ function normalizeTaskType(raw) {
 
 function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
   const seed = String(task?.seedTerm || task?.config?.seedTerm || "").trim();
-  const perTurnSeconds = Number(task?.config?.perTurnSeconds ?? task?.perTurnSeconds ?? 10) || 0;
+  const perTurnSeconds =
+    Number(task?.config?.perTurnSeconds ?? task?.perTurnSeconds ?? 10) || 0;
   const rotationBonus = Number(task?.config?.rotationBonusPoints ?? 25) || 0;
 
   const [chain, setChain] = useState(() => (seed ? [seed] : []));
@@ -297,7 +298,9 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
   const [turn, setTurn] = useState(1);
 
   // Simple per-turn timer (optional). This is a UI helper only; scoring is handled by backend/session rules.
-  const [timeLeft, setTimeLeft] = useState(perTurnSeconds > 0 ? perTurnSeconds : null);
+  const [timeLeft, setTimeLeft] = useState(
+    perTurnSeconds > 0 ? perTurnSeconds : null
+  );
   useEffect(() => {
     if (readOnly) return;
     if (!perTurnSeconds || perTurnSeconds <= 0) return;
@@ -309,7 +312,10 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
     if (timeLeft == null) return;
     if (timeLeft <= 0) return;
 
-    const tId = setTimeout(() => setTimeLeft((t) => (t == null ? null : t - 1)), 1000);
+    const tId = setTimeout(
+      () => setTimeLeft((t) => (t == null ? null : t - 1)),
+      1000
+    );
     return () => clearTimeout(tId);
   }, [timeLeft, readOnly]);
 
@@ -351,7 +357,14 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
         color: CONTRAST_TEXT_DARK,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
         <div style={{ fontWeight: 700, fontSize: "1rem" }}>🔊 Echo Chain</div>
 
         {perTurnSeconds > 0 && (
@@ -380,11 +393,15 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
           </li>
           <li>Player 1 repeats it aloud and adds one related term.</li>
           <li>Next player repeats the full chain in order and adds one.</li>
-          <li>If someone forgets or changes order, the chain breaks—reset and try again.</li>
+          <li>
+            If someone forgets or changes order, the chain breaks—reset and try
+            again.
+          </li>
         </ul>
         {rotationBonus > 0 && (
           <div style={{ marginTop: 6, fontSize: "0.9rem", color: "#334155" }}>
-            ⭐ Bonus idea: +{rotationBonus} points for a full rotation without errors.
+            ⭐ Bonus idea: +{rotationBonus} points for a full rotation without
+            errors.
           </div>
         )}
       </div>
@@ -431,7 +448,9 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
       </div>
 
       {!readOnly && (
-        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+        <div
+          style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}
+        >
           <input
             value={nextWord}
             onChange={(e) => setNextWord(e.target.value)}
@@ -455,7 +474,9 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
               padding: "10px 12px",
               borderRadius: 999,
               border: "none",
-              background: !String(nextWord || "").trim() ? "#9ca3af" : CONTRAST_ACCENT,
+              background: !String(nextWord || "").trim()
+                ? "#9ca3af"
+                : CONTRAST_ACCENT,
               color: "#ffffff",
               fontWeight: 700,
               cursor: disabled ? "not-allowed" : "pointer",
@@ -466,7 +487,14 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false }) {
         </div>
       )}
 
-      <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 8 }}>
+      <div
+        style={{
+          marginTop: 10,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
         <button
           type="button"
           onClick={reset}
@@ -526,7 +554,9 @@ function MultiPartTask({
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
     (Array.isArray(task.questions) && task.questions.length > 0 && task.questions) ||
     (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
-    (Array.isArray(task.multiQuestions) && task.multiQuestions.length > 0 && task.multiQuestions) ||
+    (Array.isArray(task.multiQuestions) &&
+      task.multiQuestions.length > 0 &&
+      task.multiQuestions) ||
     [];
 
   const items =
@@ -586,7 +616,8 @@ function MultiPartTask({
     const payload = items.map((item, idx) => {
       let answerVal = answers[idx]?.value ?? null;
 
-      const isTF = task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE;
+      const isTF =
+        task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE;
 
       if (isTF && typeof answerVal === "string") {
         const v = answerVal.trim().toLowerCase();
@@ -662,7 +693,9 @@ function MultiPartTask({
           const answerVal = answers[idx]?.value ?? "";
           const correctIndex = item?.correctAnswer ?? null;
           const studentIndex =
-            review?.answers?.[idx]?.baseIndex ?? review?.studentAnswer?.[idx]?.baseIndex ?? null;
+            review?.answers?.[idx]?.baseIndex ??
+            review?.studentAnswer?.[idx]?.baseIndex ??
+            null;
 
           return (
             <div
@@ -695,7 +728,8 @@ function MultiPartTask({
                     const base =
                       (Array.isArray(item.options) && item.options.length > 0 && item.options) ||
                       (Array.isArray(item.choices) && item.choices.length > 0 && item.choices) ||
-                      (task.taskType === TASK_TYPES.TRUE_FALSE || task.type === TASK_TYPES.TRUE_FALSE
+                      (task.taskType === TASK_TYPES.TRUE_FALSE ||
+                      task.type === TASK_TYPES.TRUE_FALSE
                         ? ["True", "False"]
                         : []);
 
@@ -851,7 +885,8 @@ export default function TaskRunner({
     if (!socket) return;
 
     const isDiffDetective =
-      (t.taskType || t.type) === TASK_TYPES.DIFF_DETECTIVE || (t.taskType || t.type) === "diff-detective";
+      (t.taskType || t.type) === TASK_TYPES.DIFF_DETECTIVE ||
+      (t.taskType || t.type) === "diff-detective";
 
     if (!isDiffDetective) {
       setDiffRaceStatus(null);
@@ -916,12 +951,15 @@ export default function TaskRunner({
   const effectiveDisabled = disabled || submitting;
 
   const currentDisplay =
-    Array.isArray(t.displays) && t.displayKey ? t.displays.find((d) => d.key === t.displayKey) || null : null;
+    Array.isArray(t.displays) && t.displayKey
+      ? t.displays.find((d) => d.key === t.displayKey) || null
+      : null;
 
   let displayTitle = "";
   if (meta?.label) displayTitle = toTitleCase(meta.label);
   else if (t.title) displayTitle = toTitleCase(t.title);
-  else if (t.taskType && TASK_TYPE_META[t.taskType]?.label) displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
+  else if (t.taskType && TASK_TYPE_META[t.taskType]?.label)
+    displayTitle = toTitleCase(TASK_TYPE_META[t.taskType].label);
 
   console.log("[TaskRunner] Task received:", {
     rawTask: t,
@@ -932,7 +970,9 @@ export default function TaskRunner({
   if (meta && meta.implemented === false) {
     return (
       <div className="p-4 text-center text-red-600 space-y-2">
-        <div className="font-semibold">⚠ This task type is not available yet on student devices.</div>
+        <div className="font-semibold">
+          ⚠ This task type is not available yet on student devices.
+        </div>
         <div className="text-sm text-red-500">
           Task type: <strong>{meta.label || type}</strong>
         </div>
@@ -940,15 +980,15 @@ export default function TaskRunner({
     );
   }
 
-  // ✅ IMPORTANT: Height-aware wrapper so tasks like Flashcards can truly "fill the task card section"
+  // ✅ IMPORTANT: Height-aware wrapper so tasks can truly "fill the task card section"
   const Wrap = ({ children }) => (
     <div className="h-full flex flex-col">
-      {/* header blocks should not steal flex space from the task itself */}
       {displayTitle && (
         <div
           className="task-title-fun text-center mb-1 shrink-0"
           style={{
-            fontFamily: '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+            fontFamily:
+              '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
             fontSize: "1.4rem",
             letterSpacing: "1px",
           }}
@@ -976,7 +1016,6 @@ export default function TaskRunner({
         </div>
       )}
 
-      {/* This is the key: gives children a real height to fill */}
       <div className="flex-1 min-h-0">{children}</div>
     </div>
   );
@@ -1003,10 +1042,14 @@ export default function TaskRunner({
   let content = null;
 
   switch (type) {
-    // ✅ Mood Check-in (NEW)
     case TASK_TYPES.MOOD_CHECKIN:
     case "mood-checkin": {
-      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      const effectiveTeamId =
+        t?.teamId ||
+        playerTeam?.id ||
+        playerTeam?.teamId ||
+        playerTeam?.teamID ||
+        null;
 
       content = (
         <MoodCheckInTask
@@ -1022,7 +1065,6 @@ export default function TaskRunner({
       break;
     }
 
-    // ✅ Treasure Runner (warm-up while waiting)
     case TASK_TYPES.TREASURE_RUNNER:
     case "treasure-runner": {
       content = (
@@ -1037,14 +1079,18 @@ export default function TaskRunner({
       break;
     }
 
-    // ✅ Guess Who (NEW)
     case TASK_TYPES.GUESS_WHO:
     case "guess-who": {
-      content = <GuessWhoTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled || isReview} />;
+      content = (
+        <GuessWhoTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+        />
+      );
       break;
     }
 
-    // ✅ Echo Chain (NEW)
     case TASK_TYPES.ECHO_CHAIN:
     case "echo-chain": {
       content = (
@@ -1058,8 +1104,6 @@ export default function TaskRunner({
       break;
     }
 
-
-    // ✅ Narration Synthesize (NEW)
     case TASK_TYPES.NARRATION_SYNTHESIZE:
     case "narration-synthesize": {
       content = (
@@ -1073,27 +1117,29 @@ export default function TaskRunner({
       break;
     }
 
+    case TASK_TYPES.SCRIPT_PLAY:
+    case "script-play": {
+      content = (
+        <ScriptPlayTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          readOnly={isReview}
+        />
+      );
+      break;
+    }
 
-// ✅ Script Play (NEW)
-case TASK_TYPES.SCRIPT_PLAY:
-case "script-play": {
-  content = (
-    <ScriptPlayTask
-      task={t}
-      onSubmit={handleTaskSubmit}
-      disabled={effectiveDisabled || isReview}
-      readOnly={isReview}
-    />
-  );
-  break;
-}
-
-    // ✅ Role Play Deck (NEW)
     case TASK_TYPES.ROLE_PLAY_DECK:
     case "role-play":
     case "role-play-deck":
     case "roleplay": {
-      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      const effectiveTeamId =
+        t?.teamId ||
+        playerTeam?.id ||
+        playerTeam?.teamId ||
+        playerTeam?.teamID ||
+        null;
 
       content = (
         <RolePlayDeckTask
@@ -1124,17 +1170,31 @@ case "script-play": {
       break;
 
     case TASK_TYPES.TRUE_FALSE:
-      content = (
-        <MultiPartTask
-          mode="choice"
-          readOnly={isReview}
-          task={t}
-          review={isReview ? review : null}
-          onSubmit={isReview ? null : handleTaskSubmit}
-          submitting={submitting}
-          disabled={effectiveDisabled || isReview}
-        />
-      );
+      // In review mode, keep the canonical MultiPart renderer so teachers can see the correct/selected overlay.
+      // In play mode, use the dedicated TrueFalseTask for a more polished, deterministic (per-team) UI.
+      if (isReview) {
+        content = (
+          <MultiPartTask
+            mode="choice"
+            readOnly={isReview}
+            task={t}
+            review={review}
+            onSubmit={null}
+            submitting={submitting}
+            disabled={true}
+          />
+        );
+      } else {
+        content = (
+          <TrueFalseTask
+            task={t}
+            onSubmit={handleTaskSubmit}
+            disabled={effectiveDisabled}
+            onAnswerChange={onAnswerChange}
+            answerDraft={answerDraft}
+          />
+        );
+      }
       break;
 
     case TASK_TYPES.VENNSORT:
@@ -1197,7 +1257,9 @@ case "script-play": {
       break;
 
     case TASK_TYPES.PHOTO:
-      content = <PhotoTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <PhotoTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.PHOTO_JOURNAL:
@@ -1227,7 +1289,9 @@ case "script-play": {
 
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
-      content = <DrawMimeTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <DrawMimeTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.DRAW_MIME:
@@ -1243,7 +1307,9 @@ case "script-play": {
       break;
 
     case TASK_TYPES.BODY_BREAK:
-      content = <BodyBreakTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <BodyBreakTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.OPEN_TEXT:
@@ -1251,7 +1317,9 @@ case "script-play": {
         <OpenTextTask
           task={t}
           onSubmit={handleTaskSubmit}
-          disabled={effectiveDisabled}
+          // OpenTextTask historically used `answered`; we support both.
+          disabled={effectiveDisabled || isReview}
+          answered={effectiveDisabled || isReview}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
         />
@@ -1271,20 +1339,45 @@ case "script-play": {
       break;
 
     case TASK_TYPES.SPEECH_RECOGNITION:
-      content = <SpeechRecognitionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <SpeechRecognitionTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+        />
+      );
       break;
 
     case TASK_TYPES.JEOPARDY:
-      content = <BrainBlitzTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
+      content = (
+        <BrainBlitzTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
       break;
 
     case TASK_TYPES.PRONUNCIATION:
-      content = <PronunciationTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
+      content = (
+        <PronunciationTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
       break;
 
     case TASK_TYPES.WORD_WEAVER_DUEL:
     case "word-weaver-duel": {
-      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      const effectiveTeamId =
+        t?.teamId ||
+        playerTeam?.id ||
+        playerTeam?.teamId ||
+        playerTeam?.teamID ||
+        null;
 
       content = (
         <WordWeaverDuelTask
@@ -1331,13 +1424,21 @@ case "script-play": {
       break;
 
     case TASK_TYPES.MUSICAL_CHAIRS:
-      content = <MusicalChairsTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
+      content = (
+        <MusicalChairsTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
       break;
 
     case TASK_TYPES.MYSTERY_CLUES:
-      content = <MysteryCluesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <MysteryCluesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
-
 
     case TASK_TYPES.FAKE_OUT:
       content = (
@@ -1349,6 +1450,7 @@ case "script-play": {
         />
       );
       break;
+
     case TASK_TYPES.TRUE_FALSE_TICTACTOE:
       content = (
         <TrueFalseTicTacToeTask
@@ -1365,7 +1467,14 @@ case "script-play": {
 
     case TASK_TYPES.MAD_DASH:
     case TASK_TYPES.MAD_DASH_SEQUENCE:
-      content = <MadDashSequenceTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
+      content = (
+        <MadDashSequenceTask
+          task={t}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          socket={socket}
+        />
+      );
       break;
 
     case TASK_TYPES.LIVE_DEBATE:
@@ -1405,7 +1514,6 @@ case "script-play": {
       break;
 
     case TASK_TYPES.FLASHCARDS_RACE:
-      // ✅ no early return; keep consistent wrapper/theming
       content = (
         <FlashcardsRaceTask
           task={t}
@@ -1418,27 +1526,39 @@ case "script-play": {
       break;
 
     case TASK_TYPES.TIMELINE:
-      content = <TimelineTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
+      content = (
+        <TimelineTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+      );
       break;
 
     case TASK_TYPES.PET_FEEDING:
-      content = <PetFeedingTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <PetFeedingTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.MOTION_MISSION:
-      content = <MotionMissionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <MotionMissionTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.BRAINSTORM_BATTLE:
-      content = <BrainstormBattleTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
+      content = (
+        <BrainstormBattleTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+      );
       break;
 
     case TASK_TYPES.MIND_MAPPER:
-      content = <MindMapperTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <MindMapperTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.SPEED_DRAW:
-      content = <SpeedDrawTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />;
+      content = (
+        <SpeedDrawTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} socket={socket} />
+      );
       break;
 
     case TASK_TYPES.DIFF_DETECTIVE:
@@ -1456,25 +1576,34 @@ case "script-play": {
       break;
 
     case TASK_TYPES.BRAIN_SPARK_NOTES:
-      content = <BrainSparkNotesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <BrainSparkNotesTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.HIDENSEEK:
-      content = <HideNSeekTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />;
+      content = (
+        <HideNSeekTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+      );
       break;
 
     case TASK_TYPES.HANGMAN_DUEL:
     case "hangman-duel": {
-      const effectiveTeamId = t?.teamId || playerTeam?.id || playerTeam?.teamId || playerTeam?.teamID || null;
+      const effectiveTeamId =
+        t?.teamId ||
+        playerTeam?.id ||
+        playerTeam?.teamId ||
+        playerTeam?.teamID ||
+        null;
 
       const stationIndex = Number.isFinite(t?.stationIndex) ? t.stationIndex : null;
 
       const wordFromItems =
         Array.isArray(t?.items) && stationIndex != null
           ? (t.items?.[stationIndex]?.word ||
-            t.items?.[stationIndex]?.hangmanWord ||
-            t.items?.[stationIndex]?.answer ||
-            t.items?.[stationIndex]?.value)
+              t.items?.[stationIndex]?.hangmanWord ||
+              t.items?.[stationIndex]?.answer ||
+              t.items?.[stationIndex]?.value)
           : null;
 
       const wordFallback =

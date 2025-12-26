@@ -5,9 +5,16 @@ import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
 export const retryMustHave = {
   [TASK_TYPES.MULTIPLE_CHOICE]:
-    'MULTIPLE_CHOICE must include items[] with 3–5 questions. Each item: { id, prompt, options[], correctAnswer } (correctAnswer is an index).',
+    "MULTIPLE_CHOICE must include items[] with 3–5 questions. Ea...rompt, options[], correctAnswer } (correctAnswer is an index).",
   [TASK_TYPES.TRUE_FALSE]:
-    "TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 0=True, 1=False.",
+    "TRUE_FALSE must include items[] with at least 3 statements....tem: { id, prompt, correctAnswer: 0|1 } where 0=True, 1=False.",
+
+  [TASK_TYPES.SHORT_ANSWER]:
+    "SHORT_ANSWER must include either (A) a single prompt + correctAnswer (string) OR (B) items[] with 3–5 prompts, each with correctAnswer (string or list of acceptable strings). For objective scoring, include `correctAnswer` and optionally `acceptableAnswers` (array) per item.",
+
+  [TASK_TYPES.OPEN_TEXT]:
+    'OPEN_TEXT must include a clear prompt and settings with gradeLevel + difficulty. For medium/hard, include settings.minWords computed as 2×gradeLevel (medium) or 3×gradeLevel (hard). No objective scoring; do NOT include correctAnswer. Include rubricFocus: ["clarity","accuracy","reasoning","evidence"].',
+
   [TASK_TYPES.SORT]:
     "SORT must include config.buckets (>=2) and config.items (>=3). Each item: { text, bucketIndex:number|null }.",
   [TASK_TYPES.SEQUENCE]:
@@ -22,15 +29,15 @@ export const retryMustHave = {
     "HANGMAN_DUEL must include wordsByStation[] (4–8 entries). Each entry: { word, hint }. Each word must come ONLY from aiWordBank, all words must be different, and lengths must be similar (max length difference ≤ 2).",
 
   [TASK_TYPES.FLASHCARDS]:
-    'FLASHCARDS must include config.items (>=5). Each item: { question, answer }.',
+    "FLASHCARDS must include config.items (>=5). Each item: { question, answer }.",
 
   [TASK_TYPES.WORD_WEAVER_DUEL]:
-    'WORD_WEAVER_DUEL must include phrase (string) and should include wordBank (array of words from the phrase, shuffled).',
+    "WORD_WEAVER_DUEL must include phrase (string) and should include wordBank (array of words from the phrase, shuffled).",
 
   [TASK_TYPES.DIFF_DETECTIVE]:
-    'DIFF_DETECTIVE must include two short texts to compare: config.textA and config.textB (3–6 sentences each) with 5–8 subtle but detectable differences.',
+    "DIFF_DETECTIVE must include two short texts to compare: config.textA and config.textB (3–6 sentences each) with 5–8 subtle but detectable differences.",
   [TASK_TYPES.GUESS_WHO]:
-    'GUESS_WHO must include config.playerCount (2–6), config.secretAnswers (array length = playerCount), config.category (string), config.maxGuesses (<=15), and config.timerSeconds (<=180). Intra-team only. Hold-to-reveal secret for answerer, yes/no Q&A, and limited guesses.',
+    "GUESS_WHO must include config.playerCount (2–6), config.secretAnswers (array length = playerCount), config.category (string), config.maxGuesses (<=15), and config.timerSeconds (<=180). Intra-team only. Hold-to-reveal secret for answerer, yes/no Q&A, and limited guesses.",
 
   [TASK_TYPES.ECHO_CHAIN]:
     "ECHO_CHAIN must include: seedTerm (string from aiWordBank), prompt (clear turn-by-turn rules), and config with optional perTurnSeconds (5–20), rotationBonusPoints, pointsPerCorrectAdd, and maxChainLength (optional). Intra-team only.",
@@ -38,9 +45,7 @@ export const retryMustHave = {
   [TASK_TYPES.NARRATION_SYNTHESIZE]:
     "NARRATION_SYNTHESIZE must include config.playerCount (2–8), config.prompts (array length == playerCount) where each element is { id, concept, prompt }. Each prompt must be an explainable concept or process (not a single word). Optional config.perTurnSeconds (0 disables). Optional config.ratingScale: { min, max, label }. Intra-team only.",
   [TASK_TYPES.ROLE_PLAY_DECK]:
-    "ROLE_PLAY_DECK must include config.playerCount (2–6), config.playerNames (array length playerCount), config.mode (mystery|classic or allow choice), config.roles (array length playerCount) each with { name, role, characteristics: [3–6 morally appropriate traits] }, and config.scenario (subject/grade appropriate, 2–5 sentences). Intra-team only; do NOT include inter-team gameplay."
-
-
+    "ROLE_PLAY_DECK must include config.playerCount (2–6), config.playerNames (array length playerCount), config.mode (mystery|classic or allow choice), config.roles (array length playerCount) each with { name, role, characteristics: [3–6 morally appropriate traits] }, and config.scenario (subject/grade appropriate, 2–5 sentences). Intra-team only; do NOT include inter-team gameplay.",
 };
 
 export function buildVocabularyLines(aiWordBank) {
