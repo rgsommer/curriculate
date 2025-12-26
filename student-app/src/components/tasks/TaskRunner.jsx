@@ -44,7 +44,7 @@ import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
 import VennSortTask from "./types/VennSortTask";
 import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
-import PhysicalMultipleChoiceTask from "./PhysicalMultipleChoiceTask";
+import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";
 
 import ScriptPlayTask from "./types/ScriptPlayTask";
 import RolePlayDeckTask from "./types/RolePlayDeckTask";

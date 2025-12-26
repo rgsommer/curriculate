@@ -909,22 +909,14 @@ function StudentApp() {
       }
 
       tasksStartedRef.current = true;
-      setWarmupStep("done");
-      setPostPhase("tasks");
-      setWaitingForLaunch(false);
-
+        setWarmupStep("done");
+        setPostPhase("tasks");
+        setScannerActive(false);
+        setWaitingForLaunch(false);
       const assignedTask = payload.task || payload || null;
       const assignedType = String(assignedTask?.taskType || assignedTask?.type || "");
 
-      
-      const assignedIsPhysicalMC = assignedType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
-      setScannerActive(assignedIsPhysicalMC);
-      if (assignedIsPhysicalMC) {
-        tryPlayAlertSound();
-        setTreatMessage(\"🚶‍♂️ Physical Multiple Choice — pick A/B/C/D, then scan the matching color station!\");
-        window.setTimeout(() => setTreatMessage(null), 4200);
-      }
-// EchoChain: quick audio + subtle pulse so the team knows it's a "say-it-aloud" round.
+      // EchoChain: quick audio + subtle pulse so the team knows it's a "say-it-aloud" round.
       if (assignedType === TASK_TYPES.ECHO_CHAIN) {
         tryPlayEchoSound();
         setEchoPulse(true);
@@ -1045,6 +1037,75 @@ function StudentApp() {
         method: method || null,
         correctAnswer: correctAnswer ?? null,
       });
+
+      if (isPhysicalLive) {
+        // clear any pending review timer + bounce straight back to scan
+        if (postSubmitTimerRef.current) {
+          clearInterval(postSubmitTimerRef.current);
+          postSubmitTimerRef.current = null;
+        }
+        setTaskLocked(false);
+        setPostSubmitSecondsLeft(null);
+        setWaitingForLaunch(false);
+        endReviewAndReturnToScan();
+        return;
+      }
+
+      const lockSeconds =
+        Number(payload?.postSubmitSeconds) > 0
+          ? Number(payload.postSubmitSeconds)
+          : DEFAULT_POST_SUBMIT_SECONDS;
+
+      setTaskLocked(true);
+      setPostSubmitSecondsLeft(lockSeconds);
+      if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
+      let t = lockSeconds;
+      const timer = setInterval(() => {
+        t -= 1;
+        setPostSubmitSecondsLeft(t);
+
+        if (t <= 0) {
+          clearInterval(timer);
+          endReviewAndReturnToScan();
+          setWaitingForLaunch(false);
+        }
+      }, 1000);
+
+      postSubmitTimerRef.current = timer;
+
+      if (reveal) {
+        setShortAnswerReveal(reveal);
+      }
+
+      if (typeof scoreDelta === "number") {
+        setPointToast({
+          message:
+            scoreDelta > 0
+              ? `+${scoreDelta} point${scoreDelta === 1 ? "" : "s"}`
+              : scoreDelta < 0
+              ? `${scoreDelta} points`
+              : "No points this time",
+          positive: scoreDelta > 0,
+        });
+
+        if (scoreDelta > 0 && maxPoints && scoreDelta >= maxPoints) {
+          setShowConfetti(true);
+          setTimeout(() => setShowConfetti(false), 2200);
+        }
+
+        // Consistent Curriculate feedback SFX for core response tasks
+        // (OpenText/ShortAnswer/TrueFalse included) – skip for warm-ups.
+        const scoredType =
+          payload?.taskType || payload?.type || currentTaskRef.current?.taskType || currentTaskRef.current?.type;
+        const isWarmup =
+          scoredType === TASK_TYPES.MOOD_CHECKIN ||
+          scoredType === TASK_TYPES.TREASURE_RUNNER ||
+          scoredType === "mood-checkin" ||
+          scoredType === "treasure-runner";
+        if (!isWarmup) {
+          if (scoreDelta > 0) tryPlayCorrectSound();
+          else tryPlayWrongSound();
+        }
 
         setTimeout(() => {
           setPointToast(null);
@@ -1754,55 +1815,15 @@ function StudentApp() {
   const handleScan = (data) => {
     if (!data || !joined || !teamId) return;
 
-    // Ignore scans only if a NON-physical-MC task is currently on screen (or we're in locked review).
-    // We MUST allow scans during PhysicalMultipleChoiceTask so it can receive station colors.
-    const liveTask = currentTaskRef.current;
-    const liveType = liveTask?.taskType || liveTask?.type;
-
-    // Block scans while locked review, always.
-    if (taskLocked) {
+    // Ignore scans only if a task is currently on screen (or we're in locked review).
+    // We MUST allow scans between tasks even if postPhase is "tasks".
+    if (currentTaskRef.current || taskLocked) {
       setScanError(null);
       setScannerActive(false);
       return;
     }
 
-    // If a task is on screen:
-    // - Physical MC: allow scans and forward to the task via window event
-    // - Everything else: ignore scans (prevents accidental station gate scans mid-task)
-    if (liveTask && liveType !== TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
-      setScanError(null);
-      setScannerActive(false);
-      return;
-    }
-
-    // Physical MC scan path: translate QR to a station color and forward.
-    if (liveTask && liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
-      const norm = normalizeStationId(data);
-      if (!norm?.id || !norm?.color) {
-        setScanError("Unrecognized station QR code for this task.");
-        setScannerActive(true);
-        return;
-      }
-
-      setScanError(null);
-      setScanStatus("ok");
-
-      try {
-        window.dispatchEvent(
-          new CustomEvent("curriculate:stationScan", {
-            detail: { color: norm.color, stationColor: norm.color, stationId: norm.id },
-          })
-        );
-      } catch {
-        // ignore
-      }
-
-      // Keep scanner active for repeated trips.
-      setScannerActive(true);
-      tryPlayAlertSound();
-      return;
-    }
-const norm = normalizeStationId(data);
+  const norm = normalizeStationId(data);
     if (!norm?.id) {
       setScanError("Unrecognized station QR code.");
       return;
@@ -1986,9 +2007,7 @@ const norm = normalizeStationId(data);
 
   const isMultipleChoice = currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
 
-  
-  const isPhysicalMultipleChoice = currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
-const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
+  const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
@@ -2053,7 +2072,7 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
     ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
     : isMakeAndSnap
     ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
-    : (isMultipleChoice || isPhysicalMultipleChoice)
+    : isMultipleChoice
     ? "linear-gradient(135deg, #22c55e 0%, #0ea5e9 40%, #eef2ff 100%)"
     : isDrawMime
     ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"

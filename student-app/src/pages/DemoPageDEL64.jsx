@@ -1313,58 +1313,6 @@ export default function DemoPage() {
               memberNames={["Demo"]}
               socket={demoSocket}
             />
-
-            {/* Demo helper: simulate a station scan (no camera in demo) */}
-            {((currentTask?.taskType || currentTask?.type) === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 14,
-                  border: "1px solid rgba(148,163,184,0.45)",
-                  background: "rgba(15,23,42,0.55)",
-                  color: "#e5e7eb",
-                }}
-              >
-                <div style={{ fontWeight: 900, marginBottom: 8 }}>
-                  Demo: tap a station color to simulate scanning that QR
-                </div>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {["Red","Orange","Yellow","Green","Blue","Teal","Purple","Pink"].map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => {
-                        try {
-                          window.dispatchEvent(
-                            new CustomEvent("curriculate:stationScan", {
-                              detail: { color: c.toLowerCase(), stationColor: c.toLowerCase() },
-                            })
-                          );
-                        } catch {}
-                      }}
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,0.18)",
-                        background: "rgba(255,255,255,0.10)",
-                        color: "#fff",
-                        fontWeight: 900,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-                  In real sessions, students scan the classroom’s fixed colored QR stations.
-                </div>
-              </div>
-            )}
-
           </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
