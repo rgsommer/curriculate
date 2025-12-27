@@ -953,7 +953,8 @@ function StudentApp() {
         tryPlayRolePlaySound();
         setRolePlayGlow(true);
         window.setTimeout(() => setRolePlayGlow(false), 1200);
-  
+      }
+
       // FakeOut: listening + voting round (intra-team only)
       if (assignedType === TASK_TYPES.FAKE_OUT || assignedType === "fake-out") {
         tryPlayFakeOutSound();
@@ -1130,7 +1131,7 @@ function StudentApp() {
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
-  }, [teamId, reviewPauseSeconds]);
+  }, [teamId, reviewPauseSeconds, taskLocked, postSubmitSecondsLeft]);
 
   // -------------------------------------------------------------------
   // Auto-open scanner when a scan is required

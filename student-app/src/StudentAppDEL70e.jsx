@@ -664,10 +664,20 @@ function StudentApp() {
   const sndTreat = useRef(null);
   const sndEcho = useRef(null);
   const sndNarration = useRef(null);
+  const sndScriptPlay = useRef(null);
+  const sndRolePlay = useRef(null);
+  const sndFakeOut = useRef(null);
+  const sndWordWeaver = useRef(null);
+  const sndCorrect = useRef(null);
+  const sndWrong = useRef(null);
 
   // EchoChain micro-theme pulse (purely visual)
   const [echoPulse, setEchoPulse] = useState(false);
   const [narrationSpark, setNarrationSpark] = useState(false);
+  const [scriptSpotlight, setScriptSpotlight] = useState(false);
+  const [rolePlayGlow, setRolePlayGlow] = useState(false);
+  const [wordWeaverGlow, setWordWeaverGlow] = useState(false);
+  const [fakeOutFlash, setFakeOutFlash] = useState(false);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
@@ -901,14 +911,22 @@ function StudentApp() {
       }
 
       tasksStartedRef.current = true;
-        setWarmupStep("done");
-        setPostPhase("tasks");
-        setScannerActive(false);
-        setWaitingForLaunch(false);
+      setWarmupStep("done");
+      setPostPhase("tasks");
+      setWaitingForLaunch(false);
+
       const assignedTask = payload.task || payload || null;
       const assignedType = String(assignedTask?.taskType || assignedTask?.type || "");
 
-      // EchoChain: quick audio + subtle pulse so the team knows it's a "say-it-aloud" round.
+      
+      const assignedIsPhysicalMC = assignedType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
+      setScannerActive(assignedIsPhysicalMC);
+      if (assignedIsPhysicalMC) {
+        tryPlayAlertSound();
+        setTreatMessage("🚶‍♂️ Physical Multiple Choice — pick A/B/C/D, then scan the matching color station!");
+        window.setTimeout(() => setTreatMessage(null), 4200);
+      }
+// EchoChain: quick audio + subtle pulse so the team knows it's a "say-it-aloud" round.
       if (assignedType === TASK_TYPES.ECHO_CHAIN) {
         tryPlayEchoSound();
         setEchoPulse(true);
@@ -925,6 +943,40 @@ function StudentApp() {
         setNarrationSpark(true);
         window.setTimeout(() => setNarrationSpark(false), 1200);
         setTreatMessage("🗣️ Teach-back time — explain it out loud, then tap Finished.");
+      }
+
+      // RolePlayDeck: subtle reveal cue + glow theme
+      if (
+        assignedType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
+        assignedType === "role-play-deck"
+      ) {
+        tryPlayRolePlaySound();
+        setRolePlayGlow(true);
+        window.setTimeout(() => setRolePlayGlow(false), 1200);
+  
+      // FakeOut: listening + voting round (intra-team only)
+      if (assignedType === TASK_TYPES.FAKE_OUT || assignedType === "fake-out") {
+        tryPlayFakeOutSound();
+        setFakeOutFlash(true);
+        window.setTimeout(() => setFakeOutFlash(false), 1200);
+        setTreatMessage(
+          "🃏 Fake Out — one player reads aloud; everyone else LISTENS and votes!"
+        );
+        window.setTimeout(() => setTreatMessage(null), 3800);
+      }
+
+      // WordWeaver Duel: Scrabble-style, turn-based intra-team play
+      if (
+        assignedType === TASK_TYPES.WORD_WEAVER_DUEL ||
+        assignedType === "word-weaver-duel" ||
+        assignedType === "word-weaver" ||
+        assignedType === "wordweaver"
+      ) {
+        tryPlayWordWeaverSound();
+        setWordWeaverGlow(true);
+        window.setTimeout(() => setWordWeaverGlow(false), 1300);
+        setTreatMessage("🧩 Word Weaver Duel — take turns placing words on the grid for points!");
+        window.setTimeout(() => setTreatMessage(null), 4200);
       }
 
       setCurrentTask(assignedTask);
@@ -1007,65 +1059,9 @@ function StudentApp() {
         correctAnswer: correctAnswer ?? null,
       });
 
-      if (isPhysicalLive) {
-        // clear any pending review timer + bounce straight back to scan
-        if (postSubmitTimerRef.current) {
-          clearInterval(postSubmitTimerRef.current);
-          postSubmitTimerRef.current = null;
-        }
-        setTaskLocked(false);
-        setPostSubmitSecondsLeft(null);
-        setWaitingForLaunch(false);
-        endReviewAndReturnToScan();
-        return;
-      }
-
-      const lockSeconds =
-        Number(payload?.postSubmitSeconds) > 0
-          ? Number(payload.postSubmitSeconds)
-          : DEFAULT_POST_SUBMIT_SECONDS;
-
-      setTaskLocked(true);
-      setPostSubmitSecondsLeft(lockSeconds);
-      if (postSubmitTimerRef.current) clearInterval(postSubmitTimerRef.current);
-      let t = lockSeconds;
-      const timer = setInterval(() => {
-        t -= 1;
-        setPostSubmitSecondsLeft(t);
-
-        if (t <= 0) {
-          clearInterval(timer);
-          endReviewAndReturnToScan();
-          setWaitingForLaunch(false);
-        }
-      }, 1000);
-
-      postSubmitTimerRef.current = timer;
-
-      if (reveal) {
-        setShortAnswerReveal(reveal);
-      }
-
-      if (typeof scoreDelta === "number") {
-        setPointToast({
-          message:
-            scoreDelta > 0
-              ? `+${scoreDelta} point${scoreDelta === 1 ? "" : "s"}`
-              : scoreDelta < 0
-              ? `${scoreDelta} points`
-              : "No points this time",
-          positive: scoreDelta > 0,
-        });
-
-        if (scoreDelta > 0 && maxPoints && scoreDelta >= maxPoints) {
-          setShowConfetti(true);
-          setTimeout(() => setShowConfetti(false), 2200);
-        }
-
-        setTimeout(() => {
-          setPointToast(null);
-        }, 2500);
-      }
+      setTimeout(() => {
+        setPointToast(null);
+      }, 2500);
     };
 
     const handleNoiseUpdate = (payload) => {
@@ -1134,7 +1130,7 @@ function StudentApp() {
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
-  }, [teamId, reviewPauseSeconds]);
+  }, [teamId, reviewPauseSeconds, taskLocked, postSubmitSecondsLeft]);
 
   // -------------------------------------------------------------------
   // Auto-open scanner when a scan is required
@@ -1244,8 +1240,54 @@ function StudentApp() {
       );
       narrationAudio.volume = 0.16;
       sndNarration.current = narrationAudio;
+
+      // ScriptPlay: page-turn / stage cue (safe to fail)
+      const scriptAudio = new Audio(
+        "https://actions.google.com/sounds/v1/foley/page_turn.ogg"
+      );
+      scriptAudio.volume = 0.16;
+      sndScriptPlay.current = scriptAudio;
+
+
+      // RolePlayDeck: "card draw" / gentle reveal cue (safe to fail)
+      const rolePlayAudio = new Audio(
+        "https://actions.google.com/sounds/v1/foley/card_shuffle.ogg"
+      );
+      rolePlayAudio.volume = 0.16;
+      sndRolePlay.current = rolePlayAudio;
+
+      // Universal feedback (correct / incorrect)
+      const correctAudio = new Audio(
+        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
+      );
+      correctAudio.volume = 0.16;
+      sndCorrect.current = correctAudio;
+
+      const wrongAudio = new Audio(
+        "https://actions.google.com/sounds/v1/cartoon/boing.ogg"
+      );
+      wrongAudio.volume = 0.14;
+      sndWrong.current = wrongAudio;
     } catch (err) {
       console.warn("Could not preload audio:", err);
+    }
+
+    // FakeOut: playful "gotcha" cue (separate try so one failure doesn't block others)
+    try {
+      const fakeOutAudio = new Audio(
+        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
+      );
+      fakeOutAudio.volume = 0.14;
+      sndFakeOut.current = fakeOutAudio;
+
+      // WordWeaver: subtle "tile tap" cue
+      const wordWeaverAudio = new Audio(
+        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
+      );
+      wordWeaverAudio.volume = 0.14;
+      sndWordWeaver.current = wordWeaverAudio;
+    } catch {
+      // ignore
     }
   }, []);
 
@@ -1271,6 +1313,23 @@ function StudentApp() {
     } catch (err) {
       console.warn("EchoChain sound play blocked:", err);
     }
+  }
+
+  function tryPlayCorrectSound() {
+    try {
+      sndCorrect.current && sndCorrect.current.play();
+    } catch {
+      // ignore
+    }
+  }
+
+  function tryPlayWrongSound() {
+    try {
+      sndWrong.current && sndWrong.current.play();
+    } catch {
+      // ignore
+    }
+  }
 
   function tryPlayNarrationSound() {
     try {
@@ -1279,6 +1338,30 @@ function StudentApp() {
       console.warn("Narration sound play blocked:", err);
     }
   }
+
+  function tryPlayScriptPlaySound() {
+    try {
+      sndScriptPlay.current && sndScriptPlay.current.play();
+    } catch (err) {
+      console.warn("ScriptPlay sound play blocked:", err);
+    }
+  }
+
+
+  function tryPlayRolePlaySound() {
+    try {
+      sndRolePlay.current && sndRolePlay.current.play();
+    } catch (err) {
+      console.warn("RolePlay sound play blocked:", err);
+    }
+  }
+
+  function tryPlayFakeOutSound() {
+    try {
+      sndFakeOut.current && sndFakeOut.current.play();
+    } catch (err) {
+      console.warn("FakeOut sound play blocked:", err);
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -1690,15 +1773,55 @@ function StudentApp() {
   const handleScan = (data) => {
     if (!data || !joined || !teamId) return;
 
-    // Ignore scans only if a task is currently on screen (or we're in locked review).
-    // We MUST allow scans between tasks even if postPhase is "tasks".
-    if (currentTaskRef.current || taskLocked) {
+    // Ignore scans only if a NON-physical-MC task is currently on screen (or we're in locked review).
+    // We MUST allow scans during PhysicalMultipleChoiceTask so it can receive station colors.
+    const liveTask = currentTaskRef.current;
+    const liveType = liveTask?.taskType || liveTask?.type;
+
+    // Block scans while locked review, always.
+    if (taskLocked) {
       setScanError(null);
       setScannerActive(false);
       return;
     }
 
-  const norm = normalizeStationId(data);
+    // If a task is on screen:
+    // - Physical MC: allow scans and forward to the task via window event
+    // - Everything else: ignore scans (prevents accidental station gate scans mid-task)
+    if (liveTask && liveType !== TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
+      setScanError(null);
+      setScannerActive(false);
+      return;
+    }
+
+    // Physical MC scan path: translate QR to a station color and forward.
+    if (liveTask && liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
+      const norm = normalizeStationId(data);
+      if (!norm?.id || !norm?.color) {
+        setScanError("Unrecognized station QR code for this task.");
+        setScannerActive(true);
+        return;
+      }
+
+      setScanError(null);
+      setScanStatus("ok");
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent("curriculate:stationScan", {
+            detail: { color: norm.color, stationColor: norm.color, stationId: norm.id },
+          })
+        );
+      } catch {
+        // ignore
+      }
+
+      // Keep scanner active for repeated trips.
+      setScannerActive(true);
+      tryPlayAlertSound();
+      return;
+    }
+const norm = normalizeStationId(data);
     if (!norm?.id) {
       setScanError("Unrecognized station QR code.");
       return;
@@ -1859,9 +1982,27 @@ function StudentApp() {
 
   const isEchoChain = currentTask?.taskType === TASK_TYPES.ECHO_CHAIN;
 
+  const isScriptPlay =
+    currentTask?.taskType === TASK_TYPES.SCRIPT_PLAY ||
+    currentTask?.taskType === "script-play";
+
   const isNarrationSynthesize =
     currentTask?.taskType === TASK_TYPES.NARRATION_SYNTHESIZE ||
     currentTask?.taskType === "narration-synthesize";
+
+  const isRolePlayDeck =
+    currentTask?.taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
+    currentTask?.taskType === "role-play-deck";
+
+  const isFakeOut =
+    currentTask?.taskType === TASK_TYPES.FAKE_OUT ||
+    currentTask?.taskType === "fake-out";
+
+  const isWordWeaver =
+    currentTask?.taskType === TASK_TYPES.WORD_WEAVER_DUEL ||
+    currentTask?.taskType === "word-weaver-duel" ||
+    currentTask?.taskType === "word-weaver" ||
+    currentTask?.taskType === "wordweaver";
 
   const isMindMapper = currentTask?.taskType === TASK_TYPES.MIND_MAPPER;
 
@@ -1870,7 +2011,9 @@ function StudentApp() {
 
   const isMultipleChoice = currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE;
 
-  const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
+  
+  const isPhysicalMultipleChoice = currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
+const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
@@ -1935,7 +2078,7 @@ function StudentApp() {
     ? "linear-gradient(135deg, #b91c1c 0%, #f97316 40%, #facc15 80%)"
     : isMakeAndSnap
     ? "linear-gradient(135deg, #14b8a6 0%, #38bdf8 40%, #e0f2fe 100%)"
-    : isMultipleChoice
+    : (isMultipleChoice || isPhysicalMultipleChoice)
     ? "linear-gradient(135deg, #22c55e 0%, #0ea5e9 40%, #eef2ff 100%)"
     : isDrawMime
     ? "linear-gradient(135deg, #fef3c7 0%, #fee2e2 40%, #f9fafb 100%)"
@@ -3293,6 +3436,23 @@ function StudentApp() {
           }}
         />
       )}
+
+      {scriptSpotlight && isScriptPlay && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 50% 20%, rgba(250,204,21,0.20), transparent 55%), radial-gradient(circle at 20% 80%, rgba(59,130,246,0.18), transparent 60%), radial-gradient(circle at 80% 80%, rgba(236,72,153,0.14), transparent 62%)",
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset",
+            animation: "echo-pulse 1.4s ease-out 1",
+          }}
+        />
+      )}
+
       {narrationSpark && isNarrationSynthesize && (
         <div
           aria-hidden="true"
@@ -3304,6 +3464,54 @@ function StudentApp() {
             background:
               "radial-gradient(circle at 20% 20%, rgba(245,158,11,0.20), transparent 55%), radial-gradient(circle at 80% 15%, rgba(29,78,216,0.18), transparent 60%), radial-gradient(circle at 50% 90%, rgba(56,189,248,0.10), transparent 60%)",
             animation: "narration-spark 1.05s ease-out both",
+          }}
+        />
+      )}
+
+      {rolePlayGlow && isRolePlayDeck && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 30% 30%, rgba(34,197,94,0.16), transparent 55%), radial-gradient(circle at 70% 25%, rgba(59,130,246,0.16), transparent 55%), radial-gradient(circle at 50% 85%, rgba(168,85,247,0.14), transparent 58%)",
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset",
+            animation: "echo-pulse 1.4s ease-out 1",
+          }}
+        />
+      )}
+
+      {wordWeaverGlow && isWordWeaver && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 25% 15%, rgba(34,197,94,0.18), transparent 55%), radial-gradient(circle at 80% 35%, rgba(59,130,246,0.14), transparent 60%), radial-gradient(circle at 50% 92%, rgba(245,158,11,0.10), transparent 60%)",
+            animation: "echo-pulse 1.25s ease-out 1",
+          }}
+        />
+      )}
+
+      {fakeOutFlash && isFakeOut && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 30% 25%, rgba(251,191,36,0.22), transparent 55%), radial-gradient(circle at 70% 60%, rgba(59,130,246,0.16), transparent 58%), radial-gradient(circle at 55% 95%, rgba(236,72,153,0.12), transparent 60%)",
+            boxShadow:
+              "0 0 0 1px rgba(255,255,255,0.08) inset, 0 18px 60px rgba(0,0,0,0.35)",
+            animation: "echo-pulse 1.1s ease-out 1",
           }}
         />
       )}
