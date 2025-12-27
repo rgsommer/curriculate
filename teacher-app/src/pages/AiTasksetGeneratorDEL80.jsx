@@ -350,13 +350,6 @@ export default function AiTasksetGenerator() {
     if (t === TASK_TYPES.FLASHCARDS_RACE) return "🏁";
     if (t === TASK_TYPES.HIDENSEEK) return "🕵️";
     if (t === TASK_TYPES.FAKE_OUT) return "🃏";
-    // New/explicit icons for newer types
-    if (t === TASK_TYPES.DIFF_DETECTIVE) return "🔎";
-    if (t === TASK_TYPES.VENNSORT) return "⭕️";
-    if (t === TASK_TYPES.SPEED_DRAW) return "✏️⚡";
-    if (t === TASK_TYPES.DRAW_MIME) return "🎨🤐";
-    if (t === TASK_TYPES.MYSTERY_CLUES) return "🧠🃏";
-    if (t === TASK_TYPES.PHYSICAL_MYSTERY_CLUES) return "🗺️🕵️";
     return "✨";
   };
 
