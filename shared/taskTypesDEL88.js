@@ -653,13 +653,13 @@ export const TASK_TYPE_META = {
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    defaultAiScoringRequired: false,
     quickTaskEligible: true,
     expectsText: true,
     maxTimeSeconds: 90,
     interTeamEnabled: true,
     intraTeamEnabled: true,
-    description: "Brain Blitz (Jeopardy-style): the device shows an answer/term and students must respond with the correct question (Jeopardy format).\nStudent flow:\n- Prompt shows a clue/answer (word/name/phrase).\n- Players respond quickly by voice (preferred) or typing.\n- AI checks meaning and Jeopardy-style phrasing (strictness adjustable by difficulty).\nScoring: AI-scored; fast, competitive retrieval + reformulation.\nAI generation should produce:\n- clue (string) OR prompt (string)\n- expectedQuestion (string) OR expectedKeyPoints (array)\n- allowTyping (boolean, optional)\n- timeLimitSeconds (optional; usually 30\u201390)\nInter-team: YES. Intra-team: YES.",
+    description:
       "Brain Blitz (Jeopardy-style) rapid review in reverse format: the device shows an answer/clue and students respond in question form. Can be typed or spoken (mic) where available. Great for retrieval + reformulation, precision with academic language, and high-engagement review.",
   }),
 
@@ -899,13 +899,13 @@ export const TASK_TYPE_META = {
     category: CATEGORY.MOVEMENT,
     implemented: true,
     aiEligible: false,
-    generatorEligible: true,
+    generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 180,
     interTeamEnabled: false,
     intraTeamEnabled: false,
-    description: "Feed the Pet: a motivation layer where completing the task feeds/powers up a virtual pet.\nStudent flow:\n- A cute pet appears (pack/theme).\n- Students choose a treat; celebration plays; task submits.\nScoring: typically completion-based or fixed bonus (e.g., +10) handled by session rules.\nAI generation should produce:\n- pack (string; one of: classic, farm, ocean, dino, fantasy)\n- optional pointsAwarded (number)\nInter-team: NO. Intra-team: NO.",
+    description:
       "A motivational loop: correct answers or task success ‘feeds’/powers up a virtual pet. Encourages repeated retrieval and positive reinforcement without changing academic rigor.",
   }),
 
@@ -921,7 +921,7 @@ export const TASK_TYPE_META = {
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: false,
-    description: "Pair-and-respond collaboration between two teams.\nStudent flow:\n1) Team A writes an initial response to a prompt.\n2) They then see Team B\u2019s response and write a thoughtful reply/extension (agree/disagree, add evidence, ask a question, or build on an idea).\nScoring: AI-scored with rubric for response quality + meaningful engagement in the reply. Bonus points can be awarded to the stronger initial response.\nAI generation should produce:\n- prompt (string)\n- rubric (object/string) describing quality criteria\n- minWords (number, optional)\n- bonusComparisonEnabled (boolean, optional; default true)\nInter-team: YES. Intra-team: NO.",
+    description:
       "Pair-and-respond collaboration. Students write an initial response to a prompt, then view another team’s response and write a thoughtful reply (agree/disagree with reasons, add evidence, ask a question, or extend an idea). AI-scored with a rubric for clarity, reasoning, and engagement. Builds accountable talk in writing, perspective-taking, synthesis, and peer feedback.",
   }),
 
@@ -934,10 +934,10 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: true,
     expectsText: true,
-    maxTimeSeconds: 600,
+    maxTimeSeconds: 300,
     interTeamEnabled: true,
     intraTeamEnabled: true,
-    description: "Live team debate between two paired teams with timed speaking turns and rebuttals.\nStudent flow:\n- Teams choose from a list of AI-generated debate topics (first-come-first-served) then are paired.\n- 5-minute prep window.\n- Players speak in assigned roles (intro/definitions, arguments, rebuttals, conclusions depending on team size).\n- Device shows a clear \u201clistening\u201d indicator; recording auto-submits at max time.\nTiming rules:\n- Target per speaker: 1:45\u20132:15 (15s grace). Too short/too long receives a penalty.\nScoring: AI-scored per speaker + team score; winning team earns bonus.\nAI generation should produce:\n- topics (array of strings)\n- rolePlan (array per team member)\n- prepSeconds (number; default 300)\n- perSpeakerSeconds (number; default 135)\n- graceSeconds (number; default 15)\n- minSeconds (number; default 105)\n- rubric (object/string)\nInter-team: YES. Intra-team: YES.",
+    description:
       "Team debate format. Students prepare arguments, then speak in timed turns with rebuttals and a clear ‘for/against’ side. Curriculate pairs teams and assigns speaker roles; audio can be recorded and AI-scored for argument quality, evidence, and respectful discourse. Builds argumentation, critical thinking, and oral confidence.",
   }),
 
@@ -965,9 +965,9 @@ export const TASK_TYPE_META = {
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 120,
-    interTeamEnabled: false,
+    interTeamEnabled: true,
     intraTeamEnabled: true,
-    description: "Fast-paced team brainstorm to activate prior knowledge and generate ideas without fear of being wrong.\nStudent flow:\n- A topic/seed prompt appears.\n- Team rapidly contributes short ideas (spoken aloud and/or typed as quick entries).\n- Optional quick vote/rank at the end to highlight the strongest ideas.\nScoring: Not single-correct; typically completion-based (optionally +bonus for voting).\nAI generation should produce:\n- prompt (string)\n- seedTopic (string, optional)\n- ideaSlots (number, optional; default 8\u201312)\n- enableVoting (boolean, optional)\n- timeLimitSeconds (optional; usually 60\u2013120)\nInter-team: NO. Intra-team: YES.",
+    description:
       "Fast-paced ‘shout ideas’ collaborative brainstorm. The device shows a topic/seed prompt and your team rapidly contributes many ideas (spoken aloud and/or typed as short entries). No single correct answer — the goal is divergent thinking. Optional quick vote/rank at the end to highlight strongest ideas. Builds creative ideation, background knowledge, verbal participation, and lowers fear of being wrong.",
   }),
 

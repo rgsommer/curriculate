@@ -2,44 +2,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../api/client";
-import { TASK_TYPE_META } from "../shared/taskTypes";
-
-
-function typeBadge(typeRaw) {
-  const type = String(typeRaw || "").trim();
-  const meta = TASK_TYPE_META?.[type] || null;
-
-  const lower = type.toLowerCase();
-  const emoji =
-    lower === "pet-feeding" || lower === "pet_feeding" || lower === "petfeeding"
-      ? "🐾"
-      : lower === "brainstorm-battle" || lower === "brainstorm_battle" || lower === "brainstormbattle"
-      ? "💡"
-      : lower === "collaboration" || lower === "collab"
-      ? "🤝"
-      : lower === "live-debate" || lower === "live_debate" || lower === "livedebate"
-      ? "🗣️"
-      : lower.includes("debate")
-      ? "🗣️"
-      : lower.includes("brain")
-      ? "🧠"
-      : lower.includes("hangman")
-      ? "🪢"
-      : lower.includes("mood")
-      ? "🙂"
-      : lower.includes("pronunciation") || lower.includes("speech")
-      ? "🎙️"
-      : "🧩";
-
-  const label = meta?.label || type;
-
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200 text-[11px] font-semibold">
-      <span aria-hidden="true">{emoji}</span>
-      <span className="uppercase tracking-wide">{label}</span>
-    </span>
-  );
-}
 
 export default function SessionAnalyticsPage() {
   const { id } = useParams();
@@ -143,7 +105,9 @@ export default function SessionAnalyticsPage() {
                   <tr key={t.taskId} className="border-t">
                     <td className="p-2 align-top">{idx + 1}</td>
                     <td className="p-2 align-top max-w-xs sm:max-w-none">
-                      {typeBadge(t.type)}
+                      <span className="uppercase text-[9px] text-gray-500 mr-1">
+                        [{t.type}]
+                      </span>
                       {t.prompt}
                     </td>
                     <td className="p-2 align-top text-right">

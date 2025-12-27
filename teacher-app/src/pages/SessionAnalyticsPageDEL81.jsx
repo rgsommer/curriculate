@@ -2,43 +2,41 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../api/client";
-import { TASK_TYPE_META } from "../shared/taskTypes";
-
+import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
 
 function typeBadge(typeRaw) {
   const type = String(typeRaw || "").trim();
-  const meta = TASK_TYPE_META?.[type] || null;
-
-  const lower = type.toLowerCase();
+  const meta = TASK_TYPE_META?.[type];
+  const label = meta?.label || type || "task";
+  const cat = String(meta?.category || "other").toLowerCase();
   const emoji =
-    lower === "pet-feeding" || lower === "pet_feeding" || lower === "petfeeding"
-      ? "🐾"
-      : lower === "brainstorm-battle" || lower === "brainstorm_battle" || lower === "brainstormbattle"
-      ? "💡"
-      : lower === "collaboration" || lower === "collab"
-      ? "🤝"
-      : lower === "live-debate" || lower === "live_debate" || lower === "livedebate"
+    type === "mood-checkin"
+      ? "😊"
+      : type === "multi-player-feedback"
+      ? "💬"
+      : type === "true-false-tictactoe"
+      ? "❎⭕"
+      : type === "pronunciation"
       ? "🗣️"
-      : lower.includes("debate")
-      ? "🗣️"
-      : lower.includes("brain")
-      ? "🧠"
-      : lower.includes("hangman")
-      ? "🪢"
-      : lower.includes("mood")
-      ? "🙂"
-      : lower.includes("pronunciation") || lower.includes("speech")
+      : type === "speech-recognition"
+      ? "🎤"
+      : type === "record-audio"
       ? "🎙️"
+      : type === "hangman-duel"
+      ? "🧩"
+      : type === "brain-blitz"
+      ? "⚡"
+      : cat === "physical"
+      ? "🏃"
+      : cat === "bluffing"
+      ? "🃏"
+      : cat === "drawing"
+      ? "✏️"
+      : cat === "audio"
+      ? "🎧"
       : "🧩";
 
-  const label = meta?.label || type;
-
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200 text-[11px] font-semibold">
-      <span aria-hidden="true">{emoji}</span>
-      <span className="uppercase tracking-wide">{label}</span>
-    </span>
-  );
+  return { type, label, emoji, cat };
 }
 
 export default function SessionAnalyticsPage() {
@@ -94,30 +92,39 @@ export default function SessionAnalyticsPage() {
 
       <div className="text-xs sm:text-sm space-y-1">
         <p>
-          Tasks Completed: {session.totalTasks} → {session.completedTasks} (
-          {Math.round(
-            (session.completedTasks / session.totalTasks) * 100
-          )}
-          %)
+          {(() => {
+            const total = Number(session.totalTasks) || 0;
+            const done = Number(session.completedTasks) || 0;
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            return (
+              <>
+                Tasks Completed: {total} → {done} ({pct}%)
+              </>
+            );
+          })()}
         </p>
         <p>
           Fastest Average Response:{" "}
-          {Math.min(
-            ...session.teams.map((t) => t.avgResponseTime || 999)
-          ).toFixed(1)}
-          s
+          {(() => {
+            const vals = Array.isArray(session.teams)
+              ? session.teams
+                  .map((t) => Number(t.avgResponseTime))
+                  .filter((n) => Number.isFinite(n) && n > 0)
+              : [];
+            if (!vals.length) return "—";
+            return `${Math.min(...vals).toFixed(1)}s`;
+          })()}
         </p>
         <p>
           Perfect Task Rate:{" "}
-          {(
-            (session.teams.reduce(
-              (s, t) => s + t.perfectTasks,
-              0
-            ) /
-              session.completedTasks) *
-            100
-          ).toFixed(1)}
-          %
+          {(() => {
+            const done = Number(session.completedTasks) || 0;
+            const perfect = Array.isArray(session.teams)
+              ? session.teams.reduce((sum, t) => sum + (Number(t.perfectTasks) || 0), 0)
+              : 0;
+            if (done <= 0) return "—";
+            return `${((perfect / done) * 100).toFixed(1)}%`;
+          })()}
         </p>
       </div>
 
@@ -143,8 +150,21 @@ export default function SessionAnalyticsPage() {
                   <tr key={t.taskId} className="border-t">
                     <td className="p-2 align-top">{idx + 1}</td>
                     <td className="p-2 align-top max-w-xs sm:max-w-none">
-                      {typeBadge(t.type)}
-                      {t.prompt}
+                      {(() => {
+                        const b = typeBadge(t.type);
+                        return (
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-700">
+                                <span aria-hidden>{b.emoji}</span>
+                                <span className="font-semibold">{b.label}</span>
+                              </span>
+                              <span className="uppercase text-[9px] text-gray-500">[{b.type}]</span>
+                            </div>
+                            <div className="text-[11px] sm:text-xs text-gray-900">{t.prompt || "—"}</div>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-2 align-top text-right">
                       {t.avgScore != null ? `${t.avgScore}%` : "—"}
@@ -237,9 +257,15 @@ export default function SessionAnalyticsPage() {
                 {selectedStudent.perTask.map((pt, idx) => (
                   <li key={idx}>
                     <strong>{idx + 1}.</strong>{" "}
-                    <span className="uppercase text-[9px] text-gray-500 mr-1">
-                      [{pt.type}]
-                    </span>
+                    {(() => {
+                      const b = typeBadge(pt.type);
+                      return (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-700 mr-1">
+                          <span aria-hidden>{b.emoji}</span>
+                          <span className="font-semibold">{b.label}</span>
+                        </span>
+                      );
+                    })()}
                     {pt.prompt} –{" "}
                     <span
                       className={

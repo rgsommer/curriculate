@@ -72,9 +72,6 @@ const QUICK_TASK_TYPES = Array.from(
     (TASK_TYPES.PRONUNCIATION || "pronunciation"),
     (TASK_TYPES.RECORD_AUDIO || "record-audio"),
     (TASK_TYPES.SPEECH_RECOGNITION || "speech-recognition"),
-    (TASK_TYPES.BRAIN_BLITZ || "brainblitz"),
-    (TASK_TYPES.HANGMAN_DUEL || "hangman-duel"),
-    (TASK_TYPES.MOOD_CHECKIN || "mood-checkin"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 
@@ -2254,81 +2251,6 @@ if (
           intraTeamEnabled: false,
           objectiveScoring: false,
           aiScoringRequired: false,
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟦 MOOD CHECK-IN (non-scored, non-timed, climate)
-      if (
-        generatedType === (TASK_TYPES.MOOD_CHECKIN || "mood-checkin") ||
-        String(generatedType).toLowerCase() === "mood-checkin" ||
-        String(generatedType).toLowerCase() === "mood_checkin"
-      ) {
-        setTaskConfig({
-          prompt:
-            baseTask.prompt ||
-            "Quick mood check-in: each player taps a mood and the team can add an optional note.",
-          timeLimitSeconds: 0,
-          points: 0,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: false,
-          objectiveScoring: false,
-          aiScoringRequired: false,
-          config: baseTask.config && typeof baseTask.config === "object" ? baseTask.config : {},
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🎯 BRAIN BLITZ (fast-paced category sprint; objective-ish / often timed)
-      if (
-        generatedType === (TASK_TYPES.BRAIN_BLITZ || "brainblitz") ||
-        String(generatedType).toLowerCase() === "brainblitz" ||
-        String(generatedType).toLowerCase() === "brain-blitz" ||
-        String(generatedType).toLowerCase() === "brain_blitz"
-      ) {
-        const cfg = baseTask.config && typeof baseTask.config === "object" ? baseTask.config : {};
-        setTaskConfig({
-          prompt: baseTask.prompt || "Brain Blitz: rapid-fire answers before the timer runs out!",
-          timeLimitSeconds:
-            Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 60,
-          points: typeof baseTask.points === "number" ? baseTask.points : 10,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: true,
-          objectiveScoring: false,
-          aiScoringRequired: false,
-          // BrainBlitzTask reads from `config` (categories/items/etc.)
-          config: cfg,
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🪢 HANGMAN DUEL (intra-team turn-based word solve)
-      if (
-        generatedType === (TASK_TYPES.HANGMAN_DUEL || "hangman-duel") ||
-        String(generatedType).toLowerCase() === "hangman-duel" ||
-        String(generatedType).toLowerCase() === "hangman_duel"
-      ) {
-        const cfg = baseTask.config && typeof baseTask.config === "object" ? baseTask.config : {};
-        setTaskConfig({
-          prompt: baseTask.prompt || "Solve the mystery word! Take turns choosing letters.",
-          timeLimitSeconds:
-            Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 120,
-          points: typeof baseTask.points === "number" ? baseTask.points : 10,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: true,
-          objectiveScoring: true,
-          aiScoringRequired: false,
-          // HangmanDuelTask expects its gameplay settings under config
-          config: cfg,
         });
         setShowAiGen(false);
         return;

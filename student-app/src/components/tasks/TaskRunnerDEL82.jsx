@@ -324,38 +324,6 @@ case "feedback":
     case "fake out":
       return TASK_TYPES.FAKE_OUT;
 
-    // Brainstorm Battle
-    case "brainstorm-battle":
-    case "brainstorm_battle":
-    case "brainstormbattle":
-      return TASK_TYPES.BRAINSTORM_BATTLE;
-
-    // Collaboration
-    case "collaboration":
-    case "collab":
-      return TASK_TYPES.COLLABORATION;
-
-    // Live Debate
-    case "live-debate":
-    case "live_debate":
-    case "debate":
-      return TASK_TYPES.LIVE_DEBATE;
-
-    // Brain Blitz / Jeopardy
-    case "brain-blitz":
-    case "brain_blitz":
-    case "brainblitz":
-    case "jeopardy":
-      return TASK_TYPES.JEOPARDY;
-
-    // Pet Feeding
-    case "pet-feeding":
-    case "pet_feeding":
-    case "petfeeding":
-    case "feed-the-pet":
-      return TASK_TYPES.PET_FEEDING;
-
-
     default:
       return raw;
   }

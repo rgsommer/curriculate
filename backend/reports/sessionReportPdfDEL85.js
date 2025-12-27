@@ -266,6 +266,15 @@ function taskTypeEmoji(typeRaw) {
   const t = String(typeRaw || "").toLowerCase();
   if (!t) return "🧩";
 
+  // Explicit newer / special types
+  if (t === "mood-checkin" || t.includes("mood-check")) return "😊";
+  if (t === "multi-player-feedback" || t.includes("feedback")) return "💬";
+  if (t === "true-false-tictactoe" || t.includes("tictactoe") || t.includes("tic-tac")) return "❎⭕";
+  if (t === "pronunciation" || t.includes("pronunci")) return "🗣️";
+  if (t === "speech-recognition" || t.includes("speech-recogn") || t.includes("speech recognition")) return "🎤";
+  if (t === "record-audio" || (t.includes("record") && t.includes("audio"))) return "🎙️";
+  if (t === "brain-blitz" || t.includes("brain-blitz") || t.includes("jeopardy")) return "⚡";
+
   // Common objective types
   if (t.includes("matching")) return "🔗";
   if (t.includes("sequence")) return "🔢";
@@ -299,9 +308,6 @@ function taskTypeEmoji(typeRaw) {
   if (t.includes("debate")) return "🗣️";
   if (t.includes("fake-out") || t.includes("fakeout") || t.includes("balderdash") || t.includes("bluff")) return "🤥";
   if (t.includes("word-weaver") || t.includes("word_weaver") || t.includes("wordweaver")) return "🔤";
-  if (t.includes("brainstorm")) return "💡";
-  if (t.includes("collaboration") || t.includes("collab")) return "🤝";
-  if (t.includes("pet") && (t.includes("feed") || t.includes("feeding") || t.includes("pet-feeding") || t.includes("pet_feeding"))) return "🐾";
 
   // Paper-based, photographed
   if (t.includes("brain") || t.includes("spark") || t.includes("notes")) return "🧠";
@@ -409,52 +415,47 @@ function formatDate(d) {
         const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(t.prompts) ? t.prompts : [];
         if (prompts.length) bulletsLines.push(`Prompt bank: ${prompts.length}.`);
         bulletsLines.push("Skill focus: rapid retrieval + concept visualization.");
-      }
-
-      if (norm === "brainstorm-battle") {
+      } else if (norm === "true-false-tictactoe") {
+        const sets = Array.isArray(t.sets) ? t.sets : Array.isArray(t.rounds) ? t.rounds : null;
+        const items = Array.isArray(t.items) ? t.items : null;
+        const totalStatements =
+          (sets && sets.reduce((n, s) => n + (Array.isArray(s?.statements) ? s.statements.length : 0), 0)) ||
+          (items ? items.length : null);
+        if (totalStatements != null) bulletsLines.push(`True/False statements: ${totalStatements}.`);
+        bulletsLines.push("Intra-team duel: players race to claim squares using assigned True/False choices.");
+        bulletsLines.push("Skill focus: evaluation + retrieval practice under strategy.");
+      } else if (norm === "hangman-duel") {
+        const word = String(t.secretWord || t.word || "").trim();
+        const wordLen = Number.isFinite(Number(t.wordLength)) ? Number(t.wordLength) : word ? word.length : null;
+        const wrongLimit = Number.isFinite(Number(t.wrongLimit)) ? Number(t.wrongLimit) : 6;
+        const powerUps = Array.isArray(t.powerUps) ? t.powerUps : Array.isArray(t.cards) ? t.cards : [];
+        if (wordLen != null) bulletsLines.push(`Word length: ${wordLen}.`);
+        bulletsLines.push(`Wrong guesses allowed: ${wrongLimit}.`);
+        if (powerUps.length) bulletsLines.push(`Power-ups: ${powerUps.slice(0, 4).map((p) => p?.name || p?.type || p).join(", ")}.`);
+        bulletsLines.push("Skill focus: spelling, vocabulary, pattern recognition, risk/reward guessing.");
+      } else if (norm === "mood-checkin") {
+        bulletsLines.push("No score / no timer: each student taps a mood emoji (optional shared note).");
+        bulletsLines.push("Skill focus: classroom climate + emotional awareness.");
+      } else if (norm === "multi-player-feedback") {
+        bulletsLines.push("No score: each student rates the taskset and can leave an optional comment.");
+        bulletsLines.push("Skill focus: reflection + student voice for iteration.");
+      } else if (norm === "pronunciation") {
         const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const seed = String(cfg.seedTopic || t.seedTopic || "").trim();
-        const slots = Number.isFinite(Number(cfg.ideaSlots)) ? Number(cfg.ideaSlots) : Number.isFinite(Number(t.ideaSlots)) ? Number(t.ideaSlots) : null;
-        const voting = typeof cfg.enableVoting === "boolean" ? cfg.enableVoting : typeof t.enableVoting === "boolean" ? t.enableVoting : null;
-        if (seed) bulletsLines.push(`Seed topic: ${seed.length > 80 ? seed.slice(0, 80) + "…" : seed}`);
-        if (slots != null) bulletsLines.push(`Idea slots: ${slots}.`);
-        if (voting != null) bulletsLines.push(`Voting: ${voting ? "enabled" : "off"}.`);
-        bulletsLines.push("Open-ended brainstorm: divergent thinking + collaboration.");
-      }
-
-      if (norm === "collaboration") {
+        const phrases = Array.isArray(cfg.phrases) ? cfg.phrases : Array.isArray(t.phrases) ? t.phrases : [];
+        const lang = String(cfg.languageCode || t.languageCode || "").trim();
+        if (lang) bulletsLines.push(`Language: ${lang}.`);
+        if (phrases.length) bulletsLines.push(`Prompts: ${phrases.length}.`);
+        bulletsLines.push("AI feedback: pronunciation accuracy + coaching cues.");
+      } else if (norm === "record-audio") {
+        const secs = Number.isFinite(Number(t.maxSeconds)) ? Number(t.maxSeconds) : null;
+        if (secs != null) bulletsLines.push(`Max recording: ${secs}s.`);
+        bulletsLines.push("Teacher-reviewed: students record an oral response for later listening.");
+      } else if (norm === "speech-recognition") {
         const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const minWords = Number.isFinite(Number(cfg.minWords)) ? Number(cfg.minWords) : null;
-        const bonus = typeof cfg.bonusComparisonEnabled === "boolean" ? cfg.bonusComparisonEnabled : null;
-        const critCount = Array.isArray(cfg.rubric?.criteria) ? cfg.rubric.criteria.length : Array.isArray(cfg.criteria) ? cfg.criteria.length : null;
-        if (minWords != null) bulletsLines.push(`Minimum length: ~${minWords} words.`);
-        if (bonus != null) bulletsLines.push(`Bonus comparison: ${bonus ? "on" : "off"}.`);
-        if (critCount != null) bulletsLines.push(`Rubric criteria: ${critCount}.`);
-        bulletsLines.push("Inter-team: write → read another team → reply/extend.");
-      }
-
-      if (norm === "live-debate") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const topics = Array.isArray(cfg.topics) ? cfg.topics : Array.isArray(t.topics) ? t.topics : [];
-        const prep = Number.isFinite(Number(cfg.prepSeconds)) ? Number(cfg.prepSeconds) : null;
-        const max = Number.isFinite(Number(cfg.maxSeconds)) ? Number(cfg.maxSeconds) : null;
-        const roles = Array.isArray(cfg.roles) ? cfg.roles : null;
-        if (topics.length) bulletsLines.push(`Topic choices: ${topics.length}.`);
-        if (prep != null) bulletsLines.push(`Prep time: ${Math.round(prep)}s.`);
-        if (max != null) bulletsLines.push(`Speaking cap: ${Math.round(max)}s per turn.`);
-        if (roles && roles.length) bulletsLines.push(`Role slots: ${roles.length}.`);
-        bulletsLines.push("Timed speaking turns + rebuttals; AI-scored reasoning.");
-      }
-
-      if (norm === "pet-feeding") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const pet = String(cfg.petName || t.petName || "").trim();
-        const pack = String(cfg.pack || t.pack || cfg.theme || t.theme || "").trim();
-        const pts = Number.isFinite(Number(cfg.pointsAwarded)) ? Number(cfg.pointsAwarded) : Number.isFinite(Number(t.pointsAwarded)) ? Number(t.pointsAwarded) : null;
-        if (pet) bulletsLines.push(`Pet: ${pet}.`);
-        if (pack) bulletsLines.push(`Pack/theme: ${pack}.`);
-        if (pts != null) bulletsLines.push(`Points: ${pts}.`);
-        bulletsLines.push("Motivation loop: correct work powers up your pet.");
+        const lang = String(cfg.languageCode || t.languageCode || "").trim();
+        if (lang) bulletsLines.push(`Recognition language: ${lang}.`);
+        bulletsLines.push("Students speak an answer → AI transcribes and scores for meaning/accuracy.");
+        bulletsLines.push("Skill focus: oral explanation + accessibility + speaking confidence.");
       }
 
       if (bulletsLines.length) {

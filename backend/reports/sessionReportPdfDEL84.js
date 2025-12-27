@@ -299,9 +299,6 @@ function taskTypeEmoji(typeRaw) {
   if (t.includes("debate")) return "🗣️";
   if (t.includes("fake-out") || t.includes("fakeout") || t.includes("balderdash") || t.includes("bluff")) return "🤥";
   if (t.includes("word-weaver") || t.includes("word_weaver") || t.includes("wordweaver")) return "🔤";
-  if (t.includes("brainstorm")) return "💡";
-  if (t.includes("collaboration") || t.includes("collab")) return "🤝";
-  if (t.includes("pet") && (t.includes("feed") || t.includes("feeding") || t.includes("pet-feeding") || t.includes("pet_feeding"))) return "🐾";
 
   // Paper-based, photographed
   if (t.includes("brain") || t.includes("spark") || t.includes("notes")) return "🧠";
@@ -409,52 +406,6 @@ function formatDate(d) {
         const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(t.prompts) ? t.prompts : [];
         if (prompts.length) bulletsLines.push(`Prompt bank: ${prompts.length}.`);
         bulletsLines.push("Skill focus: rapid retrieval + concept visualization.");
-      }
-
-      if (norm === "brainstorm-battle") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const seed = String(cfg.seedTopic || t.seedTopic || "").trim();
-        const slots = Number.isFinite(Number(cfg.ideaSlots)) ? Number(cfg.ideaSlots) : Number.isFinite(Number(t.ideaSlots)) ? Number(t.ideaSlots) : null;
-        const voting = typeof cfg.enableVoting === "boolean" ? cfg.enableVoting : typeof t.enableVoting === "boolean" ? t.enableVoting : null;
-        if (seed) bulletsLines.push(`Seed topic: ${seed.length > 80 ? seed.slice(0, 80) + "…" : seed}`);
-        if (slots != null) bulletsLines.push(`Idea slots: ${slots}.`);
-        if (voting != null) bulletsLines.push(`Voting: ${voting ? "enabled" : "off"}.`);
-        bulletsLines.push("Open-ended brainstorm: divergent thinking + collaboration.");
-      }
-
-      if (norm === "collaboration") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const minWords = Number.isFinite(Number(cfg.minWords)) ? Number(cfg.minWords) : null;
-        const bonus = typeof cfg.bonusComparisonEnabled === "boolean" ? cfg.bonusComparisonEnabled : null;
-        const critCount = Array.isArray(cfg.rubric?.criteria) ? cfg.rubric.criteria.length : Array.isArray(cfg.criteria) ? cfg.criteria.length : null;
-        if (minWords != null) bulletsLines.push(`Minimum length: ~${minWords} words.`);
-        if (bonus != null) bulletsLines.push(`Bonus comparison: ${bonus ? "on" : "off"}.`);
-        if (critCount != null) bulletsLines.push(`Rubric criteria: ${critCount}.`);
-        bulletsLines.push("Inter-team: write → read another team → reply/extend.");
-      }
-
-      if (norm === "live-debate") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const topics = Array.isArray(cfg.topics) ? cfg.topics : Array.isArray(t.topics) ? t.topics : [];
-        const prep = Number.isFinite(Number(cfg.prepSeconds)) ? Number(cfg.prepSeconds) : null;
-        const max = Number.isFinite(Number(cfg.maxSeconds)) ? Number(cfg.maxSeconds) : null;
-        const roles = Array.isArray(cfg.roles) ? cfg.roles : null;
-        if (topics.length) bulletsLines.push(`Topic choices: ${topics.length}.`);
-        if (prep != null) bulletsLines.push(`Prep time: ${Math.round(prep)}s.`);
-        if (max != null) bulletsLines.push(`Speaking cap: ${Math.round(max)}s per turn.`);
-        if (roles && roles.length) bulletsLines.push(`Role slots: ${roles.length}.`);
-        bulletsLines.push("Timed speaking turns + rebuttals; AI-scored reasoning.");
-      }
-
-      if (norm === "pet-feeding") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const pet = String(cfg.petName || t.petName || "").trim();
-        const pack = String(cfg.pack || t.pack || cfg.theme || t.theme || "").trim();
-        const pts = Number.isFinite(Number(cfg.pointsAwarded)) ? Number(cfg.pointsAwarded) : Number.isFinite(Number(t.pointsAwarded)) ? Number(t.pointsAwarded) : null;
-        if (pet) bulletsLines.push(`Pet: ${pet}.`);
-        if (pack) bulletsLines.push(`Pack/theme: ${pack}.`);
-        if (pts != null) bulletsLines.push(`Points: ${pts}.`);
-        bulletsLines.push("Motivation loop: correct work powers up your pet.");
       }
 
       if (bulletsLines.length) {

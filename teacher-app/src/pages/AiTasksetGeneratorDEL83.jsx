@@ -9,16 +9,11 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
 const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
-// Generator-eligible task types (mirror backend intent):
+// AI-eligible *generator* types (mirror backend intent):
 // - implemented: must have a working student UI + schema
-// - generatorEligible: safe to include in AI-generated sets (even if the task itself is non-AI / template driven)
-// - aiEligible: whether the content needs to be produced by the AI pipeline
-const GENERATOR_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false)
-  .map(([type]) => type);
-
-// Subset that actually requires AI content generation (used only for UI hints)
-const AI_GENERATED_TYPES = Object.entries(TASK_TYPE_META)
+// - generatorEligible: safe for AI to generate as a standalone task
+// - aiEligible: can be produced by the AI pipeline (some types are manual/teacher-only)
+const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
   .filter(
     ([, meta]) =>
       meta.implemented !== false &&
@@ -26,7 +21,6 @@ const AI_GENERATED_TYPES = Object.entries(TASK_TYPE_META)
       meta.aiEligible !== false
   )
   .map(([type]) => type);
-
 
 export default function AiTasksetGenerator() {
   const navigate = useNavigate();
@@ -321,7 +315,7 @@ export default function AiTasksetGenerator() {
     )
   ).sort();
 
-  const filteredEligibleTypes = GENERATOR_ELIGIBLE_TYPES.filter((type) => {
+  const filteredEligibleTypes = AI_ELIGIBLE_TYPES.filter((type) => {
     const meta = TASK_TYPE_META[type] || {};
     const cat = String(meta.category || "other").toLowerCase();
     if (taskTypeCategory !== "all" && cat !== taskTypeCategory) return false;
@@ -422,25 +416,7 @@ export default function AiTasksetGenerator() {
           · {category}
         </span>
 
-        
-        {meta.aiEligible === false && (
-          <span
-            style={{
-              fontSize: "0.7rem",
-              fontWeight: 800,
-              padding: "2px 8px",
-              borderRadius: 999,
-              border: "1px solid rgba(234,88,12,0.35)",
-              background: "rgba(234,88,12,0.10)",
-              color: "#9a3412",
-              marginLeft: 2,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Template
-          </span>
-        )}
-{meta.intraTeamEnabled === true && (
+        {meta.intraTeamEnabled === true && (
           <span
             style={{
               fontSize: "0.68rem",
