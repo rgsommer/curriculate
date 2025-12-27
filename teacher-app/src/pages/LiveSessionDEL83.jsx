@@ -62,11 +62,6 @@ const QUICK_TASK_TYPES = Array.from(
     (TASK_TYPES.SEQUENCE || "sequence"),
     (TASK_TYPES.SORT || "sort"),
     (TASK_TYPES.TIMELINE || "timeline"),
-    (TASK_TYPES.VENNSORT || "vennsort"),
-    (TASK_TYPES.SPEED_DRAW || "speed-draw"),
-    (TASK_TYPES.PHOTO_JOURNAL || "photo-journal"),
-    (TASK_TYPES.PHOTO || "photo"),
-    (TASK_TYPES.HIDENSEEK || "hidenseek"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 
@@ -915,65 +910,28 @@ useEffect(() => {
     setShowRoomSetup(true);
   };
 
-
-
   const handleLaunchQuickTask = () => {
-    if (!roomCode) return;
-
-    const tt = String(taskType || "").trim();
-
-    const isGuessWho = tt === (TASK_TYPES.GUESS_WHO || "guess-who") || tt === "guess-who";
-    const isEchoChain = tt === (TASK_TYPES.ECHO_CHAIN || "echo-chain") || tt === "echo-chain";
-    const isWordWeaver = tt === (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel") || tt === "word-weaver-duel";
-    const isFakeOut = tt === (TASK_TYPES.FAKE_OUT || "fake-out") || tt === "fake-out" || tt === "fakeout";
-    const isNarration =
-      tt === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize") || tt === "narration-synthesize";
+    const isGuessWho = taskType === TASK_TYPES.GUESS_WHO || taskType === "guess-who";
+    const isEchoChain = taskType === TASK_TYPES.ECHO_CHAIN || taskType === "echo-chain";
+    const isWordWeaver =
+      taskType === TASK_TYPES.WORD_WEAVER_DUEL || taskType === "word-weaver-duel";
+    const isFakeOut = taskType === TASK_TYPES.FAKE_OUT || taskType === "fake-out" || taskType === "fakeout";
+    const isNarration = taskType === TASK_TYPES.NARRATION_SYNTHESIZE || taskType === "narration-synthesize";
     const isRolePlay =
-      tt === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-      tt === "role-play-deck" ||
-      tt === (TASK_TYPES.ROLE_PLAY || "role-play") ||
-      tt === "role-play" ||
-      tt === "roleplay";
-
-    const isDiffDetective = tt === (TASK_TYPES.DIFF_DETECTIVE || "diff-detective") || tt === "diff-detective";
-    const isVennSort = tt === (TASK_TYPES.VENNSORT || "vennsort") || tt === "vennsort";
-    const isSpeedDraw = tt === (TASK_TYPES.SPEED_DRAW || "speed-draw") || tt === "speed-draw";
-    const isDrawMime = tt === (TASK_TYPES.DRAW_MIME || "draw-mime") || tt === "draw-mime";
-    const isPhysicalMysteryClues =
-      tt === (TASK_TYPES.PHYSICAL_MYSTERY_CLUES || "physical-mystery-clues") || tt === "physical-mystery-clues";
-
-    const isPhotoJournal =
-      tt === (TASK_TYPES.PHOTO_JOURNAL || "photo-journal") || tt === "photo-journal" || tt === "photojournal";
-    const isPhotoTask = tt === (TASK_TYPES.PHOTO || "photo") || tt === "photo" || tt === "photo-task";
-    const isHideNSeek = tt === (TASK_TYPES.HIDENSEEK || "hidenseek") || tt === "hidenseek";
-
-    // Basic validation
-    const promptOk = String(taskConfig?.prompt || "").trim().length > 0;
-    if (
-      !isGuessWho &&
-      !isEchoChain &&
-      !isNarration &&
-      !isRolePlay &&
-      !isFakeOut &&
-      !isDiffDetective &&
-      !isVennSort &&
-      !isSpeedDraw &&
-      !isDrawMime &&
-      !isPhysicalMysteryClues &&
-      !isPhotoJournal &&
-      !isPhotoTask &&
-      !isHideNSeek &&
-      !promptOk
-    ) {
-      return;
-    }
-
+      taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
+      taskType === "role-play-deck" ||
+      taskType === TASK_TYPES.ROLE_PLAY ||
+      taskType === "role-play" ||
+      taskType === "roleplay";
+    if (!roomCode) return;
+    if (!isGuessWho && !isEchoChain && !isNarration && !isRolePlay && !isFakeOut && !isDiffDetective && !isVennSort && !isSpeedDraw && !isDrawMime && !isPhysicalMysteryClues && !taskConfig.prompt?.trim()) return;
     if (isFakeOut) {
       const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
       const pc = Number(cfg.playerCount);
       const rounds = Array.isArray(cfg.rounds) ? cfg.rounds : [];
       if (!(pc > 0)) return;
       if (rounds.length === 0) return;
+      // ensure each round has at least statement + 4 options
       const ok = rounds.every((r) => {
         const statement = String(r?.statement ?? "").trim();
         const options = Array.isArray(r?.options) ? r.options : [];
@@ -988,17 +946,14 @@ useEffect(() => {
       if (!(pc > 0) || prompts.length === 0) return;
       if (prompts.length !== pc) return;
     }
-
     if (isEchoChain) {
       const seed = String(taskConfig.seedTerm || taskConfig.startTerm || "").trim();
       if (!seed) return;
     }
-
     if (isRolePlay) {
       const roles = Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [];
       const scenario = String(taskConfig?.config?.scenario || "").trim();
-      if (roles.length === 0 || !scenario) return;
-    }
+      if (roles.length === 0 || !scenario) return
 
     if (isDiffDetective) {
       const original = String(taskConfig.original || "").trim();
@@ -1007,102 +962,25 @@ useEffect(() => {
     }
 
     if (isVennSort) {
-      const cats = Array.isArray(taskConfig?.config?.categories)
-        ? taskConfig.config.categories
-        : Array.isArray(taskConfig?.categories)
-        ? taskConfig.categories
-        : [];
-      const items = Array.isArray(taskConfig?.config?.items)
-        ? taskConfig.config.items
-        : Array.isArray(taskConfig?.items)
-        ? taskConfig.items
-        : [];
-      if (cats.filter(Boolean).length < 2) return;
-      if (items.filter(Boolean).length < 3) return;
-    }
-
-    if (isSpeedDraw) {
-      const w = String(taskConfig.word || taskConfig?.config?.word || "").trim();
-      if (!w) return;
-    }
-
-    if (isDrawMime) {
       const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-      const prompts = Array.isArray(cfg.prompts)
-        ? cfg.prompts
-        : Array.isArray(taskConfig.prompts)
-        ? taskConfig.prompts
-        : [];
+      const circles = Array.isArray(cfg.circles) ? cfg.circles : Array.isArray(taskConfig.circles) ? taskConfig.circles : [];
+      const items = Array.isArray(cfg.items) ? cfg.items : Array.isArray(taskConfig.items) ? taskConfig.items : [];
+      if (circles.length < 2 || circles.length > 3) return;
+      if (items.length < 3) return;
+    }
+
+    if (isSpeedDraw || isDrawMime) {
+      const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
+      const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(taskConfig.prompts) ? taskConfig.prompts : [];
       if (prompts.length === 0) return;
     }
 
     if (isPhysicalMysteryClues) {
       const clues = Array.isArray(taskConfig.clues) ? taskConfig.clues : [];
+      // physical mystery clues should always include at least one clue card/text
       if (clues.length === 0) return;
     }
-
-    if (isHideNSeek) {
-      const pr = String(
-        taskConfig?.config?.pageReference ||
-          taskConfig?.config?.pageRef ||
-          taskConfig?.pageReference ||
-          ""
-      ).trim();
-      if (!pr) return;
-    }
-
-    // Defaults from shared meta if present
-    const typeMetaForLaunch = TASK_TYPE_META[tt] || {};
-    const objectiveScoringDefault = !!typeMetaForLaunch.objectiveScoring;
-    const aiScoringRequiredDefault =
-      typeof typeMetaForLaunch.aiScoringRequired === "boolean"
-        ? typeMetaForLaunch.aiScoringRequired
-        : tt === (TASK_TYPES.OPEN_TEXT || "open-text") || tt === (TASK_TYPES.SHORT_ANSWER || "short-answer");
-
-    const taskToSend = {
-      taskType: tt || (TASK_TYPES.SHORT_ANSWER || "short-answer"),
-      interTeamEnabled: false,
-      intraTeamEnabled: false,
-      objectiveScoring: objectiveScoringDefault,
-      aiScoringRequired: aiScoringRequiredDefault,
-      prompt: String(taskConfig.prompt || "").trim(),
-      correctAnswer: taskConfig.correctAnswer || null,
-      options:
-        Array.isArray(taskConfig.options) && taskConfig.options.length > 0 ? taskConfig.options : undefined,
-      items:
-        Array.isArray(taskConfig.items) && taskConfig.items.length > 0 ? taskConfig.items : undefined,
-      config:
-        taskConfig && typeof taskConfig.config === "object" && taskConfig.config ? taskConfig.config : undefined,
-      points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
-      subject: taskConfig.subject || "Ad-hoc",
-      gradeLevel: taskConfig.gradeLevel || "",
-      timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
-      reviewPauseSeconds: reviewPauseSeconds || 15,
-    };
-
-    // ---- Type-specific normalization ----
-
-    if (isFakeOut) {
-      const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-      const pc = Number(cfg.playerCount) > 0 ? Number(cfg.playerCount) : 4;
-      const rounds = Array.isArray(cfg.rounds) ? cfg.rounds : [];
-      taskToSend.prompt =
-        String(taskConfig.prompt || "").trim() ||
-        "Fake Out: One player reads aloud; everyone else listens and votes.";
-      taskToSend.config = {
-        ...(cfg || {}),
-        playerCount: pc,
-        rounds,
-        perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 45,
-        readerBonusPoints: Number(cfg.readerBonusPoints) > 0 ? Number(cfg.readerBonusPoints) : 5,
-      };
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90;
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = true;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
+;
     }
 
     if (isGuessWho) {
@@ -1111,237 +989,417 @@ useEffect(() => {
         : taskConfig.secretAnswer
         ? [taskConfig.secretAnswer]
         : [];
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Ask yes/no questions to identify the secret concept.";
-      taskToSend.secretAnswers = secrets.map((s) => String(s || "").trim()).filter(Boolean);
-      taskToSend.category = String(taskConfig.category || taskConfig.topic || taskConfig.subject || "").trim() || undefined;
-      taskToSend.maxGuesses = Number(taskConfig.maxGuesses) > 0 ? Number(taskConfig.maxGuesses) : 10;
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60;
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
+      if (secrets.length === 0 || !String(secrets[0] ?? "").trim()) return;
     }
-
-    if (isEchoChain) {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Repeat the chain aloud and add one related term each turn.";
-      taskToSend.seedTerm = String(taskConfig.seedTerm || taskConfig.startTerm || "").trim();
-      taskToSend.config = {
-        perTurnSeconds: Number(taskConfig.perTurnSeconds) > 0 ? Number(taskConfig.perTurnSeconds) : 10,
-        pointsPerCorrectAdd: Number(taskConfig.pointsPerCorrectAdd) > 0 ? Number(taskConfig.pointsPerCorrectAdd) : 2,
-        rotationBonusPoints: Number(taskConfig.rotationBonusPoints) > 0 ? Number(taskConfig.rotationBonusPoints) : 10,
-        maxChainLength: Number(taskConfig.maxChainLength) > 0 ? Number(taskConfig.maxChainLength) : 30,
-        requireVocabOnly: !!taskConfig.requireVocabOnly,
-      };
-      taskToSend.timeLimitSeconds = Number(taskConfig.perTurnSeconds) > 0 ? Number(taskConfig.perTurnSeconds) : 10;
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
-
     if (isWordWeaver) {
-      const phrase = String(taskConfig.targetPhrase || taskConfig.phrase || taskConfig.solution || taskConfig.answerPhrase || "").trim();
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Rebuild the phrase by placing the correct words in order.";
-      taskToSend.targetPhrase = phrase;
-      const rawBank = taskConfig.wordBank || taskConfig.words || taskConfig.bank || taskConfig.aiWordBank || taskConfig.aiWords || null;
-      const bank = Array.isArray(rawBank) ? rawBank.map((w) => String(w || "").trim()).filter(Boolean) : [];
-      taskToSend.wordBank = bank.length ? bank : (phrase ? phrase.split(/\s+/).filter(Boolean) : []);
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 240;
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
+      const phrase =
+        (taskConfig.targetPhrase ||
+          taskConfig.phrase ||
+          taskConfig.solution ||
+          taskConfig.answerPhrase ||
+          "").toString().trim();
+      if (!phrase) return;
     }
 
-    if (isRolePlay) {
-      taskToSend.taskType = TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck";
-      taskToSend.prompt =
-        String(taskConfig?.prompt || "").trim() ||
-        String(taskConfig?.config?.scenario || "").trim() ||
-        "Draw roles and role-play the scenario together.";
-      taskToSend.timeLimitSeconds = Number(taskConfig?.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 180;
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.config = {
-        mode: taskConfig?.config?.mode || "choose",
-        scenario: String(taskConfig?.config?.scenario || "").trim(),
-        roles: Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [],
-        playerCount: Number(taskConfig?.config?.playerCount) > 0 ? Number(taskConfig.config.playerCount) : undefined,
-        playerNames: Array.isArray(taskConfig?.config?.playerNames) ? taskConfig.config.playerNames : undefined,
-      };
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
 
-    if (isNarration) {
-      taskToSend.prompt =
-        String(taskConfig.prompt || "").trim() ||
-        "Take turns narrating these concept prompts to your team. Rate each speaker for clarity/accuracy.";
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.config = {
-        playerCount:
-          Number(taskConfig?.config?.playerCount) > 0
-            ? Number(taskConfig.config.playerCount)
-            : (Array.isArray(taskConfig?.config?.prompts) ? taskConfig.config.prompts.length : 0),
-        prompts: Array.isArray(taskConfig?.config?.prompts) ? taskConfig.config.prompts : [],
-        perTurnSeconds: Number(taskConfig?.config?.perTurnSeconds) >= 0 ? Number(taskConfig.config.perTurnSeconds) : 60,
-        ratingScale: taskConfig?.config?.ratingScale || { min: 1, max: 5, label: "Clarity / accuracy" },
-      };
-      taskToSend.timeLimitSeconds = Number(taskConfig?.config?.perTurnSeconds) > 0 ? Number(taskConfig.config.perTurnSeconds) : 60;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
+    setIsLaunchingQuick(true);
+    setQuickStatus(null);
 
-    if (isDiffDetective) {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Spot the differences and list everything that changed.";
-      taskToSend.original = taskConfig.original || "";
-      taskToSend.modified = taskConfig.modified || "";
-      taskToSend.differences = Array.isArray(taskConfig.differences) ? taskConfig.differences : [];
-      taskToSend.objectiveScoring = Array.isArray(taskConfig.differences) && taskConfig.differences.length > 0;
-      taskToSend.aiScoringRequired = !taskToSend.objectiveScoring;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
+    // Default scoring + gameplay flags derived from TASK_TYPE_META.
+    // For the three core quick tasks in this request (OPEN_TEXT, SHORT_ANSWER, TRUE_FALSE)
+    // we keep inter-team and intra-team disabled, and let the backend + student UI handle
+    // scoring/review based on objective vs AI scoring.
+    const typeMetaForLaunch = TASK_TYPE_META[taskType] || {};
+    const objectiveScoringDefault = !!typeMetaForLaunch.objectiveScoring;
+    const aiScoringRequiredDefault =
+      typeof typeMetaForLaunch.aiScoringRequired === "boolean"
+        ? typeMetaForLaunch.aiScoringRequired
+        : taskType === TASK_TYPES.OPEN_TEXT || taskType === TASK_TYPES.SHORT_ANSWER;
 
-    if (isVennSort) {
-      const cats = Array.isArray(taskConfig?.config?.categories) ? taskConfig.config.categories : Array.isArray(taskConfig?.categories) ? taskConfig.categories : [];
-      const items = Array.isArray(taskConfig?.config?.items) ? taskConfig.config.items : Array.isArray(taskConfig?.items) ? taskConfig.items : [];
-      const ca =
-        (taskConfig?.correctAnswer && typeof taskConfig.correctAnswer === "object"
-          ? taskConfig.correctAnswer
-          : (taskConfig?.config?.correctAnswer && typeof taskConfig.config.correctAnswer === "object"
-            ? taskConfig.config.correctAnswer
-            : null));
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Sort each item into the correct region of the Venn diagram.";
-      taskToSend.config = {
-        ...(taskToSend.config || {}),
-        categories: cats,
-        items,
-        correctAnswer: ca || undefined,
-        pointsPerCorrectCategory: Number(taskConfig?.config?.pointsPerCorrectCategory) > 0 ? Number(taskConfig.config.pointsPerCorrectCategory) : 2,
-      };
-      taskToSend.correctAnswer = ca || undefined;
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90;
-      taskToSend.objectiveScoring = !!ca;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
+    const taskToSend = {
+      taskType: taskType || "short-answer",
+      interTeamEnabled: false,
+      intraTeamEnabled: false,
+      objectiveScoring: objectiveScoringDefault,
+      aiScoringRequired: aiScoringRequiredDefault,
+      prompt: (taskConfig.prompt || "").trim(),
+      correctAnswer: taskConfig.correctAnswer || null,
+      options:
+        Array.isArray(taskConfig.options) && taskConfig.options.length > 0
+          ? taskConfig.options
+          : undefined,
+      items:
+        Array.isArray(taskConfig.items) && taskConfig.items.length > 0
+          ? taskConfig.items
+          : undefined,
+      points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
+      subject: taskConfig.subject || "Ad-hoc",
+      gradeLevel: taskConfig.gradeLevel || "",
+      clue: taskConfig.clue || undefined,
+      timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
+      reviewPauseSeconds: reviewPauseSeconds || 15,
+      // FakeOut (Balderdash-style) special fields
+      ...(isFakeOut && {
+        prompt:
+          (taskConfig.prompt || "").trim() ||
+          "Fake Out: One player reads aloud; everyone else listens and votes.",
+        config: (() => {
+          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
+          const pc = Number(cfg.playerCount) > 0 ? Number(cfg.playerCount) : 4;
+          const playerNames = Array.isArray(cfg.playerNames) && cfg.playerNames.length === pc ? cfg.playerNames : undefined;
+          const rounds = Array.isArray(cfg.rounds) ? cfg.rounds : [];
+          return {
+            ...(cfg || {}),
+            playerCount: pc,
+            playerNames,
+            rounds,
+            // Safety defaults
+            perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 45,
+            readerBonusPoints:
+              Number(cfg.readerBonusPoints) > 0 ? Number(cfg.readerBonusPoints) : 5,
+          };
+        })(),
+        timeLimitSeconds:
+          Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90,
+        points: typeof taskConfig.points === "number" ? taskConfig.points : 10,
+        interTeamEnabled: false,
+        intraTeamEnabled: true,
+        objectiveScoring: true,
+      }),
 
-    if (isDrawMime) {
-      const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-      const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(taskConfig.prompts) ? taskConfig.prompts : [];
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Draw or mime the concept so your teammates can guess it!";
-      taskToSend.config = {
-        ...cfg,
-        prompts,
-        perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 60,
-        mode: String(cfg.mode || taskConfig.mode || "choose"),
-      };
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
 
-    if (isSpeedDraw) {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Speed Draw: one player draws fast; teammates guess fast!";
-      taskToSend.word = String(taskConfig.word || taskConfig?.config?.word || "").trim();
-      taskToSend.difficulty = String(taskConfig.difficulty || taskConfig?.config?.difficulty || "MEDIUM").toUpperCase();
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60;
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
+      // GuessWho (Yes/No deduction) special fields
+      ...(isGuessWho && {
+        // prompt is optional; secretAnswers is required
+        prompt:
+          (taskConfig.prompt || "").trim() ||
+          "Ask yes/no questions to identify the secret concept.",
+        secretAnswers: Array.isArray(taskConfig.secretAnswers)
+          ? taskConfig.secretAnswers
+              .map((s) => String(s || "").trim())
+              .filter(Boolean)
+          : taskConfig.secretAnswer
+          ? [String(taskConfig.secretAnswer).trim()].filter(Boolean)
+          : undefined,
+        category:
+          (taskConfig.category || taskConfig.topic || taskConfig.subject || "")
+            .toString()
+            .trim() || undefined,
+        maxGuesses:
+          Number(taskConfig.maxGuesses) > 0 ? Number(taskConfig.maxGuesses) : 10,
+        timeLimitSeconds:
+          Number(taskConfig.timeLimitSeconds) > 0
+            ? Number(taskConfig.timeLimitSeconds)
+            : 60,
+        interTeamEnabled: false,
+        intraTeamEnabled: true,
+        // Ensure this stays deterministic / rule-scored
+        objectiveScoring: false,
+        aiScoringRequired: false,
+      }),
 
-    if (isPhysicalMysteryClues) {
-      taskToSend.prompt =
-        String(taskConfig.prompt || "").trim() ||
-        "Physical Mystery Clues: find the clue(s) and submit the correct solution.";
-      taskToSend.clues = Array.isArray(taskConfig.clues) ? taskConfig.clues : [];
-      taskToSend.solution = taskConfig.solution || taskConfig.answer || undefined;
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 120;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
 
-    if (isPhotoJournal) {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Take a photo as evidence AND write a short caption explaining it.";
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 120;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = true;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
+      // Echo Chain (oral memory chain) special fields
+      ...(isEchoChain && {
+        prompt:
+          (taskConfig.prompt || "").trim() ||
+          "Repeat the chain aloud and add one related term each turn.",
+        seedTerm: String(taskConfig.seedTerm || taskConfig.startTerm || "").trim(),
+        config: {
+          perTurnSeconds:
+            Number(taskConfig.perTurnSeconds) > 0 ? Number(taskConfig.perTurnSeconds) : 10,
+          pointsPerCorrectAdd:
+            Number(taskConfig.pointsPerCorrectAdd) > 0 ? Number(taskConfig.pointsPerCorrectAdd) : 2,
+          rotationBonusPoints:
+            Number(taskConfig.rotationBonusPoints) > 0 ? Number(taskConfig.rotationBonusPoints) : 10,
+          maxChainLength:
+            Number(taskConfig.maxChainLength) > 0 ? Number(taskConfig.maxChainLength) : 30,
+          requireVocabOnly: !!taskConfig.requireVocabOnly,
+        },
+        timeLimitSeconds:
+          Number(taskConfig.perTurnSeconds) > 0 ? Number(taskConfig.perTurnSeconds) : 10,
+        interTeamEnabled: false,
+        intraTeamEnabled: true,
+        objectiveScoring: false,
+        aiScoringRequired: false,
+        // Not used for this type
+        correctAnswer: null,
+        options: undefined,
+        items: undefined,
+      }),
 
-    if (isPhotoTask) {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Take a photo as proof that you completed the prompt.";
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = true;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
 
-    if (isHideNSeek) {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Find the reference, take a photo, and explain why it matters.";
-      const pageReference = String(taskConfig?.config?.pageReference || taskConfig?.config?.pageRef || taskConfig?.pageReference || "").trim();
-      taskToSend.config = { ...(taskToSend.config || {}), pageReference };
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 180;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = true;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-    }
+      // Word Weaver Duel (intra-team phrase reconstruction) special fields
+      ...(isWordWeaver && {
+        prompt:
+          (taskConfig.prompt || "").trim() ||
+          "Rebuild the phrase by placing the correct words in order.",
+        targetPhrase: String(
+          taskConfig.targetPhrase ||
+            taskConfig.phrase ||
+            taskConfig.solution ||
+            taskConfig.answerPhrase ||
+            ""
+        ).trim(),
+        wordBank: (() => {
+          const raw =
+            taskConfig.wordBank ||
+            taskConfig.words ||
+            taskConfig.bank ||
+            taskConfig.aiWordBank ||
+            taskConfig.aiWords ||
+            null;
 
-    // Brain Spark Notes: pass bullets to students (if present)
-    if (tt === (TASK_TYPES.BRAIN_SPARK_NOTES || "brain-spark-notes")) {
-      taskToSend.bullets = Array.isArray(taskConfig.bullets) ? taskConfig.bullets : [];
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-    }
+          const bank = Array.isArray(raw)
+            ? raw.map((w) => String(w || "").trim()).filter(Boolean)
+            : [];
+
+          if (bank.length) return bank;
+
+          const phrase = String(
+            taskConfig.targetPhrase ||
+              taskConfig.phrase ||
+              taskConfig.solution ||
+              taskConfig.answerPhrase ||
+              ""
+          ).trim();
+
+          return phrase ? phrase.split(/\s+/).filter(Boolean) : [];
+        })(),
+        timeLimitSeconds:
+          Number(taskConfig.timeLimitSeconds) > 0
+            ? Number(taskConfig.timeLimitSeconds)
+            : 240,
+        interTeamEnabled: false,
+        intraTeamEnabled: true,
+        objectiveScoring: false,
+        aiScoringRequired: false,
+      }),
+
+// RolePlay Deck (intra-team role play) special fields
+...(isRolePlay && {
+  taskType: TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck",
+  prompt:
+    String(taskConfig?.prompt || "").trim() ||
+    String(taskConfig?.config?.scenario || "").trim() ||
+    "Draw roles and role-play the scenario together.",
+  timeLimitSeconds:
+    Number(taskConfig?.timeLimitSeconds) > 0
+      ? Number(taskConfig.timeLimitSeconds)
+      : 180,
+  interTeamEnabled: false,
+  intraTeamEnabled: true,
+  objectiveScoring: false,
+  aiScoringRequired: false,
+  config: {
+    mode: taskConfig?.config?.mode || "choose",
+    scenario: String(taskConfig?.config?.scenario || "").trim(),
+    roles: Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [],
+    playerCount:
+      Number(taskConfig?.config?.playerCount) > 0
+        ? Number(taskConfig.config.playerCount)
+        : undefined,
+    playerNames: Array.isArray(taskConfig?.config?.playerNames)
+      ? taskConfig.config.playerNames
+      : undefined,
+  },
+  // Not used for this type
+  correctAnswer: null,
+  options: undefined,
+  items: undefined,
+}),
+
+// Narration Synthesize (teach-back) special fields
+...(isNarration && {
+  prompt:
+    (taskConfig.prompt || "").trim() ||
+    "Take turns narrating these concept prompts to your team. Rate each speaker for clarity/accuracy.",
+  config: {
+    playerCount:
+      Number(taskConfig?.config?.playerCount) > 0
+        ? Number(taskConfig.config.playerCount)
+        : (Array.isArray(taskConfig?.config?.prompts)
+            ? taskConfig.config.prompts.length
+            : 0),
+    prompts: Array.isArray(taskConfig?.config?.prompts)
+      ? taskConfig.config.prompts
+      : [],
+    perTurnSeconds:
+      Number(taskConfig?.config?.perTurnSeconds) >= 0
+        ? Number(taskConfig.config.perTurnSeconds)
+        : 60,
+    ratingScale: taskConfig?.config?.ratingScale || {
+      min: 1,
+      max: 5,
+      label: "Clarity / accuracy",
+    },
+  },
+  timeLimitSeconds:
+    Number(taskConfig?.config?.perTurnSeconds) > 0
+      ? Number(taskConfig.config.perTurnSeconds)
+      : 60,
+  interTeamEnabled: false,
+  intraTeamEnabled: true,
+  objectiveScoring: false,
+  aiScoringRequired: false,
+  // Not used for this type
+  correctAnswer: null,
+  options: undefined,
+  items: undefined,
+}),
+
+
+      
+      // VennSort special fields
+      ...(isVennSort && {
+        prompt: (taskConfig.prompt || "").trim() || "Sort each item into the correct region of the Venn diagram.",
+        config: (() => {
+          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
+          const circles = Array.isArray(cfg.circles)
+            ? cfg.circles
+            : Array.isArray(taskConfig.circles)
+            ? taskConfig.circles
+            : [];
+          const items = Array.isArray(cfg.items)
+            ? cfg.items
+            : Array.isArray(taskConfig.items)
+            ? taskConfig.items
+            : [];
+          return {
+            circles,
+            items,
+            // optional scoring weights
+            pointsPerCorrectCategory:
+              Number(cfg.pointsPerCorrectCategory) > 0 ? Number(cfg.pointsPerCorrectCategory) : 2,
+          };
+        })(),
+        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90,
+        objectiveScoring: true,
+        aiScoringRequired: false,
+        interTeamEnabled: false,
+        intraTeamEnabled: false,
+        correctAnswer: null,
+        options: undefined,
+      }),
+
+      // Draw/Mime special fields
+      ...(isDrawMime && {
+        prompt: (taskConfig.prompt || "").trim() || "Draw or mime the concept so your teammates can guess it!",
+        config: (() => {
+          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
+          const prompts = Array.isArray(cfg.prompts)
+            ? cfg.prompts
+            : Array.isArray(taskConfig.prompts)
+            ? taskConfig.prompts
+            : [];
+          return {
+            ...cfg,
+            prompts,
+            perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 60,
+            mode: String(cfg.mode || taskConfig.mode || "choose"),
+          };
+        })(),
+        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60,
+        objectiveScoring: false,
+        aiScoringRequired: false,
+        interTeamEnabled: false,
+        intraTeamEnabled: false,
+        correctAnswer: null,
+        options: undefined,
+      }),
+
+      // SpeedDraw special fields
+      ...(isSpeedDraw && {
+        prompt: (taskConfig.prompt || "").trim() || "Speed Draw: one player draws fast; teammates guess fast!",
+        config: (() => {
+          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
+          const prompts = Array.isArray(cfg.prompts)
+            ? cfg.prompts
+            : Array.isArray(taskConfig.prompts)
+            ? taskConfig.prompts
+            : [];
+          return {
+            ...cfg,
+            prompts,
+            perRoundSeconds: Number(cfg.perRoundSeconds) > 0 ? Number(cfg.perRoundSeconds) : 45,
+          };
+        })(),
+        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60,
+        objectiveScoring: false,
+        aiScoringRequired: false,
+        interTeamEnabled: false,
+        intraTeamEnabled: false,
+        correctAnswer: null,
+        options: undefined,
+      }),
+
+      // Physical Mystery Clues special fields
+      ...(isPhysicalMysteryClues && {
+        prompt:
+          (taskConfig.prompt || "").trim() ||
+          "Physical Mystery Clues: find the clue(s) and submit the correct solution.",
+        clues: Array.isArray(taskConfig.clues) ? taskConfig.clues : [],
+        solution: taskConfig.solution || taskConfig.answer || undefined,
+        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 120,
+        objectiveScoring: false,
+        aiScoringRequired: false,
+        interTeamEnabled: false,
+        intraTeamEnabled: false,
+        correctAnswer: null,
+        options: undefined,
+      }),
+
+// Diff Detective special fields
+      ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
+        original: taskConfig.original || "",
+        modified: taskConfig.modified || "",
+        differences: taskConfig.differences || [],
+      }),
+
+      // Brain Spark Notes: send bullets to students
+      ...(taskType === TASK_TYPES.BRAIN_SPARK_NOTES && {
+        bullets:
+          Array.isArray(taskConfig.bullets) && taskConfig.bullets.length > 0
+            ? taskConfig.bullets
+            : [],
+        // These are not used by the student component
+        correctAnswer: null,
+        options: undefined,
+      }),
+    };
 
     // FLASHCARDS: parse bulk input into cards[]
-    if (tt === (TASK_TYPES.FLASHCARDS || "flashcards") && quickFlashcardsText.trim()) {
-      const lines = quickFlashcardsText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (taskType === TASK_TYPES.FLASHCARDS && quickFlashcardsText.trim()) {
+      const lines = quickFlashcardsText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+
       const cards = lines.map((line, idx) => {
-        const [term, def] = line.split(/\s*[-–—]\s*/);
-        return { id: String(idx), question: term || line, answer: def || "" };
+        const [term, def] = line.split(/\s*[-–—]\s*/); // handles -, – , —
+        return {
+          id: String(idx),
+          question: term || line,
+          answer: def || "",
+        };
       });
-      if (cards.length > 0) taskToSend.cards = cards;
+
+      if (cards.length > 0) {
+        taskToSend.cards = cards;
+      }
     }
+
 
     // Normalize/attach payload fields for objective-solo tasks (matching/sequence/sort/timeline)
     if (isOneOfObjectiveSolo(taskToSend.taskType)) {
-      const lower = String(taskToSend.taskType || "").toLowerCase();
+      const tt = String(taskToSend.taskType || "").toLowerCase();
 
-      if (lower === String(TASK_TYPES.MATCHING || "matching")) {
+      if (tt === String(TASK_TYPES.MATCHING || "matching")) {
+        // Accept either pairs[] or {leftItems,rightItems,correctMatches}
         const pairs = Array.isArray(taskConfig.pairs) ? taskConfig.pairs : [];
         if (pairs.length > 0) {
-          const leftItems = pairs.map((p, i) => p?.left ?? p?.a ?? p?.promptLeft ?? `Left ${i + 1}`);
-          const rightItems = pairs.map((p, i) => p?.right ?? p?.b ?? p?.promptRight ?? `Right ${i + 1}`);
+          const leftItems = pairs.map((p, i) => p?.left ?? p?.a ?? p?.promptLeft ?? `Left ${i+1}`);
+          const rightItems = pairs.map((p, i) => p?.right ?? p?.b ?? p?.promptRight ?? `Right ${i+1}`);
           const correctMatches = {};
           pairs.forEach((p) => {
             const l = String(p?.left ?? p?.a ?? "").trim();
@@ -1354,7 +1412,10 @@ useEffect(() => {
         } else {
           taskToSend.leftItems = Array.isArray(taskConfig.leftItems) ? taskConfig.leftItems : [];
           taskToSend.rightItems = Array.isArray(taskConfig.rightItems) ? taskConfig.rightItems : [];
-          taskToSend.correctMatches = taskConfig.correctMatches && typeof taskConfig.correctMatches === "object" ? taskConfig.correctMatches : {};
+          taskToSend.correctMatches =
+            taskConfig.correctMatches && typeof taskConfig.correctMatches === "object"
+              ? taskConfig.correctMatches
+              : {};
         }
         taskToSend.objectiveScoring = true;
         taskToSend.aiScoringRequired = false;
@@ -1362,7 +1423,7 @@ useEffect(() => {
         taskToSend.intraTeamEnabled = false;
       }
 
-      if (lower === String(TASK_TYPES.SORT || "sort")) {
+      if (tt === String(TASK_TYPES.SORT || "sort")) {
         taskToSend.categories = Array.isArray(taskConfig.categories) ? taskConfig.categories : [];
         taskToSend.items = Array.isArray(taskConfig.items) ? taskConfig.items : [];
         taskToSend.correctCategoryByItem =
@@ -1375,16 +1436,27 @@ useEffect(() => {
         taskToSend.intraTeamEnabled = false;
       }
 
-      if (lower === String(TASK_TYPES.SEQUENCE || "sequence") || lower === String(TASK_TYPES.TIMELINE || "timeline")) {
-        const items = Array.isArray(taskConfig.items) ? taskConfig.items : Array.isArray(taskConfig.events) ? taskConfig.events : [];
+      if (tt === String(TASK_TYPES.SEQUENCE || "sequence") || tt === String(TASK_TYPES.TIMELINE || "timeline")) {
+        // sequence/timeline: items[] + correctOrder[] (Path A: TimelineTask reads task.items OR task.config.items)
+        const items = Array.isArray(taskConfig.items)
+          ? taskConfig.items
+          : Array.isArray(taskConfig.events)
+          ? taskConfig.events
+          : [];
+
         taskToSend.items = items;
         taskToSend.correctOrder = Array.isArray(taskConfig.correctOrder) ? taskConfig.correctOrder : undefined;
+
+        // Also provide config shape for consistency across student tasks/editors
         taskToSend.config = {
           ...(taskToSend.config || {}),
           items,
           correctOrder: Array.isArray(taskConfig.correctOrder) ? taskConfig.correctOrder : undefined,
-          ...(lower === String(TASK_TYPES.TIMELINE || "timeline") ? { layout: "horizontal", showYears: true } : {}),
+          ...(tt === String(TASK_TYPES.TIMELINE || "timeline")
+            ? { layout: "horizontal", showYears: true }
+            : {}),
         };
+
         taskToSend.objectiveScoring = true;
         taskToSend.aiScoringRequired = false;
         taskToSend.interTeamEnabled = false;
@@ -1392,23 +1464,33 @@ useEffect(() => {
       }
     }
 
-    setIsLaunchingQuick(true);
-    setQuickStatus(null);
-
+    // 🔴 Important: use teacherLaunchTask, not launch-quick-task
     socket.emit("teacherLaunchTask", {
       roomCode: roomCode.toUpperCase(),
       task: taskToSend,
       selectedRooms: selectedRooms.length > 0 ? selectedRooms : undefined,
     });
 
+    // UI reset
     setTimeout(() => {
       setIsLaunchingQuick(false);
       setQuickStatus("Quick task launched!");
     }, 300);
-
     setLastQuickTask(taskToSend);
     setQuickFlashcardsText("");
   };
+
+  const handleLocationOverrideClick = (loc) => {
+    setSelectedLocation(loc);
+    if (!roomCode) return;
+    const code = roomCode.toUpperCase();
+
+    socket.emit("teacher:setLocationOverride", {
+      roomCode: code,
+      locationCode: loc,
+    });
+  };
+
   const handleGenerateQuickTask = async () => {
     if (!roomCode) {
       alert("You must have a room code to generate a task.");

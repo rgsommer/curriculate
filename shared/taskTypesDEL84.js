@@ -149,6 +149,8 @@ function metaBase(overrides = {}) {
   };
 }
 
+const meta = metaBase;
+
 // Core metadata for each implemented task type
 export const TASK_TYPE_META = {
   // =========================
@@ -321,7 +323,14 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.VENNSORT]: meta({
     label: "Venn Sort",
-    category: "classification",
+    category: CATEGORY.ORDERING,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,
+    defaultAiScoringRequired: false,
+    quickTaskEligible: true,
+    maxTimeSeconds: 120,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -415,7 +424,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Student takes a photo as proof of completing the prompt (pose, geometry example, found item, lab setup, diagram on board, or written work). This is typically AI-scored because photos vary. Pedagogical benefits: authentic evidence, observation skills, real‑world connection, and creative demonstration of understanding. Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo\"\n- prompt (clear, photo-friendly)\n- Optional: config.instructions, config.exampleIdeas\nStudent submission includes: { photoUrl|photo, caption? }",
+      "Student takes a photo as evidence (geometry example, found item, lab setup, diagram on board). Typically AI-scored because photos vary. Builds observation and real-world connection.",
   }),
 
   [TASK_TYPES.MAKE_AND_SNAP]: metaBase({
@@ -451,7 +460,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Team captures a photo AND writes a short caption/explanation/reflection connecting the image to the prompt. AI-scored using photo evidence + caption. Pedagogical benefits: connects visual evidence to verbal reasoning, supports metacognition, and improves explanation quality beyond “just a picture.” Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo-journal\"\n- prompt\n- Optional: config.captionPrompt, config.wordCountTarget\nStudent submission includes: { photoUrl|photo, caption }",
+      "Student captures a photo AND writes a caption/explanation/reflection. Typically AI-scored. Connects visual evidence to verbal reasoning and supports metacognition.",
   }),
 
   // =========================
@@ -564,7 +573,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students are given a page/location reference (or clue), must physically find it, snap a photo, and explain its significance. Usually AI-scored due to open-ended explanation. Pedagogical benefits: active searching, source/location literacy, contextual understanding, and making learning physical. Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"hidenseek\"\n- prompt (must include what/where to find)\n- Optional: config.locationHint, config.requiredEvidence\nStudent submission includes: { photoUrl|photo, explanation, foundWhere? }",
+      "Hide & Seek (Find & Snap): students are given a page/location reference, must find it, take a photo, and briefly explain the significance. Typically AI-scored (open-ended explanation). Benefit: active searching, source/location literacy, contextual understanding, and making learning physical.",
   }),
 
   [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: metaBase({
@@ -796,7 +805,14 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.DIFF_DETECTIVE]: meta({
     label: "Diff Detective",
-    category: "analysis",
+    category: CATEGORY.DEDUCTION,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,           // ok even if you sometimes AI-score; objective when differences are provided
+    defaultAiScoringRequired: false,
+    quickTaskEligible: true,
+    maxTimeSeconds: 120,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -827,7 +843,14 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.SPEED_DRAW]: meta({
     label: "Speed Draw",
-    category: "creative",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    quickTaskEligible: true,
+    maxTimeSeconds: 60,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -844,9 +867,11 @@ export const TASK_TYPE_META = {
 
       Constraints:
       - Choose drawable nouns/phrases (avoid ultra-abstract prompts).
+
       Benefits: rapid concept visualization, vocabulary reinforcement, retrieval through images.
           `,
         }),
+
 
   [TASK_TYPES.PET_FEEDING]: metaBase({
     label: "Feed the Pet!",
@@ -927,7 +952,14 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.MYSTERY_CLUES]: meta({
     label: "Mystery Clue Cards (Digital)",
-    category: "memory",
+    category: CATEGORY.RECALL,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,           // exact match check
+    defaultAiScoringRequired: false,
+    quickTaskEligible: false,
+    maxTimeSeconds: 90,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -957,6 +989,26 @@ export const TASK_TYPE_META = {
           `,
         }),
 
+  [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: meta({
+    label: "Mystery Clue Cards (Alias)",
+    category: CATEGORY.RECALL,
+    implemented: true,
+    aiEligible: false,
+    generatorEligible: false,
+    objectiveScoring: true,
+    defaultAiScoringRequired: false,
+    quickTaskEligible: false,
+    maxTimeSeconds: 90,
+    intraTeamEnabled: false,
+    interTeamEnabled: false,
+    description: `
+      Alias/back-compat for Mystery Clue Cards.
+      If older content or callers use "physical-mystery-clues", normalize it to "mystery-clues"
+      (this mechanic is digital/on-screen memory, not physical HideNSeek).
+          `,
+        }),
+
+
   [TASK_TYPES.FAKE_OUT]: metaBase({
     label: "Fake Out",
     category: CATEGORY.DEDUCTION,
@@ -972,9 +1024,16 @@ export const TASK_TYPE_META = {
       "Turn-based oral reading + listening ‘truth vs fake’ game (Balderdash-style). One player is the Reader and holds the device, reading the statement aloud. AI provides 4 options: (1–3) long, plausible, hard-to-discern variations where ONLY ONE is fully correct, plus (4) a hilarious, obviously false ‘joke’ option that should never be correct. The Reader records each teammate’s vote (tap/check under names), then the reveal triggers discussion. Scoring: points for correct picks; optional Reader bonus for each teammate fooled. Schema: config.playerCount (2–8), optional config.playerNames[], and config.rounds[] where each round has { statement, options[4], correctIndex (0–2) }. Intra-team only; inter-team disabled.",
   }),
 
-  [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: meta({
-    label: "Mystery Clue Cards (Alias)",
-    category: "memory",
+  [TASK_TYPES.MYSTERY_CLUES]: meta({
+    label: "Mystery Clue Cards (Digital)",
+    category: CATEGORY.RECALL,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: true,           // exact match check
+    defaultAiScoringRequired: false,
+    quickTaskEligible: false,
+    maxTimeSeconds: 90,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `
@@ -1141,7 +1200,14 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.DRAW_MIME]: meta({
     label: "Draw or Mime",
-    category: "creative",
+    category: CATEGORY.CREATIVE,
+    implemented: true,
+    aiEligible: true,
+    generatorEligible: true,
+    objectiveScoring: false,
+    defaultAiScoringRequired: false,
+    quickTaskEligible: true,
+    maxTimeSeconds: 60,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `

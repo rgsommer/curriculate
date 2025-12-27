@@ -2590,6 +2590,22 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
             }
           }
 
+          if (allowedType === TASK_TYPES.SEQUENCE) {
+            const cfg =
+              regenerated?.config && typeof regenerated.config === "object"
+                ? regenerated.config
+                : {};
+            const rawItems = Array.isArray(cfg.items) ? cfg.items : [];
+            const fixedItems = rawItems
+              .map((it, idx) => {
+                if (typeof it === "string") return { text: it.trim() };
+                if (it && typeof it === "object") {
+                  const text =
+                    it.text || it.label || it.name || it.prompt || `Step ${idx + 1}`;
+                  return { text: String(text).trim() };
+                }
+
+
           // ---- FAKE OUT ----
           if (allowedType === TASK_TYPES.FAKE_OUT) {
             const cfg =
