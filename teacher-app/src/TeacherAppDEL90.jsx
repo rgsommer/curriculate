@@ -314,10 +314,11 @@ function TeacherApp() {
           </NavLinkButton>
 
           {/* Admin link (only for admins) */}
-          {/* Admin link */}
-          <NavLinkButton to="/admin" active={onAdmin}>
-            Admin
-          </NavLinkButton>
+          {isAdmin && (
+            <NavLinkButton to="/admin" active={onAdmin}>
+              Admin
+            </NavLinkButton>
+          )}
         </nav>
       </div>
 
@@ -388,9 +389,9 @@ function TeacherApp() {
           />
 
           {/* Admin */}
-          <Route path="/admin" element={requireAuth(<AdminPage isAdmin={isAdmin} />)} />
+          <Route path="/admin" element={requireAuth(<AdminPage />)} />
           {/* Back-compat */}
-          <Route path="/admin/access-codes" element={requireAuth(<AdminPage isAdmin={isAdmin} />)} />
+          <Route path="/admin/access-codes" element={requireAuth(<AdminPage />)} />
 
           {/* Auth */}
           <Route path="/login" element={<Login />} />
@@ -762,7 +763,7 @@ function PlanDetails({ plan, fallbackTier }) {
  * - GET  /api/admin/access-codes
  * - POST /api/admin/access-codes
  */
-function AdminPage({ isAdmin = false }) {
+function AdminPage() {
   // -------------------------
   // Demo taskset (system-admin only)
   // -------------------------
@@ -906,21 +907,6 @@ function AdminPage({ isAdmin = false }) {
   return (
     <div style={{ padding: 4 }}>
       <h2 style={{ marginTop: 0 }}>Admin</h2>
-      {!isAdmin && (
-        <div
-          style={{
-            marginTop: 10,
-            padding: 12,
-            borderRadius: 14,
-            border: \"1px solid rgba(255,255,255,0.14)\",
-            background: \"rgba(255,255,255,0.06)\",
-            color: \"rgba(226,232,240,0.9)\",
-            fontWeight: 700,
-          }}
-        >
-          Admin tools are hidden for this account. If you need access (e.g., demo pool regeneration), ask your system admin to enable admin rights.
-        </div>
-      )}
       <p style={{ opacity: 0.8, marginTop: 6 }}>
         System-wide controls (shown only to the system admin).
       </p>
@@ -964,7 +950,7 @@ function AdminPage({ isAdmin = false }) {
 
           <button
             onClick={regenerateDemoTaskset}
-            disabled={demoBusy || !isAdmin}
+            disabled={demoBusy}
             style={{ ...ui.buttonPrimary, minWidth: 220 }}
           >
             {demoBusy ? "Working…" : "Regenerate demo taskset"}

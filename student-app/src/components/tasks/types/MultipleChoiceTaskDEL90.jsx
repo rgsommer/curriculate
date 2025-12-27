@@ -227,12 +227,7 @@ export default function MultipleChoiceTask({
         return displayIdx >= 0 ? displayIdx : null;
       });
 
-      if (next.length) {
-        setMultiSelectedByDisplayIdx((prev) => {
-          const changed = !Array.isArray(prev) || prev.length !== next.length || next.some((v, i) => v !== prev[i]);
-          return changed ? next : prev;
-        });
-      }
+      if (next.length) setMultiSelectedByDisplayIdx(next);
     } else {
       if (typeof answerDraft !== "string" || !answerDraft.trim()) return;
 
@@ -244,7 +239,7 @@ export default function MultipleChoiceTask({
       if (displayIdx >= 0) setSingleSelectedDisplayIdx(displayIdx);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskKey, hasItems, presentedItems.length, singleOptionOrder.length, answerDraft, disabled]);
+  }, [taskKey, hasItems, presentedItems.length, singleOptionOrder.length]);
 
   // ---------- Handlers ----------
   const handleSubmitClick = () => {

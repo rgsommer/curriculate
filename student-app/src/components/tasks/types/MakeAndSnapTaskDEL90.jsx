@@ -60,11 +60,6 @@ export default function MakeAndSnapTask({
       return;
     }
 
-    if (!note.trim()) {
-      alert("Please write your note before submitting.");
-      return;
-    }
-
     const answerText = buildAnswerText(note, true);
 
     // ✅ Submit the actual photo (base64 data URL) + note + readable summary
@@ -118,7 +113,7 @@ export default function MakeAndSnapTask({
       <button
         type="button"
         onClick={handlePickPhoto}
-        disabled={uiDisabled || !imagePreview || !note.trim()}
+        disabled={uiDisabled}
         style={{
           display: "block",
           width: "100%",
@@ -176,9 +171,6 @@ export default function MakeAndSnapTask({
       >
         Briefly describe what you made (optional):
       </label>
-      <div style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: 6, color: "#e2e8f0" }}>
-        {notePrompt}
-      </div>
       <textarea
         value={note}
         onChange={handleNoteChange}
@@ -196,12 +188,6 @@ export default function MakeAndSnapTask({
           marginBottom: 12,
         }}
       />
-
-      {(!note.trim() || !imagePreview) && !uiDisabled ? (
-        <div style={{ fontSize: "0.85rem", color: "#94a3b8", marginBottom: 10 }}>
-          {!imagePreview ? "Add a photo first." : "Add your note to unlock Submit."}
-        </div>
-      ) : null}
 
       <button
         type="button"
