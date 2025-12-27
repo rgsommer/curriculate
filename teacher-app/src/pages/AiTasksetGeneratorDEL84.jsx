@@ -360,7 +360,6 @@ export default function AiTasksetGenerator() {
     if (t === TASK_TYPES.HIDENSEEK) return "🕵️";
     if (t === TASK_TYPES.PHOTO) return "📸";
     if (t === TASK_TYPES.PHOTO_JOURNAL) return "🖼️📝";
-    if (t === TASK_TYPES.MAKE_AND_SNAP) return "🛠️📸";
     if (t === TASK_TYPES.FAKE_OUT) return "🃏";
     // New/explicit icons for newer types
     if (t === TASK_TYPES.DIFF_DETECTIVE) return "🔎";

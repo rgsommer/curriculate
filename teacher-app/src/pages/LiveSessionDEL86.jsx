@@ -75,12 +75,6 @@ const QUICK_TASK_TYPES = Array.from(
     (TASK_TYPES.BRAIN_BLITZ || "brainblitz"),
     (TASK_TYPES.HANGMAN_DUEL || "hangman-duel"),
     (TASK_TYPES.MOOD_CHECKIN || "mood-checkin"),
-    (TASK_TYPES.BRAINSTORM_BATTLE || "brainstorm-battle"),
-    (TASK_TYPES.COLLABORATION || "collaboration"),
-    (TASK_TYPES.LIVE_DEBATE || "live-debate"),
-    (TASK_TYPES.PET_FEEDING || "pet-feeding"),
-    (TASK_TYPES.AI_DEBATE_JUDGE || "ai-debate-judge"),
-
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 
@@ -961,41 +955,8 @@ useEffect(() => {
     const isPhotoTask = tt === (TASK_TYPES.PHOTO || "photo") || tt === "photo" || tt === "photo-task";
     const isHideNSeek = tt === (TASK_TYPES.HIDENSEEK || "hidenseek") || tt === "hidenseek";
 
-    const isTicTacToe =
-      tt === (TASK_TYPES.TRUE_FALSE_TICTACTOE || "true-false-tictactoe") ||
-      tt === "true-false-tictactoe" ||
-      tt === "truefalse-tictactoe";
-
-    const isMultiPlayerFeedback =
-      tt === (TASK_TYPES.MULTI_PLAYER_FEEDBACK || "multi-player-feedback") ||
-      tt === "multi-player-feedback" ||
-      tt === "multiplayer-feedback";
-
-    const isPronunciation =
-      tt === (TASK_TYPES.PRONUNCIATION || "pronunciation") || tt === "pronunciation";
-
-    const isRecordAudio =
-      tt === (TASK_TYPES.RECORD_AUDIO || "record-audio") || tt === "record-audio" || tt === "recordaudio";
-
-    const isSpeechRecognition =
-      tt === (TASK_TYPES.SPEECH_RECOGNITION || "speech-recognition") ||
-      tt === "speech-recognition" ||
-      tt === "speech-recognition-answer";
-
-    const isBrainBlitz = tt === (TASK_TYPES.BRAIN_BLITZ || "brainblitz") || tt === "brainblitz";
-    const isHangmanDuel = tt === (TASK_TYPES.HANGMAN_DUEL || "hangman-duel") || tt === "hangman-duel";
-    const isMoodCheckin = tt === (TASK_TYPES.MOOD_CHECKIN || "mood-checkin") || tt === "mood-checkin";
-
-    const isBrainstormBattle = tt === (TASK_TYPES.BRAINSTORM_BATTLE || "brainstorm-battle") || tt === "brainstorm-battle";
-    const isCollaboration = tt === (TASK_TYPES.COLLABORATION || "collaboration") || tt === "collaboration";
-    const isLiveDebate = tt === (TASK_TYPES.LIVE_DEBATE || "live-debate") || tt === "live-debate";
-    const isPetFeeding = tt === (TASK_TYPES.PET_FEEDING || "pet-feeding") || tt === "pet-feeding";
-    const isAiDebateJudge = tt === (TASK_TYPES.AI_DEBATE_JUDGE || "ai-debate-judge") || tt === "ai-debate-judge";
-
-
     // Basic validation
     const promptOk = String(taskConfig?.prompt || "").trim().length > 0;
-    const hasRawQuickTask = !!(taskConfig && typeof taskConfig.__rawTask === "object" && taskConfig.__rawTask);
     if (
       !isGuessWho &&
       !isEchoChain &&
@@ -1009,7 +970,8 @@ useEffect(() => {
       !isPhysicalMysteryClues &&
       !isPhotoJournal &&
       !isPhotoTask &&
-      !isHideNSeek && !isTicTacToe && !isMultiPlayerFeedback && !isRecordAudio && !isMoodCheckin && !isBrainBlitz && !isHangmanDuel && !isBrainstormBattle && !isCollaboration && !isLiveDebate && !isPetFeeding && !isAiDebateJudge && !promptOk && !hasRawQuickTask
+      !isHideNSeek &&
+      !promptOk
     ) {
       return;
     }
@@ -1105,55 +1067,7 @@ useEffect(() => {
         ? typeMetaForLaunch.aiScoringRequired
         : tt === (TASK_TYPES.OPEN_TEXT || "open-text") || tt === (TASK_TYPES.SHORT_ANSWER || "short-answer");
 
-    const rawQuickTask =
-      taskConfig && typeof taskConfig.__rawTask === "object" && taskConfig.__rawTask
-        ? taskConfig.__rawTask
-        : null;
-
-    let taskToSend;
-
-    // If the AI generator already gave us a full task object, keep it intact so we don't
-    // accidentally drop task-specific fields (config, rounds, speaker roles, etc.).
-    if (rawQuickTask) {
-      const meta = typeMetaForLaunch || {};
-
-      taskToSend = {
-        ...rawQuickTask,
-        taskType: tt || rawQuickTask.taskType || (TASK_TYPES.SHORT_ANSWER || "short-answer"),
-      };
-
-      // Normalize core fields / sensible defaults
-      const promptStr = String(rawQuickTask.prompt ?? taskConfig.prompt ?? "").trim();
-      taskToSend.prompt = promptStr || "Quick Task";
-
-      if (typeof taskToSend.interTeamEnabled !== "boolean") taskToSend.interTeamEnabled = !!meta.interTeamEnabled;
-      if (typeof taskToSend.intraTeamEnabled !== "boolean") taskToSend.intraTeamEnabled = !!meta.intraTeamEnabled;
-      if (typeof taskToSend.objectiveScoring !== "boolean") taskToSend.objectiveScoring = !!objectiveScoringDefault;
-      if (typeof taskToSend.aiScoringRequired !== "boolean") taskToSend.aiScoringRequired = !!aiScoringRequiredDefault;
-
-      if (typeof taskToSend.points !== "number") {
-        taskToSend.points = typeof taskConfig.points === "number" ? taskConfig.points : 10;
-      }
-
-      taskToSend.subject = taskToSend.subject || taskConfig.subject || "Ad-hoc";
-      taskToSend.gradeLevel = taskToSend.gradeLevel || taskConfig.gradeLevel || "";
-
-      if (!Number(taskToSend.timeLimitSeconds) && Number(taskConfig.timeLimitSeconds) > 0) {
-        taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds);
-      }
-
-      taskToSend.reviewPauseSeconds =
-        Number(reviewPauseSeconds) > 0
-          ? Number(reviewPauseSeconds)
-          : Number(taskToSend.reviewPauseSeconds) > 0
-          ? Number(taskToSend.reviewPauseSeconds)
-          : 15;
-
-      // Remove internal editor-only keys (never send to students)
-      delete taskToSend.__rawTask;
-      delete taskToSend.__generatedAt;
-    } else {
-      taskToSend = {
+    const taskToSend = {
       taskType: tt || (TASK_TYPES.SHORT_ANSWER || "short-answer"),
       interTeamEnabled: false,
       intraTeamEnabled: false,
@@ -1173,7 +1087,6 @@ useEffect(() => {
       timeLimitSeconds: taskConfig.timeLimitSeconds || undefined,
       reviewPauseSeconds: reviewPauseSeconds || 15,
     };
-    }
 
     // ---- Type-specific normalization ----
 
@@ -2423,29 +2336,18 @@ if (
       // 🟢 SIMPLE (single-question) CASE
       if (!generatedIsMulti) {
         setTaskConfig({
-          __rawTask: baseTask,
-          __generatedAt: Date.now(),
-          ...baseTask,
-          taskType: generatedType,
           prompt: baseTask.prompt || "",
-          // Keep correctAnswer only when it exists (objective-scored types)
           correctAnswer:
             baseTask.correctAnswer != null
-              ? baseTask.correctAnswer
-              : baseTask.answer != null
-              ? baseTask.answer
-              : baseTask.correct != null
-              ? baseTask.correct
-              : null,
+              ? String(baseTask.correctAnswer)
+              : "",
           options:
             Array.isArray(baseTask.options) && baseTask.options.length > 0
               ? baseTask.options
-              : Array.isArray(baseTask.choices) && baseTask.choices.length > 0
-              ? baseTask.choices
               : [],
           clue: baseTask.clue || "",
-          subject: baseTask.subject || aiSubject || "Ad-hoc",
-          gradeLevel: baseTask.gradeLevel || gradeStr || "",
+          subject: aiSubject || "Ad-hoc",
+          gradeLevel: gradeStr || "",
         });
 
         setShowAiGen(false);
@@ -2484,25 +2386,19 @@ if (
       }
 
       setTaskConfig({
-        __rawTask: baseTask,
-        __generatedAt: Date.now(),
-        ...baseTask,
-        taskType: generatedType,
         prompt:
           taskset.description ||
           baseTask.prompt ||
           `Answer all ${items.length} questions.`,
-        // normalize commonly-used fields for the quick-launch editor
-        correctAnswer: baseTask.correctAnswer ?? baseTask.answer ?? baseTask.correct ?? null,
+        correctAnswer: null,
         options:
-          Array.isArray(baseTask.options) && baseTask.options.length > 0
-            ? baseTask.options
-            : Array.isArray(items[0].options) && items[0].options.length > 0
+          Array.isArray(items[0].options) && items[0].options.length > 0
             ? items[0].options
             : [],
+        clue: baseTask.clue || "",
+        subject: aiSubject || "Ad-hoc",
+        gradeLevel: gradeStr || "",
         items,
-        subject: baseTask.subject || aiSubject || "Ad-hoc",
-        gradeLevel: baseTask.gradeLevel || gradeStr || "",
       });
 
       setShowAiGen(false);

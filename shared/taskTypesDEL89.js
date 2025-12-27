@@ -420,7 +420,7 @@ export const TASK_TYPE_META = {
 
   [TASK_TYPES.MAKE_AND_SNAP]: metaBase({
     label: "Make It & Snap It",
-    category: CATEGORY.CREATIVE,
+    category: CATEGORY.OTHER,
     implemented: true,
     aiEligible: true,
     generatorEligible: true,
@@ -433,22 +433,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-    "Make & Snap (hands-on proof). The team physically builds/creates/arranges something based on the prompt (model, diagram, geometric construction, lab setup, mini-poster, sorting of manipulatives, etc.), then submits a photo (and optional short note) as evidence. Typically AI-scored for alignment to the prompt and quality of explanation.
-
-Student flow:
-- Read the prompt and build/create the requested artifact.
-- Tap ‘Take Photo’ to capture evidence (retake allowed).
-- Optional: add a quick note/caption (what it is / why it matches).
-- Submit.
-
-AI MUST output:
-- taskType: \"make-and-snap\"
-- title (optional)
-- prompt (clear, buildable, photo-friendly)
-- Optional config: { notePrompt?: string, requirePhoto?: true|false, requireNote?: true|false, timeLimitSeconds?: number }
-
-Submission shape (student-app): { imageDataUrl|photoUrl, noteText? }
-Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-team: NO. Intra-team: NO.",
+      "Make & Snap: the team physically builds/creates/arranges something from a prompt, then submits a photo (and optional note). Typically AI-scored for alignment to the prompt. Benefit: hands-on application, creativity, collaboration, authentic assessment, and transfer beyond the screen.",
   }),
 
   [TASK_TYPES.PHOTO_JOURNAL]: metaBase({
@@ -668,17 +653,17 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
     aiEligible: true,
     generatorEligible: true,
     objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    defaultAiScoringRequired: true,
     quickTaskEligible: true,
     expectsText: true,
     maxTimeSeconds: 90,
     interTeamEnabled: true,
     intraTeamEnabled: true,
-    description:
+    description: "Brain Blitz (Jeopardy-style): the device shows an answer/term and students must respond with the correct question (Jeopardy format).\nStudent flow:\n- Prompt shows a clue/answer (word/name/phrase).\n- Players respond quickly by voice (preferred) or typing.\n- AI checks meaning and Jeopardy-style phrasing (strictness adjustable by difficulty).\nScoring: AI-scored; fast, competitive retrieval + reformulation.\nAI generation should produce:\n- clue (string) OR prompt (string)\n- expectedQuestion (string) OR expectedKeyPoints (array)\n- allowTyping (boolean, optional)\n- timeLimitSeconds (optional; usually 30\u201390)\nInter-team: YES. Intra-team: YES.",
       "Brain Blitz (Jeopardy-style) rapid review in reverse format: the device shows an answer/clue and students respond in question form. Can be typed or spoken (mic) where available. Great for retrieval + reformulation, precision with academic language, and high-engagement review.",
   }),
 
-  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: metaBase({
+    [TASK_TYPES.TRUE_FALSE_TICTACTOE]: metaBase({
     label: "True/False Tic-Tac-Toe",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -686,13 +671,37 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
     generatorEligible: true,
     objectiveScoring: true,
     defaultAiScoringRequired: false,
-    hasOptions: true,
+    hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 180,
-    interTeamEnabled: true,
-    intraTeamEnabled: false,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
     description:
-      "True/False Tic-Tac-Toe duel. A tic-tac-toe grid is paired with short True/False statements. Players are assigned TRUE or FALSE and race to place marks by correctly matching their assigned truthiness. Wrong truthiness helps the opponent. Objective-scored; motivates fast, accurate retrieval with strategy.",
+      [
+        "True/False Tic-Tac-Toe (intra-team duel). Players within the SAME team face off 1:1 on a tic‑tac‑toe grid.",
+        "",
+        "Core loop:",
+        "• A 3×3 grid is shown.",
+        "• A stack of short statements appears as draggable/tappable ‘bubbles’.",
+        "• Each player is assigned a role: TRUE or FALSE (internally X/O).",
+        "• On your turn, pick a statement and place it on a square. If the statement matches your role’s truthiness, you claim the square; otherwise your opponent claims it.",
+        "• First to 3‑in‑a‑row wins the round.",
+        "",
+        "Rounds:",
+        "• AI may generate up to 3 sets of statements (for multiple pairs/rounds). The runtime can use only as many sets as needed so everyone gets a round.",
+        "• If an odd number of players: winner of round 1 pairs with the last player.",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: "true-false-tictactoe"",
+        "title: short (3–7 words)",
+        "prompt: short instructions (optional; UI already explains)",
+        "timeLimitSeconds: 120–180",
+        "statements: [ { text: string, isFalse: boolean } ]  // 9–14 statements recommended",
+        "Optional (for multi-round support):",
+        "config: { statementSets?: [ statements[], statements[], ... ] }",
+        "",
+        "Pedagogical benefits: evaluation + retrieval under game conditions, attention to truth-conditions, and motivating repetition with strategy.",
+      ].join("\n"),
   }),
 
   // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
@@ -778,7 +787,7 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
       "Yes/No deduction game. One player privately views the secret concept (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. Encourages logical elimination and strategic questioning.",
   }),
 
-  [TASK_TYPES.HANGMAN_DUEL]: metaBase({
+    [TASK_TYPES.HANGMAN_DUEL]: metaBase({
     label: "Hangman Duel",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -790,7 +799,29 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
-      "Teams solve a mystery word shown as blanks by taking turns choosing letters (drag letter tiles). Correct letters lock in; wrong letters move to a used pile and progress a playful ‘build’ (theme can be hangman/snowman/tree/etc.). AI should generate different words per station from aiWordBank so teams don’t help each other.",
+      [
+        "Hangman Duel (intra-team). Teams solve a mystery word shown as blanks by taking turns choosing letters (drag letter tiles/cubes into the blanks container).",
+        "",
+        "Gameplay expectations:",
+        "• Correct letters lock in and score; wrong letters move to a used pile and advance a playful ‘build’ (not grim).",
+        "• Students may attempt a full-word guess (risk/reward).",
+        "• Strict turn rotation enforced by turnkeeper where available.",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: "hangman-duel"",
+        "title: short (3–7 words)",
+        "prompt: optional hint/instructions",
+        "timeLimitSeconds: 90–180 (default 120)",
+        "config: {",
+        "  wordsByStation: [",
+        "    { word: string, hint?: string }  // one per station/display; must be DIFFERENT to prevent cross-team helping",
+        "  ]",
+        "}",
+        "",
+        "IMPORTANT: choose words from aiWordBank when possible, and vary by station.",
+        "",
+        "Pedagogical benefits: spelling + vocabulary + pattern recognition, strategic risk-taking, and high engagement under time pressure.",
+      ].join("\n"),
   }),
 
   [TASK_TYPES.WORD_WEAVER_DUEL]: metaBase({
@@ -868,13 +899,13 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
     category: CATEGORY.MOVEMENT,
     implemented: true,
     aiEligible: false,
-    generatorEligible: false,
+    generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 180,
     interTeamEnabled: false,
     intraTeamEnabled: false,
-    description:
+    description: "Feed the Pet: a motivation layer where completing the task feeds/powers up a virtual pet.\nStudent flow:\n- A cute pet appears (pack/theme).\n- Students choose a treat; celebration plays; task submits.\nScoring: typically completion-based or fixed bonus (e.g., +10) handled by session rules.\nAI generation should produce:\n- pack (string; one of: classic, farm, ocean, dino, fantasy)\n- optional pointsAwarded (number)\nInter-team: NO. Intra-team: NO.",
       "A motivational loop: correct answers or task success ‘feeds’/powers up a virtual pet. Encourages repeated retrieval and positive reinforcement without changing academic rigor.",
   }),
 
@@ -890,7 +921,7 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: false,
-    description:
+    description: "Pair-and-respond collaboration between two teams.\nStudent flow:\n1) Team A writes an initial response to a prompt.\n2) They then see Team B\u2019s response and write a thoughtful reply/extension (agree/disagree, add evidence, ask a question, or build on an idea).\nScoring: AI-scored with rubric for response quality + meaningful engagement in the reply. Bonus points can be awarded to the stronger initial response.\nAI generation should produce:\n- prompt (string)\n- rubric (object/string) describing quality criteria\n- minWords (number, optional)\n- bonusComparisonEnabled (boolean, optional; default true)\nInter-team: YES. Intra-team: NO.",
       "Pair-and-respond collaboration. Students write an initial response to a prompt, then view another team’s response and write a thoughtful reply (agree/disagree with reasons, add evidence, ask a question, or extend an idea). AI-scored with a rubric for clarity, reasoning, and engagement. Builds accountable talk in writing, perspective-taking, synthesis, and peer feedback.",
   }),
 
@@ -903,10 +934,10 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
     objectiveScoring: false,
     defaultAiScoringRequired: true,
     expectsText: true,
-    maxTimeSeconds: 300,
+    maxTimeSeconds: 600,
     interTeamEnabled: true,
     intraTeamEnabled: true,
-    description:
+    description: "Live team debate between two paired teams with timed speaking turns and rebuttals.\nStudent flow:\n- Teams choose from a list of AI-generated debate topics (first-come-first-served) then are paired.\n- 5-minute prep window.\n- Players speak in assigned roles (intro/definitions, arguments, rebuttals, conclusions depending on team size).\n- Device shows a clear \u201clistening\u201d indicator; recording auto-submits at max time.\nTiming rules:\n- Target per speaker: 1:45\u20132:15 (15s grace). Too short/too long receives a penalty.\nScoring: AI-scored per speaker + team score; winning team earns bonus.\nAI generation should produce:\n- topics (array of strings)\n- rolePlan (array per team member)\n- prepSeconds (number; default 300)\n- perSpeakerSeconds (number; default 135)\n- graceSeconds (number; default 15)\n- minSeconds (number; default 105)\n- rubric (object/string)\nInter-team: YES. Intra-team: YES.",
       "Team debate format. Students prepare arguments, then speak in timed turns with rebuttals and a clear ‘for/against’ side. Curriculate pairs teams and assigns speaker roles; audio can be recorded and AI-scored for argument quality, evidence, and respectful discourse. Builds argumentation, critical thinking, and oral confidence.",
   }),
 
@@ -934,9 +965,9 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
     objectiveScoring: false,
     defaultAiScoringRequired: false,
     maxTimeSeconds: 120,
-    interTeamEnabled: true,
+    interTeamEnabled: false,
     intraTeamEnabled: true,
-    description:
+    description: "Fast-paced team brainstorm to activate prior knowledge and generate ideas without fear of being wrong.\nStudent flow:\n- A topic/seed prompt appears.\n- Team rapidly contributes short ideas (spoken aloud and/or typed as quick entries).\n- Optional quick vote/rank at the end to highlight the strongest ideas.\nScoring: Not single-correct; typically completion-based (optionally +bonus for voting).\nAI generation should produce:\n- prompt (string)\n- seedTopic (string, optional)\n- ideaSlots (number, optional; default 8\u201312)\n- enableVoting (boolean, optional)\n- timeLimitSeconds (optional; usually 60\u2013120)\nInter-team: NO. Intra-team: YES.",
       "Fast-paced ‘shout ideas’ collaborative brainstorm. The device shows a topic/seed prompt and your team rapidly contributes many ideas (spoken aloud and/or typed as short entries). No single correct answer — the goal is divergent thinking. Optional quick vote/rank at the end to highlight strongest ideas. Builds creative ideation, background knowledge, verbal participation, and lowers fear of being wrong.",
   }),
 
@@ -1230,34 +1261,66 @@ Scoring: usually AI (rubric-based); can be teacher-reviewed if desired. Inter-te
       "Oral memory-chain game. The device starts with a subject-related seed term. Players take turns repeating the full chain aloud and adding one related term. Optional per-turn timer and bonuses for completing a full rotation. Builds retrieval practice, working memory, listening accuracy, and vocabulary association networks.",
   }),
 
-  [TASK_TYPES.PRONUNCIATION]: metaBase({
+    [TASK_TYPES.PRONUNCIATION]: metaBase({
     label: "Pronunciation Practice",
     category: CATEGORY.OTHER,
     implemented: true,
     aiEligible: true,
-    generatorEligible: false,
+    generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: true,
     maxTimeSeconds: 90,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students speak prompted words/phrases and receive AI-based pronunciation feedback. Builds phonetic accuracy, language acquisition, and speaking confidence.",
+      [
+        "Pronunciation Practice. Students speak a prompted word/phrase and receive AI-based pronunciation feedback (optionally comparing to a target accent).",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: "pronunciation"",
+        "title: short (3–7 words)",
+        "prompt: short instruction (optional)",
+        "timeLimitSeconds: 45–90",
+        "referenceText: string  // what the student should say",
+        "phonetic?: string       // optional guide (IPA-ish or simple syllable hint)",
+        "language?: string       // e.g., "English" (display label) and/or languageCode below",
+        "languageCode?: string   // e.g., "en-US" (optional; used by scoring/transcription pipelines)",
+        "accentOptions?: string[]  // e.g., ["american","canadian","british","australian","neutral"]",
+        "targetAccent?: string     // default selected accent (one of accentOptions)",
+        "",
+        "Pedagogical benefits: phonetic accuracy, language acquisition, speaking confidence, and measurable progress over time.",
+      ].join("\n"),
   }),
 
-  [TASK_TYPES.SPEECH_RECOGNITION]: metaBase({
-    label: "Speech Recognition",
+    [TASK_TYPES.SPEECH_RECOGNITION]: metaBase({
+    label: "Speech Recognition Answer",
     category: CATEGORY.OTHER,
     implemented: true,
     aiEligible: true,
-    generatorEligible: false,
+    generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: true,
-    maxTimeSeconds: 120,
+    maxTimeSeconds: 90,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Students speak an answer; AI transcribes and can score meaning/accuracy. Useful for accessibility and oral response practice.",
+      [
+        "Speech Recognition Answer (oral Open Text). A student speaks an answer; the system transcribes it and AI-scores for meaning/accuracy.",
+        "",
+        "Suggested flow: 1‑2‑3 Go! then speak for ~60s (timer encourages turn-taking).",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: "speech-recognition"",
+        "title: short (3–7 words)",
+        "prompt: the question/instruction the student should answer",
+        "timeLimitSeconds: 45–90 (default 60)",
+        "referenceText?: string  // optional reading-aloud text (if task is ‘read this aloud’ instead of ‘answer this’)",
+        "language?: string       // UI label (e.g., "English")",
+        "languageCode?: string   // e.g., "en-US" (preferred for browser recognition)",
+        "rubric?: { focus?: string, points?: number } // optional scoring guidance",
+        "",
+        "Pedagogical benefits: oral response practice, accessibility, confidence building, and language development.",
+      ].join("\n"),
   }),
 
   // =========================
