@@ -67,11 +67,6 @@ const QUICK_TASK_TYPES = Array.from(
     (TASK_TYPES.PHOTO_JOURNAL || "photo-journal"),
     (TASK_TYPES.PHOTO || "photo"),
     (TASK_TYPES.HIDENSEEK || "hidenseek"),
-    (TASK_TYPES.TRUE_FALSE_TICTACTOE || "true-false-tictactoe"),
-    (TASK_TYPES.MULTI_PLAYER_FEEDBACK || "multi-player-feedback"),
-    (TASK_TYPES.PRONUNCIATION || "pronunciation"),
-    (TASK_TYPES.RECORD_AUDIO || "record-audio"),
-    (TASK_TYPES.SPEECH_RECOGNITION || "speech-recognition"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 
@@ -1397,92 +1392,6 @@ useEffect(() => {
       }
     }
 
-
-    // --- Extra quick-launch normalization for newer task types ---
-
-    // ✅ TRUE/FALSE TIC-TAC-TOE
-    if (tt === (TASK_TYPES.TRUE_FALSE_TICTACTOE || "true-false-tictactoe") || tt === "true-false-tictactoe") {
-      const stmts = Array.isArray(taskConfig.statements)
-        ? taskConfig.statements
-        : Array.isArray(taskConfig.config?.statements)
-        ? taskConfig.config.statements
-        : [];
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Drag a True/False statement onto the board to claim squares.";
-      taskToSend.statements = stmts;
-      taskToSend.board = Array.isArray(taskConfig.board) && taskConfig.board.length === 9 ? taskConfig.board : Array(9).fill(null);
-      taskToSend.intraTeamEnabled = true;
-      taskToSend.objectiveScoring = true;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90;
-      taskToSend.points = typeof taskConfig.points === "number" ? taskConfig.points : 10;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-      taskToSend.config = undefined;
-    }
-
-    // ✅ PRONUNCIATION
-    if (tt === (TASK_TYPES.PRONUNCIATION || "pronunciation") || tt === "pronunciation") {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Pronunciation Practice: record yourself saying the target text.";
-      taskToSend.referenceText = taskConfig.referenceText || "";
-      taskToSend.phonetic = taskConfig.phonetic || "";
-      taskToSend.accentOptions = Array.isArray(taskConfig.accentOptions) ? taskConfig.accentOptions : ["american", "british", "canadian", "neutral"];
-      taskToSend.targetAccent = taskConfig.targetAccent || taskToSend.accentOptions[0] || "american";
-      taskToSend.language = taskConfig.language || "English";
-      taskToSend.intraTeamEnabled = false;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = true;
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : undefined;
-      taskToSend.points = typeof taskConfig.points === "number" ? taskConfig.points : 10;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-      taskToSend.config = undefined;
-    }
-
-    // ✅ RECORD AUDIO
-    if (tt === (TASK_TYPES.RECORD_AUDIO || "record-audio") || tt === "record-audio") {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Record an oral answer. Your teacher will listen later.";
-      taskToSend.intraTeamEnabled = false;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : undefined;
-      taskToSend.points = typeof taskConfig.points === "number" ? taskConfig.points : 0;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-      taskToSend.config = undefined;
-    }
-
-    // ✅ SPEECH RECOGNITION
-    if (tt === (TASK_TYPES.SPEECH_RECOGNITION || "speech-recognition") || tt === "speech-recognition") {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Speak your answer clearly. Curriculate will transcribe and score it.";
-      taskToSend.referenceText = taskConfig.referenceText || "";
-      taskToSend.language = taskConfig.language || "en-US";
-      taskToSend.intraTeamEnabled = false;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = true;
-      taskToSend.timeLimitSeconds = Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60;
-      taskToSend.points = typeof taskConfig.points === "number" ? taskConfig.points : 10;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-      taskToSend.config = undefined;
-    }
-
-    // ✅ MULTI-PLAYER FEEDBACK
-    if (tt === (TASK_TYPES.MULTI_PLAYER_FEEDBACK || "multi-player-feedback") || tt === "multi-player-feedback") {
-      taskToSend.prompt = String(taskConfig.prompt || "").trim() || "Quick team feedback: rate the session and share one improvement.";
-      taskToSend.intraTeamEnabled = false;
-      taskToSend.objectiveScoring = false;
-      taskToSend.aiScoringRequired = false;
-      taskToSend.timeLimitSeconds = undefined;
-      taskToSend.points = 0;
-      taskToSend.correctAnswer = null;
-      taskToSend.options = undefined;
-      taskToSend.items = undefined;
-      taskToSend.config = undefined;
-    }
     setIsLaunchingQuick(true);
     setQuickStatus(null);
 
@@ -2154,107 +2063,6 @@ if (
   return;
 }
 
-
-      // 🟪 PRONUNCIATION (speak & get feedback)
-      if (generatedType === (TASK_TYPES.PRONUNCIATION || "pronunciation") || String(generatedType).toLowerCase() === "pronunciation") {
-        const accentOptions =
-          Array.isArray(baseTask.accentOptions) && baseTask.accentOptions.length
-            ? baseTask.accentOptions
-            : Array.isArray(baseTask.config?.accentOptions) && baseTask.config.accentOptions.length
-            ? baseTask.config.accentOptions
-            : ["american", "british", "canadian", "neutral"];
-        setTaskConfig({
-          prompt: baseTask.prompt || "Pronunciation Practice: record yourself saying the target text.",
-          referenceText: baseTask.referenceText || baseTask.targetText || baseTask.text || baseTask.prompt || "",
-          phonetic: baseTask.phonetic || baseTask.config?.phonetic || "",
-          accentOptions,
-          targetAccent: baseTask.targetAccent || baseTask.config?.targetAccent || accentOptions[0] || "american",
-          language: baseTask.language || baseTask.config?.language || "English",
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 0,
-          points: typeof baseTask.points === "number" ? baseTask.points : 10,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: false,
-          objectiveScoring: false,
-          aiScoringRequired: true,
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟦 RECORD AUDIO (teacher-reviewed)
-      if (generatedType === (TASK_TYPES.RECORD_AUDIO || "record-audio") || String(generatedType).toLowerCase() === "record-audio") {
-        setTaskConfig({
-          prompt: baseTask.prompt || "Record an oral answer. Your teacher will listen later.",
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 0,
-          points: typeof baseTask.points === "number" ? baseTask.points : 0,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: false,
-          objectiveScoring: false,
-          aiScoringRequired: false,
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟨 SPEECH RECOGNITION (AI transcribes + scores)
-      if (generatedType === (TASK_TYPES.SPEECH_RECOGNITION || "speech-recognition") || String(generatedType).toLowerCase() === "speech-recognition") {
-        setTaskConfig({
-          prompt: baseTask.prompt || "Speak your answer clearly. Curriculate will transcribe and score it.",
-          referenceText: baseTask.referenceText || baseTask.targetText || baseTask.text || "",
-          language: baseTask.language || baseTask.config?.language || "en-US",
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 60,
-          points: typeof baseTask.points === "number" ? baseTask.points : 10,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: false,
-          objectiveScoring: false,
-          aiScoringRequired: true,
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟥 TRUE/FALSE TIC-TAC-TOE (objective intra-team duel)
-      if (generatedType === (TASK_TYPES.TRUE_FALSE_TICTACTOE || "true-false-tictactoe") || String(generatedType).toLowerCase() === "true-false-tictactoe") {
-        const stmts = Array.isArray(baseTask.statements) ? baseTask.statements : Array.isArray(baseTask.config?.statements) ? baseTask.config.statements : [];
-        setTaskConfig({
-          prompt: baseTask.prompt || "Drag a True/False statement onto the board to claim squares.",
-          statements: stmts,
-          board: Array.isArray(baseTask.board) && baseTask.board.length === 9 ? baseTask.board : Array(9).fill(null),
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 90,
-          points: typeof baseTask.points === "number" ? baseTask.points : 10,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: true,
-          objectiveScoring: true,
-          aiScoringRequired: false,
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟩 MULTI-PLAYER FEEDBACK (reflection / no scoring)
-      if (generatedType === (TASK_TYPES.MULTI_PLAYER_FEEDBACK || "multi-player-feedback") || String(generatedType).toLowerCase() === "multi-player-feedback") {
-        setTaskConfig({
-          prompt: baseTask.prompt || "Quick team feedback: rate the session and share one improvement.",
-          timeLimitSeconds: 0,
-          points: 0,
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          interTeamEnabled: false,
-          intraTeamEnabled: false,
-          objectiveScoring: false,
-          aiScoringRequired: false,
-        });
-        setShowAiGen(false);
-        return;
-      }
       // 🟢 SIMPLE (single-question) CASE
       if (!generatedIsMulti) {
         setTaskConfig({
@@ -2522,31 +2330,6 @@ if (
     taskType === "role-play" ||
     taskType === "roleplay";
 
-  const isTicTacToeQuick =
-    taskType === (TASK_TYPES.TRUE_FALSE_TICTACTOE || "true-false-tictactoe") ||
-    taskType === "true-false-tictactoe" ||
-    taskType === "truefalse-tictactoe" ||
-    taskType === "true-false-tictactoe-task";
-
-  const isMultiPlayerFeedbackQuick =
-    taskType === (TASK_TYPES.MULTI_PLAYER_FEEDBACK || "multi-player-feedback") ||
-    taskType === "multi-player-feedback" ||
-    taskType === "multiplayer-feedback";
-
-  const isPronunciationQuick =
-    taskType === (TASK_TYPES.PRONUNCIATION || "pronunciation") ||
-    taskType === "pronunciation";
-
-  const isRecordAudioQuick =
-    taskType === (TASK_TYPES.RECORD_AUDIO || "record-audio") ||
-    taskType === "record-audio" ||
-    taskType === "recordaudio";
-
-  const isSpeechRecognitionQuick =
-    taskType === (TASK_TYPES.SPEECH_RECOGNITION || "speech-recognition") ||
-    taskType === "speech-recognition" ||
-    taskType === "speech-recognition-answer";
-
   const quickLaunchReady = isGuessWhoQuick
     ? (Array.isArray(taskConfig.secretAnswers)
         ? taskConfig.secretAnswers
@@ -2590,19 +2373,6 @@ if (
         const scenario = String(taskConfig?.config?.scenario || "").trim();
         return roles.length > 0 && !!scenario;
       })()
-    : isTicTacToeQuick
-    ? (() => {
-        const stmts = Array.isArray(taskConfig.statements) ? taskConfig.statements : [];
-        return stmts.length >= 3;
-      })()
-    : isPronunciationQuick
-    ? !!String(taskConfig.referenceText || taskConfig.prompt || "").trim()
-    : isSpeechRecognitionQuick
-    ? !!String(taskConfig.referenceText || taskConfig.prompt || "").trim()
-    : isRecordAudioQuick
-    ? true
-    : isMultiPlayerFeedbackQuick
-    ? true
     : isOneOfObjectiveSolo(taskType)
     ? (() => {
         const tt = String(taskType || "").toLowerCase();
