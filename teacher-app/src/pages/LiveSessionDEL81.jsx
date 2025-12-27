@@ -1298,26 +1298,14 @@ useEffect(() => {
       }
 
       if (tt === String(TASK_TYPES.SEQUENCE || "sequence") || tt === String(TASK_TYPES.TIMELINE || "timeline")) {
-        // sequence/timeline: items[] + correctOrder[] (Path A: TimelineTask reads task.items OR task.config.items)
+        // sequence/timeline: items[] + correctOrder[]
         const items = Array.isArray(taskConfig.items)
           ? taskConfig.items
           : Array.isArray(taskConfig.events)
           ? taskConfig.events
           : [];
-
         taskToSend.items = items;
         taskToSend.correctOrder = Array.isArray(taskConfig.correctOrder) ? taskConfig.correctOrder : undefined;
-
-        // Also provide config shape for consistency across student tasks/editors
-        taskToSend.config = {
-          ...(taskToSend.config || {}),
-          items,
-          correctOrder: Array.isArray(taskConfig.correctOrder) ? taskConfig.correctOrder : undefined,
-          ...(tt === String(TASK_TYPES.TIMELINE || "timeline")
-            ? { layout: "horizontal", showYears: true }
-            : {}),
-        };
-
         taskToSend.objectiveScoring = true;
         taskToSend.aiScoringRequired = false;
         taskToSend.interTeamEnabled = false;
