@@ -52,12 +52,6 @@ const QUICK_TASK_TYPES = Array.from(
     (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck"),
     (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"),
     (TASK_TYPES.MAD_DASH_SEQUENCE || "mad-dash-sequence"),
-    (TASK_TYPES.VENNSORT || "vennsort"),
-    (TASK_TYPES.SPEED_DRAW || "speed-draw"),
-    (TASK_TYPES.DRAW_MIME || "draw-mime"),
-    (TASK_TYPES.PHYSICAL_MYSTERY_CLUES || "physical-mystery-clues"),
-    (TASK_TYPES.DIFF_DETECTIVE || "diff-detective"),
-
     (TASK_TYPES.MATCHING || "matching"),
     (TASK_TYPES.SEQUENCE || "sequence"),
     (TASK_TYPES.SORT || "sort"),
@@ -327,12 +321,6 @@ useEffect(() => {
     taskType === TASK_TYPES.ROLE_PLAY ||
     taskType === "role-play" ||
     taskType === "roleplay";
-
-    const isDiffDetective = taskType === (TASK_TYPES.DIFF_DETECTIVE || "diff-detective") || taskType === "diff-detective";
-    const isVennSort = taskType === (TASK_TYPES.VENNSORT || "vennsort") || taskType === "vennsort";
-    const isSpeedDraw = taskType === (TASK_TYPES.SPEED_DRAW || "speed-draw") || taskType === "speed-draw";
-    const isDrawMime = taskType === (TASK_TYPES.DRAW_MIME || "draw-mime") || taskType === "draw-mime";
-    const isPhysicalMysteryClues = taskType === (TASK_TYPES.PHYSICAL_MYSTERY_CLUES || "physical-mystery-clues") || taskType === "physical-mystery-clues";
 
   if (!isRolePlay) return;
 
@@ -924,7 +912,7 @@ useEffect(() => {
       taskType === "role-play" ||
       taskType === "roleplay";
     if (!roomCode) return;
-    if (!isGuessWho && !isEchoChain && !isNarration && !isRolePlay && !isFakeOut && !isDiffDetective && !isVennSort && !isSpeedDraw && !isDrawMime && !isPhysicalMysteryClues && !taskConfig.prompt?.trim()) return;
+    if (!isGuessWho && !isEchoChain && !isNarration && !isRolePlay && !isFakeOut && !taskConfig.prompt?.trim()) return;
     if (isFakeOut) {
       const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
       const pc = Number(cfg.playerCount);
@@ -953,34 +941,7 @@ useEffect(() => {
     if (isRolePlay) {
       const roles = Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [];
       const scenario = String(taskConfig?.config?.scenario || "").trim();
-      if (roles.length === 0 || !scenario) return
-
-    if (isDiffDetective) {
-      const original = String(taskConfig.original || "").trim();
-      const modified = String(taskConfig.modified || "").trim();
-      if (!original || !modified) return;
-    }
-
-    if (isVennSort) {
-      const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-      const circles = Array.isArray(cfg.circles) ? cfg.circles : Array.isArray(taskConfig.circles) ? taskConfig.circles : [];
-      const items = Array.isArray(cfg.items) ? cfg.items : Array.isArray(taskConfig.items) ? taskConfig.items : [];
-      if (circles.length < 2 || circles.length > 3) return;
-      if (items.length < 3) return;
-    }
-
-    if (isSpeedDraw || isDrawMime) {
-      const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-      const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(taskConfig.prompts) ? taskConfig.prompts : [];
-      if (prompts.length === 0) return;
-    }
-
-    if (isPhysicalMysteryClues) {
-      const clues = Array.isArray(taskConfig.clues) ? taskConfig.clues : [];
-      // physical mystery clues should always include at least one clue card/text
-      if (clues.length === 0) return;
-    }
-;
+      if (roles.length === 0 || !scenario) return;
     }
 
     if (isGuessWho) {
@@ -1249,107 +1210,7 @@ useEffect(() => {
 }),
 
 
-      
-      // VennSort special fields
-      ...(isVennSort && {
-        prompt: (taskConfig.prompt || "").trim() || "Sort each item into the correct region of the Venn diagram.",
-        config: (() => {
-          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-          const circles = Array.isArray(cfg.circles)
-            ? cfg.circles
-            : Array.isArray(taskConfig.circles)
-            ? taskConfig.circles
-            : [];
-          const items = Array.isArray(cfg.items)
-            ? cfg.items
-            : Array.isArray(taskConfig.items)
-            ? taskConfig.items
-            : [];
-          return {
-            circles,
-            items,
-            // optional scoring weights
-            pointsPerCorrectCategory:
-              Number(cfg.pointsPerCorrectCategory) > 0 ? Number(cfg.pointsPerCorrectCategory) : 2,
-          };
-        })(),
-        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 90,
-        objectiveScoring: true,
-        aiScoringRequired: false,
-        interTeamEnabled: false,
-        intraTeamEnabled: false,
-        correctAnswer: null,
-        options: undefined,
-      }),
-
-      // Draw/Mime special fields
-      ...(isDrawMime && {
-        prompt: (taskConfig.prompt || "").trim() || "Draw or mime the concept so your teammates can guess it!",
-        config: (() => {
-          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-          const prompts = Array.isArray(cfg.prompts)
-            ? cfg.prompts
-            : Array.isArray(taskConfig.prompts)
-            ? taskConfig.prompts
-            : [];
-          return {
-            ...cfg,
-            prompts,
-            perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 60,
-            mode: String(cfg.mode || taskConfig.mode || "choose"),
-          };
-        })(),
-        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60,
-        objectiveScoring: false,
-        aiScoringRequired: false,
-        interTeamEnabled: false,
-        intraTeamEnabled: false,
-        correctAnswer: null,
-        options: undefined,
-      }),
-
-      // SpeedDraw special fields
-      ...(isSpeedDraw && {
-        prompt: (taskConfig.prompt || "").trim() || "Speed Draw: one player draws fast; teammates guess fast!",
-        config: (() => {
-          const cfg = taskConfig && typeof taskConfig.config === "object" ? taskConfig.config : {};
-          const prompts = Array.isArray(cfg.prompts)
-            ? cfg.prompts
-            : Array.isArray(taskConfig.prompts)
-            ? taskConfig.prompts
-            : [];
-          return {
-            ...cfg,
-            prompts,
-            perRoundSeconds: Number(cfg.perRoundSeconds) > 0 ? Number(cfg.perRoundSeconds) : 45,
-          };
-        })(),
-        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 60,
-        objectiveScoring: false,
-        aiScoringRequired: false,
-        interTeamEnabled: false,
-        intraTeamEnabled: false,
-        correctAnswer: null,
-        options: undefined,
-      }),
-
-      // Physical Mystery Clues special fields
-      ...(isPhysicalMysteryClues && {
-        prompt:
-          (taskConfig.prompt || "").trim() ||
-          "Physical Mystery Clues: find the clue(s) and submit the correct solution.",
-        clues: Array.isArray(taskConfig.clues) ? taskConfig.clues : [],
-        solution: taskConfig.solution || taskConfig.answer || undefined,
-        timeLimitSeconds: Number(taskConfig.timeLimitSeconds) > 0 ? Number(taskConfig.timeLimitSeconds) : 120,
-        objectiveScoring: false,
-        aiScoringRequired: false,
-        interTeamEnabled: false,
-        intraTeamEnabled: false,
-        correctAnswer: null,
-        options: undefined,
-      }),
-
-// Diff Detective special fields
+      // Diff Detective special fields
       ...(taskType === TASK_TYPES.DIFF_DETECTIVE && {
         original: taskConfig.original || "",
         modified: taskConfig.modified || "",
@@ -1752,101 +1613,6 @@ if (isRolePlayRequested) {
         setShowAiGen(false);
         return;
       }
-
-
-      // 🟣 VennSort
-      if (generatedType === (TASK_TYPES.VENNSORT || "vennsort") || generatedType === "vennsort") {
-        const cfg = (baseTask && typeof baseTask.config === "object" && baseTask.config) || {};
-        const circles =
-          Array.isArray(cfg.circles) && cfg.circles.length
-            ? cfg.circles
-            : Array.isArray(baseTask.circles)
-            ? baseTask.circles
-            : [];
-        const items =
-          Array.isArray(cfg.items) && cfg.items.length ? cfg.items : Array.isArray(baseTask.items) ? baseTask.items : [];
-        setTaskConfig({
-          prompt: baseTask.prompt || "",
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 90,
-          config: {
-            circles,
-            items,
-            pointsPerCorrectCategory:
-              Number(cfg.pointsPerCorrectCategory) > 0 ? Number(cfg.pointsPerCorrectCategory) : 2,
-          },
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟠 Draw/Mime
-      if (generatedType === (TASK_TYPES.DRAW_MIME || "draw-mime") || generatedType === "draw-mime") {
-        const cfg = (baseTask && typeof baseTask.config === "object" && baseTask.config) || {};
-        const prompts =
-          Array.isArray(cfg.prompts) && cfg.prompts.length
-            ? cfg.prompts
-            : Array.isArray(baseTask.prompts)
-            ? baseTask.prompts
-            : [];
-        setTaskConfig({
-          prompt: baseTask.prompt || "",
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 60,
-          config: {
-            ...cfg,
-            prompts,
-            perTurnSeconds: Number(cfg.perTurnSeconds) > 0 ? Number(cfg.perTurnSeconds) : 60,
-            mode: String(cfg.mode || "choose"),
-          },
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟡 SpeedDraw
-      if (generatedType === (TASK_TYPES.SPEED_DRAW || "speed-draw") || generatedType === "speed-draw") {
-        const cfg = (baseTask && typeof baseTask.config === "object" && baseTask.config) || {};
-        const prompts =
-          Array.isArray(cfg.prompts) && cfg.prompts.length
-            ? cfg.prompts
-            : Array.isArray(baseTask.prompts)
-            ? baseTask.prompts
-            : [];
-        setTaskConfig({
-          prompt: baseTask.prompt || "",
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 60,
-          config: {
-            ...cfg,
-            prompts,
-            perRoundSeconds: Number(cfg.perRoundSeconds) > 0 ? Number(cfg.perRoundSeconds) : 45,
-          },
-        });
-        setShowAiGen(false);
-        return;
-      }
-
-      // 🟤 Physical Mystery Clues
-      if (
-        generatedType === (TASK_TYPES.PHYSICAL_MYSTERY_CLUES || "physical-mystery-clues") ||
-        generatedType === "physical-mystery-clues"
-      ) {
-        setTaskConfig({
-          prompt: baseTask.prompt || "",
-          subject: aiSubject || "Ad-hoc",
-          gradeLevel: gradeStr || "",
-          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 120,
-          clues: Array.isArray(baseTask.clues) ? baseTask.clues : [],
-          solution: baseTask.solution || baseTask.answer || "",
-        });
-        setShowAiGen(false);
-        return;
-      }
-
 
       // 🟡 Brain Spark Notes
       if (generatedType === TASK_TYPES.BRAIN_SPARK_NOTES) {

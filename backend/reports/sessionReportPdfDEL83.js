@@ -323,112 +323,7 @@ function formatDate(d) {
     });
   }
 
-  
-
-  // Task-aware summary card (simple PDF "card" block)
-  function renderTaskSummaryCards(tasks) {
-    const list = Array.isArray(tasks) ? tasks.filter(Boolean) : [];
-    if (!list.length) return;
-
-    sectionTitle("Task Summary Cards");
-
-    const cardPad = 8;
-    const cardGap = 10;
-
-    for (const t of list) {
-      ensureSpace(160);
-
-      const type = String(t.taskType || t.type || "").trim();
-      const title = String(t.title || "").trim() || "Task";
-      const prompt = String(t.prompt || "").trim();
-      const emoji = taskTypeEmoji(type);
-
-      // Card background
-      const x = doc.page.margins.left;
-      const w = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-      const y0 = doc.y;
-
-      // We'll measure dynamically by rendering into an estimated height; then draw border.
-      const startY = y0;
-      const innerX = x + cardPad;
-      const innerW = w - cardPad * 2;
-
-      doc.save();
-      doc.roundedRect(x, startY, w, 1, 10).strokeColor("#e5e7eb").lineWidth(1).stroke();
-      doc.restore();
-
-      doc.x = innerX;
-      doc.y = startY + cardPad;
-
-      doc.font("Helvetica-Bold").fontSize(11).fillColor("#111111").text(`${emoji} ${title}`, {
-        width: innerW,
-      });
-
-      if (prompt) {
-        doc.moveDown(0.2);
-        doc.font("Helvetica").fontSize(10).fillColor("#111111").text(prompt, { width: innerW });
-      }
-
-      // Type-specific bullets
-      const bulletsLines = [];
-      const norm = type;
-
-      if (norm === "diff-detective") {
-        const original = String(t.original || "").trim();
-        const modified = String(t.modified || "").trim();
-        const diffCount = Array.isArray(t.differences) ? t.differences.length : null;
-        if (original) bulletsLines.push(`Original provided (${Math.min(original.length, 240)} chars shown in app).`);
-        if (modified) bulletsLines.push(`Modified provided (${Math.min(modified.length, 240)} chars shown in app).`);
-        if (diffCount != null) bulletsLines.push(`Expected differences: ${diffCount}.`);
-        bulletsLines.push("Skill focus: close reading, error detection, careful comparison.");
-      } else if (norm === "physical-mystery-clues") {
-        const clues = Array.isArray(t.clues) ? t.clues : [];
-        if (clues.length) bulletsLines.push(`Clues: ${clues.length} item(s).`);
-        const sol = String(t.solution || t.answer || "").trim();
-        if (sol) bulletsLines.push("Includes a teacher-defined solution/check.");
-        bulletsLines.push("Skill focus: observation + reasoning, remembering details while moving.");
-      } else if (norm === "vennsort") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const circles = Array.isArray(cfg.circles) ? cfg.circles : Array.isArray(t.circles) ? t.circles : [];
-        const items = Array.isArray(cfg.items) ? cfg.items : Array.isArray(t.items) ? t.items : [];
-        if (circles.length) bulletsLines.push(`Circles: ${circles.map((c) => c.label || c.name || c).join(" / ")}`);
-        if (items.length) bulletsLines.push(`Items: ${items.length}. Drag into correct Venn region(s).`);
-        bulletsLines.push("Skill focus: nuanced classification + intersections.");
-      } else if (norm === "draw-mime") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(t.prompts) ? t.prompts : [];
-        const mode = String(cfg.mode || t.mode || "choose");
-        if (mode) bulletsLines.push(`Mode: ${mode}.`);
-        if (prompts.length) bulletsLines.push(`Prompt bank: ${prompts.length}.`);
-        bulletsLines.push("Skill focus: multimodal encoding + teamwork guessing.");
-      } else if (norm === "speed-draw") {
-        const cfg = (t.config && typeof t.config === "object" && t.config) || {};
-        const prompts = Array.isArray(cfg.prompts) ? cfg.prompts : Array.isArray(t.prompts) ? t.prompts : [];
-        if (prompts.length) bulletsLines.push(`Prompt bank: ${prompts.length}.`);
-        bulletsLines.push("Skill focus: rapid retrieval + concept visualization.");
-      }
-
-      if (bulletsLines.length) {
-        doc.moveDown(0.25);
-        doc.font("Helvetica").fontSize(10).fillColor("#111111");
-        bullets(bulletsLines);
-      }
-
-      // Compute card height and redraw border correctly (quick trick: draw border after we know end y)
-      const endY = doc.y + cardPad;
-      const cardH = Math.max(90, endY - startY);
-
-      // Redraw border with correct height
-      doc.save();
-      doc.roundedRect(x, startY, w, cardH, 10).strokeColor("#e5e7eb").lineWidth(1).stroke();
-      doc.restore();
-
-      // Move cursor to below the card
-      doc.y = startY + cardH + cardGap;
-      doc.x = x;
-    }
-  }
-// ---------- Page 1: Overview ----------
+  // ---------- Page 1: Overview ----------
   sectionTitle("Session Overview");
 
   keyValue("School:", report.schoolName || "—");
@@ -483,17 +378,6 @@ function formatDate(d) {
       })
     : [];
   bullets((Array.isArray(activitiesList) && activitiesList.length ? activitiesList : fallbackTaskList) || []);
-
-  // Task-aware cards (from summary taskList or other common locations)
-  const taskCardsSource =
-    report.tasks ||
-    report.taskList ||
-    report.summary?.taskList ||
-    report.summary?.tasks ||
-    report.transcript?.tasks ||
-    [];
-  renderTaskSummaryCards(taskCardsSource);
-
 
   ensureSpace(640);
 
