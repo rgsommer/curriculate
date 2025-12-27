@@ -272,14 +272,6 @@ function taskTypeEmoji(typeRaw) {
   if (t.includes("timeline")) return "🕰️";
   if (t.includes("sort")) return "🧺";
 
-  // Venn / compare / spot-the-diff
-  if (t.includes("venn")) return "⭕";
-  if (t.includes("diff")) return "🔍";
-
-  // Quick draw / charades
-  if (t.includes("speed-draw") || t.includes("speeddraw") || t.includes("speed_draw")) return "⚡️";
-  if (t.includes("draw-mime") || t.includes("drawmime") || t.includes("draw_mime")) return "🎭";
-
   // Core question types
   if (t.includes("multiple")) return "✅";
   if (t.includes("true")) return "☑️";
