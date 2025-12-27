@@ -42,7 +42,7 @@ import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
 import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
 import VennSortTask from "./types/VennSortTask";
-import MultiPlayerFeedbackTask from "./types/MultiPlayerFeedbackTask";
+import MultiPlayerFeedbackTask from "./types/MultiplayerFeedbackTask";
 import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
 import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";

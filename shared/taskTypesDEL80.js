@@ -335,7 +335,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Drag 5–10 items into a 2–3 circle Venn diagram with overlapping regions (including outside). Objective scoring maps item → which circle(s). Builds nuanced classification and relational reasoning beyond simple categories.",
+      "Drag 5\u201310 items into a 2\u20133 circle Venn diagram (including overlaps and the outside pool). Objective-scored using correctAnswer mapping each itemId \u2192 [categories it belongs to]. Supports partial credit for multi-category items: award points per correctly-included category (e.g., an item in A\u2229B\u2229C can earn up to 6 points if each category is worth 2). Builds nuanced classification and relational reasoning beyond simple categories.",
   }),
 
   // =========================
@@ -607,7 +607,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "End-of-taskset reflection: each player rates the set (emoji scale) and the team can leave an optional comment. No scoring. Drives iterative improvement and metacognition.",
+      "End-of-taskset reflection: the team rates the taskset (emoji/1\u20135) and can leave optional comments/suggestions. Optional \u2018what we learned\u2019 note can grant a small bonus point. Not AI-generated; not scored beyond participation/bonus. Improves student voice and metacognition.",
   }),
 
   [TASK_TYPES.TREASURE_RUNNER]: metaBase({
@@ -1095,7 +1095,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Teams represent a concept non-verbally—either drawing or acting it out—while teammates guess. Reinforces vocabulary and builds multi-modal memory traces.",
+      "Teams represent a concept non-verbally\u2014either by drawing (on device) or acting it out charades-style\u2014while teammates guess. Tap by names to mark who guessed. 1\u20132\u20133 GO starts a ~60s round; bonus to actor and first correct guess. Not objective-scored (participation/round points). Reinforces vocabulary, multi-modal encoding, and collaboration.",
   }),
 
   [TASK_TYPES.DRAW]: metaBase({

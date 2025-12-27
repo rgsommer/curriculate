@@ -259,7 +259,14 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Drag 6–10 items into 2–4 categories. Objective scoring maps each item → category. Great for classification, concept boundaries, and quick detection of misconceptions (wrong bucket = instant insight).",
+      `A drag-and-drop categorization task. Students sort 6–12 items into 2–4 labeled buckets. Each item must belong to exactly one bucket. Great for concept grouping, classification, parts-of-speech, geography (continents/regions), science (states of matter), etc. Objective scoring checks whether each item was placed in its correct bucket.`,
+    generatorSpec: {
+      shape: "sort",
+      requiredFields: ["taskType", "title", "prompt", "config.buckets", "config.items"],
+      configNotes: "Provide config.buckets as an array of {id, label}. Provide config.items as an array of {id, text, correctBucketId} (or correctBucket/index equivalents). Every item must specify a correct bucket and every bucket should have at least one correct item.",
+      submission: "{ placements: { [itemId]: bucketId } }",
+      commonMistakesToAvoid: "Avoid degenerate sets where all items belong in one bucket. Ensure bucket ids are unique. Ensure each item's correctBucketId matches an existing bucket id.",
+    },
   }),
 
   [TASK_TYPES.SEQUENCE]: metaBase({
@@ -278,7 +285,14 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Drag 4–8 steps/events into the correct order (process steps, life cycles, cause→effect chains, or historical chronology). Reinforces procedural understanding and ‘big picture’ structure.",
+      `A drag-to-order sequencing task. Students reorder 4–10 steps/events into the correct sequence (procedures, life cycles, story plot, math steps, historical sequence). Each item can be a string or an object with id + text/title (+ optional date/description). Objective scoring compares the submitted order to the correct order.`,
+    generatorSpec: {
+      shape: "sequence",
+      requiredFields: ["taskType", "title", "prompt", "config.items", "correctOrder"],
+      configNotes: "Provide config.items as an array (strings or objects). Provide correctOrder as an array of item ids in correct order. If items are strings, generator must assign ids and then use those ids in correctOrder.",
+      submission: "{ order: [itemId1, itemId2, ...] }",
+      commonMistakesToAvoid: "Do not use display text as the id if it is long/duplicate. Ensure correctOrder length matches items length and contains the same ids exactly once.",
+    },
   }),
 
   [TASK_TYPES.TIMELINE]: metaBase({
@@ -297,7 +311,14 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Timeline-branded ordering task. Students drag events into chronological order. Excellent for historical thinking and understanding causal sequences over time.",
+      `A timeline-themed drag-to-order task (same mechanics as Sequence, but framed as dates/events). Students reorder 4–8 events into chronological order. Items should include a date/year and a short event label. Objective scoring compares the submitted order to correctOrder.`,
+    generatorSpec: {
+      shape: "timeline",
+      requiredFields: ["taskType", "title", "prompt", "shuffledItems", "correctOrder"],
+      configNotes: "Provide shuffledItems as an array of display strings or objects; provide correctOrder as an array in correct sequence using the same item representations or ids (prefer ids). For solo play, omit winner and any socket-related fields.",
+      submission: "{ order: [...] }",
+      commonMistakesToAvoid: "Do not include a winner field for solo play. Ensure correctOrder matches the same items as shuffledItems.",
+    },
   }),
 
   [TASK_TYPES.MATCHING]: metaBase({
@@ -316,7 +337,14 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Two columns of 5–7 items. Students draw animated lines to connect correct pairs (term→definition, cause→effect, person→event). Fast formative assessment and strong association-building.",
+      `A two‑column connect-the-pairs task. Students match each LEFT item to exactly one RIGHT item by tapping/dragging to draw animated connector lines. Use 5–8 pairs. Great for vocabulary ↔ definitions, causes ↔ effects, people ↔ roles, dates ↔ events, symbols ↔ meanings. Objective scoring: each leftId must map to the correct rightId.`,
+    generatorSpec: {
+      shape: "matching",
+      requiredFields: ["taskType", "title", "prompt", "config.leftItems", "config.rightItems", "config.correctMatches"],
+      configNotes: "Provide leftItems/rightItems arrays of objects {id, label/text}. Provide correctMatches as an object mapping each left id to the matching right id. IDs must be unique and stable.",
+      submission: "{ matches: { [leftId]: rightId } }",
+      commonMistakesToAvoid: "Do not repeat ids. Do not omit correctMatches. Ensure every leftItem id appears in correctMatches and points to an existing rightItem id.",
+    },
   }),
 
   [TASK_TYPES.VENNSORT]: metaBase({

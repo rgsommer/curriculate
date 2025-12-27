@@ -42,6 +42,7 @@ import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
 import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
 import VennSortTask from "./types/VennSortTask";
+import MultiPlayerFeedbackTask from "./types/MultiPlayerFeedbackTask";
 import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
 import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";
@@ -162,7 +163,15 @@ function normalizeTaskType(raw) {
     case "venndiagram":
       return TASK_TYPES.VENNSORT;
 
-    // Photo / Media
+    
+// Feedback / reflection
+case "multi-player-feedback":
+case "multi_player_feedback":
+case "multiplayerfeedback":
+case "feedback":
+  return TASK_TYPES.MULTI_PLAYER_FEEDBACK;
+
+// Photo / Media
     case "photo":
       return TASK_TYPES.PHOTO;
 
@@ -1603,6 +1612,32 @@ export default function TaskRunner({
       );
       break;
 
+case TASK_TYPES.MULTI_PLAYER_FEEDBACK:
+case "multi-player-feedback":
+case "multi_player_feedback":
+  content = (
+    <MultiPlayerFeedbackTask
+      roomCode={roomCode}
+      teamId={
+        t?.teamId ||
+        playerTeam?.id ||
+        playerTeam?.teamId ||
+        playerTeam?.teamID ||
+        null
+      }
+      teamName={
+        t?.teamName ||
+        playerTeam?.name ||
+        playerTeam?.teamName ||
+        null
+      }
+      socket={socket}
+      onSubmit={handleTaskSubmit}
+    />
+  );
+  break;
+
+
     case TASK_TYPES.SORT:
       content = (
         <SortTask
@@ -1775,6 +1810,7 @@ export default function TaskRunner({
           socket={socketRef}
           roomCode={roomCode}
           teamId={effectiveTeamId}
+          memberNames={memberNames}
           disabled={effectiveDisabled || isReview}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
@@ -1906,6 +1942,7 @@ export default function TaskRunner({
       content = (
         <FlashcardsRaceTask
           task={t}
+          onSubmit={handleTaskSubmit}
           socket={socket}
           roomCode={roomCode}
           playerTeam={playerTeam}
