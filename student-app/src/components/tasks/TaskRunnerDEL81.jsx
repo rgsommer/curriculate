@@ -42,7 +42,7 @@ import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
 import TreasureRunnerTask from "./types/TreasureRunnerTask"; // ✅ NEW
 import VennSortTask from "./types/VennSortTask";
-import MultiPlayerFeedbackTask from "./types/MultiPlayerFeedbackTask";
+import MultiPlayerFeedbackTask from "./types/MultiplayerFeedbackTask";
 import GuessWhoTask from "./types/GuessWhoTask"; // ✅ NEW (Guess Who)
 import NarrationSynthesizeTask from "./types/NarrationSynthesizeTask";
 import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";
@@ -204,19 +204,6 @@ case "feedback":
     case "body-break":
     case "body_break":
       return TASK_TYPES.BODY_BREAK;
-
-
-    // Motion Mission
-    case "motion-mission":
-    case "motion_mission":
-    case "motionmission":
-      return TASK_TYPES.MOTION_MISSION;
-
-    // Musical Chairs
-    case "musical-chairs":
-    case "musical_chairs":
-    case "musicalchairs":
-      return TASK_TYPES.MUSICAL_CHAIRS;
 
     // ✅ Mood check-in (NEW)
     case "mood-checkin":

@@ -36,12 +36,6 @@ export default function MusicalChairsTask({
     }
   }, [task?.winnerTeam]);
 
-  const scanBtnClass =
-    "px-12 py-8 text-4xl font-bold rounded-2xl transition " +
-    (scanned
-      ? "bg-gray-400 text-gray-700"
-      : "bg-green-600 text-white hover:bg-green-700 shadow-lg");
-
   const handleScan = () => {
     if (scanned || disabled) return;
     if (!socket || !task?.roomCode) return; // safety guard
@@ -86,7 +80,11 @@ export default function MusicalChairsTask({
       <button
         onClick={handleScan}
         disabled={disabled || scanned}
-        className={scanBtnClass}
+        className={`px-12 py-8 text-4xl font-bold rounded-2xl transition ${
+          scanned
+            ? "bg-gray-400 text-gray-700"
+            : "bg-green-600 text-white hover:bg-green-700 shadow-lg"
+        }`}
       >
         {scanned ? "SCANNED!" : "SCAN NOW!"}
       </button>

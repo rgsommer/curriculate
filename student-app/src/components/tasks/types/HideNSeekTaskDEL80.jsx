@@ -20,16 +20,6 @@ export default function HideNSeekTask({ task, onSubmit, disabled }) {
 
   const isHard = task.difficulty === "HARD";
 
-  const takePhotoBtnClass =
-    "px-8 md:px-16 py-4 md:py-6 bg-blue-600 text-white text-2xl md:text-4xl lg:text-5xl font-bold rounded-full transition shadow-2xl mb-6 md:mb-8 " +
-    (disabled || submitted ? "opacity-60 cursor-not-allowed" : "hover:bg-blue-700");
-
-  const submitBtnClass =
-    "mt-8 md:mt-10 px-10 md:px-16 lg:px-20 py-4 md:py-6 lg:py-8 text-3xl md:text-5xl lg:text-6xl font-bold rounded-3xl shadow-2xl " +
-    (!photo || !significance.trim() || disabled || submitted
-      ? "bg-green-700/50 cursor-not-allowed opacity-60"
-      : "bg-green-600 hover:bg-green-700");
-
   const handleTakePhoto = () => {
     if (disabled || submitted) return;
     fileInputRef.current?.click();
@@ -79,7 +69,11 @@ export default function HideNSeekTask({ task, onSubmit, disabled }) {
         <button
           onClick={handleTakePhoto}
           disabled={disabled || submitted}
-          className={takePhotoBtnClass}
+          className={`px-8 md:px-16 py-4 md:py-6 bg-blue-600 text-white text-2xl md:text-4xl lg:text-5xl font-bold rounded-full transition shadow-2xl mb-6 md:mb-8 ${
+            disabled || submitted
+              ? "opacity-60 cursor-not-allowed"
+              : "hover:bg-blue-700"
+          }`}
         >
           Take Photo of Page
         </button>
@@ -123,7 +117,11 @@ export default function HideNSeekTask({ task, onSubmit, disabled }) {
         <button
           onClick={submit}
           disabled={!photo || !significance.trim() || disabled || submitted}
-          className={submitBtnClass}
+          className={`mt-8 md:mt-10 px-10 md:px-16 lg:px-20 py-4 md:py-6 lg:py-8 text-3xl md:text-5xl lg:text-6xl font-bold rounded-3xl shadow-2xl ${
+            !photo || !significance.trim() || disabled || submitted
+              ? "bg-green-700/50 cursor-not-allowed opacity-60"
+              : "bg-green-600 hover:bg-green-700"
+          }`}
         >
           {submitted ? "SUBMITTED!" : "I FOUND IT!"}
         </button>
