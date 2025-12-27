@@ -75,6 +75,10 @@ export default function TimelineTask({ task, onSubmit, disabled, socket }) {
 
   const canSubmit = !disabled && items.length >= 2;
 
+  const submitClassName = canSubmit
+    ? "px-4 py-2 rounded font-semibold bg-blue-600 text-white hover:bg-blue-700"
+    : "px-4 py-2 rounded font-semibold bg-gray-200 text-gray-500";
+
   return (
     <div className="p-6">
       <div className="flex items-start justify-between gap-4">
@@ -84,7 +88,7 @@ export default function TimelineTask({ task, onSubmit, disabled, socket }) {
         </div>
 
         <button
-          className={\`px-4 py-2 rounded font-semibold \${canSubmit ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-200 text-gray-500"}\`}
+          className={submitClassName}
           onClick={handleSubmit}
           disabled={!canSubmit}
         >
