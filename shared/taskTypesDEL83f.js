@@ -841,8 +841,8 @@ export const TASK_TYPE_META = {
           `,
         }),
 
-  [TASK_TYPES.SPEED_DRAW]: meta({
-    label: "Speed Draw",
+  [TASK_TYPES.DRAW_MIME]: meta({
+    label: "Draw or Mime",
     category: CATEGORY.CREATIVE,
     implemented: true,
     aiEligible: true,
@@ -867,11 +867,9 @@ export const TASK_TYPE_META = {
 
       Constraints:
       - Choose drawable nouns/phrases (avoid ultra-abstract prompts).
-
       Benefits: rapid concept visualization, vocabulary reinforcement, retrieval through images.
           `,
         }),
-
 
   [TASK_TYPES.PET_FEEDING]: metaBase({
     label: "Feed the Pet!",
@@ -988,26 +986,6 @@ export const TASK_TYPE_META = {
       - This is NOT HideNSeek (physical search + photo evidence). This is purely on-screen memory.
           `,
         }),
-
-  [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: meta({
-    label: "Mystery Clue Cards (Alias)",
-    category: CATEGORY.RECALL,
-    implemented: true,
-    aiEligible: false,
-    generatorEligible: false,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
-    quickTaskEligible: false,
-    maxTimeSeconds: 90,
-    intraTeamEnabled: false,
-    interTeamEnabled: false,
-    description: `
-      Alias/back-compat for Mystery Clue Cards.
-      If older content or callers use "physical-mystery-clues", normalize it to "mystery-clues"
-      (this mechanic is digital/on-screen memory, not physical HideNSeek).
-          `,
-        }),
-
 
   [TASK_TYPES.FAKE_OUT]: metaBase({
     label: "Fake Out",

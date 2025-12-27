@@ -655,75 +655,28 @@ export default function TasksetTranscript({ transcript }) {
             </p>
 
             {taskSubs.length === 0 ? (
-              (() => {
-                const tt = String(task.taskType || task.type || "").toLowerCase();
-
-                const isFlashcardsRace =
-                  tt === "flashcards-race" || tt === "flashcards_race" || tt === "flashcardsrace";
-
-                const isBodyBreak =
-                  tt === "bodybreak" || tt === "body-break" || tt === "body_break";
-
-                const isMotionMission =
-                  tt === "motion-mission" || tt === "motion_mission" || tt === "motionmission";
-
-                const isMusicalChairs =
-                  tt === "musical-chairs" || tt === "musical_chairs" || tt === "musicalchairs";
-
-                // These tasks are often "live activity" and may not produce a submission record.
-                if (isFlashcardsRace) {
-                  return (
-                    <div
-                      style={{
-                        marginTop: 6,
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px dashed rgba(255,255,255,0.0)",
-                        background: "rgba(59,130,246,0.06)",
-                        color: "#374151",
-                        fontSize: "0.9rem",
-                      }}
-                    >
-                      <div style={{ fontWeight: 800, marginBottom: 2 }}>Flashcards Race (live inter-team)</div>
-                      <div style={{ color: "#6b7280", fontSize: "0.85rem" }}>
-                        This task is typically driven by live socket events (buzz/answer/advance). If your backend is
-                        configured to persist the race outcome, you’ll see a scoreboard submission here.
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (isBodyBreak || isMotionMission || isMusicalChairs) {
-                  const label = isBodyBreak
-                    ? "Body Break (movement reset)"
-                    : isMotionMission
-                    ? "Motion Mission (embodied challenge)"
-                    : "Musical Chairs (movement + cue)";
-
-                  return (
-                    <div
-                      style={{
-                        marginTop: 6,
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px dashed rgba(0,0,0,0.10)",
-                        background: "rgba(16,185,129,0.06)",
-                        color: "#374151",
-                        fontSize: "0.9rem",
-                      }}
-                    >
-                      <div style={{ fontWeight: 800, marginBottom: 2 }}>{label}</div>
-                      <div style={{ color: "#6b7280", fontSize: "0.85rem" }}>
-                        This task is usually completed physically as a team and may not create a submission record.
-                        Completion is typically reflected in engagement and timing metrics rather than an answer payload.
-                      </div>
-                    </div>
-                  );
-                }
-
-                return <p style={{ color: "#9ca3af", margin: 0 }}>No submissions for this task.</p>;
-              })()
-            ) : ( : (
+              task.taskType === "flashcards-race" || task.taskType === "flashcards_race" || task.taskType === "flashcardsRace" ? (
+                <div
+                  style={{
+                    marginTop: 6,
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px dashed rgba(255,255,255,0.0)",
+                    background: "rgba(59,130,246,0.06)",
+                    color: "#374151",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, marginBottom: 2 }}>Flashcards Race (live inter-team)</div>
+                  <div style={{ color: "#6b7280", fontSize: "0.85rem" }}>
+                    This task is typically driven by live socket events (buzz/answer/advance). If your backend is
+                    configured to persist the race outcome, you’ll see a scoreboard submission here.
+                  </div>
+                </div>
+              ) : (
+                <p style={{ color: "#9ca3af", margin: 0 }}>No submissions for this task.</p>
+              )
+            ) : (
               <div
                 style={{
                   display: "grid",
