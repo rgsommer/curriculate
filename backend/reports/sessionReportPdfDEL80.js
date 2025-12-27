@@ -282,6 +282,7 @@ if (t.includes("short")) return "✍️";
   if (t.includes("mystery")) return "🕵️";
   if (t.includes("debate")) return "🗣️";
   if (t.includes("fake-out") || t.includes("fakeout") || t.includes("fake_out") || t.includes("balderdash") || t.includes("bluff")) return "🤥";
+  if (t.includes("word-weaver") || t.includes("word_weaver") || t.includes("wordweaver")) return "🔤";
   // BrainSparkNotes / MindMapper (paper-based, photographed)
   if (t.includes("brain") || t.includes("spark") || t.includes("notes")) return "🧠";
   if (t.includes("mind") || t.includes("mapper") || t.includes("mind-mapper") || t.includes("mind_mapper")) return "🕸️";
@@ -397,6 +398,8 @@ function formatDate(d) {
         doc.text(`Highlights: ${fb.highlights || "—"}`);
         doc.text(`Improvements: ${fb.improvements || "—"}`);
         doc.text(`Favorite task: ${fb.favoriteTask || "—"}`);
+        doc.text(`Learned: ${fb.learned || "—"}`);
+
       }
 
       // Peer-rated / narration-style tasks (optional)

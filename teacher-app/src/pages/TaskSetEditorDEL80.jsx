@@ -589,12 +589,39 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
               out.config = { ...out.config, wordsByStation: wbs };
             }
 
-            // Word Weaver: keep phrase at top-level (student task expects task.phrase)
+            // Word Weaver: normalize legacy/AI variants into the schema expected by student + editor UIs.
             if (out.taskType === TASK_TYPES.WORD_WEAVER_DUEL) {
+              // Preferred "scrabble" mode: out.words (array of 5–10 words) + optional gridSize/allowRotate.
+              const words =
+                (Array.isArray(out.words) && out.words) ||
+                (Array.isArray(out.config?.words) && out.config.words) ||
+                (Array.isArray(out.config?.wordBank) && out.config.wordBank) ||
+                (Array.isArray(out.wordBank) && out.wordBank) ||
+                [];
+
+              if (words.length) out.words = words.filter(Boolean).map((w) => String(w).trim()).filter(Boolean);
+
+              // Mode inference: if words exist assume scrabble unless explicitly set.
+              if (!out.mode) out.mode = out.words && out.words.length ? "scrabble" : "phrase";
+
+              // Phrase mode: keep phrase at top-level (student task expects task.phrase).
               if (!out.phrase && typeof out.prompt === "string") {
-                const m = out.prompt.match(/phrase\s*:\s*['\"]([^'\"]{4,120})['\"]/i);
+                const m = out.prompt.match(/phrase\s*:\s*['\"]([^'\"]{4,160})['\"]/i);
                 if (m && m[1]) out.phrase = m[1].trim();
               }
+
+              // If AI stuffed a phrase into `phrase` but also provided `words`, keep both.
+              // Grid knobs may come either top-level or config.
+              const gridSize = Number(out.gridSize ?? out.config?.gridSize);
+              if (!Number.isNaN(gridSize) && gridSize > 0) out.gridSize = Math.min(15, Math.max(8, Math.floor(gridSize)));
+
+              const allowRotate =
+                typeof out.allowRotate === "boolean"
+                  ? out.allowRotate
+                  : typeof out.config?.allowRotate === "boolean"
+                    ? out.config.allowRotate
+                    : true;
+              out.allowRotate = allowRotate;
             }
 
             // Diff Detective: ensure config.textA/textB exist
@@ -3077,22 +3104,98 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                   </div>
                 )}
 
-                {/* WORD WEAVER: ensure phrase exists (current component uses task.phrase) */}
+                {/* WORD WEAVER: Scrabble-style "words on grid" OR legacy phrase rebuild */}
                 {task.taskType === TASK_TYPES.WORD_WEAVER_DUEL && (
-                  <div style={{ marginBottom: 6 }}>
-                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
-                      Phrase
-                    </label>
-                    <input
-                      type="text"
-                      value={task.phrase || ""}
-                      onChange={(e) => updateTask(task._tempId, "phrase", e.target.value)}
-                      placeholder="e.g., Teamwork and Perseverance"
-                      style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
-                    />
-                    <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
-                      Note: the current WordWeaverDuelTask component rebuilds a phrase (not yet a Scrabble-style grid).
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                      <div style={{ flex: "0 0 auto" }}>
+                        <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                          Mode
+                        </label>
+                        <select
+                          value={task.mode || (Array.isArray(task.words) && task.words.length ? "scrabble" : "phrase")}
+                          onChange={(e) => updateTask(task._tempId, "mode", e.target.value)}
+                          style={{ borderRadius: 6, border: "1px solid #d1d5db", padding: "6px 8px", fontSize: "0.85rem" }}
+                        >
+                          <option value="scrabble">Scrabble Grid (words on grid)</option>
+                          <option value="phrase">Phrase Rebuild (legacy)</option>
+                        </select>
+                      </div>
+
+                      <div style={{ flex: "0 0 auto" }}>
+                        <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                          Grid Size
+                        </label>
+                        <input
+                          type="number"
+                          min={8}
+                          max={15}
+                          value={Number(task.gridSize ?? 11)}
+                          onChange={(e) => updateTask(task._tempId, "gridSize", Number(e.target.value))}
+                          style={{ width: 90, borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                        />
+                      </div>
+
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", marginTop: 18 }}>
+                        <input
+                          type="checkbox"
+                          checked={typeof task.allowRotate === "boolean" ? task.allowRotate : true}
+                          onChange={(e) => updateTask(task._tempId, "allowRotate", e.target.checked)}
+                        />
+                        Allow Rotate
+                      </label>
                     </div>
+
+                    {(task.mode || (Array.isArray(task.words) && task.words.length ? "scrabble" : "phrase")) === "scrabble" ? (
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                          Word Bank (5–10 words, one per line)
+                        </label>
+                        <textarea
+                          value={Array.isArray(task.words) ? task.words.join("\n") : ""}
+                          onChange={(e) =>
+                            updateTask(
+                              task._tempId,
+                              "words",
+                              e.target.value
+                                .split(/\r?\n/)
+                                .map((s) => s.trim())
+                                .filter(Boolean)
+                                .slice(0, 20)
+                            )
+                          }
+                          placeholder={"e.g.\nphotosynthesis\nchlorophyll\nenergy\ncarbon\noxygen"}
+                          rows={6}
+                          style={{
+                            width: "100%",
+                            borderRadius: 6,
+                            border: "1px solid #d1d5db",
+                            padding: 8,
+                            fontSize: "0.85rem",
+                            resize: "vertical",
+                          }}
+                        />
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
+                          Students take turns placing whole words on a grid. Score is based on word length and intersections.
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                          Phrase
+                        </label>
+                        <input
+                          type="text"
+                          value={task.phrase || ""}
+                          onChange={(e) => updateTask(task._tempId, "phrase", e.target.value)}
+                          placeholder="e.g., Teamwork and Perseverance"
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                        />
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
+                          Legacy mode: students rebuild the phrase from a word bank.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -52,11 +52,27 @@ const QUICK_TASK_TYPES = Array.from(
     (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck"),
     (TASK_TYPES.WORD_WEAVER_DUEL || "word-weaver-duel"),
     (TASK_TYPES.MAD_DASH_SEQUENCE || "mad-dash-sequence"),
+    (TASK_TYPES.MATCHING || "matching"),
+    (TASK_TYPES.SEQUENCE || "sequence"),
+    (TASK_TYPES.SORT || "sort"),
+    (TASK_TYPES.TIMELINE || "timeline"),
   ].filter((t) => t && t !== TASK_TYPES.SCRIPT_PLAY && t !== 'script-play'))
 );
 
 
 
+
+// Objective solo quick-launch types we want fully supported in LiveSession
+const QUICK_OBJECTIVE_SOLO_TYPES = new Set([
+  TASK_TYPES.MATCHING || "matching",
+  TASK_TYPES.SEQUENCE || "sequence",
+  TASK_TYPES.SORT || "sort",
+  TASK_TYPES.TIMELINE || "timeline",
+]);
+
+function isOneOfObjectiveSolo(type) {
+  return QUICK_OBJECTIVE_SOLO_TYPES.has(type);
+}
 const PURPOSE_OPTIONS = [
   "Introduction",
   "Review",
@@ -1234,6 +1250,69 @@ useEffect(() => {
       }
     }
 
+
+    // Normalize/attach payload fields for objective-solo tasks (matching/sequence/sort/timeline)
+    if (isOneOfObjectiveSolo(taskToSend.taskType)) {
+      const tt = String(taskToSend.taskType || "").toLowerCase();
+
+      if (tt === String(TASK_TYPES.MATCHING || "matching")) {
+        // Accept either pairs[] or {leftItems,rightItems,correctMatches}
+        const pairs = Array.isArray(taskConfig.pairs) ? taskConfig.pairs : [];
+        if (pairs.length > 0) {
+          const leftItems = pairs.map((p, i) => p?.left ?? p?.a ?? p?.promptLeft ?? `Left ${i+1}`);
+          const rightItems = pairs.map((p, i) => p?.right ?? p?.b ?? p?.promptRight ?? `Right ${i+1}`);
+          const correctMatches = {};
+          pairs.forEach((p) => {
+            const l = String(p?.left ?? p?.a ?? "").trim();
+            const r = String(p?.right ?? p?.b ?? "").trim();
+            if (l && r) correctMatches[l] = r;
+          });
+          taskToSend.leftItems = leftItems;
+          taskToSend.rightItems = rightItems;
+          taskToSend.correctMatches = correctMatches;
+        } else {
+          taskToSend.leftItems = Array.isArray(taskConfig.leftItems) ? taskConfig.leftItems : [];
+          taskToSend.rightItems = Array.isArray(taskConfig.rightItems) ? taskConfig.rightItems : [];
+          taskToSend.correctMatches =
+            taskConfig.correctMatches && typeof taskConfig.correctMatches === "object"
+              ? taskConfig.correctMatches
+              : {};
+        }
+        taskToSend.objectiveScoring = true;
+        taskToSend.aiScoringRequired = false;
+        taskToSend.interTeamEnabled = false;
+        taskToSend.intraTeamEnabled = false;
+      }
+
+      if (tt === String(TASK_TYPES.SORT || "sort")) {
+        taskToSend.categories = Array.isArray(taskConfig.categories) ? taskConfig.categories : [];
+        taskToSend.items = Array.isArray(taskConfig.items) ? taskConfig.items : [];
+        taskToSend.correctCategoryByItem =
+          taskConfig.correctCategoryByItem && typeof taskConfig.correctCategoryByItem === "object"
+            ? taskConfig.correctCategoryByItem
+            : undefined;
+        taskToSend.objectiveScoring = true;
+        taskToSend.aiScoringRequired = false;
+        taskToSend.interTeamEnabled = false;
+        taskToSend.intraTeamEnabled = false;
+      }
+
+      if (tt === String(TASK_TYPES.SEQUENCE || "sequence") || tt === String(TASK_TYPES.TIMELINE || "timeline")) {
+        // sequence/timeline: items[] + correctOrder[]
+        const items = Array.isArray(taskConfig.items)
+          ? taskConfig.items
+          : Array.isArray(taskConfig.events)
+          ? taskConfig.events
+          : [];
+        taskToSend.items = items;
+        taskToSend.correctOrder = Array.isArray(taskConfig.correctOrder) ? taskConfig.correctOrder : undefined;
+        taskToSend.objectiveScoring = true;
+        taskToSend.aiScoringRequired = false;
+        taskToSend.interTeamEnabled = false;
+        taskToSend.intraTeamEnabled = false;
+      }
+    }
+
     // 🔴 Important: use teacherLaunchTask, not launch-quick-task
     socket.emit("teacherLaunchTask", {
       roomCode: roomCode.toUpperCase(),
@@ -1271,8 +1350,10 @@ useEffect(() => {
       .split(",")
       .map((w) => w.trim())
       .filter(Boolean);
-
-    if (rawWords.length === 0) {
+    // For many quick tasks we want at least 1 key term. For objective-solo
+    // tasks (matching/sequence/sort/timeline) we allow generation without a word list.
+    const needsWords = !isOneOfObjectiveSolo(taskType);
+    if (rawWords.length === 0 && needsWords) {
       alert(
         "Please enter at least one vocabulary word or key term (e.g. 'photosynthesis', 'Confederation')."
       );
@@ -1379,6 +1460,130 @@ if (isRolePlayRequested) {
         baseTask.taskType || baseTask.task_type || taskType;
 
       setTaskType(generatedType);
+
+      // ✅ MATCHING / SEQUENCE / SORT / TIMELINE (objective solo) – map to quick-launch config
+      const genTypeLower = String(generatedType || "").toLowerCase();
+
+      // MATCHING
+      if (genTypeLower === String(TASK_TYPES.MATCHING || "matching")) {
+        const pairs = Array.isArray(baseTask.pairs) ? baseTask.pairs : [];
+        let leftItems = [];
+        let rightItems = [];
+        let correctMatches = {};
+
+        if (pairs.length > 0) {
+          leftItems = pairs.map((p, i) => String(p?.left ?? p?.a ?? `Left ${i + 1}`).trim());
+          rightItems = pairs.map((p, i) => String(p?.right ?? p?.b ?? `Right ${i + 1}`).trim());
+          pairs.forEach((p) => {
+            const l = String(p?.left ?? p?.a ?? "").trim();
+            const r = String(p?.right ?? p?.b ?? "").trim();
+            if (l && r) correctMatches[l] = r;
+          });
+        } else {
+          leftItems = Array.isArray(baseTask.leftItems) ? baseTask.leftItems : (Array.isArray(baseTask.left) ? baseTask.left : []);
+          rightItems = Array.isArray(baseTask.rightItems) ? baseTask.rightItems : (Array.isArray(baseTask.right) ? baseTask.right : []);
+          correctMatches =
+            baseTask.correctMatches && typeof baseTask.correctMatches === "object"
+              ? baseTask.correctMatches
+              : baseTask.answerKey && typeof baseTask.answerKey === "object"
+              ? baseTask.answerKey
+              : {};
+        }
+
+        setTaskConfig({
+          prompt: baseTask.prompt || "Match the items.",
+          leftItems,
+          rightItems,
+          correctMatches,
+          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 90,
+          points: typeof baseTask.points === "number" ? baseTask.points : 10,
+          subject: aiSubject || "Ad-hoc",
+          gradeLevel: gradeStr || "",
+          interTeamEnabled: false,
+          intraTeamEnabled: false,
+          objectiveScoring: true,
+          aiScoringRequired: false,
+        });
+        setShowAiGen(false);
+        return;
+      }
+
+      // SORT
+      if (genTypeLower === String(TASK_TYPES.SORT || "sort")) {
+        const categories =
+          Array.isArray(baseTask.categories) ? baseTask.categories :
+          Array.isArray(baseTask.buckets) ? baseTask.buckets.map((b) => b?.title ?? b?.name ?? b) :
+          [];
+        const items = Array.isArray(baseTask.items) ? baseTask.items : (Array.isArray(baseTask.cards) ? baseTask.cards : []);
+        let correctCategoryByItem =
+          baseTask.correctCategoryByItem && typeof baseTask.correctCategoryByItem === "object"
+            ? baseTask.correctCategoryByItem
+            : {};
+
+        // If items are objects with category field, build mapping
+        if ((!correctCategoryByItem || Object.keys(correctCategoryByItem).length === 0) && items.some((it) => it && typeof it === "object")) {
+          correctCategoryByItem = {};
+          items.forEach((it) => {
+            const label = String(it.label ?? it.text ?? it.item ?? it.term ?? it.name ?? "").trim();
+            const cat = String(it.category ?? it.correctCategory ?? it.bucket ?? it.group ?? "").trim();
+            if (label && cat) correctCategoryByItem[label] = cat;
+          });
+        }
+
+        setTaskConfig({
+          prompt: baseTask.prompt || "Sort the items into the correct categories.",
+          categories,
+          items,
+          correctCategoryByItem,
+          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 90,
+          points: typeof baseTask.points === "number" ? baseTask.points : 10,
+          subject: aiSubject || "Ad-hoc",
+          gradeLevel: gradeStr || "",
+          interTeamEnabled: false,
+          intraTeamEnabled: false,
+          objectiveScoring: true,
+          aiScoringRequired: false,
+        });
+        setShowAiGen(false);
+        return;
+      }
+
+      // SEQUENCE / TIMELINE
+      if (
+        genTypeLower === String(TASK_TYPES.SEQUENCE || "sequence") ||
+        genTypeLower === String(TASK_TYPES.TIMELINE || "timeline")
+      ) {
+        const items =
+          Array.isArray(baseTask.items) ? baseTask.items :
+          Array.isArray(baseTask.events) ? baseTask.events :
+          Array.isArray(baseTask.steps) ? baseTask.steps :
+          [];
+        const correctOrder =
+          Array.isArray(baseTask.correctOrder) ? baseTask.correctOrder :
+          Array.isArray(baseTask.order) ? baseTask.order :
+          Array.isArray(baseTask.correctSequence) ? baseTask.correctSequence :
+          undefined;
+
+        setTaskConfig({
+          prompt:
+            baseTask.prompt ||
+            (genTypeLower === String(TASK_TYPES.TIMELINE || "timeline")
+              ? "Place the events in chronological order on the timeline."
+              : "Put the steps in the correct order."),
+          items,
+          correctOrder,
+          timeLimitSeconds: Number(baseTask.timeLimitSeconds) > 0 ? Number(baseTask.timeLimitSeconds) : 90,
+          points: typeof baseTask.points === "number" ? baseTask.points : 10,
+          subject: aiSubject || "Ad-hoc",
+          gradeLevel: gradeStr || "",
+          interTeamEnabled: false,
+          intraTeamEnabled: false,
+          objectiveScoring: true,
+          aiScoringRequired: false,
+        });
+        setShowAiGen(false);
+        return;
+      }
 
       const generatedMeta = TASK_TYPE_META[generatedType] || {};
       const generatedIsMulti = !!generatedMeta.multiItemCapable;
@@ -2003,6 +2208,34 @@ if (
         const roles = Array.isArray(taskConfig?.config?.roles) ? taskConfig.config.roles : [];
         const scenario = String(taskConfig?.config?.scenario || "").trim();
         return roles.length > 0 && !!scenario;
+      })()
+    : isOneOfObjectiveSolo(taskType)
+    ? (() => {
+        const tt = String(taskType || "").toLowerCase();
+        if (tt === String(TASK_TYPES.MATCHING || "matching")) {
+          const left = Array.isArray(taskConfig.leftItems) ? taskConfig.leftItems : [];
+          const right = Array.isArray(taskConfig.rightItems) ? taskConfig.rightItems : [];
+          const cm = taskConfig.correctMatches && typeof taskConfig.correctMatches === "object" ? taskConfig.correctMatches : {};
+          const pairs = Array.isArray(taskConfig.pairs) ? taskConfig.pairs : [];
+          return (
+            (left.length >= 3 && right.length >= 3 && Object.keys(cm).length >= 2) ||
+            pairs.length >= 3
+          );
+        }
+        if (tt === String(TASK_TYPES.SORT || "sort")) {
+          const cats = Array.isArray(taskConfig.categories) ? taskConfig.categories : [];
+          const items = Array.isArray(taskConfig.items) ? taskConfig.items : [];
+          const map = taskConfig.correctCategoryByItem && typeof taskConfig.correctCategoryByItem === "object"
+            ? taskConfig.correctCategoryByItem
+            : {};
+          return cats.length >= 2 && items.length >= 4 && (Object.keys(map).length >= 3 || items.some((it) => it && (it.category || it.correctCategory)));
+        }
+        if (tt === String(TASK_TYPES.SEQUENCE || "sequence") || tt === String(TASK_TYPES.TIMELINE || "timeline")) {
+          const items = Array.isArray(taskConfig.items) ? taskConfig.items : (Array.isArray(taskConfig.events) ? taskConfig.events : []);
+          const order = Array.isArray(taskConfig.correctOrder) ? taskConfig.correctOrder : [];
+          return items.length >= 3 && (order.length === items.length || order.length >= 3);
+        }
+        return false;
       })()
     : !!taskConfig.prompt?.trim();
 

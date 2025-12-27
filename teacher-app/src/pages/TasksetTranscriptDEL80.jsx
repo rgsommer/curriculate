@@ -367,10 +367,16 @@ function extractAnswerText(sub, task) {
     ap?.answer,
     ap?.response,
     ap?.value,
+    ap?.comment,
+    ap?.feedback,
+    ap?.learned,
     data?.text,
     data?.answer,
     data?.response,
     data?.value,
+    data?.comment,
+    data?.feedback,
+    data?.learned,
   ].filter((v) => v != null);
 
   if (candidates.length) {

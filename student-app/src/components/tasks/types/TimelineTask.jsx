@@ -1,160 +1,319 @@
 // student-app/src/components/tasks/types/TimelineTask.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Timeline – Drag to Order (solo / non-collab)
+ * TimelineTask (solo)
+ * - Drag-to-order timeline events (4–8 items).
+ * - Objective-scored via submitted ordered ids: { type: "timeline", order: [...] }
  *
- * Expected task shape (preferred):
- *  - shuffledItems: [{ id, label, date?, description? }] OR [string]
- *  - correctOrder:  [id1, id2, ...] (or matching string values if using strings)
- *
- * Submission payload:
- *  - { order: [id1, id2, ...] }  (or string values if items are strings)
+ * Expected task shapes (generator-friendly):
+ * - task.items OR task.events OR task.config.items: [{ id, text, year? }]
+ * - task.correctOrder: [id1, id2, ...]
+ * - task.shuffledItems (optional): initial order of item objects
  */
-export default function TimelineTask({ task, onSubmit, disabled, socket }) {
-  // socket is accepted for compatibility with TaskRunner but is not used for solo timeline play.
-  void socket;
+export default function TimelineTask({ task, onSubmit, disabled }) {
+  const t = task || {};
+  const taskKey = String(t._id || t.id || t.taskId || "timeline");
 
-  const normalized = useMemo(() => {
-    const raw =
-      (Array.isArray(task?.shuffledItems) && task.shuffledItems) ||
-      (Array.isArray(task?.config?.items) && task.config.items) ||
-      (Array.isArray(task?.items) && task.items) ||
-      [];
-
-    return raw
-      .filter(Boolean)
+  const normalizeItems = (raw) => {
+    const arr = Array.isArray(raw) ? raw : [];
+    return arr
       .map((it, idx) => {
+        if (it == null) return null;
         if (typeof it === "string") {
-          const v = it.trim();
-          return {
-            id: `item-${idx}-${v}`.slice(0, 80),
-            label: v,
-            date: null,
-            description: null,
-            isString: true,
-            original: v,
-          };
+          return { id: `${idx}`, text: it, year: null };
         }
-        const id = String(it.id ?? it._id ?? `item-${idx}`).slice(0, 80);
-        const label = String(it.label ?? it.text ?? it.title ?? `Item ${idx + 1}`).trim();
-        const date = it.date ?? it.year ?? it.when ?? null;
-        const description = it.description ?? it.details ?? null;
-        return { id, label, date, description, isString: false, original: it };
-      });
-  }, [task]);
+        const id = String(it.id ?? it._id ?? idx);
+        const text = String(it.text ?? it.label ?? it.event ?? it.title ?? it.name ?? "").trim();
+        const year = it.year ?? it.date ?? it.when ?? null;
+        return { id, text: text || `Event ${idx + 1}`, year };
+      })
+      .filter(Boolean);
+  };
 
-  const [items, setItems] = useState(normalized);
-  const [winner, setWinner] = useState(task?.winner ?? null);
+  const sourceItems =
+    t.shuffledItems ||
+    t.items ||
+    t.events ||
+    t.config?.items ||
+    t.config?.events ||
+    [];
 
-  const correctOrder = useMemo(() => task?.correctOrder || [], [task]);
+  const baseItems = useMemo(() => normalizeItems(sourceItems), [taskKey]);
+
+  // If generator did not provide shuffledItems, do a stable shuffle for initial display
+  const seededShuffle = (array, seedStr) => {
+    const copy = [...array];
+    let seed = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      seed = (seed * 31 + seedStr.charCodeAt(i)) >>> 0;
+    }
+    const rand = () => {
+      seed ^= seed << 13;
+      seed >>>= 0;
+      seed ^= seed >> 17;
+      seed >>>= 0;
+      seed ^= seed << 5;
+      seed >>>= 0;
+      return (seed >>> 0) / 4294967296;
+    };
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rand() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  const initialOrder = useMemo(() => {
+    if (Array.isArray(t.shuffledItems) && t.shuffledItems.length) return baseItems;
+    return seededShuffle(baseItems, `timeline:${taskKey}`);
+  }, [baseItems, taskKey]);
+
+  const [order, setOrder] = useState(() => initialOrder);
 
   useEffect(() => {
-    setItems(normalized);
-    setWinner(task?.winner ?? null);
-  }, [normalized, task?.winner]);
+    setOrder(initialOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskKey]);
 
-  const move = (from, delta) => {
-    setItems((prev) => {
-      const to = from + delta;
-      if (to < 0 || to >= prev.length) return prev;
-      const next = prev.slice();
-      const [picked] = next.splice(from, 1);
-      next.splice(to, 0, picked);
-      return next;
-    });
-  };
+  const correctOrder = Array.isArray(t.correctOrder) ? t.correctOrder.map(String) : null;
 
-  const handleSubmit = () => {
-    if (disabled) return;
-
-    // Prefer ids; if the task was authored as strings, submit the original strings
-    const order = items.map((it) => (it.isString ? it.original : it.id));
-    onSubmit?.({ order });
-  };
-
-  const canSubmit = !disabled && items.length >= 2;
+  const canSubmit = order.length >= 2 && !disabled;
 
   const submitClassName = canSubmit
     ? "px-4 py-2 rounded font-semibold bg-blue-600 text-white hover:bg-blue-700"
     : "px-4 py-2 rounded font-semibold bg-gray-200 text-gray-500";
 
-  return (
-    <div className="p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold">{task?.title || "Timeline"}</h2>
-          {task?.prompt ? <p className="mt-2 opacity-80">{task.prompt}</p> : null}
-        </div>
+  // Drag-and-drop
+  const dragIdRef = useRef(null);
 
-        <button
-          className={submitClassName}
-          onClick={handleSubmit}
-          disabled={!canSubmit}
-        >
+  const onDragStart = (id) => {
+    dragIdRef.current = id;
+  };
+
+  const onDropOn = (targetId) => {
+    const fromId = dragIdRef.current;
+    dragIdRef.current = null;
+    if (!fromId || fromId === targetId) return;
+
+    setOrder((prev) => {
+      const fromIdx = prev.findIndex((x) => x.id === fromId);
+      const toIdx = prev.findIndex((x) => x.id === targetId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+
+      const next = prev.slice();
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  };
+
+  const move = (id, dir) => {
+    setOrder((prev) => {
+      const idx = prev.findIndex((x) => x.id === id);
+      if (idx < 0) return prev;
+      const nextIdx = idx + dir;
+      if (nextIdx < 0 || nextIdx >= prev.length) return prev;
+      const next = prev.slice();
+      const tmp = next[idx];
+      next[idx] = next[nextIdx];
+      next[nextIdx] = tmp;
+      return next;
+    });
+  };
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    const orderedIds = order.map((x) => x.id);
+
+    onSubmit?.({
+      type: "timeline",
+      order: orderedIds,
+      // Helpful for debugging/transcript; backend can ignore safely.
+      correctOrder: correctOrder || undefined,
+    });
+  };
+
+  // UI styling (kept inline for predictable builds)
+  const shell = {
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+    borderRadius: 18,
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "rgba(255,255,255,0.86)",
+    padding: 12,
+    overflow: "hidden",
+  };
+
+  const railWrap = {
+    position: "relative",
+    borderRadius: 16,
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(255,255,255,1) 100%)",
+    padding: 12,
+    overflow: "auto",
+    flex: 1,
+    minHeight: 0,
+  };
+
+  const rail = {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    top: 34,
+    height: 6,
+    borderRadius: 999,
+    background: "rgba(14,165,233,0.25)",
+  };
+
+  const row = {
+    position: "relative",
+    display: "flex",
+    gap: 10,
+    alignItems: "stretch",
+    paddingTop: 16,
+    paddingBottom: 8,
+    minWidth: 560, // encourages horizontal feel; still scrollable on small screens
+  };
+
+  const card = {
+    width: 220,
+    flex: "0 0 auto",
+    borderRadius: 16,
+    border: "1px solid rgba(15,23,42,0.14)",
+    background: "#ffffff",
+    boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+    padding: 12,
+    cursor: disabled ? "not-allowed" : "grab",
+    userSelect: "none",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  };
+
+  const dot = {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    background: "rgba(14,165,233,1)",
+    boxShadow: "0 0 0 6px rgba(14,165,233,0.18)",
+  };
+
+  const yearChip = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "4px 10px",
+    borderRadius: 999,
+    background: "rgba(99,102,241,0.10)",
+    border: "1px solid rgba(99,102,241,0.25)",
+    color: "#3730a3",
+    fontWeight: 800,
+    fontSize: "0.85rem",
+  };
+
+  return (
+    <div style={shell}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0f172a" }}>
+          🗓️ Timeline – Drag to Order
+        </div>
+        <button type="button" className={submitClassName} onClick={handleSubmit} disabled={!canSubmit}>
           Submit
         </button>
       </div>
 
-      <div className="mt-6 space-y-3">
-        {items.map((it, idx) => (
-          <div
-            key={it.id}
-            className="flex items-stretch gap-3 border rounded-xl p-3 bg-white shadow-sm"
-          >
-            <div className="flex flex-col justify-center items-center w-12 rounded-lg bg-gray-100 text-gray-700 font-bold">
-              {idx + 1}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold truncate">
-                {it.date ? (
-                  <span className="mr-2 inline-flex items-center px-2 py-0.5 text-xs rounded bg-gray-100">
-                    {String(it.date)}
-                  </span>
-                ) : null}
-                <span>{it.label}</span>
-              </div>
-              {it.description ? (
-                <div className="mt-1 text-sm opacity-80 line-clamp-2">{it.description}</div>
-              ) : null}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <button
-                className="border rounded px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-40"
-                onClick={() => move(idx, -1)}
-                disabled={disabled || idx === 0}
-                aria-label="Move up"
-              >
-                ↑
-              </button>
-              <button
-                className="border rounded px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-40"
-                onClick={() => move(idx, 1)}
-                disabled={disabled || idx === items.length - 1}
-                aria-label="Move down"
-              >
-                ↓
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Optional “winner” banner (kept for backward compatibility if older tasks include it) */}
-      {winner && (
-        <div className="mt-10 text-5xl font-bold animate-bounce text-center">
-          {winner === "current" ? (
-            <span className="text-green-600">YOU WIN! +15</span>
-          ) : (
-            <span className="text-red-600">FINISHED!</span>
-          )}
+      {t.prompt && (
+        <div style={{ marginTop: 8, fontSize: "0.98rem", color: "#334155", fontWeight: 600 }}>
+          {t.prompt}
         </div>
       )}
 
-      {/* Optional teacher-facing hint in review-only tasks */}
-      {Array.isArray(correctOrder) && correctOrder.length > 0 ? null : null}
+      <div style={{ marginTop: 10, marginBottom: 10, color: "#475569", fontSize: "0.9rem" }}>
+        Drag cards into chronological order. (You can also use ↑ ↓ if drag is finicky on a device.)
+      </div>
+
+      <div style={railWrap}>
+        <div style={rail} aria-hidden="true" />
+        <div style={row}>
+          {order.map((it) => (
+            <div
+              key={it.id}
+              style={card}
+              draggable={!disabled}
+              onDragStart={() => onDragStart(it.id)}
+              onDragOver={(e) => {
+                if (disabled) return;
+                e.preventDefault();
+              }}
+              onDrop={() => onDropOn(it.id)}
+              title="Drag to reorder"
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <div style={dot} aria-hidden="true" />
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => move(it.id, -1)}
+                    disabled={disabled}
+                    style={{
+                      borderRadius: 10,
+                      border: "1px solid rgba(15,23,42,0.14)",
+                      background: "#ffffff",
+                      padding: "4px 8px",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      fontWeight: 900,
+                    }}
+                    aria-label="Move left"
+                    title="Move earlier"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => move(it.id, +1)}
+                    disabled={disabled}
+                    style={{
+                      borderRadius: 10,
+                      border: "1px solid rgba(15,23,42,0.14)",
+                      background: "#ffffff",
+                      padding: "4px 8px",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      fontWeight: 900,
+                    }}
+                    aria-label="Move right"
+                    title="Move later"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+
+              {it.year != null && String(it.year).trim() !== "" && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <span style={yearChip}>📍 {String(it.year).trim()}</span>
+                </div>
+              )}
+
+              <div style={{ fontWeight: 800, fontSize: "0.98rem", color: "#0f172a", lineHeight: 1.25 }}>
+                {it.text}
+              </div>
+
+              <div style={{ marginTop: "auto", display: "flex", justifyContent: "space-between", color: "#64748b", fontSize: "0.8rem" }}>
+                <span>Drop here</span>
+                <span style={{ fontWeight: 900 }}>#{order.findIndex((x) => x.id === it.id) + 1}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {correctOrder && (
+        <div style={{ marginTop: 10, fontSize: "0.82rem", color: "#64748b" }}>
+          (Generator hint: correctOrder is present; objective scoring compares your submitted order to it.)
+        </div>
+      )}
     </div>
   );
 }

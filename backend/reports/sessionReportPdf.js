@@ -265,14 +265,22 @@ export async function renderSessionReportPdfBuffer(reportDoc) {
 function taskTypeEmoji(typeRaw) {
   const t = String(typeRaw || "").toLowerCase();
   if (!t) return "🧩";
+
+  // Common objective types
+  if (t.includes("matching")) return "🔗";
+  if (t.includes("sequence")) return "🔢";
+  if (t.includes("timeline")) return "🕰️";
+  if (t.includes("sort")) return "🧺";
+
+  // Core question types
   if (t.includes("multiple")) return "✅";
   if (t.includes("true")) return "☑️";
-  
   if (t.includes("short") && t.includes("answer")) return "✍️";
   if (t.includes("open") && t.includes("text")) return "📝";
   if (t.includes("open-text")) return "📝";
-if (t.includes("short")) return "✍️";
-  if (t.includes("matching")) return "🔗";
+  if (t.includes("short")) return "✍️";
+
+  // Games / performance
   if (t.includes("hangman")) return "🪢";
   if (t.includes("flash")) return "🃏";
   if (t.includes("role")) return "🎭";
@@ -281,15 +289,19 @@ if (t.includes("short")) return "✍️";
   if (t.includes("echo")) return "🔁";
   if (t.includes("mystery")) return "🕵️";
   if (t.includes("debate")) return "🗣️";
-  if (t.includes("fake-out") || t.includes("fakeout") || t.includes("fake_out") || t.includes("balderdash") || t.includes("bluff")) return "🤥";
+  if (t.includes("fake-out") || t.includes("fakeout") || t.includes("balderdash") || t.includes("bluff")) return "🤥";
   if (t.includes("word-weaver") || t.includes("word_weaver") || t.includes("wordweaver")) return "🔤";
-  // BrainSparkNotes / MindMapper (paper-based, photographed)
+
+  // Paper-based, photographed
   if (t.includes("brain") || t.includes("spark") || t.includes("notes")) return "🧠";
   if (t.includes("mind") || t.includes("mapper") || t.includes("mind-mapper") || t.includes("mind_mapper")) return "🕸️";
+
   if (t.includes("photo")) return "📷";
   if (t.includes("audio")) return "🎧";
+
   return "🧩";
 }
+
 
 function formatDate(d) {
     const x = d ? new Date(d) : null;

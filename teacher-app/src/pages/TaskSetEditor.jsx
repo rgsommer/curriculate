@@ -34,7 +34,10 @@ function normalizeTaskType(raw) {
   if (v === "sort") {
     return TASK_TYPES.SORT;
   }
-  // Legacy aliases for Hide & Seek
+    if (v === "matching" || v === "match" || v === "connect" || v === "matching-task") {
+    return TASK_TYPES.MATCHING;
+  }
+// Legacy aliases for Hide & Seek
   if (
     v === "hidenseek" ||
     v === "hide-and-seek" ||
@@ -43,8 +46,11 @@ function normalizeTaskType(raw) {
   ) {
     return TASK_TYPES.HIDENSEEK || "hidenseek";
   }
-  if (v === "sequence" || v === "seq" || v === "timeline") {
+  if (v === "sequence" || v === "seq") {
     return TASK_TYPES.SEQUENCE;
+  }
+  if (v === "timeline" || v === "time-line") {
+    return TASK_TYPES.TIMELINE;
   }
 
   // Echo Chain aliases
@@ -389,7 +395,68 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
               out.config = { ...out.config, buckets, items };
             }
 
-            // Sequence / Timeline: accept steps/events/sequence/items legacy keys
+            
+            // Matching: accept left/right/pairs legacy keys and normalize to { leftItems, rightItems, correctMatches }
+            if (out.taskType === TASK_TYPES.MATCHING) {
+              // Prefer canonical shape
+              const leftItems =
+                (Array.isArray(out.leftItems) && out.leftItems) ||
+                (Array.isArray(out.config?.leftItems) && out.config.leftItems) ||
+                [];
+              const rightItems =
+                (Array.isArray(out.rightItems) && out.rightItems) ||
+                (Array.isArray(out.config?.rightItems) && out.config.rightItems) ||
+                [];
+
+              // If pairs[] provided, derive left/right/mapping
+              const pairs =
+                (Array.isArray(out.pairs) && out.pairs) ||
+                (Array.isArray(out.items) && out.items) ||
+                (Array.isArray(out.config?.pairs) && out.config.pairs) ||
+                (Array.isArray(out.config?.items) && out.config.items) ||
+                [];
+
+              let finalLeft = leftItems;
+              let finalRight = rightItems;
+              let mapping =
+                (out.correctMatches && typeof out.correctMatches === "object" && out.correctMatches) ||
+                (out.correctMapping && typeof out.correctMapping === "object" && out.correctMapping) ||
+                (out.correctAnswer && typeof out.correctAnswer === "object" && out.correctAnswer) ||
+                (out.config?.correctMatches && typeof out.config.correctMatches === "object" && out.config.correctMatches) ||
+                (out.config?.correctMapping && typeof out.config.correctMapping === "object" && out.config.correctMapping) ||
+                {};
+
+              if ((!finalLeft?.length || !finalRight?.length) && pairs?.length) {
+                const l = [];
+                const r = [];
+                const mapp = {};
+                pairs.forEach((p, i) => {
+                  const leftId = String(p.leftId || p.left?.id || p.left?.key || `L${i + 1}`);
+                  const rightId = String(p.rightId || p.right?.id || p.right?.key || `R${i + 1}`);
+                  const leftText = String(p.leftLabel || p.leftText || p.left?.label || p.left?.text || p.left || `Left ${i + 1}`);
+                  const rightText = String(p.rightLabel || p.rightText || p.right?.label || p.right?.text || p.right || `Right ${i + 1}`);
+                  l.push({ id: leftId, text: leftText });
+                  r.push({ id: rightId, text: rightText });
+                  mapp[leftId] = rightId;
+                });
+                finalLeft = l;
+                finalRight = r;
+                if (!Object.keys(mapping || {}).length) mapping = mapp;
+              }
+
+              out.leftItems = (finalLeft || []).map((it, i) => ({
+                id: String(it?.id || it?._id || it?.key || `L${i + 1}`),
+                text: String(it?.text || it?.label || it?.title || `Left ${i + 1}`),
+              }));
+              out.rightItems = (finalRight || []).map((it, i) => ({
+                id: String(it?.id || it?._id || it?.key || `R${i + 1}`),
+                text: String(it?.text || it?.label || it?.title || `Right ${i + 1}`),
+              }));
+              out.correctMatches = mapping && typeof mapping === "object" ? mapping : {};
+              // keep also in config for legacy consumers
+              out.config = { ...out.config, leftItems: out.leftItems, rightItems: out.rightItems, correctMatches: out.correctMatches };
+            }
+// Sequence: accept steps/events/sequence/items legacy keys
             if (out.taskType === TASK_TYPES.SEQUENCE) {
               const seq =
                 (Array.isArray(out.config?.items) && out.config.items) ||
@@ -404,7 +471,36 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
               out.config = { ...out.config, items: seq };
             }
 
-            // True/False: ensure options exist for single-item edit
+            
+            // Timeline: accept steps/events/sequence/items legacy keys
+            if (out.taskType === TASK_TYPES.TIMELINE) {
+              const seq =
+                (Array.isArray(out.config?.items) && out.config.items) ||
+                (Array.isArray(out.config?.steps) && out.config.steps) ||
+                (Array.isArray(out.config?.events) && out.config.events) ||
+                (Array.isArray(out.config?.sequence) && out.config.sequence) ||
+                (Array.isArray(out.items) && out.items) ||
+                (Array.isArray(out.steps) && out.steps) ||
+                (Array.isArray(out.events) && out.events) ||
+                (Array.isArray(out.options) && out.options) ||
+                [];
+              out.config = { ...out.config, items: seq };
+              // if timeline items are plain strings, wrap into { id, text }
+              if (Array.isArray(out.config.items)) {
+                out.config.items = out.config.items.map((it, i) => {
+                  if (typeof it === "string") return { id: `event-${i + 1}`, text: it };
+                  if (it && typeof it === "object") {
+                    const id = String(it.id || it._id || it.key || `event-${i + 1}`);
+                    const text = String(it.text || it.label || it.title || it.name || `Event ${i + 1}`);
+                    const year = it.year ?? it.date ?? it.when ?? "";
+                    return year ? { ...it, id, text, year } : { ...it, id, text };
+                  }
+                  return { id: `event-${i + 1}`, text: `Event ${i + 1}` };
+                });
+              }
+            }
+
+// True/False: ensure options exist for single-item edit
             if (out.taskType === TASK_TYPES.TRUE_FALSE) {
               out.options = Array.isArray(out.options) && out.options.length ? out.options : ["True", "False"];
               if (out.correctAnswer === null || out.correctAnswer === undefined) out.correctAnswer = 0;
@@ -4532,7 +4628,7 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                 )}
 
                 {/* SEQUENCE / TIMELINE: Items (steps) */}
-                {task.taskType === TASK_TYPES.SEQUENCE && (
+                {(task.taskType === TASK_TYPES.SEQUENCE || task.taskType === TASK_TYPES.TIMELINE) && (
                   <div style={{ marginBottom: 6 }}>
                     <label
                       style={{
@@ -4541,7 +4637,7 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                         marginBottom: 2,
                       }}
                     >
-                      Steps / events (drag order happens in StudentApp)
+                      {task.taskType === TASK_TYPES.TIMELINE ? "Timeline events (drag order happens in StudentApp)" : "Steps / events (drag order happens in StudentApp)"}
                     </label>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -4578,7 +4674,39 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                                 fontSize: "0.8rem",
                               }}
                             />
-                            <button
+                            {task.taskType === TASK_TYPES.TIMELINE && (
+                              <input
+                                type="text"
+                                value={
+                                  it && typeof it === "object" && (it.year ?? it.date ?? it.when)
+                                    ? String(it.year ?? it.date ?? it.when)
+                                    : ""
+                                }
+                                onChange={(e) =>
+                                  updateGenericConfig(task._tempId, (prevCfg) => {
+                                    const items = Array.isArray(prevCfg.items) ? [...prevCfg.items] : [];
+                                    const prevItem = items[i];
+                                    const base =
+                                      typeof prevItem === "string"
+                                        ? { id: `event-${i + 1}`, text: prevItem }
+                                        : prevItem && typeof prevItem === "object"
+                                        ? prevItem
+                                        : { id: `event-${i + 1}`, text: "" };
+                                    items[i] = { ...base, year: e.target.value };
+                                    return { ...prevCfg, items };
+                                  })
+                                }
+                                placeholder="Year"
+                                style={{
+                                  width: 110,
+                                  borderRadius: 6,
+                                  border: "1px solid #d1d5db",
+                                  padding: 6,
+                                  fontSize: "0.85rem",
+                                }}
+                              />
+                            )}
+<button
                               type="button"
                               onClick={() =>
                                 updateSequenceConfig(task._tempId, (cfg) => {
@@ -4624,6 +4752,181 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                       >
                         + Add step
                       </button>
+                    </div>
+                  </div>
+                )}
+
+
+                {/* MATCHING: Left/Right columns + mapping */}
+                {task.taskType === TASK_TYPES.MATCHING && (
+                  <div style={{ marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                      Matching pairs (connect left → right)
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      {/* Left column */}
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 6 }}>Left items (5–7)</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {(Array.isArray(task.leftItems) ? task.leftItems : []).map((it, i) => (
+                            <div key={String(it?.id || i)} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <input
+                                type="text"
+                                value={it?.text || ""}
+                                onChange={(e) =>
+                                  updateTaskField(task._tempId, (prev) => {
+                                    const leftItems = Array.isArray(prev.leftItems) ? [...prev.leftItems] : [];
+                                    const id = String(leftItems[i]?.id || it?.id || `L${i + 1}`);
+                                    leftItems[i] = { ...(leftItems[i] || {}), id, text: e.target.value };
+                                    return { ...prev, leftItems };
+                                  })
+                                }
+                                placeholder={`Left ${i + 1}`}
+                                style={{ flex: 1, borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateTaskField(task._tempId, (prev) => {
+                                    const leftItems = Array.isArray(prev.leftItems) ? [...prev.leftItems] : [];
+                                    const removed = leftItems.splice(i, 1);
+                                    const rid = String(removed?.[0]?.id || "");
+                                    const correctMatches =
+                                      prev.correctMatches && typeof prev.correctMatches === "object" ? { ...prev.correctMatches } : {};
+                                    if (rid && correctMatches[rid]) delete correctMatches[rid];
+                                    return { ...prev, leftItems, correctMatches };
+                                  })
+                                }
+                                style={{ border: "1px solid #e5e7eb", background: "white", borderRadius: 6, padding: "6px 8px", cursor: "pointer" }}
+                                title="Remove"
+                              >
+                                −
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateTaskField(task._tempId, (prev) => {
+                                const leftItems = Array.isArray(prev.leftItems) ? [...prev.leftItems] : [];
+                                leftItems.push({ id: `L${leftItems.length + 1}`, text: "" });
+                                return { ...prev, leftItems };
+                              })
+                            }
+                            style={{ border: "1px solid #e5e7eb", background: "white", borderRadius: 8, padding: "6px 10px", cursor: "pointer", alignSelf: "flex-start" }}
+                          >
+                            + Add left
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right column */}
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 6 }}>Right items (5–7)</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {(Array.isArray(task.rightItems) ? task.rightItems : []).map((it, i) => (
+                            <div key={String(it?.id || i)} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <input
+                                type="text"
+                                value={it?.text || ""}
+                                onChange={(e) =>
+                                  updateTaskField(task._tempId, (prev) => {
+                                    const rightItems = Array.isArray(prev.rightItems) ? [...prev.rightItems] : [];
+                                    const id = String(rightItems[i]?.id || it?.id || `R${i + 1}`);
+                                    rightItems[i] = { ...(rightItems[i] || {}), id, text: e.target.value };
+                                    return { ...prev, rightItems };
+                                  })
+                                }
+                                placeholder={`Right ${i + 1}`}
+                                style={{ flex: 1, borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateTaskField(task._tempId, (prev) => {
+                                    const rightItems = Array.isArray(prev.rightItems) ? [...prev.rightItems] : [];
+                                    const removed = rightItems.splice(i, 1);
+                                    const removedId = String(removed?.[0]?.id || "");
+                                    // Remove any left->removed mapping
+                                    const correctMatches =
+                                      prev.correctMatches && typeof prev.correctMatches === "object" ? { ...prev.correctMatches } : {};
+                                    if (removedId) {
+                                      Object.keys(correctMatches).forEach((k) => {
+                                        if (correctMatches[k] === removedId) delete correctMatches[k];
+                                      });
+                                    }
+                                    return { ...prev, rightItems, correctMatches };
+                                  })
+                                }
+                                style={{ border: "1px solid #e5e7eb", background: "white", borderRadius: 6, padding: "6px 8px", cursor: "pointer" }}
+                                title="Remove"
+                              >
+                                −
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateTaskField(task._tempId, (prev) => {
+                                const rightItems = Array.isArray(prev.rightItems) ? [...prev.rightItems] : [];
+                                rightItems.push({ id: `R${rightItems.length + 1}`, text: "" });
+                                return { ...prev, rightItems };
+                              })
+                            }
+                            style={{ border: "1px solid #e5e7eb", background: "white", borderRadius: 8, padding: "6px 10px", cursor: "pointer", alignSelf: "flex-start" }}
+                          >
+                            + Add right
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Mapping */}
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 6 }}>Correct mapping (left → right)</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {(Array.isArray(task.leftItems) ? task.leftItems : []).map((l, i) => {
+                          const leftId = String(l?.id || `L${i + 1}`);
+                          const rightId =
+                            task.correctMatches && typeof task.correctMatches === "object" ? task.correctMatches[leftId] : "";
+                          const rights = Array.isArray(task.rightItems) ? task.rightItems : [];
+                          return (
+                            <div key={leftId} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                              <div style={{ width: 180, fontSize: "0.85rem", color: "#111827" }}>{l?.text || `Left ${i + 1}`}</div>
+                              <select
+                                value={rightId || ""}
+                                onChange={(e) =>
+                                  updateTaskField(task._tempId, (prev) => {
+                                    const correctMatches =
+                                      prev.correctMatches && typeof prev.correctMatches === "object" ? { ...prev.correctMatches } : {};
+                                    const chosen = e.target.value;
+                                    // enforce one-to-one: remove any other left that maps to chosen
+                                    Object.keys(correctMatches).forEach((k) => {
+                                      if (k !== leftId && correctMatches[k] === chosen) delete correctMatches[k];
+                                    });
+                                    if (chosen) correctMatches[leftId] = chosen;
+                                    else delete correctMatches[leftId];
+                                    return { ...prev, correctMatches };
+                                  })
+                                }
+                                style={{ flex: 1, borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem", background: "white" }}
+                              >
+                                <option value="">Select match…</option>
+                                {rights.map((r, j) => (
+                                  <option key={String(r?.id || j)} value={String(r?.id || `R${j + 1}`)}>
+                                    {r?.text || `Right ${j + 1}`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 6 }}>
+                        Tip: Keep left/right lists the same length. Each right item should be used once.
+                      </div>
                     </div>
                   </div>
                 )}

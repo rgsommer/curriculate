@@ -354,6 +354,171 @@ function summarizeWordWeaver(sub, task) {
 }
 
 
+
+function summarizeOrderingTask(sub, task) {
+  // Handles sequence + timeline (order arrays).
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  const order =
+    (Array.isArray(ap.order) ? ap.order : null) ||
+    (Array.isArray(ap.orderedIds) ? ap.orderedIds : null) ||
+    (Array.isArray(ap.ordered) ? ap.ordered : null) ||
+    (Array.isArray(data.order) ? data.order : null) ||
+    (Array.isArray(data.orderedIds) ? data.orderedIds : null) ||
+    (Array.isArray(data.ordered) ? data.ordered : null) ||
+    null;
+
+  const items =
+    (Array.isArray(cfg.items) ? cfg.items : null) ||
+    (Array.isArray(cfg.events) ? cfg.events : null) ||
+    (Array.isArray(task.items) ? task.items : null) ||
+    (Array.isArray(task.events) ? task.events : null) ||
+    (Array.isArray(task.shuffledItems) ? task.shuffledItems : null) ||
+    null;
+
+  // Build id->label map
+  const map = {};
+  if (Array.isArray(items)) {
+    for (const it of items) {
+      if (!it) continue;
+      const id = it.id ?? it._id ?? it.key ?? it.value ?? it.label ?? it.text;
+      const label = it.label ?? it.text ?? it.title ?? it.value ?? "";
+      if (id != null && label) map[String(id)] = String(label);
+    }
+  }
+
+  const pretty =
+    Array.isArray(order) && order.length
+      ? order.slice(0, 10).map((x, i) => `${i + 1}. ${map[String(x)] || String(x)}`)
+      : null;
+
+  return pretty && pretty.length ? { order: pretty } : null;
+}
+
+function summarizeSortTask(sub, task) {
+  // Handles sort/categorize: item->category mapping or per-category buckets.
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  const mapping =
+    (ap.mapping && typeof ap.mapping === "object" ? ap.mapping : null) ||
+    (ap.assignments && typeof ap.assignments === "object" ? ap.assignments : null) ||
+    (data.mapping && typeof data.mapping === "object" ? data.mapping : null) ||
+    (data.assignments && typeof data.assignments === "object" ? data.assignments : null) ||
+    null;
+
+  const buckets =
+    (ap.buckets && typeof ap.buckets === "object" ? ap.buckets : null) ||
+    (ap.categories && typeof ap.categories === "object" ? ap.categories : null) ||
+    (data.buckets && typeof data.buckets === "object" ? data.buckets : null) ||
+    (data.categories && typeof data.categories === "object" ? data.categories : null) ||
+    null;
+
+  const categoryLabels = Array.isArray(cfg.categories) ? cfg.categories.map((c) => (typeof c === "string" ? c : c?.label || c?.name)).filter(Boolean) : null;
+
+  // If buckets object: { "Category": [items...] }
+  if (buckets && typeof buckets === "object") {
+    const entries = Object.entries(buckets)
+      .map(([k, v]) => {
+        const count = Array.isArray(v) ? v.length : 0;
+        return { category: String(k), count };
+      })
+      .filter((e) => e.category);
+    if (entries.length) {
+      const lines = entries.slice(0, 6).map((e) => `${e.category}: ${e.count}`);
+      return { buckets: lines };
+    }
+  }
+
+  // If mapping object: { itemId: categoryLabel }
+  if (mapping && typeof mapping === "object") {
+    const counts = {};
+    for (const [item, cat] of Object.entries(mapping)) {
+      const key = cat == null ? "—" : String(cat);
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    const lines = Object.entries(counts)
+      .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+      .slice(0, 6)
+      .map(([cat, n]) => `${cat}: ${n}`);
+    if (lines.length) return { buckets: lines };
+  }
+
+  // If no submission mapping, but categories exist, show placeholder
+  if (categoryLabels && categoryLabels.length) {
+    return { buckets: categoryLabels.slice(0, 6).map((c) => `${c}: —`) };
+  }
+
+  return null;
+}
+
+function summarizeMatchingTask(sub, task) {
+  // Handles matching/connect: left->right mapping or pairs.
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  const matches =
+    (ap.matches && typeof ap.matches === "object" ? ap.matches : null) ||
+    (ap.correctMatches && typeof ap.correctMatches === "object" ? ap.correctMatches : null) ||
+    (ap.mapping && typeof ap.mapping === "object" ? ap.mapping : null) ||
+    (data.matches && typeof data.matches === "object" ? data.matches : null) ||
+    (data.mapping && typeof data.mapping === "object" ? data.mapping : null) ||
+    null;
+
+  const pairs =
+    (Array.isArray(ap.pairs) ? ap.pairs : null) ||
+    (Array.isArray(data.pairs) ? data.pairs : null) ||
+    null;
+
+  const leftItems =
+    (Array.isArray(cfg.leftItems) ? cfg.leftItems : null) ||
+    (Array.isArray(task.leftItems) ? task.leftItems : null) ||
+    null;
+  const rightItems =
+    (Array.isArray(cfg.rightItems) ? cfg.rightItems : null) ||
+    (Array.isArray(task.rightItems) ? task.rightItems : null) ||
+    null;
+
+  const leftMap = {};
+  const rightMap = {};
+  if (Array.isArray(leftItems)) {
+    for (const it of leftItems) {
+      const id = it?.id ?? it?._id ?? it?.key ?? it?.value ?? it?.label ?? it?.text;
+      const label = it?.label ?? it?.text ?? it?.title ?? it?.value ?? "";
+      if (id != null && label) leftMap[String(id)] = String(label);
+    }
+  }
+  if (Array.isArray(rightItems)) {
+    for (const it of rightItems) {
+      const id = it?.id ?? it?._id ?? it?.key ?? it?.value ?? it?.label ?? it?.text;
+      const label = it?.label ?? it?.text ?? it?.title ?? it?.value ?? "";
+      if (id != null && label) rightMap[String(id)] = String(label);
+    }
+  }
+
+  const lines = [];
+
+  if (pairs && pairs.length) {
+    for (const p of pairs.slice(0, 8)) {
+      const l = p?.left ?? p?.leftId ?? p?.a ?? p?.from;
+      const r = p?.right ?? p?.rightId ?? p?.b ?? p?.to;
+      if (l == null || r == null) continue;
+      lines.push(`${leftMap[String(l)] || String(l)} → ${rightMap[String(r)] || String(r)}`);
+    }
+  } else if (matches) {
+    for (const [l, r] of Object.entries(matches).slice(0, 8)) {
+      if (r == null) continue;
+      lines.push(`${leftMap[String(l)] || String(l)} → ${rightMap[String(r)] || String(r)}`);
+    }
+  }
+
+  return lines.length ? { matches: lines } : null;
+}
+
 function extractAnswerText(sub, task) {
   // Prefer canonical flattened field if present
   if (sub?.answerText) return String(sub.answerText);
@@ -1113,6 +1278,94 @@ export default function TasksetTranscript({ transcript }) {
                         );
                       })()}
 
+
+
+                      {/* Objective task summaries (matching / sequence / sort / timeline) */}
+                      {(() => {
+                        const tt = String(task.taskType || task.type || "").toLowerCase();
+                        const isMatching = tt === "matching" || tt === "match" || tt.includes("matching");
+                        const isSequence = tt === "sequence" || tt.includes("sequence");
+                        const isTimeline = tt === "timeline" || tt.includes("timeline");
+                        const isSort = tt === "sort" || tt.includes("sort");
+
+                        if (isMatching) {
+                          const summary = summarizeMatchingTask(sub, task);
+                          if (!summary) return null;
+                          return (
+                            <div
+                              style={{
+                                marginTop: 6,
+                                padding: 10,
+                                borderRadius: 12,
+                                border: "1px solid rgba(59,130,246,0.25)",
+                                background: "rgba(59,130,246,0.06)",
+                              }}
+                            >
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#1d4ed8", marginBottom: 6 }}>
+                                🔗 Matching connections
+                              </div>
+                              <div style={{ display: "grid", gap: 4, fontSize: "0.82rem", color: "#111827" }}>
+                                {summary.matches.map((ln, i) => (
+                                  <div key={i}>{ln}</div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (isSort) {
+                          const summary = summarizeSortTask(sub, task);
+                          if (!summary) return null;
+                          return (
+                            <div
+                              style={{
+                                marginTop: 6,
+                                padding: 10,
+                                borderRadius: 12,
+                                border: "1px solid rgba(16,185,129,0.30)",
+                                background: "rgba(16,185,129,0.07)",
+                              }}
+                            >
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#065f46", marginBottom: 6 }}>
+                                🧺 Sort buckets
+                              </div>
+                              <div style={{ display: "grid", gap: 4, fontSize: "0.82rem", color: "#111827" }}>
+                                {(summary.buckets || []).map((ln, i) => (
+                                  <div key={i}>{ln}</div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (isSequence || isTimeline) {
+                          const summary = summarizeOrderingTask(sub, task);
+                          if (!summary) return null;
+                          const label = isTimeline ? "🕰️ Timeline order" : "🔢 Sequence order";
+                          return (
+                            <div
+                              style={{
+                                marginTop: 6,
+                                padding: 10,
+                                borderRadius: 12,
+                                border: "1px solid rgba(99,102,241,0.25)",
+                                background: "rgba(99,102,241,0.06)",
+                              }}
+                            >
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#3730a3", marginBottom: 6 }}>
+                                {label}
+                              </div>
+                              <div style={{ display: "grid", gap: 4, fontSize: "0.82rem", color: "#111827" }}>
+                                {summary.order.map((ln, i) => (
+                                  <div key={i}>{ln}</div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return null;
+                      })()}
 
 {(() => {
                         const txt = extractAnswerText(sub, task);
