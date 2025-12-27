@@ -168,6 +168,113 @@ function scoreObjectiveLocally(task, submission) {
     };
   }
 
+
+  if (type === TASK_TYPES.VENNSORT) {
+    // Partial-credit scoring:
+    // +2 points for each *required* category included in the student's placement (no credit for extras)
+    const cats =
+      (Array.isArray(task?.config?.categories) ? task.config.categories : Array.isArray(task?.categories) ? task.categories : [])
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 3);
+
+    const correct =
+      (task?.correctAnswer && typeof task.correctAnswer === "object" && task.correctAnswer) ||
+      (task?.config?.correctAnswer && typeof task.config.correctAnswer === "object" && task.config.correctAnswer) ||
+      null;
+
+    const placements =
+      (submission?.placements && typeof submission.placements === "object" && submission.placements) ||
+      (submission?.answer?.placements && typeof submission.answer.placements === "object" && submission.answer.placements) ||
+      {};
+
+    if (!correct) {
+      return { scoreDelta: 0, maxPoints: points, correct: false, details: { reason: "missing-correctAnswer" } };
+    }
+
+    const norm = (arr) =>
+      (Array.isArray(arr) ? arr : [])
+        .map(String)
+        .map((s) => s.trim())
+        .filter((c) => c && cats.includes(c))
+        .sort();
+
+    let maxPoints = 0;
+    let scoreDelta = 0;
+
+    for (const [itemId, expectedRaw] of Object.entries(correct)) {
+      const expected = norm(expectedRaw);
+      const got = norm(placements?.[itemId]);
+      maxPoints += expected.length * 2;
+
+      // credit for each required category present
+      const expectedSet = new Set(expected);
+      let hit = 0;
+      for (const g of got) {
+        if (expectedSet.has(g)) hit += 1;
+      }
+      scoreDelta += hit * 2;
+    }
+
+    return {
+      scoreDelta: clamp(scoreDelta, 0, maxPoints),
+      maxPoints: Math.max(0, maxPoints),
+      correct: scoreDelta >= maxPoints && maxPoints > 0,
+      details: { mode: "per-category", cats },
+    };
+  }
+
+
+  if (type === TASK_TYPES.VENNSORT) {
+    const cats =
+      (Array.isArray(task?.config?.categories) ? task.config.categories : Array.isArray(task?.categories) ? task.categories : [])
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 3);
+
+    const rawItems = Array.isArray(task?.config?.items)
+      ? task.config.items
+      : Array.isArray(task?.items)
+      ? task.items
+      : Array.isArray(task?.options)
+      ? task.options
+      : [];
+
+    const makeId = (it, idx) =>
+      (it && typeof it === "object" ? it.id ?? it._id ?? it.key : null) ||
+      (typeof it === "string" ? it : null) ||
+      `item-${idx}`;
+
+    const placements = {};
+    rawItems.slice(0, 10).forEach((it, idx) => {
+      const id = String(makeId(it, idx));
+      const pickCount = cats.length ? randInt(0, Math.min(2, cats.length)) : 0;
+      const chosen = [];
+      for (let k = 0; k < pickCount; k++) {
+        const c = cats[randInt(0, cats.length - 1)];
+        if (!chosen.includes(c)) chosen.push(c);
+      }
+      placements[id] = chosen;
+    });
+
+    return { placements };
+  }
+
+  if (type === TASK_TYPES.SPEED_DRAW) {
+    return { answer: { done: true, note: "We played a quick round and guessed!" } };
+  }
+
+  if (type === TASK_TYPES.HIDENSEEK) {
+    return {
+      answer: {
+        text: "We found the target, took a photo, and explained why it matters.",
+        hasPhoto: true,
+      },
+    };
+  }
+
   if (type === TASK_TYPES.SEQUENCE || type === TASK_TYPES.TIMELINE) {
     const cfg = task?.config && typeof task.config === "object" ? task.config : {};
     const items = Array.isArray(cfg.items) ? cfg.items : [];
@@ -322,6 +429,48 @@ function playWordWeaverChime() {
     // ignore
   }
 }
+
+
+function playPhotoShutter() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/camera/camera_shutter_click_01.ogg");
+    a.volume = 0.18;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+function playSketchChime() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/foley/marker_write.ogg");
+    a.volume = 0.14;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+function playVennTap() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/foley/wood_tap.ogg");
+    a.volume = 0.12;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
+function playHuntWhoosh() {
+  try {
+    const a = new Audio("https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum_hit.ogg");
+    a.volume = 0.12;
+    a.play();
+  } catch {
+    // ignore
+  }
+}
+
 
 function playFakeOutChime() {
   try {
@@ -827,7 +976,31 @@ export default function DemoPage() {
       showToast("🔔 Flashcards Race! Buzz in and answer fast.", true);
       playFakeOutChime();
     }
-}
+
+    if ((next?.taskType || next?.type) === TASK_TYPES.VENNSORT) {
+      showToast("⭕ Venn Sort! Drag items into the correct Venn regions.", true);
+      playVennTap();
+    }
+
+    if ((next?.taskType || next?.type) === TASK_TYPES.SPEED_DRAW) {
+      showToast("✏️ Speed Draw! One draws, teammates guess fast.", true);
+      playSketchChime();
+    }
+
+    if (
+      (next?.taskType || next?.type) === TASK_TYPES.PHOTO ||
+      (next?.taskType || next?.type) === TASK_TYPES.PHOTO_JOURNAL
+    ) {
+      showToast("📸 Photo challenge! Take a clear pic, then add your explanation.", true);
+      playPhotoShutter();
+    }
+
+    if ((next?.taskType || next?.type) === TASK_TYPES.HIDENSEEK) {
+      showToast("🔎 Hide & Seek! Find it, snap proof, and explain why it matters.", true);
+      playHuntWhoosh();
+    }
+
+  }
 
   // -------------------------
   // Bot simulation per task

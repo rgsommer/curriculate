@@ -671,6 +671,12 @@ function StudentApp() {
   const sndCorrect = useRef(null);
   const sndWrong = useRef(null);
 
+  // Extra task-specific cues
+  const sndPhoto = useRef(null);
+  const sndSketch = useRef(null);
+  const sndVenn = useRef(null);
+  const sndHunt = useRef(null);
+
   // EchoChain micro-theme pulse (purely visual)
   const [echoPulse, setEchoPulse] = useState(false);
   const [narrationSpark, setNarrationSpark] = useState(false);
@@ -678,6 +684,11 @@ function StudentApp() {
   const [rolePlayGlow, setRolePlayGlow] = useState(false);
   const [wordWeaverGlow, setWordWeaverGlow] = useState(false);
   const [fakeOutFlash, setFakeOutFlash] = useState(false);
+
+  const [photoFlash, setPhotoFlash] = useState(false);
+  const [sketchSpark, setSketchSpark] = useState(false);
+  const [vennGlow, setVennGlow] = useState(false);
+  const [huntPulse, setHuntPulse] = useState(false);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
@@ -980,6 +991,46 @@ function StudentApp() {
         window.setTimeout(() => setTreatMessage(null), 4200);
       }
 
+      // VennSort: quick “sorting” cue
+      if (assignedType === TASK_TYPES.VENNSORT || assignedType === "vennsort" || assignedType === "venn-sort") {
+        tryPlayVennSound();
+        setVennGlow(true);
+        window.setTimeout(() => setVennGlow(false), 1200);
+        setTreatMessage("⭕ Venn Sort — drag items into the best regions (overlaps count!)");
+        window.setTimeout(() => setTreatMessage(null), 3600);
+      }
+
+      // Speed Draw: pictionary cue
+      if (assignedType === TASK_TYPES.SPEED_DRAW || assignedType === "speed-draw" || assignedType === "speeddraw") {
+        tryPlaySketchSound();
+        setSketchSpark(true);
+        window.setTimeout(() => setSketchSpark(false), 1200);
+        setTreatMessage("✏️ Speed Draw — one draws fast, teammates guess faster!");
+        window.setTimeout(() => setTreatMessage(null), 3600);
+      }
+
+      // Photo / PhotoJournal: camera cue
+      if (
+        assignedType === TASK_TYPES.PHOTO ||
+        assignedType === "photo" ||
+        assignedType === TASK_TYPES.PHOTO_JOURNAL ||
+        assignedType === "photo-journal" ||
+        assignedType === "photo_journal"
+      ) {
+        tryPlayPhotoSound();
+        setPhotoFlash(true);
+        window.setTimeout(() => setPhotoFlash(false), 520);
+      }
+
+      // HideNSeek: hunt cue
+      if (assignedType === TASK_TYPES.HIDENSEEK || assignedType === "hidenseek" || assignedType === "hide-n-seek") {
+        tryPlayHuntSound();
+        setHuntPulse(true);
+        window.setTimeout(() => setHuntPulse(false), 1200);
+        setTreatMessage("🔎 Hide & Seek — find it, snap proof, and explain why it matters.");
+        window.setTimeout(() => setTreatMessage(null), 4200);
+      }
+
       setCurrentTask(assignedTask);
       setPostPhase("tasks"); // Clear mood
       const idx =
@@ -1269,6 +1320,34 @@ function StudentApp() {
       );
       wrongAudio.volume = 0.14;
       sndWrong.current = wrongAudio;
+
+      // Photo / PhotoJournal / HideNSeek: camera shutter cue (safe to fail)
+      const photoAudio = new Audio(
+        "https://actions.google.com/sounds/v1/camera/camera_shutter_click_01.ogg"
+      );
+      photoAudio.volume = 0.18;
+      sndPhoto.current = photoAudio;
+
+      // SpeedDraw / DrawMime: marker cue (safe to fail)
+      const sketchAudio = new Audio(
+        "https://actions.google.com/sounds/v1/foley/marker_write.ogg"
+      );
+      sketchAudio.volume = 0.14;
+      sndSketch.current = sketchAudio;
+
+      // VennSort: soft "drop" cue (safe to fail)
+      const vennAudio = new Audio(
+        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
+      );
+      vennAudio.volume = 0.12;
+      sndVenn.current = vennAudio;
+
+      // HideNSeek: little "whoosh" cue (safe to fail)
+      const huntAudio = new Audio(
+        "https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum_hit.ogg"
+      );
+      huntAudio.volume = 0.12;
+      sndHunt.current = huntAudio;
     } catch (err) {
       console.warn("Could not preload audio:", err);
     }
@@ -1362,6 +1441,39 @@ function StudentApp() {
       sndFakeOut.current && sndFakeOut.current.play();
     } catch (err) {
       console.warn("FakeOut sound play blocked:", err);
+    }
+  }
+
+
+  function tryPlayPhotoSound() {
+    try {
+      sndPhoto.current && sndPhoto.current.play();
+    } catch {
+      // ignore
+    }
+  }
+
+  function tryPlaySketchSound() {
+    try {
+      sndSketch.current && sndSketch.current.play();
+    } catch {
+      // ignore
+    }
+  }
+
+  function tryPlayVennSound() {
+    try {
+      sndVenn.current && sndVenn.current.play();
+    } catch {
+      // ignore
+    }
+  }
+
+  function tryPlayHuntSound() {
+    try {
+      sndHunt.current && sndHunt.current.play();
+    } catch {
+      // ignore
     }
   }
 
@@ -2053,6 +2165,21 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
     currentTask?.taskType === "photo-journal" ||
     currentTask?.taskType === "photo_journal";
 
+  const isVennSort =
+    currentTask?.taskType === TASK_TYPES.VENNSORT ||
+    currentTask?.taskType === "vennsort" ||
+    currentTask?.taskType === "venn-sort";
+
+  const isSpeedDraw =
+    currentTask?.taskType === TASK_TYPES.SPEED_DRAW ||
+    currentTask?.taskType === "speed-draw" ||
+    currentTask?.taskType === "speeddraw";
+
+  const isHideNSeek =
+    currentTask?.taskType === TASK_TYPES.HIDENSEEK ||
+    currentTask?.taskType === "hidenseek" ||
+    currentTask?.taskType === "hide-n-seek";
+
   const isPhysicalTask =
     !!currentTask?.isPhysical ||
     !!currentTask?.config?.isPhysical ||
@@ -2097,6 +2224,12 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
     ? "linear-gradient(135deg, #0f172a 0%, #38bdf8 40%, #e0f2fe 100%)"
     : isPhotoJournal
     ? "linear-gradient(135deg, #0f172a 0%, #1d4ed8 35%, #a855f7 70%, #f97316 100%)"
+    : isVennSort
+    ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #06b6d4 70%, #e0f2fe 100%)"
+    : isSpeedDraw
+    ? "linear-gradient(135deg, #fef9c3 0%, #60a5fa 35%, #a855f7 70%, #f97316 100%)"
+    : isHideNSeek
+    ? "linear-gradient(135deg, #020617 0%, #0ea5e9 35%, #22c55e 70%, #fef3c7 100%)"
     : isHangman
     ? "linear-gradient(135deg, #0f172a 0%, #22c55e 35%, #facc15 70%, #f97316 100%)"
     : isBrainSparkNotes
@@ -2670,6 +2803,13 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
           50% {
             transform: scale(1.04);
           }
+        }
+
+
+        @keyframes photo-flash {
+          0% { opacity: 0; }
+          20% { opacity: 0.55; }
+          100% { opacity: 0; }
         }
 
         /* JEOPARDY lightning */
@@ -3496,6 +3636,66 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
             background:
               "radial-gradient(circle at 25% 15%, rgba(34,197,94,0.18), transparent 55%), radial-gradient(circle at 80% 35%, rgba(59,130,246,0.14), transparent 60%), radial-gradient(circle at 50% 92%, rgba(245,158,11,0.10), transparent 60%)",
             animation: "echo-pulse 1.25s ease-out 1",
+          }}
+        />
+      )}
+      {vennGlow && isVennSort && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 20% 20%, rgba(34,197,94,0.16), transparent 55%), radial-gradient(circle at 80% 20%, rgba(14,165,233,0.14), transparent 60%), radial-gradient(circle at 50% 90%, rgba(245,158,11,0.10), transparent 60%)",
+            animation: "echo-pulse 1.25s ease-out 1",
+          }}
+        />
+      )}
+
+      {sketchSpark && isSpeedDraw && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 15% 25%, rgba(96,165,250,0.18), transparent 60%), radial-gradient(circle at 80% 15%, rgba(168,85,247,0.14), transparent 62%), radial-gradient(circle at 55% 92%, rgba(249,115,22,0.10), transparent 60%)",
+            animation: "narration-spark 1.05s ease-out both",
+          }}
+        />
+      )}
+
+      {photoFlash && (isPhoto || isPhotoJournal) && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "linear-gradient(0deg, rgba(255,255,255,0.0), rgba(255,255,255,0.0))",
+            boxShadow: "0 0 0 1px rgba(255,255,255,0.08) inset",
+            animation: "photo-flash 420ms ease-out 1",
+          }}
+        />
+      )}
+
+      {huntPulse && isHideNSeek && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 18,
+            pointerEvents: "none",
+            background:
+              "radial-gradient(circle at 30% 30%, rgba(14,165,233,0.18), transparent 55%), radial-gradient(circle at 70% 25%, rgba(34,197,94,0.14), transparent 55%), radial-gradient(circle at 50% 85%, rgba(250,204,21,0.10), transparent 60%)",
+            animation: "echo-pulse 1.35s ease-out 1",
           }}
         />
       )}

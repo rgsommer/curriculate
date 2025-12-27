@@ -953,7 +953,8 @@ function StudentApp() {
         tryPlayRolePlaySound();
         setRolePlayGlow(true);
         window.setTimeout(() => setRolePlayGlow(false), 1200);
-  
+      }
+
       // FakeOut: listening + voting round (intra-team only)
       if (assignedType === TASK_TYPES.FAKE_OUT || assignedType === "fake-out") {
         tryPlayFakeOutSound();
