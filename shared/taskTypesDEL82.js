@@ -316,7 +316,21 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Two columns of 5–7 items. Students draw animated lines to connect correct pairs (term→definition, cause→effect, person→event). Fast formative assessment and strong association-building.",
+      "Matching / Connect (solo).
+- Two columns (5–7 left, 5–7 right). Students connect pairs by drawing animated lines.
+- Objective-scored: mapping of leftId → rightId.
+Pedagogical benefits: strengthens associations (term-definition, cause-effect, vocab-meaning), reduces cognitive load via visualization, and provides quick formative assessment.
+
+Generator requirements (JSON shape):
+- taskType: \"matching\"
+- title (string), prompt (string)
+- leftItems: array of 5–7 objects: { id, text }
+- rightItems: array of 5–7 objects: { id, text }
+- correctMapping: object map { [leftId]: rightId }
+Guardrails:
+- leftItems and rightItems must be the same length.
+- Every leftId must appear exactly once in correctMapping.
+- All ids must be unique within their column.",
   }),
 
   [TASK_TYPES.VENNSORT]: metaBase({
@@ -419,7 +433,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Make & Snap: the team physically builds/creates/arranges something from a prompt, then submits a photo (and optional note). Typically AI-scored for alignment to the prompt. Benefit: hands-on application, creativity, collaboration, authentic assessment, and transfer beyond the screen.",
+      "Team physically builds/creates/arranges something from a prompt, then submits a photo. Typically AI-scored for alignment to the prompt. Encourages hands-on application and authentic assessment.",
   }),
 
   [TASK_TYPES.PHOTO_JOURNAL]: metaBase({
@@ -459,43 +473,43 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Short movement break (30–60s). The device shows a quick physical challenge or guided moves (stretch, jumping jacks, dance, quick poses) and the team follows along. No answers; no objective scoring; no AI scoring. Includes upbeat prompts/animations for buy-in. Benefit: boosts attention, reduces restlessness, and helps energy regulation through brain–body activation.",
+      "30–60 second movement break (stretch, jumping jacks, dance, quick poses). No scoring. Boosts attention and regulates energy to improve readiness for learning.",
   }),
 
   [TASK_TYPES.MOTION_MISSION]: metaBase({
     label: "Motion Mission",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,
-    generatorEligible: true,
+    aiEligible: false,
+    generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
-    quickTaskEligible: true,
+    quickTaskEligible: false,
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 180,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Motion Mission: a quick physical mission tied to content or energy (e.g., 'Act out erosion', 'Do 10 jumping jacks', 'Freeze like a statue of…'). Usually completion-based (not objective-scored). Benefit: movement integration, embodied cognition, higher engagement, and improved focus during longer blocks.",
+      "Quick physical mission linked to content or energy (e.g., ‘Act out erosion’). Usually not objective-scored. Increases engagement and supports embodied cognition.",
   }),
 
   [TASK_TYPES.MUSICAL_CHAIRS]: metaBase({
     label: "Musical Chairs",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,
-    generatorEligible: true,
+    aiEligible: false,
+    generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: false,
-    quickTaskEligible: true,
+    quickTaskEligible: false,
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: false,
     description:
-      "Musical Chairs: movement game where music cues students to move; when it stops they scan a station/spot that can trigger a quick question or fact. Not objective-scored by default. Inter-team enabled (teams can compete for winner). Benefit: attention control, quick transitions, group fun, and pairing movement with recall.",
+      "Music cues movement; when it stops, students ‘land’ and trigger a quick question/fact. Great energizer and attention-control practice; can be used in inter-team race mode if desired.",
   }),
 
   [TASK_TYPES.MAD_DASH]: metaBase({
@@ -543,14 +557,14 @@ export const TASK_TYPE_META = {
     generatorEligible: true,
     objectiveScoring: false,
     defaultAiScoringRequired: true,
-    quickTaskEligible: true,
+    quickTaskEligible: false,
     hasOptions: false,
     expectsText: true,
     maxTimeSeconds: 300,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Hide & Seek (Find & Snap): students are given a page/location reference, must find it, take a photo, and briefly explain the significance. Typically AI-scored (open-ended explanation). Benefit: active searching, source/location literacy, contextual understanding, and making learning physical.",
+      "Students are given a page/location reference, must find it, snap a photo, and explain significance. Builds source/location literacy and contextual understanding through active searching.",
   }),
 
   [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: metaBase({
