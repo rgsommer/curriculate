@@ -944,17 +944,15 @@ export const TASK_TYPE_META = {
     label: "AI Debate Judge",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    // Special task: not included in normal AI-generated task sets (invoked on demand).
-    generatorEligible: false,
     aiEligible: true,
+    generatorEligible: false,
     objectiveScoring: false,
     defaultAiScoringRequired: true,
-    // 2:00 main + 0:30 overtime grace = 150s hard-stop
-    maxTimeSeconds: 150,
+    maxTimeSeconds: 180,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
-      "AI Debate Judge: students run a live debate and the AI produces a written verdict with scores, feedback, and a winner announcement (rubric-style evaluation).\n\nStudent flow:\n- Pick your Side (Affirmative/Negative) and your Position (Introduction / First / Rebuttal / Conclusion).\n- Tap the big 1-2-3 GO button to start recording; the device shows a live sound meter while listening.\n- Timer counts down from 2:00 to -0:30 (overtime grace).\n- Audio cues: 1:45 elapsed, beeps the last 5 seconds to 2:00, warning at 2:15, auto-ends at 2:30.\n- Recording auto-submits at the end (or students can submit early when finished).\n- AI returns: per-speaker score, strengths, specific improvement tips, and an overall side-by-side winner decision.\n\nScoring notes:\n- Penalty if under 1:45 or over 2:15.\n- Encourages evidence and structure by making criteria visible.\n\nPedagogical benefits: clearer criteria for argument improvement, motivation to use evidence and structure, better reflection after live speaking, and higher-quality feedback than peer-only judging.",
+      "Debate happens live; AI produces a written verdict with scores, feedback, and a winner announcement. Encourages evidence and structure by making criteria visible.",
   }),
 
   [TASK_TYPES.BRAINSTORM_BATTLE]: metaBase({

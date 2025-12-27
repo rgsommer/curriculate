@@ -1448,6 +1448,135 @@ async function scoreSpeechRecognition({ task, submission, rubric }) {
   };
 }
 
+// --- SPECIAL CASE: AI DEBATE JUDGE (AUDIO + RUBRIC VERDICT) ---
+// AI Debate Judge is invoked on-demand (often as a Quick Task), not part of normal tasksets.
+// The client typically submits: { side, position, transcript/recognizedText, audioUrl, ... } and timeMs.
+// We AI-score argument quality + apply simple timing penalties (under 1:45 or over 2:15).
+async function scoreAIDebateJudge({ task, submission, rubric }) {
+  const points = typeof task.points === "number" ? task.points : 15;
+
+  const effectiveRubric =
+    rubric ||
+    {
+      totalPoints: points,
+      criteria: [
+        {
+          id: "structure",
+          label: "Structure & role fit",
+          maxPoints: Math.round(points * 0.25),
+          description:
+            "Does the speaker match the assigned position (Introduction / First / Rebuttal / Conclusion), define terms when needed, and present ideas in a clear order?",
+        },
+        {
+          id: "evidence",
+          label: "Evidence & reasoning",
+          maxPoints: Math.round(points * 0.35),
+          description:
+            "Uses relevant facts/examples, explains WHY the evidence supports the claim, avoids obvious logical gaps.",
+        },
+        {
+          id: "rebuttal",
+          label: "Engagement & rebuttal",
+          maxPoints: Math.round(points * 0.2),
+          description:
+            "Responds to the other side's points (especially for Rebuttal role), addresses counter-arguments fairly and directly.",
+        },
+        {
+          id: "delivery",
+          label: "Clarity & persuasion",
+          maxPoints: points - Math.round(points * 0.25) - Math.round(points * 0.35) - Math.round(points * 0.2),
+          description:
+            "Clear, confident speaking, understandable phrasing, persuasive tone without disrespect.",
+        },
+      ],
+    };
+
+  const side =
+    submission?.side ||
+    submission?.data?.side ||
+    submission?.answer?.side ||
+    null;
+
+  const position =
+    submission?.position ||
+    submission?.role ||
+    submission?.data?.position ||
+    submission?.answer?.position ||
+    null;
+
+  // Allow either transcript or recognizedText; the AI rubric function will read both.
+  const normalizedSubmission = {
+    ...(submission || {}),
+    side,
+    position,
+    transcript:
+      submission?.transcript ||
+      submission?.recognizedText ||
+      submission?.text ||
+      submission?.answerText ||
+      null,
+  };
+
+  const result = await scoreSubmissionWithAI({
+    task: {
+      ...task,
+      prompt:
+        (task?.prompt ? String(task.prompt) : "AI Debate Judge") +
+        (side || position
+          ? `\n\nSpeaker meta: side=${side || "?"}, position=${position || "?"}`
+          : ""),
+    },
+    submission: normalizedSubmission,
+    rubric: effectiveRubric,
+    explicitTotalPoints: points,
+  });
+
+  let scoreNum =
+    typeof result.score === "number"
+      ? result.score
+      : typeof result.totalScore === "number"
+      ? result.totalScore
+      : 0;
+
+  // Timing penalty: under 1:45 or over 2:15
+  const ms =
+    (typeof submission?.timeMs === "number" && submission.timeMs) ||
+    (typeof submission?.durationMs === "number" && submission.durationMs) ||
+    null;
+  const elapsedSeconds = ms != null ? ms / 1000 : null;
+
+  const minSeconds = typeof task.minSeconds === "number" ? task.minSeconds : 105; // 1:45
+  const maxSeconds = typeof task.maxSeconds === "number" ? task.maxSeconds : 135; // 2:15
+
+  let timingPenalty = 0;
+  if (elapsedSeconds != null) {
+    if (elapsedSeconds < minSeconds || elapsedSeconds > maxSeconds) {
+      timingPenalty = Math.max(1, Math.round(points * 0.1)); // gentle but noticeable
+    }
+  }
+
+  const clamped = clamp(scoreNum - timingPenalty, 0, points);
+
+  return {
+    ...result,
+    score: clamped,
+    totalScore: clamped,
+    maxPoints: points,
+    method: "ai-rubric",
+    rubricUsed: effectiveRubric,
+    details: {
+      ...(result.details || {}),
+      type: task.taskType,
+      side,
+      position,
+      elapsedSeconds,
+      timingPenalty,
+      minSeconds,
+      maxSeconds,
+    },
+  };
+}
+
 // --- SPECIAL CASE: NARRATION SYNTHESIZE (PEER-RATED, NO OPENAI) ---
 // NarrationSynthesize is an oral, intra-team teach-back. It should NOT be AI-scored.
 // The client submits peer ratings (slider) and completion signals; we translate that
@@ -1711,7 +1840,17 @@ if (task?.taskType === TASK_TYPES.SCRIPT_PLAY || task?.taskType === "script-play
     return scoreBrainSparkNotes({ task, submission });
   }
 
-  // Specialized path: Speech Recognition / Pronunciation
+  
+  // Specialized path: AI Debate Judge (audio verdict; rubric-based)
+  if (
+    task?.taskType === TASK_TYPES.AI_DEBATE_JUDGE ||
+    task?.taskType === "ai-debate-judge" ||
+    task?.taskType === "ai_debate_judge"
+  ) {
+    return scoreAIDebateJudge({ task, submission, rubric });
+  }
+
+// Specialized path: Speech Recognition / Pronunciation
   if (
     task?.taskType === TASK_TYPES.SPEECH_RECOGNITION ||
     task?.taskType === "speech-recognition" ||

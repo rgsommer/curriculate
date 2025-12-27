@@ -2601,33 +2601,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
         };
       }
 
-      
-      // AI DEBATE JUDGE (AI)
-      if (type === "ai-debate-judge") {
-        return {
-          prompt: task?.prompt || task?.title || null,
-          side: answer?.side || answer?.data?.side || null,
-          position: answer?.position || answer?.role || answer?.data?.position || null,
-          transcript: answer?.transcript || answer?.recognizedText || answer?.text || null,
-          recordingUrl:
-            answer?.recordingUrl ||
-            answer?.audioUrl ||
-            answer?.mediaUrl ||
-            answer?.fileUrl ||
-            null,
-          aiVerdict:
-            aiScore?.verdict ||
-            aiScore?.feedback ||
-            aiScore?.rationale ||
-            null,
-          score: aiScore?.score ?? aiScore?.totalScore ?? null,
-          timingPenalty: aiScore?.details?.timingPenalty ?? null,
-          elapsedSeconds: aiScore?.details?.elapsedSeconds ?? null,
-          winner: aiScore?.winner || aiScore?.details?.winner || null,
-        };
-      }
-
-// SPEECH RECOGNITION (AI)
+      // SPEECH RECOGNITION (AI)
       if (type === "speech-recognition") {
         return {
           prompt: task?.prompt || task?.question || null,

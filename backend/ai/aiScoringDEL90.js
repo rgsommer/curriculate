@@ -1103,6 +1103,143 @@ async function scoreMindMapper({ task, submission }) {
 
 // --- SPECIAL CASE: PHOTO JOURNAL (PHOTO + TEXT) ---
 
+
+async function scoreOpenText({ task, submission, rubric }) {
+  // Open text is AI-scored (not objective). We provide:
+  // - score/maxPoints (rubric-based)
+  // - a student-facing aiFeedback message
+  // - a "correct" boolean for UI effects (based on a generous threshold)
+  const points =
+    typeof task?.points === "number"
+      ? task.points
+      : typeof task?.maxPoints === "number"
+      ? task.maxPoints
+      : 100;
+
+  const gradeLevel = Number(task?.settings?.gradeLevel ?? task?.gradeLevel ?? 8) || 8;
+  const difficulty = String(task?.settings?.difficulty ?? task?.difficulty ?? "easy").toLowerCase();
+
+  const minWordsExplicit = Number(task?.settings?.minWords ?? task?.config?.minWords);
+  const minWords =
+    Number.isFinite(minWordsExplicit) && minWordsExplicit > 0
+      ? Math.floor(minWordsExplicit)
+      : difficulty === "hard"
+      ? 3 * gradeLevel
+      : difficulty === "medium"
+      ? 2 * gradeLevel
+      : 0;
+
+  // Default rubric if the caller didn't provide one.
+  const effectiveRubric =
+    rubric && typeof rubric === "object" && rubric.totalPoints
+      ? rubric
+      : {
+          name: "Open Text Rubric",
+          totalPoints: points,
+          criteria: [
+            {
+              id: "clarity",
+              label: "Clarity",
+              maxPoints: Math.round(points * 0.25),
+              description:
+                "Is the response clear and well-organized? Are ideas easy to follow for the grade level?",
+            },
+            {
+              id: "accuracy",
+              label: "Accuracy",
+              maxPoints: Math.round(points * 0.25),
+              description:
+                "Is the information correct and aligned with the prompt and subject expectations?",
+            },
+            {
+              id: "reasoning",
+              label: "Reasoning",
+              maxPoints: Math.round(points * 0.30),
+              description:
+                "Does the student explain their thinking with logical connections and cause/effect where appropriate?",
+            },
+            {
+              id: "evidence",
+              label: "Evidence / Examples",
+              maxPoints: points - (Math.round(points * 0.25) + Math.round(points * 0.25) + Math.round(points * 0.30)),
+              description:
+                "Does the response use evidence, examples, or details to support claims? For Bible/CE, references to Scripture or doctrine count as evidence when appropriate.",
+            },
+          ],
+        };
+
+  // Length expectation (soft penalty if far below minWords)
+  const work = buildStudentWorkDescription(task, submission);
+  const studentText = String(work?.studentText ?? "").trim();
+  const wordCount = studentText ? studentText.split(/\s+/).filter(Boolean).length : 0;
+
+  // If they submitted essentially nothing, short-circuit.
+  if (!studentText) {
+    return {
+      score: 0,
+      maxPoints: points,
+      method: "ai",
+      correct: false,
+      reason: "No written response was provided.",
+      aiFeedback: "I didn’t receive a written response. Please try again with a complete answer.",
+      details: {
+        type: TASK_TYPES.OPEN_TEXT,
+        wordCount: 0,
+        minWords,
+      },
+    };
+  }
+
+  const result = await scoreSubmissionWithAI({
+    task,
+    submission,
+    rubric: effectiveRubric,
+    explicitTotalPoints: points,
+  });
+
+  // Soft length adjustment (avoid harsh penalty; just nudge).
+  let adjustedScore = typeof result.score === "number" ? result.score : 0;
+  if (minWords > 0 && wordCount < Math.max(3, Math.floor(minWords * 0.6))) {
+    adjustedScore = Math.max(0, Math.round(adjustedScore * 0.8));
+  }
+
+  const maxPoints = typeof result.maxPoints === "number" ? result.maxPoints : points;
+  const ratio = maxPoints > 0 ? adjustedScore / maxPoints : 0;
+
+  // "Correct" is used for UI effects only on open text. Use a generous threshold.
+  const correct = ratio >= 0.7;
+
+  const studentFeedbackPieces = [];
+  studentFeedbackPieces.push(`Score: ${adjustedScore}/${maxPoints}.`);
+  if (minWords > 0) {
+    if (wordCount >= minWords) studentFeedbackPieces.push(`You met the length goal (${wordCount} words).`);
+    else studentFeedbackPieces.push(`Try to write a bit more detail next time (goal: ${minWords} words; you wrote ${wordCount}).`);
+  }
+  if (typeof result.reason === "string" && result.reason.trim()) {
+    // Keep it short for students: first sentence only.
+    const firstSentence = result.reason.trim().split(/(?<=[.!?])\s+/)[0] || result.reason.trim();
+    studentFeedbackPieces.push(firstSentence);
+  }
+  if (!correct) studentFeedbackPieces.push("Next time: add one more specific example or piece of evidence.");
+
+  return {
+    score: adjustedScore,
+    maxPoints,
+    method: "ai",
+    correct,
+    reason: result.reason,
+    aiFeedback: studentFeedbackPieces.join(" "),
+    details: {
+      type: TASK_TYPES.OPEN_TEXT,
+      wordCount,
+      minWords,
+      gradeLevel,
+      difficulty,
+    },
+  };
+}
+
+
 async function scorePhotoJournal({ task, submission, rubric }) {
   const points = typeof task.points === "number" ? task.points : 10;
 
@@ -1514,6 +1651,13 @@ export async function generateAIScore({ task, submission, rubric }) {
   ) {
     return scoreGuessWho({ task, submission });
   }
+
+
+  // Specialized path: Open Text (rubric-based AI scoring)
+  if (task?.taskType === TASK_TYPES.OPEN_TEXT || task?.taskType === "open-text" || task?.taskType === "open_text" || task?.taskType === "opentext") {
+    return scoreOpenText({ task, submission, rubric });
+  }
+
 
 
 // Specialized path: Narration Synthesize (peer-rated; no OpenAI call)
