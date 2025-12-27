@@ -344,9 +344,6 @@ export default function AiTasksetGenerator() {
     if (t === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize")) return "🎙️";
     if (t === (TASK_TYPES.SCRIPT_PLAY || "script-play")) return "🎭";
     if (t === TASK_TYPES.HANGMAN_DUEL) return "🧩";
-    if (t === TASK_TYPES.TRUE_FALSE_TICTACTOE) return "❎⭕️";
-    if (t === TASK_TYPES.PRONUNCIATION) return "🗣️";
-    if (t === TASK_TYPES.SPEECH_RECOGNITION) return "🎤";
     if (t === TASK_TYPES.WORD_WEAVER_DUEL) return "🧶";
     if (t === TASK_TYPES.JEOPARDY) return "⚡";
     if (t === TASK_TYPES.FLASHCARDS) return "🗂️";
