@@ -6,6 +6,10 @@ import ProgressFillButton from "../components/ProgressFillButton";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
+// Demo admin controls (regen pool) are hidden by default in production builds.
+// Set VITE_SHOW_DEMO_ADMIN=1 to show them.
+const SHOW_DEMO_ADMIN = String(import.meta.env.VITE_SHOW_DEMO_ADMIN || "").trim() === "1";
+
 // Demo pacing
 const DEFAULT_REVIEW_SECONDS = 15;
 const BOT_THINK_MIN_MS = 900;
@@ -1347,6 +1351,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
             </span>
 
+            {SHOW_DEMO_ADMIN && (
             <button
               onClick={onRegeneratePool}
               style={{
@@ -1379,7 +1384,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   outline: "none",
                 }}
               />
-              </>
             )}
 
             <div style={{ minWidth: 220 }}>
@@ -1392,6 +1396,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               </ProgressFillButton>
               <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
             </div>
+            )}
           </div>
         </div>
       </header>
