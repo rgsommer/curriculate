@@ -6,10 +6,6 @@ import ProgressFillButton from "../components/ProgressFillButton";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
-// Demo admin controls (regen pool) are hidden by default in production builds.
-// Set VITE_SHOW_DEMO_ADMIN=1 to show them.
-const SHOW_DEMO_ADMIN = String(import.meta.env.VITE_SHOW_DEMO_ADMIN || "").trim() === "1";
-
 // Demo pacing
 const DEFAULT_REVIEW_SECONDS = 15;
 const BOT_THINK_MIN_MS = 900;
@@ -1351,54 +1347,50 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
             </span>
 
-            {SHOW_DEMO_ADMIN && (
-            <>
-              <button
-                onClick={onRegeneratePool}
+            <button
+              onClick={onRegeneratePool}
+              style={{
+                ...pill,
+                cursor: "pointer",
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: "rgba(59,130,246,0.9)", // blue
+                color: "#fff",
+                fontWeight: 900,
+              }}
+              title="Regenerate demo pool (admin)"
+              type="button"
+            >
+              Regenerate
+            </button>
+
+            {showAdminKey && (
+              <input
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                placeholder="Admin code"
                 style={{
                   ...pill,
-                  cursor: "pointer",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  background: "rgba(59,130,246,0.9)", // blue
+                  padding: "7px 10px",
+                  width: 160,
+                  textAlign: "left",
+                  border: "1px solid rgba(148,163,184,0.55)",
+                  background: "rgba(15,23,42,0.65)",
                   color: "#fff",
-                  fontWeight: 900,
+                  outline: "none",
                 }}
-                title="Regenerate demo pool (admin)"
-                type="button"
+              />
+            )}
+
+            <div style={{ minWidth: 220 }}>
+              <ProgressFillButton
+                progress={generating ? progress : 0}
+                disabled={generating}
+                onClick={startDemoGeneration}
               >
-                Regenerate
-              </button>
-
-              {showAdminKey && (
-                <input
-                  value={adminKey}
-                  onChange={(e) => setAdminKey(e.target.value)}
-                  placeholder="Admin code"
-                  style={{
-                    ...pill,
-                    padding: "7px 10px",
-                    width: 160,
-                    textAlign: "left",
-                    border: "1px solid rgba(148,163,184,0.55)",
-                    background: "rgba(15,23,42,0.65)",
-                    color: "#fff",
-                    outline: "none",
-                  }}
-                />
-              )}
-
-              <div style={{ minWidth: 220 }}>
-                <ProgressFillButton
-                  progress={generating ? progress : 0}
-                  disabled={generating}
-                  onClick={startDemoGeneration}
-                >
-                  {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
-                </ProgressFillButton>
-                <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
-              </div>
-            </>
-          )}            </div>
+                {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
+              </ProgressFillButton>
+              <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
+            </div>
           </div>
         </div>
       </header>

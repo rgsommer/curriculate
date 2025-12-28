@@ -314,11 +314,10 @@ function TeacherApp() {
           </NavLinkButton>
 
           {/* Admin link (only for admins) */}
-          {isAdmin && (
-            <NavLinkButton to="/admin" active={onAdmin}>
-              Admin
-            </NavLinkButton>
-          )}
+          {/* Admin link */}
+          <NavLinkButton to="/admin" active={onAdmin}>
+            Admin
+          </NavLinkButton>
         </nav>
       </div>
 
@@ -335,7 +334,6 @@ function TeacherApp() {
           isAuthenticated={isAuthenticated}
           user={user}
           logoutWithClear={logoutWithClear}
-          isAdmin={isAdmin}
         />
 
         <Routes>
@@ -441,7 +439,7 @@ function NavLinkButton({ to, active, children }) {
   );
 }
 
-function HeaderBar({ isAuthenticated, user, logoutWithClear, isAdmin }) {
+function HeaderBar({ isAuthenticated, user, logoutWithClear }) {
   return (
     <div
       style={{
@@ -466,11 +464,6 @@ function HeaderBar({ isAuthenticated, user, logoutWithClear, isAdmin }) {
           }}
         >
           <span style={{ opacity: 0.9 }}>{user?.email}</span>
-          {isAdmin && (
-            <Link to="/admin" style={{ ...ui.buttonGhost, textDecoration: "none", display: "inline-block" }}>
-              Admin
-            </Link>
-          )}
           <button
             onClick={logoutWithClear}
             style={ui.buttonGhost}
