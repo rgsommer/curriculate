@@ -912,9 +912,9 @@ function AdminPage({ isAdmin = false }) {
             marginTop: 10,
             padding: 12,
             borderRadius: 14,
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: "rgba(255,255,255,0.06)",
-            color: "rgba(226,232,240,0.9)",
+            border: \"1px solid rgba(255,255,255,0.14)\",
+            background: \"rgba(255,255,255,0.06)\",
+            color: \"rgba(226,232,240,0.9)\",
             fontWeight: 700,
           }}
         >
