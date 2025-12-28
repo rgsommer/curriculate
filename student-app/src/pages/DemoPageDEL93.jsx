@@ -1352,51 +1352,54 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
             </span>
 
             {SHOW_DEMO_ADMIN && (
-            <button
-              onClick={onRegeneratePool}
-              style={{
-                ...pill,
-                cursor: "pointer",
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(59,130,246,0.9)", // blue
-                color: "#fff",
-                fontWeight: 900,
-              }}
-              title="Regenerate demo pool (admin)"
-              type="button"
-            >
-              Regenerate
-            </button>
-
-            {showAdminKey && (
-              <input
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Admin code"
+            <>
+              <button
+                onClick={onRegeneratePool}
                 style={{
                   ...pill,
-                  padding: "7px 10px",
-                  width: 160,
-                  textAlign: "left",
-                  border: "1px solid rgba(148,163,184,0.55)",
-                  background: "rgba(15,23,42,0.65)",
+                  cursor: "pointer",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "rgba(59,130,246,0.9)", // blue
                   color: "#fff",
-                  outline: "none",
+                  fontWeight: 900,
                 }}
-              />
-            )}
-
-            <div style={{ minWidth: 220 }}>
-              <ProgressFillButton
-                progress={generating ? progress : 0}
-                disabled={generating}
-                onClick={startDemoGeneration}
+                title="Regenerate demo pool (admin)"
+                type="button"
               >
-                {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
-              </ProgressFillButton>
-              <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
+                Regenerate
+              </button>
+
+              {showAdminKey && (
+                <input
+                  value={adminKey}
+                  onChange={(e) => setAdminKey(e.target.value)}
+                  placeholder="Admin code"
+                  style={{
+                    ...pill,
+                    padding: "7px 10px",
+                    width: 160,
+                    textAlign: "left",
+                    border: "1px solid rgba(148,163,184,0.55)",
+                    background: "rgba(15,23,42,0.65)",
+                    color: "#fff",
+                    outline: "none",
+                  }}
+                />
+              )}
+
+              <div style={{ minWidth: 220 }}>
+                <ProgressFillButton
+                  progress={generating ? progress : 0}
+                  disabled={generating}
+                  onClick={startDemoGeneration}
+                >
+                  {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
+                </ProgressFillButton>
+                <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
+              </div>
+            </>
+          )}
             </div>
-            )}
           </div>
         </div>
       </header>
