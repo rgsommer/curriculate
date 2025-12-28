@@ -935,6 +935,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description: "Live team debate between two paired teams with timed speaking turns and rebuttals.\nStudent flow:\n- Teams choose from a list of AI-generated debate topics (first-come-first-served) then are paired.\n- 5-minute prep window.\n- Players speak in assigned roles (intro/definitions, arguments, rebuttals, conclusions depending on team size).\n- Device shows a clear \u201clistening\u201d indicator; recording auto-submits at max time.\nTiming rules:\n- Target per speaker: 1:45\u20132:15 (15s grace). Too short/too long receives a penalty.\nScoring: AI-scored per speaker + team score; winning team earns bonus.\nAI generation should produce:\n- topics (array of strings)\n- rolePlan (array per team member)\n- prepSeconds (number; default 300)\n- perSpeakerSeconds (number; default 135)\n- graceSeconds (number; default 15)\n- minSeconds (number; default 105)\n- rubric (object/string)\nInter-team: YES. Intra-team: YES.",
+      "Team debate format. Students prepare arguments, then speak in timed turns with rebuttals and a clear ‘for/against’ side. Curriculate pairs teams and assigns speaker roles; audio can be recorded and AI-scored for argument quality, evidence, and respectful discourse. Builds argumentation, critical thinking, and oral confidence.",
   }),
 
   [TASK_TYPES.AI_DEBATE_JUDGE]: metaBase({
