@@ -920,7 +920,8 @@ export const TASK_TYPE_META = {
     interTeamEnabled: true,
     intraTeamEnabled: false,
     description: "Pair-and-respond collaboration between two teams.\nStudent flow:\n1) Team A writes an initial response to a prompt.\n2) They then see Team B\u2019s response and write a thoughtful reply/extension (agree/disagree, add evidence, ask a question, or build on an idea).\nScoring: AI-scored with rubric for response quality + meaningful engagement in the reply. Bonus points can be awarded to the stronger initial response.\nAI generation should produce:\n- prompt (string)\n- rubric (object/string) describing quality criteria\n- minWords (number, optional)\n- bonusComparisonEnabled (boolean, optional; default true)\nInter-team: YES. Intra-team: NO.",
-}),
+      "Pair-and-respond collaboration. Students write an initial response to a prompt, then view another team’s response and write a thoughtful reply (agree/disagree with reasons, add evidence, ask a question, or extend an idea). AI-scored with a rubric for clarity, reasoning, and engagement. Builds accountable talk in writing, perspective-taking, synthesis, and peer feedback.",
+  }),
 
   [TASK_TYPES.LIVE_DEBATE]: metaBase({
     label: "Live Debate",
