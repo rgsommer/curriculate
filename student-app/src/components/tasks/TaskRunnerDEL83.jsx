@@ -1279,14 +1279,6 @@ export default function TaskRunner({
   const t = task || null;
   const type = t ? normalizeTaskType(t.taskType || t.type) : null;
 
-  // Derived team id for tasks that need it (media uploads, inter-team routing, etc.)
-  const derivedTeamId =
-    t?.teamId ||
-    playerTeam?.id ||
-    playerTeam?.teamId ||
-    playerTeam?.teamID ||
-    null;
-
   const handleTaskSubmit = (payload) => {
     let outgoing = payload;
     if (payload != null && typeof payload !== "object") {
@@ -1735,14 +1727,7 @@ case "multi_player_feedback":
 
     case TASK_TYPES.PHOTO:
       content = (
-        <PhotoTask
-          task={t}
-          onSubmit={handleTaskSubmit}
-          disabled={effectiveDisabled}
-          roomCode={roomCode}
-          teamId={derivedTeamId}
-          playerTeam={playerTeam}
-        />
+        <PhotoTask task={t} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
       );
       break;
 
@@ -1753,9 +1738,6 @@ case "multi_player_feedback":
           task={t}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
-          roomCode={roomCode}
-          teamId={derivedTeamId}
-          playerTeam={playerTeam}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
         />
@@ -1768,9 +1750,6 @@ case "multi_player_feedback":
           task={t}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
-          roomCode={roomCode}
-          teamId={derivedTeamId}
-          playerTeam={playerTeam}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
         />
@@ -1822,9 +1801,6 @@ case "multi_player_feedback":
           task={t}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
-          roomCode={roomCode}
-          teamId={derivedTeamId}
-          playerTeam={playerTeam}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
         />
@@ -1837,9 +1813,6 @@ case "multi_player_feedback":
           task={t}
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
-          roomCode={roomCode}
-          teamId={derivedTeamId}
-          playerTeam={playerTeam}
         />
       );
       break;
