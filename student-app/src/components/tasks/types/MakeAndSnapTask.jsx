@@ -10,6 +10,7 @@ export default function MakeAndSnapTask({
 }) {
   const [note, setNote] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const fileRef = useRef(null);
 
@@ -18,6 +19,48 @@ export default function MakeAndSnapTask({
     "Build, arrange, or create the object as instructed. Then take a photo of what you made.";
 
   const uiDisabled = disabled || submitted;
+
+
+  const notePrompt =
+    task?.config?.notePrompt ||
+    task?.notePrompt ||
+    "Write 1–2 sentences describing what you made and why it matches the prompt.";
+
+  const roomCode = task?.roomCode || task?.config?.roomCode || null;
+  const teamId = task?.teamId || task?.config?.teamId || null;
+
+  const presignAndUploadToS3 = async ({ blob, contentType, purpose }) => {
+    if (!roomCode || !teamId) throw new Error("Missing roomCode/teamId for S3 upload.");
+
+    const presignResp = await fetch("/api/media/presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roomCode,
+        teamId,
+        taskType: "make-and-snap",
+        contentType: contentType || blob.type || "application/octet-stream",
+        purpose: purpose || "image",
+        fileName: `make-and-snap-${Date.now()}`,
+      }),
+    });
+
+    const presignJson = await presignResp.json().catch(() => null);
+    if (!presignResp.ok || !presignJson?.uploadUrl || !presignJson?.key) {
+      throw new Error(presignJson?.error || "Presign failed.");
+    }
+
+    const putResp = await fetch(presignJson.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType || blob.type || "application/octet-stream" },
+      body: blob,
+    });
+
+    if (!putResp.ok) throw new Error("Upload to S3 failed.");
+
+    return { s3Key: presignJson.key, signedGetUrl: presignJson.signedGetUrl || null };
+  };
+
 
   const buildAnswerText = (noteValue, hasPhoto) => {
     const parts = [];
@@ -44,6 +87,8 @@ export default function MakeAndSnapTask({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setImageFile(file);
+
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result);
@@ -57,11 +102,6 @@ export default function MakeAndSnapTask({
 
     if (!imagePreview) {
       alert("Please take a photo of what you made before submitting.");
-      return;
-    }
-
-    if (!note.trim()) {
-      alert("Please write your note before submitting.");
       return;
     }
 
@@ -118,7 +158,7 @@ export default function MakeAndSnapTask({
       <button
         type="button"
         onClick={handlePickPhoto}
-        disabled={uiDisabled || !imagePreview || !note.trim()}
+        disabled={uiDisabled}
         style={{
           display: "block",
           width: "100%",
@@ -174,11 +214,8 @@ export default function MakeAndSnapTask({
           marginBottom: 4,
         }}
       >
-        Briefly describe what you made (optional):
+        Describe what you made (required):
       </label>
-      <div style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: 6, color: "#e2e8f0" }}>
-        {notePrompt}
-      </div>
       <textarea
         value={note}
         onChange={handleNoteChange}
@@ -197,16 +234,10 @@ export default function MakeAndSnapTask({
         }}
       />
 
-      {(!note.trim() || !imagePreview) && !uiDisabled ? (
-        <div style={{ fontSize: "0.85rem", color: "#94a3b8", marginBottom: 10 }}>
-          {!imagePreview ? "Add a photo first." : "Add your note to unlock Submit."}
-        </div>
-      ) : null}
-
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={uiDisabled || !imagePreview}
+        disabled={uiDisabled || !imagePreview || !note.trim()}
         style={{
           display: "block",
           width: "100%",

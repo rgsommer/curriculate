@@ -564,10 +564,12 @@ export async function regenerateSingleTask({
   vocabularyLines,
   specialConsiderations,
   previousTask,
+  temperature,
 }) {
   const sys = `
 You generate exactly ONE classroom task for Curriculate.
 Return ONLY valid JSON for a single task object (no markdown, no backticks, no extra text).
+You MUST include a field "taskType" and it MUST be exactly: "${allowedType}".
 `.trim();
 
   const prev = JSON.stringify(previousTask || {}, null, 2);
@@ -630,7 +632,7 @@ ${prev}
 
   const completion = await client.chat.completions.create({
     model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
-    temperature: 0.4,
+    temperature: (typeof temperature === "number" ? temperature : 0.4),
     max_tokens: 900,
     messages: [
       { role: "system", content: sys },
@@ -639,7 +641,30 @@ ${prev}
   });
 
   const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
-  return JSON.parse(raw);
+
+  // Be resilient to occasional code fences or preface text.
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+
+  let obj = null;
+  try {
+    obj = JSON.parse(cleaned);
+  } catch (e) {
+    // Try to salvage the first JSON object in the text.
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (m) obj = JSON.parse(m[0]);
+    else throw e;
+  }
+
+  // Enforce the requested type for per-type regeneration reliability.
+  if (!obj || typeof obj !== "object") {
+    throw new Error("AI did not return a JSON object task.");
+  }
+  obj.taskType = allowedType;
+
+  return obj;
 }
 
 /**
@@ -730,7 +755,7 @@ export const generateAiTaskset = async (req, res) => {
       : null;
 
     // If demo requested explicit types, generate one per type (and set count accordingly).
-    if (isDemoRequest && requestedTypes?.length) {
+    if ((isDemoRequest || uniqueTaskTypes === true || req.body?.onePerType === true) && requestedTypes?.length) {
       safeCount = clampInt(requestedTypes.length, 4, 40, requestedTypes.length);
       typePool = requestedTypes.slice(); // force exact coverage for demo
     }
@@ -901,7 +926,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
     let aiTasks = null;
 
-    if (isDemoRequest && requestedTypes?.length) {
+    if ((isDemoRequest || uniqueTaskTypes === true || req.body?.onePerType === true) && requestedTypes?.length) {
       // Generate EXACTLY one task per requested type (most reliable for Demo)
       const demoTasks = [];
       for (const allowedType of requestedTypes) {
@@ -919,6 +944,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
             specialConsiderations: [specialConsiderations, customNotes].filter(Boolean).join("\n\n"),
             previousTask: null,
           });
+          if (!t || typeof t !== "object") throw new Error("empty task");
           demoTasks.push(t);
         } catch (e) {
           console.error("Demo per-type generation failed for", allowedType, e);
@@ -939,7 +965,7 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
     } else {
       const completion = await client.chat.completions.create({
       model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
-      temperature: 0.4,
+      temperature: (typeof temperature === "number" ? temperature : 0.4),
       max_tokens: 2600,
       messages: [
         { role: "system", content: systemPrompt },

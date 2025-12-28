@@ -51,7 +51,7 @@ export const retryMustHave = {
   [TASK_TYPES.NARRATION_SYNTHESIZE]:
     "NARRATION_SYNTHESIZE must include config.playerCount (2–8), config.prompts (array length == playerCount) where each element is { id, concept, prompt }. Each prompt must be an explainable concept or process (not a single word). Optional config.perTurnSeconds (0 disables). Optional config.ratingScale: { min, max, label }. Intra-team only.",
   [TASK_TYPES.ROLE_PLAY_DECK]:
-    "ROLE_PLAY_DECK must include config.playerCount (2–6), config.playerNames (array length playerCount), config.mode (mystery|classic or allow choice), config.roles (array length playerCount) each with { name, role, characteristics: [3–6 morally appropriate traits] }, and config.scenario (subject/grade appropriate, 2–5 sentences). Intra-team only; do NOT include inter-team gameplay."
+    "ROLE_PLAY_DECK must include config.playerCount (2–6), config.playerNames (array length playerCount), config.mode (mystery|classic or allow choice), config.roles (array length playerCount) each with { name, role, characteristics: [3–6 morally appropriate traits] }, and config.scenario (subject/grade appropriate, 2–5 sentences). Intra-team only; do NOT include inter-team gameplay.",
 
 
   [TASK_TYPES.MAD_DASH_SEQUENCE]:
@@ -2590,22 +2590,6 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
             }
           }
 
-          if (allowedType === TASK_TYPES.SEQUENCE) {
-            const cfg =
-              regenerated?.config && typeof regenerated.config === "object"
-                ? regenerated.config
-                : {};
-            const rawItems = Array.isArray(cfg.items) ? cfg.items : [];
-            const fixedItems = rawItems
-              .map((it, idx) => {
-                if (typeof it === "string") return { text: it.trim() };
-                if (it && typeof it === "object") {
-                  const text =
-                    it.text || it.label || it.name || it.prompt || `Step ${idx + 1}`;
-                  return { text: String(text).trim() };
-                }
-
-
           // ---- FAKE OUT ----
           if (allowedType === TASK_TYPES.FAKE_OUT) {
             const cfg =
@@ -2660,7 +2644,6 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
                 },
                 aiScoringRequired: t.aiScoringRequired ?? false,
               };
-              break;
             }
 
             // invalid fake-out; continue retry loop
@@ -3192,8 +3175,5 @@ if (allowedType === TASK_TYPES.JEOPARDY) {
     });
   }
 };
-
-export { normalizeSelectedType, retryMustHave, regenerateSingleTask };
-
 
 export default { generateAiTaskset };
