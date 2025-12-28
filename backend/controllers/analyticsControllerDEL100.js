@@ -43,7 +43,6 @@ export async function listSessions(req, res) {
         classAverageScore: sa.classAverageScore,
         classAverageAccuracy: sa.classAverageAccuracy,
         classAverageEngagement: sa.classAverageEngagement ?? null,
-        noiseSummary: sa.noiseSummary ?? null,
       };
     });
 
@@ -92,10 +91,8 @@ export async function getSessionDetails(req, res) {
         classAverageScore: sa.classAverageScore,
         classAverageAccuracy: sa.classAverageAccuracy,
         classAverageEngagement: sa.classAverageEngagement ?? null,
-        noiseSummary: sa.noiseSummary ?? null,
         tasks: sa.tasks || [],
         teams: sa.teams || [],
-        noiseSummary: sa.noiseSummary ?? null,
       },
       studentAnalytics: studentAnalytics.map((s) => ({
         _id: s._id,

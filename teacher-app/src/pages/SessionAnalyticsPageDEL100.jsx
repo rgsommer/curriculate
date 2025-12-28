@@ -41,65 +41,6 @@ function typeBadge(typeRaw) {
   );
 }
 
-
-function NoiseSummaryCard({ noiseSummary }) {
-  const ns = noiseSummary && typeof noiseSummary === "object" ? noiseSummary : null;
-  if (!ns) return null;
-
-  const enabled = !!ns.enabled;
-  const thr = Number.isFinite(Number(ns.threshold)) ? Number(ns.threshold) : 0;
-  const avg = Number.isFinite(Number(ns.avgLevel)) ? Number(ns.avgLevel) : null;
-  const peak = Number.isFinite(Number(ns.peakLevel)) ? Number(ns.peakLevel) : null;
-  const pctOver = Number.isFinite(Number(ns.pctOverThreshold)) ? Number(ns.pctOverThreshold) : null;
-  const samplesCount = Number.isFinite(Number(ns.samplesCount)) ? Number(ns.samplesCount) : null;
-
-  const hasAny = enabled || thr > 0 || avg != null || peak != null || pctOver != null || (samplesCount != null && samplesCount > 0);
-  if (!hasAny) return null;
-
-  const mode = !enabled ? "Off" : thr < 40 ? "Strict" : thr < 70 ? "Normal" : "Lenient";
-  const gaugeVal = avg != null ? avg : peak != null ? peak : 0;
-
-  return (
-    <section className="border rounded-lg bg-white p-3 sm:p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm sm:text-base font-semibold">Noise &amp; Focus</div>
-          <div className="text-[11px] sm:text-xs text-gray-600">
-            Mode: <strong>{mode}</strong>{enabled ? "" : " (disabled)"} {thr > 0 ? ` • Threshold ${Math.round(thr)}/100` : ""}
-          </div>
-        </div>
-        <div className="text-right text-[11px] sm:text-xs text-gray-700">
-          {avg != null && <div>Avg: {Math.round(avg)}/100</div>}
-          {peak != null && <div>Peak: {Math.round(peak)}/100</div>}
-          {pctOver != null && thr > 0 && <div>Over thr: {pctOver}%</div>}
-        </div>
-      </div>
-
-      <div className="mt-3">
-        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-          <div
-            className="h-2 bg-sky-400"
-            style={{ width: `${Math.max(0, Math.min(100, gaugeVal))}%` }}
-          />
-        </div>
-        {enabled && thr > 0 && (
-          <div className="relative h-0">
-            <div
-              className="absolute -top-2 w-[2px] h-6 bg-red-500/80"
-              style={{ left: `${Math.max(0, Math.min(100, thr))}%` }}
-            />
-          </div>
-        )}
-        {samplesCount != null && (
-          <div className="mt-2 text-[11px] sm:text-xs text-gray-500">
-            Samples: {samplesCount}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 export default function SessionAnalyticsPage() {
   const { id } = useParams();
   const [session, setSession] = useState(null);
@@ -148,9 +89,6 @@ export default function SessionAnalyticsPage() {
             &nbsp;|&nbsp;
             <strong>Accuracy:</strong> {session.classAverageAccuracy != null ? `${session.classAverageAccuracy}%` : "—"}
           </p>
-          <div className="mt-3">
-            <NoiseSummaryCard noiseSummary={session.noiseSummary || session.noise} />
-          </div>
         </div>
       </div>
 

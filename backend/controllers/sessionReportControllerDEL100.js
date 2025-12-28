@@ -67,118 +67,6 @@ function inferAttachmentType(taskType) {
   return "file";
 }
 
-function normalizeNoiseSamples(raw) {
-  const arr = safeArr(raw);
-  const out = [];
-  for (const s of arr) {
-    if (typeof s === "number" && Number.isFinite(s)) {
-      out.push({ t: null, level: s });
-      continue;
-    }
-    if (s && typeof s === "object") {
-      const level = Number(s.level ?? s.noise ?? s.value ?? s.lvl);
-      if (!Number.isFinite(level)) continue;
-      const tRaw = s.t ?? s.ts ?? s.time ?? s.at ?? s.timestamp;
-      const t = Number.isFinite(Number(tRaw)) ? Number(tRaw) : tRaw ? new Date(tRaw).getTime() : null;
-      out.push({ t: Number.isFinite(t) ? t : null, level });
-    }
-  }
-  return out.slice(0, 20000);
-}
-
-function computeNoiseSummary({ room, transcript, noiseSamples, noiseConfig }) {
-  const cfg = noiseConfig && typeof noiseConfig === "object" ? noiseConfig : null;
-
-  // Candidates (best-effort)
-  const samples =
-    normalizeNoiseSamples(noiseSamples) ||
-    normalizeNoiseSamples(room?.noiseHistory) ||
-    normalizeNoiseSamples(room?.noiseSamples) ||
-    normalizeNoiseSamples(transcript?.noiseHistory) ||
-    normalizeNoiseSamples(transcript?.noiseSamples) ||
-    [];
-
-  const enabled =
-    typeof cfg?.enabled === "boolean"
-      ? cfg.enabled
-      : typeof room?.noise?.enabled === "boolean"
-      ? room.noise.enabled
-      : typeof room?.noiseConfig?.enabled === "boolean"
-      ? room.noiseConfig.enabled
-      : false;
-
-  const threshold =
-    Number.isFinite(Number(cfg?.threshold))
-      ? Number(cfg.threshold)
-      : Number.isFinite(Number(room?.noise?.threshold))
-      ? Number(room.noise.threshold)
-      : Number.isFinite(Number(room?.noiseConfig?.threshold))
-      ? Number(room.noiseConfig.threshold)
-      : 0;
-
-  const brightness =
-    Number.isFinite(Number(cfg?.brightness))
-      ? Number(cfg.brightness)
-      : Number.isFinite(Number(room?.noise?.brightness))
-      ? Number(room.noise.brightness)
-      : Number.isFinite(Number(room?.noiseConfig?.brightness))
-      ? Number(room.noiseConfig.brightness)
-      : 1;
-
-  if (!samples.length && !enabled && !threshold) return null;
-
-  const levels = samples.map((s) => Number(s.level)).filter((n) => Number.isFinite(n));
-  const samplesCount = levels.length;
-
-  let avgLevel = null;
-  let peakLevel = null;
-  let pctOverThreshold = null;
-  let durationSeconds = null;
-
-  if (samplesCount) {
-    const sum = levels.reduce((a, b) => a + b, 0);
-    avgLevel = Math.round((sum / samplesCount) * 10) / 10;
-    peakLevel = Math.round(Math.max(...levels) * 10) / 10;
-
-    if (threshold > 0) {
-      const over = levels.filter((n) => n >= threshold).length;
-      pctOverThreshold = Math.round((over / samplesCount) * 1000) / 10; // 0.1%
-    }
-
-    const ts = samples.map((s) => s.t).filter((n) => Number.isFinite(n));
-    if (ts.length >= 2) {
-      const minT = Math.min(...ts);
-      const maxT = Math.max(...ts);
-      durationSeconds = Math.max(0, Math.round((maxT - minT) / 1000));
-    }
-  }
-
-  const source =
-    noiseSamples
-      ? "noiseSamples:param"
-      : room?.noiseHistory
-      ? "room.noiseHistory"
-      : room?.noiseSamples
-      ? "room.noiseSamples"
-      : transcript?.noiseHistory
-      ? "transcript.noiseHistory"
-      : transcript?.noiseSamples
-      ? "transcript.noiseSamples"
-      : "";
-
-  return {
-    enabled: !!enabled,
-    threshold: Number.isFinite(Number(threshold)) ? Number(threshold) : 0,
-    brightness: Number.isFinite(Number(brightness)) ? Number(brightness) : 1,
-    samplesCount,
-    avgLevel,
-    peakLevel,
-    pctOverThreshold,
-    durationSeconds,
-    source,
-  };
-}
-
 // Basic engagement heuristic: attempted tasks / total tasks.
 function computeEngagement(attemptedTasks, totalTasks) {
   if (!totalTasks || totalTasks <= 0) return 0;
@@ -308,10 +196,6 @@ export async function buildSessionReportSnapshot({
   mediaSubmissions,
   generatedAt,
 
-  // NEW (optional): noise sampling / config (class-level)
-  noiseSamples,
-  noiseConfig,
-
   // NEW (optional): narrative generation options
   narrativeOptions,
 }) {
@@ -408,10 +292,6 @@ export async function buildSessionReportSnapshot({
   const classAverageEngagement =
     teams.length > 0 ? Math.round(teams.reduce((s, t) => s + (t.engagementScore || 0), 0) / teams.length) : null;
 
-
-  // Noise summary (class-level; best-effort)
-  const noiseSummary = computeNoiseSummary({ room, transcript, noiseSamples, noiseConfig });
-
   // Attachments: from mediaSubmissions + enrich with task info if available
   const attachments = safeArr(mediaSubmissions)
     .map((m) => {
@@ -502,8 +382,6 @@ const canIncludeStudentDetail = !!includeIndividualReports && planAllowsStudentD
 
     classAverageScore,
     classAverageEngagement,
-
-    noiseSummary,
 
     teams,
     attachments,

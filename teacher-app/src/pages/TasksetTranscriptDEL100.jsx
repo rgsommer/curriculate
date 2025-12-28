@@ -1038,36 +1038,6 @@ function extractAnswerText(sub, task) {
  *       submissions: [...]
  *     }
  */
-
-function NoiseSummaryInline({ noiseSummary }) {
-  const ns = noiseSummary && typeof noiseSummary === "object" ? noiseSummary : null;
-  if (!ns) return null;
-  const enabled = !!ns.enabled;
-  const thr = Number.isFinite(Number(ns.threshold)) ? Number(ns.threshold) : 0;
-  const avg = Number.isFinite(Number(ns.avgLevel)) ? Number(ns.avgLevel) : null;
-  const peak = Number.isFinite(Number(ns.peakLevel)) ? Number(ns.peakLevel) : null;
-  const pctOver = Number.isFinite(Number(ns.pctOverThreshold)) ? Number(ns.pctOverThreshold) : null;
-  const hasAny = enabled || thr > 0 || avg != null || peak != null || pctOver != null;
-  if (!hasAny) return null;
-
-  const mode = !enabled ? "Off" : thr < 40 ? "Strict" : thr < 70 ? "Normal" : "Lenient";
-  return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        background: "white",
-        borderRadius: 12,
-        padding: 12,
-      }}
-    >
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>Noise &amp; Focus</div>
-      <div style={{ fontSize: "0.9rem", color: "#374151" }}>
-        Mode: <strong>{mode}</strong>{thr > 0 ? ` • Threshold ${Math.round(thr)}/100` : ""}{avg != null ? ` • Avg ${Math.round(avg)}/100` : ""}{peak != null ? ` • Peak ${Math.round(peak)}/100` : ""}{pctOver != null && thr > 0 ? ` • Over ${pctOver}%` : ""}
-      </div>
-    </div>
-  );
-}
-
 export default function TasksetTranscript({ transcript }) {
   if (!transcript) {
     return <div style={{ padding: 16 }}>No transcript loaded.</div>;
@@ -1104,8 +1074,6 @@ export default function TasksetTranscript({ transcript }) {
           Task set: <strong>{tasksetName}</strong>
         </p>
       </header>
-
-      <NoiseSummaryInline noiseSummary={transcript.noiseSummary || transcript.summary?.noiseSummary || transcript.noise} />
 
       {(tasks || []).map((task) => {
         const idx = task.index ?? 0;

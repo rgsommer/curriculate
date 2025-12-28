@@ -20,23 +20,6 @@ const TeamSummarySchema = new Schema({
   avgLatencyMs: Number,
 });
 
-const NoiseSummarySchema = new Schema(
-  {
-    enabled: { type: Boolean, default: false },
-    threshold: { type: Number, default: 0 }, // 0–100
-    brightness: { type: Number, default: 1 },
-
-    // Aggregates (best-effort; depends on what the session stored)
-    samplesCount: { type: Number, default: 0 },
-    avgLevel: { type: Number, default: null }, // 0–100
-    peakLevel: { type: Number, default: null }, // 0–100
-    pctOverThreshold: { type: Number, default: null }, // 0–100
-    durationSeconds: { type: Number, default: null },
-    source: { type: String, default: "" }, // e.g., "room.noiseHistory"
-  },
-  { _id: false }
-);
-
 const SessionAnalyticsSchema = new Schema(
   {
     sessionId: { type: Schema.Types.ObjectId, ref: "Session", required: true },
@@ -45,9 +28,6 @@ const SessionAnalyticsSchema = new Schema(
 
     classAverageScore: Number,
     classAverageAccuracy: Number,
-    classAverageEngagement: Number,
-
-    noiseSummary: { type: NoiseSummarySchema, default: () => ({}) },
 
     tasks: [TaskSummarySchema],
     teams: [TeamSummarySchema],

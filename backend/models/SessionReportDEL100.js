@@ -91,9 +91,6 @@ const SessionReportSchema = new mongoose.Schema(
     classAverageScore: { type: Number, default: null },
     classAverageEngagement: { type: Number, default: null },
 
-    // Noise sensor summary (class-level; not per-student)
-    noiseSummary: { type: mongoose.Schema.Types.Mixed, default: null },
-
     // Details
     teams: { type: [TeamSchema], default: [] },
     attachments: { type: [AttachmentSchema], default: [] },

@@ -477,80 +477,6 @@ function formatDate(d) {
       doc.x = x;
     }
   }
-
-  // ---------- Noise Summary ----------
-  function renderNoiseSummarySection() {
-    const ns =
-      report.noiseSummary ||
-      report.summary?.noiseSummary ||
-      report.summary?.noise ||
-      null;
-
-    if (!ns || typeof ns !== "object") return;
-
-    const enabled = !!ns.enabled;
-    const threshold = Number.isFinite(Number(ns.threshold)) ? Number(ns.threshold) : 0;
-    const avg = Number.isFinite(Number(ns.avgLevel)) ? Number(ns.avgLevel) : null;
-    const peak = Number.isFinite(Number(ns.peakLevel)) ? Number(ns.peakLevel) : null;
-    const pctOver = Number.isFinite(Number(ns.pctOverThreshold)) ? Number(ns.pctOverThreshold) : null;
-    const samplesCount = Number.isFinite(Number(ns.samplesCount)) ? Number(ns.samplesCount) : null;
-    const durationSeconds = Number.isFinite(Number(ns.durationSeconds)) ? Number(ns.durationSeconds) : null;
-
-    const hasAny =
-      enabled ||
-      threshold > 0 ||
-      avg != null ||
-      peak != null ||
-      pctOver != null ||
-      (samplesCount != null && samplesCount > 0);
-
-    if (!hasAny) return;
-
-    sectionTitle("Noise & Focus");
-
-    const mode =
-      !enabled ? "Off" : threshold < 40 ? "Strict" : threshold < 70 ? "Normal" : "Lenient";
-
-    doc.font("Helvetica").fontSize(10).fillColor("#111111");
-    doc.text(`Mode: ${mode}${enabled ? "" : " (disabled during session)"}`);
-
-    if (threshold > 0) doc.text(`Threshold: ${Math.round(threshold)} / 100`);
-    if (avg != null) doc.text(`Average level: ${avg} / 100`);
-    if (peak != null) doc.text(`Peak level: ${peak} / 100`);
-    if (pctOver != null && threshold > 0) doc.text(`Time above threshold: ${pctOver}%`);
-    if (durationSeconds != null && durationSeconds > 0) {
-      const mins = Math.round((durationSeconds / 60) * 10) / 10;
-      doc.text(`Measured duration: ${mins} min`);
-    }
-
-    // Simple gauge bar (uses avg or latest-ish)
-    const gaugeVal =
-      avg != null ? avg : Number.isFinite(Number(ns.level)) ? Number(ns.level) : null;
-
-    if (gaugeVal != null) {
-      const x = 54;
-      const w = pageWidth - 108;
-      const h = 10;
-      const y = doc.y + 8;
-
-      doc.save();
-      doc.roundedRect(x, y, w, h, 6).fillColor("#f1f5f9").fill();
-      const pct = Math.max(0, Math.min(100, gaugeVal));
-      doc.roundedRect(x, y, (w * pct) / 100, h, 6).fillColor("#60a5fa").fill();
-
-      if (enabled && threshold > 0) {
-        const tx = x + (w * Math.max(0, Math.min(100, threshold))) / 100;
-        doc.moveTo(tx, y - 2).lineTo(tx, y + h + 2).lineWidth(1).strokeColor("#ef4444").stroke();
-      }
-      doc.restore();
-
-      doc.moveDown(1.2);
-    } else {
-      doc.moveDown(0.6);
-    }
-  }
-
-
 // ---------- Page 1: Overview ----------
   sectionTitle("Session Overview");
 
@@ -581,10 +507,7 @@ function formatDate(d) {
 
   if (report.classAverageScore != null) keyValue("Class Average Score:", `${report.classAverageScore}%`);
 
-  doc.moveDown(0.6);
-  renderNoiseSummarySection();
-
-  doc.moveDown(0.2);
+  doc.moveDown(0.8);
 
   sectionTitle("Teacher Summary");
   const teacherSummary =

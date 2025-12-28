@@ -35,7 +35,6 @@ import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
-import { recordNoiseSample, computeNoiseSummary } from "./utils/noiseTelemetry.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
@@ -65,9 +64,6 @@ const SessionReport = mongoose.models.SessionReport || mongoose.model(
 
       // Attachments metadata (photos/recordings that were submitted)
       mediaSubmissions: { type: Array, default: [] }, // [{teamId, teamName, taskIndex, taskType, label, url, submittedAt}]
-      // Classroom noise telemetry (class-level, not per-student)
-      noiseSummary: { type: mongoose.Schema.Types.Mixed, default: null },
-      noiseSamples: { type: Array, default: [] }, // [{t, level, brightness, threshold}]
       // Optional: if your emailer generates a PDF and returns a storage url, store it here
       pdfUrl: { type: String, default: "" },
 
@@ -1264,10 +1260,6 @@ function updateNoiseDerivedState(code, room) {
   });
 
   // StudentApp listens to this for dimming + live meter.
-  // Record a class-level noise sample for reporting (capped; no-op if disabled)
-  try {
-    recordNoiseSample(room, { level, brightness, enabled, threshold });
-  } catch (e) { /* telemetry must never break session */ }
   io.to(code).emit("noise:update", {
     roomCode: code,
     level,
@@ -4510,8 +4502,6 @@ socket.on(
           parentNote,
           summary,
           transcript,
-          noiseSummary: computeNoiseSummary(room?.noiseSamples || [], room?.noiseControl || {}),
-          noiseSamples: Array.isArray(room?.noiseSamples) ? room.noiseSamples : [],
           perParticipant,
           mediaSubmissions,
           assessmentCategories: Array.isArray(assessmentCategories) ? assessmentCategories : [],

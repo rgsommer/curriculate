@@ -5,26 +5,6 @@ import api from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { socket } from "../socket";
 
-
-function formatNoiseSummary(ns) {
-  if (!ns || typeof ns !== "object") return "–";
-  const enabled = !!ns.enabled;
-  const thr = Number.isFinite(Number(ns.threshold)) ? Number(ns.threshold) : 0;
-  const avg = Number.isFinite(Number(ns.avgLevel)) ? Number(ns.avgLevel) : null;
-  const peak = Number.isFinite(Number(ns.peakLevel)) ? Number(ns.peakLevel) : null;
-
-  const hasAny = enabled || thr > 0 || avg != null || peak != null;
-  if (!hasAny) return "–";
-
-  const parts = [];
-  if (avg != null) parts.push(`avg ${Math.round(avg)}`);
-  if (peak != null) parts.push(`peak ${Math.round(peak)}`);
-  if (thr > 0 && enabled) parts.push(`thr ${Math.round(thr)}`);
-
-  const label = parts.join(" • ") || (enabled ? "On" : "Off");
-  return label;
-}
-
 export default function AnalyticsOverview() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -196,7 +176,6 @@ export default function AnalyticsOverview() {
                       ? `${s.classAverageEngagement}%`
                       : "–"}
                   </div>
-                  <div>Noise: {formatNoiseSummary(s.noiseSummary)}</div>
                 </div>
               </div>
             </Link>
