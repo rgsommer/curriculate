@@ -728,32 +728,6 @@ function summarizeMysteryClues(sub, task) {
   };
 }
 
-
-function summarizeTreasureRunner(sub, task) {
-  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : null;
-  const raw = ap || sub?.answer || sub?.answerText || sub?.response || null;
-  let obj = null;
-  if (raw && typeof raw === "object") obj = raw;
-  if (!obj && typeof raw === "string") {
-    const s = raw.trim();
-    if (s.startsWith("{") && s.endsWith("}")) {
-      try { obj = JSON.parse(s); } catch {}
-    }
-  }
-
-  const points = Number.isFinite(Number(obj?.pointsEarned)) ? Number(obj.pointsEarned) : null;
-  const coins = Number.isFinite(Number(obj?.coins ?? obj?.collectibles)) ? Number(obj.coins ?? obj.collectibles) : null;
-  const boosts = Number.isFinite(Number(obj?.boosts)) ? Number(obj.boosts) : null;
-  const hits = Number.isFinite(Number(obj?.hits)) ? Number(obj.hits) : null;
-  const dur = Number.isFinite(Number(obj?.durationSeconds)) ? Number(obj.durationSeconds) : null;
-  const speed = Number.isFinite(Number(obj?.finalSpeed)) ? Number(obj.finalSpeed) : null;
-
-  const hasAny = points != null || coins != null || boosts != null || hits != null || dur != null || speed != null;
-  if (!hasAny) return null;
-
-  return { points, coins, boosts, hits, durationSeconds: dur, finalSpeed: speed, controls: obj?.controls || null };
-}
-
 function summarizeDrawMimeOrSpeedDraw(sub, task) {
   const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
   const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
@@ -1064,6 +1038,36 @@ function extractAnswerText(sub, task) {
  *       submissions: [...]
  *     }
  */
+
+function NoiseSummaryInline({ noiseSummary }) {
+  const ns = noiseSummary && typeof noiseSummary === "object" ? noiseSummary : null;
+  if (!ns) return null;
+  const enabled = !!ns.enabled;
+  const thr = Number.isFinite(Number(ns.threshold)) ? Number(ns.threshold) : 0;
+  const avg = Number.isFinite(Number(ns.avgLevel)) ? Number(ns.avgLevel) : null;
+  const peak = Number.isFinite(Number(ns.peakLevel)) ? Number(ns.peakLevel) : null;
+  const pctOver = Number.isFinite(Number(ns.pctOverThreshold)) ? Number(ns.pctOverThreshold) : null;
+  const hasAny = enabled || thr > 0 || avg != null || peak != null || pctOver != null;
+  if (!hasAny) return null;
+
+  const mode = !enabled ? "Off" : thr < 40 ? "Strict" : thr < 70 ? "Normal" : "Lenient";
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        background: "white",
+        borderRadius: 12,
+        padding: 12,
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>Noise &amp; Focus</div>
+      <div style={{ fontSize: "0.9rem", color: "#374151" }}>
+        Mode: <strong>{mode}</strong>{thr > 0 ? ` • Threshold ${Math.round(thr)}/100` : ""}{avg != null ? ` • Avg ${Math.round(avg)}/100` : ""}{peak != null ? ` • Peak ${Math.round(peak)}/100` : ""}{pctOver != null && thr > 0 ? ` • Over ${pctOver}%` : ""}
+      </div>
+    </div>
+  );
+}
+
 export default function TasksetTranscript({ transcript }) {
   if (!transcript) {
     return <div style={{ padding: 16 }}>No transcript loaded.</div>;
@@ -1100,6 +1104,8 @@ export default function TasksetTranscript({ transcript }) {
           Task set: <strong>{tasksetName}</strong>
         </p>
       </header>
+
+      <NoiseSummaryInline noiseSummary={transcript.noiseSummary || transcript.summary?.noiseSummary || transcript.noise} />
 
       {(tasks || []).map((task) => {
         const idx = task.index ?? 0;
@@ -1438,77 +1444,6 @@ export default function TasksetTranscript({ transcript }) {
                           </div>
                         );
                       })()}
-
-                      {/* Treasure Runner summary (score + pickups) */}
-                      {(() => {
-                        const isTreasure =
-                          tt === "treasure-runner" ||
-                          tt === "treasurerunner" ||
-                          tt === "treasure_runner";
-                        if (!isTreasure) return null;
-
-                        const summary = summarizeTreasureRunner(sub, task);
-                        if (!summary) return null;
-
-                        const chips = [];
-                        if (summary.points != null) chips.push(`Score: ${summary.points}`);
-                        if (summary.coins != null) chips.push(`Coins: ${summary.coins}`);
-                        if (summary.boosts != null) chips.push(`Boosts: ${summary.boosts}`);
-                        if (summary.hits != null) chips.push(`Hits: ${summary.hits}`);
-                        if (summary.durationSeconds != null) chips.push(`Duration: ${summary.durationSeconds}s`);
-                        if (summary.finalSpeed != null) chips.push(`Final speed: ${summary.finalSpeed}`);
-
-                        const tilt = summary.controls?.tiltEnabled;
-
-                        return (
-                          <div
-                            style={{
-                              marginTop: 6,
-                              padding: 10,
-                              borderRadius: 12,
-                              border: "1px solid rgba(59,130,246,0.26)",
-                              background: "rgba(59,130,246,0.06)",
-                            }}
-                          >
-                            <div style={{ fontWeight: 800, marginBottom: 6 }}>🏃 Treasure Runner</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                              {chips.map((c) => (
-                                <span
-                                  key={c}
-                                  style={{
-                                    padding: "4px 10px",
-                                    borderRadius: 999,
-                                    border: "1px solid rgba(0,0,0,0.10)",
-                                    background: "rgba(255,255,255,0.85)",
-                                    fontSize: "0.82rem",
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  {c}
-                                </span>
-                              ))}
-                              {typeof tilt === "boolean" && (
-                                <span
-                                  style={{
-                                    padding: "4px 10px",
-                                    borderRadius: 999,
-                                    border: "1px solid rgba(0,0,0,0.10)",
-                                    background: tilt ? "rgba(34,197,94,0.12)" : "rgba(148,163,184,0.18)",
-                                    fontSize: "0.82rem",
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  Tilt: {tilt ? "On" : "Off"}
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ marginTop: 6, fontSize: "0.82rem", color: "#334155" }}>
-                              Arcade engagement: quick attention, persistence, and momentum. (This is typically best reported as a compact score snapshot, not detailed play-by-play.)
-                            </div>
-                          </div>
-                        );
-                      })()}
-
 
                       {/* Draw/Mime + Speed Draw summary */}
                       {(() => {

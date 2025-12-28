@@ -494,45 +494,20 @@ export default function TreasureRunnerTask({
       setRunning(false);
       const s = stateRef.current;
       const finalPoints = scoreRef.current;
-
-      // Compact summary payload for reporting (avoid huge state blobs in transcripts)
-      const summary = {
-        taskType: "treasure-runner",
-        pointsEarned: finalPoints,
-        coins: Number(s.collectibles) || 0,
-        boosts: Number(s.boosts) || 0,
-        hits: Number(s.hits) || 0,
-        durationSeconds: 60,
-        finalSpeed: Math.round(Number(s.vx) || 0),
-        controls: {
-          tapJump: true,
-          swipeDownDrop: true,
-          tiltEnabled: permission === "granted",
-        },
-      };
-
       setResult({
-        pointsEarned: summary.pointsEarned,
-        collectibles: summary.coins,
-        boosts: summary.boosts,
-        hits: summary.hits,
+        pointsEarned: finalPoints,
+        collectibles: s.collectibles,
+        boosts: s.boosts,
+        hits: s.hits,
       });
-
-      // Submit a compact payload (answerPayload + answer string) so reporting can render it nicely.
-      if (onSubmit) onSubmit({
-        type: "treasure-runner",
-        answer: JSON.stringify(summary),
-        answerPayload: summary,
-        pointsEarned: summary.pointsEarned,
-      });
-
+      if (onSubmit) onSubmit({ type: "treasure-runner", pointsEarned: finalPoints, ...s });
       if (socket && me.roomCode && me.teamId && !s.sent) {
         s.sent = true;
         socket.emit("score:add", { roomCode: me.roomCode, teamId: me.teamId, delta: finalPoints, reason: "TreasureRunner" });
-        socket.emit("treasure:finish", { roomCode: me.roomCode, teamId: me.teamId, ...summary });
+        socket.emit("treasure:finish", { roomCode: me.roomCode, teamId: me.teamId, pointsEarned: finalPoints });
       }
     }
-  }, [timeLeftMs, running, result, socket, onSubmit, me, currentScore, permission]);
+  }, [timeLeftMs, running, result, socket, onSubmit, me, currentScore]);
 
   const secondsLeft = Math.ceil(timeLeftMs / 1000);
 
