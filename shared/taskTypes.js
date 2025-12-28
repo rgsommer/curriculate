@@ -114,7 +114,7 @@ const CATEGORY = {
 };
 
 // Small helper: ensure all meta objects include the same “capability surface”.
-function metaBase(overrides = {}) {
+function meta(overrides = {}) {
   return {
     // Identity
     label: "",
@@ -155,7 +155,7 @@ export const TASK_TYPE_META = {
   // CORE Q&A / OBJECTIVE TASKS
   // =========================
 
-  [TASK_TYPES.MULTIPLE_CHOICE]: metaBase({
+  [TASK_TYPES.MULTIPLE_CHOICE]: meta({
     label: "Multiple Choice",
     category: CATEGORY.QUESTION,
     implemented: true,
@@ -176,7 +176,7 @@ export const TASK_TYPE_META = {
       "Classic multiple-choice question set (3\u20135 items). Students read each question and choose one of four visible options (A\u2013D). Submit by tapping an option on-screen. Great for quick checks for understanding and fast feedback.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133, explanation?: string }\n- optional: title, prompt, timeLimitSeconds, points\nScoring: objective (correctIndex) \u2014 no AI scoring required.",
   }),
 
-  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: metaBase({
+  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: meta({
     label: "Physical Multiple Choice",
     category: CATEGORY.QUESTION,
     implemented: true,
@@ -197,7 +197,7 @@ export const TASK_TYPE_META = {
       "Physical Multiple Choice (kinesthetic). Looks exactly like standard multiple-choice on the device (full question + four fully visible options A\u2013D), but students cannot submit by tapping.\nTo submit, they must walk to one of the classroom\u2019s 8 permanent colored QR stations and scan the station whose color matches the color displayed beside their chosen option.\n\nHow it works:\n- The system randomly selects 4 of the 8 station colors and maps them to A/B/C/D each question (randomized every play).\n- Each option shows a large color chip (e.g., A \u25cf Red, B \u25cf Teal, C \u25cf Purple, D \u25cf Green).\n- Student decides the answer, walks to that color station, scans, and the scan auto-submits that letter.\n- Typically 3\u20135 questions per task \u2192 3\u20135 trips across the room.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133 }\n- system provides per-question colorMap (generated at runtime; not required from AI)\nScoring: objective (correctIndex). Inter-team: NO. Intra-team: NO.",
   }),
 
-  [TASK_TYPES.TRUE_FALSE]: metaBase({
+  [TASK_TYPES.TRUE_FALSE]: meta({
     label: "True / False",
     category: CATEGORY.QUESTION,
     implemented: true,
@@ -218,7 +218,7 @@ export const TASK_TYPE_META = {
       "Students judge statements as True or False. Objective-scored and designed to be tricky-but-fair so students must think rather than guess. Great for quick misconception checks, conceptual clarity, and efficient review.",
   }),
 
-  [TASK_TYPES.SHORT_ANSWER]: metaBase({
+  [TASK_TYPES.SHORT_ANSWER]: meta({
     label: "Short Answer",
     category: CATEGORY.QUESTION,
     implemented: true,
@@ -243,7 +243,7 @@ export const TASK_TYPE_META = {
   // ORDERING / DRAG & DROP
   // =========================
 
-  [TASK_TYPES.SORT]: metaBase({
+  [TASK_TYPES.SORT]: meta({
     label: "Sort / Categorize",
     category: CATEGORY.ORDERING,
     implemented: true,
@@ -262,7 +262,7 @@ export const TASK_TYPE_META = {
       "Drag 6–10 items into 2–4 categories. Objective scoring maps each item → category. Great for classification, concept boundaries, and quick detection of misconceptions (wrong bucket = instant insight).",
   }),
 
-  [TASK_TYPES.SEQUENCE]: metaBase({
+  [TASK_TYPES.SEQUENCE]: meta({
     label: "Sequence / Order",
     category: CATEGORY.ORDERING,
     implemented: true,
@@ -281,7 +281,7 @@ export const TASK_TYPE_META = {
       "Drag 4–8 steps/events into the correct order (process steps, life cycles, cause→effect chains, or historical chronology). Reinforces procedural understanding and ‘big picture’ structure.",
   }),
 
-  [TASK_TYPES.TIMELINE]: metaBase({
+  [TASK_TYPES.TIMELINE]: meta({
     label: "Timeline – Drag to Order",
     category: CATEGORY.ORDERING,
     implemented: true,
@@ -300,7 +300,7 @@ export const TASK_TYPE_META = {
       "Timeline-branded ordering task. Students drag events into chronological order. Excellent for historical thinking and understanding causal sequences over time.",
   }),
 
-  [TASK_TYPES.MATCHING]: metaBase({
+  [TASK_TYPES.MATCHING]: meta({
     label: "Matching / Connect",
     category: CATEGORY.ORDERING,
     implemented: true,
@@ -356,7 +356,7 @@ export const TASK_TYPE_META = {
   // OPEN RESPONSE / MEDIA (AI or teacher-reviewed)
   // =========================
 
-  [TASK_TYPES.OPEN_TEXT]: metaBase({
+  [TASK_TYPES.OPEN_TEXT]: meta({
     label: "Open-text Response",
     category: CATEGORY.QUESTION,
     implemented: true,
@@ -382,7 +382,7 @@ export const TASK_TYPE_META = {
       ].join("\n"),
   }),
 
-  [TASK_TYPES.RECORD_AUDIO]: metaBase({
+  [TASK_TYPES.RECORD_AUDIO]: meta({
     label: "Record Audio Answer",
     category: CATEGORY.OTHER,
     implemented: true,
@@ -400,7 +400,7 @@ export const TASK_TYPE_META = {
       "Student records an oral explanation/reading. Typically teacher-reviewed. Great for oral fluency, confidence, and accessibility for students who express better verbally than in writing.",
   }),
 
-  [TASK_TYPES.PHOTO]: metaBase({
+  [TASK_TYPES.PHOTO]: meta({
     label: "Photo Evidence",
     category: CATEGORY.OTHER,
     implemented: true,
@@ -418,7 +418,7 @@ export const TASK_TYPE_META = {
       "Student takes a photo as proof of completing the prompt (pose, geometry example, found item, lab setup, diagram on board, or written work). This is typically AI-scored because photos vary. Pedagogical benefits: authentic evidence, observation skills, real‑world connection, and creative demonstration of understanding. Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo\"\n- prompt (clear, photo-friendly)\n- Optional: config.instructions, config.exampleIdeas\nStudent submission includes: { photoUrl|photo, caption? }",
   }),
 
-  [TASK_TYPES.MAKE_AND_SNAP]: metaBase({
+  [TASK_TYPES.MAKE_AND_SNAP]: meta({
     label: "Make It & Snap It",
     category: CATEGORY.OTHER,
     implemented: true,
@@ -436,7 +436,7 @@ export const TASK_TYPE_META = {
       "Make & Snap: the team physically builds/creates/arranges something from a prompt, then submits a photo (and required note). Typically AI-scored for alignment to the prompt. Benefit: hands-on application, creativity, collaboration, authentic assessment, and transfer beyond the screen.",
   }),
 
-  [TASK_TYPES.PHOTO_JOURNAL]: metaBase({
+  [TASK_TYPES.PHOTO_JOURNAL]: meta({
     label: "Photo Journal",
     category: CATEGORY.OTHER,
     implemented: true,
@@ -458,7 +458,7 @@ export const TASK_TYPE_META = {
   // MOVEMENT / PHYSICAL
   // =========================
 
-  [TASK_TYPES.BODY_BREAK]: metaBase({
+  [TASK_TYPES.BODY_BREAK]: meta({
     label: "Body Break",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -476,7 +476,7 @@ export const TASK_TYPE_META = {
       "Short movement break (30–60s). The device shows a quick physical challenge or guided moves (stretch, jumping jacks, dance, quick poses) and the team follows along. No answers; no objective scoring; no AI scoring. Includes upbeat prompts/animations for buy-in. Benefit: boosts attention, reduces restlessness, and helps energy regulation through brain–body activation.",
   }),
 
-  [TASK_TYPES.MOTION_MISSION]: metaBase({
+  [TASK_TYPES.MOTION_MISSION]: meta({
     label: "Motion Mission",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -494,7 +494,7 @@ export const TASK_TYPE_META = {
       "Motion Mission: a quick physical mission tied to content or energy (e.g., 'Act out erosion', 'Do 10 jumping jacks', 'Freeze like a statue of…'). Usually completion-based (not objective-scored). Benefit: movement integration, embodied cognition, higher engagement, and improved focus during longer blocks.",
   }),
 
-  [TASK_TYPES.MUSICAL_CHAIRS]: metaBase({
+  [TASK_TYPES.MUSICAL_CHAIRS]: meta({
     label: "Musical Chairs",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -512,7 +512,7 @@ export const TASK_TYPE_META = {
       "Musical Chairs: movement game where music cues students to move; when it stops they scan a station/spot that can trigger a quick question or fact. Not objective-scored by default. Inter-team enabled (teams can compete for winner). Benefit: attention control, quick transitions, group fun, and pairing movement with recall.",
   }),
 
-  [TASK_TYPES.MAD_DASH]: metaBase({
+  [TASK_TYPES.MAD_DASH]: meta({
     label: "Mad Dash – Race to Scan!",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -530,7 +530,7 @@ export const TASK_TYPE_META = {
       "High-energy physical race (scan/find/complete) under time pressure. Can be used for sequencing/procedure or QR races. Builds teamwork and urgency while reinforcing order/steps.",
   }),
 
-  [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: meta({
     label: "Mad Dash Sequence",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -549,7 +549,7 @@ export const TASK_TYPE_META = {
       "High-energy sequence race: memorize 3–4 color-linked steps, then scan stations in order as fast as possible. Supports academic sequences by attaching a short label to each color (process steps, timeline events, procedure order). Score = correct order + speed bonus.",
   }),
 
-  [TASK_TYPES.HIDENSEEK]: metaBase({
+  [TASK_TYPES.HIDENSEEK]: meta({
     label: "Hide & Seek",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -567,7 +567,7 @@ export const TASK_TYPE_META = {
       "Students are given a page/location reference (or clue), must physically find it, snap a photo, and explain its significance. Usually AI-scored due to open-ended explanation. Pedagogical benefits: active searching, source/location literacy, contextual understanding, and making learning physical. Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"hidenseek\"\n- prompt (must include what/where to find)\n- Optional: config.locationHint, config.requiredEvidence\nStudent submission includes: { photoUrl|photo, explanation, foundWhere? }",
   }),
 
-  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: metaBase({
+  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: meta({
     label: "Multi-Room Scavenger Hunt",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -589,7 +589,7 @@ export const TASK_TYPE_META = {
   // FEEDBACK / META
   // =========================
 
-  [TASK_TYPES.MOOD_CHECKIN]: metaBase({
+  [TASK_TYPES.MOOD_CHECKIN]: meta({
     label: "Mood Check-in",
     category: CATEGORY.FEEDBACK,
     implemented: true,
@@ -607,7 +607,7 @@ export const TASK_TYPE_META = {
       "Pre-taskset vibe-setter: each player taps a mood emoji; team can optionally add what they’re excited about. No timer, no scoring. Improves classroom climate and engagement.",
   }),
 
-  [TASK_TYPES.MULTI_PLAYER_FEEDBACK]: metaBase({
+  [TASK_TYPES.MULTI_PLAYER_FEEDBACK]: meta({
     label: "Multi-player Feedback",
     category: CATEGORY.FEEDBACK,
     implemented: true,
@@ -624,7 +624,7 @@ export const TASK_TYPE_META = {
       "End-of-taskset reflection: the team rates the taskset (emoji/1\u20135) and can leave optional comments/suggestions. Optional \u2018what we learned\u2019 note can grant a small bonus point. Not AI-generated; not scored beyond participation/bonus. Improves student voice and metacognition.",
   }),
 
-  [TASK_TYPES.TREASURE_RUNNER]: metaBase({
+  [TASK_TYPES.TREASURE_RUNNER]: meta({
     label: "Treasure Runner",
     category: CATEGORY.OTHER,
     implemented: true,
@@ -646,7 +646,7 @@ export const TASK_TYPE_META = {
   // COMPETITIVE / GAME MODES
   // =========================
 
-  [TASK_TYPES.JEOPARDY]: metaBase({
+  [TASK_TYPES.JEOPARDY]: meta({
     label: "Brain Blitz!",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -662,7 +662,7 @@ export const TASK_TYPE_META = {
     description: "Brain Blitz (Jeopardy-style): the device shows an answer/term and students must respond with the correct question (Jeopardy format).\nStudent flow:\n- Prompt shows a clue/answer (word/name/phrase).\n- Players respond quickly by voice (preferred) or typing.\n- AI checks meaning and Jeopardy-style phrasing (strictness adjustable by difficulty).\nScoring: AI-scored; fast, competitive retrieval + reformulation.\nAI generation should produce:\n- clue (string) OR prompt (string)\n- expectedQuestion (string) OR expectedKeyPoints (array)\n- allowTyping (boolean, optional)\n- timeLimitSeconds (optional; usually 30\u201390)\nInter-team: YES. Intra-team: YES.",
   }),
 
-    [TASK_TYPES.TRUE_FALSE_TICTACTOE]: metaBase({
+    [TASK_TYPES.TRUE_FALSE_TICTACTOE]: meta({
     label: "True/False Tic-Tac-Toe",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -704,7 +704,7 @@ export const TASK_TYPE_META = {
   }),
 
   // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
-  [TASK_TYPES.FLASHCARDS]: metaBase({
+  [TASK_TYPES.FLASHCARDS]: meta({
     label: "Flashcards",
     category: CATEGORY.RECALL,
     implemented: true,
@@ -723,7 +723,7 @@ export const TASK_TYPE_META = {
   }),
 
   // ✅ Updated: this mode is inherently inter-team (A vs B scoring / winner events)
-  [TASK_TYPES.FLASHCARDS_RACE]: metaBase({
+  [TASK_TYPES.FLASHCARDS_RACE]: meta({
     label: "Flashcards Race",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -771,7 +771,7 @@ export const TASK_TYPE_META = {
   }),
 
   // (rest unchanged from your file)
-  [TASK_TYPES.GUESS_WHO]: metaBase({
+  [TASK_TYPES.GUESS_WHO]: meta({
     label: "Guess Who",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -786,7 +786,7 @@ export const TASK_TYPE_META = {
       "Yes/No deduction game. One player privately views the secret concept (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. Encourages logical elimination and strategic questioning.",
   }),
 
-    [TASK_TYPES.HANGMAN_DUEL]: metaBase({
+    [TASK_TYPES.HANGMAN_DUEL]: meta({
     label: "Hangman Duel",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -823,7 +823,7 @@ export const TASK_TYPE_META = {
       ].join("\n"),
   }),
 
-  [TASK_TYPES.WORD_WEAVER_DUEL]: metaBase({
+  [TASK_TYPES.WORD_WEAVER_DUEL]: meta({
     label: "Word Weaver Duel",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
@@ -893,7 +893,7 @@ export const TASK_TYPE_META = {
           `,
         }),
 
-  [TASK_TYPES.PET_FEEDING]: metaBase({
+  [TASK_TYPES.PET_FEEDING]: meta({
     label: "Feed the Pet!",
     category: CATEGORY.MOVEMENT,
     implemented: true,
@@ -908,7 +908,7 @@ export const TASK_TYPE_META = {
     "Feed the Pet: a motivation layer where completing the task feeds/powers up a virtual pet.\nStudent flow:\n- A cute pet appears (pack/theme).\n- Students choose a treat; celebration plays; task submits.\nScoring: typically completion-based or fixed bonus (e.g., +10) handled by session rules.\nAI generation should produce:\n- pack (string; one of: classic, farm, ocean, dino, fantasy)\n- optional pointsAwarded (number)\nInter-team: NO. Intra-team: NO.",
   }),
 
-  [TASK_TYPES.COLLABORATION]: metaBase({
+  [TASK_TYPES.COLLABORATION]: meta({
     label: "Collaboration (Pair & Respond)",
     category: CATEGORY.COLLABORATION,
     implemented: true,
@@ -925,7 +925,7 @@ export const TASK_TYPE_META = {
       "then views another team’s response and writes a thoughtful reply. AI-scored for quality and engagement."
 }),
 
-  [TASK_TYPES.LIVE_DEBATE]: metaBase({
+  [TASK_TYPES.LIVE_DEBATE]: meta({
     label: "Live Debate",
     category: CATEGORY.COLLABORATION,
     implemented: true,
@@ -946,7 +946,7 @@ export const TASK_TYPE_META = {
       "Scoring: AI-assisted rubric for argument quality and evidence."
   }),
 
-  [TASK_TYPES.AI_DEBATE_JUDGE]: metaBase({
+  [TASK_TYPES.AI_DEBATE_JUDGE]: meta({
     label: "AI Debate Judge",
     category: CATEGORY.COLLABORATION,
     implemented: true,
@@ -963,7 +963,7 @@ export const TASK_TYPE_META = {
       "AI Debate Judge: students run a live debate and the AI produces a written verdict with scores, feedback, and a winner announcement (rubric-style evaluation).\n\nStudent flow:\n- Pick your Side (Affirmative/Negative) and your Position (Introduction / First / Rebuttal / Conclusion).\n- Tap the big 1-2-3 GO button to start recording; the device shows a live sound meter while listening.\n- Timer counts down from 2:00 to -0:30 (overtime grace).\n- Audio cues: 1:45 elapsed, beeps the last 5 seconds to 2:00, warning at 2:15, auto-ends at 2:30.\n- Recording auto-submits at the end (or students can submit early when finished).\n- AI returns: per-speaker score, strengths, specific improvement tips, and an overall side-by-side winner decision.\n\nScoring notes:\n- Penalty if under 1:45 or over 2:15.\n- Encourages evidence and structure by making criteria visible.\n\nPedagogical benefits: clearer criteria for argument improvement, motivation to use evidence and structure, better reflection after live speaking, and higher-quality feedback than peer-only judging.",
   }),
 
-  [TASK_TYPES.BRAINSTORM_BATTLE]: metaBase({
+  [TASK_TYPES.BRAINSTORM_BATTLE]: meta({
     label: "Brainstorm Battle",
     category: CATEGORY.COLLABORATION,
     implemented: true,
@@ -1010,7 +1010,7 @@ export const TASK_TYPE_META = {
           `,
         }),
 
-  [TASK_TYPES.FAKE_OUT]: metaBase({
+  [TASK_TYPES.FAKE_OUT]: meta({
     label: "Fake Out",
     category: CATEGORY.DEDUCTION,
     implemented: true,
@@ -1042,7 +1042,7 @@ export const TASK_TYPE_META = {
           `,
         }),
 
-    [TASK_TYPES.BRAIN_SPARK_NOTES]: metaBase({
+    [TASK_TYPES.BRAIN_SPARK_NOTES]: meta({
     label: "Brain Spark Notes",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
@@ -1066,7 +1066,7 @@ export const TASK_TYPE_META = {
       ].join("\n"),
   }),
 
-  [TASK_TYPES.MIND_MAPPER]: metaBase({
+  [TASK_TYPES.MIND_MAPPER]: meta({
     label: "Mind Mapper",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
@@ -1089,7 +1089,7 @@ export const TASK_TYPE_META = {
         "Inter-team: NO. Intra-team: NO."
       ].join("\n"),
   }),
-  [TASK_TYPES.NARRATION_SYNTHESIZE]: metaBase({
+  [TASK_TYPES.NARRATION_SYNTHESIZE]: meta({
     label: "Narration Synthesize",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
@@ -1119,7 +1119,7 @@ export const TASK_TYPE_META = {
       `.trim(),
     }),
 
-  [TASK_TYPES.ROLE_PLAY]: metaBase({
+  [TASK_TYPES.ROLE_PLAY]: meta({
     label: "Role Play (Legacy)",
     category: CATEGORY.SYNTHESIS,
     implemented: false,
@@ -1134,7 +1134,7 @@ export const TASK_TYPE_META = {
       "Legacy alias for Role Play Deck. Prefer taskType \"role-play-deck\" (TASK_TYPES.ROLE_PLAY_DECK). This id is kept for backwards compatibility and normalizes to ROLE_PLAY_DECK.",
   }),
 
-  [TASK_TYPES.ROLE_PLAY_DECK]: metaBase({
+  [TASK_TYPES.ROLE_PLAY_DECK]: meta({
     label: "Role Play Deck",
     category: CATEGORY.COLLABORATION,
     implemented: true,
@@ -1177,7 +1177,7 @@ export const TASK_TYPE_META = {
     `.trim(),
   }),
 
-  [TASK_TYPES.SCRIPT_PLAY]: metaBase({
+  [TASK_TYPES.SCRIPT_PLAY]: meta({
     label: "Script Play",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
@@ -1220,7 +1220,7 @@ export const TASK_TYPE_META = {
           `,
         }),
 
-  [TASK_TYPES.DRAW]: metaBase({
+  [TASK_TYPES.DRAW]: meta({
     label: "Draw",
     category: CATEGORY.CREATIVE,
     implemented: true,
@@ -1235,7 +1235,7 @@ export const TASK_TYPE_META = {
       "Drawing response task. Students draw a diagram or concept representation. Often used with teacher review or photo submission in other tasks.",
   }),
 
-  [TASK_TYPES.MIME]: metaBase({
+  [TASK_TYPES.MIME]: meta({
     label: "Mime",
     category: CATEGORY.CREATIVE,
     implemented: true,
@@ -1250,7 +1250,7 @@ export const TASK_TYPE_META = {
       "Charades-style acting response. Students act out a concept without words. Great for vocabulary and concept visualization through movement.",
   }),
 
-  [TASK_TYPES.ECHO_CHAIN]: metaBase({
+  [TASK_TYPES.ECHO_CHAIN]: meta({
     label: "Echo Chain",
     category: CATEGORY.RECALL,
     implemented: true,
@@ -1268,7 +1268,7 @@ export const TASK_TYPE_META = {
       "Oral memory-chain game. The device starts with a subject-related seed term. Players take turns repeating the full chain aloud and adding one related term. Optional per-turn timer and bonuses for completing a full rotation. Builds retrieval practice, working memory, listening accuracy, and vocabulary association networks.",
   }),
 
-    [TASK_TYPES.PRONUNCIATION]: metaBase({
+    [TASK_TYPES.PRONUNCIATION]: meta({
     label: "Pronunciation Practice",
     category: CATEGORY.OTHER,
     implemented: true,
@@ -1299,7 +1299,7 @@ export const TASK_TYPE_META = {
       ].join("\n"),
   }),
 
-    [TASK_TYPES.SPEECH_RECOGNITION]: metaBase({
+    [TASK_TYPES.SPEECH_RECOGNITION]: meta({
     label: "Speech Recognition Answer",
     category: CATEGORY.OTHER,
     implemented: true,
