@@ -638,12 +638,6 @@ function StudentApp() {
     level: 0,
     brightness: 1,
   });
-
-  // NoiseSensor UI effects (client-side only)
-  const [noiseOver, setNoiseOver] = useState(false);
-  const [noisePulse, setNoisePulse] = useState(false);
-  const noiseWarnRef = useRef({ prevOver: false, lastMs: 0 });
-
   const [treatMessage, setTreatMessage] = useState(null);
 
   // 🔢 Scoring: running total + last-task result + toast
@@ -1205,64 +1199,6 @@ function StudentApp() {
       socket.off("collab:reply", handleCollabReply);
     };
   }, [teamId, reviewPauseSeconds, taskLocked, postSubmitSecondsLeft]);
-
-  // ----------------------------------------------------
-  // NoiseSensor special effects:
-  // - when noise crosses the threshold, pulse the noise bar and (optionally) play a soft beep
-  // ----------------------------------------------------
-  useEffect(() => {
-    if (!noiseState?.enabled) {
-      setNoiseOver(false);
-      noiseWarnRef.current.prevOver = false;
-      return;
-    }
-
-    const rawThr = Number(noiseState.threshold || 0);
-    const thr = rawThr > 1 ? rawThr / 100 : rawThr; // supports 0–1 or 0–100
-    const lvl = Number(noiseState.level || 0);
-
-    const over = thr > 0 ? lvl >= thr : false;
-    setNoiseOver(over);
-
-    // edge-trigger: only when crossing into "over"
-    if (over && !noiseWarnRef.current.prevOver) {
-      setNoisePulse(true);
-      window.setTimeout(() => setNoisePulse(false), 650);
-
-      // gentle warning beep (debounced)
-      const now = Date.now();
-      if (now - (noiseWarnRef.current.lastMs || 0) > 2500) {
-        noiseWarnRef.current.lastMs = now;
-
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (AudioCtx) {
-            const ctx = new AudioCtx();
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.type = "sine";
-            o.frequency.value = 880;
-            g.gain.value = 0.0001;
-            o.connect(g);
-            g.connect(ctx.destination);
-            o.start();
-            // quick envelope (very quiet)
-            g.gain.exponentialRampToValueAtTime(0.02, ctx.currentTime + 0.02);
-            g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
-            o.stop(ctx.currentTime + 0.2);
-            window.setTimeout(() => {
-              try { ctx.close(); } catch {}
-            }, 250);
-          }
-        } catch {
-          // ignore audio errors (autoplay policies etc.)
-        }
-      }
-    }
-
-    noiseWarnRef.current.prevOver = over;
-  }, [noiseState.enabled, noiseState.threshold, noiseState.level]);
-
 
   // -------------------------------------------------------------------
   // Auto-open scanner when a scan is required
@@ -2178,9 +2114,6 @@ const norm = normalizeStationId(data);
   const isMultiRoom = Array.isArray(selectedRooms) && selectedRooms.length > 1;
 
   const noiseBarOpacity = noiseState.enabled ? noiseState.brightness : 0.08;
-  const uiBrightness = noiseState.enabled
-    ? Math.max(0.65, Math.min(typeof noiseState.brightness === "number" ? noiseState.brightness : 1, 1))
-    : 1;
 
   const timerDisplay = timeLimitSeconds ? formatRemainingMs(remainingMs) : null;
 
@@ -2384,8 +2317,7 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
           ? "radial-gradient(circle at top, #0f172a 0%, #0ea5e9 40%, #22c55e 75%, #e0f2fe 100%)"
           : themeShell.pageBg,
         color: themeShell.text,
-        filter: `brightness(${uiBrightness})`,
-        transition: "background 0.35s ease, color 0.25s ease, filter 0.18s ease",
+        transition: "background 0.35s ease, color 0.25s ease",
       }}
     >
       <style>
@@ -2584,22 +2516,7 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
           border-radius: 999px;
         }
 
-        
-        .noise-over {
-          box-shadow: 0 0 0 2px rgba(239,68,68,0.35), 0 10px 28px rgba(239,68,68,0.18);
-        }
-        .noise-bar-hot {
-          filter: saturate(1.35);
-        }
-        .noise-pulse {
-          animation: noisePulse 0.65s ease-in-out 1;
-        }
-        @keyframes noisePulse {
-          0% { transform: scaleY(1); }
-          35% { transform: scaleY(1.35); }
-          100% { transform: scaleY(1); }
-        }
-.scan-error {
+        .scan-error {
           color: #fee2e2;
           background: rgba(127,29,29,0.9);
           padding: 6px 10px;
@@ -3374,9 +3291,9 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
                 </div>
               )}
             </div>
-            <div className={`noise-bar-track noise-fade${noiseOver ? " noise-over" : ""}${noisePulse ? " noise-pulse" : ""}`}>
+            <div className="noise-bar-track noise-fade">
               <div
-                className={`noise-bar-inner${noiseOver ? " noise-bar-hot" : ""}`}
+                className="noise-bar-inner"
                 style={{
                   width: `${Math.min(Math.max(noiseState.level * 100, 0), 100)}%`,
                   opacity: noiseBarOpacity,

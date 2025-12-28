@@ -775,7 +775,6 @@ function AdminPage({ isAdmin = false }) {
   // -------------------------
   const DEMO_KEY_STORAGE = "curriculate.demoAdminKey";
   const [demoBusy, setDemoBusy] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
   const [demoErr, setDemoErr] = useState("");
   const [demoInfo, setDemoInfo] = useState(null);
   const [demoKey, setDemoKey] = useState(() => {
@@ -788,7 +787,7 @@ function AdminPage({ isAdmin = false }) {
 
   const loadDemoInfo = async () => {
     setDemoErr("");
-    setDemoLoading(true);
+    setDemoBusy(true);
     try {
       const res = await apiFetch("/api/demo/taskset");
       const data = await res.json().catch(() => null);
@@ -811,7 +810,7 @@ function AdminPage({ isAdmin = false }) {
       console.warn("[AdminPage] load demo taskset failed:", e);
       setDemoErr("Network error");
     } finally {
-      setDemoLoading(false);
+      setDemoBusy(false);
     }
   };
 
@@ -975,7 +974,15 @@ function AdminPage({ isAdmin = false }) {
             disabled={demoBusy || !isAdmin}
             style={{ ...ui.buttonPrimary, minWidth: 220 }}
           >
-            {demoBusy ? "Working…" : "Regenerate"}
+            {demoBusy ? "Working…" : "Regenerate demo taskset"}
+          </button>
+
+          <button
+            onClick={loadDemoInfo}
+            disabled={demoBusy}
+            style={{ ...ui.buttonGhostDark, minWidth: 120 }}
+          >
+            Refresh
           </button>
         </div>
 
