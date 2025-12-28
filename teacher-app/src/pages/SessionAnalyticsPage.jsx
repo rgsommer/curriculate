@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../api/client";
-import { TASK_TYPE_META } from "../shared/taskTypes";
+import { TASK_TYPE_META } from "../../../shared/taskTypes";
 
 
 function typeBadge(typeRaw) {
