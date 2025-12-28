@@ -85,16 +85,6 @@ if (
   if (v === "make-and-snap" || v === "make_snap") {
     return TASK_TYPES.MAKE_AND_SNAP;
   }
-  if (
-    v === "ai-debate-judge" ||
-    v === "ai_debate_judge" ||
-    v === "aidebatejudge" ||
-    v === "debate-judge" ||
-    v === "ai debate judge"
-  ) {
-    return TASK_TYPES.AI_DEBATE_JUDGE || "ai-debate-judge";
-  }
-
   if (v === "body-break" || v === "body_break") {
     return TASK_TYPES.BODY_BREAK;
   }
@@ -621,6 +611,72 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
               out.config = { ...(out.config || {}), wordsByStation: wbs };
             }
 
+            // True/False Tic-Tac-Toe: normalize statements (supports either task.statements or config.statementSets[0])
+            if (out.taskType === TASK_TYPES.TRUE_FALSE_TICTACTOE) {
+              const cfg = out.config && typeof out.config === "object" ? out.config : {};
+              const sets = Array.isArray(cfg.statementSets) ? cfg.statementSets : [];
+              const rawStatements =
+                (Array.isArray(out.statements) && out.statements) ||
+                (Array.isArray(cfg.statements) && cfg.statements) ||
+                (Array.isArray(sets[0]) && sets[0]) ||
+                [];
+              out.statements = (Array.isArray(rawStatements) ? rawStatements : []).map((s, i) => ({
+                text: String(s?.text ?? s?.statement ?? s ?? "").trim(),
+                isFalse: s?.isFalse === true || s?.isFalse === "true" || s?.truth === false || s?.truthiness === "false",
+              })).filter((s) => s.text);
+              // keep a canonical home in config for multi-round support
+              out.config = { ...cfg, statementSets: sets.length ? sets : (out.statements.length ? [out.statements] : []) };
+            }
+
+            // Pronunciation: normalize referenceText/accentOptions
+            if (out.taskType === TASK_TYPES.PRONUNCIATION) {
+              const cfg = out.config && typeof out.config === "object" ? out.config : {};
+              const accentOptionsRaw =
+                (Array.isArray(out.accentOptions) && out.accentOptions) ||
+                (Array.isArray(cfg.accentOptions) && cfg.accentOptions) ||
+                ["american", "canadian", "british", "neutral"];
+              const accentOptions = (Array.isArray(accentOptionsRaw) ? accentOptionsRaw : [])
+                .map((a) => String(a || "").trim().toLowerCase())
+                .filter(Boolean);
+              const referenceText = String(out.referenceText ?? cfg.referenceText ?? out.prompt ?? "").trim();
+              const phonetic = String(out.phonetic ?? cfg.phonetic ?? "").trim();
+              const languageCode = String(out.languageCode ?? cfg.languageCode ?? out.language ?? cfg.language ?? "en-US").trim();
+              const targetAccent = String(out.targetAccent ?? cfg.targetAccent ?? (accentOptions[0] || "american")).trim().toLowerCase();
+              out.referenceText = referenceText;
+              out.phonetic = phonetic || undefined;
+              out.languageCode = languageCode;
+              out.accentOptions = accentOptions;
+              out.targetAccent = targetAccent;
+              out.config = { ...cfg, referenceText, phonetic: phonetic || undefined, languageCode, accentOptions, targetAccent };
+            }
+
+            // Speech Recognition: normalize languageCode/referenceText
+            if (out.taskType === TASK_TYPES.SPEECH_RECOGNITION) {
+              const cfg = out.config && typeof out.config === "object" ? out.config : {};
+              const languageCode = String(out.languageCode ?? cfg.languageCode ?? out.language ?? cfg.language ?? "en-US").trim();
+              const referenceText = String(out.referenceText ?? cfg.referenceText ?? "").trim();
+              out.languageCode = languageCode;
+              out.referenceText = referenceText || undefined;
+              out.config = { ...cfg, languageCode, referenceText: referenceText || undefined };
+              // default time for oral answers if missing
+              if (!Number.isFinite(Number(out.timeLimitSeconds)) || Number(out.timeLimitSeconds) <= 0) {
+                out.timeLimitSeconds = 60;
+              }
+            }
+
+
+            // Pet Feeding: normalize pack so editor + student task stay in sync
+            if (out.taskType === TASK_TYPES.PET_FEEDING) {
+              const prevCfg = out.config && typeof out.config === "object" ? out.config : {};
+              const pack = String(out.pack ?? prevCfg.pack ?? "classic").trim() || "classic";
+              const pointsAwardedRaw = out.pointsAwarded ?? prevCfg.pointsAwarded;
+              const pointsAwarded =
+                Number.isFinite(Number(pointsAwardedRaw)) ? Number(pointsAwardedRaw) : undefined;
+
+              out.pack = pack;
+              if (pointsAwarded !== undefined) out.pointsAwarded = pointsAwarded;
+              out.config = { ...prevCfg, pack, ...(pointsAwarded !== undefined ? { pointsAwarded } : {}) };
+            }
             // VennSort: normalize items + correctAnswer so editor can show/check category membership
             if (out.taskType === TASK_TYPES.VENNSORT) {
               const categories =
@@ -902,6 +958,89 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
           return base;
         }
 
+
+        if (nextType === TASK_TYPES.TRUE_FALSE_TICTACTOE) {
+          // Tic-tac-toe statements list
+          base.options = [];
+          base.correctAnswer = null;
+          base.items = undefined;
+          const prevStatements = Array.isArray(t.statements) ? t.statements : [];
+          base.statements =
+            prevStatements.length
+              ? prevStatements.map((s) => ({
+                  text: String(s?.text ?? s ?? "").trim(),
+                  isFalse: s?.isFalse === true,
+                }))
+              : [
+                  { text: "", isFalse: false },
+                  { text: "", isFalse: true },
+                  { text: "", isFalse: false },
+                  { text: "", isFalse: true },
+                  { text: "", isFalse: false },
+                  { text: "", isFalse: true },
+                  { text: "", isFalse: false },
+                  { text: "", isFalse: true },
+                  { text: "", isFalse: false },
+                ];
+          base.config = { ...(t.config || {}), statementSets: [base.statements] };
+          base.aiScoringRequired = false;
+          base.timeLimitSeconds = Number.isFinite(Number(t.timeLimitSeconds)) ? t.timeLimitSeconds : 180;
+          return base;
+        }
+
+        if (nextType === TASK_TYPES.PRONUNCIATION) {
+          base.options = [];
+          base.correctAnswer = null;
+          base.items = undefined;
+          base.referenceText = String(t.referenceText ?? t.prompt ?? "").trim();
+          base.phonetic = String(t.phonetic ?? "").trim() || undefined;
+          base.languageCode = String(t.languageCode ?? "en-US");
+          base.accentOptions = Array.isArray(t.accentOptions) ? t.accentOptions : ["american", "canadian", "british", "neutral"];
+          base.targetAccent = String(t.targetAccent ?? base.accentOptions?.[0] ?? "american");
+          base.config = {
+            ...(t.config || {}),
+            referenceText: base.referenceText,
+            phonetic: base.phonetic,
+            languageCode: base.languageCode,
+            accentOptions: base.accentOptions,
+            targetAccent: base.targetAccent,
+          };
+          base.aiScoringRequired = true;
+          base.timeLimitSeconds = Number.isFinite(Number(t.timeLimitSeconds)) ? t.timeLimitSeconds : 60;
+          return base;
+        }
+
+        if (nextType === TASK_TYPES.SPEECH_RECOGNITION) {
+          base.options = [];
+          base.correctAnswer = null;
+          base.items = undefined;
+          base.referenceText = String(t.referenceText ?? "").trim();
+          base.languageCode = String(t.languageCode ?? "en-US");
+          base.config = { ...(t.config || {}), referenceText: base.referenceText, languageCode: base.languageCode };
+          base.aiScoringRequired = true;
+          base.timeLimitSeconds = Number.isFinite(Number(t.timeLimitSeconds)) ? t.timeLimitSeconds : 60;
+          return base;
+        }
+
+        if (nextType === TASK_TYPES.MULTI_PLAYER_FEEDBACK) {
+          base.options = [];
+          base.correctAnswer = null;
+          base.items = undefined;
+          base.aiScoringRequired = false;
+          base.timeLimitSeconds = 0;
+          base.config = { ...(t.config || {}) };
+          return base;
+        }
+
+        if (nextType === TASK_TYPES.RECORD_AUDIO) {
+          base.options = [];
+          base.correctAnswer = null;
+          base.items = undefined;
+          base.aiScoringRequired = false;
+          base.timeLimitSeconds = 0;
+          base.config = { ...(t.config || {}) };
+          return base;
+        }
         if (nextType === TASK_TYPES.OPEN_TEXT) {
           base.options = [];
           base.correctAnswer = null;
@@ -951,6 +1090,21 @@ if (out.taskType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
         // If the type isn't objective, don't carry correctAnswer across.
         if (meta.objectiveScoring !== true) {
           base.correctAnswer = null;
+        }
+
+
+        if (nextType === TASK_TYPES.PET_FEEDING) {
+          base.options = [];
+          base.correctAnswer = null;
+          delete base.items;
+
+          const prevCfg = t.config && typeof t.config === "object" ? t.config : {};
+          const pack = String(t.pack ?? prevCfg.pack ?? "classic").trim() || "classic";
+          base.pack = pack;
+          base.config = { ...prevCfg, pack };
+          // Usually completion/bonus only
+          if (typeof base.aiScoringRequired !== "boolean") base.aiScoringRequired = false;
+          return base;
         }
 
 
@@ -2895,6 +3049,244 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                   </div>
                 )}
 
+                
+                {/* PET FEEDING: pack selector */}
+                {task.taskType === TASK_TYPES.PET_FEEDING && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      Pet Feeding options
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Pack / Theme</div>
+                        <select
+                          value={task.pack || task.config?.pack || "classic"}
+                          onChange={(e) => {
+                            const pack = e.target.value;
+                            updateTask(task._tempId, "pack", pack);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...prev, pack }));
+                          }}
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        >
+                          <option value="classic">Classic</option>
+                          <option value="farm">Farm</option>
+                          <option value="ocean">Ocean</option>
+                          <option value="dino">Dino</option>
+                          <option value="fantasy">Fantasy</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Points awarded (optional)</div>
+                        <input
+                          type="number"
+                          value={Number.isFinite(Number(task.pointsAwarded ?? task.config?.pointsAwarded)) ? Number(task.pointsAwarded ?? task.config?.pointsAwarded) : ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const n = v === "" ? undefined : Number(v);
+                            updateTask(task._tempId, "pointsAwarded", Number.isFinite(n) ? n : undefined);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...prev, pointsAwarded: Number.isFinite(n) ? n : undefined }));
+                          }}
+                          placeholder="(leave blank for default)"
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8, fontSize: "0.75rem", color: "#6b7280" }}>
+                      Student task reads <code>task.pack</code>. We also mirror it into <code>task.config.pack</code> for legacy safety.
+                    </div>
+                  </div>
+                )}
+
+                {/* BRAINSTORM BATTLE: quick config */}
+                {task.taskType === TASK_TYPES.BRAINSTORM_BATTLE && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      Brainstorm Battle options
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Idea slots</div>
+                        <input
+                          type="number"
+                          value={Number.isFinite(Number(task.config?.ideaSlots)) ? Number(task.config.ideaSlots) : ""}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              ideaSlots: e.target.value === "" ? undefined : Math.max(4, Math.min(20, Number(e.target.value))),
+                            }))
+                          }
+                          placeholder="8–12"
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
+                        <input
+                          type="checkbox"
+                          checked={!!task.config?.enableVoting}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({ ...prev, enableVoting: e.target.checked }))
+                          }
+                        />
+                        <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>Enable voting</span>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Seed topic (optional)</div>
+                        <input
+                          type="text"
+                          value={task.config?.seedTopic || ""}
+                          onChange={(e) => updateGenericConfig(task._tempId, (prev) => ({ ...prev, seedTopic: e.target.value }))}
+                          placeholder="e.g., Causes of Confederation"
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8, fontSize: "0.75rem", color: "#6b7280" }}>
+                      Prompt is the main on-screen instruction. Use it to set the brainstorm direction.
+                    </div>
+                  </div>
+                )}
+
+                {/* COLLABORATION: prompt + rubric helpers */}
+                {task.taskType === TASK_TYPES.COLLABORATION && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      Collaboration options
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Minimum words (optional)</div>
+                        <input
+                          type="number"
+                          value={Number.isFinite(Number(task.config?.minWords)) ? Number(task.config.minWords) : ""}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              minWords: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)),
+                            }))
+                          }
+                          placeholder="e.g., 40"
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 18 }}>
+                        <input
+                          type="checkbox"
+                          checked={task.config?.bonusComparisonEnabled !== false}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({
+                              ...prev,
+                              bonusComparisonEnabled: e.target.checked,
+                            }))
+                          }
+                        />
+                        <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>Enable “better answer” bonus</span>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Rubric (optional)</div>
+                      <textarea
+                        value={task.config?.rubric || ""}
+                        onChange={(e) => updateGenericConfig(task._tempId, (prev) => ({ ...prev, rubric: e.target.value }))}
+                        placeholder="Quality criteria (clarity, evidence, reasoning, engagement, etc.)"
+                        rows={3}
+                        style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem", resize: "vertical" }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* LIVE DEBATE: topics + timing helpers */}
+                {task.taskType === TASK_TYPES.LIVE_DEBATE && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      Live Debate options
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Prep (sec)</div>
+                        <input
+                          type="number"
+                          value={Number.isFinite(Number(task.config?.prepSeconds)) ? Number(task.config.prepSeconds) : 300}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({ ...prev, prepSeconds: Math.max(0, Number(e.target.value)) }))
+                          }
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Per speaker (sec)</div>
+                        <input
+                          type="number"
+                          value={Number.isFinite(Number(task.config?.perSpeakerSeconds)) ? Number(task.config.perSpeakerSeconds) : 135}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({ ...prev, perSpeakerSeconds: Math.max(30, Number(e.target.value)) }))
+                          }
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Grace (sec)</div>
+                        <input
+                          type="number"
+                          value={Number.isFinite(Number(task.config?.graceSeconds)) ? Number(task.config.graceSeconds) : 15}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({ ...prev, graceSeconds: Math.max(0, Number(e.target.value)) }))
+                          }
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Min (sec)</div>
+                        <input
+                          type="number"
+                          value={Number.isFinite(Number(task.config?.minSeconds)) ? Number(task.config.minSeconds) : 105}
+                          onChange={(e) =>
+                            updateGenericConfig(task._tempId, (prev) => ({ ...prev, minSeconds: Math.max(0, Number(e.target.value)) }))
+                          }
+                          style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Topics (one per line)</div>
+                      <textarea
+                        value={Array.isArray(task.config?.topics) ? task.config.topics.join("\n") : (task.config?.topicsText || "")}
+                        onChange={(e) => {
+                          const lines = e.target.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+                          updateGenericConfig(task._tempId, (prev) => ({ ...prev, topics: lines, topicsText: e.target.value }));
+                        }}
+                        placeholder="e.g., Should homework be banned?\nIs technology making us smarter?"
+                        rows={4}
+                        style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem", resize: "vertical" }}
+                      />
+                    </div>
+
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 4 }}>Rubric (optional)</div>
+                      <textarea
+                        value={task.config?.rubric || ""}
+                        onChange={(e) => updateGenericConfig(task._tempId, (prev) => ({ ...prev, rubric: e.target.value }))}
+                        placeholder="Scoring criteria for AI (evidence, structure, rebuttal, respect, etc.)"
+                        rows={3}
+                        style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.85rem", resize: "vertical" }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+
                 {/* FLASHCARDS: cards editor */}
                 {task.taskType === TASK_TYPES.FLASHCARDS && (
                   <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
@@ -3206,6 +3598,228 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
                       >
                         + Add station word
                       </button>
+                    </div>
+                  </div>
+                )}
+
+
+                {/* TRUE/FALSE TIC-TAC-TOE: edit statements */}
+                {task.taskType === TASK_TYPES.TRUE_FALSE_TICTACTOE && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 2 }}>
+                      Statements (mark which are FALSE)
+                    </label>
+                    <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 8 }}>
+                      Students are assigned TRUE or FALSE and race to claim squares by placing statements that match their role’s truthiness.
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {(Array.isArray(task.statements) ? task.statements : []).map((s, i) => (
+                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 120px auto", gap: 6, alignItems: "center" }}>
+                          <input
+                            type="text"
+                            value={s?.text || ""}
+                            onChange={(e) =>
+                              (() => {
+                              const next = (Array.isArray(task.statements) ? task.statements : []).map((x, idx) => idx === i ? { ...(x || {}), text: e.target.value } : x);
+                              updateTask(task._tempId, "statements", next);
+                              updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), statementSets: [next] }));
+                            })()
+                            }
+                            placeholder={`Statement ${i + 1}`}
+                            style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.8rem" }}
+                          />
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.8rem" }}>
+                            <input
+                              type="checkbox"
+                              checked={!!s?.isFalse}
+                              onChange={(e) =>
+                                (() => {
+                                const next = (Array.isArray(task.statements) ? task.statements : []).map((x, idx) => idx === i ? { ...(x || {}), isFalse: e.target.checked } : x);
+                                updateTask(task._tempId, "statements", next);
+                                updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), statementSets: [next] }));
+                              })()
+                              }
+                            />
+                            <span>FALSE</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              (() => {
+                              const next = (Array.isArray(task.statements) ? task.statements : []).filter((_, idx) => idx !== i);
+                              updateTask(task._tempId, "statements", next);
+                              updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), statementSets: [next] }));
+                            })()
+                            }
+                            style={redTextButton}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          (() => {
+                          const next = [...(Array.isArray(task.statements) ? task.statements : []), { text: "", isFalse: false }];
+                          updateTask(task._tempId, "statements", next);
+                          updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), statementSets: [next] }));
+                        })()
+                        }
+                        style={grayButton}
+                      >
+                        + Add statement
+                      </button>
+
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                        Saved as <code>task.statements</code> (and mirrored into <code>task.config.statementSets[0]</code>).
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PRONUNCIATION: edit referenceText/accent options */}
+                {task.taskType === TASK_TYPES.PRONUNCIATION && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      Pronunciation settings
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 8, marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 2 }}>Reference text (what they should say)</div>
+                        <input
+                          type="text"
+                          value={task.referenceText || task.config?.referenceText || ""}
+                          onChange={(e) => {
+                            updateTask(task._tempId, "referenceText", e.target.value);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), referenceText: e.target.value }));
+                          }}
+                          placeholder="e.g., Photosynthesis requires sunlight."
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 2 }}>Language code</div>
+                        <input
+                          type="text"
+                          value={task.languageCode || task.config?.languageCode || "en-US"}
+                          onChange={(e) => {
+                            updateTask(task._tempId, "languageCode", e.target.value);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), languageCode: e.target.value }));
+                          }}
+                          placeholder="en-US"
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 2 }}>Phonetic hint (optional)</div>
+                      <input
+                        type="text"
+                        value={task.phonetic || task.config?.phonetic || ""}
+                        onChange={(e) => {
+                          updateTask(task._tempId, "phonetic", e.target.value);
+                          updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), phonetic: e.target.value }));
+                        }}
+                        placeholder="e.g., foe-toh-SIN-thuh-sis"
+                        style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                      />
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 6 }}>Accent options (comma-separated)</div>
+                        <input
+                          type="text"
+                          value={(Array.isArray(task.accentOptions) ? task.accentOptions : task.config?.accentOptions || []).join(", ")}
+                          onChange={(e) => {
+                            const arr = e.target.value.split(/[,]+/).map((x) => x.trim()).filter(Boolean);
+                            updateTask(task._tempId, "accentOptions", arr);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), accentOptions: arr }));
+                          }}
+                          placeholder="american, canadian, british, neutral"
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 6 }}>Default accent</div>
+                        <input
+                          type="text"
+                          value={task.targetAccent || task.config?.targetAccent || ""}
+                          onChange={(e) => {
+                            updateTask(task._tempId, "targetAccent", e.target.value);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), targetAccent: e.target.value }));
+                          }}
+                          placeholder="american"
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SPEECH RECOGNITION: edit prompt/referenceText/language */}
+                {task.taskType === TASK_TYPES.SPEECH_RECOGNITION && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10 }}>
+                    <label style={{ display: "block", fontSize: "0.8rem", marginBottom: 6 }}>
+                      Speech recognition settings
+                    </label>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 8, marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 2 }}>Reference text (optional)</div>
+                        <input
+                          type="text"
+                          value={task.referenceText || task.config?.referenceText || ""}
+                          onChange={(e) => {
+                            updateTask(task._tempId, "referenceText", e.target.value);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), referenceText: e.target.value }));
+                          }}
+                          placeholder="(leave blank if it’s an open-ended question)"
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem" }}
+                        />
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: 2 }}>Language code</div>
+                        <input
+                          type="text"
+                          value={task.languageCode || task.config?.languageCode || "en-US"}
+                          onChange={(e) => {
+                            updateTask(task._tempId, "languageCode", e.target.value);
+                            updateGenericConfig(task._tempId, (prev) => ({ ...(prev || {}), languageCode: e.target.value }));
+                          }}
+                          placeholder="en-US"
+                          style={{ width: "100%", borderRadius: 6, border: "1px solid #d1d5db", padding: 6, fontSize: "0.85rem", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                      Student UI uses browser speech recognition; languageCode should be a BCP‑47 code (e.g., en-US, fr-CA).
+                    </div>
+                  </div>
+                )}
+
+                {/* MULTI-PLAYER FEEDBACK: no special schema, but show note */}
+                {task.taskType === TASK_TYPES.MULTI_PLAYER_FEEDBACK && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10, fontSize: "0.8rem", color: "#374151" }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Multi-player Feedback (closer)</div>
+                    <div style={{ color: "#6b7280" }}>
+                      This is a reflection/feedback closer (emoji rating + optional comment). It typically has no timer and is not AI-generated.
+                    </div>
+                  </div>
+                )}
+
+                {/* RECORD AUDIO: no special schema, but show note */}
+                {task.taskType === TASK_TYPES.RECORD_AUDIO && (
+                  <div style={{ marginBottom: 6, border: "1px solid #e5e7eb", background: "#ffffff", borderRadius: 10, padding: 10, fontSize: "0.8rem", color: "#374151" }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Record Audio (teacher-reviewed)</div>
+                    <div style={{ color: "#6b7280" }}>
+                      Students record an oral response. The teacher reviews the audio later. Prompt text is shown in the student UI.
                     </div>
                   </div>
                 )}

@@ -20,45 +20,6 @@ export default function RecordAudioTask({
   const streamRef = useRef(null);
   const timerRef = useRef(null);
 
-
-  const presignAndUploadToS3 = async ({ blob, contentType, purpose }) => {
-    const roomCode = task?.roomCode || task?.config?.roomCode || null;
-    const teamId = task?.teamId || task?.config?.teamId || null;
-
-    // In normal sessions, roomCode/teamId are usually baked into task by TaskRunner.
-    if (!roomCode || !teamId) {
-      throw new Error("Missing roomCode/teamId for S3 upload.");
-    }
-
-    const presignResp = await fetch("/api/media/presign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomCode,
-        teamId,
-        taskType: "record-audio",
-        contentType: contentType || blob.type || "application/octet-stream",
-        purpose: purpose || "audio",
-        fileName: `record-audio-${Date.now()}`,
-      }),
-    });
-
-    const presignJson = await presignResp.json().catch(() => null);
-    if (!presignResp.ok || !presignJson?.uploadUrl || !presignJson?.key) {
-      throw new Error(presignJson?.error || "Presign failed.");
-    }
-
-    const putResp = await fetch(presignJson.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": contentType || blob.type || "application/octet-stream" },
-      body: blob,
-    });
-    if (!putResp.ok) throw new Error("Upload to S3 failed.");
-
-    return { s3Key: presignJson.key, signedGetUrl: presignJson.signedGetUrl || null };
-  };
-
-
   // Load existing answer if draft exists (e.g., from reload)
   useEffect(() => {
     if (answerDraft?.audioUrl) {
@@ -192,51 +153,28 @@ export default function RecordAudioTask({
     };
   }, [audioUrl]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!hasRecording || disabled || !audioUrl) return;
 
-    try {
-      const blob = await fetch(audioUrl).then((r) => r.blob());
+    const reader = new FileReader();
 
-      // Prefer S3 upload so we don't push base64 through the backend.
-      let s3 = null;
-      try {
-        s3 = await presignAndUploadToS3({
-          blob,
-          contentType: blob.type || "audio/webm",
-          purpose: "audio",
-        });
-      } catch (e) {
-        console.warn("S3 upload unavailable, falling back to base64:", e);
-      }
+    reader.onloadend = () => {
+      const base64 = reader.result.split(",")[1];
+      onSubmit({
+        type: "audio",
+        base64,
+        duration,
+        mimeType: "audio/webm",
+      });
+    };
 
-      if (s3?.s3Key) {
-        onSubmit?.({
-          type: "record-audio",
-          s3Key: s3.s3Key,
-          signedGetUrl: s3.signedGetUrl,
-          duration,
-          mimeType: blob.type || "audio/webm",
-        });
-        return;
-      }
-
-      // Fallback: base64 (legacy)
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = String(reader.result || "").split(",")[1] || "";
-        onSubmit?.({
-          type: "record-audio",
-          base64,
-          duration,
-          mimeType: blob.type || "audio/webm",
-        });
-      };
-      reader.readAsDataURL(blob);
-    } catch (err) {
-      console.error("Error preparing recorded audio for submit", err);
-      alert("There was a problem preparing your recording. Please try again.");
-    }
+    fetch(audioUrl)
+      .then((res) => res.blob())
+      .then((blob) => reader.readAsDataURL(blob))
+      .catch((err) => {
+        console.error("Error reading recorded audio for submit", err);
+        alert("There was a problem preparing your recording. Please try again.");
+      });
   };
 
   return (

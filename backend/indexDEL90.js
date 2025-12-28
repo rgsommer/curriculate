@@ -32,9 +32,6 @@ import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import AccessCode from "./models/AccessCode.js";
 import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import crypto from "crypto";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
@@ -108,45 +105,6 @@ function getSessionByRoomCode(code) {
 }
 
 const POST_SUBMIT_SECONDS = Number(process.env.POST_SUBMIT_SECONDS || 10);
-
-// ------------------------------
-// S3 Media Upload (Presigned URLs)
-// ------------------------------
-const AWS_REGION = process.env.AWS_REGION || "us-east-2";
-const S3_BUCKET = process.env.S3_BUCKET || "";
-const S3_URL_EXPIRY_SECONDS = Number(process.env.S3_URL_EXPIRY_SECONDS || 300); // 5 minutes
-const S3_GET_URL_EXPIRY_SECONDS = Number(process.env.S3_GET_URL_EXPIRY_SECONDS || 3600); // 1 hour
-
-let _s3Client = null;
-function getS3Client() {
-  if (_s3Client) return _s3Client;
-  if (!S3_BUCKET) return null;
-  _s3Client = new S3Client({ region: AWS_REGION });
-  return _s3Client;
-}
-
-function safeExtFromContentType(contentType = "") {
-  const ct = String(contentType).toLowerCase();
-  if (ct.includes("audio/webm")) return "webm";
-  if (ct.includes("audio/wav")) return "wav";
-  if (ct.includes("audio/mpeg") || ct.includes("audio/mp3")) return "mp3";
-  if (ct.includes("audio/ogg")) return "ogg";
-  if (ct.includes("image/png")) return "png";
-  if (ct.includes("image/jpeg") || ct.includes("image/jpg")) return "jpg";
-  if (ct.includes("image/webp")) return "webp";
-  return "bin";
-}
-
-function canTeamAccessRoom(roomCode, teamId) {
-  try {
-    const room = getSessionByRoomCode(roomCode);
-    if (!room) return false;
-    if (!teamId) return false;
-    return Boolean(room.teams && room.teams[teamId]);
-  } catch {
-    return false;
-  }
-}
 
 function updateTeamScore(room, teamId, points) {
   // room may be a room object or (in some legacy calls) a roomCode string
@@ -5492,81 +5450,6 @@ app.get("/api/tasksets", async (req, res) => {
     res.json(sets);
   } catch (err) {
     console.error("GET /api/tasksets error:", err);
-
-// ------------------------------
-// Media: Presigned S3 Upload URLs
-// ------------------------------
-app.post("/api/media/presign", async (req, res) => {
-  try {
-    const s3 = getS3Client();
-    if (!s3) {
-      return res.status(400).json({ ok: false, error: "S3 is not configured (missing S3_BUCKET)." });
-    }
-    const { roomCode, teamId, taskType, contentType, purpose } = req.body || {};
-    if (!roomCode || !teamId) {
-      return res.status(400).json({ ok: false, error: "roomCode and teamId are required" });
-    }
-    if (!canTeamAccessRoom(roomCode, teamId)) {
-      return res.status(403).json({ ok: false, error: "Invalid roomCode/teamId" });
-    }
-    const ct = String(contentType || "application/octet-stream");
-    const ext = safeExtFromContentType(ct);
-    const safeTask = String(taskType || "media").replace(/[^a-z0-9-_]/gi, "").toLowerCase() || "media";
-    const safePurpose = String(purpose || "submission").replace(/[^a-z0-9-_]/gi, "").toLowerCase() || "submission";
-    const id = crypto.randomUUID();
-    const key = `sessions/${roomCode}/${teamId}/${safeTask}/${safePurpose}-${Date.now()}-${id}.${ext}`;
-
-    const putCmd = new PutObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: key,
-      ContentType: ct,
-      Metadata: {
-        roomcode: String(roomCode),
-        teamid: String(teamId),
-        tasktype: String(taskType || ""),
-        purpose: String(purpose || ""),
-      },
-    });
-
-    const uploadUrl = await getSignedUrl(s3, putCmd, { expiresIn: S3_URL_EXPIRY_SECONDS });
-
-    // Optional: signed GET for immediate preview (still private bucket)
-    const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: key });
-    const signedGetUrl = await getSignedUrl(s3, getCmd, { expiresIn: S3_GET_URL_EXPIRY_SECONDS });
-
-    return res.json({ ok: true, bucket: S3_BUCKET, key, uploadUrl, signedGetUrl });
-  } catch (err) {
-    console.error("/api/media/presign error:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
-
-app.post("/api/media/signed-get", async (req, res) => {
-  try {
-    const s3 = getS3Client();
-    if (!s3) {
-      return res.status(400).json({ ok: false, error: "S3 is not configured (missing S3_BUCKET)." });
-    }
-    const { roomCode, teamId, key } = req.body || {};
-    if (!roomCode || !teamId || !key) {
-      return res.status(400).json({ ok: false, error: "roomCode, teamId, and key are required" });
-    }
-    if (!canTeamAccessRoom(roomCode, teamId)) {
-      return res.status(403).json({ ok: false, error: "Invalid roomCode/teamId" });
-    }
-    // basic containment check: key should be within this room/team folder
-    const prefix = `sessions/${roomCode}/${teamId}/`;
-    if (!String(key).startsWith(prefix)) {
-      return res.status(403).json({ ok: false, error: "Key not allowed" });
-    }
-    const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: key });
-    const signedGetUrl = await getSignedUrl(s3, getCmd, { expiresIn: S3_GET_URL_EXPIRY_SECONDS });
-    return res.json({ ok: true, signedGetUrl });
-  } catch (err) {
-    console.error("/api/media/signed-get error:", err);
-    return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
     res.status(500).json({ error: "Failed to load task sets" });
   }
 });

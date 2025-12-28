@@ -4,7 +4,6 @@ import React, { useRef, useState } from "react";
 export default function PhotoTask({ task, onSubmit, disabled }) {
   const [note, setNote] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
-  const [imageFile, setImageFile] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const fileRef = useRef(null);
 
@@ -13,43 +12,6 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
     "Use your device to take a photo that matches your teacher's instructions.";
 
   const uiDisabled = disabled || submitted;
-
-
-  const roomCode = task?.roomCode || task?.config?.roomCode || null;
-  const teamId = task?.teamId || task?.config?.teamId || null;
-
-  const presignAndUploadToS3 = async ({ blob, contentType, purpose }) => {
-    if (!roomCode || !teamId) throw new Error("Missing roomCode/teamId for S3 upload.");
-
-    const presignResp = await fetch("/api/media/presign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomCode,
-        teamId,
-        taskType: "photo",
-        contentType: contentType || blob.type || "application/octet-stream",
-        purpose: purpose || "image",
-        fileName: `photo-${Date.now()}`,
-      }),
-    });
-
-    const presignJson = await presignResp.json().catch(() => null);
-    if (!presignResp.ok || !presignJson?.uploadUrl || !presignJson?.key) {
-      throw new Error(presignJson?.error || "Presign failed.");
-    }
-
-    const putResp = await fetch(presignJson.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": contentType || blob.type || "application/octet-stream" },
-      body: blob,
-    });
-
-    if (!putResp.ok) throw new Error("Upload to S3 failed.");
-
-    return { s3Key: presignJson.key, signedGetUrl: presignJson.signedGetUrl || null };
-  };
-
 
   const handlePickPhoto = () => {
     if (uiDisabled) return;
@@ -60,8 +22,6 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setImageFile(file);
-
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result);
@@ -69,7 +29,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (uiDisabled) return;
 
     if (!imagePreview) {
@@ -84,26 +44,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
     }
 
     const answerText = parts.join(" ");
-
-    // Prefer S3 upload; fall back to legacy (no media attachment) if unavailable.
-    let s3 = null;
-    try {
-      if (imageFile) {
-        s3 = await presignAndUploadToS3({
-          blob: imageFile,
-          contentType: imageFile.type || "image/jpeg",
-          purpose: "image",
-        });
-      }
-    } catch (e) {
-      console.warn("S3 upload unavailable (PhotoTask), continuing without key:", e);
-    }
-
-    const enriched = s3?.s3Key
-      ? `${answerText} [S3:${s3.s3Key}]`
-      : answerText;
-
-    onSubmit(enriched);
+    onSubmit(answerText);
     setSubmitted(true);
   };
 

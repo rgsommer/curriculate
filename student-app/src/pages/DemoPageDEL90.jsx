@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import TaskRunner from "../components/tasks/TaskRunner.jsx";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
-import ProgressFillButton from "../components/ProgressFillButton";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
@@ -430,16 +429,6 @@ function playWordWeaverChime() {
   }
 }
 
-function playDebateGavel() {
-  try {
-    const a = new Audio("https://actions.google.com/sounds/v1/foley/wood_tap.ogg");
-    a.volume = 0.18;
-    a.play();
-  } catch {
-    // ignore
-  }
-}
-
 
 function playPhotoShutter() {
   try {
@@ -560,9 +549,6 @@ export default function DemoPage() {
   const [phase, setPhase] = useState("mood"); // mood | runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
 
-  // Admin key is hidden until “Regenerate” is clicked
-  const [adminKey, setAdminKey] = useState("");
-  const [showAdminKey, setShowAdminKey] = useState(false);
 
   const [selectedType, setSelectedType] = useState("");
   const [currentTask, setCurrentTask] = useState(null);
@@ -573,14 +559,6 @@ export default function DemoPage() {
 
   const [toast, setToast] = useState(null);
 
-  // “Generate all types” streaming UI (ProgressFillButton)
-  const [generating, setGenerating] = useState(false);
-  const [done, setDone] = useState(0);
-  const [total, setTotal] = useState(1);
-  const [status, setStatus] = useState("");
-  const esRef = useRef(null);
-
-  const progress = total > 0 ? done / total : 0;
 
   // Hidden by default (you asked not to show bot count). Keep a sane default.
   const [botCount] = useState(3);
@@ -646,103 +624,7 @@ export default function DemoPage() {
     return json.taskset;
   }
 
-  async function regenerateDemoTaskset(key) {
-    const json = await fetchJsonSafe(`${API_BASE}/api/demo/taskset/regenerate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-demo-admin-key": key,
-      },
-      body: JSON.stringify({}),
-    });
-    if (!json?.ok) throw new Error(json?.error || "Failed to regenerate demo taskset");
-    setDemoTaskset(json.taskset);
-    return json.taskset;
-  }
 
-  // -------------------------
-  // Streaming generation (ProgressFillButton)
-  // -------------------------
-  function cleanupEventSource() {
-    try {
-      if (esRef.current) esRef.current.close();
-    } catch {}
-    esRef.current = null;
-  }
-
-  const startDemoGeneration = async () => {
-    if (generating) return;
-
-    // We require the admin key to generate the full demo pool.
-    const key = adminKey.trim();
-    if (!showAdminKey) {
-      setShowAdminKey(true);
-      showToast("Enter admin code to regenerate", false);
-      return;
-    }
-    if (!key) {
-      showToast("Admin code required", false);
-      return;
-    }
-
-    setGenerating(true);
-    setDone(0);
-    setTotal(1);
-    setStatus("Starting…");
-
-    cleanupEventSource();
-
-    const payload = {
-      adminKey: key,
-      // room for future: { includeNonEligible: false, ... }
-    };
-
-    const url = `${API_BASE}/api/demo/taskset/stream?payload=${encodeURIComponent(
-      JSON.stringify(payload)
-    )}`;
-
-    const es = new EventSource(url);
-    esRef.current = es;
-
-    es.addEventListener("start", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setTotal(Number(data.total) || 1);
-        setDone(Number(data.done) || 0);
-        setStatus("Generating…");
-      } catch {
-        setStatus("Generating…");
-      }
-    });
-
-    es.addEventListener("progress", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDone(Number(data.done) || 0);
-        setTotal(Number(data.total) || 1);
-        if (data.currentType) setStatus(`Generating: ${data.currentType}`);
-      } catch {}
-    });
-
-    es.addEventListener("done", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data?.taskset) setDemoTaskset(data.taskset);
-      } catch {}
-      setStatus("Done");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Demo pool regenerated", true);
-    });
-
-    es.addEventListener("error", () => {
-      // EventSource fires "error" on disconnect too; handle carefully
-      setStatus("Error / disconnected");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Stream disconnected", false);
-    });
-  };
 
   // Load once
   useEffect(() => {
@@ -948,46 +830,6 @@ export default function DemoPage() {
       };
     }
 
-
-    // AI Debate Judge: rich fallback (special live-debate verdict tool)
-    if (type === TASK_TYPES.AI_DEBATE_JUDGE || type === "ai-debate-judge" || type === "ai_debate_judge") {
-      return {
-        taskType: TASK_TYPES.AI_DEBATE_JUDGE,
-        title: "AI Debate Judge",
-        prompt:
-          "Choose your side and role, then tap 1‑2‑3 GO to record. Use evidence, structure, and respectful tone.",
-        timeLimitSeconds: 0,
-        points: 0,
-        config: {
-          kind: "ai-debate-judge",
-          allowTeamDevice: true,
-          sides: ["Affirmative", "Negative"],
-          positions: ["Introduction", "First", "Rebuttal", "Conclusion"],
-          timing: {
-            countdownSeconds: 120,
-            graceSeconds: 15,
-            penaltyTooShortUnderSeconds: 105,
-            penaltyTooLongOverSeconds: 135,
-            hardStopSeconds: 150,
-          },
-          ui: {
-            showSoundMeter: true,
-            showWaveform: false,
-            showListeningIndicator: true,
-          },
-          scoring: {
-            rubricName: "Debate Speech Rubric",
-            categories: [
-              { id: "structure", label: "Structure & Clarity", weight: 0.25 },
-              { id: "evidence", label: "Evidence & Reasoning", weight: 0.35 },
-              { id: "rebuttal", label: "Rebuttal & Responsiveness", weight: 0.20 },
-              { id: "delivery", label: "Delivery & Respect", weight: 0.20 },
-            ],
-          },
-        },
-      };
-    }
-
     return {
       taskType: type,
       title: `Demo: ${type}`,
@@ -1048,11 +890,6 @@ export default function DemoPage() {
     if ((next?.taskType || next?.type) === TASK_TYPES.HIDENSEEK) {
       showToast("🔎 Hide & Seek! Find it, snap proof, and explain why it matters.", true);
       playHuntWhoosh();
-    }
-
-    if ((next?.taskType || next?.type) === TASK_TYPES.AI_DEBATE_JUDGE) {
-      showToast("🧑‍⚖️ AI Debate Judge! Pick your side & role, then record your speech.", true);
-      playDebateGavel();
     }
 
   }
@@ -1258,28 +1095,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
     else showToast("Submitted", true);
   }
 
-  // -------------------------
-  // Demo Admin actions (POST regeneration for legacy)
-  // -------------------------
-  async function onRegeneratePool() {
-    // 1st click: reveal the admin input
-    if (!showAdminKey) {
-      setShowAdminKey(true);
-      return;
-    }
-
-    // 2nd click: actually regenerate
-    const key = adminKey.trim();
-    if (!key) return;
-
-    try {
-      await regenerateDemoTaskset(key);
-      showToast("Demo pool regenerated", true);
-    } catch (e) {
-      console.warn("[DemoPage] regenerate failed:", e);
-      showToast(e?.message || "Regenerate failed", false);
-    }
-  }
 
   // -------------------------
   // Simple “StudentApp-like” styling bits
@@ -1347,50 +1162,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
             </span>
 
-            <button
-              onClick={onRegeneratePool}
-              style={{
-                ...pill,
-                cursor: "pointer",
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(59,130,246,0.9)", // blue
-                color: "#fff",
-                fontWeight: 900,
-              }}
-              title="Regenerate demo pool (admin)"
-              type="button"
-            >
-              Regenerate
-            </button>
-
-            {showAdminKey && (
-              <input
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Admin code"
-                style={{
-                  ...pill,
-                  padding: "7px 10px",
-                  width: 160,
-                  textAlign: "left",
-                  border: "1px solid rgba(148,163,184,0.55)",
-                  background: "rgba(15,23,42,0.65)",
-                  color: "#fff",
-                  outline: "none",
-                }}
-              />
-            )}
-
-            <div style={{ minWidth: 220 }}>
-              <ProgressFillButton
-                progress={generating ? progress : 0}
-                disabled={generating}
-                onClick={startDemoGeneration}
-              >
-                {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
-              </ProgressFillButton>
-              <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
-            </div>
           </div>
         </div>
       </header>
@@ -1505,7 +1276,10 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 style={{
                   flex: "1 1 320px",
                   minWidth: 320,
-                  padding: 10,
+                  padding: 14,
+                  height: 52,
+                  fontSize: 16,
+                  lineHeight: "20px",
                   borderRadius: 10,
                   border: "1px solid rgba(255,255,255,0.18)",
                   background: "rgba(0,0,0,0.18)",

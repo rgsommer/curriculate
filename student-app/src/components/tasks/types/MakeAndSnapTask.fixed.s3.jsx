@@ -1,7 +1,13 @@
-// student-app/src/components/tasks/types/PhotoTask.jsx
+// student-app/src/components/tasks/types/MakeAndSnapTask.jsx
 import React, { useRef, useState } from "react";
 
-export default function PhotoTask({ task, onSubmit, disabled }) {
+export default function MakeAndSnapTask({
+  task,
+  onSubmit,
+  disabled,
+  onAnswerChange,
+  answerDraft,
+}) {
   const [note, setNote] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
   const [imageFile, setImageFile] = useState(null);
@@ -10,10 +16,15 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
 
   const promptText =
     task?.prompt ||
-    "Use your device to take a photo that matches your teacher's instructions.";
+    "Build, arrange, or create the object as instructed. Then take a photo of what you made.";
 
   const uiDisabled = disabled || submitted;
 
+
+  const notePrompt =
+    task?.config?.notePrompt ||
+    task?.notePrompt ||
+    "Write 1–2 sentences describing what you made and why it matches the prompt.";
 
   const roomCode = task?.roomCode || task?.config?.roomCode || null;
   const teamId = task?.teamId || task?.config?.teamId || null;
@@ -27,10 +38,10 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
       body: JSON.stringify({
         roomCode,
         teamId,
-        taskType: "photo",
+        taskType: "make-and-snap",
         contentType: contentType || blob.type || "application/octet-stream",
         purpose: purpose || "image",
-        fileName: `photo-${Date.now()}`,
+        fileName: `make-and-snap-${Date.now()}`,
       }),
     });
 
@@ -51,9 +62,25 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
   };
 
 
+  const buildAnswerText = (noteValue, hasPhoto) => {
+    const parts = [];
+    parts.push("[MAKE-AND-SNAP]");
+    parts.push(hasPhoto ? "[PHOTO TAKEN]" : "[NO PHOTO SELECTED]");
+    if (noteValue.trim()) {
+      parts.push(`Note: ${noteValue.trim()}`);
+    }
+    return parts.join(" ");
+  };
+
+  const pushDraftIfNeeded = (noteValue, hasPhoto) => {
+    if (!onAnswerChange) return;
+    const answerText = buildAnswerText(noteValue, hasPhoto);
+    onAnswerChange(answerText);
+  };
+
   const handlePickPhoto = () => {
     if (uiDisabled) return;
-    fileRef.current?.click(); // will open camera on most mobile browsers
+    fileRef.current?.click(); // triggers camera/gallery; on mobile with `capture` this prefers camera
   };
 
   const handleFileChange = (e) => {
@@ -65,46 +92,36 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result);
+      pushDraftIfNeeded(note, true);
     };
     reader.readAsDataURL(file);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (uiDisabled) return;
 
     if (!imagePreview) {
-      alert("Please take a photo before submitting.");
+      alert("Please take a photo of what you made before submitting.");
       return;
     }
 
-    const parts = [];
-    parts.push("[PHOTO TAKEN]");
-    if (note.trim()) {
-      parts.push(`Note: ${note.trim()}`);
-    }
+    const answerText = buildAnswerText(note, true);
 
-    const answerText = parts.join(" ");
+    // ✅ Submit the actual photo (base64 data URL) + note + readable summary
+    onSubmit?.({
+      type: "make-and-snap",
+      note: note.trim(),
+      imageDataUrl: imagePreview, // <-- THIS is what you were missing
+      summary: answerText,
+    });
 
-    // Prefer S3 upload; fall back to legacy (no media attachment) if unavailable.
-    let s3 = null;
-    try {
-      if (imageFile) {
-        s3 = await presignAndUploadToS3({
-          blob: imageFile,
-          contentType: imageFile.type || "image/jpeg",
-          purpose: "image",
-        });
-      }
-    } catch (e) {
-      console.warn("S3 upload unavailable (PhotoTask), continuing without key:", e);
-    }
-
-    const enriched = s3?.s3Key
-      ? `${answerText} [S3:${s3.s3Key}]`
-      : answerText;
-
-    onSubmit(enriched);
     setSubmitted(true);
+  };
+
+  const handleNoteChange = (e) => {
+    const next = e.target.value;
+    setNote(next);
+    pushDraftIfNeeded(next, !!imagePreview);
   };
 
   return (
@@ -113,7 +130,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
         background: "#020617",
         borderRadius: 12,
         padding: 16,
-        border: "2px solid #1d4ed8",
+        border: "2px solid #22c55e",
         color: "#e5e7eb",
       }}
     >
@@ -124,7 +141,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
           fontSize: "1.15rem",
         }}
       >
-        Photo Task
+        Make & Snap Task
       </h2>
 
       <p
@@ -159,7 +176,6 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
         {imagePreview ? "Retake Photo" : "Open Camera / Take Photo"}
       </button>
 
-      {/* Hidden input that opens camera/gallery on mobile */}
       <input
         type="file"
         accept="image/*"
@@ -198,11 +214,11 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
           marginBottom: 4,
         }}
       >
-        Add a note or description (optional):
+        Describe what you made (required):
       </label>
       <textarea
         value={note}
-        onChange={(e) => setNote(e.target.value)}
+        onChange={handleNoteChange}
         disabled={uiDisabled}
         rows={3}
         style={{
@@ -221,7 +237,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={uiDisabled || !imagePreview}
+        disabled={uiDisabled || !imagePreview || !note.trim()}
         style={{
           display: "block",
           width: "100%",

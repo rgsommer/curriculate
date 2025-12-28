@@ -1600,17 +1600,9 @@ useEffect(() => {
       .split(",")
       .map((w) => w.trim())
       .filter(Boolean);
-    // For many quick tasks we want at least 1 key term.
-    // For objective-solo tasks (matching/sequence/sort/timeline) we allow generation without a word list.
-    // Also allow wordless generation for tasks where the teacher prompt is the main driver (e.g., AI Debate Judge).
-    const wordlessTypes = new Set([
-      TASK_TYPES.AI_DEBATE_JUDGE || "ai-debate-judge",
-      // These are typically prompt-driven or non-word-bank flows.
-      TASK_TYPES.RECORD_AUDIO || "record-audio",
-      TASK_TYPES.MULTI_PLAYER_FEEDBACK || "multi-player-feedback",
-      TASK_TYPES.MOOD_CHECKIN || "mood-checkin",
-    ]);
-    const needsWords = !isOneOfObjectiveSolo(taskType) && !wordlessTypes.has(taskType);
+    // For many quick tasks we want at least 1 key term. For objective-solo
+    // tasks (matching/sequence/sort/timeline) we allow generation without a word list.
+    const needsWords = !isOneOfObjectiveSolo(taskType);
     if (rawWords.length === 0 && needsWords) {
       alert(
         "Please enter at least one vocabulary word or key term (e.g. 'photosynthesis', 'Confederation')."

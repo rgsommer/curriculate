@@ -35,17 +35,15 @@ export default function PhotoJournalTask({
   const [photoCaptured, setPhotoCaptured] = useState(false);
 
   const handleInnerPhotoSubmit = (payload) => {
-    const normalized =
-      typeof payload === "string" ? { type: "photo", summary: payload } : payload;
     // Do NOT call the parent onSubmit yet; just capture the photo payload.
-    setPhotoAnswer(normalized);
+    setPhotoAnswer(payload);
     setPhotoCaptured(true);
 
     // Optionally let parent know draft changed
     if (onAnswerChange) {
       onAnswerChange({
         ...(answerDraft || {}),
-        photo: normalized,
+        photo: payload,
         explanation,
       });
     }

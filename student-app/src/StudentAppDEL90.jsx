@@ -668,7 +668,6 @@ function StudentApp() {
   const sndRolePlay = useRef(null);
   const sndFakeOut = useRef(null);
   const sndWordWeaver = useRef(null);
-  const sndDebate = useRef(null);
   const sndCorrect = useRef(null);
   const sndWrong = useRef(null);
 
@@ -690,7 +689,6 @@ function StudentApp() {
   const [sketchSpark, setSketchSpark] = useState(false);
   const [vennGlow, setVennGlow] = useState(false);
   const [huntPulse, setHuntPulse] = useState(false);
-  const [debateGlow, setDebateGlow] = useState(false);
 
   // Timer refs
   const countdownTimerRef = useRef(null);
@@ -1033,20 +1031,6 @@ function StudentApp() {
         window.setTimeout(() => setTreatMessage(null), 4200);
       }
 
-      // AI Debate Judge: gavel cue + courtroom glow
-      if (
-        assignedType === TASK_TYPES.AI_DEBATE_JUDGE ||
-        assignedType === "ai-debate-judge" ||
-        assignedType === "ai_debate_judge" ||
-        assignedType === "aidebatejudge"
-      ) {
-        tryPlayDebateSound();
-        setDebateGlow(true);
-        window.setTimeout(() => setDebateGlow(false), 1400);
-        setTreatMessage("🧑‍⚖️ AI Debate Judge — choose your side & role, then tap 1‑2‑3 GO to record.");
-        window.setTimeout(() => setTreatMessage(null), 5200);
-      }
-
       setCurrentTask(assignedTask);
       setPostPhase("tasks"); // Clear mood
       const idx =
@@ -1382,13 +1366,6 @@ function StudentApp() {
       );
       wordWeaverAudio.volume = 0.14;
       sndWordWeaver.current = wordWeaverAudio;
-
-      // AI Debate Judge: gavel cue
-      const debateAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      debateAudio.volume = 0.18;
-      sndDebate.current = debateAudio;
     } catch {
       // ignore
     }
@@ -1464,22 +1441,6 @@ function StudentApp() {
       sndFakeOut.current && sndFakeOut.current.play();
     } catch (err) {
       console.warn("FakeOut sound play blocked:", err);
-    }
-  }
-
-  function tryPlayWordWeaverSound() {
-    try {
-      sndWordWeaver.current && sndWordWeaver.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-  function tryPlayDebateSound() {
-    try {
-      sndDebate.current && sndDebate.current.play();
-    } catch {
-      // ignore
     }
   }
 
@@ -2123,10 +2084,6 @@ const norm = normalizeStationId(data);
   const isMotionMission = currentTask?.taskType === TASK_TYPES.MOTION_MISSION;
   const isPetFeeding = currentTask?.taskType === TASK_TYPES.PET_FEEDING;
   const isRecordAudio = currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
-  const isAIDebateJudge =
-    currentTask?.taskType === TASK_TYPES.AI_DEBATE_JUDGE ||
-    currentTask?.taskType === "ai-debate-judge" ||
-    currentTask?.taskType === "ai_debate_judge";
 
   const isJeopardy = currentTask?.taskType === TASK_TYPES.BRAINSTORM_BATTLE;
   const isFlashcardsRace = currentTask?.taskType === TASK_TYPES.FLASHCARDS_RACE;
@@ -3756,23 +3713,6 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
             boxShadow:
               "0 0 0 1px rgba(255,255,255,0.08) inset, 0 18px 60px rgba(0,0,0,0.35)",
             animation: "echo-pulse 1.1s ease-out 1",
-          }}
-        />
-      )}
-
-      {debateGlow && isAIDebateJudge && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: 18,
-            pointerEvents: "none",
-            background:
-              "radial-gradient(circle at 20% 25%, rgba(14,165,233,0.18), transparent 58%), radial-gradient(circle at 80% 20%, rgba(250,204,21,0.16), transparent 60%), radial-gradient(circle at 50% 92%, rgba(236,72,153,0.10), transparent 60%)",
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.08) inset, 0 18px 60px rgba(0,0,0,0.30)",
-            animation: "echo-pulse 1.35s ease-out 1",
           }}
         />
       )}
