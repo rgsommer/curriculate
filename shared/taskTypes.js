@@ -1322,7 +1322,7 @@ export const TASK_TYPE_META = {
         "prompt: the question/instruction the student should answer",
         "timeLimitSeconds: 45–90 (default 60)",
         "referenceText?: string  // optional reading-aloud text (if task is ‘read this aloud’ instead of ‘answer this’)",
-        "language?: string       // UI label (e.g., "English")",
+        "language?: string       // UI label (e.g., \"English\")",
         "languageCode?: string   // e.g., \"en-US\" (preferred for browser recognition)",
         "rubric?: { focus?: string, points?: number } // optional scoring guidance",
         "",
