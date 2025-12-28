@@ -1398,8 +1398,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
               </div>
             </>
-          )}
-            </div>
+          )}            </div>
           </div>
         </div>
       </header>
