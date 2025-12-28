@@ -1379,7 +1379,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   outline: "none",
                 }}
               />
-              </>
             )}
 
             <div style={{ minWidth: 220 }}>
