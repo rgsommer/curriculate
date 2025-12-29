@@ -551,6 +551,10 @@ function shuffleArray(arr) {
   return a;
 }
 
+function stripChoiceLabel(s) {
+  return typeof s === "string" ? s.replace(/^[A-D]\)\s*/i, "").trim() : s;
+}
+
 // Targeted regeneration for one broken task (same type, more content)
 export async function regenerateSingleTask({
   allowedType,
@@ -1504,7 +1508,7 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
               (it.text && String(it.text).trim()) ||
               `Question ${idx + 1}`;
 
-            let ioptions = Array.isArray(it.options) ? it.options : [];
+            let ioptions = Array.isArray(it.options) ? it.options.map(stripChoiceLabel) : [];
             // Enforce exactly 4 visible options for the physical station format
             if (ioptions.length < 4) {
               // pad deterministically (UI will still shuffle/present)
@@ -3187,6 +3191,18 @@ if (allowedType === TASK_TYPES.JEOPARDY) {
         }
       }
     }
+
+    function dedupeTasks(tasks) {
+      const seen = new Set();
+      return (tasks || []).filter((t) => {
+        const key = `${t?.taskType}||${(t?.title || "").trim()}||${(t?.prompt || "").trim()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    tasks.splice(0, tasks.length, ...dedupeTasks(tasks));
 
     const now = new Date();
     let finalName = explicitName || topicLabel;
