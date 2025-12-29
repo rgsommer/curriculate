@@ -1,0 +1,23 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/about/page": "app/about/page.js",
+  "/compare/page": "app/compare/page.js",
+  "/compare/kahoot/page": "app/compare/kahoot/page.js",
+  "/compare/quizlet/page": "app/compare/quizlet/page.js",
+  "/compare/worksheets/page": "app/compare/worksheets/page.js",
+  "/compare/one-pager/page": "app/compare/one-pager/page.js",
+  "/pedagogy/page": "app/pedagogy/page.js",
+  "/faq/page": "app/faq/page.js",
+  "/contact/page": "app/contact/page.js",
+  "/pricing/page": "app/pricing/page.js",
+  "/features/page": "app/features/page.js",
+  "/reports/page": "app/reports/page.js",
+  "/referrals/page": "app/referrals/page.js",
+  "/signup/page": "app/signup/page.js",
+  "/station-posters/page": "app/station-posters/page.js",
+  "/terms/page": "app/terms/page.js",
+  "/termsofservice/page": "app/termsofservice/page.js",
+  "/privacy/page": "app/privacy/page.js",
+  "/support/page": "app/support/page.js",
+  "/page": "app/page.js"
+}
