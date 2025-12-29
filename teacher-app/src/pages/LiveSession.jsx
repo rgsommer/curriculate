@@ -2612,7 +2612,6 @@ if (
         roomCode: code,
         tasksetId: data._id || activeTasksetMeta._id,
         selectedRooms,
-      }),
         reportOwnerId,
         reportOwnerName,
         reportOwnerEmail,
@@ -2620,7 +2619,8 @@ if (
         runByPresenterName: runByName,
         runByPresenterEmail: user?.email,
         sharedToken,
-      });    } catch (err) {
+      });
+    } catch (err) {
       console.error("[LiveSession] Launch taskset error:", err);
       setStatus(err.message || "Failed to launch taskset.");
       setTasksetLaunchAnimating(false);
@@ -4763,15 +4763,15 @@ Precipitation — rain, snow, hail`}
                           tasksetDoc._id ||
                           activeTasksetMeta?._id,
                         selectedRooms,
-                      }),
-        reportOwnerId,
-        reportOwnerName,
-        reportOwnerEmail,
-        runByPresenterId: user?.id || user?._id,
-        runByPresenterName: runByName,
-        runByPresenterEmail: user?.email,
-        sharedToken,
-      });                    }
+                        reportOwnerId,
+                        reportOwnerName,
+                        reportOwnerEmail,
+                        runByPresenterId: user?.id || user?._id,
+                        runByPresenterName: runByName,
+                        runByPresenterEmail: user?.email,
+                        sharedToken,
+                      });
+                    }
                   } catch (err) {
                     console.error(
                       "[LiveSession] Hide & Seek save error:",
