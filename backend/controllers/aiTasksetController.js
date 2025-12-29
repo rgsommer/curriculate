@@ -516,6 +516,7 @@ function mcItemsAreValid(items) {
         it.correctAnswer < it.options.length
     )
   );
+} 
 
 function physicalMcItemsAreValid(items) {
   return (
@@ -531,8 +532,6 @@ function physicalMcItemsAreValid(items) {
         it.correctAnswer < it.options.length
     )
   );
-}
-
 }
 
 function cluesAreValid(clues) {
