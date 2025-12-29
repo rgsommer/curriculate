@@ -1,6 +1,8 @@
 // frontend/src/app/termsofservice/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
+import PolicyLastUpdatedBanner from "@/components/PolicyLastUpdatedBanner";
+
 
 export const metadata: Metadata = {
   title: "Terms of Service | Curriculate",
@@ -24,6 +26,7 @@ export default function TermsOfServicePage() {
           By using the service, you agree to these terms.
         </p>
       </header>
+      <PolicyLastUpdatedBanner dateLabel={EFFECTIVE_DATE} />
 
       <Section title="1. The Service">
         Curriculate is a web-based educational platform designed to help

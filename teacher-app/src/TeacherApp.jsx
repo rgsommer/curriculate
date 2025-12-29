@@ -1368,7 +1368,7 @@ function AdminPage({ isAdmin = false }) {
             <div style={{ fontWeight: 900, marginBottom: 6 }}>
               HTML body
               <span style={{ opacity: 0.75, fontWeight: 700, marginLeft: 10, fontSize: 12 }}>
-                Placeholders: {{'{{SENDER_NAME}}'}}, {{'{{TASKSET_NAME}}'}}, {{'{{SHARE_URL}}'}}, {{'{{EXPIRES_DATE}}'}}, {{'{{CUSTOM_MESSAGE_BLOCK}}'}}
+                {"Placeholders: {{SENDER_NAME}}, {{TASKSET_NAME}}, {{SHARE_URL}}, {{EXPIRES_DATE}}, {{CUSTOM_MESSAGE_BLOCK}}"}
               </span>
             </div>
             <textarea

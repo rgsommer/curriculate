@@ -1,6 +1,7 @@
 // frontend/app/privacy/page.tsx
 import type { Metadata } from "next";
 import Link from "next/link";
+import PolicyLastUpdatedBanner from "@/components/PolicyLastUpdatedBanner";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Curriculate",
@@ -22,6 +23,7 @@ export default function PrivacyPage() {
           needed to provide the service and improve it over time.
         </p>
       </header>
+      <PolicyLastUpdatedBanner dateLabel={EFFECTIVE_DATE} />
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-semibold">1) Who we are</h2>

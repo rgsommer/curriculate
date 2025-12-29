@@ -5,7 +5,7 @@ import "./globals.css";
 import Script from "next/script";
 import { AuthProvider } from "@/lib/auth";
 
-//import Footer from "@/components/Footer";
+import Footer from "@/components/Footer";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -46,6 +46,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <AuthProvider>{children}</AuthProvider>
         {/* <Footer /> */}
+      </body>
+      <body className={inter.className}>
+        {children}
+        <Footer />
       </body>
     </html>
   );
