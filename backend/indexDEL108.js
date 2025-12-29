@@ -39,7 +39,6 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
 import { recordNoiseSample, computeNoiseSummary } from "./utils/noiseTelemetry.js";
-import billingHandoffRoutes from "./routes/billingHandoff.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
@@ -285,7 +284,6 @@ const server = http.createServer(app);
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 app.use("/api/demo", demoTasksetStreamRoutes);
-app.use("/api", billingHandoffRoutes);
 
 app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-16" });
@@ -5912,19 +5910,16 @@ app.post("/api/media/signed-get", async (req, res) => {
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
+    res.status(500).json({ error: "Failed to load task sets" });
+  }
+});
 
 app.get("/api/tasksets/:id", async (req, res) => {
   try {
     const set = await TaskSet.findById(req.params.id).lean();
     if (!set) {
       return res.status(404).json({ error: "Task set not found" });
-    }
-    return res.json(set);
-  } catch (err) {
-    console.error("GET /api/tasksets/:id error:", err);
-    return res.status(500).json({ error: "Failed to load task set" });
-  }
-});
+
 
 // --------------------------------------------------------------------
 // Share link: create an expiring link that another logged-in presenter can run.
@@ -6128,8 +6123,21 @@ app.post("/api/shared/:token/send-invite", authRequired, async (req, res) => {
   }
 });
 
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[share-invite] failed:", err);
+    res.status(500).json({ ok: false, error: err.message || "Failed to send invite email." });
+  }
+});
 
 
+    }
+    res.json(set);
+  } catch (err) {
+    console.error("GET /api/tasksets/:id error:", err);
+    res.status(500).json({ error: "Failed to load task set" });
+  }
+});
 
 app.put("/api/tasksets/:id", async (req, res) => {
   try {
