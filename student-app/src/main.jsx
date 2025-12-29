@@ -33,8 +33,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <BrowserRouter>
       <MotionPermissionWrapper>
         <Routes>
+          {/* Explicit demo route */}
           <Route path="/demo" element={<DemoPage />} />
-          <Route path="/*" element={<App />} />
+
+          {/* Everything else → Demo */}
+          <Route path="*" element={<DemoPage />} />
         </Routes>
       </MotionPermissionWrapper>
     </BrowserRouter>
