@@ -90,8 +90,7 @@ const SessionReport = mongoose.models.SessionReport || mongoose.model(
       includeIndividualReports: { type: Boolean, default: false },
     },
     { timestamps: true }
-
-);
+  )
 
 
 function renderEmailTemplate(str, vars) {
