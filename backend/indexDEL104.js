@@ -91,7 +91,6 @@ const SessionReport = mongoose.models.SessionReport || mongoose.model(
     },
     { timestamps: true }
 
-  )
 );
 
 
