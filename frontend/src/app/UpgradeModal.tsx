@@ -13,15 +13,16 @@ type Props = {
   ctaLabel?: string;
 };
 
-export default function UpgradeModal({
-  open,
-  onClose,
-  feature = "this feature",
-  title = "Unlock Teacher Plus",
-  subtitle = "Founding Teacher Price · locked forever for early subscribers",
-  ctaHref = "/pricing#teacher-plus",
-  ctaLabel = "See Teacher Plus",
-}: Props) {
+
+type UpgradeModalProps = {
+  open: boolean;
+  onClose: () => void;
+  feature?: string;
+  ctaHref?: string;
+  ctaLabel?: string;
+};
+
+export default function UpgradeModal({ open, onClose, feature, ctaHref, ctaLabel }: UpgradeModalProps) {
   if (!open) return null;
 
   return (
