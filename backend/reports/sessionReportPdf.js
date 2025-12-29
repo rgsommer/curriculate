@@ -489,6 +489,10 @@ function formatDate(d) {
   keyValue("Class:", report.className || "—");
   keyValue("Grade:", report.gradeLevel || "—");
   keyValue("Task Set:", report.taskSetName || "—");
+  if (report.runByPresenterName) keyValue("Presented by:", report.runByPresenterName);
+  if (report.sharedFromTeacherName || report.sharedFromTeacherEmail) {
+    keyValue("TaskSet from:", report.sharedFromTeacherName || report.sharedFromTeacherEmail);
+  }
   if (report.subject) keyValue("Subject:", report.subject);
 
   doc.moveDown(0.5);

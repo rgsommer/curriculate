@@ -1098,7 +1098,25 @@ export default function TasksetTranscript({ transcript }) {
         </p>
         <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
           Task set: <strong>{tasksetName}</strong>
-        </p>
+        
+        {(transcript.runByPresenterName || transcript.sharedFromTeacherName || transcript.sharedFromTeacherEmail) && (
+          <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
+            {transcript.sharedFromTeacherName || transcript.sharedFromTeacherEmail ? (
+              <>
+                TaskSet from: <strong>{transcript.sharedFromTeacherName || transcript.sharedFromTeacherEmail}</strong>
+                {transcript.runByPresenterName ? (
+                  <>
+                    {" "}• Presented by: <strong>{transcript.runByPresenterName}</strong>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <>
+                Presented by: <strong>{transcript.runByPresenterName}</strong>
+              </>
+            )}
+          </p>
+        )}
       </header>
 
       {(tasks || []).map((task) => {

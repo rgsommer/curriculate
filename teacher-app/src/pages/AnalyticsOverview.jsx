@@ -176,6 +176,16 @@ export default function AnalyticsOverview() {
                 <div>
                   <div className="font-semibold text-sm sm:text-base">
                     {s.classroomName} – {s.taskSetName}
+                    {(s.sharedFromTeacherName || s.sharedFromTeacherEmail) && (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                        TaskSet from {s.sharedFromTeacherName || s.sharedFromTeacherEmail}
+                      </span>
+                    )}
+                    {s.runByPresenterName && (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        Presented by {s.runByPresenterName}
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] sm:text-xs text-gray-500">
                     {s.startedAt

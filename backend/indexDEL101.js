@@ -21,7 +21,6 @@ import TeamSession from "./models/TeamSession.js"; // NEW IMPORT
 import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
-import { sendSystemEmail } from "./email/shareInviteEmailer.js";
 import { generateAiTaskset } from "./controllers/aiTasksetController.js";
 import {
   listSessions,
@@ -32,8 +31,6 @@ import { authRequired } from "./middleware/authRequired.js";
 import { TASK_TYPE_META } from "../shared/taskTypes.js";
 import { COLORS } from "../shared/colors.js";
 import AccessCode from "./models/AccessCode.js";
-import SystemEmailTemplate from "./models/SystemEmailTemplate.js";
-import ReferralProgramSettings from "./models/ReferralProgramSettings.js";
 import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -58,17 +55,6 @@ const SessionReport = mongoose.models.SessionReport || mongoose.model(
 
       // Summary / overview for quick listing + email teaser
       headline: { type: String, default: "" },
-
-
-      // Shared-run attribution (when a different presenter ran the task set)
-      sharedToken: { type: String, default: "" },
-      sharedFromTeacherId: { type: String, default: "" },
-      sharedFromTeacherName: { type: String, default: "" },
-      sharedFromTeacherEmail: { type: String, default: "" },
-      runByPresenterId: { type: String, default: "" },
-      runByPresenterName: { type: String, default: "" },
-      runByPresenterEmail: { type: String, default: "" },
-
       overviewEmail: { type: String, default: "" }, // brief email-ready overview (plain text)
       parentNote: { type: String, default: "" }, // "Today in __class..." (plain text)
 
@@ -91,197 +77,9 @@ const SessionReport = mongoose.models.SessionReport || mongoose.model(
     },
     { timestamps: true }
   )
-
-
-function renderEmailTemplate(str, vars) {
-  let out = String(str || "");
-  for (const [k, v] of Object.entries(vars || {})) {
-    out = out.replaceAll(`{{${k}}}`, String(v ?? ""));
-  }
-  return out;
-}
-
-async function ensureDefaultEmailTemplates() {
-  // Only create if missing (so Admin edits are preserved)
-  const defaults = [
-    {
-      key: "share-invite",
-      label: "Share link email (initial)",
-      enabled: true,
-      subject: "Curriculate: {{SENDER_NAME}} shared a task set with you",
-      html: `
-<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#111827;line-height:1.5;">
-  <h2 style="margin:0 0 8px 0;">A task set was shared with you</h2>
-  <p style="margin:0 0 10px 0;"><b>{{SENDER_NAME}}</b> shared <b>{{TASKSET_NAME}}</b> with you on Curriculate.</p>
-
-  {{CUSTOM_MESSAGE_BLOCK}}
-
-  <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin:12px 0;">
-    <div style="font-weight:700;">Open and run the task set</div>
-    <ol style="margin:8px 0 0 18px;color:#334155;">
-      <li>Click <b>Open in Curriculate</b></li>
-      <li>Curriculate opens two tabs: <b>Host</b> (projector) + <b>Live</b> (presenter controls)</li>
-      <li>Run it as many times as you want (refresh regenerates the room but reuses the same task set)</li>
-    </ol>
-
-    <div style="margin-top:10px;">
-      <a href="{{SHARE_URL}}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 14px;border-radius:10px;font-weight:700;">
-        Open in Curriculate
-      </a>
-    </div>
-
-    <div style="margin-top:10px;color:#475569;font-size:13px;">This link expires on {{EXPIRES_DATE}}.</div>
-  </div>
-
-  <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;"/>
-  <p style="margin:0;color:#475569;font-size:13px;">
-    Want to keep Curriculate ready for next time? Explore plan tiers and classroom analytics in the presenter app.
-  </p>
-</div>
-`,
-      followupDays: null,
-    },
-    {
-      key: "share-followup-7",
-      label: "Follow-up email (7 days)",
-      enabled: true,
-      subject: "Reminder: a Curriculate task set is waiting for you",
-      html: `
-<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#111827;line-height:1.5;">
-  <h2 style="margin:0 0 8px 0;">Reminder: a task set was shared with you</h2>
-  <p style="margin:0 0 10px 0;">{{SENDER_NAME}} shared a ready-to-run task set with you on Curriculate.</p>
-  <div style="margin-top:10px;">
-    <a href="{{SHARE_URL}}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 14px;border-radius:10px;font-weight:700;">
-      Open in Curriculate
-    </a>
-  </div>
-  <div style="margin-top:10px;color:#475569;font-size:13px;">This link expires on {{EXPIRES_DATE}}.</div>
-</div>
-`,
-      followupDays: 7,
-    },
-    {
-      key: "share-followup-30",
-      label: "Follow-up email (30 days)",
-      enabled: true,
-      subject: "Final reminder: shared Curriculate task set",
-      html: `
-<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#111827;line-height:1.5;">
-  <h2 style="margin:0 0 8px 0;">Final reminder</h2>
-  <p style="margin:0 0 10px 0;">If you still need it, the shared task set link is below (if it hasn’t expired).</p>
-  <div style="margin-top:10px;">
-    <a href="{{SHARE_URL}}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 14px;border-radius:10px;font-weight:700;">
-      Open in Curriculate
-    </a>
-  </div>
-  <div style="margin-top:10px;color:#475569;font-size:13px;">This link expires on {{EXPIRES_DATE}}.</div>
-</div>
-`,
-      followupDays: 30,
-    },
-    {
-      key: "referral-reward",
-      label: "Referral reward email (sender)",
-      enabled: true,
-      subject: "You earned a free month of Curriculate 🎉",
-      html: `
-<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#111827;line-height:1.5;">
-  <h2 style="margin:0 0 8px 0;">You did it 🎉</h2>
-  <p style="margin:0 0 10px 0;">{{SENDER_NAME}}, thanks for sharing Curriculate with other teachers.</p>
-
-  <div style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:12px;padding:12px 14px;margin:12px 0;">
-    <div style="font-weight:800;">Reward unlocked</div>
-    <div style="margin-top:6px;">You’ve hit the referral goal of <b>{{THRESHOLD}}</b> successful shares. We’ve queued <b>{{REWARD_MONTHS}}</b> free month(s) on your account.</div>
-  </div>
-
-  <p style="margin:0;color:#475569;font-size:13px;">If you have any questions, just reply to this email and our team will help.</p>
-</div>
-`,
-      followupDays: null,
-    },
-  ];
-
-  for (const d of defaults) {
-    const exists = await SystemEmailTemplate.findOne({ key: d.key }).lean();
-    if (!exists) await SystemEmailTemplate.create(d);
-  }
-}
-
-async function ensureDefaultReferralSettings() {
-  // Keep this in a single doc so Admin can edit the program globally
-  const key = "default";
-  const exists = await ReferralProgramSettings.findOne({ key }).lean();
-  if (exists) return;
-  await ReferralProgramSettings.create({ key, enabled: true, threshold: 5, rewardMonths: 1 });
-}
-// --------------------------------------------------------------------
-// Shared task set links (secure, expiring links for substitute presenters)
-// --------------------------------------------------------------------
-const SharedTasksetLink =
-  mongoose.models.SharedTasksetLink ||
-  mongoose.model(
-    "SharedTasksetLink",
-    new mongoose.Schema(
-      {
-        token: { type: String, index: true, unique: true, required: true },
-        tasksetId: { type: String, index: true, required: true },
-
-        ownerId: { type: String, index: true, required: true },
-        ownerName: { type: String, default: "" },
-        ownerEmail: { type: String, default: "" },
-
-        createdAt: { type: Date, default: () => new Date() },
-        expiresAt: { type: Date, required: true, index: true },
-        revokedAt: { type: Date, default: null },
-
-        // Optional, for cross-compat with access codes / districts
-        entryCode: { type: String, default: "", index: true },
-
-        // Email tracking + follow-ups
-        invites: {
-          type: [
-            new mongoose.Schema(
-              {
-                toEmail: { type: String, default: "" },
-                ccEmail: { type: String, default: "" },
-                senderUserId: { type: String, default: "" },
-                senderName: { type: String, default: "" },
-                sentAt: { type: Date },
-                followup7SentAt: { type: Date },
-                followup30SentAt: { type: Date },
-                firstUsedAt: { type: Date },
-                countedForReward: { type: Boolean, default: false },
-                rewardSentAt: { type: Date },
-              },
-              { _id: false }
-            ),
-          ],
-          default: [],
-        },
-
-        firstUsedAt: { type: Date, default: null },
-        lastUsedAt: { type: Date, default: null },
-        usedCount: { type: Number, default: 0 },
-      },
-      { minimize: false }
-    )
-  );
-
 );
 
 const app = express();
-
-// Admin gate (server-side)
-const adminRequired = [
-  authRequired,
-  (req, res, next) => {
-    const u = req.user || {};
-    const roles = Array.isArray(u.roles) ? u.roles : [];
-    const ok = u.isAdmin === true || u.role === "admin" || u.userType === "admin" || roles.includes("admin");
-    if (!ok) return res.status(403).json({ ok: false, error: "Admin only." });
-    next();
-  },
-];
 const server = http.createServer(app);
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
@@ -306,87 +104,6 @@ const teamClues = new Map(); // ← global store for mystery clues
 // helper functions
 function getOwnerId(req) {
   return String(req.user?._id || req.user?.userId || req.user?.id || req.userId || "").trim();
-}
-
-async function getReferralSettings() {
-  const s = await ReferralProgramSettings.findOne({ key: "default" }).lean();
-  return {
-    enabled: s ? s.enabled !== false : true,
-    threshold: s ? Number(s.threshold || 5) : 5,
-    rewardMonths: s ? Number(s.rewardMonths || 1) : 1,
-  };
-}
-
-async function maybeSendReferralReward({ senderUserId, senderEmail, senderName } = {}) {
-  try {
-    if (!senderUserId || !senderEmail) return { ok: true, skipped: true };
-    const settings = await getReferralSettings();
-    if (!settings.enabled) return { ok: true, skipped: true };
-
-    // Count distinct recipients who have actually run a shared taskset, and haven't been counted for rewards yet.
-    const agg = await SharedTasksetLink.aggregate([
-      { $unwind: "$invites" },
-      {
-        $match: {
-          "invites.senderUserId": String(senderUserId),
-          "invites.firstUsedAt": { $ne: null },
-          $or: [
-            { "invites.countedForReward": { $exists: false } },
-            { "invites.countedForReward": false },
-          ],
-        },
-      },
-      // Deduplicate by recipient email
-      {
-        $group: {
-          _id: { toEmail: { $toLower: "$invites.toEmail" } },
-          linkId: { $first: "$_id" },
-          sentAt: { $first: "$invites.sentAt" },
-        },
-      },
-      { $sort: { sentAt: 1 } },
-      { $limit: Math.max(1, settings.threshold) },
-    ]);
-
-    if (!agg || agg.length < settings.threshold) return { ok: true, skipped: true };
-
-    // Mark these invites as counted (best-effort)
-    for (const row of agg) {
-      const email = String(row?._id?.toEmail || "").trim();
-      if (!email) continue;
-      await SharedTasksetLink.updateOne(
-        { _id: row.linkId, "invites.toEmail": new RegExp(`^${email}$`, "i") },
-        { $set: { "invites.$.countedForReward": true } }
-      );
-    }
-
-    // Send reward email
-    const tpl = (await SystemEmailTemplate.findOne({ key: "referral-reward" }).lean()) || {};
-    const subjectTemplate = tpl.subject || "You earned a free month of Curriculate 🎉";
-    const htmlTemplate = tpl.html || "";
-    const vars = {
-      SENDER_NAME: senderName || "Presenter",
-      THRESHOLD: settings.threshold,
-      REWARD_MONTHS: settings.rewardMonths,
-    };
-
-    await sendSystemEmail({
-      to: senderEmail,
-      subject: renderEmailTemplate(subjectTemplate, vars),
-      html: renderEmailTemplate(htmlTemplate, vars),
-    });
-
-    // Also stamp a rewardSentAt on the *most recent* invite we just counted (for metrics)
-    await SharedTasksetLink.updateOne(
-      { token: { $exists: true }, "invites.senderUserId": String(senderUserId), "invites.firstUsedAt": { $ne: null }, "invites.rewardSentAt": { $exists: false } },
-      { $set: { "invites.$.rewardSentAt": new Date() } }
-    );
-
-    return { ok: true, sent: true };
-  } catch (e) {
-    console.warn("[referral-reward] failed:", e?.message || e);
-    return { ok: false, error: e?.message || String(e) };
-  }
 }
 
 
@@ -598,16 +315,7 @@ if (!MONGO_URI) {
 
 mongoose
   .connect(MONGO_URI)
-  .then(async () => {
-    console.log("Mongo connected");
-    // Seed system templates/settings once (Admin edits are preserved)
-    try {
-      await ensureDefaultEmailTemplates();
-      await ensureDefaultReferralSettings();
-    } catch (e) {
-      console.warn("[seed] failed:", e?.message || e);
-    }
-  })
+  .then(() => console.log("Mongo connected"))
   .catch((err) => console.error("Mongo connection error:", err));
 
 // ====================================================================
@@ -866,14 +574,6 @@ function buildTranscript(room) {
 
   return {
     roomCode: room.code,
-    taskSetName: room?.taskset?.name || room?.taskset?.title || "",
-    sharedToken: room.sharedToken || "",
-    sharedFromTeacherId: room.reportOwnerId || "",
-    sharedFromTeacherName: room.reportOwnerName || "",
-    sharedFromTeacherEmail: room.reportOwnerEmail || "",
-    runByPresenterId: room.runByPresenterId || "",
-    runByPresenterName: room.runByPresenterName || "",
-    runByPresenterEmail: room.runByPresenterEmail || "",
     startedAt: room.startedAt,
     completedAt: Date.now(),
     tasks: taskRecords,
@@ -932,13 +632,6 @@ function buildRoomState(room) {
     return {
       code: null,
       locationCode: "Classroom",
-      reportOwnerId: "",
-      reportOwnerName: "",
-      reportOwnerEmail: "",
-      runByPresenterId: "",
-      runByPresenterName: "",
-      runByPresenterEmail: "",
-      sharedToken: "",
       teams: {},
       stations: [],
       scores: {},
@@ -1046,13 +739,6 @@ function buildRoomState(room) {
   return {
     code: room.code,
     locationCode: room.locationCode || "Classroom",
-    reportOwnerId: room.reportOwnerId || "",
-    reportOwnerName: room.reportOwnerName || "",
-    reportOwnerEmail: room.reportOwnerEmail || "",
-    runByPresenterId: room.runByPresenterId || "",
-    runByPresenterName: room.runByPresenterName || "",
-    runByPresenterEmail: room.runByPresenterEmail || "",
-    sharedToken: room.sharedToken || "",
     teams: (() => {
       const out = {};
       for (const [teamId, t] of Object.entries(room.teams || {})) {
@@ -4325,20 +4011,6 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
         room.selectedRooms = null;
       }
 
-
-      // Shared-link attribution (optional)
-      if (reportOwnerId || reportOwnerName || reportOwnerEmail) {
-        room.reportOwnerId = String(reportOwnerId || "").trim();
-        room.reportOwnerName = String(reportOwnerName || "").trim();
-        room.reportOwnerEmail = String(reportOwnerEmail || "").trim();
-      }
-      if (runByPresenterId || runByPresenterName || runByPresenterEmail) {
-        room.runByPresenterId = String(runByPresenterId || "").trim();
-        room.runByPresenterName = String(runByPresenterName || "").trim();
-        room.runByPresenterEmail = String(runByPresenterEmail || "").trim();
-      }
-      if (sharedToken) room.sharedToken = String(sharedToken || "").trim();
-
       const tasksetDoc = await TaskSet.findById(tasksetId).lean();
       if (!tasksetDoc) {
         console.warn("handleTeacherLoadTaskset: TaskSet not found", tasksetId);
@@ -4748,7 +4420,7 @@ socket.on(
       return;
     }
 
-    const safeOwnerId = String((ownerId || room.reportOwnerId || "").trim());
+    const safeOwnerId = String(ownerId || "").trim();
 
     // If ownerId isn't provided, try to infer from the connected teacher profile (best-effort)
     // NOTE: This is intentionally conservative to avoid mismatching owners.
@@ -4833,13 +4505,6 @@ socket.on(
           className: safeClass,
           gradeLevel: safeGrade,
           planTierUsed: String(planTierUsed || "").trim(),
-          sharedToken: room.sharedToken || "",
-          sharedFromTeacherId: room.reportOwnerId || safeOwnerId || "",
-          sharedFromTeacherName: room.reportOwnerName || "",
-          sharedFromTeacherEmail: room.reportOwnerEmail || "",
-          runByPresenterId: room.runByPresenterId || "",
-          runByPresenterName: room.runByPresenterName || "",
-          runByPresenterEmail: room.runByPresenterEmail || "",
           headline: (summary && (summary.headline || summary.title)) || `Curriculate Report — ${code}`,
           overviewEmail: (summary && (summary.emailOverview || summary.overview || "")) || "",
           parentNote,
@@ -5921,218 +5586,6 @@ app.get("/api/tasksets/:id", async (req, res) => {
     const set = await TaskSet.findById(req.params.id).lean();
     if (!set) {
       return res.status(404).json({ error: "Task set not found" });
-
-
-// --------------------------------------------------------------------
-// Share link: create an expiring link that another logged-in presenter can run.
-// --------------------------------------------------------------------
-app.post("/api/tasksets/:id/share", authRequired, async (req, res) => {
-  try {
-    const ownerId = getOwnerId(req);
-    const tasksetId = String(req.params.id || "").trim();
-    if (!ownerId) return res.status(401).json({ ok: false, error: "Not authorized." });
-    if (!tasksetId) return res.status(400).json({ ok: false, error: "Missing taskset id." });
-
-    const ts = await TaskSet.findById(tasksetId).lean();
-    if (!ts) return res.status(404).json({ ok: false, error: "Task set not found." });
-
-    // Only the owner can share it (simple + safe)
-    const tsOwner = String(ts.ownerId || ts.owner || ts.userId || "").trim();
-    if (tsOwner && tsOwner !== ownerId) {
-      return res.status(403).json({ ok: false, error: "You do not own this task set." });
-    }
-
-    // Resolve teacher name/email for nicer UI
-    let ownerName = "";
-    let ownerEmail = "";
-    try {
-      const prof = await TeacherProfile.findOne({ ownerId }).lean();
-      if (prof?.name) ownerName = String(prof.name).trim();
-      if (prof?.email) ownerEmail = String(prof.email).trim();
-    } catch {}
-
-    const token = crypto.randomBytes(16).toString("hex");
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days default
-
-    await SharedTasksetLink.create({
-      token,
-      tasksetId,
-      ownerId,
-      ownerName,
-      ownerEmail,
-      expiresAt,
-    });
-
-    const shareUrl = `https://set.curriculate.net/shared/${token}`;
-    res.json({ ok: true, token, shareUrl, expiresAt, ownerName, ownerEmail });
-  } catch (err) {
-    console.error("POST /api/tasksets/:id/share error:", err);
-    res.status(500).json({ ok: false, error: "Failed to create share link." });
-  }
-});
-
-// Validate + resolve a share token (recipient must be logged in)
-app.get("/api/shared/:token", authRequired, async (req, res) => {
-  try {
-    const token = String(req.params.token || "").trim();
-    if (!token) return res.status(400).json({ ok: false, error: "Missing token." });
-
-    const link = await SharedTasksetLink.findOne({ token }).lean();
-    if (!link || link.revokedAt) return res.status(404).json({ ok: false, error: "Link not found." });
-
-    const now = Date.now();
-    const exp = link.expiresAt ? new Date(link.expiresAt).getTime() : 0;
-    if (exp && exp < now) return res.status(410).json({ ok: false, error: "Link expired." });
-
-    res.json({
-      ok: true,
-      token,
-      tasksetId: link.tasksetId,
-      ownerId: link.ownerId,
-      ownerName: link.ownerName || "",
-      ownerEmail: link.ownerEmail || "",
-      expiresAt: link.expiresAt || null,
-    });
-  } catch (err) {
-    console.error("GET /api/shared/:token error:", err);
-    res.status(500).json({ ok: false, error: "Failed to validate link." });
-  }
-});
-
-app.post("/api/shared/:token/mark-used", authRequired, async (req, res) => {
-  try {
-    const token = String(req.params.token || "").trim();
-    if (!token) return res.status(400).json({ ok: false, error: "Missing token." });
-
-    const link = await SharedTasksetLink.findOne({ token });
-    if (!link || link.revokedAt) return res.status(404).json({ ok: false, error: "Link not found." });
-
-    const now = new Date();
-    link.usedCount = Number(link.usedCount || 0) + 1;
-    link.lastUsedAt = now;
-    if (!link.firstUsedAt) link.firstUsedAt = now;
-
-    // Also mark the invite record for this user (so follow-ups stop)
-    const email = String(req.user?.email || req.user?.emailAddress || "").trim().toLowerCase();
-    let senderUserId = "";
-    let senderEmail = "";
-    let senderName = "";
-    if (email && Array.isArray(link.invites)) {
-      const inv = link.invites.find((x) => String(x.toEmail || "").trim().toLowerCase() === email);
-      if (inv && !inv.firstUsedAt) inv.firstUsedAt = now;
-      if (inv) {
-        senderUserId = String(inv.senderUserId || "").trim();
-        senderEmail = String(inv.ccEmail || "").trim();
-        senderName = String(inv.senderName || "").trim();
-      }
-    }
-
-    await link.save();
-
-    // Referral incentive: if this was a share invite that just got used, check whether the sender earned a reward.
-    if (senderUserId && senderEmail) {
-      await maybeSendReferralReward({ senderUserId, senderEmail, senderName });
-    }
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("[share-mark-used] failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to mark used." });
-  }
-});
-
-// Send a share-invite email (recipient must be logged in to open link, but email can be sent to any address)
-app.post("/api/shared/:token/send-invite", authRequired, async (req, res) => {
-  try {
-    const token = String(req.params.token || "").trim();
-    const toEmail = String(req.body?.toEmail || "").trim();
-    const message = String(req.body?.message || "").trim();
-
-    if (!token) return res.status(400).json({ ok: false, error: "Missing token." });
-    if (!toEmail) return res.status(400).json({ ok: false, error: "Missing toEmail." });
-
-    const link = await SharedTasksetLink.findOne({ token }).lean();
-    if (!link || link.revokedAt) return res.status(404).json({ ok: false, error: "Link not found." });
-
-    const now = Date.now();
-    const exp = link.expiresAt ? new Date(link.expiresAt).getTime() : 0;
-    if (exp && exp < now) return res.status(410).json({ ok: false, error: "Link expired." });
-
-    const taskset = await TaskSet.findById(link.tasksetId).lean().catch(() => null);
-    const tasksetName = taskset?.name || taskset?.title || "a Curriculate task set";
-
-    const senderEmail =
-      String(req.user?.email || req.user?.emailAddress || "").trim() || link.ownerEmail || "";
-
-    const senderName =
-      String(req.user?.name || req.user?.fullName || req.user?.displayName || "").trim() ||
-      link.ownerName ||
-      "A presenter";
-
-    const teacherAppOrigin = process.env.TEACHER_APP_ORIGIN || "https://set.curriculate.net";
-    const shareUrl = `${teacherAppOrigin}/share/${token}`;
-
-    // Load editable template (auto-created on boot)
-    const template = (await SystemEmailTemplate.findOne({ key: "share-invite" }).lean()) || {};
-    const subjectTemplate =
-      template.subject || "Curriculate: {{SENDER_NAME}} shared a task set with you";
-    const htmlTemplate = template.html || "";
-
-    const customMessageBlock = message
-      ? `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;margin:12px 0;">
-           <div style="font-weight:700;margin-bottom:6px;">Message from ${senderName}</div>
-           <div style="white-space:pre-wrap;">${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-         </div>`
-      : "";
-
-    const vars = {
-      SENDER_NAME: senderName,
-      TASKSET_NAME: tasksetName,
-      SHARE_URL: shareUrl,
-      EXPIRES_DATE: link.expiresAt ? new Date(link.expiresAt).toLocaleDateString() : "",
-      CUSTOM_MESSAGE_BLOCK: customMessageBlock,
-    };
-
-    const subject = renderEmailTemplate(subjectTemplate, vars);
-    const html = renderEmailTemplate(htmlTemplate, vars);
-
-    await sendSystemEmail({
-      to: toEmail,
-      cc: senderEmail || undefined, // copy the sender
-      subject,
-      html,
-    });
-
-    // Log invite (for metrics + follow-ups)
-    await SharedTasksetLink.updateOne(
-      { token },
-      {
-        $push: {
-          invites: {
-            toEmail,
-            ccEmail: senderEmail || "",
-            senderUserId: getOwnerId(req),
-            senderName,
-            sentAt: new Date(),
-          },
-        },
-      }
-    );
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("[share-invite] failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to send invite." });
-  }
-});
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("[share-invite] failed:", err);
-    res.status(500).json({ ok: false, error: err.message || "Failed to send invite email." });
-  }
-});
-
-
     }
     res.json(set);
   } catch (err) {
@@ -6227,7 +5680,7 @@ app.get("/api/reports", authRequired, async (req, res) => {
 
     const rows = await SessionReport.find({ ownerId })
       .sort({ createdAt: -1 })
-      .select("_id roomCode className gradeLevel headline createdAt planTierUsed taskSetName runByPresenterName sharedFromTeacherName sharedFromTeacherEmail")
+      .select("_id roomCode className gradeLevel headline createdAt planTierUsed")
       .lean();
 
     return res.json({ ok: true, reports: rows || [] });
@@ -6261,113 +5714,4 @@ app.get("/analytics/sessions/:id", authRequired, getSessionDetails);
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
-})
-// --------------------------------------------------------------------
-// Admin: Email templates + metrics (share links)
-// --------------------------------------------------------------------
-app.get("/api/admin/email-templates", ...adminRequired, async (req, res) => {
-  try {
-    const all = await SystemEmailTemplate.find({}).sort({ key: 1 }).lean();
-    res.json({ ok: true, templates: all });
-  } catch (err) {
-    console.error("[admin-email-templates] get failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to load templates." });
-  }
 });
-
-app.put("/api/admin/email-templates/:key", ...adminRequired, async (req, res) => {
-  try {
-    const key = String(req.params.key || "").trim();
-    if (!key) return res.status(400).json({ ok: false, error: "Missing key." });
-
-    const patch = {
-      subject: String(req.body?.subject || ""),
-      html: String(req.body?.html || ""),
-      enabled: req.body?.enabled !== false,
-    };
-
-    if (req.body?.followupDays != null) {
-      patch.followupDays = Number(req.body.followupDays);
-    }
-
-    const updated = await SystemEmailTemplate.findOneAndUpdate(
-      { key },
-      { $set: patch },
-      { new: true, upsert: true }
-    ).lean();
-
-    res.json({ ok: true, template: updated });
-  } catch (err) {
-    console.error("[admin-email-templates] save failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to save template." });
-  }
-});
-
-// --------------------------------------------------------------------
-// Admin: Referral program settings (share incentives)
-// --------------------------------------------------------------------
-app.get("/api/admin/referral-settings", ...adminRequired, async (req, res) => {
-  try {
-    const s = await ReferralProgramSettings.findOne({ key: "default" }).lean();
-    res.json({ ok: true, settings: s || { key: "default", enabled: true, threshold: 5, rewardMonths: 1 } });
-  } catch (err) {
-    console.error("[admin-referral-settings] get failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to load referral settings." });
-  }
-});
-
-app.put("/api/admin/referral-settings", ...adminRequired, async (req, res) => {
-  try {
-    const enabled = req.body?.enabled !== false;
-    const threshold = Math.max(1, Number(req.body?.threshold || 5));
-    const rewardMonths = Math.max(0, Number(req.body?.rewardMonths || 1));
-
-    const updated = await ReferralProgramSettings.findOneAndUpdate(
-      { key: "default" },
-      { $set: { enabled, threshold, rewardMonths } },
-      { new: true, upsert: true }
-    ).lean();
-
-    res.json({ ok: true, settings: updated });
-  } catch (err) {
-    console.error("[admin-referral-settings] save failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to save referral settings." });
-  }
-});
-
-app.get("/api/admin/email-metrics", ...adminRequired, async (req, res) => {
-  try {
-    const shareLinks = await SharedTasksetLink.countDocuments({});
-    const invitesAgg = await SharedTasksetLink.aggregate([
-      { $unwind: { path: "$invites", preserveNullAndEmptyArrays: false } },
-      {
-        $group: {
-          _id: null,
-          invites: { $sum: 1 },
-          followup7: { $sum: { $cond: [{ $ifNull: ["$invites.followup7SentAt", false] }, 1, 0] } },
-          followup30: { $sum: { $cond: [{ $ifNull: ["$invites.followup30SentAt", false] }, 1, 0] } },
-          used: { $sum: { $cond: [{ $ifNull: ["$invites.firstUsedAt", false] }, 1, 0] } },
-          rewardEmails: { $sum: { $cond: [{ $ifNull: ["$invites.rewardSentAt", false] }, 1, 0] } },
-        },
-      },
-    ]);
-
-    const row = invitesAgg?.[0] || {};
-    res.json({
-      ok: true,
-      counts: {
-        shareLinks,
-        invites: row.invites || 0,
-        followup7: row.followup7 || 0,
-        followup30: row.followup30 || 0,
-        invitesUsed: row.used || 0,
-        rewardEmails: row.rewardEmails || 0,
-      },
-    });
-  } catch (err) {
-    console.error("[admin-email-metrics] failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to load metrics." });
-  }
-});
-
-;

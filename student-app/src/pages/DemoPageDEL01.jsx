@@ -1363,24 +1363,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               Regenerate
             </button>
 
-            <a
-              href="https://www.curriculate.net/freetrial"
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                ...pill,
-                cursor: "pointer",
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(34,197,94,0.22)",
-                color: "#fff",
-                fontWeight: 900,
-                textDecoration: "none",
-              }}
-              title="Start a free trial"
-            >
-              Free Trial
-            </a>
-
             {showAdminKey && (
               <input
                 value={adminKey}

@@ -105,7 +105,16 @@ function buildLatestPhotoByTeam(submissions = []) {
   return out;
 }
 
-export default function HostView({ roomCode }) {
+export default function HostView({ roomCode: roomCodeProp }) {
+
+  const location = useLocation();
+  const qs = new URLSearchParams(location.search || "");
+  const roomFromQuery = (qs.get("room") || "").trim().toUpperCase();
+  const sharedToken = (qs.get("sharedToken") || qs.get("token") || "").trim();
+  const reportOwnerName = (qs.get("reportOwnerName") || qs.get("from") || "").trim();
+  const reportOwnerEmail = (qs.get("reportOwnerEmail") || "").trim();
+
+  const roomCode = roomFromQuery || (roomCodeProp || "").trim().toUpperCase();
   const [roomState, setRoomState] = useState({
     teams: {},
     scores: {},

@@ -165,6 +165,100 @@ export default function TaskSetEditor() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
+  const [sharing, setSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareStatus, setShareStatus] = useState("");
+
+  const handleShareWithAnotherPresenter = async () => {
+    if (!id) {
+      setShareStatus("Save this task set first, then share it.");
+      return;
+    }
+    try {
+      setSharing(true);
+      setShareStatus("");
+      const res = await fetch(`${API_BASE}/api/tasksets/${id}/share`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok || !data?.shareUrl) {
+        throw new Error(data?.error || "Failed to create share link.");
+      }
+      setShareUrl(String(data.shareUrl));
+      try {
+        await navigator.clipboard.writeText(String(data.shareUrl));
+        setShareStatus("Link copied!");
+      } catch {
+        setShareStatus("Link created. Copy it below.");
+      }
+    } catch (e) {
+      setShareStatus(e?.message || "Failed to create share link.");
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleSendShareInvite = async () => {
+    if (!shareUrl) return;
+    const email = String(shareInviteEmail || "").trim();
+    if (!email) {
+      setShareInviteStatus("Enter a recipient email first.");
+      return;
+    }
+
+    setShareInviteSending(true);
+    setShareInviteStatus("");
+
+    try {
+      const token =
+        shareUrl && shareUrl.includes("/shared/")
+          ? shareUrl.split("/shared/")[1].split(/[?#]/)[0]
+          : "";
+
+      if (!token) throw new Error("Could not determine share token from link.");
+
+      const authToken =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+      const res = await fetch(`${API_BASE}/api/shared/${token}/send-invite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          toEmail: email,
+          message: String(shareInviteNote || "").trim(),
+        }),
+      });
+
+      const text = await res.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Invite email failed to send.");
+      }
+
+      setShareInviteStatus("Invite sent! (You were CC’d.)");
+    } catch (err) {
+      console.error("[TaskSetEditor] send invite failed:", err);
+      setShareInviteStatus(err.message || "Invite email failed.");
+    } finally {
+      setShareInviteSending(false);
+    }
+  };
+
+
   // AI word-bank metadata (used vs unused terms)
   const [aiWordBank, setAiWordBank] = useState([]);
   const [aiWordsUsed, setAiWordsUsed] = useState([]);
@@ -1528,7 +1622,23 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
           >
             Back to list
           </button>
-          <button
+          
+          {id && (
+            <button
+              type="button"
+              onClick={handleShareWithAnotherPresenter}
+              disabled={sharing}
+              style={{
+                ...greenButton,
+                opacity: sharing ? 0.7 : 1,
+                cursor: sharing ? "wait" : "pointer",
+              }}
+              title="Create a secure link to let another presenter run this task set"
+            >
+              {sharing ? "Creating link…" : "Share with another presenter"}
+            </button>
+          )}
+<button
             type="button"
             onClick={handleSave}
             disabled={saving}
@@ -1555,6 +1665,110 @@ if (normalizedType === (TASK_TYPES.SCRIPT_PLAY || "script-play")) {
           }}
         >
           {error}
+        </div>
+      )}
+
+      {(shareUrl || shareStatus) && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 10,
+            borderRadius: 10,
+            border: "1px solid #d1fae5",
+            background: "#ecfdf5",
+            color: "#065f46",
+            fontSize: "0.85rem",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Share link</div>
+          {shareStatus && <div style={{ marginBottom: shareUrl ? 8 : 0 }}>{shareStatus}</div>}
+          {shareUrl && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                readOnly
+                value={shareUrl}
+                style={{
+                  flex: "1 1 340px",
+                  minWidth: 260,
+                  borderRadius: 8,
+                  border: "1px solid #a7f3d0",
+                  padding: "8px 10px",
+                  fontSize: "0.85rem",
+                }}
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    setShareStatus("Link copied!");
+                  } catch {
+                    setShareStatus("Copy failed — select the link and copy manually.");
+                  }
+                }}
+                style={blueButton}
+              >
+                Copy
+              </button>
+            </div>
+          )}
+          
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                type="email"
+                value={shareInviteEmail}
+                onChange={(e) => setShareInviteEmail(e.target.value)}
+                placeholder="Recipient email (e.g., sub@school.ca)"
+                style={{
+                  flex: "1 1 260px",
+                  minWidth: 240,
+                  borderRadius: 8,
+                  border: "1px solid rgba(6,95,70,0.25)",
+                  padding: "8px 10px",
+                  fontSize: "0.85rem",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSendShareInvite}
+                disabled={shareInviteSending}
+                style={{
+                  ...purpleButton,
+                  opacity: shareInviteSending ? 0.7 : 1,
+                  cursor: shareInviteSending ? "wait" : "pointer",
+                }}
+                title="Send a ready-to-run invitation email from noreply@curriculate.net (you are CC'd)"
+              >
+                {shareInviteSending ? "Sending…" : "Send invite email"}
+              </button>
+            </div>
+
+            <textarea
+              value={shareInviteNote}
+              onChange={(e) => setShareInviteNote(e.target.value)}
+              placeholder="Optional note to the presenter (shown in email)…"
+              rows={2}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid rgba(6,95,70,0.18)",
+                padding: 10,
+                fontSize: "0.85rem",
+                resize: "vertical",
+              }}
+            />
+
+            {shareInviteStatus && (
+              <div style={{ marginTop: 8, fontSize: "0.82rem", color: "#065f46", fontWeight: 600 }}>
+                {shareInviteStatus}
+              </div>
+            )}
+
+          <div style={{ marginTop: 8, color: "#047857", fontSize: "0.78rem" }}>
+            The receiving presenter must be logged in. The session report will be sent back to you.
+          </div>
         </div>
       )}
 

@@ -143,6 +143,20 @@ export default function SessionAnalyticsPage() {
             {session.taskSetName} –{" "}
             {new Date(session.startedAt).toLocaleString()}
           </p>
+          {(session.sharedFromTeacherName || session.sharedFromTeacherEmail || session.runByPresenterName) && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(session.sharedFromTeacherName || session.sharedFromTeacherEmail) && (
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                  TaskSet from {session.sharedFromTeacherName || session.sharedFromTeacherEmail}
+                </span>
+              )}
+              {session.runByPresenterName && (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                  Presented by {session.runByPresenterName}
+                </span>
+              )}
+            </div>
+          )}
           <p className="mt-2 text-xs sm:text-sm">
             <strong>Class Avg Score:</strong> {session.classAverageScore}%{" "}
             &nbsp;|&nbsp;

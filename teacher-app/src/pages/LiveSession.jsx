@@ -1,5 +1,6 @@
 // teacher-app/src/pages/LiveSession.jsx
 import React, { useEffect, useState, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { socket } from "../socket";
 import { fetchMyProfile } from "../api/profile";
 import {
@@ -275,9 +276,24 @@ export function isObjectiveScoringTaskType(taskType) {
   return !!meta?.objectiveScoring;
 }
 
-export default function LiveSession({ roomCode }) {
+export default function LiveSession({ roomCode: roomCodeProp }) {
   const [status, setStatus] = useState("Checking connection…");
   const { user } = useAuth();
+
+  const location = useLocation();
+  const qs = new URLSearchParams(location.search || "");
+  const roomFromQuery = (qs.get("room") || "").trim().toUpperCase();
+  const sharedToken = (qs.get("sharedToken") || qs.get("token") || "").trim();
+  const reportOwnerId = (qs.get("reportOwnerId") || "").trim();
+  const reportOwnerName = (qs.get("reportOwnerName") || qs.get("from") || "").trim();
+  const reportOwnerEmail = (qs.get("reportOwnerEmail") || "").trim();
+
+  const roomCode = roomFromQuery || (roomCodeProp || "").trim().toUpperCase();
+
+  const runByName =
+    (user && (user.name || user.fullName || user.displayName)) ||
+    (user && user.email) ||
+    "Presenter";
 
   const [roomState, setRoomState] = useState({
     stations: [],
@@ -920,7 +936,7 @@ useEffect(() => {
     const code = (roomCode || "").trim().toUpperCase();
     if (!code) return;
     // Host/Presenter kiosk view (opens in new tab)
-    const url = `${window.location.origin}/host?room=${encodeURIComponent(code)}`;
+    const url = `${window.location.origin}/host?room=${encodeURIComponent(code)}${sharedToken ? `&sharedToken=${encodeURIComponent(sharedToken)}` : ""}${reportOwnerName ? `&reportOwnerName=${encodeURIComponent(reportOwnerName)}` : ""}${reportOwnerEmail ? `&reportOwnerEmail=${encodeURIComponent(reportOwnerEmail)}` : ""}${reportOwnerId ? `&reportOwnerId=${encodeURIComponent(reportOwnerId)}` : ""}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -2596,8 +2612,15 @@ if (
         roomCode: code,
         tasksetId: data._id || activeTasksetMeta._id,
         selectedRooms,
-      });
-    } catch (err) {
+      }),
+        reportOwnerId,
+        reportOwnerName,
+        reportOwnerEmail,
+        runByPresenterId: user?.id || user?._id,
+        runByPresenterName: runByName,
+        runByPresenterEmail: user?.email,
+        sharedToken,
+      });    } catch (err) {
       console.error("[LiveSession] Launch taskset error:", err);
       setStatus(err.message || "Failed to launch taskset.");
       setTasksetLaunchAnimating(false);
@@ -2616,8 +2639,8 @@ if (
 
     socket.emit("teacher:endSessionAndEmail", {
       roomCode: code, // ✅ must be roomCode (backend expects this)
-      ownerId: user?.id || user?._id,
-      teacherEmail: user?.email, // optional but helpful
+      ownerId: reportOwnerId || user?.id || user?._id,
+      teacherEmail: reportOwnerEmail || user?.email, // optional but helpful
       includeIndividualReports,
     });
   };
@@ -3100,7 +3123,7 @@ if (
               fontSize: "1.25rem",
             }}
           >
-            Live Session
+            Presenter Console
           </h1>
           <p
             style={{
@@ -3111,6 +3134,16 @@ if (
           >
             Room <strong>{roomCode}</strong> · {status}
           </p>
+          {(reportOwnerName || reportOwnerEmail) && (
+            <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: "0.78rem", padding: "4px 10px", borderRadius: 999, background: "#f0f9ff", color: "#0369a1" }}>
+                📦 TaskSet from <strong>{reportOwnerName || reportOwnerEmail}</strong>
+              </span>
+              <span style={{ fontSize: "0.78rem", padding: "4px 10px", borderRadius: 999, background: "#fefce8", color: "#854d0e" }}>
+                🧑‍🏫 Presented by <strong>{runByName}</strong>
+              </span>
+            </div>
+          )}
           {endSessionMessage && (
             <p
               style={{
@@ -4730,8 +4763,15 @@ Precipitation — rain, snow, hail`}
                           tasksetDoc._id ||
                           activeTasksetMeta?._id,
                         selectedRooms,
-                      });
-                    }
+                      }),
+        reportOwnerId,
+        reportOwnerName,
+        reportOwnerEmail,
+        runByPresenterId: user?.id || user?._id,
+        runByPresenterName: runByName,
+        runByPresenterEmail: user?.email,
+        sharedToken,
+      });                    }
                   } catch (err) {
                     console.error(
                       "[LiveSession] Hide & Seek save error:",
