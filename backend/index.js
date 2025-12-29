@@ -5473,8 +5473,8 @@ const DEMO_WORD_BANK = [
 
 function buildDemoBody(extra = {}) {
   return {
-    mode: "demo",
-    count: 10,
+    source: "demo",              // ✅ makes isDemoRequest true
+    uniqueTaskTypes: true,       // ✅ ensures "one per type" path
     gradeLevel: DEMO_GRADE_LEVEL,
     subject: DEMO_SUBJECT,
     difficulty: "medium",
