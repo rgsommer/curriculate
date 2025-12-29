@@ -707,16 +707,6 @@ export const generateAiTaskset = async (req, res) => {
       !!req.body?.demo ||
       String(req.body?.source || "").toLowerCase() === "demo";
 
-
-    // If true, try to generate one unique task per selected type (useful for demo / "one per type" sets).
-    // Accepts boolean or "true"/"1" strings from body or querystring.
-    const uniqueTaskTypes =
-      req.body?.uniqueTaskTypes === true ||
-      req.body?.uniqueTaskTypes === "true" ||
-      req.body?.uniqueTaskTypes === "1" ||
-      req.query?.uniqueTaskTypes === "true" ||
-      req.query?.uniqueTaskTypes === "1";
-
     const requestedCount = Number(numberOfTasks) || Number(numTasks) || 8;
     const duration = Number(totalDurationMinutes) || Number(durationMinutes) || 45;
 
