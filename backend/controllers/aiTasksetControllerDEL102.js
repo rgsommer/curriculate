@@ -703,18 +703,9 @@ export const generateAiTaskset = async (req, res) => {
     // Demo generator support: if the demo flow hits the same /api/ai/tasksets route,
     // allow the caller to request a clearly-labeled set.
     const isDemoRequest =
-      // Explicit flags
       !!req.body?.isDemo ||
       !!req.body?.demo ||
-      !!req.query?.demo ||
-      String(req.query?.source || "").toLowerCase() === "demo" ||
-      // Source tag
-      String(req.body?.source || "").toLowerCase() === "demo" ||
-      // URL heuristics (covers internal/demo endpoints)
-      String(req.originalUrl || req.url || "").includes("/api/demo") ||
-      String(req.path || "").includes("/demo") ||
-      // Optional header flag
-      String(req.headers?.["x-curriculate-demo"] || "") === "1";
+      String(req.body?.source || "").toLowerCase() === "demo";
 
 
     // If true, try to generate one unique task per selected type (useful for demo / "one per type" sets).
@@ -1026,31 +1017,14 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
 
       const missing = want.filter((t) => !byType.has(t));
       if (missing.length) {
-        // In demo mode, do NOT hard-fail the entire experience if the AI misses some types.
-        // We'll proceed with the tasks we did get, and surface missing types as a warning.
-        if (!isDemoRequest) {
-          return res.status(400).json({
-            ok: false,
-            error: `AI did not return a task for: ${missing.join(", ")}`,
-          });
-        } else {
-          console.warn(
-            "[DEMO][aiTasksetController] AI missing requested task types:",
-            missing
-          );
-        }
+        return res.status(400).json({
+          ok: false,
+          error: `AI did not return a task for: ${missing.join(", ")}`,
+        });
       }
 
-      // Re-order tasks we *did* receive to match the requested order (one-per-type)
-      const haveInOrder = want.filter((t) => byType.has(t)).map((t) => byType.get(t));
-
-      // If AI returned extra tasks beyond the requested set, keep them (helps demo feel “full”).
-      const extras = (Array.isArray(aiTasks) ? aiTasks : []).filter((t) => {
-        const got = normalizeSelectedType(t?.taskType || t?.type);
-        return got && !wantSet.has(got);
-      });
-
-      aiTasks = [...haveInOrder, ...extras];
+      // Re-order and collapse to one-per-type for downstream normalization
+      aiTasks = want.map((t) => byType.get(t));
     }
 
     // ---------- Normalize AI tasks into TaskSet schema ----------
