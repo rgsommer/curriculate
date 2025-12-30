@@ -269,7 +269,53 @@ const SharedTasksetLink =
     )
   );
 
+// ====================================================================
+//  CORS
+// ====================================================================
+const allowedOrigins = [
+  "https://set.curriculate.net",
+  "https://play.curriculate.net",
+  "https://curriculate.net",
+  "https://www.curriculate.net",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:4173",
+  "http://localhost:4174",
+  "http://localhost:3000",
+];
+
+function isVercelPreview(origin) {
+  return origin && origin.endsWith(".vercel.app");
+}
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+
+    const ok = allowedOrigins.includes(origin) || isVercelPreview(origin);
+
+    if (!ok) console.warn("Blocked CORS origin:", origin);
+
+    // IMPORTANT:
+    // Returning false means "no CORS headers" (browser will block).
+    // That's okay for blocked origins, but we must return true for allowed ones.
+    return callback(null, ok);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
+};
+
 const app = express();
+
+const server = http.createServer(app);
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
+app.use(express.static("public")); // ← serves backend/public/index.html at /
+app.use("/api/demo", demoTasksetStreamRoutes);
+
 // Admin gate (server-side)
 const adminRequired = [
   authRequired,
@@ -282,18 +328,11 @@ const adminRequired = [
   },
 ];
 
-const server = http.createServer(app);
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-
-app.use(express.static("public")); // ← serves backend/public/index.html at /
-app.use("/api/demo", demoTasksetStreamRoutes);
-
 stripeRoutes.use(cors(corsOptions));
 stripeRoutes.options("*", cors(corsOptions));
 
 app.get("/api/version", (req, res) => {
-  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-29a" });
+  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-30a" });
 });
 
 // Simple UUID generator
@@ -497,44 +536,6 @@ function getRandomTeam(roomCode) {
     ? teams[Math.floor(Math.random() * teams.length)]
     : { teamName: "Team" };
 }
-
-// ====================================================================
-//  CORS
-// ====================================================================
-const allowedOrigins = [
-  "https://set.curriculate.net",
-  "https://play.curriculate.net",
-  "https://curriculate.net",
-  "https://www.curriculate.net",
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:4173",
-  "http://localhost:4174",
-  "http://localhost:3000",
-];
-
-function isVercelPreview(origin) {
-  return origin && origin.endsWith(".vercel.app");
-}
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-
-    const ok = allowedOrigins.includes(origin) || isVercelPreview(origin);
-
-    if (!ok) console.warn("Blocked CORS origin:", origin);
-
-    // IMPORTANT:
-    // Returning false means "no CORS headers" (browser will block).
-    // That's okay for blocked origins, but we must return true for allowed ones.
-    return callback(null, ok);
-  },
-  credentials: true,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  optionsSuccessStatus: 204,
-};
 
 // ====================================================================
 //  EXPRESS MIDDLEWARE
