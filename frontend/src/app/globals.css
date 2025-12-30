@@ -1,12 +1,8 @@
-/* frontend/src/app/globals.css */
 @import "tailwindcss";
 
-/* safe defaults */
+/* your resets are fine */
 html, body {
   margin: 0;
   padding: 0;
 }
-
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }

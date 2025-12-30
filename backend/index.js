@@ -39,6 +39,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "crypto";
 import { recordNoiseSample, computeNoiseSummary } from "./utils/noiseTelemetry.js";
+import stripeRoutes from "./routes/stripe.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
@@ -284,6 +285,7 @@ const server = http.createServer(app);
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 app.use("/api/demo", demoTasksetStreamRoutes);
+app.use("/api/stripe", stripeRoutes);
 
 app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-16" });
