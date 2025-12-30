@@ -2,10 +2,19 @@
 
 import React from "react";
 
+const PRICES = {
+  TEACHER_PLUS_MONTHLY: "price_1SjgbNLduAaZuYj5Y8h138iq",
+  TEACHER_PRO_MONTHLY: "price_1SjganLduAaZuYj5e0YozeDy",
+  SCHOOL_PLUS_YEARLY: "price_1SjgbuLduAaZuYj5qy8o6OSR",
+  SCHOOL_PRO_YEARLY: "price_1SjgcTLduAaZuYj5LlaHf5M9",
+};
+
 export default function FreeTrialPage() {
   const [status, setStatus] = React.useState<"idle" | "loading" | "error" | "used">("idle");
 
   const [billingEmail, setBillingEmail] = React.useState("");
+
+  const TEACHER_PRO_MONTHLY_PRICE_ID = "price_XXXXXXXXXXXXXXXX";
 
   async function startTrial() {
     try {
@@ -25,6 +34,7 @@ export default function FreeTrialPage() {
         credentials: "include",
         body: JSON.stringify({
           plan: "TEACHER_PRO_TRIAL", // ✅ this is the key
+          priceId: PRICES.TEACHER_PLUS_MONTHLY,
           email: billingEmail.trim(),
           successUrl: `${window.location.origin}/billing/success`,
           cancelUrl: `${window.location.origin}/free-trial`,
