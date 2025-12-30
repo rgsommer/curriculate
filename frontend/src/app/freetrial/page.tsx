@@ -5,9 +5,7 @@ import React from "react";
 export default function FreeTrialPage() {
   const [status, setStatus] = React.useState<"idle" | "loading" | "error" | "used">("idle");
 
-  // TODO: replace with real auth values when ready
-  const userId = "admin";
-  const email = "admin@curriculate.net";
+  const [billingEmail, setBillingEmail] = React.useState("");
 
   async function startTrial() {
     try {
@@ -16,20 +14,18 @@ export default function FreeTrialPage() {
       // Prefer NEXT_PUBLIC_API_BASE, fallback to production API.
       const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://api.curriculate.net";
 
+      if (!billingEmail.trim()) {
+        setStatus("error");
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/api/stripe/create-checkout-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          // ✅ Use an existing plan your backend knows
-          plan: "TEACHER_PRO",
-
-          // ✅ Let backend treat it as a trial (if supported)
-          isTrial: true,
-          trialDays: 30,
-
-          userId,
-          email,
+          plan: "TEACHER_PRO_TRIAL", // ✅ this is the key
+          email: billingEmail.trim(),
           successUrl: `${window.location.origin}/billing/success`,
           cancelUrl: `${window.location.origin}/free-trial`,
         }),
@@ -87,6 +83,26 @@ export default function FreeTrialPage() {
           <li>✔ After 30 days, automatically reverts to Free (upgrade anytime)</li>
           <li>✔ Works instantly — no install</li>
         </ul>
+
+        <div style={{ marginBottom: 12 }}>
+          <input
+            value={billingEmail}
+            onChange={(e) => setBillingEmail(e.target.value)}
+            placeholder="you@school.ca"
+            type="email"
+            autoComplete="email"
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1px solid rgba(148,163,184,0.35)",
+              background: "rgba(2,6,23,0.2)",
+              color: "#e5e7eb",
+              outline: "none",
+            }}
+          />
+        </div>
 
         <button
           onClick={startTrial}

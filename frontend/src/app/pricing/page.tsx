@@ -17,9 +17,9 @@ async function consumeHandoff(handoffCode: string) {
   return data;
 }
 
-async function startCheckout(args: { plan: string; priceId?: string | null; returnTo: string | null }) {
-  const { plan, priceId, returnTo } = args;
-
+async function startCheckout(args: { plan: string; priceId?: string | null; returnTo: string | null; email?: string | null }) {
+  const { plan, priceId, returnTo, email } = args;
+  
   // Persist returnTo across the Stripe redirect
   if (typeof window !== "undefined") {
     if (returnTo) localStorage.setItem("billing:returnTo", returnTo);
@@ -31,14 +31,9 @@ async function startCheckout(args: { plan: string; priceId?: string | null; retu
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({
-      // IMPORTANT: backend expects plan (this fixes “missing plan”)
       plan,
-
-      // Optional: keep priceId around if your backend ever supports it
-      // (safe if ignored)
       priceId: priceId || undefined,
-
-      // Optional but helpful if your backend supports these:
+      email: email || undefined, // ✅ add
       successUrl: `${window.location.origin}/billing/success`,
       cancelUrl: `${window.location.origin}/pricing`,
     }),
@@ -75,6 +70,7 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [billingEmail, setBillingEmail] = useState("");
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -189,6 +185,28 @@ export default function PricingPage() {
         </div>
       )}
 
+      <div style={{ marginTop: 14, border: "1px solid #e5e7eb", background: "#fff", borderRadius: 16, padding: 12 }}>
+        <div style={{ fontWeight: 900, marginBottom: 6 }}>Get started</div>
+        <div style={{ opacity: 0.75, fontSize: 13, marginBottom: 10 }}>
+          If you’re not signed in yet, enter your email to start checkout.
+        </div>
+        <input
+          value={billingEmail}
+          onChange={(e) => setBillingEmail(e.target.value)}
+          placeholder="you@school.ca"
+          type="email"
+          autoComplete="email"
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            outline: "none",
+            fontSize: 14,
+          }}
+        />
+      </div>
+
       <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: 12 }}>
         {plans.map((p) => (
           <div
@@ -227,7 +245,7 @@ export default function PricingPage() {
                 try {
                   setLoading(true);
                   setNotice(null);
-                  await startCheckout({ plan: p.plan, priceId: p.priceId, returnTo });
+                  await startCheckout({ plan: p.plan, priceId: p.priceId, returnTo, email: billingEmail.trim() || null });
                 } catch (e: any) {
                   setNotice(e?.message || "Checkout failed.");
                 } finally {
