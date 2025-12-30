@@ -1,9 +1,12 @@
-cat > src/app/globals.css <<'EOF'
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* frontend/src/app/globals.css */
+@import "tailwindcss";
 
-/* small safe defaults */
-html, body { margin: 0; padding: 0; }
-* { box-sizing: border-box; }
-EOF
+/* safe defaults */
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
