@@ -2,7 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
-const API_BASE = "";
+// Prefer NEXT_PUBLIC_API_BASE, fallback to production API.
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://api.curriculate.net";
 
 async function consumeHandoff(handoffCode: string) {
   const res = await fetch(`${API_BASE}/api/billing/handoff/consume`, {
@@ -16,7 +17,9 @@ async function consumeHandoff(handoffCode: string) {
   return data;
 }
 
-async function startCheckout(priceId: string, returnTo: string | null) {
+async function startCheckout(args: { plan: string; priceId?: string | null; returnTo: string | null }) {
+  const { plan, priceId, returnTo } = args;
+
   // Persist returnTo across the Stripe redirect
   if (typeof window !== "undefined") {
     if (returnTo) localStorage.setItem("billing:returnTo", returnTo);
@@ -27,7 +30,18 @@ async function startCheckout(priceId: string, returnTo: string | null) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ priceId }),
+    body: JSON.stringify({
+      // IMPORTANT: backend expects plan (this fixes “missing plan”)
+      plan,
+
+      // Optional: keep priceId around if your backend ever supports it
+      // (safe if ignored)
+      priceId: priceId || undefined,
+
+      // Optional but helpful if your backend supports these:
+      successUrl: `${window.location.origin}/billing/success`,
+      cancelUrl: `${window.location.origin}/pricing`,
+    }),
   });
 
   const data = await res.json().catch(() => null);
@@ -93,19 +107,17 @@ export default function PricingPage() {
         price: "$6.99 CAD / month",
         bullets: ["Student-level reporting", "PDF exports", "Great for small-group or class sessions"],
         priceId: PRICES.TEACHER_PLUS_MONTHLY,
+        // IMPORTANT: this is what your backend likely expects
+        plan: "TEACHER_PLUS",
       },
       {
         key: "teacher_pro",
         title: "Teacher Pro",
         price: "$12.99 CAD / month",
         featured: true,
-        bullets: [
-          "Higher student limits than Plus",
-          "Expanded AI task generation",
-          "Advanced student and session reports",
-          "Built for full classrooms and multiple classes",
-        ],
+        bullets: ["Higher student limits than Plus", "Expanded AI task generation", "Advanced student and session reports", "Built for full classrooms and multiple classes"],
         priceId: PRICES.TEACHER_PRO_MONTHLY,
+        plan: "TEACHER_PRO",
       },
       {
         key: "school_plus",
@@ -113,6 +125,7 @@ export default function PricingPage() {
         price: "$399 CAD / year",
         bullets: ["School-wide deployment", "Student-level reporting", "PDF exports"],
         priceId: PRICES.SCHOOL_PLUS_YEARLY,
+        plan: "SCHOOL_PLUS",
       },
       {
         key: "school_pro",
@@ -120,6 +133,7 @@ export default function PricingPage() {
         price: "$599 CAD / year",
         bullets: ["Higher capacity than School Plus", "Expanded AI task generation", "Advanced reporting & analytics"],
         priceId: PRICES.SCHOOL_PRO_YEARLY,
+        plan: "SCHOOL_PRO",
       },
     ],
     []
@@ -170,27 +184,12 @@ export default function PricingPage() {
       </div>
 
       {notice && (
-        <div
-          style={{
-            marginTop: 12,
-            border: "1px solid #e5e7eb",
-            background: "#fff",
-            borderRadius: 16,
-            padding: 12,
-          }}
-        >
+        <div style={{ marginTop: 12, border: "1px solid #e5e7eb", background: "#fff", borderRadius: 16, padding: 12 }}>
           {notice}
         </div>
       )}
 
-      <div
-        style={{
-          marginTop: 14,
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))",
-          gap: 12,
-        }}
-      >
+      <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: 12 }}>
         {plans.map((p) => (
           <div
             key={p.key}
@@ -198,27 +197,14 @@ export default function PricingPage() {
               border: p.featured ? "2px solid #0ea5e9" : "1px solid #e5e7eb",
               borderRadius: 18,
               padding: 14,
-              background: p.featured
-                ? "linear-gradient(180deg, rgba(14,165,233,0.08), rgba(255,255,255,1))"
-                : "#fff",
-              boxShadow: p.featured
-                ? "0 18px 44px rgba(14,165,233,0.16)"
-                : "0 10px 28px rgba(15, 23, 42, 0.08)",
+              background: p.featured ? "linear-gradient(180deg, rgba(14,165,233,0.08), rgba(255,255,255,1))" : "#fff",
+              boxShadow: p.featured ? "0 18px 44px rgba(14,165,233,0.16)" : "0 10px 28px rgba(15, 23, 42, 0.08)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
               <div style={{ fontWeight: 950, fontSize: 16 }}>{p.title}</div>
               {p.featured && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 950,
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    background: "#0ea5e9",
-                    color: "#fff",
-                  }}
-                >
+                <div style={{ fontSize: 11, fontWeight: 950, padding: "4px 8px", borderRadius: 999, background: "#0ea5e9", color: "#fff" }}>
                   Best value
                 </div>
               )}
@@ -241,7 +227,7 @@ export default function PricingPage() {
                 try {
                   setLoading(true);
                   setNotice(null);
-                  await startCheckout(p.priceId, returnTo);
+                  await startCheckout({ plan: p.plan, priceId: p.priceId, returnTo });
                 } catch (e: any) {
                   setNotice(e?.message || "Checkout failed.");
                 } finally {

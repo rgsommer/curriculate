@@ -3,36 +3,33 @@
 import React from "react";
 
 export default function FreeTrialPage() {
-  const [status, setStatus] = React.useState<
-    "idle" | "loading" | "error" | "used"
-  >("idle");
+  const [status, setStatus] = React.useState<"idle" | "loading" | "error" | "used">("idle");
 
-  // If you have a global auth/user object, replace these with real values.
-  // For now, you can hard-wire your userId/email while you’re the only user.
+  // TODO: replace with real auth values when ready
   const userId = "admin";
-  //  (globalThis as any)?.CURRENT_USER_ID ||
-  //  ""; // TODO: replace with your auth user id
   const email = "admin@curriculate.net";
-  //  (globalThis as any)?.CURRENT_USER_EMAIL ||
-  //  ""; // TODO: replace with your auth email
 
-  
   async function startTrial() {
     try {
       setStatus("loading");
 
-      // If you prefer, set NEXT_PUBLIC_API_BASE in Vercel/Render.
-      const API_BASE =
-        process.env.NEXT_PUBLIC_API_BASE || "https://api.curriculate.net";
+      // Prefer NEXT_PUBLIC_API_BASE, fallback to production API.
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://api.curriculate.net";
 
       const res = await fetch(`${API_BASE}/api/stripe/create-checkout-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          plan: "TEACHER_PRO_TRIAL",
+          // IMPORTANT: send a plan your backend already understands.
+          // Backend can decide eligibility + apply trial rules server-side.
+          plan: "TEACHER_PRO",
+          isTrial: true,
+          trialDays: 30,
+
           userId,
           email,
+
           successUrl: `${window.location.origin}/billing/success`,
           cancelUrl: `${window.location.origin}/free-trial`,
         }),
@@ -63,34 +60,20 @@ export default function FreeTrialPage() {
         padding: "48px 16px",
         background: "radial-gradient(circle at top, #0f172a, #020617)",
         color: "#e5e7eb",
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
-        <h1
-          style={{
-            fontSize: "2.2rem",
-            fontWeight: 900,
-            marginBottom: 12,
-            color: "#ffffff",
-          }}
-        >
+        <h1 style={{ fontSize: "2.2rem", fontWeight: 900, marginBottom: 12, color: "#ffffff" }}>
           Start Your Free Trial
         </h1>
 
         <p style={{ opacity: 0.9, fontSize: "1.05rem", marginBottom: 28 }}>
-          Experience <strong>Curriculate</strong> exactly as your students will —
-          interactive tasks, live teamwork, and zero prep headaches.
+          Experience <strong>Curriculate</strong> exactly as your students will — interactive tasks, live teamwork, and
+          zero prep headaches.
         </p>
 
-        <ul
-          style={{
-            lineHeight: 1.6,
-            marginBottom: 18,
-            paddingLeft: 18,
-          }}
-        >
+        <ul style={{ lineHeight: 1.6, marginBottom: 18, paddingLeft: 18 }}>
           <li>✔ Full Pro features for 30 days</li>
           <li>✔ $0 today</li>
           <li>✔ After 30 days, automatically reverts to Free (upgrade anytime)</li>
@@ -120,8 +103,7 @@ export default function FreeTrialPage() {
 
         {status === "used" && (
           <p style={{ marginTop: 14, color: "#fbbf24", fontWeight: 800 }}>
-            This account has already used its free trial. You can still start on the Free plan
-            and upgrade anytime.
+            This account has already used its free trial. You can still start on the Free plan and upgrade anytime.
           </p>
         )}
 
@@ -132,10 +114,7 @@ export default function FreeTrialPage() {
         )}
 
         <div style={{ marginTop: 14 }}>
-          <a
-            href="/pricing"
-            style={{ color: "#93c5fd", fontWeight: 800, textDecoration: "none" }}
-          >
+          <a href="/pricing" style={{ color: "#93c5fd", fontWeight: 800, textDecoration: "none" }}>
             View plans instead →
           </a>
         </div>
