@@ -281,10 +281,16 @@ const adminRequired = [
     next();
   },
 ];
+
 const server = http.createServer(app);
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 app.use("/api/demo", demoTasksetStreamRoutes);
+
+stripeRoutes.use(cors(corsOptions));
+stripeRoutes.options("*", cors(corsOptions));
 
 app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-29a" });
@@ -529,13 +535,6 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 204,
 };
-
-app.use(cors(corsOptions));
-
-// This is the missing piece in a LOT of setups:
-app.options("*", cors(corsOptions));
-stripeRoutes.use(cors(corsOptions));
-stripeRoutes.options("*", cors(corsOptions));
 
 // ====================================================================
 //  EXPRESS MIDDLEWARE
