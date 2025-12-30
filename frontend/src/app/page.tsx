@@ -251,6 +251,43 @@
     );
   }
 
+  function SampleMultipleChoice() {
+    return (
+      <div className="max-w-md mx-auto">
+        <h3 className="text-2xl font-extrabold text-gray-900 mb-6 text-center">
+          Photosynthesis Review
+        </h3>
+
+        <div className="rounded-3xl border-2 border-emerald-300 bg-emerald-50/60 p-6 shadow-inner">
+          <p className="text-lg font-bold text-gray-800 mb-6 text-center">
+            What is the primary source of energy for Earth’s climate system?
+          </p>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 rounded-2xl bg-emerald-500 text-white px-4 py-4 font-bold shadow">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-emerald-600 font-black">
+                ✓
+              </span>
+              The Sun
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white px-4 py-4 text-gray-400 font-semibold">
+              Geothermal heat
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white px-4 py-4 text-gray-400 font-semibold">
+              Ocean currents
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white px-4 py-4 text-gray-400 font-semibold">
+              Earth’s core
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   export default function Home() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
@@ -309,10 +346,8 @@
                       </div>
                     </div>
 
-                    <div className="p-4 sm:p-10">
-                      {/* Keep whatever your M/C sample UI is here if it exists */}
-                      {/* If HoverVideo was here before, it is now moved to the inset on the right */}
-                      {/* Example: <YourMultipleChoiceSample /> */}
+                    <div className="p-6 sm:p-10">
+                      <SampleMultipleChoice />
                     </div>
                   </div>
 
