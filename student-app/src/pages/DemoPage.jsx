@@ -23,12 +23,36 @@ const PHYSICAL_TYPES = new Set(
     .map((s) => String(s).toLowerCase())
 );
 
+const DEMO_TEAM_CATALOG = [
+  { name: "Alligators", emoji: "🐊", color: "rgba(34,197,94,0.22)" },
+  { name: "Lightning Lions", emoji: "🦁", color: "rgba(250,204,21,0.22)" },
+  { name: "Cosmic Falcons", emoji: "🦅", color: "rgba(56,189,248,0.22)" },
+  { name: "Iron Wolves", emoji: "🐺", color: "rgba(148,163,184,0.22)" },
+  { name: "Turbo Turtles", emoji: "🐢", color: "rgba(20,184,166,0.22)" },
+  { name: "Fire Dragons", emoji: "🐉", color: "rgba(244,63,94,0.22)" },
+  { name: "Shadow Panthers", emoji: "🐆", color: "rgba(168,85,247,0.22)" },
+  { name: "Neon Sharks", emoji: "🦈", color: "rgba(59,130,246,0.22)" },
+  { name: "Thunder Bears", emoji: "🐻", color: "rgba(251,146,60,0.22)" },
+  { name: "Crimson Cobras", emoji: "🐍", color: "rgba(239,68,68,0.22)" },
+];
+
+function pickRandomTeamCards(count) {
+  const shuffled = [...DEMO_TEAM_CATALOG].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
 function randInt(min, max) {
   return Math.floor(min + Math.random() * (max - min + 1));
 }
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
+}
+
+function pickRandomTeamNames(count, exclude = []) {
+  const pool = DEMO_TEAM_NAMES.filter((n) => !exclude.includes(n));
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
 }
 
 function isPhysicalTask(task) {
@@ -586,11 +610,26 @@ export default function DemoPage() {
   const [botCount] = useState(3);
 
   const [teams, setTeams] = useState(() => {
-    const base = [{ id: "team-you", teamName: "Your Team", isYou: true, score: 0 }];
-    for (let i = 1; i <= 3; i++) {
-      base.push({ id: `team-bot-${i}`, teamName: `Bot Team ${i}`, isYou: false, score: 0 });
-    }
-    return base;
+    const botCards = pickRandomTeamCards(3);
+
+    return [
+      {
+        id: "team-you",
+        teamName: "Your Team",
+        emoji: "⭐️",
+        color: "rgba(59,130,246,0.24)", // your team blue
+        isYou: true,
+        score: 0,
+      },
+      ...botCards.map((c, i) => ({
+        id: `team-bot-${i + 1}`,
+        teamName: c.name,
+        emoji: c.emoji,
+        color: c.color,
+        isYou: false,
+        score: 0,
+      })),
+    ];
   });
 
   // Leaderboard + derived totals
@@ -1297,6 +1336,19 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
     color: "#e5e7eb",
   };
 
+  const instructionPill = {
+    ...pill,
+    cursor: "pointer",
+    userSelect: "none",
+    padding: "8px 12px",
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(255,255,255,0.08)",
+    fontWeight: 900,
+    lineHeight: 1.25,
+    maxWidth: 820,
+  };
+
+
   // -------------------------
   // Render
   // -------------------------
@@ -1326,10 +1378,27 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
             <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#ffffff" }}>
               Curriculate – Demo
             </h1>
-            <p style={{ margin: 0, fontSize: "0.85rem", color: "rgba(226,232,240,0.78)" }}>
-              Usual play: Enter Room Code and Team members → Mood → Treasure Runner (while waiting for the Launch) → Enjoy tasks → See leaderboard
-              For the Demo: Try Treasure Runner (for fun) → Pick a task type → Try as many as you like
-            </p>
+            <button
+              type="button"
+              onClick={() =>
+                showToast(
+                  "Instructions copied above — Usual play: Room Code → Mood → Treasure Runner → Tasks → Leaderboard. Demo: Try Runner → Pick a task type → Try as many as you like.",
+                  true
+                )
+              }
+              style={instructionPill}
+              title="Quick instructions"
+            >
+              <span style={{ opacity: 0.9, marginRight: 8 }}>Instructions:</span>
+              <span style={{ opacity: 0.95 }}>
+                Usual play: <strong>Enter Room Code</strong> + Team members → <strong>Mood</strong> →
+                <strong> Treasure Runner</strong> (while waiting for Launch) → <strong>Enjoy tasks</strong> →
+                <strong> See leaderboard</strong>
+                <span style={{ opacity: 0.85 }}> &nbsp;•&nbsp; </span>
+                For the Demo: <strong>Try Treasure Runner</strong> (for fun) → <strong>Pick a task type</strong> →
+                <strong> Try as many as you like</strong>
+              </span>
+            </button>
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
