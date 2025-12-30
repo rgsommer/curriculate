@@ -97,10 +97,12 @@ export async function POST(req: Request) {
     // Look up user record
     const users = db.collection("users");
     // Resolve user record
-    let resolvedUserId: string | undefined = userId;
+    // - If userId is provided (logged-in flow), we attach checkout to that user.
+    // - If userId is missing but email is provided (marketing-site flow), we find-or-create a user by email.
+    // NOTE: Keep Mongo ObjectId values as ObjectId (do NOT stringify), or queries won't match.
+    let resolvedUserKey: any = userId;
 
-    // If no userId, allow email-based identity for public checkout
-    if (!resolvedUserId) {
+    if (!resolvedUserKey) {
       if (!email) {
         return NextResponse.json(
           { ok: false, error: "Not authenticated (missing userId and email)." },
@@ -118,7 +120,7 @@ export async function POST(req: Request) {
             email: emailLower,
             createdAt: new Date(),
             plan: "FREE",
-            hasUsedTrial: false,  # placeholder to be fixed
+            hasUsedTrial: false,
           },
           $set: {
             updatedAt: new Date(),
@@ -135,16 +137,16 @@ export async function POST(req: Request) {
         );
       }
 
-      // Use the created/found user's id
-      resolvedUserId =
-        typeof upsertedUser._id === "string" ? upsertedUser._id : String(upsertedUser._id);
+      // Use the created/found user's _id as-is (likely ObjectId)
+      resolvedUserKey = upsertedUser._id;
     }
 
-    // Convert string to ObjectId when possible
-    const userQuery =
-      /^[a-fA-F0-9]{24}$/.test(resolvedUserId!)
-        ? { _id: new ObjectId(resolvedUserId!) }
-        : { _id: resolvedUserId };
+    // Convert string ids that look like ObjectId into ObjectId
+    if (typeof resolvedUserKey === "string" && /^[a-fA-F0-9]{24}$/.test(resolvedUserKey)) {
+      resolvedUserKey = new ObjectId(resolvedUserKey);
+    }
+
+    const userQuery = { _id: resolvedUserKey };
 
     const user = await users.findOne(userQuery);
 
@@ -187,13 +189,18 @@ export async function POST(req: Request) {
     
     // Build subscription_data without TS union headaches
     const subscription_data: Stripe.Checkout.SessionCreateParams.SubscriptionData = {
-      metadata: { plan, userId: resolvedUserId },
+      metadata: { plan, userId: resolvedUserIdForMeta },
     };
 
     if (isTrial) {
       subscription_data.trial_period_days = trialDays;
       subscription_data.metadata = { plan, userId, trial: "true" };
     }
+
+    const resolvedUserIdForMeta =
+      resolvedUserKey instanceof ObjectId
+        ? resolvedUserKey.toHexString()
+        : String(resolvedUserKey);
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -207,7 +214,7 @@ export async function POST(req: Request) {
       payment_method_collection: isTrial ? "if_required" : "always",
       allow_promotion_codes: true,
       billing_address_collection: "auto",
-      metadata: { plan, userId: resolvedUserId },
+      metadata: { plan, userId: resolvedUserIdForMeta },
     });
 
     return NextResponse.json({ ok: true, url: session.url });
