@@ -285,7 +285,6 @@ const server = http.createServer(app);
 
 app.use(express.static("public")); // ← serves backend/public/index.html at /
 app.use("/api/demo", demoTasksetStreamRoutes);
-app.use("/api/stripe", stripeRoutes);
 
 app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-29a" });
@@ -501,15 +500,12 @@ const allowedOrigins = [
   "https://play.curriculate.net",
   "https://curriculate.net",
   "https://www.curriculate.net",
-  "https://api.curriculate.net",
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:4173",
   "http://localhost:4174",
   "http://localhost:3000",
 ];
-
-let raceWinner = {};
 
 function isVercelPreview(origin) {
   return origin && origin.endsWith(".vercel.app");
@@ -519,40 +515,27 @@ const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
-      return callback(null, true);
-    }
+    const ok = allowedOrigins.includes(origin) || isVercelPreview(origin);
 
-    if (process.env.NODE_ENV !== "production") {
-      if (
-        origin.startsWith("http://localhost:") ||
-        origin.startsWith("http://127.0.0.1:")
-      ) {
-        return callback(null, false);
-      }
-    }
+    if (!ok) console.warn("Blocked CORS origin:", origin);
 
-    console.warn("Blocked CORS origin:", origin);
-
-    // ✅ IMPORTANT: don't throw an error (causes 500 preflight)
-    return callback(null, false);
+    // IMPORTANT:
+    // Returning false means "no CORS headers" (browser will block).
+    // That's okay for blocked origins, but we must return true for allowed ones.
+    return callback(null, ok);
   },
-
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-
-  // ✅ keep your custom header here
-  allowedHeaders: ["Content-Type", "Authorization", "x-demo-admin-key"],
-
   credentials: true,
-
-  // (Either 200 or 204 is fine; 204 is common)
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
 
-// ✅ your regex is good (Express + path-to-regexp friendly)
-app.options(/.*/, cors(corsOptions));
+// This is the missing piece in a LOT of setups:
+app.options("*", cors(corsOptions));
+stripeRoutes.use(cors(corsOptions));
+stripeRoutes.options("*", cors(corsOptions));
 
 // ====================================================================
 //  EXPRESS MIDDLEWARE
@@ -561,6 +544,7 @@ app.use(bodyParser.json({ limit: "3mb" }));
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/auth", authRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/stripe", stripeRoutes);
 
 // ====================================================================
 //  SOCKET.IO
