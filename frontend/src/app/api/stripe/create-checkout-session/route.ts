@@ -149,6 +149,11 @@ export async function POST(req: Request) {
     const userQuery = { _id: resolvedUserKey };
 
     const user = await users.findOne(userQuery);
+    const resolvedUserIdForMeta =
+      resolvedUserKey instanceof ObjectId
+        ? resolvedUserKey.toHexString()
+        : String(resolvedUserKey);
+
 
     if (!user) {
       return NextResponse.json(
@@ -196,11 +201,6 @@ export async function POST(req: Request) {
       subscription_data.trial_period_days = trialDays;
       subscription_data.metadata = { plan, userId, trial: "true" };
     }
-
-    const resolvedUserIdForMeta =
-      resolvedUserKey instanceof ObjectId
-        ? resolvedUserKey.toHexString()
-        : String(resolvedUserKey);
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
