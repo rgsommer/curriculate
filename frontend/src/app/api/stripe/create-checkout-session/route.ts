@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("Missing STRIPE_SECRET_KEY");
-  return new Stripe(key, { apiVersion: "2024-06-20" });
+  return new Stripe(key);
 }
 
 function siteUrl() {
@@ -99,24 +99,59 @@ export async function POST(req: Request) {
 
     // Look up user record
     const users = db.collection("users");
-    const user = await users.findOne({ _id: userId as any });
+
+    // Convert string to ObjectId when possible
+    const userQuery =
+      /^[a-fA-F0-9]{24}$/.test(userId) ? { _id: new ObjectId(userId) } : { _id: userId };
+
+    const user = await users.findOne(userQuery);
+
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, error: "User not found (invalid userId for this environment)." },
+        { status: 401 }
+      );
+    }
+
+    // ---- One-trial-per-user protection ----
+    const planUpper = plan.toUpperCase();
+    const isTrial = planUpper === "TEACHER_PRO_TRIAL";
+
+    if (isTrial && (user as any)?.hasUsedTrial) {
+      return NextResponse.json(
+        { ok: false, error: "Trial already used for this account." },
+        { status: 409 }
+      );
+    }
 
     // Create or reuse Stripe customer
-    let customerId: string | undefined = user?.stripeCustomerId;
+    let customerId: string | undefined = (user as any)?.stripeCustomerId;
+
     if (!customerId) {
       const customer = await stripe.customers.create({
-        email: email || user?.email,
-        metadata: { userId },
+        email: email || (user as any)?.email,
+        metadata: { userId: String((user as any)?._id ?? userId) },
       });
+
       customerId = customer.id;
 
       await users.updateOne(
-        { _id: userId as any },
+        userQuery,
         { $set: { stripeCustomerId: customerId, updatedAt: new Date() } }
       );
     }
 
     const trialDays = Number(process.env.TRIAL_DAYS || 30);
+    
+    // Build subscription_data without TS union headaches
+    const subscription_data: Stripe.Checkout.SessionCreateParams.SubscriptionData = {
+      metadata: { plan, userId },
+    };
+
+    if (isTrial) {
+      subscription_data.trial_period_days = trialDays;
+      subscription_data.metadata = { plan, userId, trial: "true" };
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -125,20 +160,9 @@ export async function POST(req: Request) {
       success_url: successUrl,
       cancel_url: cancelUrl,
 
-      // Key bit:
-      subscription_data: isTrialPlan(plan)
-        ? {
-            trial_period_days: trialDays,
-            cancel_at_period_end: true, // ensures it ends after trial → user becomes Free
-            metadata: { plan, userId, trial: "true" },
-          }
-        : {
-            metadata: { plan, userId },
-          },
+      subscription_data,
 
-      // Reduce friction for a true $0 trial:
-      payment_method_collection: isTrialPlan(plan) ? "if_required" : "always",
-
+      payment_method_collection: isTrial ? "if_required" : "always",
       allow_promotion_codes: true,
       billing_address_collection: "auto",
       metadata: { plan, userId },
