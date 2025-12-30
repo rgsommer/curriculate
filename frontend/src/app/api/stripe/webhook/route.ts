@@ -70,7 +70,8 @@ export async function POST(req: Request) {
     const users = db.collection("users");
 
     // Helper: apply subscription -> update user plan/status (+ trial enforcement)
-    async function applySubscription(sub: Stripe.Subscription) {
+    // Use a block-scoped function expression (not a function declaration) to avoid ES5 strict-mode issues.
+    const applySubscription = async (sub: Stripe.Subscription) => {
       const customerId =
         typeof sub.customer === "string" ? sub.customer : sub.customer.id;
 
@@ -128,7 +129,7 @@ export async function POST(req: Request) {
       }
 
       await users.updateOne({ stripeCustomerId: customerId }, { $set: patch });
-    }
+    };
 
     // Handle subscription lifecycle events
     if (
@@ -139,9 +140,6 @@ export async function POST(req: Request) {
       const sub = event.data.object as Stripe.Subscription;
       await applySubscription(sub);
     }
-
-    // Optional: you can log checkout completion if you want
-    // if (event.type === "checkout.session.completed") { ... }
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {
