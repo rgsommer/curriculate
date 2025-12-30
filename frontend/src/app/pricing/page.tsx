@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://api.curriculate.net";
+const API_BASE = "";
 
 async function consumeHandoff(handoffCode: string) {
   const res = await fetch(`${API_BASE}/api/billing/handoff/consume`, {
