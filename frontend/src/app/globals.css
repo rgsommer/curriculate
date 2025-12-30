@@ -1,8 +1,9 @@
-/* frontend/src/app/globals.css */
-html, body {
-  margin: 0;
-  padding: 0;
-}
-* {
-  box-sizing: border-box;
-}
+cat > src/app/globals.css <<'EOF'
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* small safe defaults */
+html, body { margin: 0; padding: 0; }
+* { box-sizing: border-box; }
+EOF
