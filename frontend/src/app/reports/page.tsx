@@ -5,7 +5,7 @@ import { Download, ArrowRight, FileText, GraduationCap, ClipboardList } from "lu
 const docs = [
   {
     title: "Student Report Sample (Grade 5)",
-    file: "/reports/student-report-sample-gr5.pdf",
+    file: "/pdfs/Curriculate-Student-Report-SampleGr5.pdf",
     icon: <GraduationCap className="w-6 h-6 text-blue-600" />,
     bullets: [
       "Encouraging, grade-appropriate language",
@@ -16,7 +16,7 @@ const docs = [
   },
   {
     title: "Student Report Sample (Grade 7)",
-    file: "/reports/student-report-sample-gr7.pdf",
+    file: "/pdfs/Curriculate-Student-Report-SampleGr7.pdf",
     icon: <GraduationCap className="w-6 h-6 text-purple-600" />,
     bullets: [
       "Clear, readable by students + parents",
@@ -26,8 +26,8 @@ const docs = [
     ],
   },
   {
-    title: "Teacher Session Report (Grade 7/8)",
-    file: "/reports/teacher-session-report-gr7.pdf",
+    title: "Teacher Session Report",
+    file: "/pdfs/Curriculate-Teacher-Report-Sample.pdf",
     icon: <ClipboardList className="w-6 h-6 text-emerald-600" />,
     bullets: [
       "Session overview + team performance snapshot",
