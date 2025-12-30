@@ -350,7 +350,6 @@
                       <SampleMultipleChoice />
                     </div>
                   </div>
-
                   <p className="text-center mt-6 sm:mt-8 text-gray-500 font-medium text-sm sm:text-base">
                     ↑ This is what your students see — live, beautiful, and instant
                   </p>
