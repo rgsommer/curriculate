@@ -4,6 +4,7 @@ import { authAny } from "../middleware/authAny.js";
 
 const router = express.Router();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+console.log("[stripeRoutes] PATCH LOADED 2025-12-30c");
 
 function successUrl() {
   return process.env.STRIPE_CHECKOUT_SUCCESS_URL || "https://www.curriculate.net/billing/success";
@@ -12,7 +13,7 @@ function cancelUrl() {
   return process.env.STRIPE_CHECKOUT_CANCEL_URL || "https://www.curriculate.net/pricing";
 }
 
-router.post("/create-checkout-session", authAny, async (req, res) => {
+router.post("/create-checkout-session", async (req, res) => {
   try {
     const { priceId } = req.body || {};
     if (!priceId) return res.status(400).json({ error: "Missing priceId" });
@@ -37,7 +38,9 @@ router.post("/create-checkout-session", authAny, async (req, res) => {
   }
 });
 
-router.post("/create-portal-session", authAny, async (req, res) => {
+router.use(authAny);
+
+router.post("/create-portal-session", async (req, res) => {
   try {
     const user = req.user;
     if (!user.stripeCustomerId) {
