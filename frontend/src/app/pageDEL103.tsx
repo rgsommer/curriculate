@@ -2,7 +2,7 @@
 "use client";
 import React from "react";
 import Link from "next/link";
-import HoverVideo from "@/components/HoverVideo";
+import HoverVideo from "../components/HoverVideo";
 import {
   ArrowRight,
   Sparkles,
@@ -55,63 +55,61 @@ const steps = [
 function Testimonials() {
   const [active, setActive] = React.useState<"teacher" | "student">("teacher");
   const [controls, setControls] = React.useState(false);
-  const [unmuted, setUnmuted] = React.useState(false);
 
   const teacherRef = React.useRef<HTMLVideoElement | null>(null);
   const studentRef = React.useRef<HTMLVideoElement | null>(null);
 
-  function getActiveVideo() {
-    return active === "teacher" ? teacherRef.current : studentRef.current;
-  }
-  function getOtherVideo() {
-    return active === "teacher" ? studentRef.current : teacherRef.current;
+  const activeRef = active === "teacher" ? teacherRef : studentRef;
+
+  function pauseOther() {
+    const other = active === "teacher" ? studentRef.current : teacherRef.current;
+    if (other) {
+      other.pause();
+      other.currentTime = 0;
+      other.muted = true;
+    }
   }
 
-  function resetVideo(v: HTMLVideoElement | null) {
+  function ensureAutoplayMuted() {
+    const v = activeRef.current;
     if (!v) return;
-    v.pause();
-    v.currentTime = 0;
     v.muted = true;
+    v.playsInline = true as any;
+    // attempt autoplay
+    v.play().catch(() => {});
   }
 
   React.useEffect(() => {
-    // switch videos: keep autoplay muted, hide controls until user taps
+    pauseOther();
     setControls(false);
-    setUnmuted(false);
-
-    resetVideo(getOtherVideo());
-
-    const v = getActiveVideo();
-    if (!v) return;
-    v.muted = true;
-    v.loop = true;
-    v.play().catch(() => {});
+    // small delay helps some browsers apply attributes before play()
+    const t = setTimeout(() => ensureAutoplayMuted(), 60);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
   function onTap() {
-    const v = getActiveVideo();
+    const v = activeRef.current;
     if (!v) return;
 
-    // First interaction: unmute + show controls
+    // First tap: unmute + show controls
     if (v.muted) {
       v.muted = false;
-      setUnmuted(true);
       setControls(true);
       v.play().catch(() => {});
       return;
     }
 
-    // After unmuted: toggle play/pause
+    // Subsequent taps: toggle play/pause
     if (v.paused) v.play().catch(() => {});
     else v.pause();
   }
 
-  const btnBase =
+  const toggleBase =
     "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold transition";
-  const btnOn =
+  const toggleOn =
     "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm";
-  const btnOff =
+  const toggleOff =
     "border border-gray-200 bg-white text-gray-800 hover:bg-gray-50";
 
   return (
@@ -121,21 +119,22 @@ function Testimonials() {
           Real Voices. Real Learning.
         </h2>
         <p className="mx-auto mt-4 max-w-2xl text-gray-600">
-          Autoplay muted for browsing. Tap to play with sound and captions.
+          Autoplay muted (for browsing). Tap to hear audio, view captions, and
+          watch the full story.
         </p>
 
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <button
             type="button"
             onClick={() => setActive("teacher")}
-            className={`${btnBase} ${active === "teacher" ? btnOn : btnOff}`}
+            className={`${toggleBase} ${active === "teacher" ? toggleOn : toggleOff}`}
           >
             🎓 Watch teacher
           </button>
           <button
             type="button"
             onClick={() => setActive("student")}
-            className={`${btnBase} ${active === "student" ? btnOn : btnOff}`}
+            className={`${toggleBase} ${active === "student" ? toggleOn : toggleOff}`}
           >
             🧠 Watch student
           </button>
@@ -157,6 +156,7 @@ function Testimonials() {
               }
             }}
           >
+            {/* Teacher */}
             <video
               ref={teacherRef}
               src="/testimonials/teacher-testimonial.mp4"
@@ -178,6 +178,7 @@ function Testimonials() {
               />
             </video>
 
+            {/* Student */}
             <video
               ref={studentRef}
               src="/testimonials/student-testimonial.mp4"
@@ -199,9 +200,10 @@ function Testimonials() {
               />
             </video>
 
+            {/* Overlay hint */}
             <div className="pointer-events-none absolute bottom-4 left-4 flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-black/60 px-3 py-1 text-xs font-extrabold text-white">
-                {unmuted ? "Tap to pause/play" : "Tap for sound"}
+                Tap to {activeRef.current?.muted ? "unmute" : "pause/play"}
               </span>
               <span className="rounded-full bg-black/60 px-3 py-1 text-xs font-extrabold text-white">
                 CC
@@ -247,6 +249,12 @@ function Testimonials() {
           </div>
         </div>
       </div>
+
+      <p className="mx-auto mt-6 max-w-4xl text-center text-xs font-semibold text-gray-500">
+        Captions files: place <span className="font-mono">teacher-testimonial.vtt</span>{" "}
+        and <span className="font-mono">student-testimonial.vtt</span> in{" "}
+        <span className="font-mono">frontend/public/testimonials/</span>.
+      </p>
     </section>
   );
 }
@@ -413,6 +421,8 @@ export default function Home() {
           </div>
         </div>
       </section>
-    </main>
+        {/* TESTIMONIALS */}
+        <Testimonials />
+</main>
   );
 }

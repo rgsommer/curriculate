@@ -1,6 +1,4 @@
 // frontend/src/app/page.tsx
-"use client";
-import React from "react";
 import Link from "next/link";
 import HoverVideo from "@/components/HoverVideo";
 import {
@@ -50,206 +48,6 @@ const steps = [
   { n: "4", title: "Submit together", desc: "Text, photos, drawings, audio — evidence included." },
   { n: "5", title: "Reports generated", desc: "Teacher + student reports appear automatically." },
 ];
-
-
-function Testimonials() {
-  const [active, setActive] = React.useState<"teacher" | "student">("teacher");
-  const [controls, setControls] = React.useState(false);
-  const [unmuted, setUnmuted] = React.useState(false);
-
-  const teacherRef = React.useRef<HTMLVideoElement | null>(null);
-  const studentRef = React.useRef<HTMLVideoElement | null>(null);
-
-  function getActiveVideo() {
-    return active === "teacher" ? teacherRef.current : studentRef.current;
-  }
-  function getOtherVideo() {
-    return active === "teacher" ? studentRef.current : teacherRef.current;
-  }
-
-  function resetVideo(v: HTMLVideoElement | null) {
-    if (!v) return;
-    v.pause();
-    v.currentTime = 0;
-    v.muted = true;
-  }
-
-  React.useEffect(() => {
-    // switch videos: keep autoplay muted, hide controls until user taps
-    setControls(false);
-    setUnmuted(false);
-
-    resetVideo(getOtherVideo());
-
-    const v = getActiveVideo();
-    if (!v) return;
-    v.muted = true;
-    v.loop = true;
-    v.play().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-
-  function onTap() {
-    const v = getActiveVideo();
-    if (!v) return;
-
-    // First interaction: unmute + show controls
-    if (v.muted) {
-      v.muted = false;
-      setUnmuted(true);
-      setControls(true);
-      v.play().catch(() => {});
-      return;
-    }
-
-    // After unmuted: toggle play/pause
-    if (v.paused) v.play().catch(() => {});
-    else v.pause();
-  }
-
-  const btnBase =
-    "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold transition";
-  const btnOn =
-    "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm";
-  const btnOff =
-    "border border-gray-200 bg-white text-gray-800 hover:bg-gray-50";
-
-  return (
-    <section className="mx-auto mt-24 max-w-6xl px-6">
-      <div className="text-center">
-        <h2 className="text-3xl font-extrabold tracking-tight text-gray-900">
-          Real Voices. Real Learning.
-        </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-gray-600">
-          Autoplay muted for browsing. Tap to play with sound and captions.
-        </p>
-
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <button
-            type="button"
-            onClick={() => setActive("teacher")}
-            className={`${btnBase} ${active === "teacher" ? btnOn : btnOff}`}
-          >
-            🎓 Watch teacher
-          </button>
-          <button
-            type="button"
-            onClick={() => setActive("student")}
-            className={`${btnBase} ${active === "student" ? btnOn : btnOff}`}
-          >
-            🧠 Watch student
-          </button>
-        </div>
-      </div>
-
-      <div className="mx-auto mt-10 max-w-4xl">
-        <div className="rounded-3xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-          <div
-            className="relative cursor-pointer"
-            role="button"
-            tabIndex={0}
-            aria-label="Tap to play / unmute"
-            onClick={onTap}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onTap();
-              }
-            }}
-          >
-            <video
-              ref={teacherRef}
-              src="/testimonials/teacher-testimonial.mp4"
-              poster="/images/posters/teacher-testimonial.png"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              controls={controls && active === "teacher"}
-              className={`w-full h-auto ${active === "teacher" ? "block" : "hidden"}`}
-            >
-              <track
-                kind="captions"
-                src="/testimonials/teacher-testimonial.vtt"
-                srcLang="en"
-                label="English"
-                default
-              />
-            </video>
-
-            <video
-              ref={studentRef}
-              src="/testimonials/student-testimonial.mp4"
-              poster="/images/posters/student-testimonial.png"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              controls={controls && active === "student"}
-              className={`w-full h-auto ${active === "student" ? "block" : "hidden"}`}
-            >
-              <track
-                kind="captions"
-                src="/testimonials/student-testimonial.vtt"
-                srcLang="en"
-                label="English"
-                default
-              />
-            </video>
-
-            <div className="pointer-events-none absolute bottom-4 left-4 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-black/60 px-3 py-1 text-xs font-extrabold text-white">
-                {unmuted ? "Tap to pause/play" : "Tap for sound"}
-              </span>
-              <span className="rounded-full bg-black/60 px-3 py-1 text-xs font-extrabold text-white">
-                CC
-              </span>
-            </div>
-          </div>
-
-          <div className="p-6">
-            {active === "teacher" ? (
-              <>
-                <h3 className="text-lg font-extrabold text-gray-900">
-                  For Teachers
-                </h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Less prep. Smooth station flow. End-of-session reports that
-                  support grading and formative feedback for students and
-                  parents.
-                </p>
-              </>
-            ) : (
-              <>
-                <h3 className="text-lg font-extrabold text-gray-900">
-                  For Students
-                </h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Learning by doing — moving, collaborating, and understanding
-                  the material more deeply, not just memorizing it.
-                </p>
-              </>
-            )}
-
-            <div className="mt-4 flex flex-wrap gap-3 text-xs font-bold text-gray-500">
-              <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1">
-                Autoplay muted
-              </span>
-              <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1">
-                Tap to hear audio
-              </span>
-              <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1">
-                Captions available
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 export default function Home() {
   return (
@@ -413,6 +211,53 @@ export default function Home() {
           </div>
         </div>
       </section>
-    </main>
+    
+        {/* TESTIMONIALS */}
+        <section className="mx-auto mt-24 max-w-6xl px-6">
+          <h2 className="text-center text-3xl font-extrabold tracking-tight">
+            Real Voices. Real Learning.
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-center text-gray-600">
+            Hear how Curriculate changes teaching and learning — with minimal prep and meaningful results.
+          </p>
+
+          <div className="mt-12 grid gap-10 md:grid-cols-2">
+            {/* Teacher testimonial */}
+            <div className="rounded-3xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+              <video
+                src="/testimonials/teacher-testimonial.mp4"
+                poster="/images/posters/teacher-testimonial.png"
+                controls
+                className="w-full h-auto"
+              />
+              <div className="p-6">
+                <h3 className="text-lg font-bold">For Teachers</h3>
+                <p className="mt-2 text-sm text-gray-600">
+                  Less prep. Smooth station flow. Powerful end-of-session reports that support grading and
+                  formative feedback for students and parents.
+                </p>
+              </div>
+            </div>
+
+            {/* Student testimonial */}
+            <div className="rounded-3xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+              <video
+                src="/testimonials/student-testimonial.mp4"
+                poster="/images/posters/student-testimonial.png"
+                controls
+                className="w-full h-auto"
+              />
+              <div className="p-6">
+                <h3 className="text-lg font-bold">For Students</h3>
+                <p className="mt-2 text-sm text-gray-600">
+                  Learning by doing. Moving, collaborating, and understanding the material more deeply —
+                  not just memorizing it.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
   );
 }
