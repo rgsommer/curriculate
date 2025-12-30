@@ -20,3 +20,7 @@ backend/.env
 .env
 .env.*
 backend/.env
+
+# Next.js build output
+.next
+frontend/.next
