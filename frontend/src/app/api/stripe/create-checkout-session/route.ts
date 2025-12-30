@@ -72,13 +72,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing plan" }, { status: 400 });
     }
 
-    // You said A is true: users exist. We’ll require userId so trial attaches to the user.
-    if (!userId) {
-      return NextResponse.json(
-        { ok: false, error: "Missing userId (not logged in)." },
-        { status: 401 }
-      );
-    }
+    // Auth / identity:
+    // - If userId is provided (logged-in flow), we attach checkout to that user.
+    // - If userId is missing but email is provided (marketing-site flow), we find-or-create a user by email.
+    // This keeps portal access auth-only while allowing public pricing/trial checkout to function.
 
     const priceId = priceIdForPlan(plan);
     if (!priceId) {
@@ -99,10 +96,55 @@ export async function POST(req: Request) {
 
     // Look up user record
     const users = db.collection("users");
+    // Resolve user record
+    let resolvedUserId: string | undefined = userId;
+
+    // If no userId, allow email-based identity for public checkout
+    if (!resolvedUserId) {
+      if (!email) {
+        return NextResponse.json(
+          { ok: false, error: "Not authenticated (missing userId and email)." },
+          { status: 401 }
+        );
+      }
+
+      const emailLower = email.toLowerCase();
+
+      // Find-or-create user by email
+      const upsertRes = await users.findOneAndUpdate(
+        { email: emailLower },
+        {
+          $setOnInsert: {
+            email: emailLower,
+            createdAt: new Date(),
+            plan: "FREE",
+            hasUsedTrial: false,  # placeholder to be fixed
+          },
+          $set: {
+            updatedAt: new Date(),
+          },
+        },
+        { upsert: true, returnDocument: "after" }
+      );
+
+      const upsertedUser = upsertRes.value;
+      if (!upsertedUser) {
+        return NextResponse.json(
+          { ok: false, error: "Unable to create user for checkout." },
+          { status: 500 }
+        );
+      }
+
+      // Use the created/found user's id
+      resolvedUserId =
+        typeof upsertedUser._id === "string" ? upsertedUser._id : String(upsertedUser._id);
+    }
 
     // Convert string to ObjectId when possible
     const userQuery =
-      /^[a-fA-F0-9]{24}$/.test(userId) ? { _id: new ObjectId(userId) } : { _id: userId };
+      /^[a-fA-F0-9]{24}$/.test(resolvedUserId!)
+        ? { _id: new ObjectId(resolvedUserId!) }
+        : { _id: resolvedUserId };
 
     const user = await users.findOne(userQuery);
 
@@ -145,7 +187,7 @@ export async function POST(req: Request) {
     
     // Build subscription_data without TS union headaches
     const subscription_data: Stripe.Checkout.SessionCreateParams.SubscriptionData = {
-      metadata: { plan, userId },
+      metadata: { plan, userId: resolvedUserId },
     };
 
     if (isTrial) {
@@ -165,7 +207,7 @@ export async function POST(req: Request) {
       payment_method_collection: isTrial ? "if_required" : "always",
       allow_promotion_codes: true,
       billing_address_collection: "auto",
-      metadata: { plan, userId },
+      metadata: { plan, userId: resolvedUserId },
     });
 
     return NextResponse.json({ ok: true, url: session.url });
