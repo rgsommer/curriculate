@@ -21,15 +21,15 @@ export default function FreeTrialPage() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          // IMPORTANT: send a plan your backend already understands.
-          // Backend can decide eligibility + apply trial rules server-side.
+          // ✅ Use an existing plan your backend knows
           plan: "TEACHER_PRO",
+
+          // ✅ Let backend treat it as a trial (if supported)
           isTrial: true,
           trialDays: 30,
 
           userId,
           email,
-
           successUrl: `${window.location.origin}/billing/success`,
           cancelUrl: `${window.location.origin}/free-trial`,
         }),
@@ -40,10 +40,18 @@ export default function FreeTrialPage() {
         return;
       }
 
-      const data = await res.json().catch(() => ({}));
+      const raw = await res.text();
+      let data: any = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch {}
 
       if (!res.ok || !data?.url) {
-        throw new Error(data?.error || `Checkout failed (${res.status})`);
+        console.error("Stripe checkout error:", {
+          status: res.status,
+          raw,
+          data,
+          apiBase: API_BASE,
+        });
+        throw new Error(data?.error || raw || `Checkout failed (${res.status})`);
       }
 
       window.location.href = data.url;
