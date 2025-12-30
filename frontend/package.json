@@ -59,8 +59,6 @@
     "json-stable-stringify-without-jsonify": "^1.0.1",
     "keyv": "^4.5.4",
     "levn": "^0.4.1",
-    "lightningcss": "^1.30.2",
-    "lightningcss-darwin-arm64": "^1.30.2",
     "locate-path": "^6.0.0",
     "lodash.merge": "^4.6.2",
     "loose-envify": "^1.4.0",
@@ -112,5 +110,8 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "lightningcss": "^1.30.2"
+  }
 }
