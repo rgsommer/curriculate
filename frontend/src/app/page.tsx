@@ -2,7 +2,7 @@
 "use client";
 import React from "react";
 import Link from "next/link";
-import HoverVideo from "@/components/HoverVideo";
+import HoverVideo from "../components/HoverVideo";
 import {
   ArrowRight,
   Sparkles,
@@ -313,8 +313,6 @@ export default function Home() {
                 />
 </div>
             </div>
-
-            <p className="text-center mt-8
 
             <p className="text-center mt-8 text-gray-500 font-medium">
               ↑ This is what your students see — live, beautiful, and instant
