@@ -49,12 +49,6 @@ function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-function pickRandomTeamNames(count, exclude = []) {
-  const pool = DEMO_TEAM_NAMES.filter((n) => !exclude.includes(n));
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
-}
-
 function isPhysicalTask(task) {
   const t = String(task?.taskType || task?.type || "").toLowerCase();
   return (
@@ -583,10 +577,7 @@ async function fetchJsonSafe(url, options = {}) {
 export default function DemoPage() {
   const [phase, setPhase] = useState("mood"); // mood | runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
-
-  // Admin key is hidden until “Regenerate” is clicked
-  const [adminKey, setAdminKey] = useState("");
-  const [showAdminKey, setShowAdminKey] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   const [selectedType, setSelectedType] = useState("");
   const [currentTask, setCurrentTask] = useState(null);
@@ -685,20 +676,6 @@ export default function DemoPage() {
     return json.taskset;
   }
 
-  async function regenerateDemoTaskset(key) {
-    const json = await fetchJsonSafe(`${API_BASE}/api/demo/taskset/regenerate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-demo-admin-key": key,
-      },
-      body: JSON.stringify({}),
-    });
-    if (!json?.ok) throw new Error(json?.error || "Failed to regenerate demo taskset");
-    setDemoTaskset(json.taskset);
-    return json.taskset;
-  }
-
   // -------------------------
   // Streaming generation (ProgressFillButton)
   // -------------------------
@@ -708,80 +685,6 @@ export default function DemoPage() {
     } catch {}
     esRef.current = null;
   }
-
-  const startDemoGeneration = async () => {
-    if (generating) return;
-
-    // We require the admin key to generate the full demo pool.
-    const key = adminKey.trim();
-    if (!showAdminKey) {
-      setShowAdminKey(true);
-      showToast("Enter admin code to regenerate", false);
-      return;
-    }
-    if (!key) {
-      showToast("Admin code required", false);
-      return;
-    }
-
-    setGenerating(true);
-    setDone(0);
-    setTotal(1);
-    setStatus("Starting…");
-
-    cleanupEventSource();
-
-    const payload = {
-      adminKey: key,
-      // room for future: { includeNonEligible: false, ... }
-    };
-
-    const url = `${API_BASE}/api/demo/taskset/stream?payload=${encodeURIComponent(
-      JSON.stringify(payload)
-    )}`;
-
-    const es = new EventSource(url);
-    esRef.current = es;
-
-    es.addEventListener("start", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setTotal(Number(data.total) || 1);
-        setDone(Number(data.done) || 0);
-        setStatus("Generating…");
-      } catch {
-        setStatus("Generating…");
-      }
-    });
-
-    es.addEventListener("progress", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDone(Number(data.done) || 0);
-        setTotal(Number(data.total) || 1);
-        if (data.currentType) setStatus(`Generating: ${data.currentType}`);
-      } catch {}
-    });
-
-    es.addEventListener("done", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data?.taskset) setDemoTaskset(data.taskset);
-      } catch {}
-      setStatus("Done");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Demo pool regenerated", true);
-    });
-
-    es.addEventListener("error", () => {
-      // EventSource fires "error" on disconnect too; handle carefully
-      setStatus("Error / disconnected");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Stream disconnected", false);
-    });
-  };
 
   // Load once
   useEffect(() => {
@@ -1298,29 +1201,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
   }
 
   // -------------------------
-  // Demo Admin actions (POST regeneration for legacy)
-  // -------------------------
-  async function onRegeneratePool() {
-    // 1st click: reveal the admin input
-    if (!showAdminKey) {
-      setShowAdminKey(true);
-      return;
-    }
-
-    // 2nd click: actually regenerate
-    const key = adminKey.trim();
-    if (!key) return;
-
-    try {
-      await regenerateDemoTaskset(key);
-      showToast("Demo pool regenerated", true);
-    } catch (e) {
-      console.warn("[DemoPage] regenerate failed:", e);
-      showToast(e?.message || "Regenerate failed", false);
-    }
-  }
-
-  // -------------------------
   // Simple “StudentApp-like” styling bits
   // -------------------------
   const pill = {
@@ -1380,25 +1260,51 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
             </h1>
             <button
               type="button"
-              onClick={() =>
-                showToast(
-                  "Instructions copied above — Usual play: Room Code → Mood → Treasure Runner → Tasks → Leaderboard. Demo: Try Runner → Pick a task type → Try as many as you like.",
-                  true
-                )
-              }
+              onClick={() => setShowInstructions((v) => !v)}
               style={instructionPill}
-              title="Quick instructions"
+              title="Show instructions"
             >
-              <span style={{ opacity: 0.9, marginRight: 8 }}>Instructions:</span>
-              <span style={{ opacity: 0.95 }}>
-                Usual play: <strong>Enter Room Code</strong> + Team members → <strong>Mood</strong> →
-                <strong> Treasure Runner</strong> (while waiting for Launch) → <strong>Enjoy tasks</strong> →
-                <strong> See leaderboard</strong>
-                <span style={{ opacity: 0.85 }}> &nbsp;•&nbsp; </span>
-                For the Demo: <strong>Try Treasure Runner</strong> (for fun) → <strong>Pick a task type</strong> →
-                <strong> Try as many as you like</strong>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>📘</span>
+              <span>Instructions</span>
+              <span style={{ marginLeft: 6, opacity: 0.9 }}>
+                {showInstructions ? "▲" : "▼"}
               </span>
             </button>
+            {showInstructions && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "10px 12px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(255,255,255,0.06)",
+                  maxWidth: 820,
+                  lineHeight: 1.35,
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ fontWeight: 900, marginBottom: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>🧭</span>
+                  <span>Usual play</span>
+                </div>
+                <div style={{ opacity: 0.92 }}>
+                  <strong>Enter Room Code</strong> + Team members → <strong>Mood</strong> →
+                  <strong> Treasure Runner</strong> (while waiting for Launch) → <strong>Enjoy tasks</strong> →
+                  <strong> See leaderboard</strong>
+                </div>
+
+                <div style={{ height: 10 }} />
+
+                <div style={{ fontWeight: 900, marginBottom: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>🎮</span>
+                  <span>For the Demo</span>
+                </div>
+                <div style={{ opacity: 0.92 }}>
+                  <strong>Try Treasure Runner</strong> (for fun) → <strong>Pick a task type</strong> →
+                  <strong> Try as many as you like</strong>
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
@@ -1417,22 +1323,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
             </span>
 
-            <button
-              onClick={onRegeneratePool}
-              style={{
-                ...pill,
-                cursor: "pointer",
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(59,130,246,0.9)", // blue
-                color: "#fff",
-                fontWeight: 900,
-              }}
-              title="Regenerate demo pool (admin)"
-              type="button"
-            >
-              Regenerate
-            </button>
-
             <a
               href="https://www.curriculate.net/freetrial"
               target="_blank"
@@ -1450,35 +1340,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
             >
               Free Trial
             </a>
-
-            {showAdminKey && (
-              <input
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Admin code"
-                style={{
-                  ...pill,
-                  padding: "7px 10px",
-                  width: 160,
-                  textAlign: "left",
-                  border: "1px solid rgba(148,163,184,0.55)",
-                  background: "rgba(15,23,42,0.65)",
-                  color: "#fff",
-                  outline: "none",
-                }}
-              />
-            )}
-
-            <div style={{ minWidth: 220 }}>
-              <ProgressFillButton
-                progress={generating ? progress : 0}
-                disabled={generating}
-                onClick={startDemoGeneration}
-              >
-                {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
-              </ProgressFillButton>
-              <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
-            </div>
           </div>
         </div>
       </header>
@@ -1533,8 +1394,10 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               style={{
                 padding: "8px 10px",
                 borderRadius: 999,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: t.color || (t.isYou ? "rgba(59,130,246,0.18)" : "rgba(0,0,0,0.18)"),
+                border: t.isYou
+                  ? "1px solid rgba(255,255,255,0.35)"
+                  : "1px solid rgba(255,255,255,0.14)",
+                background: t.color,
                 fontWeight: 900,
                 fontVariantNumeric: "tabular-nums",
                 display: "inline-flex",
@@ -1542,10 +1405,10 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 gap: 8,
               }}
             >
-              <span style={{ opacity: 0.9 }}>{i + 1}.</span>
-              <span style={{ fontSize: 16, lineHeight: 1 }}>{t.emoji || "👥"}</span>
+              <span>{i + 1}.</span>
+              <span style={{ fontSize: 16 }}>{t.emoji}</span>
               <span>{t.teamName}</span>
-              <span style={{ opacity: 0.85 }}>:</span>
+              <span>:</span>
               <span>{t.score || 0}</span>
             </div>
           ))}
