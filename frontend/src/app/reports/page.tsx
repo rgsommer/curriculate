@@ -6,6 +6,7 @@ const docs = [
   {
     title: "Student Report Sample (Grade 5)",
     file: "/pdfs/Curriculate-Student-Report-SampleGr5.pdf",
+    downloadName: "Curriculate-Student-Report-SampleGr5.pdf",
     icon: <GraduationCap className="w-6 h-6 text-blue-600" />,
     bullets: [
       "Encouraging, grade-appropriate language",
@@ -17,6 +18,7 @@ const docs = [
   {
     title: "Student Report Sample (Grade 7)",
     file: "/pdfs/Curriculate-Student-Report-SampleGr7.pdf",
+    downloadName: "Curriculate-Student-Report-SampleGr7.pdf",
     icon: <GraduationCap className="w-6 h-6 text-purple-600" />,
     bullets: [
       "Clear, readable by students + parents",
@@ -28,6 +30,7 @@ const docs = [
   {
     title: "Teacher Session Report",
     file: "/pdfs/Curriculate-Teacher-Report-Sample.pdf",
+    downloadName: "Curriculate-Teacher-Report-Sample.pdf",
     icon: <ClipboardList className="w-6 h-6 text-emerald-600" />,
     bullets: [
       "Session overview + team performance snapshot",
@@ -77,7 +80,7 @@ export default function ReportsPage() {
                 </a>
                 <a
                   href={d.file}
-                  download
+                  download={d.downloadName}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-gray-900 text-base font-black shadow-xl border border-gray-200 hover:bg-gray-50"
                 >
                   <FileText className="w-5 h-5" /> Download
