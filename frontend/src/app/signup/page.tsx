@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function SignupRedirect() {
+function SignupRedirectInner() {
   const params = useSearchParams();
 
   useEffect(() => {
-    // preserve any handoff / returnTo / stripe params
     const qs = params?.toString();
     window.location.replace(qs ? `/pricing?${qs}` : "/pricing");
   }, [params]);
 
+  return <main style={{ padding: 32 }}>Redirecting…</main>;
+}
+
+export default function SignupRedirectPage() {
   return (
-    <main style={{ padding: 32 }}>
-      Redirecting…
-    </main>
+    <Suspense fallback={<main style={{ padding: 32 }}>Redirecting…</main>}>
+      <SignupRedirectInner />
+    </Suspense>
   );
 }
