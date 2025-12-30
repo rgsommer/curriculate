@@ -173,6 +173,9 @@ function TeacherApp() {
 
   const requireAuth = (element) => (isAuthenticated ? element : <Login />);
 
+  const requireAdmin = (element) =>
+  isAuthenticated ? (isAdmin ? element : <EnterRoomMessage />) : <Login />;
+
   const clearEntryOk = () => {
     try {
       localStorage.removeItem(ENTRY_KEY);
@@ -390,10 +393,9 @@ function TeacherApp() {
           />
 
           {/* Admin */}
-          <Route path="/admin" element={requireAuth(<AdminPage isAdmin={isAdmin} />)} />
-          {/* Back-compat */}
-          <Route path="/admin/access-codes" element={requireAuth(<AdminPage isAdmin={isAdmin} />)} />
-
+          <Route path="/admin" element={requireAdmin(<AdminPage isAdmin={isAdmin} />)} />
+          <Route path="/admin/access-codes" element={requireAdmin(<AdminPage isAdmin={isAdmin} />)} />
+          
           {/* Auth */}
           <Route path="/login" element={<Login />} />
 

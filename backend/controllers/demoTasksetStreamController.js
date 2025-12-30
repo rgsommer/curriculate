@@ -108,6 +108,18 @@ function getEligibleDemoTypes(selectedTypes = null) {
   return all;
 }
 
+const origin = req.headers.origin;
+const allow = new Set([
+  "https://play.curriculate.net",
+  "https://www.curriculate.net",
+  "http://localhost:5173",
+]);
+
+if (origin && allow.has(origin)) {
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+}
+
 export const streamDemoTaskset = async (req, res) => {
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");

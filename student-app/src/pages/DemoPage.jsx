@@ -1327,7 +1327,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               Curriculate – Demo
             </h1>
             <p style={{ margin: 0, fontSize: "0.85rem", color: "rgba(226,232,240,0.78)" }}>
-              Mood → Treasure Runner → Pick a task type. (No room needed.)
+              Usual play: Enter Room Code and Team members → Mood → Treasure Runner (while waiting for the Launch) → Enjoy tasks → See leaderboard
+              For the Demo: Try Treasure Runner (for fun) → Pick a task type → Try as many as you like
             </p>
           </div>
 
