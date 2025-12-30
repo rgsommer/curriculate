@@ -1,3 +1,9 @@
+export const metadata = {
+  title: "Free Trial | Curriculate",
+  description:
+    "Try Curriculate free — interactive classroom learning powered by AI.",
+};
+
 export default function FreeTrialPage() {
   return (
     <main

@@ -1,6 +1,5 @@
 // frontend/src/app/page.tsx
 import Link from "next/link";
-import HoverVideo from "@/components/HoverVideo";
 import {
   ArrowRight,
   Sparkles,
@@ -102,17 +101,49 @@ export default function Home() {
               </div>
 
               <div className="p-10">
-                <HoverVideo
-                  primarySrc="/videos/station-rotation-single-room.mp4"
-                  hoverSrc="/videos/station-rotation-multi-room.mp4"
-                  primaryPoster="/images/posters/station-rotation-single-room.png"
-                  hoverPoster="/images/posters/station-rotation-multi-room.png"
-                  label="Station Rotation Preview"
-                />
-</div>
-            </div>
+                <div className="flex items-center gap-3 mb-8">
+                  <Sparkles className="w-10 h-10 text-yellow-500" />
+                  <h2 className="text-4xl font-bold text-gray-900">Photosynthesis Review</h2>
+                </div>
 
-            <p className="text-center mt-8
+                <div className="space-y-8 max-w-3xl mx-auto">
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-8 border-2 border-green-200">
+                    <p className="text-2xl font-semibold mb-6">
+                      What is the primary source of energy for Earth's climate system?
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {["The Sun", "Geothermal heat", "Ocean currents", "Volcanic activity"].map((option, i) => (
+                        <label
+                          key={i}
+                          className={`flex items-center gap-4 p-5 rounded-xl cursor-pointer transition-all ${
+                            i === 0 ? "bg-green-500 text-white shadow-lg" : "bg-white hover:bg-gray-50"
+                          }`}
+                        >
+                          <div
+                            className={`w-7 h-7 rounded-full border-2 flex items-center justify-center ${
+                              i === 0 ? "border-white bg-white" : "border-gray-300"
+                            }`}
+                          >
+                            {i === 0 && <CheckCircle className="w-5 h-5 text-green-600" />}
+                          </div>
+                          <span className="text-lg font-medium">{option}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-lg font-medium text-gray-600">Question 1 of 12</span>
+                    <div className="flex items-center gap-3">
+                      <div className="bg-gray-200 rounded-full h-3 w-96 overflow-hidden">
+                        <div className="bg-blue-600 h-full rounded-full" style={{ width: "42%" }} />
+                      </div>
+                      <span className="text-lg font-bold text-blue-600">42%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <p className="text-center mt-8 text-gray-500 font-medium">
               ↑ This is what your students see — live, beautiful, and instant
@@ -211,53 +242,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-    
-        {/* TESTIMONIALS */}
-        <section className="mx-auto mt-24 max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-extrabold tracking-tight">
-            Real Voices. Real Learning.
-          </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-center text-gray-600">
-            Hear how Curriculate changes teaching and learning — with minimal prep and meaningful results.
-          </p>
-
-          <div className="mt-12 grid gap-10 md:grid-cols-2">
-            {/* Teacher testimonial */}
-            <div className="rounded-3xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-              <video
-                src="/testimonials/teacher-testimonial.mp4"
-                poster="/images/posters/teacher-testimonial.png"
-                controls
-                className="w-full h-auto"
-              />
-              <div className="p-6">
-                <h3 className="text-lg font-bold">For Teachers</h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Less prep. Smooth station flow. Powerful end-of-session reports that support grading and
-                  formative feedback for students and parents.
-                </p>
-              </div>
-            </div>
-
-            {/* Student testimonial */}
-            <div className="rounded-3xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-              <video
-                src="/testimonials/student-testimonial.mp4"
-                poster="/images/posters/student-testimonial.png"
-                controls
-                className="w-full h-auto"
-              />
-              <div className="p-6">
-                <h3 className="text-lg font-bold">For Students</h3>
-                <p className="mt-2 text-sm text-gray-600">
-                  Learning by doing. Moving, collaborating, and understanding the material more deeply —
-                  not just memorizing it.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-      </main>
+    </main>
   );
 }

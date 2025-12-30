@@ -41,6 +41,14 @@ export default function CompareKahootPage() {
             </a>
           </div>
         </div>
+        <div className="mt-6 rounded-3xl overflow-hidden border border-gray-200 shadow-2xl bg-white">
+          <img
+            src="/images/compare/compare-kahoot-preview.png"
+            alt="Curriculate vs Kahoot (one-page preview)"
+            className="w-full h-auto block"
+            loading="lazy"
+          />
+        </div>
 
         <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 p-10">
           <h2 className="text-2xl font-extrabold text-gray-900 mb-3">Quick takeaway</h2>

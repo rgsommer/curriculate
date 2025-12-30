@@ -10,11 +10,13 @@ export default function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-6 text-sm font-semibold text-gray-700 md:flex">
-          <Link className="hover:text-gray-900" href="/features">Features</Link>
-          <Link className="hover:text-gray-900" href="/pricing">Pricing</Link>
-          <Link className="hover:text-gray-900" href="/about">About</Link>
-          <Link className="hover:text-gray-900" href="/contact">Contact</Link>
-        </nav>
+            <Link className="hover:text-gray-900" href="/features">Features</Link>
+            <Link className="hover:text-gray-900" href="/compare">Compare</Link>
+            <Link className="hover:text-gray-900" href="/pricing">Pricing</Link>
+            <Link className="hover:text-gray-900" href="/reports">Reports</Link>
+            <Link className="hover:text-gray-900" href="/about">About</Link>
+            <Link className="hover:text-gray-900" href="/contact">Contact</Link>
+            </nav>
 
         <div className="flex items-center gap-2">
           <Link
@@ -22,6 +24,12 @@ export default function SiteHeader() {
             className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-800 hover:bg-gray-50"
           >
             Try Demo
+          </Link>
+          <Link
+            href="/freetrial"
+            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-800 hover:bg-gray-50"
+          >
+            Free Trial
           </Link>
           <Link
             href="/signup"
