@@ -288,7 +288,7 @@ app.use("/api/demo", demoTasksetStreamRoutes);
 app.use("/api/stripe", stripeRoutes);
 
 app.get("/api/version", (req, res) => {
-  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-16" });
+  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-29a" });
 });
 
 // Simple UUID generator
