@@ -14,8 +14,6 @@ export default function FreeTrialPage() {
 
   const [billingEmail, setBillingEmail] = React.useState("");
 
-  const TEACHER_PRO_MONTHLY_PRICE_ID = "price_XXXXXXXXXXXXXXXX";
-
   async function startTrial() {
     try {
       setStatus("loading");
@@ -34,7 +32,7 @@ export default function FreeTrialPage() {
         credentials: "include",
         body: JSON.stringify({
           plan: "TEACHER_PRO_TRIAL", // ✅ this is the key
-          priceId: PRICES.TEACHER_PLUS_MONTHLY,
+          priceId: PRICES.TEACHER_PRO_MONTHLY,
           email: billingEmail.trim(),
           successUrl: `${window.location.origin}/billing/success`,
           cancelUrl: `${window.location.origin}/free-trial`,
