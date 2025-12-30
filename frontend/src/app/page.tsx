@@ -320,7 +320,7 @@
                 </Link>
 
                 <Link
-                  href="/station-posters"
+                  href="/pdfs/Curriculate-Station-Posters.pdf"
                   className="inline-flex w-full sm:w-auto items-center justify-center gap-3 bg-purple-600 hover:bg-purple-700 text-white text-lg sm:text-xl font-bold py-4 sm:py-5 px-6 sm:px-8 rounded-2xl shadow-2xl"
                 >
                   <Printer className="w-6 h-6" />

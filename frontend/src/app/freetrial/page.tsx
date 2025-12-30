@@ -1,10 +1,61 @@
-export const metadata = {
-  title: "Free Trial | Curriculate",
-  description:
-    "Try Curriculate free — interactive classroom learning powered by AI.",
-};
+"use client";
+
+import React from "react";
 
 export default function FreeTrialPage() {
+  const [status, setStatus] = React.useState<
+    "idle" | "loading" | "error" | "used"
+  >("idle");
+
+  // If you have a global auth/user object, replace these with real values.
+  // For now, you can hard-wire your userId/email while you’re the only user.
+  const userId = "admin";
+  //  (globalThis as any)?.CURRENT_USER_ID ||
+  //  ""; // TODO: replace with your auth user id
+  const email = "admin@curriculate.net";
+  //  (globalThis as any)?.CURRENT_USER_EMAIL ||
+  //  ""; // TODO: replace with your auth email
+
+  
+  async function startTrial() {
+    try {
+      setStatus("loading");
+
+      // If you prefer, set NEXT_PUBLIC_API_BASE in Vercel/Render.
+      const API_BASE =
+        process.env.NEXT_PUBLIC_API_BASE || "https://api.curriculate.net";
+
+      const res = await fetch(`${API_BASE}/api/stripe/create-checkout-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          plan: "TEACHER_PRO_TRIAL",
+          userId,
+          email,
+          successUrl: `${window.location.origin}/billing/success`,
+          cancelUrl: `${window.location.origin}/free-trial`,
+        }),
+      });
+
+      if (res.status === 409) {
+        setStatus("used");
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error || `Checkout failed (${res.status})`);
+      }
+
+      window.location.href = data.url;
+    } catch (e) {
+      console.error(e);
+      setStatus("error");
+    }
+  }
+
   return (
     <main
       style={{
@@ -36,32 +87,58 @@ export default function FreeTrialPage() {
         <ul
           style={{
             lineHeight: 1.6,
-            marginBottom: 32,
+            marginBottom: 18,
             paddingLeft: 18,
           }}
         >
-          <li>✔ Live classroom task engine</li>
-          <li>✔ AI-generated & physical learning tasks</li>
+          <li>✔ Full Pro features for 30 days</li>
+          <li>✔ $0 today</li>
+          <li>✔ After 30 days, automatically reverts to Free (upgrade anytime)</li>
           <li>✔ Works instantly — no install</li>
-          <li>✔ Cancel anytime</li>
         </ul>
 
-        <a
-          href="/signup"
+        <button
+          onClick={startTrial}
+          disabled={status === "loading"}
           style={{
             display: "inline-block",
             padding: "14px 22px",
             borderRadius: 999,
             background:
-              "linear-gradient(135deg, rgba(34,197,94,0.85), rgba(14,165,233,0.85))",
+              status === "loading"
+                ? "rgba(148,163,184,0.35)"
+                : "linear-gradient(135deg, rgba(34,197,94,0.85), rgba(14,165,233,0.85))",
             color: "#fff",
             fontWeight: 900,
-            textDecoration: "none",
+            border: "none",
+            cursor: status === "loading" ? "not-allowed" : "pointer",
             boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           }}
         >
-          Start Free Trial →
-        </a>
+          {status === "loading" ? "Starting…" : "Start Free Trial →"}
+        </button>
+
+        {status === "used" && (
+          <p style={{ marginTop: 14, color: "#fbbf24", fontWeight: 800 }}>
+            This account has already used its free trial. You can still start on the Free plan
+            and upgrade anytime.
+          </p>
+        )}
+
+        {status === "error" && (
+          <p style={{ marginTop: 14, color: "#fb7185", fontWeight: 800 }}>
+            Load failed. Please try again — or go to Pricing to start checkout.
+          </p>
+        )}
+
+        <div style={{ marginTop: 14 }}>
+          <a
+            href="/pricing"
+            style={{ color: "#93c5fd", fontWeight: 800, textDecoration: "none" }}
+          >
+            View plans instead →
+          </a>
+        </div>
       </div>
     </main>
   );
