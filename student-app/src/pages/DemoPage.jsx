@@ -1534,12 +1534,19 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 padding: "8px 10px",
                 borderRadius: 999,
                 border: "1px solid rgba(255,255,255,0.14)",
-                background: t.isYou ? "rgba(59,130,246,0.18)" : "rgba(0,0,0,0.18)",
+                background: t.color || (t.isYou ? "rgba(59,130,246,0.18)" : "rgba(0,0,0,0.18)"),
                 fontWeight: 900,
                 fontVariantNumeric: "tabular-nums",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              {i + 1}. {t.teamName}: {t.score || 0}
+              <span style={{ opacity: 0.9 }}>{i + 1}.</span>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{t.emoji || "👥"}</span>
+              <span>{t.teamName}</span>
+              <span style={{ opacity: 0.85 }}>:</span>
+              <span>{t.score || 0}</span>
             </div>
           ))}
         </div>
