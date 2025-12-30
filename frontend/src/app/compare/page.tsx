@@ -1,39 +1,30 @@
 import Link from "next/link";
 
-type Mark = "yes" | "no" | "partial" | "text";
+type Mark = "yes" | "no" | "partial";
 
-function IconMark({
-  value,
-  label,
-}: {
-  value: Exclude<Mark, "text">;
-  label: string;
-}) {
-  const base =
-    "inline-flex items-center gap-2 font-semibold whitespace-nowrap";
+function MarkIcon({ value }: { value: Mark }) {
   if (value === "yes") {
     return (
-      <span className={`${base} text-emerald-700`}>
+      <span className="inline-flex items-center gap-2 font-semibold text-emerald-700">
         <span aria-hidden="true">✔</span>
-        <span className="sr-only">{label}: Yes</span>
+        <span className="sr-only">Yes</span>
         <span aria-hidden="true">Yes</span>
       </span>
     );
   }
   if (value === "no") {
     return (
-      <span className={`${base} text-rose-700`}>
+      <span className="inline-flex items-center gap-2 font-semibold text-rose-700">
         <span aria-hidden="true">✖</span>
-        <span className="sr-only">{label}: No</span>
+        <span className="sr-only">No</span>
         <span aria-hidden="true">No</span>
       </span>
     );
   }
-  // partial
   return (
-    <span className={`${base} text-amber-700`}>
+    <span className="inline-flex items-center gap-2 font-semibold text-amber-700">
       <span aria-hidden="true">◯</span>
-      <span className="sr-only">{label}: Limited</span>
+      <span className="sr-only">Limited</span>
       <span aria-hidden="true">Limited</span>
     </span>
   );
@@ -41,79 +32,60 @@ function IconMark({
 
 function Cell({
   mark,
-  text,
-  label,
-  className = "",
+  detail,
 }: {
   mark: Mark;
-  text?: string;
-  label: string;
-  className?: string;
+  detail?: string;
 }) {
-  if (mark === "text") {
-    return <td className={`p-4 ${className}`}>{text}</td>;
-  }
   return (
-    <td className={`p-4 ${className}`}>
-      <IconMark value={mark} label={label} />
-      {text ? <span className="ml-2 text-gray-600 font-medium">({text})</span> : null}
+    <td className="p-4">
+      <MarkIcon value={mark} />
+      {detail ? (
+        <span className="ml-2 text-gray-600 font-medium">({detail})</span>
+      ) : null}
     </td>
   );
 }
 
 export default function ComparePage() {
   return (
-    <main className="mx-auto max-w-6xl px-6 py-16">
-      {/* Print styles + hide non-print UI */}
-      <style jsx global>{`
-        @media print {
-          .no-print {
-            display: none !important;
-          }
-          main {
-            max-width: 100% !important;
-            padding: 0 !important;
-          }
-          table {
-            font-size: 12px !important;
-          }
-          th,
-          td {
-            padding: 10px !important;
-          }
-        }
-      `}</style>
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <main className="mx-auto max-w-6xl px-6 py-16 print:max-w-none print:px-0 print:py-0">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between print:block">
         <div>
-          <h1 className="text-4xl font-bold mb-3">Compare Curriculate</h1>
-          <p className="text-lg text-gray-600">
+          <h1 className="text-4xl font-bold mb-3 print:mb-2">
+            Compare Curriculate
+          </h1>
+          <p className="text-lg text-gray-600 print:text-gray-800 print:text-base">
             See how Curriculate compares to traditional station learning tools,
             static worksheets, and common edtech platforms.
           </p>
+
+          {/* Print hint (shows only on screen) */}
+          <p className="mt-2 text-sm text-gray-500 print:hidden">
+            Tip: Use your browser’s Print command to save as PDF.
+          </p>
         </div>
 
-        <div className="no-print flex gap-3">
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="rounded-lg border px-4 py-2 font-semibold hover:bg-gray-50"
-            aria-label="Print or save as PDF"
-          >
-            Print / Save PDF
-          </button>
+        {/* Screen-only buttons */}
+        <div className="flex gap-3 print:hidden">
           <Link
             href="/pricing"
             className="rounded-lg bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700"
           >
             View Pricing
           </Link>
+          <Link
+            href="/demo"
+            className="rounded-lg border px-4 py-2 font-semibold hover:bg-gray-50"
+          >
+            Try the Demo
+          </Link>
         </div>
       </div>
 
-      <div className="mt-10 overflow-x-auto">
-        <table className="w-full border border-gray-200 rounded-xl overflow-hidden">
-          <thead className="bg-gray-50">
+      <div className="mt-10 overflow-x-auto print:overflow-visible">
+        <table className="w-full border border-gray-200 rounded-xl overflow-hidden print:border-gray-300">
+          <thead className="bg-gray-50 print:bg-white">
             <tr>
               <th className="p-4 text-left">Feature</th>
               <th className="p-4 text-left">Curriculate</th>
@@ -122,33 +94,33 @@ export default function ComparePage() {
             </tr>
           </thead>
 
-          <tbody className="divide-y">
+          <tbody className="divide-y print:divide-gray-200">
             <tr>
               <td className="p-4">AI-generated tasks</td>
-              <Cell mark="yes" label="Curriculate AI-generated tasks" />
-              <Cell mark="no" label="Traditional stations AI-generated tasks" />
-              <Cell mark="partial" label="Other edtech AI-generated tasks" text="Varies / limited" />
+              <Cell mark="yes" />
+              <Cell mark="no" />
+              <Cell mark="partial" detail="Varies / limited" />
             </tr>
 
             <tr>
               <td className="p-4">Live teacher pacing</td>
-              <Cell mark="yes" label="Curriculate live pacing" />
-              <Cell mark="no" label="Traditional stations live pacing" />
-              <Cell mark="partial" label="Other edtech live pacing" text="Often timer-based" />
+              <Cell mark="yes" />
+              <Cell mark="no" />
+              <Cell mark="partial" detail="Often timer-based" />
             </tr>
 
             <tr>
               <td className="p-4">Student engagement tracking</td>
-              <Cell mark="yes" label="Curriculate engagement tracking" text="Built-in" />
-              <Cell mark="partial" label="Traditional stations engagement tracking" text="Manual" />
-              <Cell mark="partial" label="Other edtech engagement tracking" text="Clicks/answers only" />
+              <Cell mark="yes" detail="Built-in" />
+              <Cell mark="partial" detail="Manual" />
+              <Cell mark="partial" detail="Clicks/answers only" />
             </tr>
 
             <tr>
               <td className="p-4">Reports & transcripts</td>
-              <Cell mark="yes" label="Curriculate reports & transcripts" text="Automatic" />
-              <Cell mark="no" label="Traditional stations reports & transcripts" />
-              <Cell mark="partial" label="Other edtech reports & transcripts" text="Basic exports" />
+              <Cell mark="yes" detail="Automatic" />
+              <Cell mark="no" />
+              <Cell mark="partial" detail="Basic exports" />
             </tr>
 
             <tr>
@@ -160,76 +132,67 @@ export default function ComparePage() {
 
             <tr>
               <td className="p-4">Evidence capture (photo, audio, drawing)</td>
-              <Cell mark="yes" label="Curriculate evidence capture" text="Built-in" />
-              <Cell mark="partial" label="Traditional stations evidence capture" text="Possible, manual" />
-              <Cell mark="partial" label="Other edtech evidence capture" text="Some tools only" />
+              <Cell mark="yes" detail="Built-in" />
+              <Cell mark="partial" detail="Possible, manual" />
+              <Cell mark="partial" detail="Some tools only" />
             </tr>
 
             <tr>
               <td className="p-4">Auto-scoring & feedback</td>
-              <Cell mark="yes" label="Curriculate auto-scoring & feedback" text="Optional AI + rubric" />
-              <Cell mark="no" label="Traditional stations auto-scoring & feedback" />
-              <Cell mark="partial" label="Other edtech auto-scoring & feedback" text="Mainly objective" />
+              <Cell mark="yes" detail="Optional AI + rubric" />
+              <Cell mark="no" />
+              <Cell mark="partial" detail="Mostly objective" />
             </tr>
 
             <tr>
               <td className="p-4">Designed for movement & rotation</td>
-              <Cell mark="yes" label="Curriculate movement & rotation" text="QR-based flow" />
-              <Cell mark="yes" label="Traditional stations movement & rotation" text="Manual" />
-              <Cell mark="partial" label="Other edtech movement & rotation" text="Usually seated" />
+              <Cell mark="yes" detail="QR-based flow" />
+              <Cell mark="yes" detail="Manual" />
+              <Cell mark="partial" detail="Usually seated" />
             </tr>
 
             <tr>
               <td className="p-4">Supports fixed stations & multi-room activities</td>
-              <Cell mark="yes" label="Curriculate fixed stations & multi-room" text="Exhibits, art, scavenger hunts" />
-              <Cell mark="partial" label="Traditional fixed stations & multi-room" text="Doable, high effort" />
-              <Cell mark="partial" label="Other edtech fixed stations & multi-room" text="Not the focus" />
+              <Cell mark="yes" detail="Exhibits, art, scavenger hunts" />
+              <Cell mark="partial" detail="Doable, high effort" />
+              <Cell mark="partial" detail="Not the focus" />
             </tr>
 
             <tr>
               <td className="p-4">Differentiation & variants</td>
-              <Cell mark="yes" label="Curriculate differentiation & variants" text="Instant variants" />
-              <Cell mark="no" label="Traditional differentiation & variants" text="Rebuild / reprint" />
-              <Cell mark="partial" label="Other edtech differentiation & variants" text="Limited branching" />
+              <Cell mark="yes" detail="Instant variants" />
+              <Cell mark="no" detail="Rebuild / reprint" />
+              <Cell mark="partial" detail="Limited branching" />
             </tr>
 
             <tr>
               <td className="p-4">Team accountability</td>
-              <Cell mark="yes" label="Curriculate team accountability" text="Team submissions" />
-              <Cell mark="partial" label="Traditional team accountability" text="Hard to track" />
-              <Cell mark="partial" label="Other edtech team accountability" text="Often individual" />
+              <Cell mark="yes" detail="Team submissions" />
+              <Cell mark="partial" detail="Hard to track" />
+              <Cell mark="partial" detail="Often individual" />
             </tr>
 
             <tr>
               <td className="p-4">Teacher insight during class</td>
-              <Cell mark="yes" label="Curriculate teacher insight" text="Live dashboard" />
-              <Cell mark="partial" label="Traditional teacher insight" text="Walk-around" />
-              <Cell mark="partial" label="Other edtech teacher insight" text="After answers" />
+              <Cell mark="yes" detail="Live dashboard" />
+              <Cell mark="partial" detail="Walk-around" />
+              <Cell mark="partial" detail="After answers" />
             </tr>
 
             <tr>
               <td className="p-4">Works on any mobile device (no app required)</td>
-              <Cell mark="yes" label="Curriculate mobile no app" text="Phone, tablet, Chromebook" />
-              <Cell mark="partial" label="Traditional stations mobile no app" text="Depends on materials" />
-              <Cell mark="partial" label="Other edtech mobile no app" text="Varies by platform" />
+              <Cell mark="yes" detail="Phone, tablet, Chromebook" />
+              <Cell mark="partial" detail="Depends on materials" />
+              <Cell mark="partial" detail="Varies by platform" />
             </tr>
           </tbody>
         </table>
       </div>
 
-      <div className="no-print mt-12 flex gap-4">
-        <Link
-          href="/demo"
-          className="rounded-lg bg-blue-600 px-6 py-3 text-white font-semibold hover:bg-blue-700"
-        >
-          Try the Demo
-        </Link>
-        <Link
-          href="/pricing"
-          className="rounded-lg border px-6 py-3 font-semibold hover:bg-gray-50"
-        >
-          View Pricing
-        </Link>
+      <div className="mt-10 text-sm text-gray-500 print:text-gray-700">
+        <span className="font-semibold">Printing:</span> On Chrome/Edge/Safari, choose{" "}
+        <span className="font-semibold">Print</span> →{" "}
+        <span className="font-semibold">Save as PDF</span>.
       </div>
     </main>
   );
