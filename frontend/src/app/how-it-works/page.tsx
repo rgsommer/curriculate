@@ -1,3 +1,5 @@
+"use client";
+
 // frontend/src/app/how-it-works/page.tsx
 import React, { useState } from "react";
 import WalkthroughModal from "../../components/WalkthroughModal";
