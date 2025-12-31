@@ -1073,9 +1073,9 @@ function AdminPage({ isAdmin = false }) {
     setEmailErr("");
     try {
       const [tRes, mRes, rRes] = await Promise.all([
-        fetchJsonSafe(`${API_BASE}/api/admin/email-templates`, { credentials: "include" }),
-        fetchJsonSafe(`${API_BASE}/api/admin/email-metrics`, { credentials: "include" }),
-        fetchJsonSafe(`${API_BASE}/api/admin/referral-settings`, { credentials: "include" }),
+        fetchJsonSafe(`/api/admin/email-templates`, { credentials: "include" }),
+        fetchJsonSafe(`/api/admin/email-metrics`, { credentials: "include" }),
+        fetchJsonSafe(`/api/admin/referral-settings`, { credentials: "include" }),
       ]);
 
       if (tRes?.ok) {
@@ -1105,7 +1105,7 @@ function AdminPage({ isAdmin = false }) {
         rewardMonths: Math.max(0, Number(refRewardMonths || 1)),
       };
 
-      const res = await fetchJsonSafe(`${API_BASE}/api/admin/referral-settings`, {
+      const res = await fetchJsonSafe(`/api/admin/referral-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -1136,7 +1136,7 @@ function AdminPage({ isAdmin = false }) {
       if (tplFollowupDays !== "") payload.followupDays = Number(tplFollowupDays);
 
       const res = await fetchJsonSafe(
-        `${API_BASE}/api/admin/email-templates/${encodeURIComponent(selectedEmailKey)}`,
+        `/api/admin/email-templates/${encodeURIComponent(selectedEmailKey)}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1646,6 +1646,45 @@ function AdminPage({ isAdmin = false }) {
       </div>
 
 </div>
+  );
+}
+
+
+function ProgressFillButton({ onClick, loading, progress = 0, style = {}, children }) {
+  const p = Math.max(0, Math.min(1, Number(progress) || 0));
+  return (
+    <button
+      type="button"
+      onClick={loading ? undefined : onClick}
+      disabled={!!loading}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        border: "none",
+        cursor: loading ? "not-allowed" : "pointer",
+        opacity: loading ? 0.9 : 1,
+        background: "linear-gradient(180deg, #38bdf8 0%, #0ea5e9 55%, #0284c7 100%)",
+        color: "#06263a",
+        boxShadow: "0 10px 24px rgba(14,165,233,0.25)",
+        ...style,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: `${p * 100}%`,
+          background: "rgba(255,255,255,0.22)",
+          transition: "width 140ms linear",
+        }}
+      />
+      <span style={{ position: "relative", fontWeight: 900 }}>
+        {children}
+      </span>
+    </button>
   );
 }
 
