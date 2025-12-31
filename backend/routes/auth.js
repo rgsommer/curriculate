@@ -30,6 +30,9 @@ function signAuthToken(user) {
     userId: String(user._id),
     email: user.email,
     name: user.name || "",
+    // Optional claims (helpful for admin-gated UI/routes). Safe defaults.
+    isAdmin: user?.isAdmin === true || user?.role === "admin" || user?.userType === "admin" || (Array.isArray(user?.roles) && user.roles.includes("admin")),
+    roles: Array.isArray(user?.roles) ? user.roles : [],
   };
   return jwt.sign(payload, secret, { expiresIn: "30d" });
 }
@@ -126,7 +129,7 @@ router.post("/signup", async (req, res) => {
     return res.json({
       ok: true,
       token,
-      user: { userId: String(user._id), email: user.email, name: user.name || "" },
+      user: { userId: String(user._id), email: user.email, name: user.name || "", isAdmin: user.isAdmin === true, roles: Array.isArray(user.roles) ? user.roles : [] },
     });
   } catch (err) {
     console.error("POST /signup failed:", err);
@@ -163,7 +166,7 @@ router.post("/login", async (req, res) => {
     return res.json({
       ok: true,
       token,
-      user: { userId: String(user._id), email: user.email, name: user.name || "" },
+      user: { userId: String(user._id), email: user.email, name: user.name || "", isAdmin: user.isAdmin === true, roles: Array.isArray(user.roles) ? user.roles : [] },
     });
   } catch (err) {
     console.error("POST /login failed:", err);

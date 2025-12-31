@@ -166,6 +166,25 @@ export const streamDemoTaskset = async (req, res) => {
   req.on("close", cleanup);
   req.on("aborted", cleanup);
 
+  // Admin-key guard for demo regeneration (SSE must return text/event-stream even on failure)
+  const providedKey =
+    (req.query?.key && String(req.query.key)) ||
+    (req.headers["x-demo-admin-key"] && String(req.headers["x-demo-admin-key"])) ||
+    (req.headers["x-demo-taskset-key"] && String(req.headers["x-demo-taskset-key"])) ||
+    "";
+
+  const expectedKey =
+    process.env.DEMO_ADMIN_KEY ||
+    process.env.DEMO_TASKSET_ADMIN_KEY ||
+    process.env.DEMO_KEY ||
+    "";
+
+  if (expectedKey && providedKey !== expectedKey) {
+    sseWrite(res, "error", { ok: false, error: "Forbidden (missing/invalid demo admin key)." });
+    cleanup();
+    return;
+  }
+
   const generated = [];
   const skipped = [];
   const placeholders = [];

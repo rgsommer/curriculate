@@ -40,6 +40,12 @@ function generateRoomCode() {
 
 const ENTRY_KEY = "curriculate.teacherApp.entry.ok";
 
+function entryKeyForUser(user) {
+  const id = user?.userId || user?._id || user?.id || user?.email || "anon";
+  return `${ENTRY_KEY}:${id}`;
+}
+
+
 /**
  * NOTE:
  * - This file preserves your structure and routes.
@@ -105,16 +111,30 @@ function TeacherApp() {
   console.log("AUTH user:", user);
   console.log("isAdmin:", isAdmin);
 
-  const [entryOk, setEntryOk] = useState(() => {
-    try {
-      return localStorage.getItem(ENTRY_KEY) === "1";
-    } catch {
-      return false;
+  const [entryOk, setEntryOk] = useState(false);
+
+  // Entry code should be required only once per browser *per user*.
+  // (Prevents re-prompting on every refresh, while avoiding cross-account leakage.)
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setEntryOk(false);
+      return;
     }
-  });
+    const key = entryKeyForUser(user);
+    try {
+      const v = localStorage.getItem(key);
+      const legacy = localStorage.getItem(ENTRY_KEY); // backward-compat (old global flag)
+      setEntryOk(v === "1" || legacy === "1");
+    } catch {
+      setEntryOk(false);
+    }
+  }, [isAuthenticated, user]);
+
 
   // Ensure room exists + keepalive for whole session
   useEffect(() => {
+    if (!isAuthenticated || !entryOk) return;
+
     const code = (roomCode || "").trim().toUpperCase();
     if (!code) return;
 
@@ -135,7 +155,7 @@ function TeacherApp() {
       clearInterval(t);
       socket.off("connect", ensureRoom);
     };
-  }, [roomCode]);
+  }, [roomCode, isAuthenticated, entryOk]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -182,6 +202,7 @@ function TeacherApp() {
   const clearEntryOk = () => {
     try {
       localStorage.removeItem(ENTRY_KEY);
+      localStorage.removeItem(entryKeyForUser(user));
     } catch {}
     setEntryOk(false);
   };
@@ -199,7 +220,8 @@ function TeacherApp() {
         onPass={() => {
           try {
             const v = user?.email ? `1:${user.email}` : "1";
-            localStorage.setItem(ENTRY_KEY, "1");
+            localStorage.setItem(entryKeyForUser(user), "1");
+            localStorage.removeItem(ENTRY_KEY); // remove legacy global flag
           } catch {}
           setEntryOk(true);
         }}
@@ -904,6 +926,7 @@ function AdminPage({ isAdmin = false }) {
   });
 
   const loadDemoInfo = async () => {
+    if (!isAdmin) return;
     setDemoErr("");
     setDemoLoading(true);
     try {
@@ -984,7 +1007,7 @@ function AdminPage({ isAdmin = false }) {
       es.addEventListener("done", async (ev) => {
         cleanup();
         stopFakeProgress(1);
-        await loadDemoInfo();
+        await if (isAdmin) loadDemoInfo();
         setDemoOk("Regenerated ✓");
         window.setTimeout(() => setDemoOk(""), 2000);
         setDemoBusy(false);
@@ -1013,6 +1036,7 @@ function AdminPage({ isAdmin = false }) {
   const [expiresAt, setExpiresAt] = useState(""); // ISO date (YYYY-MM-DD) or empty
 
   const load = async () => {
+    if (!isAdmin) return;
     setErr("");
     setBusy(true);
     try {
@@ -1031,11 +1055,12 @@ function AdminPage({ isAdmin = false }) {
   };
 
   useEffect(() => {
+    if (!isAdmin) return;
     load();
   }, []);
 
   useEffect(() => {
-    loadDemoInfo();
+    if (isAdmin) loadDemoInfo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1171,6 +1196,7 @@ function AdminPage({ isAdmin = false }) {
 
   // Load email admin settings once when AdminPage opens
   useEffect(() => {
+    if (!isAdmin) return;
     loadEmailAdmin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
