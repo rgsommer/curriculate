@@ -11,32 +11,86 @@
   display: block;
 }
 
-/* shared station style */
+/* station base */
 .station {
   position: absolute;
   width: 6%;
   aspect-ratio: 4 / 5;
   border-radius: 6px;
   opacity: 0.95;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
   z-index: 1;
-  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease, filter 0.25s ease;
 }
 
-/* hover enlarge */
-.station:hover {
-  transform: scale(1.6);
+/* non-active stations are subdued */
+.station.inactive {
+  opacity: 0.25;
+  filter: saturate(0.8) blur(0px);
+}
+
+/* active station enlarges automatically */
+.station.active {
+  transform: scale(1.7);
   z-index: 10;
+  opacity: 1;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
 }
 
-/* === POSITIONING (tune visually) === */
-.s1 { top: 22%; left: 12%; }  /* left wall front */
-.s2 { top: 38%; left: 12%; }  /* left wall back */
-.s3 { top: 30%; left: 44%; }  /* back wall left */
-.s4 { top: 30%; left: 58%; }  /* back wall right */
+/* Controls UI */
+.controls {
+  position: absolute;
+  left: 50%;
+  bottom: 2%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 20;
+}
 
-.s5 { top: 55%; left: 38%; }  /* front-center table */
-.s6 { top: 50%; left: 24%; }  /* mid-left table */
-.s7 { top: 52%; left: 62%; }  /* mid-right table */
-.s8 { top: 46%; left: 46%; }  /* back-center table */
+.btn {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 18px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.btn.small {
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* === POSITIONING (keep/tune as needed) === */
+.s1 { top: 22%; left: 12%; }
+.s2 { top: 38%; left: 12%; }
+.s3 { top: 30%; left: 44%; }
+.s4 { top: 30%; left: 58%; }
+
+.s5 { top: 55%; left: 38%; }
+.s6 { top: 50%; left: 24%; }
+.s7 { top: 52%; left: 62%; }
+.s8 { top: 46%; left: 46%; }
