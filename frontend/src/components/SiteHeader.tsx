@@ -10,13 +10,14 @@ export default function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-6 text-sm font-semibold text-gray-700 md:flex">
-            <Link className="hover:text-gray-900" href="/features">Features</Link>
-            <Link className="hover:text-gray-900" href="/compare">Compare</Link>
-            <Link className="hover:text-gray-900" href="/pricing">Pricing</Link>
-            <Link className="hover:text-gray-900" href="/reports">Reports</Link>
-            <Link className="hover:text-gray-900" href="/about">About</Link>
-            <Link className="hover:text-gray-900" href="/contact">Contact</Link>
-            </nav>
+          <Link className="hover:text-gray-900" href="/features">Features</Link>
+          <Link className="hover:text-gray-900" href="/how-it-works">How it Works</Link>
+          <Link className="hover:text-gray-900" href="/compare">Compare</Link>
+          <Link className="hover:text-gray-900" href="/pricing">Pricing</Link>
+          <Link className="hover:text-gray-900" href="/reports">Reports</Link>
+          <Link className="hover:text-gray-900" href="/about">About</Link>
+          <Link className="hover:text-gray-900" href="/contact">Contact</Link>
+        </nav>
 
         <div className="flex items-center gap-2">
           <Link

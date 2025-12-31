@@ -41,6 +41,9 @@ export default function SiteFooter() {
               <Link className="hover:text-gray-900" href="/features">
                 Features
               </Link>
+              <Link className="hover:text-gray-900" href="/how-it-works">
+                How it Works
+              </Link>
               <Link className="hover:text-gray-900" href="/compare">
                 Compare
               </Link>
