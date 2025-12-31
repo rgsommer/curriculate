@@ -114,11 +114,10 @@ export default function WalkthroughModal({
         body: (
           <div className="space-y-2">
             <p>
-              Choose your topic, number of stations, and mix task types (quick checks, collaboration,
-              short written work).
+              Enter your topic, grade level, difficulty level, purpose, and (most importantly) your list of terms/concepts. Then do you want to play in just your room or multi-room – think giant scavenger hunt.
             </p>
             <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700 ring-1 ring-black/5">
-              Tip: Start with <b>4–6 stations</b> for your first run.
+              Tip: One-time setup in your classroom: print and post the <><b>8 station</b> posters.</>
             </div>
           </div>
         ),
