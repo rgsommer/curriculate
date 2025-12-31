@@ -7,6 +7,34 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// -----------------------------
+// TaskTypes scoring helpers (new switches, with back-compat)
+// -----------------------------
+function getScoringMode(meta = {}) {
+  if (meta && meta.scoringMode) return String(meta.scoringMode).toLowerCase();
+  // Back-compat: objectiveScoring => objective, otherwise treat as ai unless explicitly defaultAiScoringRequired === false
+  if (meta && meta.objectiveScoring === true) return "objective";
+  return "ai";
+}
+
+function isObjectiveMeta(meta = {}) {
+  return (
+    (typeof meta.objectiveKeyed === "boolean" ? meta.objectiveKeyed : false) === true ||
+    getScoringMode(meta) === "objective" ||
+    meta.objectiveScoring === true // back-compat
+  );
+}
+
+function isNoScoreMeta(meta = {}) {
+  return getScoringMode(meta) === "none";
+}
+
+function getAiScoringDefaultOn(meta = {}) {
+  if (typeof meta.aiScoringDefaultOn === "boolean") return meta.aiScoringDefaultOn;
+  if (typeof meta.defaultAiScoringRequired === "boolean") return meta.defaultAiScoringRequired; // back-compat
+  return true;
+}
+
 // --- Helpers ---
 
 function safeJsonParse(str, fallback = null) {
@@ -42,7 +70,7 @@ function scoreSubmissionRuleBased({ task, submission }) {
   const meta = TASK_TYPE_META[task.taskType] || {};
 
   // If the caller accidentally sends an objective task here, skip AI scoring.
-  if (meta.objectiveScoring) {
+  if (isObjectiveMeta(meta)) {
     return {
       score: null,
       maxPoints: typeof task.points === "number" ? task.points : null,
@@ -50,7 +78,7 @@ function scoreSubmissionRuleBased({ task, submission }) {
       details: { reason: "Objective task types should be scored deterministically (not via aiScoring)." },
     };
   }
-  if (!meta.objectiveScoring) return null;
+  if (!isObjectiveMeta(meta)) return null;
 
   const points = typeof task.points === "number" ? task.points : 1;
   let score = 0;
@@ -1862,7 +1890,7 @@ if (task?.taskType === TASK_TYPES.SCRIPT_PLAY || task?.taskType === "script-play
   const meta = TASK_TYPE_META[task.taskType] || {};
 
   // If the caller accidentally sends an objective task here, skip AI scoring.
-  if (meta.objectiveScoring) {
+  if (isObjectiveMeta(meta)) {
     return {
       score: null,
       maxPoints: typeof task.points === "number" ? task.points : null,
@@ -1880,14 +1908,31 @@ if (task?.taskType === TASK_TYPES.SCRIPT_PLAY || task?.taskType === "script-play
     aiScoringRequired:
       typeof task.aiScoringRequired === "boolean"
         ? task.aiScoringRequired
-        : meta.defaultAiScoringRequired,
+        : getAiScoringDefaultOn(meta),
   };
 
   // 2) Determine whether AI scoring is required for this (non-objective) task type.
   const requiresAI =
+    // Explicit override from task payload
     task?.aiScoringRequired === true ||
-    meta.defaultAiScoringRequired === true ||
+    // Meta default (new switch with back-compat)
+    getAiScoringDefaultOn(meta) === true ||
+    // If a rubric exists, AI scoring is meaningful
     !!rubric;
+
+// If this task type is explicitly "none" (no score) or objective, do not AI-score.
+if (isNoScoreMeta(meta) || isObjectiveMeta(meta)) {
+  return {
+    score: null,
+    maxPoints: typeof task.points === "number" ? task.points : null,
+    method: isNoScoreMeta(meta) ? "skipped-no-score" : "skipped-objective",
+    details: {
+      reason: isNoScoreMeta(meta)
+        ? "This task type is completion/no-score (scoringMode: none)."
+        : "Objective task types should be scored deterministically (not via aiScoring).",
+    },
+  };
+}
 
   if (!requiresAI) {
     return {

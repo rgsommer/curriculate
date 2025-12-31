@@ -516,6 +516,11 @@ function formatDate(d) {
 
   if (report.classAverageScore != null) keyValue("Class Average Score:", `${report.classAverageScore}%`);
 
+  // Noise (class-level)
+  const noiseLabel = formatNoiseSummary(report.noiseSummary || report.summary?.noiseSummary);
+  if (noiseLabel) keyValue("Noise & Focus:", noiseLabel);
+
+
   doc.moveDown(0.8);
 
   sectionTitle("Teacher Summary");
@@ -688,6 +693,26 @@ function formatDate(d) {
   doc.end();
   return done;
 }
+
+  function formatNoiseSummary(ns) {
+    if (!ns || typeof ns !== "object") return null;
+    const enabled = !!ns.enabled;
+    const thr = Number.isFinite(Number(ns.threshold)) ? Number(ns.threshold) : null;
+    const avg = Number.isFinite(Number(ns.avgLevel)) ? Number(ns.avgLevel) : null;
+    const peak = Number.isFinite(Number(ns.peakLevel)) ? Number(ns.peakLevel) : null;
+    const pctOver = Number.isFinite(Number(ns.pctOverThreshold)) ? Number(ns.pctOverThreshold) : null;
+    const samples = Number.isFinite(Number(ns.samplesCount)) ? Number(ns.samplesCount) : null;
+
+    const parts = [];
+    if (avg != null) parts.push(`avg ${Math.round(avg)}/100`);
+    if (peak != null) parts.push(`peak ${Math.round(peak)}/100`);
+    if (thr != null && thr > 0) parts.push(`thr ${Math.round(thr)}/100`);
+    if (pctOver != null && thr != null && thr > 0) parts.push(`${pctOver}% over thr`);
+    if (samples != null && samples > 0) parts.push(`${samples} samples`);
+    if (!parts.length && enabled === false) return "Off";
+    return parts.join(" • ") || (enabled ? "On" : "Off");
+  }
+
 
 
 function summarizeRatings(raw) {

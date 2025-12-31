@@ -64,6 +64,12 @@ function isPhysicalTask(task) {
 function isObjectiveTask(task) {
   const type = task?.taskType || task?.type;
   const meta = TASK_TYPE_META?.[type] || {};
+
+  // New switches (preferred)
+  if (meta.scoringMode) return String(meta.scoringMode).toLowerCase() === "objective";
+  if (typeof meta.objectiveKeyed === "boolean") return meta.objectiveKeyed === true;
+
+  // Back-compat (older meta)
   return meta.objectiveScoring === true;
 }
 

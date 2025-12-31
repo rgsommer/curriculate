@@ -11,20 +11,21 @@ const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
 
 // Generator-eligible task types (mirror backend intent):
 // - implemented: must have a working student UI + schema
-// - generatorEligible: safe to include in AI-generated sets (even if the task itself is non-AI / template driven)
-// - aiEligible: whether the content needs to be produced by the AI pipeline
+// - generatorEligible: safe to include in AI-generated sets
+// NOTE: taskTypes now uses explicit switches:
+// - demoEligible (demo pool inclusion)
+// - scoringMode ("none" | "objective" | "ai" | "hybrid")
+// - objectiveKeyed (answer key included in task payload)
+// - aiScoringDefaultOn (default AI scoring toggle)
 const GENERATOR_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
   .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false)
   .map(([type]) => type);
 
-// Subset that actually requires AI content generation (used only for UI hints)
+// Subset that *likely* benefits from AI-generated content (UI-only hints).
+// We avoid the legacy aiEligible flag; instead we treat scoringMode !== "none" as a proxy.
 const AI_GENERATED_TYPES = Object.entries(TASK_TYPE_META)
-  .filter(
-    ([, meta]) =>
-      meta.implemented !== false &&
-      meta.generatorEligible !== false &&
-      meta.aiEligible !== false
-  )
+  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false)
+  .filter(([, meta]) => (meta.scoringMode ? String(meta.scoringMode).toLowerCase() : "") !== "none")
   .map(([type]) => type);
 
 
@@ -424,7 +425,7 @@ export default function AiTasksetGenerator() {
         </span>
 
         
-        {meta.aiEligible === false && (
+        {(meta.scoringMode ? String(meta.scoringMode).toLowerCase() : "") === "none" && (
           <span
             style={{
               fontSize: "0.7rem",
@@ -438,7 +439,7 @@ export default function AiTasksetGenerator() {
               whiteSpace: "nowrap",
             }}
           >
-            Template
+            No-score
           </span>
         )}
 {meta.intraTeamEnabled === true && (

@@ -1098,7 +1098,8 @@ export default function TasksetTranscript({ transcript }) {
         </p>
         <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
           Task set: <strong>{tasksetName}</strong>
-        
+        </p>
+
         {(transcript.runByPresenterName || transcript.sharedFromTeacherName || transcript.sharedFromTeacherEmail) && (
           <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
             {transcript.sharedFromTeacherName || transcript.sharedFromTeacherEmail ? (
@@ -1301,7 +1302,6 @@ export default function TasksetTranscript({ transcript }) {
                         </div>
                       )}
 
-                      {
                       {/* Diff Detective summary */}
                       {(() => {
                         const tt = String(task.taskType || task.type || "").toLowerCase();
@@ -1458,7 +1458,8 @@ export default function TasksetTranscript({ transcript }) {
                       })()}
 
                       {/* Treasure Runner summary (score + pickups) */}
-                      {(() => {
+                      (() => {
+                        const tt = String(task.taskType || task.type || "").toLowerCase();
                         const isTreasure =
                           tt === "treasure-runner" ||
                           tt === "treasurerunner" ||
@@ -1593,7 +1594,7 @@ export default function TasksetTranscript({ transcript }) {
                       })()}
 
 
-/* Flashcards Race summary (if present) */}
+{/* Flashcards Race summary (if present) */}
                       {(() => {
                         const isFlashcardsRace =
                           task.taskType === "flashcards-race" ||
@@ -2111,7 +2112,6 @@ export default function TasksetTranscript({ transcript }) {
 
 
 
-                      {
                       {/* Brainstorm Battle summary */}
                       {(() => {
                         const tt = String(task.taskType || task.type || "").toLowerCase();

@@ -114,62 +114,20 @@ const CATEGORY = {
 };
 
 // Small helper: ensure all meta objects include the same “capability surface”.
-function metaBase(overrides = {}) {
-  return {
-    // Identity
-    label: "",
-    category: CATEGORY.OTHER,
-    description: "",
-
-    // Capabilities
-    implemented: false,
-    aiEligible: false, // may be AI-generated
-    generatorEligible: false, // safe for generator to produce reliably (schema enforced)
-    objectiveScoring: false, // can be scored without AI judgement
-    defaultAiScoringRequired: false,
-    quickTaskEligible: false,
-
-    // Interaction model
-    interTeamEnabled: false,
-    intraTeamEnabled: false,
-
-    // Typical UI needs
-    hasOptions: false,
-    expectsText: false,
-
-    // Timing (seconds). 0 means “no timer”.
-    maxTimeSeconds: 0,
-
-    // Schema hints (optional; helps AI generator + admin UI)
-    correctAnswerShape: null, // e.g., "single-option" | "string-or-list" | "map" | "array" | ...
-    multiItemCapable: false,
-    preferredItemsPerTask: null,
-
-    ...overrides,
-  };
-}
-
-// Alias helper used throughout this file (older entries call meta(...)).
-// meta(...) is intentionally identical to metaBase(...) so existing task definitions remain compatible.
-function meta(overrides = {}) {
-  return metaBase(overrides);
-}
-
-
-// Core metadata for each implemented task type
 export const TASK_TYPE_META = {
   // =========================
   // CORE Q&A / OBJECTIVE TASKS
   // =========================
 
-  [TASK_TYPES.MULTIPLE_CHOICE]: metaBase({
+  [TASK_TYPES.MULTIPLE_CHOICE]: {
     label: "Multiple Choice",
     category: CATEGORY.QUESTION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: true,
     expectsText: false,
@@ -181,16 +139,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Classic multiple-choice question set (3\u20135 items). Students read each question and choose one of four visible options (A\u2013D). Submit by tapping an option on-screen. Great for quick checks for understanding and fast feedback.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133, explanation?: string }\n- optional: title, prompt, timeLimitSeconds, points\nScoring: objective (correctIndex) \u2014 no AI scoring required.",
-  }),
+  },
 
-  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: metaBase({
+  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: {
     label: "Physical Multiple Choice",
     category: CATEGORY.QUESTION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: true,
     expectsText: false,
@@ -202,16 +161,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Physical Multiple Choice (kinesthetic). Looks exactly like standard multiple-choice on the device (full question + four fully visible options A\u2013D), but students cannot submit by tapping.\nTo submit, they must walk to one of the classroom\u2019s 8 permanent colored QR stations and scan the station whose color matches the color displayed beside their chosen option.\n\nHow it works:\n- The system randomly selects 4 of the 8 station colors and maps them to A/B/C/D each question (randomized every play).\n- Each option shows a large color chip (e.g., A \u25cf Red, B \u25cf Teal, C \u25cf Purple, D \u25cf Green).\n- Student decides the answer, walks to that color station, scans, and the scan auto-submits that letter.\n- Typically 3\u20135 questions per task \u2192 3\u20135 trips across the room.\n\nAI generation shape:\n- config.items: array of 3\u20135 questions\n- each item: { question: string, options: [string,string,string,string], correctIndex: 0\u20133 }\n- system provides per-question colorMap (generated at runtime; not required from AI)\nScoring: objective (correctIndex). Inter-team: NO. Intra-team: NO.",
-  }),
+  },
 
-  [TASK_TYPES.TRUE_FALSE]: metaBase({
+  [TASK_TYPES.TRUE_FALSE]: {
     label: "True / False",
     category: CATEGORY.QUESTION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: true,
     expectsText: false,
@@ -223,16 +183,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Students judge statements as True or False. Objective-scored and designed to be tricky-but-fair so students must think rather than guess. Great for quick misconception checks, conceptual clarity, and efficient review.",
-  }),
+  },
 
-  [TASK_TYPES.SHORT_ANSWER]: metaBase({
+  [TASK_TYPES.SHORT_ANSWER]: {
     label: "Short Answer",
     category: CATEGORY.QUESTION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: true,
+    scoringMode: "hybrid",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: true,
@@ -244,20 +205,21 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Students type a single word or one-sentence answer. Objective scoring checks against a reference answer (and optional acceptable answers), with AI scoring as a safety net to reject nonsense and award partial credit for close answers. Great for quick, precise checks for understanding without multiple-choice guesswork.",
-  }),
+  },
 
   // =========================
   // ORDERING / DRAG & DROP
   // =========================
 
-  [TASK_TYPES.SORT]: metaBase({
+  [TASK_TYPES.SORT]: {
     label: "Sort / Categorize",
     category: CATEGORY.ORDERING,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: true,
     expectsText: false,
@@ -267,16 +229,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Drag 6–10 items into 2–4 categories. Objective scoring maps each item → category. Great for classification, concept boundaries, and quick detection of misconceptions (wrong bucket = instant insight).",
-  }),
+  },
 
-  [TASK_TYPES.SEQUENCE]: metaBase({
+  [TASK_TYPES.SEQUENCE]: {
     label: "Sequence / Order",
     category: CATEGORY.ORDERING,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: true,
     expectsText: false,
@@ -286,16 +249,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Drag 4–8 steps/events into the correct order (process steps, life cycles, cause→effect chains, or historical chronology). Reinforces procedural understanding and ‘big picture’ structure.",
-  }),
+  },
 
-  [TASK_TYPES.TIMELINE]: metaBase({
+  [TASK_TYPES.TIMELINE]: {
     label: "Timeline – Drag to Order",
     category: CATEGORY.ORDERING,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: true,
     expectsText: false,
@@ -305,16 +269,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Timeline-branded ordering task. Students drag events into chronological order. Excellent for historical thinking and understanding causal sequences over time.",
-  }),
+  },
 
-  [TASK_TYPES.MATCHING]: metaBase({
+  [TASK_TYPES.MATCHING]: {
     label: "Matching / Connect",
     category: CATEGORY.ORDERING,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -324,9 +289,9 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Two columns of 5–7 items. Students draw animated lines to connect correct pairs (term→definition, cause→effect, person→event). Fast formative assessment and strong association-building.",
-  }),
+  },
 
-  [TASK_TYPES.VENNSORT]: meta({
+  [TASK_TYPES.VENNSORT]: {
     label: "Venn Sort",
     category: "classification",
     intraTeamEnabled: false,
@@ -357,20 +322,21 @@ export const TASK_TYPE_META = {
 
       Benefits: nuanced classification, intersections, relational reasoning.
           `,
-        }),
+        },
 
   // =========================
   // OPEN RESPONSE / MEDIA (AI or teacher-reviewed)
   // =========================
 
-  [TASK_TYPES.OPEN_TEXT]: metaBase({
+  [TASK_TYPES.OPEN_TEXT]: {
     label: "Open-text Response",
     category: CATEGORY.QUESTION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: true,
@@ -387,16 +353,17 @@ export const TASK_TYPE_META = {
         "No inter-team or intra-team gameplay—this is individual writing within the station flow.",
         "Benefits: writing development, articulation of reasoning, deeper thinking, assessment beyond multiple choice."
       ].join("\n"),
-  }),
+  },
 
-  [TASK_TYPES.RECORD_AUDIO]: metaBase({
+  [TASK_TYPES.RECORD_AUDIO]: {
     label: "Record Audio Answer",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -405,16 +372,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Student records an oral explanation/reading. Typically teacher-reviewed. Great for oral fluency, confidence, and accessibility for students who express better verbally than in writing.",
-  }),
+  },
 
-  [TASK_TYPES.PHOTO]: metaBase({
+  [TASK_TYPES.PHOTO]: {
     label: "Photo Evidence",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -423,16 +391,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Student takes a photo as proof of completing the prompt (pose, geometry example, found item, lab setup, diagram on board, or written work). This is typically AI-scored because photos vary. Pedagogical benefits: authentic evidence, observation skills, real‑world connection, and creative demonstration of understanding. Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo\"\n- prompt (clear, photo-friendly)\n- Optional: config.instructions, config.exampleIdeas\nStudent submission includes: { photoUrl|photo, caption? }",
-  }),
+  },
 
-  [TASK_TYPES.MAKE_AND_SNAP]: metaBase({
+  [TASK_TYPES.MAKE_AND_SNAP]: {
     label: "Make It & Snap It",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -441,16 +410,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Make & Snap: the team physically builds/creates/arranges something from a prompt, then submits a photo (and required note). Typically AI-scored for alignment to the prompt. Benefit: hands-on application, creativity, collaboration, authentic assessment, and transfer beyond the screen.",
-  }),
+  },
 
-  [TASK_TYPES.PHOTO_JOURNAL]: metaBase({
+  [TASK_TYPES.PHOTO_JOURNAL]: {
     label: "Photo Journal",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: true,
@@ -459,20 +429,21 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Team captures a photo AND writes a short caption/explanation/reflection connecting the image to the prompt. AI-scored using photo evidence + caption. Pedagogical benefits: connects visual evidence to verbal reasoning, supports metacognition, and improves explanation quality beyond “just a picture.” Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"photo-journal\"\n- prompt\n- Optional: config.captionPrompt, config.wordCountTarget\nStudent submission includes: { photoUrl|photo, caption }",
-  }),
+  },
 
   // =========================
   // MOVEMENT / PHYSICAL
   // =========================
 
-  [TASK_TYPES.BODY_BREAK]: metaBase({
+  [TASK_TYPES.BODY_BREAK]: {
     label: "Body Break",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -481,16 +452,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Short movement break (30–60s). The device shows a quick physical challenge or guided moves (stretch, jumping jacks, dance, quick poses) and the team follows along. No answers; no objective scoring; no AI scoring. Includes upbeat prompts/animations for buy-in. Benefit: boosts attention, reduces restlessness, and helps energy regulation through brain–body activation.",
-  }),
+  },
 
-  [TASK_TYPES.MOTION_MISSION]: metaBase({
+  [TASK_TYPES.MOTION_MISSION]: {
     label: "Motion Mission",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -499,16 +471,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Motion Mission: a quick physical mission tied to content or energy (e.g., 'Act out erosion', 'Do 10 jumping jacks', 'Freeze like a statue of…'). Usually completion-based (not objective-scored). Benefit: movement integration, embodied cognition, higher engagement, and improved focus during longer blocks.",
-  }),
+  },
 
-  [TASK_TYPES.MUSICAL_CHAIRS]: metaBase({
+  [TASK_TYPES.MUSICAL_CHAIRS]: {
     label: "Musical Chairs",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -517,16 +490,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Musical Chairs: movement game where music cues students to move; when it stops they scan a station/spot that can trigger a quick question or fact. Not objective-scored by default. Inter-team enabled (teams can compete for winner). Benefit: attention control, quick transitions, group fun, and pairing movement with recall.",
-  }),
+  },
 
-  [TASK_TYPES.MAD_DASH]: metaBase({
+  [TASK_TYPES.MAD_DASH]: {
     label: "Mad Dash – Race to Scan!",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: false,
     hasOptions: false,
     expectsText: false,
@@ -535,16 +509,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: true,
     description:
       "High-energy physical race (scan/find/complete) under time pressure. Can be used for sequencing/procedure or QR races. Builds teamwork and urgency while reinforcing order/steps.",
-  }),
+  },
 
-  [TASK_TYPES.MAD_DASH_SEQUENCE]: metaBase({
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: {
     label: "Mad Dash Sequence",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -554,16 +529,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: true,
     description:
       "High-energy sequence race: memorize 3–4 color-linked steps, then scan stations in order as fast as possible. Supports academic sequences by attaching a short label to each color (process steps, timeline events, procedure order). Score = correct order + speed bonus.",
-  }),
+  },
 
-  [TASK_TYPES.HIDENSEEK]: metaBase({
+  [TASK_TYPES.HIDENSEEK]: {
     label: "Hide & Seek",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: true,
@@ -572,16 +548,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Students are given a page/location reference (or clue), must physically find it, snap a photo, and explain its significance. Usually AI-scored due to open-ended explanation. Pedagogical benefits: active searching, source/location literacy, contextual understanding, and making learning physical. Inter-team: NO. Intra-team: NO.\n\nAI MUST output:\n- taskType: \"hidenseek\"\n- prompt (must include what/where to find)\n- Optional: config.locationHint, config.requiredEvidence\nStudent submission includes: { photoUrl|photo, explanation, foundWhere? }",
-  }),
+  },
 
-  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: metaBase({
+  [TASK_TYPES.MULTI_ROOM_SCAVENGER_HUNT]: {
     label: "Multi-Room Scavenger Hunt",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: false,
     hasOptions: false,
     expectsText: false,
@@ -590,20 +567,21 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Hunt for items or solve riddles across rooms/locations. Not a standard station task; designed for special events or larger activities.",
-  }),
+  },
 
   // =========================
   // FEEDBACK / META
   // =========================
 
-  [TASK_TYPES.MOOD_CHECKIN]: metaBase({
+  [TASK_TYPES.MOOD_CHECKIN]: {
     label: "Mood Check-in",
     category: CATEGORY.FEEDBACK,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: false,
     hasOptions: false,
     expectsText: true,
@@ -612,16 +590,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "Pre-taskset vibe-setter: each player taps a mood emoji; team can optionally add what they’re excited about. No timer, no scoring. Improves classroom climate and engagement.",
-  }),
+  },
 
-  [TASK_TYPES.MULTI_PLAYER_FEEDBACK]: metaBase({
+  [TASK_TYPES.MULTI_PLAYER_FEEDBACK]: {
     label: "Multi-player Feedback",
     category: CATEGORY.FEEDBACK,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: false,
     expectsText: true,
     maxTimeSeconds: 0,
@@ -629,16 +608,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: false,
     description:
       "End-of-taskset reflection: the team rates the taskset (emoji/1\u20135) and can leave optional comments/suggestions. Optional \u2018what we learned\u2019 note can grant a small bonus point. Not AI-generated; not scored beyond participation/bonus. Improves student voice and metacognition.",
-  }),
+  },
 
-  [TASK_TYPES.TREASURE_RUNNER]: metaBase({
+  [TASK_TYPES.TREASURE_RUNNER]: {
     label: "Treasure Runner",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: false,
     hasOptions: false,
     expectsText: false,
@@ -647,36 +627,38 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: true,
     description:
       "Interstitial mini-game used while waiting for the next task. Keeps teams engaged during transitions and reduces off-task behavior. Can optionally award small bonus points.",
-  }),
+  },
 
   // =========================
   // COMPETITIVE / GAME MODES
   // =========================
 
-  [TASK_TYPES.JEOPARDY]: metaBase({
+  [TASK_TYPES.JEOPARDY]: {
     label: "Brain Blitz!",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     quickTaskEligible: true,
     expectsText: true,
     maxTimeSeconds: 90,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description: "Brain Blitz (Jeopardy-style): the device shows an answer/term and students must respond with the correct question (Jeopardy format).\nStudent flow:\n- Prompt shows a clue/answer (word/name/phrase).\n- Players respond quickly by voice (preferred) or typing.\n- AI checks meaning and Jeopardy-style phrasing (strictness adjustable by difficulty).\nScoring: AI-scored; fast, competitive retrieval + reformulation.\nAI generation should produce:\n- clue (string) OR prompt (string)\n- expectedQuestion (string) OR expectedKeyPoints (array)\n- allowTyping (boolean, optional)\n- timeLimitSeconds (optional; usually 30\u201390)\nInter-team: YES. Intra-team: YES.",
-  }),
+  },
 
-    [TASK_TYPES.TRUE_FALSE_TICTACTOE]: metaBase({
+    [TASK_TYPES.TRUE_FALSE_TICTACTOE]: {
     label: "True/False Tic-Tac-Toe",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 180,
@@ -708,17 +690,19 @@ export const TASK_TYPE_META = {
         "",
         "Pedagogical benefits: evaluation + retrieval under game conditions, attention to truth-conditions, and motivating repetition with strategy.",
       ].join("\n"),
-  }),
+  },
 
   // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
-  [TASK_TYPES.FLASHCARDS]: metaBase({
+  [TASK_TYPES.FLASHCARDS]: {
     label: "Flashcards",
     category: CATEGORY.RECALL,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false, // typically not graded; just tracked / completion
-    defaultAiScoringRequired: false, // voice/AI optional, not required
+    objectiveKeyed: false,
+    scoringMode: "none", // typically not graded; just tracked / completion
+    aiScoringDefaultOn: false,
+    scoringMode: "none", // voice/AI optional, not required
     quickTaskEligible: true,
     expectsText: false,
     maxTimeSeconds: 120,
@@ -727,17 +711,18 @@ export const TASK_TYPE_META = {
     correctAnswerShape: "string-or-list",
     description:
       "Standard flashcard review (8–12 cards) with {question, answer}. Intended flow is ‘shout to answer’ with optional speech recognition / AI transcription support. Focus is mastery and repeated retrieval, not competition. Intra-team play enabled; inter-team play disabled.",
-  }),
+  },
 
   // ✅ Updated: this mode is inherently inter-team (A vs B scoring / winner events)
-  [TASK_TYPES.FLASHCARDS_RACE]: metaBase({
+  [TASK_TYPES.FLASHCARDS_RACE]: {
     label: "Flashcards Race",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: true, // buzzer winner types the answer
@@ -775,32 +760,34 @@ export const TASK_TYPE_META = {
         "Pedagogical benefits: retrieval practice + speed/automaticity (Bloom’s: Remember/Understand),",
         "with motivating game-show energy (sounds, confetti, live score).",
       ].join("\n"),
-  }),
+  },
 
   // (rest unchanged from your file)
-  [TASK_TYPES.GUESS_WHO]: metaBase({
+  [TASK_TYPES.GUESS_WHO]: {
     label: "Guess Who",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     maxTimeSeconds: 60,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
       "Yes/No deduction game. One player privately views the secret concept (hold-to-reveal). Others ask only yes/no questions, then make limited guesses (e.g., max 10). Timer (e.g., 60s) starts on first reveal. Encourages logical elimination and strategic questioning.",
-  }),
+  },
 
-    [TASK_TYPES.HANGMAN_DUEL]: metaBase({
+    [TASK_TYPES.HANGMAN_DUEL]: {
     label: "Hangman Duel",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 300,
     interTeamEnabled: false,
     intraTeamEnabled: true,
@@ -828,25 +815,26 @@ export const TASK_TYPE_META = {
         "",
         "Pedagogical benefits: spelling + vocabulary + pattern recognition, strategic risk-taking, and high engagement under time pressure.",
       ].join("\n"),
-  }),
+  },
 
-  [TASK_TYPES.WORD_WEAVER_DUEL]: metaBase({
+  [TASK_TYPES.WORD_WEAVER_DUEL]: {
     label: "Word Weaver Duel",
     category: CATEGORY.COMPETITIVE,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     expectsText: true,
     maxTimeSeconds: 240,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
       "Scrabble-style, turn-based team duel: players drag/place 5–10 short words onto a grid (horizontal/vertical), earning points for each valid placement and intersections. Builds vocabulary, phrase structure, syntax awareness, and cooperative competition.",
-  }),
+  },
 
-  [TASK_TYPES.DIFF_DETECTIVE]: meta({
+  [TASK_TYPES.DIFF_DETECTIVE]: {
     label: "Diff Detective",
     category: "analysis",
     intraTeamEnabled: false,
@@ -875,9 +863,9 @@ export const TASK_TYPE_META = {
 
       Benefits: close reading, attention to detail, error detection, comparison skills.
           `,
-        }),
+        },
 
-  [TASK_TYPES.SPEED_DRAW]: meta({
+  [TASK_TYPES.SPEED_DRAW]: {
     label: "Speed Draw",
     category: "creative",
     intraTeamEnabled: false,
@@ -898,31 +886,33 @@ export const TASK_TYPE_META = {
       - Choose drawable nouns/phrases (avoid ultra-abstract prompts).
       Benefits: rapid concept visualization, vocabulary reinforcement, retrieval through images.
           `,
-        }),
+        },
 
-  [TASK_TYPES.PET_FEEDING]: metaBase({
+  [TASK_TYPES.PET_FEEDING]: {
     label: "Feed the Pet!",
     category: CATEGORY.MOVEMENT,
     implemented: true,
-    aiEligible: false,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 180,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description: 
     "Feed the Pet: a motivation layer where completing the task feeds/powers up a virtual pet.\nStudent flow:\n- A cute pet appears (pack/theme).\n- Students choose a treat; celebration plays; task submits.\nScoring: typically completion-based or fixed bonus (e.g., +10) handled by session rules.\nAI generation should produce:\n- pack (string; one of: classic, farm, ocean, dino, fantasy)\n- optional pointsAwarded (number)\nInter-team: NO. Intra-team: NO.",
-  }),
+  },
 
-  [TASK_TYPES.COLLABORATION]: metaBase({
+  [TASK_TYPES.COLLABORATION]: {
     label: "Collaboration (Pair & Respond)",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     expectsText: true,
     maxTimeSeconds: 180,
     interTeamEnabled: true,
@@ -930,16 +920,17 @@ export const TASK_TYPE_META = {
     description:
       "Pair-and-respond collaboration between two teams. One team writes an initial response, " +
       "then views another team’s response and writes a thoughtful reply. AI-scored for quality and engagement."
-}),
+},
 
-  [TASK_TYPES.LIVE_DEBATE]: metaBase({
+  [TASK_TYPES.LIVE_DEBATE]: {
     label: "Live Debate",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     expectsText: true,
     maxTimeSeconds: 600,
     interTeamEnabled: true,
@@ -951,41 +942,43 @@ export const TASK_TYPE_META = {
       "- Prep window.\n" +
       "- Timed speaking turns with rebuttals.\n" +
       "Scoring: AI-assisted rubric for argument quality and evidence."
-  }),
+  },
 
-  [TASK_TYPES.AI_DEBATE_JUDGE]: metaBase({
+  [TASK_TYPES.AI_DEBATE_JUDGE]: {
     label: "AI Debate Judge",
     category: CATEGORY.COLLABORATION,
     implemented: true,
     // Special task: not included in normal AI-generated task sets (invoked on demand).
     generatorEligible: false,
-    aiEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    demoEligible: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     // 2:00 main + 0:30 overtime grace = 150s hard-stop
     maxTimeSeconds: 150,
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:
       "AI Debate Judge: students run a live debate and the AI produces a written verdict with scores, feedback, and a winner announcement (rubric-style evaluation).\n\nStudent flow:\n- Pick your Side (Affirmative/Negative) and your Position (Introduction / First / Rebuttal / Conclusion).\n- Tap the big 1-2-3 GO button to start recording; the device shows a live sound meter while listening.\n- Timer counts down from 2:00 to -0:30 (overtime grace).\n- Audio cues: 1:45 elapsed, beeps the last 5 seconds to 2:00, warning at 2:15, auto-ends at 2:30.\n- Recording auto-submits at the end (or students can submit early when finished).\n- AI returns: per-speaker score, strengths, specific improvement tips, and an overall side-by-side winner decision.\n\nScoring notes:\n- Penalty if under 1:45 or over 2:15.\n- Encourages evidence and structure by making criteria visible.\n\nPedagogical benefits: clearer criteria for argument improvement, motivation to use evidence and structure, better reflection after live speaking, and higher-quality feedback than peer-only judging.",
-  }),
+  },
 
-  [TASK_TYPES.BRAINSTORM_BATTLE]: metaBase({
+  [TASK_TYPES.BRAINSTORM_BATTLE]: {
     label: "Brainstorm Battle",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 120,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description: "Fast-paced team brainstorm to activate prior knowledge and generate ideas without fear of being wrong.\nStudent flow:\n- A topic/seed prompt appears.\n- Team rapidly contributes short ideas (spoken aloud and/or typed as quick entries).\n- Optional quick vote/rank at the end to highlight the strongest ideas.\nScoring: Not single-correct; typically completion-based (optionally +bonus for voting).\nAI generation should produce:\n- prompt (string)\n- seedTopic (string, optional)\n- ideaSlots (number, optional; default 8\u201312)\n- enableVoting (boolean, optional)\n- timeLimitSeconds (optional; usually 60\u2013120)\nInter-team: NO. Intra-team: YES.",
     pedagogyNotes: "Fast-paced ‘shout ideas’ collaborative brainstorm. The device shows a topic/seed prompt and your team rapidly contributes many ideas (spoken aloud and/or typed as short entries). No single correct answer — the goal is divergent thinking. Optional quick vote/rank at the end to highlight strongest ideas. Builds creative ideation, background knowledge, verbal participation, and lowers fear of being wrong.",
-  }),
+  },
 
-  [TASK_TYPES.MYSTERY_CLUES]: meta({
+  [TASK_TYPES.MYSTERY_CLUES]: {
     label: "Mystery Clue Cards (Digital)",
     category: "memory",
     intraTeamEnabled: false,
@@ -1015,24 +1008,25 @@ export const TASK_TYPE_META = {
       Key distinction:
       - This is NOT HideNSeek (physical search + photo evidence). This is purely on-screen memory.
           `,
-        }),
+        },
 
-  [TASK_TYPES.FAKE_OUT]: metaBase({
+  [TASK_TYPES.FAKE_OUT]: {
     label: "Fake Out",
     category: CATEGORY.DEDUCTION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: true,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
     maxTimeSeconds: 90,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
       "Turn-based oral reading + listening ‘truth vs fake’ game (Balderdash-style). One player is the Reader and holds the device, reading the statement aloud. AI provides 4 options: (1–3) long, plausible, hard-to-discern variations where ONLY ONE is fully correct, plus (4) a hilarious, obviously false ‘joke’ option that should never be correct. The Reader records each teammate’s vote (tap/check under names), then the reveal triggers discussion. Scoring: points for correct picks; optional Reader bonus for each teammate fooled. Schema: config.playerCount (2–8), optional config.playerNames[], and config.rounds[] where each round has { statement, options[4], correctIndex (0–2) }. Intra-team only; inter-team disabled.",
-  }),
+  },
 
-  [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: meta({
+  [TASK_TYPES.PHYSICAL_MYSTERY_CLUES]: {
     label: "Mystery Clue Cards (Alias)",
     category: "memory",
     intraTeamEnabled: false,
@@ -1047,16 +1041,17 @@ export const TASK_TYPE_META = {
 
       But the runtime should accept either string and normalize.
           `,
-        }),
+        },
 
-    [TASK_TYPES.BRAIN_SPARK_NOTES]: metaBase({
+    [TASK_TYPES.BRAIN_SPARK_NOTES]: {
     label: "Brain Spark Notes",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     maxTimeSeconds: 240,
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -1071,16 +1066,17 @@ export const TASK_TYPE_META = {
         "GENERATOR RULES: Provide task.title, task.prompt (topic), and task.bullets (array of concise definitions/jot-notes).",
         "Inter-team: NO. Intra-team: NO."
       ].join("\n"),
-  }),
+  },
 
-  [TASK_TYPES.MIND_MAPPER]: metaBase({
+  [TASK_TYPES.MIND_MAPPER]: {
     label: "Mind Mapper",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     maxTimeSeconds: 300,
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -1095,16 +1091,17 @@ export const TASK_TYPE_META = {
         "GENERATOR RULES: Provide task.title, task.prompt (central concept), task.organizerType, and task.items (array of 5–7 ideas; each can optionally include a ‘level’ hint for Easy).",
         "Inter-team: NO. Intra-team: NO."
       ].join("\n"),
-  }),
-  [TASK_TYPES.NARRATION_SYNTHESIZE]: metaBase({
+  },
+  [TASK_TYPES.NARRATION_SYNTHESIZE]: {
     label: "Narration Synthesize",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
     noAutoScoring: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 60,
     interTeamEnabled: false,
     intraTeamEnabled: true,
@@ -1124,31 +1121,33 @@ export const TASK_TYPE_META = {
 
       Intra-team only.
       `.trim(),
-    }),
+    },
 
-  [TASK_TYPES.ROLE_PLAY]: metaBase({
+  [TASK_TYPES.ROLE_PLAY]: {
     label: "Role Play (Legacy)",
     category: CATEGORY.SYNTHESIS,
     implemented: false,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 300,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
       "Legacy alias for Role Play Deck. Prefer taskType \"role-play-deck\" (TASK_TYPES.ROLE_PLAY_DECK). This id is kept for backwards compatibility and normalizes to ROLE_PLAY_DECK.",
-  }),
+  },
 
-  [TASK_TYPES.ROLE_PLAY_DECK]: metaBase({
+  [TASK_TYPES.ROLE_PLAY_DECK]: {
     label: "Role Play Deck",
     category: CATEGORY.COLLABORATION,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 300,
     interTeamEnabled: false,
     intraTeamEnabled: true,
@@ -1182,24 +1181,25 @@ export const TASK_TYPE_META = {
       }
     }
     `.trim(),
-  }),
+  },
 
-  [TASK_TYPES.SCRIPT_PLAY]: metaBase({
+  [TASK_TYPES.SCRIPT_PLAY]: {
     label: "Script Play",
     category: CATEGORY.SYNTHESIS,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 300,
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
       "AI-generated Script Play: a structured performance task. The device shows the CURRENT speaker’s line in large text, plus optional tone cues (e.g., serious, excited) and stage directions (e.g., whispering, pointing). It also shows brief context lines for ‘just before’ and ‘up next’ so the team understands the story flow. Students PASS the device from speaker to speaker and read/act their lines. Intra-team only (no inter-team). Pedagogical benefits: reading fluency, expressive oral language, comprehension, narrative reasoning, collaboration, and deeper retention through performance.",
-  }),
+  },
 
-  [TASK_TYPES.DRAW_MIME]: meta({
+  [TASK_TYPES.DRAW_MIME]: {
     label: "Draw or Mime",
     category: "creative",
     intraTeamEnabled: false,
@@ -1225,46 +1225,49 @@ export const TASK_TYPE_META = {
 
       Benefits: multi-modal encoding, kinesthetic learning, vocabulary reinforcement, collaboration.
           `,
-        }),
+        },
 
-  [TASK_TYPES.DRAW]: metaBase({
+  [TASK_TYPES.DRAW]: {
     label: "Draw",
     category: CATEGORY.CREATIVE,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 240,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
       "Drawing response task. Students draw a diagram or concept representation. Often used with teacher review or photo submission in other tasks.",
-  }),
+  },
 
-  [TASK_TYPES.MIME]: metaBase({
+  [TASK_TYPES.MIME]: {
     label: "Mime",
     category: CATEGORY.CREATIVE,
     implemented: true,
-    aiEligible: false,
+    demoEligible: false,
     generatorEligible: false,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     maxTimeSeconds: 180,
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
       "Charades-style acting response. Students act out a concept without words. Great for vocabulary and concept visualization through movement.",
-  }),
+  },
 
-  [TASK_TYPES.ECHO_CHAIN]: metaBase({
+  [TASK_TYPES.ECHO_CHAIN]: {
     label: "Echo Chain",
     category: CATEGORY.RECALL,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "none",
     quickTaskEligible: true,
     hasOptions: false,
     expectsText: false,
@@ -1273,16 +1276,17 @@ export const TASK_TYPE_META = {
     intraTeamEnabled: true,
     description:
       "Oral memory-chain game. The device starts with a subject-related seed term. Players take turns repeating the full chain aloud and adding one related term. Optional per-turn timer and bonuses for completing a full rotation. Builds retrieval practice, working memory, listening accuracy, and vocabulary association networks.",
-  }),
+  },
 
-    [TASK_TYPES.PRONUNCIATION]: metaBase({
+    [TASK_TYPES.PRONUNCIATION]: {
     label: "Pronunciation Practice",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     maxTimeSeconds: 90,
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -1304,16 +1308,17 @@ export const TASK_TYPE_META = {
         "",
         "Pedagogical benefits: phonetic accuracy, language acquisition, speaking confidence, and measurable progress over time.",
       ].join("\n"),
-  }),
+  },
 
-    [TASK_TYPES.SPEECH_RECOGNITION]: metaBase({
+    [TASK_TYPES.SPEECH_RECOGNITION]: {
     label: "Speech Recognition Answer",
     category: CATEGORY.OTHER,
     implemented: true,
-    aiEligible: true,
+    demoEligible: true,
     generatorEligible: true,
-    objectiveScoring: false,
-    defaultAiScoringRequired: true,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: true,
+    scoringMode: "ai",
     maxTimeSeconds: 90,
     interTeamEnabled: false,
     intraTeamEnabled: false,
@@ -1335,12 +1340,73 @@ export const TASK_TYPE_META = {
         "",
         "Pedagogical benefits: oral response practice, accessibility, confidence building, and language development.",
       ].join("\n"),
-  }),
+  },
 
   // =========================
   // COMPETITIVE (placeholder type)
   // =========================
 };
+// -------------------------
+// Compatibility + defaults
+// -------------------------
+// This project historically used:
+// - aiEligible              (overloaded as "demo eligible")
+// - objectiveScoring        (deterministic / answer-key scoring)
+// - defaultAiScoringRequired (AI scoring enabled by default)
+//
+// Going forward we use:
+// - demoEligible
+// - objectiveKeyed
+// - scoringMode: "none" | "objective" | "ai" | "hybrid"
+// - aiScoringDefaultOn
+//
+// To avoid breaking older code paths, we backfill legacy fields below.
+
+const __TASK_TYPE_META_DEFAULTS = {
+  label: "",
+  category: CATEGORY.OTHER,
+  description: "",
+  implemented: false,
+
+  // New switches
+  demoEligible: false,
+  generatorEligible: false,
+  scoringMode: "none",
+  objectiveKeyed: false,
+  aiScoringDefaultOn: false,
+
+  // Existing capabilities / UI hints (kept)
+  quickTaskEligible: false,
+  interTeamEnabled: false,
+  intraTeamEnabled: false,
+  hasOptions: false,
+  expectsText: false,
+  maxTimeSeconds: 0,
+  correctAnswerShape: null,
+  multiItemCapable: false,
+  preferredItemsPerTask: null,
+};
+
+for (const [k, meta] of Object.entries(TASK_TYPE_META)) {
+  const m = { ...__TASK_TYPE_META_DEFAULTS, ...(meta || {}) };
+
+  // Derive any missing new switches from scoringMode
+  if (!m.scoringMode) m.scoringMode = "none";
+  if (m.scoringMode === "objective") m.objectiveKeyed = true;
+  if (m.scoringMode === "hybrid") {
+    m.objectiveKeyed = true;
+    m.aiScoringDefaultOn = true;
+  }
+  if (m.scoringMode === "ai") m.aiScoringDefaultOn = true;
+
+  // Legacy fields for older clients/servers that still read them
+  m.aiEligible = m.demoEligible === true; // legacy meaning: demo-eligible
+  m.objectiveScoring = m.objectiveKeyed === true;
+  m.defaultAiScoringRequired = m.aiScoringDefaultOn === true;
+
+  TASK_TYPE_META[k] = m;
+}
+
 
 // Flat map of taskType → human-readable label
 export const TASK_TYPE_LABELS = Object.fromEntries(

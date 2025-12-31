@@ -1,6 +1,8 @@
 // backend/controllers/demoTasksetStreamController.js
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 import { normalizeSelectedType, retryMustHave, regenerateSingleTask } from "./aiTasksetController.js";
+import fs from "fs/promises";
+import path from "path";
 
 /**
  * SSE endpoint: generates a "demo" taskset by stepping through each eligible task type
@@ -26,6 +28,17 @@ function safeJsonParse(str, fallback) {
   }
 }
 
+function isoStamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+async function writeDemoLog(payload) {
+  const dir = path.join(process.cwd(), "logs");
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `demo-taskset-${isoStamp()}.json`);
+  await fs.writeFile(file, JSON.stringify(payload, null, 2), "utf8");
+  return file;
+}
 
 function normalizeFakeOutDemoTask(task) {
   if (!task || typeof task !== "object") return task;
@@ -94,7 +107,10 @@ function normalizeFakeOutDemoTask(task) {
 function getEligibleDemoTypes(selectedTypes = null) {
   const all = Object.entries(TASK_TYPE_META || {})
     .filter(([, meta]) => meta && meta.implemented !== false)
-    .filter(([, meta]) => meta.aiEligible === true && meta.generatorEligible === true)
+    .filter(([, meta]) => {
+      const demoOk = meta.demoEligible === true || meta.aiEligible === true; // back-compat
+      return demoOk && meta.generatorEligible === true;
+    })
     .map(([type]) => type);
 
   if (Array.isArray(selectedTypes) && selectedTypes.length) {
@@ -150,8 +166,9 @@ export const streamDemoTaskset = async (req, res) => {
   req.on("close", cleanup);
   req.on("aborted", cleanup);
 
-  console.log("[demo] included:", tasks.map(t => t.taskType || t.type));
-  console.log("[demo] count:", tasks.length);
+  const generated = [];
+  const skipped = [];
+  const placeholders = [];
 
   try {
     const payloadRaw = req.query?.payload ? decodeURIComponent(String(req.query.payload)) : "{}";
@@ -182,6 +199,7 @@ export const streamDemoTaskset = async (req, res) => {
       try {
         const mustHave = retryMustHave?.[taskType] || null;
 
+
         const task = await regenerateSingleTask({
           allowedType: taskType,
           mustHave,
@@ -199,14 +217,19 @@ export const streamDemoTaskset = async (req, res) => {
 
         tasks.push(fixedTask);
 
-        sseWrite(res, "task", { index: i, total, taskType, task: fixedTask });
+        
+        generated.push({ index: i, taskType });
+sseWrite(res, "task", { index: i, total, taskType, task: fixedTask });
         sseWrite(res, "progress", { index: i, total, taskType, status: "done" });
       } catch (err) {
         // We keep going: demo should still return a taskset even if one type fails.
         const msg = err?.message || String(err) || "Generation error";
-        console.warn("[demo] skipped type:", type, err?.message);
+        console.warn("[demo] skipped type:", taskType, err?.message);
 
         sseWrite(res, "error", { ok: false, error: msg, taskType, index: i, total });
+
+        skipped.push({ index: i, taskType, error: msg });
+        sseWrite(res, "progress", { index: i, total, taskType, status: "skipped", error: msg });
 
         if (taskType === TASK_TYPES.FAKE_OUT) {
           tasks.push({
@@ -279,6 +302,7 @@ export const streamDemoTaskset = async (req, res) => {
           });
         }
 
+        placeholders.push({ index: i, taskType, error: msg });
         sseWrite(res, "progress", { index: i, total, taskType, status: "placeholder" });
       }
     }
@@ -298,7 +322,20 @@ export const streamDemoTaskset = async (req, res) => {
       },
     };
 
-    sseWrite(res, "done", taskset);
+    const logFile = await writeDemoLog({
+      createdAt: new Date().toISOString(),
+      total,
+      generatedCount: generated.length,
+      skippedCount: skipped.length,
+      generated,
+      skipped,
+      types
+    });
+    sseWrite(res, "done", { ok: true, taskset, summary: { total, generated: generated.length, skipped: skipped.length }, logFile });
+// (removed) pre-tasks log
+// (removed) pre-tasks count log
+// (removed) duplicate done event
+
     cleanup();
   } catch (err) {
     if (!clientGone) {

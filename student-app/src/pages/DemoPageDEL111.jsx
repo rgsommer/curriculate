@@ -23,6 +23,24 @@ const PHYSICAL_TYPES = new Set(
     .map((s) => String(s).toLowerCase())
 );
 
+const DEMO_TEAM_CATALOG = [
+  { name: "Alligators", emoji: "🐊", color: "rgba(34,197,94,0.22)" },
+  { name: "Lightning Lions", emoji: "🦁", color: "rgba(250,204,21,0.22)" },
+  { name: "Cosmic Falcons", emoji: "🦅", color: "rgba(56,189,248,0.22)" },
+  { name: "Iron Wolves", emoji: "🐺", color: "rgba(148,163,184,0.22)" },
+  { name: "Turbo Turtles", emoji: "🐢", color: "rgba(20,184,166,0.22)" },
+  { name: "Fire Dragons", emoji: "🐉", color: "rgba(244,63,94,0.22)" },
+  { name: "Shadow Panthers", emoji: "🐆", color: "rgba(168,85,247,0.22)" },
+  { name: "Neon Sharks", emoji: "🦈", color: "rgba(59,130,246,0.22)" },
+  { name: "Thunder Bears", emoji: "🐻", color: "rgba(251,146,60,0.22)" },
+  { name: "Crimson Cobras", emoji: "🐍", color: "rgba(239,68,68,0.22)" },
+];
+
+function pickRandomTeamCards(count) {
+  const shuffled = [...DEMO_TEAM_CATALOG].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
 function randInt(min, max) {
   return Math.floor(min + Math.random() * (max - min + 1));
 }
@@ -559,10 +577,7 @@ async function fetchJsonSafe(url, options = {}) {
 export default function DemoPage() {
   const [phase, setPhase] = useState("mood"); // mood | runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
-
-  // Admin key is hidden until “Regenerate” is clicked
-  const [adminKey, setAdminKey] = useState("");
-  const [showAdminKey, setShowAdminKey] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   const [selectedType, setSelectedType] = useState("");
   const [currentTask, setCurrentTask] = useState(null);
@@ -586,11 +601,26 @@ export default function DemoPage() {
   const [botCount] = useState(3);
 
   const [teams, setTeams] = useState(() => {
-    const base = [{ id: "team-you", teamName: "Your Team", isYou: true, score: 0 }];
-    for (let i = 1; i <= 3; i++) {
-      base.push({ id: `team-bot-${i}`, teamName: `Bot Team ${i}`, isYou: false, score: 0 });
-    }
-    return base;
+    const botCards = pickRandomTeamCards(3);
+
+    return [
+      {
+        id: "team-you",
+        teamName: "Your Team",
+        emoji: "⭐️",
+        color: "rgba(59,130,246,0.24)", // your team blue
+        isYou: true,
+        score: 0,
+      },
+      ...botCards.map((c, i) => ({
+        id: `team-bot-${i + 1}`,
+        teamName: c.name,
+        emoji: c.emoji,
+        color: c.color,
+        isYou: false,
+        score: 0,
+      })),
+    ];
   });
 
   // Leaderboard + derived totals
@@ -646,18 +676,98 @@ export default function DemoPage() {
     return json.taskset;
   }
 
-  async function regenerateDemoTaskset(key) {
-    const json = await fetchJsonSafe(`${API_BASE}/api/demo/taskset/regenerate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-demo-admin-key": key,
-      },
-      body: JSON.stringify({}),
+  function startGenerateAllTypesStream() {
+    if (generating) return;
+
+    cleanupEventSource();
+    setGenerating(true);
+    setDone(0);
+    setTotal(Math.max(1, eligibleTaskTypes.length));
+    setStatus("Starting…");
+
+    // Build the payload the backend stream endpoint expects
+    const payload = {
+      subject: "General",
+      gradeLevel: "7",
+      difficulty: "MEDIUM",
+      learningGoal: "REVIEW",
+      topicLabel: "Demo",
+      duration: 30,
+      // Force the server to generate exactly the same eligible list your dropdown uses
+      selectedTypes: eligibleTaskTypes,
+    };
+
+    const url = `${API_BASE}/api/demo/taskset/stream?payload=${encodeURIComponent(
+      JSON.stringify(payload)
+    )}`;
+
+    const es = new EventSource(url, { withCredentials: true });
+    esRef.current = es;
+
+    es.addEventListener("init", (evt) => {
+      try {
+        const data = JSON.parse(evt.data || "{}");
+        setTotal(Math.max(1, Number(data.total) || eligibleTaskTypes.length || 1));
+        setStatus(`Generating… (0 / ${Number(data.total) || eligibleTaskTypes.length})`);
+      } catch {
+        setStatus("Generating…");
+      }
     });
-    if (!json?.ok) throw new Error(json?.error || "Failed to regenerate demo taskset");
-    setDemoTaskset(json.taskset);
-    return json.taskset;
+
+    es.addEventListener("progress", (evt) => {
+      try {
+        const data = JSON.parse(evt.data || "{}");
+        const idx = Number(data.index) || 0;
+        const t = Number(data.total) || total || 1;
+        const st = data.status || "working";
+        const type = data.taskType || "";
+
+        // only count completion-like statuses
+        if (st === "done" || st === "placeholder") {
+          setDone(Math.min(idx + 1, t));
+        }
+
+        setStatus(
+          `${st === "placeholder" ? "Placeholder" : "Generating"}: ${type} (${Math.min(
+            idx + 1,
+            t
+          )} / ${t})`
+        );
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    es.addEventListener("error", (evt) => {
+      // NOTE: SSE also uses "error" as a connection event. We treat JSON "error" events as messages.
+      try {
+        const data = evt?.data ? JSON.parse(evt.data) : null;
+        if (data?.error) {
+          showToast(data.error, false);
+        }
+      } catch {
+        // connection-level error or non-json
+      }
+    });
+
+    es.addEventListener("done", (evt) => {
+      try {
+        const data = JSON.parse(evt.data || "{}");
+        const taskset = data?.taskset || data?.taskset?.taskset || data?.taskset; // defensive
+        if (taskset?.tasks) {
+          setDemoTaskset(taskset); // immediately reflects without reload
+          showToast(`Generated ${taskset.tasks.length} demo tasks ✓`, true);
+        } else {
+          showToast("Generation finished ✓", true);
+        }
+      } catch {
+        showToast("Generation finished ✓", true);
+      } finally {
+        setGenerating(false);
+        setStatus("");
+        cleanupEventSource();
+      }
+    });
   }
 
   // -------------------------
@@ -669,80 +779,6 @@ export default function DemoPage() {
     } catch {}
     esRef.current = null;
   }
-
-  const startDemoGeneration = async () => {
-    if (generating) return;
-
-    // We require the admin key to generate the full demo pool.
-    const key = adminKey.trim();
-    if (!showAdminKey) {
-      setShowAdminKey(true);
-      showToast("Enter admin code to regenerate", false);
-      return;
-    }
-    if (!key) {
-      showToast("Admin code required", false);
-      return;
-    }
-
-    setGenerating(true);
-    setDone(0);
-    setTotal(1);
-    setStatus("Starting…");
-
-    cleanupEventSource();
-
-    const payload = {
-      adminKey: key,
-      // room for future: { includeNonEligible: false, ... }
-    };
-
-    const url = `${API_BASE}/api/demo/taskset/stream?payload=${encodeURIComponent(
-      JSON.stringify(payload)
-    )}`;
-
-    const es = new EventSource(url);
-    esRef.current = es;
-
-    es.addEventListener("start", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setTotal(Number(data.total) || 1);
-        setDone(Number(data.done) || 0);
-        setStatus("Generating…");
-      } catch {
-        setStatus("Generating…");
-      }
-    });
-
-    es.addEventListener("progress", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setDone(Number(data.done) || 0);
-        setTotal(Number(data.total) || 1);
-        if (data.currentType) setStatus(`Generating: ${data.currentType}`);
-      } catch {}
-    });
-
-    es.addEventListener("done", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data?.taskset) setDemoTaskset(data.taskset);
-      } catch {}
-      setStatus("Done");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Demo pool regenerated", true);
-    });
-
-    es.addEventListener("error", () => {
-      // EventSource fires "error" on disconnect too; handle carefully
-      setStatus("Error / disconnected");
-      setGenerating(false);
-      cleanupEventSource();
-      showToast("Stream disconnected", false);
-    });
-  };
 
   // Load once
   useEffect(() => {
@@ -788,12 +824,20 @@ export default function DemoPage() {
     []
   );
 
-  const allTaskTypes = useMemo(() => {
-    const fromMeta = TASK_TYPE_META ? Object.keys(TASK_TYPE_META) : [];
-    const fromConst = Object.values(TASK_TYPES).filter((v) => typeof v === "string");
-    const set = new Set([...fromMeta, ...fromConst].filter(Boolean));
-    return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
+  const eligibleTaskTypes = useMemo(() => {
+    const entries = Object.entries(TASK_TYPE_META || {});
+    return entries
+      .filter(([, meta]) => meta && meta.implemented !== false)
+      .filter(([, meta]) => meta.aiEligible === true && meta.generatorEligible === true)
+      .map(([type]) => type)
+      .sort((a, b) => String(a).localeCompare(String(b)));
   }, []);
+
+  const selectWidthPx = useMemo(() => {
+    const maxLen = eligibleTaskTypes.reduce((m, t) => Math.max(m, String(t).length), 0);
+    // Rough estimate: ~9px per char + padding
+    return Math.min(720, Math.max(380, maxLen * 9 + 90));
+  }, [eligibleTaskTypes]);
 
   function pickDemoTask(type) {
     const tasks = demoTaskset?.tasks || demoTaskset?.items || [];
@@ -1259,29 +1303,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
   }
 
   // -------------------------
-  // Demo Admin actions (POST regeneration for legacy)
-  // -------------------------
-  async function onRegeneratePool() {
-    // 1st click: reveal the admin input
-    if (!showAdminKey) {
-      setShowAdminKey(true);
-      return;
-    }
-
-    // 2nd click: actually regenerate
-    const key = adminKey.trim();
-    if (!key) return;
-
-    try {
-      await regenerateDemoTaskset(key);
-      showToast("Demo pool regenerated", true);
-    } catch (e) {
-      console.warn("[DemoPage] regenerate failed:", e);
-      showToast(e?.message || "Regenerate failed", false);
-    }
-  }
-
-  // -------------------------
   // Simple “StudentApp-like” styling bits
   // -------------------------
   const pill = {
@@ -1296,6 +1317,19 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
     border: "1px solid rgba(148,163,184,0.55)",
     color: "#e5e7eb",
   };
+
+  const instructionPill = {
+    ...pill,
+    cursor: "pointer",
+    userSelect: "none",
+    padding: "8px 12px",
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(255,255,255,0.08)",
+    fontWeight: 900,
+    lineHeight: 1.25,
+    maxWidth: 820,
+  };
+
 
   // -------------------------
   // Render
@@ -1326,9 +1360,53 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
             <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#ffffff" }}>
               Curriculate – Demo
             </h1>
-            <p style={{ margin: 0, fontSize: "0.85rem", color: "rgba(226,232,240,0.78)" }}>
-              Mood → Treasure Runner → Pick a task type. (No room needed.)
-            </p>
+            <button
+              type="button"
+              onClick={() => setShowInstructions((v) => !v)}
+              style={instructionPill}
+              title="Show instructions"
+            >
+              <span style={{ fontSize: 16, lineHeight: 1 }}>📘</span>
+              <span>Instructions</span>
+              <span style={{ marginLeft: 6, opacity: 0.9 }}>
+                {showInstructions ? "▲" : "▼"}
+              </span>
+            </button>
+            {showInstructions && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "10px 12px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(255,255,255,0.06)",
+                  maxWidth: 820,
+                  lineHeight: 1.35,
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ fontWeight: 900, marginBottom: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>🧭</span>
+                  <span>Usual play</span>
+                </div>
+                <div style={{ opacity: 0.92 }}>
+                  <strong>Enter Room Code</strong> + Team members → <strong>Mood</strong> →
+                  <strong> Treasure Runner</strong> (while waiting for Launch) → <strong>Enjoy tasks</strong> →
+                  <strong> See leaderboard</strong>
+                </div>
+
+                <div style={{ height: 10 }} />
+
+                <div style={{ fontWeight: 900, marginBottom: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>🎮</span>
+                  <span>For the Demo</span>
+                </div>
+                <div style={{ opacity: 0.92 }}>
+                  <strong>Try Treasure Runner</strong> (for fun) → <strong>Pick a task type</strong> →
+                  <strong> Try as many as you like</strong>
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
@@ -1347,50 +1425,23 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{1 + botCount}</strong>
             </span>
 
-            <button
-              onClick={onRegeneratePool}
+            <a
+              href="https://www.curriculate.net/freetrial"
+              target="_blank"
+              rel="noreferrer"
               style={{
                 ...pill,
                 cursor: "pointer",
                 border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(59,130,246,0.9)", // blue
+                background: "rgba(34,197,94,0.22)",
                 color: "#fff",
                 fontWeight: 900,
+                textDecoration: "none",
               }}
-              title="Regenerate demo pool (admin)"
-              type="button"
+              title="Start a free trial"
             >
-              Regenerate
-            </button>
-
-            {showAdminKey && (
-              <input
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Admin code"
-                style={{
-                  ...pill,
-                  padding: "7px 10px",
-                  width: 160,
-                  textAlign: "left",
-                  border: "1px solid rgba(148,163,184,0.55)",
-                  background: "rgba(15,23,42,0.65)",
-                  color: "#fff",
-                  outline: "none",
-                }}
-              />
-            )}
-
-            <div style={{ minWidth: 220 }}>
-              <ProgressFillButton
-                progress={generating ? progress : 0}
-                disabled={generating}
-                onClick={startDemoGeneration}
-              >
-                {generating ? `Regenerating… ${Math.round(progress * 100)}%` : "Regenerate (stream)"}
-              </ProgressFillButton>
-              <div style={{ marginTop: 6, opacity: 0.85, fontSize: 12 }}>{status}</div>
-            </div>
+              Free Trial
+            </a>
           </div>
         </div>
       </header>
@@ -1445,13 +1496,22 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               style={{
                 padding: "8px 10px",
                 borderRadius: 999,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: t.isYou ? "rgba(59,130,246,0.18)" : "rgba(0,0,0,0.18)",
+                border: t.isYou
+                  ? "1px solid rgba(255,255,255,0.35)"
+                  : "1px solid rgba(255,255,255,0.14)",
+                background: t.color,
                 fontWeight: 900,
                 fontVariantNumeric: "tabular-nums",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              {i + 1}. {t.teamName}: {t.score || 0}
+              <span>{i + 1}.</span>
+              <span style={{ fontSize: 16 }}>{t.emoji}</span>
+              <span>{t.teamName}</span>
+              <span>:</span>
+              <span>{t.score || 0}</span>
             </div>
           ))}
         </div>
@@ -1503,19 +1563,29 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value)}
                 style={{
-                  flex: "1 1 320px",
-                  minWidth: 320,
-                  padding: 10,
-                  borderRadius: 10,
+                  width: selectWidthPx,
+                  maxWidth: "90vw",
+                  height: 56,
+                  padding: "14px 14px",
+                  borderRadius: 12,
                   border: "1px solid rgba(255,255,255,0.18)",
                   background: "rgba(0,0,0,0.18)",
                   color: "#fff",
-                  fontWeight: 800,
+                  fontWeight: 900,
+                  fontSize: 17,
+                  lineHeight: "22px",
                 }}
               >
-                <option value="">— Select a task type —</option>
-                {allTaskTypes.map((t) => (
-                  <option key={t} value={t} style={{ color: "#000" }}>
+                <option value="" disabled>
+                  Select a task type…
+                </option>
+
+                {eligibleTaskTypes.map((t) => (
+                  <option
+                    key={t}
+                    value={t}
+                    style={{ color: "#000", fontSize: 16 }}
+                  >
                     {t}
                   </option>
                 ))}
@@ -1539,6 +1609,31 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               >
                 Start Task
               </button>
+              <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <ProgressFillButton
+                  onClick={startGenerateAllTypesStream}
+                  loading={generating}
+                  progress={progress}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(148,163,184,0.55)",
+                    background: "rgba(255,255,255,0.10)",
+                    color: "#fff",
+                    fontWeight: 900,
+                    cursor: generating ? "progress" : "pointer",
+                    minWidth: 240,
+                  }}
+                >
+                  {generating ? "Generating…" : "Generate demo pool (all eligible types)"}
+                </ProgressFillButton>
+
+                {generating && (
+                  <div style={{ fontSize: 13, opacity: 0.9, fontWeight: 800 }}>
+                    {status || `Working… ${Math.round(progress * 100)}%`}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={{ marginTop: 10, opacity: 0.78, fontSize: 13 }}>

@@ -74,16 +74,15 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Build a list of implemented, AI-eligible task types that are safe to GENERATE.
+// Build a list of implemented task types that are safe to GENERATE.
+// Eligibility here is about generation safety, not scoring.
 // - implemented !== false
-// - aiEligible !== false
-// - generatorEligible !== false (some types are AI-scoreable but not generator-safe)
-// - exclude HIDENSEEK (your special case)
+// - generatorEligible !== false
+// - exclude HIDENSEEK (special case)
 const AI_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
   .filter(
     ([type, meta]) =>
       meta?.implemented !== false &&
-      meta?.aiEligible !== false &&
       meta?.generatorEligible !== false &&
       type !== TASK_TYPES.HIDENSEEK
   )
@@ -1072,7 +1071,10 @@ Return ONLY valid JSON in this exact format (no backticks, no extra text):
       }
 
       const meta = TASK_TYPE_META[taskType] || {};
-      const objective = meta.objectiveScoring === true;
+      const objective =
+      (typeof meta.objectiveKeyed === "boolean" ? meta.objectiveKeyed : null) === true ||
+      (meta.scoringMode ? String(meta.scoringMode).toLowerCase() === "objective" : false) ||
+      meta.objectiveScoring === true; // back-compat
 
       let options = Array.isArray(t.options) ? t.options : [];
       let config = t.config && typeof t.config === "object" ? t.config : {};
@@ -2530,14 +2532,27 @@ else if (taskType === TASK_TYPES.ECHO_CHAIN) {
         correctAnswer = null;
       }
 
-      // --- aiScoringRequired: objective types default false ---
-      let aiScoringRequired;
-      if (typeof t.aiScoringRequired === "boolean") aiScoringRequired = t.aiScoringRequired;
-      else if (objective) aiScoringRequired = false;
-      else if (taskType === TASK_TYPES.GUESS_WHO) aiScoringRequired = false;
-      else if (typeof meta.defaultAiScoringRequired === "boolean")
-        aiScoringRequired = meta.defaultAiScoringRequired;
-      else aiScoringRequired = true;
+      // --- aiScoringRequired: explicit scoring intent ---
+// scoringMode: "none" | "objective" | "ai" | "hybrid"
+// - objective => default AI scoring OFF
+// - none      => no scoring (AI OFF)
+// - ai/hybrid => default governed by aiScoringDefaultOn (fallback to legacy defaultAiScoringRequired)
+let aiScoringRequired;
+if (typeof t.aiScoringRequired === "boolean") {
+  aiScoringRequired = t.aiScoringRequired;
+} else if (objective) {
+  aiScoringRequired = false;
+} else if ((meta.scoringMode ? String(meta.scoringMode).toLowerCase() : "") === "none") {
+  aiScoringRequired = false;
+} else if (taskType === TASK_TYPES.GUESS_WHO) {
+  aiScoringRequired = false;
+} else if (typeof meta.aiScoringDefaultOn === "boolean") {
+  aiScoringRequired = meta.aiScoringDefaultOn;
+} else if (typeof meta.defaultAiScoringRequired === "boolean") {
+  aiScoringRequired = meta.defaultAiScoringRequired; // back-compat
+} else {
+  aiScoringRequired = true;
+}
 
       const out = {
         index,

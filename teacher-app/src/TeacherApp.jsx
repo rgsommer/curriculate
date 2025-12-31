@@ -1,5 +1,5 @@
 // teacher-app/src/TeacherApp.jsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Routes, Route, Link, useLocation } from "react-router-dom";
 
 import LiveSession from "./pages/LiveSession.jsx";
@@ -862,6 +862,9 @@ function AdminPage({ isAdmin = false }) {
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoErr, setDemoErr] = useState("");
   const [demoInfo, setDemoInfo] = useState(null);
+  const [demoDone, setDemoDone] = useState(0);
+  const [demoTotal, setDemoTotal] = useState(0);
+  const sseRef = useRef(null);
 
   // -------------------------
   // Share-link emails (admin-editable templates + metrics)
@@ -934,37 +937,69 @@ function AdminPage({ isAdmin = false }) {
     setDemoOk("");
     setDemoBusy(true);
     startFakeProgress();
+    setDemoDone(0);
+    setDemoTotal(0);
 
     try {
       try { localStorage.setItem(DEMO_KEY_STORAGE, demoKey || ""); } catch {}
 
-      const res = await apiFetch("/api/demo/taskset/regenerate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(demoKey ? { "x-demo-admin-key": demoKey } : {}),
-        },
-        body: JSON.stringify({}),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok || !data?.ok) {
-        setDemoErr(data?.error || "Could not regenerate demo taskset.");
-        stopFakeProgress(1);
-        return;
+      // Close any previous stream
+      if (sseRef.current) {
+        try { sseRef.current.close(); } catch {}
+        sseRef.current = null;
       }
 
-      // success → snap to 100% and refresh UI
-      stopFakeProgress(1);
-      await loadDemoInfo();
-      setDemoOk("Regenerated ✓");
-      window.setTimeout(() => setDemoOk(""), 2000);
+      const qs = new URLSearchParams();
+      if (demoKey) qs.set("key", demoKey);
+
+      // IMPORTANT: point this to whatever route you mounted streamDemoTaskset on
+      // Example: /api/demo/taskset/stream
+      const url = `/api/demo/taskset/stream?${qs.toString()}`;
+
+      const es = new EventSource(url, { withCredentials: true });
+      sseRef.current = es;
+
+      const cleanup = () => {
+        if (sseRef.current) {
+          try { sseRef.current.close(); } catch {}
+          sseRef.current = null;
+        }
+      };
+
+      es.addEventListener("init", (ev) => {
+        const data = JSON.parse(ev.data || "{}");
+        const total = Number(data.total || 0);
+        setDemoTotal(total);
+        setDemoDone(0);
+      });
+
+      es.addEventListener("progress", (ev) => {
+        const data = JSON.parse(ev.data || "{}");
+        const status = String(data.status || "");
+        if (status === "done" || status === "skipped" || status === "placeholder") {
+          setDemoDone((d) => d + 1);
+        }
+      });
+
+      es.addEventListener("done", async (ev) => {
+        cleanup();
+        stopFakeProgress(1);
+        await loadDemoInfo();
+        setDemoOk("Regenerated ✓");
+        window.setTimeout(() => setDemoOk(""), 2000);
+        setDemoBusy(false);
+      });
+
+      es.addEventListener("error", () => {
+        cleanup();
+        stopFakeProgress(1);
+        setDemoErr("Stream error (check backend logs / route).");
+        setDemoBusy(false);
+      });
     } catch (e) {
-      console.warn("[AdminPage] regenerate demo taskset failed:", e);
+      console.warn("[AdminPage] SSE regenerate demo taskset failed:", e);
       setDemoErr("Network error");
       stopFakeProgress(1);
-    } finally {
       setDemoBusy(false);
     }
   };
@@ -1212,7 +1247,9 @@ function AdminPage({ isAdmin = false }) {
               fontWeight: 900,
             }}
           >
-            {demoBusy ? "Working…" : "Regenerate demo taskset"}
+            {demoBusy
+            ? `Generating ${demoDone}/${demoTotal || "…"}`
+            : "Regenerate demo taskset"}
           </ProgressFillButton>
         </div>
 

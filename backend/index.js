@@ -5439,9 +5439,12 @@ const DEMO_VOCAB = (process.env.DEMO_VOCAB || "teamwork, integrity, perseverance
   .filter(Boolean);
 
 // Build from taskTypes meta so you don't maintain v=== lists by hand
+// Derived from TaskTypes meta so you don't maintain lists by hand.
+// Demo eligibility is explicit via demoEligible (fallback to legacy aiEligible during transition).
 const DEMO_TASK_TYPES = Object.keys(TASK_TYPE_META).filter((t) => {
   const m = TASK_TYPE_META[t] || {};
-  return m.enabled !== false && m.generatorEligible !== false && m.aiEligible !== false;
+  const demoOk = m.demoEligible === true || m.aiEligible === true; // back-compat
+  return m.enabled !== false && m.implemented !== false && m.generatorEligible !== false && demoOk;
 });
 
 // Optional: fixed word bank used by the generator
