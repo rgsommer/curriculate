@@ -1007,7 +1007,9 @@ function AdminPage({ isAdmin = false }) {
       es.addEventListener("done", async (ev) => {
         cleanup();
         stopFakeProgress(1);
-        await if (isAdmin) loadDemoInfo();
+        if (isAdmin) {
+          await loadDemoInfo();
+        }
         setDemoOk("Regenerated ✓");
         window.setTimeout(() => setDemoOk(""), 2000);
         setDemoBusy(false);
