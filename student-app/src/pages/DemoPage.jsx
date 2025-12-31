@@ -730,12 +730,20 @@ export default function DemoPage() {
     []
   );
 
-  const allTaskTypes = useMemo(() => {
-    const fromMeta = TASK_TYPE_META ? Object.keys(TASK_TYPE_META) : [];
-    const fromConst = Object.values(TASK_TYPES).filter((v) => typeof v === "string");
-    const set = new Set([...fromMeta, ...fromConst].filter(Boolean));
-    return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
+  const eligibleTaskTypes = useMemo(() => {
+    const entries = Object.entries(TASK_TYPE_META || {});
+    return entries
+      .filter(([, meta]) => meta && meta.implemented !== false)
+      .filter(([, meta]) => meta.aiEligible === true && meta.generatorEligible === true)
+      .map(([type]) => type)
+      .sort((a, b) => String(a).localeCompare(String(b)));
   }, []);
+
+  const selectWidthPx = useMemo(() => {
+    const maxLen = eligibleTaskTypes.reduce((m, t) => Math.max(m, String(t).length), 0);
+    // Rough estimate: ~9px per char + padding
+    return Math.min(720, Math.max(380, maxLen * 9 + 90));
+  }, [eligibleTaskTypes]);
 
   function pickDemoTask(type) {
     const tasks = demoTaskset?.tasks || demoTaskset?.items || [];
@@ -1461,19 +1469,29 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value)}
                 style={{
-                  flex: "1 1 320px",
-                  minWidth: 320,
-                  padding: 10,
-                  borderRadius: 10,
+                  width: selectWidthPx,
+                  maxWidth: "90vw",
+                  height: 56,
+                  padding: "14px 14px",
+                  borderRadius: 12,
                   border: "1px solid rgba(255,255,255,0.18)",
                   background: "rgba(0,0,0,0.18)",
                   color: "#fff",
-                  fontWeight: 800,
+                  fontWeight: 900,
+                  fontSize: 17,
+                  lineHeight: "22px",
                 }}
               >
-                <option value="">— Select a task type —</option>
-                {allTaskTypes.map((t) => (
-                  <option key={t} value={t} style={{ color: "#000" }}>
+                <option value="" disabled>
+                  Select a task type…
+                </option>
+
+                {eligibleTaskTypes.map((t) => (
+                  <option
+                    key={t}
+                    value={t}
+                    style={{ color: "#000", fontSize: 16 }}
+                  >
                     {t}
                   </option>
                 ))}
