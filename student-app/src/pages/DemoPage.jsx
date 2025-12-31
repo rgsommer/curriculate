@@ -676,6 +676,100 @@ export default function DemoPage() {
     return json.taskset;
   }
 
+  function startGenerateAllTypesStream() {
+    if (generating) return;
+
+    cleanupEventSource();
+    setGenerating(true);
+    setDone(0);
+    setTotal(Math.max(1, eligibleTaskTypes.length));
+    setStatus("Starting…");
+
+    // Build the payload the backend stream endpoint expects
+    const payload = {
+      subject: "General",
+      gradeLevel: "7",
+      difficulty: "MEDIUM",
+      learningGoal: "REVIEW",
+      topicLabel: "Demo",
+      duration: 30,
+      // Force the server to generate exactly the same eligible list your dropdown uses
+      selectedTypes: eligibleTaskTypes,
+    };
+
+    const url = `${API_BASE}/api/demo/taskset/stream?payload=${encodeURIComponent(
+      JSON.stringify(payload)
+    )}`;
+
+    const es = new EventSource(url, { withCredentials: true });
+    esRef.current = es;
+
+    es.addEventListener("init", (evt) => {
+      try {
+        const data = JSON.parse(evt.data || "{}");
+        setTotal(Math.max(1, Number(data.total) || eligibleTaskTypes.length || 1));
+        setStatus(`Generating… (0 / ${Number(data.total) || eligibleTaskTypes.length})`);
+      } catch {
+        setStatus("Generating…");
+      }
+    });
+
+    es.addEventListener("progress", (evt) => {
+      try {
+        const data = JSON.parse(evt.data || "{}");
+        const idx = Number(data.index) || 0;
+        const t = Number(data.total) || total || 1;
+        const st = data.status || "working";
+        const type = data.taskType || "";
+
+        // only count completion-like statuses
+        if (st === "done" || st === "placeholder") {
+          setDone(Math.min(idx + 1, t));
+        }
+
+        setStatus(
+          `${st === "placeholder" ? "Placeholder" : "Generating"}: ${type} (${Math.min(
+            idx + 1,
+            t
+          )} / ${t})`
+        );
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    es.addEventListener("error", (evt) => {
+      // NOTE: SSE also uses "error" as a connection event. We treat JSON "error" events as messages.
+      try {
+        const data = evt?.data ? JSON.parse(evt.data) : null;
+        if (data?.error) {
+          showToast(data.error, false);
+        }
+      } catch {
+        // connection-level error or non-json
+      }
+    });
+
+    es.addEventListener("done", (evt) => {
+      try {
+        const data = JSON.parse(evt.data || "{}");
+        const taskset = data?.taskset || data?.taskset?.taskset || data?.taskset; // defensive
+        if (taskset?.tasks) {
+          setDemoTaskset(taskset); // immediately reflects without reload
+          showToast(`Generated ${taskset.tasks.length} demo tasks ✓`, true);
+        } else {
+          showToast("Generation finished ✓", true);
+        }
+      } catch {
+        showToast("Generation finished ✓", true);
+      } finally {
+        setGenerating(false);
+        setStatus("");
+        cleanupEventSource();
+      }
+    });
+  }
+
   // -------------------------
   // Streaming generation (ProgressFillButton)
   // -------------------------
@@ -1515,6 +1609,31 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               >
                 Start Task
               </button>
+              <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <ProgressFillButton
+                  onClick={startGenerateAllTypesStream}
+                  loading={generating}
+                  progress={progress}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(148,163,184,0.55)",
+                    background: "rgba(255,255,255,0.10)",
+                    color: "#fff",
+                    fontWeight: 900,
+                    cursor: generating ? "progress" : "pointer",
+                    minWidth: 240,
+                  }}
+                >
+                  {generating ? "Generating…" : "Generate demo pool (all eligible types)"}
+                </ProgressFillButton>
+
+                {generating && (
+                  <div style={{ fontSize: 13, opacity: 0.9, fontWeight: 800 }}>
+                    {status || `Working… ${Math.round(progress * 100)}%`}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div style={{ marginTop: 10, opacity: 0.78, fontSize: 13 }}>

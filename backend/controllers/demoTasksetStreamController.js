@@ -150,6 +150,9 @@ export const streamDemoTaskset = async (req, res) => {
   req.on("close", cleanup);
   req.on("aborted", cleanup);
 
+  console.log("[demo] included:", tasks.map(t => t.taskType || t.type));
+  console.log("[demo] count:", tasks.length);
+
   try {
     const payloadRaw = req.query?.payload ? decodeURIComponent(String(req.query.payload)) : "{}";
     const payload = safeJsonParse(payloadRaw, {});
@@ -201,6 +204,8 @@ export const streamDemoTaskset = async (req, res) => {
       } catch (err) {
         // We keep going: demo should still return a taskset even if one type fails.
         const msg = err?.message || String(err) || "Generation error";
+        console.warn("[demo] skipped type:", type, err?.message);
+
         sseWrite(res, "error", { ok: false, error: msg, taskType, index: i, total });
 
         if (taskType === TASK_TYPES.FAKE_OUT) {

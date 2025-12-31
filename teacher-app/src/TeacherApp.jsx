@@ -492,6 +492,22 @@ function HeaderBar({ isAuthenticated, user, logoutWithClear, isAdmin }) {
   );
 }
 
+function MaskOnHover({ value }) {
+  const [hover, setHover] = useState(false);
+  const masked = "•".repeat(Math.min(16, String(value || "").length || 8));
+
+  return (
+    <span
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+      title="Hover to reveal"
+    >
+      {hover ? value : masked}
+    </span>
+  );
+}
+
 /**
  * Upgraded Entry Gate:
  * - First tries verify endpoint (returning teachers)
@@ -1258,7 +1274,9 @@ function AdminPage({ isAdmin = false }) {
               {codes.map((c) => (
                 <tr key={c._id || c.code} style={{ borderBottom: "1px solid rgba(15,23,42,0.06)" }}>
                   <td style={{ padding: "8px 6px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco" }}>
-                    {c.code}
+                    <td style={{ padding: "8px 6px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco" }}>
+                      <MaskOnHover value={c.code} />
+                    </td>
                   </td>
                   <td style={{ padding: "8px 6px" }}>{c.planTier || c.tier}</td>
                   <td style={{ padding: "8px 6px" }}>{c.maxSeats ?? c.seats ?? 1}</td>
