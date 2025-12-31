@@ -1,13 +1,17 @@
 // backend/controllers/meController.js
 import User from "../models/User.js";
 import TeacherProfile from "../models/TeacherProfile.js";
-import { getBaseTierFromUser, resolveEntitlements } from "../services/entitlementService.js";
-import { resolvePlanForUser } from "../billing/planResolver.js";
+import { resolveAccessForUser } from "../billing/planResolver.js";
 
 /**
  * GET /api/me
- * Returns authenticated user + teacher profile basics + effective entitlements.
- * This becomes the single source of truth for the TeacherApp.
+ * Stripe-first (practical): return authenticated user + teacher profile basics
+ * plus a single "access" object resolved from billing (Stripe) + any overrides.
+ *
+ * NOTE:
+ * - This controller intentionally relies on billing/planResolver.js (already in your repo)
+ *   rather than introducing a second entitlement system.
+ * - To keep backward compatibility, we also expose `plan` and `entitlements` as aliases of `access`.
  */
 export async function getMeController(req, res) {
   try {
@@ -36,51 +40,41 @@ export async function getMeController(req, res) {
       return res.status(401).json({ ok: false, error: "Not authenticated" });
     }
 
+    // Teacher profile is optional; keep this lightweight
     const teacherProfile =
       (await TeacherProfile.findOne({ userId: user._id }).lean()) ||
       (await TeacherProfile.findOne({ email: user.email }).lean());
 
-    // Transitional: allow overrides to live on teacherProfile for now if you add them
-    const overrides =
-      teacherProfile?.entitlementOverrides ||
-      teacherProfile?.entitlementsOverrides ||
-      user?.entitlementOverrides ||
-      [];
+    // Resolve effective access/plan from your existing billing logic (Stripe-first).
+    // This should internally handle Stripe tier mapping + access-code/override logic if you implement it there.
+    let access = null;
+    try {
+      access = await resolveAccessForUser(user);
+    } catch (e) {
+      console.error("resolveAccessForUser failed in /api/me:", e);
+      access = null;
+    }
 
-    const baseTier = getBaseTierFromUser(user, teacherProfile);
-    const entitlements = resolveEntitlements({ baseTier, overrides });
-
-    // Return a safe user payload
+    // Return a safe user payload (no secrets)
     const safeUser = {
       _id: user._id,
       email: user.email,
       name: user.name,
+
+      // Admin flags (support both legacy patterns)
       isAdmin: !!user.isAdmin || !!teacherProfile?.isAdmin,
-      role: user.role || (teacherProfile?.isAdmin ? "admin" : undefined),
+      role: user.role || (user.isAdmin ? "admin" : undefined),
       roles: Array.isArray(user.roles) ? user.roles : (user.isAdmin ? ["admin"] : []),
 
-      subscriptionTier: user.subscriptionTier || baseTier,
-      subscriptionStatus: user.subscriptionStatus, // if present in your schema
-      stripeCustomerId: user.stripeCustomerId,     // if present
-      currentPeriodEnd: user.currentPeriodEnd,     // if present
-      cancelAtPeriodEnd: user.cancelAtPeriodEnd,   // if present
+      // Billing identity/status (optional fields depending on your schema)
+      subscriptionTier: user.subscriptionTier,
+      subscriptionStatus: user.subscriptionStatus,
+      stripeCustomerId: user.stripeCustomerId,
+      currentPeriodEnd: user.currentPeriodEnd,
+      cancelAtPeriodEnd: user.cancelAtPeriodEnd,
     };
 
-    // Stripe-first: resolve effective plan + limits from billing system
-    let plan = null;
-    try {
-    plan = await resolvePlanForUser({
-        userId: user._id,
-        email: user.email,
-        subscriptionTier: user.subscriptionTier,
-        stripeCustomerId: user.stripeCustomerId,
-    });
-    } catch (e) {
-    console.error("planResolver failed in /api/me:", e);
-    plan = null;
-    }
-
-    res.json({
+    return res.json({
       ok: true,
       user: safeUser,
       teacherProfile: teacherProfile
@@ -91,11 +85,16 @@ export async function getMeController(req, res) {
             schoolName: teacherProfile.schoolName,
           }
         : null,
-      plan,
-      entitlements,
+
+      // Canonical resolved object
+      access,
+
+      // Friendly aliases (so frontend can transition without breaking)
+      plan: access,
+      entitlements: access,
     });
   } catch (err) {
     console.error("GET /api/me error:", err);
-    res.status(500).json({ ok: false, error: "Server error" });
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 }
