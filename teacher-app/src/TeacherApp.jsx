@@ -977,9 +977,13 @@ function AdminPage({ isAdmin = false }) {
 
       // IMPORTANT: point this to whatever route you mounted streamDemoTaskset on
       // Example: /api/demo/taskset/stream
-      const url = `/api/demo/taskset/stream?${qs.toString()}`;
+      const API_BASE =
+        (import.meta?.env?.VITE_API_BASE_URL) ||
+        "https://api.curriculate.net";
 
-      const es = new EventSource(url, { withCredentials: true });
+      const url = `${API_BASE}/api/demo/taskset/stream?${qs.toString()}`;
+      
+      const es = new EventSource(url); // do NOT rely on headers; use ?key=
       sseRef.current = es;
 
       const cleanup = () => {

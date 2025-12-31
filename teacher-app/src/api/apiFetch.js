@@ -1,17 +1,38 @@
-// teacher-app/src/api/apiFetch.js
+const API_BASE =
+  import.meta?.env?.VITE_API_BASE_URL ||
+  "https://api.curriculate.net";
 
-// Safe helper: no React hooks used here.
-export function apiFetch(path, options = {}) {
-  const token = localStorage.getItem("curriculate_token") || "";
+export async function apiFetch(path, options = {}) {
+  const url = path.startsWith("http")
+    ? path
+    : `${API_BASE}${path}`;
 
-  const headers = {
-    ...(options.headers || {}),
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-
-  return fetch(`https://api.curriculate.net${path}`, {
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
     ...options,
-    headers,
   });
+
+  if (!res.ok) {
+    let errorBody = null;
+    try {
+      errorBody = await res.json();
+    } catch {
+      errorBody = await res.text();
+    }
+
+    throw new Error(
+      errorBody?.error ||
+        errorBody?.message ||
+        `Request failed: ${res.status}`
+    );
+  }
+
+  // handle 204
+  if (res.status === 204) return null;
+
+  return res.json();
 }
