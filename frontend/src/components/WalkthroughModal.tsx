@@ -91,7 +91,7 @@ export default function WalkthroughModal({
               automatically. Some tasks automatically submit recorded or photo evidence to the teacher.
             </p>
             <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700 ring-1 ring-black/5">
-              No paper chase after class—everything is already organized.
+              No paper chase after class—everything is already organized <b>and assessed</b>.
             </div>
           </div>
         ),
