@@ -1,17 +1,78 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Lottie, { type LottieRefCurrentProps } from "lottie-react";
 
 type Step = {
   title: string;
   body: React.ReactNode;
 };
- 
+
 const STORAGE_KEY = "curriculate_walkthrough_v1_dismissed";
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function accentForIdx(i: number) {
+  // 0-1: emerald, 2-3: indigo, 4-5: rose
+  if (i >= 4)
+    return { text: "text-rose-600", bar: "bg-rose-500", ring: "ring-rose-200", bg: "bg-rose-50" };
+  if (i >= 2)
+    return {
+      text: "text-indigo-600",
+      bar: "bg-indigo-500",
+      ring: "ring-indigo-200",
+      bg: "bg-indigo-50",
+    };
+  return {
+    text: "text-emerald-600",
+    bar: "bg-emerald-500",
+    ring: "ring-emerald-200",
+    bg: "bg-emerald-50",
+  };
+}
+
+function LottieBadge({
+  animation,
+  accentText,
+  accentBg,
+  accentRing,
+  isVisible,
+}: {
+  animation: any;
+  accentText: string;
+  accentBg: string;
+  accentRing: string;
+  isVisible: boolean;
+}) {
+  const lottieRef = useRef<LottieRefCurrentProps>(null);
+
+  // Pause/play when modal hidden/shown (if it stays mounted in future).
+  // With current "if (!open) return null" it unmounts anyway, but this makes it robust.
+  useEffect(() => {
+    const inst = lottieRef.current;
+    if (!inst) return;
+    if (isVisible) inst.play();
+    else inst.pause();
+  }, [isVisible]);
+
+  return (
+    <div className="mb-3 flex justify-center">
+      <div className={`rounded-2xl p-3 ring-1 transition-colors duration-300 ${accentRing} ${accentBg}`}>
+        <div className={`transition-colors duration-300 ${accentText}`}>
+          <Lottie
+            lottieRef={lottieRef}
+            animationData={animation}
+            loop
+            autoplay
+            style={{ width: 56, height: 56 }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function WalkthroughModal({
@@ -170,6 +231,27 @@ export default function WalkthroughModal({
     if (open) setIdx(startAt);
   }, [open, startAt]);
 
+  const accent = accentForIdx(idx);
+  const progress = Math.round(((idx + 1) / steps.length) * 100);
+
+  // Subtle fade/slide per step (optional but nice)
+  const [animateIn, setAnimateIn] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setAnimateIn(false);
+    const t = window.setTimeout(() => setAnimateIn(true), 20);
+    return () => window.clearTimeout(t);
+  }, [open, idx]);
+
+  function handleClose() {
+    if (dontShowAgain) {
+      try {
+        localStorage.setItem(STORAGE_KEY, "1");
+      } catch {}
+    }
+    onClose();
+  }
+
   // Close on Esc
   useEffect(() => {
     if (!open) return;
@@ -180,17 +262,6 @@ export default function WalkthroughModal({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, dontShowAgain]);
-
-  const progress = Math.round(((idx + 1) / steps.length) * 100);
-
-  function handleClose() {
-    if (dontShowAgain) {
-      try {
-        localStorage.setItem(STORAGE_KEY, "1");
-      } catch {}
-    }
-    onClose();
-  }
 
   function next() {
     setIdx((v) => clamp(v + 1, 0, steps.length - 1));
@@ -203,6 +274,7 @@ export default function WalkthroughModal({
   if (!open) return null;
 
   const step = steps[idx];
+  const currentAnim = animations?.[idx];
 
   return (
     <div className="fixed inset-0 z-[100]">
@@ -233,10 +305,10 @@ export default function WalkthroughModal({
               </button>
             </div>
 
-            {/* Progress bar */}
+            {/* Progress bar (color-shifts with step) */}
             <div className="mt-4 h-2 w-full rounded-full bg-slate-100">
               <div
-                className="h-2 rounded-full bg-emerald-500 transition-all"
+                className={`h-2 rounded-full transition-all ${accent.bar}`}
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -244,7 +316,30 @@ export default function WalkthroughModal({
 
           {/* Body */}
           <div className="px-6 py-5 text-sm leading-relaxed text-slate-800">
-            {step.body}
+            <div
+              className={[
+                "transition-all duration-300 ease-out",
+                animateIn ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2",
+              ].join(" ")}
+            >
+              {loadingAnims || !currentAnim ? (
+                <div className="mb-3 flex justify-center">
+                  <div className={`rounded-2xl p-6 ring-1 ${accent.ring} ${accent.bg}`}>
+                    <div className="h-14 w-14 animate-pulse rounded-xl bg-black/10" />
+                  </div>
+                </div>
+              ) : (
+                <LottieBadge
+                  animation={currentAnim}
+                  accentText={accent.text}
+                  accentBg={accent.bg}
+                  accentRing={accent.ring}
+                  isVisible={open}
+                />
+              )}
+
+              {step.body}
+            </div>
           </div>
 
           {/* Footer */}
