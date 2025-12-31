@@ -7,7 +7,7 @@ type Step = {
   title: string;
   body: React.ReactNode;
 };
-
+ 
 const STORAGE_KEY = "curriculate_walkthrough_v1_dismissed";
 
 function clamp(n: number, min: number, max: number) {
