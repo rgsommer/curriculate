@@ -784,6 +784,15 @@ function PlanDetails({ plan, fallbackTier }) {
   );
 }
 
+async function fetchJsonSafe(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    return { ok: false, error: data?.error || `Request failed (${res.status})`, status: res.status };
+  }
+  return { ok: true, ...data, status: res.status };
+}
+
 /**
  * Inline Admin page so you don't have to create a new file.
  * Uses:
@@ -803,6 +812,34 @@ function AdminPage({ isAdmin = false }) {
     boxSizing: "border-box",
     fontSize: "0.95rem",
   };
+
+  const [demoOk, setDemoOk] = useState("");
+  const [demoProgress, setDemoProgress] = useState(0); // 0..1
+  const progTimerRef = useRef(null);
+
+
+  function startFakeProgress() {
+  // smooth-ish progress up to 90% while waiting
+  setDemoProgress(0.08);
+  if (progTimerRef.current) clearInterval(progTimerRef.current);
+
+  progTimerRef.current = setInterval(() => {
+    setDemoProgress((p) => {
+      const next = p + (0.02 * (1 - p)); // ease
+      return Math.min(0.9, next);
+    });
+  }, 250);
+}
+
+  function stopFakeProgress(finalValue = 1) {
+    if (progTimerRef.current) {
+      clearInterval(progTimerRef.current);
+      progTimerRef.current = null;
+    }
+    setDemoProgress(finalValue);
+    // reset back to 0 after a moment so it’s ready for next click
+    window.setTimeout(() => setDemoProgress(0), 900);
+  }
 
   const pill = {
     display: "inline-flex",
@@ -894,11 +931,12 @@ function AdminPage({ isAdmin = false }) {
 
   const regenerateDemoTaskset = async () => {
     setDemoErr("");
+    setDemoOk("");
     setDemoBusy(true);
+    startFakeProgress();
+
     try {
-      try {
-        localStorage.setItem(DEMO_KEY_STORAGE, demoKey || "");
-      } catch {}
+      try { localStorage.setItem(DEMO_KEY_STORAGE, demoKey || ""); } catch {}
 
       const res = await apiFetch("/api/demo/taskset/regenerate", {
         method: "POST",
@@ -910,14 +948,22 @@ function AdminPage({ isAdmin = false }) {
       });
 
       const data = await res.json().catch(() => null);
+
       if (!res.ok || !data?.ok) {
         setDemoErr(data?.error || "Could not regenerate demo taskset.");
+        stopFakeProgress(1);
         return;
       }
+
+      // success → snap to 100% and refresh UI
+      stopFakeProgress(1);
       await loadDemoInfo();
+      setDemoOk("Regenerated ✓");
+      window.setTimeout(() => setDemoOk(""), 2000);
     } catch (e) {
       console.warn("[AdminPage] regenerate demo taskset failed:", e);
       setDemoErr("Network error");
+      stopFakeProgress(1);
     } finally {
       setDemoBusy(false);
     }
@@ -1155,13 +1201,19 @@ function AdminPage({ isAdmin = false }) {
             />
           </div>
 
-          <button
+          <ProgressFillButton
             onClick={regenerateDemoTaskset}
-            disabled={demoBusy || !isAdmin}
-            style={{ ...ui.buttonPrimary, minWidth: 220 }}
+            loading={demoBusy}
+            progress={demoBusy ? demoProgress : 0}
+            style={{
+              minWidth: 240,
+              padding: "12px 16px",
+              borderRadius: 999,
+              fontWeight: 900,
+            }}
           >
-            {demoBusy ? "Working…" : "Regenerate"}
-          </button>
+            {demoBusy ? "Working…" : "Regenerate demo taskset"}
+          </ProgressFillButton>
         </div>
 
         {demoErr && (
@@ -1274,16 +1326,14 @@ function AdminPage({ isAdmin = false }) {
               {codes.map((c) => (
                 <tr key={c._id || c.code} style={{ borderBottom: "1px solid rgba(15,23,42,0.06)" }}>
                   <td style={{ padding: "8px 6px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco" }}>
-                    <td style={{ padding: "8px 6px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco" }}>
-                      <MaskOnHover value={c.code} />
-                    </td>
+                    <MaskOnHover value={c.code} />
                   </td>
                   <td style={{ padding: "8px 6px" }}>{c.planTier || c.tier}</td>
-                  <td style={{ padding: "8px 6px" }}>{c.maxSeats ?? c.seats ?? 1}</td>
-                  <td style={{ padding: "8px 6px" }}>
-                    {c.claimedBy ? "Yes" : "No"}
-                  </td>
-                  <td style={{ padding: "8px 6px" }}>
+                    <td style={{ padding: "8px 6px" }}>{c.maxSeats ?? c.seats ?? 1}</td>
+                      <td style={{ padding: "8px 6px" }}>
+                        {c.claimedBy ? "Yes" : "No"}
+                      </td>
+                    <td style={{ padding: "8px 6px" }}>
                     {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}
                   </td>
                 </tr>

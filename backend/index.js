@@ -335,7 +335,7 @@ stripeRoutes.use(cors(corsOptions));
 stripeRoutes.options("*", cors(corsOptions));
 
 app.get("/api/version", (req, res) => {
-  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-31a" });
+  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-31b" });
 });
 
 // Simple UUID generator
@@ -543,11 +543,15 @@ function getRandomTeam(roomCode) {
 // ====================================================================
 //  EXPRESS MIDDLEWARE
 // ====================================================================
+import { getMeController } from "./controllers/meController.js"; // you’ll create this
+
 app.use(bodyParser.json({ limit: "3mb" }));
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/auth", authRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/stripe", stripeRoutes);
+// Register the route for tripe first 
+app.get("/api/me", authRequired, getMeController);
 
 // ====================================================================
 //  SOCKET.IO
