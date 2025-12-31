@@ -1,6 +1,7 @@
 import express from "express";
 import Stripe from "stripe";
-import { ObjectId } from "mongodb";
+//import { ObjectId } from "mongodb";
+import User from "../models/User.js"; // adjust if needed
 
 // NOTE: Adjust this import if your mongo helper lives elsewhere.
 // Common paths in your repo have been getMongo() used in other backend files.
@@ -35,99 +36,70 @@ function isHex24(s) {
 // - Anonymous marketing-site users can start checkout by providing an email.
 router.post("/create-checkout-session", async (req, res) => {
   try {
-    const { priceId: rawPriceId, plan, email: rawEmail } = req.body || {};
-
-    // Resolve priceId from either priceId or plan
-    let priceId = rawPriceId;
-    let effectivePlan = plan;
-
-    // Trial plans: TEACHER_PRO_TRIAL -> TEACHER_PRO + trialPeriodDays
-    const isTrial = typeof effectivePlan === "string" && effectivePlan.endsWith("_TRIAL");
-    const trialDays = Number(process.env.TRIAL_DAYS || 30);
-
-    if (!priceId) {
-      if (typeof effectivePlan !== "string" || !effectivePlan) {
-        return res.status(400).json({ error: "Missing priceId or plan" });
-      }
-
-      if (isTrial) effectivePlan = effectivePlan.replace(/_TRIAL$/, "");
-
-      priceId = PRICE_BY_PLAN[effectivePlan];
-      if (!priceId) {
-        return res.status(400).json({ error: `Unknown plan: ${plan}` });
-      }
-    }
+    const { priceId, plan, email: rawEmail } = req.body || {};
+    if (!priceId) return res.status(400).json({ error: "Missing priceId" });
 
     const email = (rawEmail || "").trim().toLowerCase();
+    const isTrial = typeof plan === "string" && plan.endsWith("_TRIAL");
+    const trialDays = Number(process.env.TRIAL_DAYS || 30);
 
-    // Resolve user:
-    // - If some upstream middleware already set req.user, we’ll use it.
-    // - Otherwise require email and find-or-create the user.
-    let user = req.user;
-
-    const db = await getMongo();
-    const users = db.collection("users");
+    // 1) Resolve user (session OR email fallback)
+    let user = req.user || null;
 
     if (!user) {
       if (!email) return res.status(401).json({ error: "Not authenticated" });
 
-      const up = await users.findOneAndUpdate(
+      user = await User.findOneAndUpdate(
         { email },
         {
           $setOnInsert: {
             email,
-            createdAt: new Date(),
-            plan: "FREE",
+            subscriptionTier: "FREE",
             hasUsedTrial: false,
+            // passwordHash left null intentionally
           },
           $set: { updatedAt: new Date() },
         },
-        { upsert: true, returnDocument: "after" }
+        { upsert: true, new: true }
       );
-
-      user = up.value;
-      if (!user) return res.status(500).json({ error: "Unable to create user for checkout" });
     }
 
-    // Ensure Stripe customer exists
-    let stripeCustomerId = user.stripeCustomerId;
-    if (!stripeCustomerId) {
+    if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+    // 2) Ensure Stripe customer
+    if (!user.stripeCustomerId) {
       const customer = await stripe.customers.create({
-        email: user.email || email || undefined,
-        metadata: { userId: String(user._id || "") },
+        email: user.email,
+        metadata: { userId: String(user._id) },
       });
-      stripeCustomerId = customer.id;
 
-      // Persist customer id (handle ObjectId vs string _id)
-      const q = isHex24(String(user._id)) ? { _id: new ObjectId(String(user._id)) } : { _id: user._id };
-      await users.updateOne(q, { $set: { stripeCustomerId, updatedAt: new Date() } });
-
-      user.stripeCustomerId = stripeCustomerId;
+      user.stripeCustomerId = customer.id;
+      await user.save();
     }
 
-    // Build subscription_data with optional trial
-    const subscription_data = {
-      metadata: { plan: plan || effectivePlan, userId: String(user._id), userEmail: user.email || email || "" },
-      ...(isTrial ? { trial_period_days: trialDays } : {}),
-    };
-
+    // 3) Create checkout session
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: stripeCustomerId || undefined,
-      customer_email: stripeCustomerId ? undefined : (user.email || email || undefined),
+      customer: user.stripeCustomerId,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${successUrl()}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: cancelUrl(),
       allow_promotion_codes: true,
       client_reference_id: String(user._id),
-      subscription_data,
-      payment_method_collection: "if_required",
+      subscription_data: {
+        metadata: {
+          plan: plan || "",
+          userId: String(user._id),
+          userEmail: user.email,
+        },
+        ...(isTrial ? { trial_period_days: trialDays } : {}),
+      },
     });
 
-    res.json({ url: session.url });
+    return res.json({ url: session.url });
   } catch (e) {
     console.error("[stripe] create-checkout-session error:", e);
-    res.status(500).json({ error: e?.message || "Failed to create checkout session" });
+    return res.status(500).json({ error: e?.message || "Failed to create checkout session" });
   }
 });
 

@@ -7,7 +7,13 @@ const UserSchema = new Schema(
   {
     email: { type: String, required: true, unique: true },
     name: String,
-    passwordHash: { type: String, required: true },
+
+    // ✅ Allow users created via checkout before password is set
+    passwordHash: { type: String, default: null },
+
+    // Stripe / billing
+    stripeCustomerId: { type: String, default: null },
+    hasUsedTrial: { type: Boolean, default: false },
 
     // Your subscription fields
     subscriptionTier: {
@@ -17,11 +23,12 @@ const UserSchema = new Schema(
     },
     subscriptionMeta: {
       type: Schema.Types.Mixed,
+      default: {},
     },
   },
   { timestamps: true }
 );
 
-const User = mongoose.model("User", UserSchema);
+const User = mongoose.models.User || mongoose.model("User", UserSchema);
 
 export default User;
