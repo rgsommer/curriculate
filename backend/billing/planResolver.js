@@ -71,6 +71,62 @@ export const PLAN = {
   },
 };
 
+// ------------------------------------------------------------
+// Access / Plan resolution (used by GET /api/me)
+// ------------------------------------------------------------
+// NOTE: This file is Stripe webhook–aware, but /api/me needs a simple,
+// fast resolver that turns a User document into an "access" object.
+// We treat `user.subscriptionTier` as the canonical tier field for now;
+// Stripe webhooks should keep it updated.
+//
+// Newer parts of the app call this `access`; older parts may call it `plan`
+// or `entitlements` — they are the same object.
+export async function resolveAccessForUser(user) {
+  if (!user) return PLAN.FREE;
+
+  // Normalize tier
+  const rawTier = String(user.subscriptionTier || user.plan || user.tier || "FREE").toUpperCase();
+  const tier = PLAN[rawTier] ? rawTier : "FREE";
+
+  // Base access from tier table
+  const base = PLAN[tier] || PLAN.FREE;
+
+  // Include a few helpful fields (safe + lightweight)
+  const access = {
+    ...base,
+    tier: base.tier || tier,
+
+    // Stripe/customer linkage (if present)
+    stripeCustomerId: user.stripeCustomerId || null,
+    stripeSubscriptionId: user.stripeSubscriptionId || null,
+    subscriptionStatus: user.subscriptionStatus || user.stripeSubscriptionStatus || null,
+
+    // Downgrade scheduling (if your webhook handler sets these)
+    planWillDowngradeAt: user.planWillDowngradeAt || null,
+    cancelAtPeriodEnd: typeof user.cancelAtPeriodEnd === "boolean" ? user.cancelAtPeriodEnd : null,
+
+    // Optional: seat cap overrides (if you ever set them on the user)
+    seatsOverride: typeof user.seatsOverride === "number" ? user.seatsOverride : null,
+  };
+
+  // Apply overrides if present (keep it deterministic)
+  if (typeof access.seatsOverride === "number" && access.seatsOverride > 0) {
+    access.seats = access.seatsOverride;
+  }
+
+  return access;
+}
+
+// Convenience alias (older code may look for "resolvePlanForUser")
+export async function resolvePlanForUser(optsOrUser) {
+  // Support both signatures:
+  // - resolvePlanForUser(user)
+  // - resolvePlanForUser({ user })
+  const user = optsOrUser && optsOrUser.user ? optsOrUser.user : optsOrUser;
+  return resolveAccessForUser(user);
+}
+
+
 const GRACE_DAYS = Number(process.env.STRIPE_GRACE_DAYS || 7);
 
 function toDateFromUnixSeconds(sec) {
