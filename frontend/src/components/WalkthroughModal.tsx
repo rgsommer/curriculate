@@ -46,7 +46,7 @@ export default function WalkthroughModal({
         body: (
           <div className="space-y-2">
             <p>
-              Enter your topic, grade level, difficulty level, purpose, and (most importantly) paste in a list of words of concepts you want to teach or review.
+              Enter your topic, grade level, difficulty level, purpose, and (most importantly) paste in a list of words or concepts you want to teach or review.
             </p>
             <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700 ring-1 ring-black/5">
               Tip: Start with putting up <b>8 station posters</b>.
@@ -61,9 +61,9 @@ export default function WalkthroughModal({
             <p>
               Start the session on the teacher screen. Teams join quickly (scan/code). They enter a team name of their choice and their names. Pacing is fully automatic. Students scan their device at one station, complete the task shown, then scan at the next assigned station.
             </p>
-            <p className="text-slate-600 text-sm">
+            <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700 ring-1 ring-black/5">
               Everything is tracked while students work — no extra “teacher busywork. It's a teacher's dream!”
-            </p>
+            </div>
           </div>
         ),
       },
@@ -90,9 +90,9 @@ export default function WalkthroughModal({
               Answers are saved by station and task type. Optional scoring/feedback can be generated
               automatically. Some tasks automatically submit recorded or photo evidence to the teacher.
             </p>
-            <p className="text-slate-600 text-sm">
+            <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700 ring-1 ring-black/5">
               No paper chase after class—everything is already organized.
-            </p>
+            </div>
           </div>
         ),
       },
