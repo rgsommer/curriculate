@@ -303,7 +303,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-demo-admin-key"],
   optionsSuccessStatus: 204,
 };
 
@@ -335,7 +335,7 @@ stripeRoutes.use(cors(corsOptions));
 stripeRoutes.options("*", cors(corsOptions));
 
 app.get("/api/version", (req, res) => {
-  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-30a" });
+  res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-31a" });
 });
 
 // Simple UUID generator
@@ -6240,6 +6240,86 @@ const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
 })
+
+// --------------------------------------------------------------------
+// Admin: Access Codes (create + list)
+// --------------------------------------------------------------------
+function genAccessCode(len = 8) {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no I/O/1/0 confusion
+  let out = "";
+  for (let i = 0; i < len; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
+}
+
+app.get("/api/admin/access-codes", ...adminRequired, async (req, res) => {
+  try {
+    const rows = await AccessCode.find({})
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const codes = (rows || []).map((c) => ({
+      _id: String(c._id),
+      code: String(c.code || ""),
+      planTier: String(c.planTier || "FREE"),
+      maxSeats: Number(c.maxSeats || 1),
+      disabled: !!c.disabled,
+      expiresAt: c.expiresAt ? new Date(c.expiresAt).toISOString().slice(0, 10) : null,
+      claimantsCount: Array.isArray(c.claimants) ? c.claimants.length : 0,
+      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
+    }));
+
+    return res.json({ ok: true, codes });
+  } catch (err) {
+    console.error("[admin-access-codes] list failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load access codes." });
+  }
+});
+
+app.post("/api/admin/access-codes", ...adminRequired, async (req, res) => {
+  try {
+    const planTier = String(req.body?.planTier || "FREE").toUpperCase().trim();
+    const maxSeats = Math.max(1, Number(req.body?.maxSeats ?? req.body?.seats ?? 1));
+
+    const expiresRaw = req.body?.expiresAt ?? req.body?.expires ?? null;
+    let expiresAt = null;
+    if (expiresRaw) {
+      const d = new Date(expiresRaw);
+      if (!Number.isNaN(d.getTime())) expiresAt = d;
+    }
+
+    // generate unique code
+    let code = genAccessCode(8);
+    for (let i = 0; i < 5; i += 1) {
+      const exists = await AccessCode.findOne({ code }).lean();
+      if (!exists) break;
+      code = genAccessCode(8);
+    }
+
+    const doc = await AccessCode.create({
+      code,
+      planTier,
+      maxSeats,
+      expiresAt,
+      disabled: false,
+      claimants: [],
+    });
+
+    return res.json({
+      ok: true,
+      accessCode: {
+        _id: String(doc._id),
+        code: doc.code,
+        planTier: doc.planTier,
+        maxSeats: doc.maxSeats,
+        expiresAt: doc.expiresAt ? new Date(doc.expiresAt).toISOString().slice(0, 10) : null,
+      },
+    });
+  } catch (err) {
+    console.error("[admin-access-codes] create failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to create access code." });
+  }
+});
+
 // --------------------------------------------------------------------
 // Admin: Email templates + metrics (share links)
 // --------------------------------------------------------------------
