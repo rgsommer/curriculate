@@ -235,8 +235,8 @@ export default function HowItWorksPage() {
           <div className="mt-8 grid gap-6 md:grid-cols-2">
             <StepCard
               number="1"
-              title="Build a Task Set"
-              desc="Create (or generate) a set of station activities for your lesson."
+              title="Build a Task Set (< 5 minutes)"
+              desc="Create a set of station activities for your lesson."
               icon={
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path
@@ -256,6 +256,7 @@ export default function HowItWorksPage() {
                 "Choose a subject/topic and the number of stations.",
                 "Mix task types: quick checks, collaboration, short written work, etc.",
                 "Save it so you can reuse it (and tweak it) anytime.",
+                "Teachers can even send a set to a substitute teacher!",
               ]}
             />
 
@@ -283,6 +284,7 @@ export default function HowItWorksPage() {
                 "Teams join quickly (scan/code).",
                 "You control pacing: start, pause, rotate, and end.",
                 "Everything is tracked automatically while students work.",
+                "At launch, teachers can choose single-room or multi-room.",
               ]}
             />
 
@@ -307,7 +309,7 @@ export default function HowItWorksPage() {
               }
               bullets={[
                 "One device per team is enough (others can watch/assist).",
-                "Stations can be QR-coded posters, table signs, or screen prompts.",
+                "Stations are QR-coded posters – one-time print and post.",
                 "Keeps students moving, collaborating, and focused.",
               ]}
             />
@@ -336,6 +338,7 @@ export default function HowItWorksPage() {
                 "Team answers are stored by station and task type.",
                 "Optional scoring and feedback can be generated automatically.",
                 "No “paper chase” after class—everything is already sorted.",
+                "Grades ready for the grade book!",
               ]}
             />
 
