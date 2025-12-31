@@ -195,10 +195,6 @@ export default function WalkthroughModal({
     []
   );
 
-  const animations = useMemo(
-    () => [introAnim, buildAnim, launchAnim, stationsAnim, captureAnim, reportAnim],
-    []
-  );
 
   const [idx, setIdx] = useState(startAt);
   const [dontShowAgain, setDontShowAgain] = useState(false);
