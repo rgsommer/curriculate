@@ -102,6 +102,9 @@ function TeacherApp() {
     );
   }, [user]);
 
+  console.log("AUTH user:", user);
+  console.log("isAdmin:", isAdmin);
+
   const [entryOk, setEntryOk] = useState(() => {
     try {
       return localStorage.getItem(ENTRY_KEY) === "1";
