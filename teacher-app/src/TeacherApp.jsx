@@ -775,6 +775,32 @@ function PlanDetails({ plan, fallbackTier }) {
  * - POST /api/admin/access-codes
  */
 function AdminPage({ isAdmin = false }) {
+  // UI helpers used by the email templates section
+  const input = {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "#ffffff",
+    color: "#0f172a",
+    outline: "none",
+    boxSizing: "border-box",
+    fontSize: "0.95rem",
+  };
+
+  const pill = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "rgba(15,23,42,0.04)",
+    fontSize: 12,
+    fontWeight: 900,
+    color: "#0f172a",
+    whiteSpace: "nowrap",
+  };
   // -------------------------
   // Demo taskset (system-admin only)
   // -------------------------
