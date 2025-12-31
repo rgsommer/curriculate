@@ -4,12 +4,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Lottie, { type LottieRefCurrentProps } from "lottie-react";
 
-import introAnim from "@/public/lottie/intro.json";
-import buildAnim from "@/public/lottie/build.json";
-import launchAnim from "@/public/lottie/launch.json";
-import stationsAnim from "@/public/lottie/stations.json";
-import captureAnim from "@/public/lottie/capture.json";
-import reportAnim from "@/public/lottie/report.json";
+import introAnim from "@/assets/lottie/intro.json";
+import buildAnim from "@/assets/lottie/build.json";
+import launchAnim from "@/assets/lottie/launch.json";
+import stationsAnim from "@/assets/lottie/stations.json";
+import captureAnim from "@/assets/lottie/capture.json";
+import reportAnim from "@/assets/lottie/report.json";
 
 type Step = {
   title: string;
