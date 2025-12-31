@@ -1,5 +1,6 @@
 // frontend/src/app/how-it-works/page.tsx
-import React from "react";
+import React, { useState } from "react";
+import WalkthroughModal from "../../components/WalkthroughModal";
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -19,12 +20,14 @@ function StepCard({
   desc,
   icon,
   bullets,
+  footer,
 }: {
   number: string;
   title: string;
   desc: string;
   icon: React.ReactNode;
   bullets: string[];
+  footer?: React.ReactNode;
 }) {
   return (
     <div className="group relative overflow-hidden rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
@@ -52,6 +55,7 @@ function StepCard({
               </li>
             ))}
           </ul>
+          {footer ? <div className="mt-4">{footer}</div> : null}
         </div>
       </div>
     </div>
@@ -95,6 +99,8 @@ function Arrow() {
 }
 
 export default function HowItWorksPage() {
+  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-indigo-50">
       {/* Hero */}
@@ -366,6 +372,15 @@ export default function HowItWorksPage() {
                 "Student/team report: what they did + what to improve next time.",
                 "Reuse the task set next week with quick edits.",
               ]}
+              footer={
+                <button
+                  type="button"
+                  onClick={() => setWalkthroughOpen(true)}
+                  className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-105"
+                >
+                  Open 60-second walkthrough
+                </button>
+              }
             />
 
             <div className="relative overflow-hidden rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
@@ -456,6 +471,11 @@ export default function HowItWorksPage() {
           </div>
         </div>
       </section>
+      <WalkthroughModal
+        open={walkthroughOpen}
+        onClose={() => setWalkthroughOpen(false)}
+        showDontShowAgain={false}
+      />
     </main>
   );
 }
