@@ -5,10 +5,55 @@
   margin: 0 auto;
 }
 
+.stage {
+  position: relative;
+  width: 100%;
+}
+
 .preview-stage {
   width: 100%;
   height: auto;
   display: block;
+}
+
+/* On-stage animated arrows */
+.navArrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,0.25));
+  animation: floaty 1.6s ease-in-out infinite;
+}
+
+.navArrow img {
+  width: 64px;
+  height: 64px;
+  display: block;
+}
+
+.navArrow.left { left: 1.2%; }
+.navArrow.right { right: 1.2%; }
+
+/* Flip horizontally for the FORWARD arrow (right side) */
+.navArrow.right img { transform: scaleX(-1); }
+
+.navArrow:hover {
+  animation-duration: 1.0s;
+  transform: translateY(-50%) scale(1.06);
+}
+
+.navArrow:active {
+  transform: translateY(-50%) scale(0.98);
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(-50%); }
+  50% { transform: translateY(calc(-50% - 8px)); }
 }
 
 /* station base */

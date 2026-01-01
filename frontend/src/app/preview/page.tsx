@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import "./preview.css";
 
 type Station = {
   key: string;
@@ -28,7 +29,6 @@ export default function PreviewPage() {
 
   const [activeIdx, setActiveIdx] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const timerRef = useRef<number | null>(null);
 
   const goNext = () => setActiveIdx((i) => (i + 1) % stations.length);
@@ -46,25 +46,32 @@ export default function PreviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Ensure only the active station is "playing"
+  const prevIdxRef = useRef<number>(-1);
+
   useEffect(() => {
-    videoRefs.current.forEach((v, idx) => {
-      if (!v) return;
+    const stage = document.querySelector(".stage");
+    if (!stage) return;
 
-      // Always keep videos ready to play
-      v.muted = true;
-      v.playsInline = true;
+    const videos = stage.querySelectorAll<HTMLVideoElement>("video.station");
 
-      if (idx === activeIdx && !isPaused) {
-        // Restart for a clean “station starts now” feel
-        try {
-          v.currentTime = 0;
-        } catch {}
-        void v.play().catch(() => {});
+    videos.forEach((video, idx) => {
+      video.muted = true;
+      video.playsInline = true;
+
+      const isActive = idx === activeIdx;
+
+      if (isActive && !isPaused) {
+        // Only restart when the station actually changes
+        if (prevIdxRef.current !== activeIdx) {
+          try { video.currentTime = 0; } catch {}
+        }
+        void video.play().catch(() => {});
       } else {
-        v.pause();
+        video.pause();
       }
     });
+
+    prevIdxRef.current = activeIdx;
   }, [activeIdx, isPaused]);
 
   // Auto-advance 1→8→1 continuously
@@ -84,49 +91,35 @@ export default function PreviewPage() {
 
   return (
     <main className="preview-root">
-      <img
-        src="/preview/stage.jpg"
-        alt="Curriculate classroom preview stage"
-        className="preview-stage"
-      />
+      <div className="stage">
+        <img
+          src="/preview/stage.jpg"
+          alt="Curriculate classroom preview stage"
+          className="preview-stage"
+        />
 
-      {stations.map((st, idx) => {
-        const isActive = idx === activeIdx;
-        return (
-          <video
-            key={st.key}
-            ref={(el) => {
-              videoRefs.current[idx] = el;
-            }}
-            className={`station ${st.className} ${isActive ? "active" : "inactive"}`}
-            src={st.src}
-            // IMPORTANT: no loop; we control cycling globally
-            // loop
-            muted
-            playsInline
-            preload="auto"
-            onClick={() => setActiveIdx(idx)}
-          />
-        );
-      })}
+        {stations.map((st, idx) => {
+          const isActive = idx === activeIdx;
+          return (
+            <video
+              key={st.key}
+              className={`station ${st.className} ${isActive ? "active" : "inactive"}`}
+              src={st.src}
+              muted
+              playsInline
+              preload="auto"
+              onClick={() => setActiveIdx(idx)}
+            />
+          );
+        })}
 
-      {/* Controls */}
-      <div className="controls">
-        <button className="btn" onClick={goPrev} aria-label="Previous station">
-          ◀
+        {/* ON-STAGE ARROWS */}
+        <button className="navArrow left" onClick={goPrev} aria-label="Previous station">
+          <img src="/preview/ui/arrow.png" alt="Back" />
         </button>
 
-        <div className="status">
-          <div className="title">
-            Station {activeIdx + 1} / {stations.length}: {stations[activeIdx]?.label}
-          </div>
-          <button className="btn small" onClick={() => setIsPaused((p) => !p)}>
-            {isPaused ? "Play" : "Pause"}
-          </button>
-        </div>
-
-        <button className="btn" onClick={goNext} aria-label="Next station">
-          ▶
+        <button className="navArrow right" onClick={goNext} aria-label="Next station">
+          <img src="/preview/ui/arrow.png" alt="Next" />
         </button>
       </div>
     </main>
