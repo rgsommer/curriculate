@@ -114,7 +114,7 @@ export default function WalkthroughModal({
         body: (
           <div className="space-y-2">
             <p>
-              Enter your topic, grade level, difficulty level, purpose, and (most importantly) your list of terms/concepts. Then do you want to play in just your room or multi-room – think giant scavenger hunt.
+              Enter your topic, grade level, difficulty level, purpose, and (most importantly) your list of terms/concepts. Then, do you want to play in just your room or multi-room – think giant scavenger hunt.
             </p>
             <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700 ring-1 ring-black/5">
               Tip: One-time setup in your classroom: print and post the <><b>8 station</b> posters.</>
@@ -127,11 +127,10 @@ export default function WalkthroughModal({
         body: (
           <div className="space-y-2">
             <p>
-              Start the session on the teacher screen. Teams join quickly (scan/code), and you control
-              pacing (start/pause/rotate/end).
+              Start the session on the teacher screen. Teams join quickly (scan/code), and the flow is controlled automatically.
             </p>
             <p className="text-slate-600 text-sm">
-              Everything is tracked while students work—no extra “teacher busywork.”
+              Everything is tracked while students work — no extra “teacher busywork.”
             </p>
           </div>
         ),
@@ -141,12 +140,13 @@ export default function WalkthroughModal({
         body: (
           <div className="space-y-2">
             <p>
-              Students rotate station-by-station. One device per team is enough—others can watch/assist.
+              Students rotate from color station to color station. One device per team is enough.
             </p>
             <div className="rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-900 ring-1 ring-emerald-200">
               <b>Devices:</b> Phones work, but the best experience is{" "}
               <b>~1 tablet per 3 students</b> (one tablet per team). Many schools already have carts/roaming
-              sets.
+              sets. 
+              <b>~Nothing to download or install.</b>
             </div>
           </div>
         ),
@@ -160,7 +160,7 @@ export default function WalkthroughModal({
               automatically.
             </p>
             <p className="text-slate-600 text-sm">
-              No paper chase after class—everything is already organized.
+              No paper chase after class — everything is already organized AND assessed!
             </p>
           </div>
         ),
@@ -170,8 +170,11 @@ export default function WalkthroughModal({
         body: (
           <div className="space-y-3">
             <p>
-              End the session and you get clear reporting: whole-class overview, plus team/student
+              Session ends and you get clear reporting: whole-class overview, plus team/student
               detail (based on plan).
+            </p>
+            <p className="text-slate-600 text-sm">
+              <b>Reports include grades, topics covered, and anecdotal comments!</b>
             </p>
             <div className="flex flex-wrap gap-2">
               <Link
@@ -184,7 +187,7 @@ export default function WalkthroughModal({
                 href="/demo"
                 className="rounded-2xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:brightness-105"
               >
-                Try the demo
+                Try the demo! It's revolutionary!
               </Link>
             </div>
           </div>
