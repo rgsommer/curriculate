@@ -55,68 +55,6 @@ const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
 const CONTRAST_ACCENT = "#0ea5e9";
 
-// ---------------------------------------------------------------------
-// Category staging videos (8s play → collapse) - put files in:
-// student-app/public/animations/categories/<filename>
-// For each base file, you can also add a "-alt.mp4" variant and we'll pick randomly.
-// ---------------------------------------------------------------------
-const CATEGORY_ANIMATION_BASE_FILES = {
-  question: "question.mp4",
-  ordering: "ordering.mp4",
-  creative: "creative.mp4",
-  movement: "movement.mp4",
-  competitive: "competitive.mp4",
-  deduction: "deduction.mp4",
-  collaboration: "collaboration.mp4",
-  "feedback/meta": "feedback-meta.mp4",
-  synthesis: "synthesis.mp4",
-  recall: "recall.mp4",
-  "role-play": "role-play.mp4",
-  other: "other.mp4",
-};
-
-// Task types that should NOT show the category staging video.
-const CATEGORY_ANIMATION_SKIP_TYPES = new Set([
-  TASK_TYPES.MOOD_CHECKIN,
-  TASK_TYPES.TASK_RUNNER,
-  TASK_TYPES.MULTI_PLAYER_FEEDBACK,
-]);
-
-function stableRand01(seedStr) {
-  // deterministic 0..1 for the same seedStr (fast hash)
-  let h = 2166136261;
-  for (let i = 0; i < seedStr.length; i++) {
-    h ^= seedStr.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  // unsigned → 0..1
-  return ((h >>> 0) % 1000000) / 1000000;
-}
-
-function pickCategoryVideoSrc(taskType, taskObj) {
-  const tt = normalizeTaskType(taskType || taskObj?.taskType || taskObj?.type);
-
-  if (CATEGORY_ANIMATION_SKIP_TYPES.has(tt)) return null;
-
-  // allow per-task override (exact filename in /animations/categories/)
-  const ui = taskObj?.ui || taskObj?.config?.ui || null;
-  const override = ui?.categoryVideo || ui?.categoryAnimation || ui?.categoryAnim || null;
-  if (override && typeof override === "string") {
-    return `/animations/categories/${override}`;
-  }
-
-  const meta = TASK_TYPE_META?.[tt] || null;
-  const cat = meta?.category || "other";
-  const base = CATEGORY_ANIMATION_BASE_FILES[cat] || CATEGORY_ANIMATION_BASE_FILES.other;
-  const alt = base.replace(/\.mp4$/i, "-alt.mp4");
-
-  // stable random per task instance (so it won't swap mid-render and cause a flash)
-  const seed = `${taskObj?._id || taskObj?.id || taskObj?.taskId || ""}|${tt}|${cat}`;
-  const useAlt = stableRand01(seed) >= 0.5;
-
-  return `/animations/categories/${useAlt ? alt : base}`;
-}
-
 
 
 // ---------------------------------------------------------------------
@@ -1565,59 +1503,6 @@ export default function TaskRunner({
     multiItems: hasMultiItems,
   });
 
-  // -------------------------------------------------------------------
-  // Category video: plays once for ~8s at task start, then collapses to 0 height (3s)
-  // -------------------------------------------------------------------
-  const categoryVideoSrc = useMemo(() => {
-    return pickCategoryVideoSrc(type, t);
-  }, [
-    type,
-    t?._id,
-    t?.id,
-    t?.taskId,
-    t?.taskType,
-    t?.type,
-    t?.config?.ui?.categoryVideo,
-    t?.ui?.categoryVideo,
-  ]);
-
-  const [stageCollapsed, setStageCollapsed] = useState(false);
-  const [stageDone, setStageDone] = useState(false);
-  const stageTimersRef = useRef({ t1: null, t2: null });
-
-  useEffect(() => {
-    // reset per-task
-    setStageCollapsed(false);
-    setStageDone(false);
-
-    if (stageTimersRef.current.t1) clearTimeout(stageTimersRef.current.t1);
-    if (stageTimersRef.current.t2) clearTimeout(stageTimersRef.current.t2);
-
-    if (!categoryVideoSrc) {
-      setStageDone(true);
-      return;
-    }
-
-    // Only show staging in normal play mode (not review).
-    if (mode !== "play") {
-      setStageDone(true);
-      return;
-    }
-
-    // Play for 8s, then collapse over 3s.
-    stageTimersRef.current.t1 = setTimeout(() => {
-      setStageCollapsed(true);
-      stageTimersRef.current.t2 = setTimeout(() => {
-        setStageDone(true);
-      }, 3000);
-    }, 8000);
-
-    return () => {
-      if (stageTimersRef.current.t1) clearTimeout(stageTimersRef.current.t1);
-      if (stageTimersRef.current.t2) clearTimeout(stageTimersRef.current.t2);
-    };
-  }, [categoryVideoSrc, mode]);
-
   if (meta && meta.implemented === false) {
     return (
       <div className="p-4 text-center text-red-600 space-y-2">
@@ -1702,55 +1587,7 @@ export default function TaskRunner({
           </div>
         )}
 
-  
-      {/* Category staging video (Tier 2 contextual moment) */}
-      {categoryVideoSrc && !stageDone && mode === "play" && (
-        <div
-          className="mx-auto mb-3"
-          style={{
-            width: "60vw",
-            maxWidth: 920,
-            minWidth: 280,
-            overflow: "hidden",
-            borderRadius: 18,
-            border: "1px solid rgba(15,23,42,0.10)",
-            boxShadow: "0 10px 30px rgba(2,6,23,0.08)",
-            background: "rgba(255,255,255,0.75)",
-            // Bottom-up collapse: reduce maxHeight so the bottom edge rises
-            maxHeight: stageCollapsed ? 0 : 340,
-            transition: "max-height 3s cubic-bezier(.2,.8,.2,1)",
-          }}
-        >
-          <video
-            key={categoryVideoSrc}
-            src={categoryVideoSrc}
-            autoPlay
-            muted
-            playsInline
-            preload="auto"
-            controls={false}
-            style={{
-              width: "100%",
-              height: 340,
-              display: "block",
-              objectFit: "cover",
-              // keep the top edge visually stable during collapse
-              transformOrigin: "top",
-            }}
-            onEnded={() => {
-              // if the asset is shorter than expected, still collapse + finish cleanly
-              setStageCollapsed(true);
-              window.setTimeout(() => setStageDone(true), 3000);
-            }}
-            onError={() => {
-              // if a specific category file is missing, fail open (no stage) rather than breaking task UI
-              setStageDone(true);
-            }}
-          />
-        </div>
-      )}
-
-      <div className="flex-1 min-h-0">{children}</div>
+        <div className="flex-1 min-h-0">{children}</div>
       </div>
     );
   };

@@ -7,7 +7,7 @@ import ProgressFillButton from "../components/ProgressFillButton";
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
 // Demo intro video (served from student-app/public)
-const DEMO_INTRO_SRC = "/demointro/demo-intro.mp4";
+const DEMO_INTRO_SOURCES = ["/demointro/demo-intro.mp4", "/demointro/demo-intro-alt.mp4"];
 
 // Demo pacing
 const DEFAULT_REVIEW_SECONDS = 15;
@@ -606,6 +606,12 @@ function ViewportCard({ children, padded = true }) {
 }
 
 export default function DemoPage() {
+
+  // Pick one of the two intro variants once per page load (stable; prevents mid-play “flash”)
+  const demoIntroSrc = useMemo(() => {
+    const pickAlt = Math.random() >= 0.5;
+    return DEMO_INTRO_SOURCES[pickAlt ? 1 : 0] || DEMO_INTRO_SOURCES[0];
+  }, []);
   const [phase, setPhase] = useState("mood"); // mood | runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -1611,7 +1617,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
 
             <div style={{ borderRadius: 16, overflow: "hidden", background: "#000" }}>
                 <video
-              src={DEMO_INTRO_SRC}
+              src={demoIntroSrc}
               muted
               autoPlay
               loop
