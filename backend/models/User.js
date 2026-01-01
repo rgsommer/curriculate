@@ -15,7 +15,7 @@ const UserSchema = new Schema(
     stripeCustomerId: { type: String, default: null },
     hasUsedTrial: { type: Boolean, default: false },
 
-    // Your subscription fields
+    // Subscription fields
     subscriptionTier: {
       type: String,
       enum: ["FREE", "PLUS", "PRO"],
@@ -25,6 +25,14 @@ const UserSchema = new Schema(
       type: Schema.Types.Mixed,
       default: {},
     },
+
+    // ✅ Admin & roles (server-truth)
+    isAdmin: { type: Boolean, default: false },
+    roles: { type: [String], default: [] },
+
+    // Optional compatibility fields (in case older code checks these)
+    role: { type: String, default: null },     // e.g. "admin"
+    userType: { type: String, default: null }, // e.g. "admin"
   },
   { timestamps: true }
 );

@@ -133,10 +133,10 @@
 /* === POSITIONING (keep/tune as needed) === */
 /* Marked positions from your S1–S8 overlay */
 .s1 { left: 81.31%; top: 51.13%; } /* right wall */
-.s2 { left: 69.03%; top: 54.85%; } /* back table area */
+.s2 { left: 69.03%; top: 24.85%; } /* back table area */
 .s3 { left: 43.15%; top: 64.64%; } /* center table */
 .s4 { left: 15.37%; top: 53.64%; } /* left table */
 .s5 { left: 66.44%; top: 51.13%; } /* near blue wall shapes */
-.s6 { left: 22.78%; top: 44.34%; } /* back-left table */
+.s6 { left: 22.78%; top: 34.34%; } /* back-left table */
 .s7 { left: 48.70%; top: 68.93%; } /* right-front table */
 .s8 { left: 80.94%; top: 70.10%; } /* bottom-right floor */
