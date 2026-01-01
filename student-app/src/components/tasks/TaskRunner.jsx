@@ -1416,50 +1416,245 @@ export default function TaskRunner({
     );
   }
 
-  // ✅ IMPORTANT: Height-aware wrapper so tasks can truly "fill the task card section"
-  const Wrap = ({ children }) => (
-    <div className="h-full flex flex-col">
-      {displayTitle && (
-        <div
-          className="task-title-fun text-center mb-1 shrink-0"
-          style={{
-            fontFamily:
-              '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-            fontSize: "1.4rem",
-            letterSpacing: "1px",
-          }}
-        >
-          {displayTitle}
-        </div>
-      )}
+  // --- Unified task theming (TaskFrame) ---------------------------------
 
-      {currentDisplay && (
-        <div
-          className="rounded-lg border px-3 py-2 text-sm shrink-0"
-          style={{
-            borderColor: CONTRAST_BORDER,
-            background: CONTRAST_BG_LIGHT,
-            color: CONTRAST_TEXT_DARK,
-          }}
-        >
-          <div className="font-semibold">Look at this station object:</div>
-          <div>{currentDisplay.name || currentDisplay.key}</div>
-          {currentDisplay.description && (
-            <div className="mt-1 text-xs" style={{ color: "#4b5563" }}>
-              {currentDisplay.description}
+const THEME_PRESETS = {
+  default: {
+    bg: "linear-gradient(135deg, #e0f2fe 0%, #ffffff 45%, #e0e7ff 100%)",
+    card: "rgba(255,255,255,0.92)",
+    border: "rgba(15,23,42,0.12)",
+    title: "#0f172a",
+    sub: "#475569",
+    accent: "#0ea5e9",
+    badgeBg: "rgba(14,165,233,0.12)",
+    badgeText: "#0369a1",
+  },
+
+  physical: {
+    bg: "linear-gradient(135deg, #fff7ed 0%, #ffffff 45%, #ecfccb 100%)",
+    card: "rgba(255,255,255,0.92)",
+    border: "rgba(15,23,42,0.12)",
+    title: "#0f172a",
+    sub: "#475569",
+    accent: "#16a34a",
+    badgeBg: "rgba(22,163,74,0.12)",
+    badgeText: "#166534",
+  },
+
+  battle: {
+    bg: "linear-gradient(135deg, #0b1220 0%, #111827 55%, #1e293b 100%)",
+    card: "rgba(255,255,255,0.08)",
+    border: "rgba(255,255,255,0.14)",
+    title: "#ffffff",
+    sub: "rgba(255,255,255,0.75)",
+    accent: "#a78bfa",
+    badgeBg: "rgba(167,139,250,0.18)",
+    badgeText: "#ede9fe",
+  },
+
+  notes: {
+    bg: "linear-gradient(135deg, #fffbeb 0%, #ffffff 50%, #fef3c7 100%)",
+    card: "rgba(255,255,255,0.94)",
+    border: "rgba(15,23,42,0.12)",
+    title: "#0f172a",
+    sub: "#475569",
+    accent: "#f59e0b",
+    badgeBg: "rgba(245,158,11,0.16)",
+    badgeText: "#92400e",
+  },
+};
+
+  function pickThemeForTask(type, t) {
+    // Allow JSON overrides from backend/AI
+    const ui = t?.ui || t?.config?.ui || null;
+    const presetId = ui?.themeId || ui?.preset;
+
+    if (presetId && THEME_PRESETS[presetId]) return { ...THEME_PRESETS[presetId], ...ui };
+
+    // Lightweight defaults by type
+    if (type === TASK_TYPES.BODY_BREAK || type === TASK_TYPES.MOTION_MISSION) {
+      return { ...THEME_PRESETS.physical, ...ui };
+    }
+    if (type === TASK_TYPES.BRAINSTORM_BATTLE) return { ...THEME_PRESETS.battle, ...ui };
+    if (type === TASK_TYPES.BRAIN_SPARK_NOTES) return { ...THEME_PRESETS.notes, ...ui };
+
+    return { ...THEME_PRESETS.default, ...ui };
+  }
+
+  function secondsToClock(s) {
+    if (!Number.isFinite(s)) return null;
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, "0")}`;
+  }
+
+  // ✅ Unified TaskFrame wrapper (every task inherits the same “beautiful shell”)
+  const TaskFrame = ({ children }) => {
+    const theme = pickThemeForTask(type, t);
+
+    const hideTitle =
+      !!t?.ui?.hideTitle || !!t?.config?.ui?.hideTitle || !!t?.config?.hideTaskRunnerTitle;
+
+    const badge =
+      t?.ui?.badge ||
+      t?.config?.ui?.badge ||
+      (theme === THEME_PRESETS.physical ? "PHYSICAL" : null);
+
+    const showTimer =
+      Number.isFinite(t?.timeLimitSeconds) && t.timeLimitSeconds > 0 && !isReview;
+
+    const timerText = showTimer ? secondsToClock(t.timeLimitSeconds) : null;
+
+    return (
+      <div
+        className="h-full flex flex-col"
+        style={{
+          borderRadius: 18,
+          padding: 12,
+          background: theme.bg,
+        }}
+      >
+        {/* Header row */}
+        {!hideTitle && (
+          <div
+            className="shrink-0"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              {/* Badge */}
+              {(badge || t?.ui?.icon) && (
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: `1px solid ${theme.border}`,
+                    background: theme.badgeBg,
+                    color: theme.badgeText,
+                    fontWeight: 900,
+                    fontSize: 12,
+                    letterSpacing: 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {t?.ui?.icon ? <span style={{ fontSize: 16 }}>{t.ui.icon}</span> : null}
+                  <span>{String(badge || "").toUpperCase()}</span>
+                </div>
+              )}
+
+              {/* Title */}
+              {displayTitle && (
+                <div
+                  className="task-title-fun"
+                  style={{
+                    fontFamily:
+                      '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                    fontSize: "1.3rem",
+                    letterSpacing: "0.5px",
+                    color: theme.title,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={displayTitle}
+                >
+                  {displayTitle}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
 
-      <div className="flex-1 min-h-0">{children}</div>
-    </div>
-  );
+            {/* Right-side pills */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              {timerText && (
+                <div
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: `1px solid ${theme.border}`,
+                    background: theme.card,
+                    color: theme.title,
+                    fontWeight: 900,
+                    fontSize: 12,
+                  }}
+                  title="Time limit"
+                >
+                  ⏱ {timerText}
+                </div>
+              )}
+
+              {isReview && (
+                <div
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: `1px solid ${theme.border}`,
+                    background: theme.card,
+                    color: theme.title,
+                    fontWeight: 900,
+                    fontSize: 12,
+                  }}
+                >
+                  REVIEW
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Optional display block (kept, but styled to match frame) */}
+        {currentDisplay && (
+          <div
+            className="shrink-0"
+            style={{
+              borderRadius: 16,
+              border: `1px solid ${theme.border}`,
+              background: theme.card,
+              padding: 10,
+              marginBottom: 10,
+              color: theme.title,
+            }}
+          >
+            <div style={{ fontWeight: 900, marginBottom: 4 }}>Station object</div>
+            <div style={{ fontWeight: 800 }}>{currentDisplay.name || currentDisplay.key}</div>
+            {currentDisplay.description && (
+              <div style={{ marginTop: 4, fontSize: 12, color: theme.sub }}>
+                {currentDisplay.description}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Inner card (the big win) */}
+        <div
+          className="flex-1 min-h-0"
+          style={{
+            borderRadius: 18,
+            border: `1px solid ${theme.border}`,
+            background: theme.card,
+            boxShadow: "0 20px 60px rgba(0,0,0,0.10)",
+            overflow: "hidden",
+          }}
+        >
+          <div className="h-full w-full" style={{ padding: 12 }}>
+            {children}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
     return (
-      <Wrap>
+      <TaskFrame>
         <div className="h-full overflow-auto">
           <MultiPartTask
             mode={multiMode}
@@ -1471,7 +1666,7 @@ export default function TaskRunner({
             disabled={effectiveDisabled || isReview}
           />
         </div>
-      </Wrap>
+      </TaskFrame>
     );
   }
 
@@ -2139,5 +2334,5 @@ case "multi_player_feedback":
       );
   }
 
-  return <Wrap>{content}</Wrap>;
+  return <TaskFrame>{content}</TaskFrame>;
 }
