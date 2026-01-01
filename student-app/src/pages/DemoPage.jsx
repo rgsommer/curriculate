@@ -1449,7 +1449,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   <strong>Try Treasure Runner</strong> (for fun) → <strong>Pick a task type</strong> →
                   <strong> Try as many as you like</strong>
                 </div>
-      )}
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
