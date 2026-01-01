@@ -583,13 +583,27 @@ async function fetchJsonSafe(url, options = {}) {
   return json;
 }
 
-const DemoInset = ({ children }) => (
-  <div className="w-full flex justify-center my-6">
-    <div className="w-[80%] max-w-5xl bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
-      {children}
+
+// Viewport-wide card: 80% of viewport width (centered), with rounded corners.
+function ViewportCard({ children, padded = true }) {
+  return (
+    <div style={{ width: "100%", display: "flex", justifyContent: "center", marginTop: 16 }}>
+      <div
+        style={{
+          width: "80vw",
+          maxWidth: 1200,
+          borderRadius: 18,
+          overflow: "hidden",
+          border: "1px solid rgba(15, 23, 42, 0.10)",
+          background: "rgba(255,255,255,0.85)",
+          boxShadow: "0 18px 60px rgba(15, 23, 42, 0.10)",
+        }}
+      >
+        <div style={{ padding: padded ? 16 : 0 }}>{children}</div>
+      </div>
     </div>
-  </div>
-);
+  );
+}
 
 export default function DemoPage() {
   const [phase, setPhase] = useState("mood"); // mood | runner | task
@@ -800,10 +814,10 @@ export default function DemoPage() {
   // Load once
   useEffect(() => {
     loadDemoTaskset()
-      .then(() => showToast("Demo pool loaded", true))
+      .then(() => showToast("🍏", true))
       .catch((e) => {
         console.warn("[DemoPage] load demo pool failed:", e);
-        showToast(e?.message || "Load demo pool failed", false);
+        showToast(e?.message || "🍎", false);
       });
 
     return () => {
@@ -848,6 +862,7 @@ export default function DemoPage() {
       // Normal demo list: AI+generator eligible, plus a few demo-only/manual picks
       .filter(([, meta]) => (meta.aiEligible === true && meta.generatorEligible === true) || meta.demoSelectable === true)
       .map(([type]) => type)
+      .filter((t) => t !== TASK_TYPES.TASK_RUNNER)
       .sort((a, b) => String(a).localeCompare(String(b)));
   }, []);
 
@@ -857,6 +872,7 @@ export default function DemoPage() {
       .filter(([, meta]) => meta && meta.implemented !== false)
       .filter(([, meta]) => meta.aiEligible === true && meta.generatorEligible === true)
       .map(([type]) => type)
+      .filter((t) => t !== TASK_TYPES.TASK_RUNNER)
       .sort((a, b) => String(a).localeCompare(String(b)));
   }, []);
 
@@ -1057,18 +1073,6 @@ export default function DemoPage() {
             ],
           },
         },
-      };
-    }
-
-
-    // Task Runner (Demo intro video): rendered directly by DemoPage (not TaskRunner component)
-    if (type === TASK_TYPES.TASK_RUNNER) {
-      return {
-        taskType: TASK_TYPES.TASK_RUNNER,
-        title: "Task Runner (Intro)",
-        prompt: "A short walkthrough clip showing the Task Runner flow.",
-        timeLimitSeconds: 0,
-        points: 0,
       };
     }
 
@@ -1445,8 +1449,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   <strong>Try Treasure Runner</strong> (for fun) → <strong>Pick a task type</strong> →
                   <strong> Try as many as you like</strong>
                 </div>
-              </div>
-            )}
+        </ViewportCard>
+      )}
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
@@ -1559,59 +1563,49 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
 
       {/* Phase: Mood */}
       {phase === "mood" && (
-        <DemoInset>
-          <div style={{ marginTop: 16 }}>
-            <TaskRunner
-              task={moodTask}
-              onSubmit={() => setPhase("runner")}
-              disabled={false}
-              mode="play"
-              roomCode={"DEMO"}
-              playerTeam={{ id: "team-you", teamName: "Your Team" }}
-              memberNames={["Demo"]}
-              socket={demoSocket}
-            />
-          </div>
-        </DemoInset>
+        <ViewportCard padded={false}>
+          <TaskRunner
+            task={moodTask}
+            onSubmit={() => setPhase("runner")}
+            disabled={false}
+            mode="play"
+            roomCode={"DEMO"}
+            playerTeam={{ id: "team-you", teamName: "Your Team" }}
+            memberNames={["Demo"]}
+            socket={demoSocket}
+          />
+        </div>
       )}
 
       {/* Phase: Runner + Picker */}
       {phase === "runner" && (
         <div style={{ marginTop: 16 }}>
           {/* Demo intro (replaces interactive Treasure Runner on DemoPage) */}
-          <DemoInset>
+          
+          <ViewportCard>
             <div>
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>
-                  Task Runner (demo intro)
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.78, marginTop: 2 }}>
-                  Short walkthrough clip (muted autoplay; tap for sound).
-                </div>
+<div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
+              <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Task Runner (demo intro)</div>
+              <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
+                Short walkthrough clip (muted autoplay; tap for sound).
               </div>
-
-              <video
-                src={DEMO_INTRO_SRC}
-                autoPlay
-                muted
-                loop
-                playsInline
-                controls={false}
-                className="w-full h-auto rounded-xl"
-                style={{ background: "#000" }}
-              />
             </div>
-          </DemoInset>
 
-          <div
-            style={{
-              marginTop: 16,
-              borderRadius: 16,
-              padding: 16,
-              border: "1px solid rgba(15,23,42,0.10)",
-              background: "rgba(255,255,255,0.70)",
-            }}
-          >
+            <div style={{ borderRadius: 16, overflow: "hidden", background: "#000" }}>
+                <video
+              src={DEMO_INTRO_SRC}
+              muted
+              autoPlay
+              loop
+              playsInline
+              controls
+              style={{ width: "100%", display: "block", background: "#000" }}
+             style={{ width: "100%", height: "auto", display: "block", background: "#000" }} />
+              </div>
+            </div>
+          </ViewportCard>
+          <ViewportCard>
+            <div>
             <div style={{ fontWeight: 900, marginBottom: 10 }}>Choose a task to demo</div>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -1675,7 +1669,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                     borderRadius: 999,
                     border: "1px solid rgba(15,23,42,0.18)",
                     background: "rgba(255,255,255,0.10)",
-                    color: "#fff",
+                    color: "#0f172a",
                     fontWeight: 900,
                     cursor: generating ? "progress" : "pointer",
                     minWidth: 240,
@@ -1696,7 +1690,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               Objective tasks score locally. AI-scored tasks call the backend scoring route for{" "}
               <strong>your team</strong>. Bots simulate AI scores.
             </div>
-          </div>
+            </div>
+          </ViewportCard>
         </div>
       )}
 
@@ -1729,7 +1724,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                       maxWidth: 420,
                       borderRadius: 14,
                       background: "#0b1220",
-                      color: "#fff",
+                      color: "#0f172a",
                       border: "1px solid rgba(255,255,255,0.15)",
                       padding: 14,
                       position: "relative",
@@ -1771,50 +1766,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
           )}
 
           <div style={{ opacity: taskLocked ? 0.6 : 1 }}>
-            {(String(currentTask?.taskType || currentTask?.type) === String(TASK_TYPES.TASK_RUNNER)) ? (
-              <DemoInset>
-                <div>
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>
-                      {currentTask?.title || "Task Runner (Intro)"}
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.78, marginTop: 2 }}>
-                      {currentTask?.prompt || "Watch the intro clip, then try a task type."}
-                    </div>
-                  </div>
-
-                  <video
-                    src={DEMO_INTRO_SRC}
-                    muted
-                    autoPlay
-                    loop
-                    playsInline
-                    controls={false}
-                    className="w-full h-auto rounded-xl"
-                    style={{ background: "#000" }}
-                  />
-
-                  <div style={{ marginTop: 12 }}>
-                    <button
-                      type="button"
-                      onClick={goBackToRunner}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 999,
-                        border: "1px solid rgba(15,23,42,0.18)",
-                        background: "rgba(255,255,255,0.85)",
-                        color: "#0f172a",
-                        fontWeight: 900,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-              </DemoInset>
-            ) : (
-              <TaskRunner
+            <TaskRunner
                 task={currentTask}
                 onSubmit={handleSubmit}
                 disabled={taskLocked}
@@ -1825,7 +1777,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 memberNames={["Demo"]}
                 socket={demoSocket}
               />
-            )}
 
             {/* Demo helper: simulate a station scan (no camera in demo) */}
             {((currentTask?.taskType || currentTask?.type) === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) && (

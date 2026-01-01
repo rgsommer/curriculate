@@ -288,9 +288,82 @@
     );
   }
 
+
+  function MobileNav() {
+    const [open, setOpen] = React.useState(false);
+
+    const links = [
+      { href: "/how-it-works", label: "How it works" },
+      { href: "/features", label: "Features" },
+      { href: "/pricing", label: "Pricing" },
+      { href: "/compare", label: "Compare" },
+      { href: "/reports", label: "Reports" },
+      { href: "/station-posters", label: "Station Posters" },
+      { href: "/faq", label: "FAQ" },
+      { href: "/contact", label: "Contact" },
+      { href: "/signup", label: "Sign up" },
+      { href: "/dashboard", label: "Login" },
+    ];
+
+    return (
+      <>
+        {/* Mobile hamburger (shows on small screens only) */}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="sm:hidden fixed top-4 right-4 z-50 rounded-2xl border border-gray-200 bg-white/90 backdrop-blur px-4 py-3 shadow-xl font-black text-gray-900"
+          aria-label="Open menu"
+        >
+          ☰
+        </button>
+
+        {open && (
+          <div className="sm:hidden fixed inset-0 z-50">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              aria-label="Close menu backdrop"
+              onClick={() => setOpen(false)}
+            />
+            <div className="absolute top-4 left-4 right-4 rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b bg-gray-50">
+                <div className="font-black text-gray-900">Menu</div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-2xl border border-gray-200 bg-white px-3 py-2 font-black text-gray-900"
+                  aria-label="Close menu"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 grid grid-cols-1 gap-2">
+                {links.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    onClick={() => setOpen(false)}
+                    className="rounded-2xl border border-gray-200 bg-white px-4 py-3 font-extrabold text-gray-900 hover:bg-gray-50"
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+
   export default function Home() {
+    const [stationMode, setStationMode] = React.useState<"single" | "multi">("single");
+
     return (
       <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        <MobileNav />
         {/* Hero */}
         <section className="relative overflow-hidden px-6 py-12 sm:py-20">
           <div className="mx-auto max-w-7xl">
@@ -361,24 +434,56 @@
                     <div className="rounded-3xl border border-gray-200 bg-white shadow-xl overflow-hidden">
                       <div className="px-4 py-3 border-b bg-gray-50">
                         <div className="text-sm font-extrabold text-gray-900">Station Preview</div>
-                        <div className="text-xs text-gray-600 font-medium">Hover to switch views</div>
+                        <div className="text-xs text-gray-600 font-medium">Hover (desktop) / Tap (mobile) to switch</div>
                       </div>
 
                       <div className="p-3">
                         <div className="mx-auto w-full max-w-sm lg:max-w-none">
-                          <HoverVideo
-                            primarySrc="/videos/station-rotation-single-room.mp4"
-                            hoverSrc="/videos/station-rotation-multi-room.mp4"
-                            primaryPoster="/images/posters/station-rotation-single-room.png"
-                            hoverPoster="/images/posters/station-rotation-multi-room.png"
-                            label="Station Rotation Preview"
-                          />
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            aria-label="Toggle station preview"
+                            onClick={() =>
+                              setStationMode((m) => (m === "single" ? "multi" : "single"))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setStationMode((m) => (m === "single" ? "multi" : "single"));
+                              }
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <HoverVideo
+                              primarySrc={
+                                stationMode === "single"
+                                  ? "/videos/station-rotation-single-room.mp4"
+                                  : "/videos/station-rotation-multi-room.mp4"
+                              }
+                              hoverSrc={
+                                stationMode === "single"
+                                  ? "/videos/station-rotation-multi-room.mp4"
+                                  : "/videos/station-rotation-single-room.mp4"
+                              }
+                              primaryPoster={
+                                stationMode === "single"
+                                  ? "/images/posters/station-rotation-single-room.png"
+                                  : "/images/posters/station-rotation-multi-room.png"
+                              }
+                              hoverPoster={
+                                stationMode === "single"
+                                  ? "/images/posters/station-rotation-multi-room.png"
+                                  : "/images/posters/station-rotation-single-room.png"
+                              }
+                              label="Station Rotation Preview"
+                            />
+                          </div>
                         </div>
                       </div>
 
                       <div className="px-4 pb-4">
                         <p className="text-xs text-gray-500 font-medium">
-                          Desktop: hover to compare. Mobile: tap to play.
+                          Desktop: hover to compare. Mobile: tap to switch views (tap again to switch back).
                         </p>
                       </div>
                     </div>
