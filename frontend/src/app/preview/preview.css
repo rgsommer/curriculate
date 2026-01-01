@@ -70,13 +70,13 @@
 
 /* non-active stations are subdued */
 .station.inactive {
-  opacity: 0.25;
+  opacity: 0.35;
   filter: saturate(0.8) blur(0px);
 }
 
 /* active station enlarges automatically */
 .station.active {
-  transform: scale(3);
+  transform: scale(2.5);
   z-index: 10;
   opacity: 1;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
