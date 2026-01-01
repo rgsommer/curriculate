@@ -1,144 +1,231 @@
 // student-app/src/components/tasks/taskStyles.js
-// Centralized, kid-friendly “Curriculate” task styling tokens + small helpers.
-// Goal: keep TaskRunner lean and let tasks share a consistent look without a UI framework.
+import React from "react";
 
-export const COLORS = {
-  ink: "#0f172a",
-  inkSoft: "#334155",
-  muted: "#64748b",
-  border: "rgba(15, 23, 42, 0.10)",
-  borderStrong: "rgba(15, 23, 42, 0.14)",
-  cardBg: "rgba(255,255,255,0.86)",
-  cardBgStrong: "rgba(255,255,255,0.92)",
-  wash: "rgba(255,255,255,0.60)",
-  accentA: "rgba(34,197,94,0.70)",   // green
-  accentB: "rgba(14,165,233,0.70)",  // sky
-  danger: "rgba(239,68,68,0.18)",
-  success: "rgba(34,197,94,0.18)",
-};
+/**
+ * Curriculate Task UI System
+ * - Keep TaskRunner thin.
+ * - Give each task a consistent, beautiful frame (cards, pills, buttons).
+ *
+ * Usage:
+ *   import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextInput } from "../taskStyles";
+ */
 
-export const RADII = {
-  sm: 10,
-  md: 14,
-  lg: 18,
-  pill: 999,
-};
-
-export const SHADOWS = {
-  soft: "0 14px 44px rgba(15, 23, 42, 0.10)",
-  pop: "0 18px 55px rgba(15, 23, 42, 0.16)",
-};
+export function cx(...parts) {
+  return parts.filter(Boolean).join(" ");
+}
 
 export const UI = {
-  card: (overrides = {}) => ({
-    borderRadius: RADII.lg,
-    border: `1px solid ${COLORS.border}`,
-    background: COLORS.cardBg,
-    boxShadow: SHADOWS.soft,
-    ...overrides,
-  }),
-
-  header: (overrides = {}) => ({
-    fontWeight: 950,
-    fontSize: 22,
-    letterSpacing: 0.2,
-    color: COLORS.ink,
-    margin: 0,
-    ...overrides,
-  }),
-
-  subheader: (overrides = {}) => ({
-    fontWeight: 800,
-    color: COLORS.inkSoft,
-    opacity: 0.92,
-    marginTop: 6,
-    lineHeight: 1.25,
-    ...overrides,
-  }),
-
-  sectionLabel: (overrides = {}) => ({
-    fontWeight: 950,
-    fontSize: 13,
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    color: COLORS.muted,
-    ...overrides,
-  }),
-
-  pill: (overrides = {}) => ({
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: RADII.pill,
-    border: `1px solid ${COLORS.border}`,
-    background: COLORS.wash,
-    color: COLORS.ink,
-    fontWeight: 900,
-    fontSize: 12,
-    ...overrides,
-  }),
-
-  button: ({ kind = "primary", disabled = false } = {}, overrides = {}) => {
-    const base = {
-      borderRadius: RADII.pill,
-      padding: "10px 14px",
-      fontWeight: 950,
-      cursor: disabled ? "not-allowed" : "pointer",
-      border: `1px solid ${COLORS.borderStrong}`,
-      userSelect: "none",
-      transition: "transform 120ms ease, filter 120ms ease, opacity 120ms ease",
-      opacity: disabled ? 0.6 : 1,
-    };
-
-    if (kind === "ghost") {
-      return {
-        ...base,
-        background: "rgba(255,255,255,0.65)",
-        color: COLORS.ink,
-        ...overrides,
-      };
-    }
-
-    if (kind === "danger") {
-      return {
-        ...base,
-        background: "rgba(239,68,68,0.18)",
-        color: COLORS.ink,
-        ...overrides,
-      };
-    }
-
-    // primary
-    return {
-      ...base,
-      background: disabled
-        ? "rgba(255,255,255,0.55)"
-        : `linear-gradient(135deg, ${COLORS.accentA}, ${COLORS.accentB})`,
-      color: COLORS.ink,
-      ...overrides,
-    };
+  // surfaces
+  shell: {
+    height: "100%",
+    padding: 16,
+    display: "grid",
+    placeItems: "center",
   },
-
-  input: (overrides = {}) => ({
-    width: "100%",
-    padding: "12px 12px",
-    borderRadius: RADII.md,
-    border: `1px solid ${COLORS.borderStrong}`,
-    background: "rgba(255,255,255,0.92)",
-    color: COLORS.ink,
-    fontWeight: 800,
-    outline: "none",
-    ...overrides,
-  }),
+  // theme tokens
+  theme: {
+    light: {
+      pageBg:
+        "radial-gradient(1000px 520px at 18% 0%, rgba(56,189,248,0.18), transparent 60%), radial-gradient(900px 480px at 86% 20%, rgba(99,102,241,0.18), transparent 60%), linear-gradient(135deg, rgba(248,250,252,1), rgba(255,255,255,1))",
+      cardBg:
+        "linear-gradient(135deg, rgba(255,255,255,0.96), rgba(255,255,255,0.82))",
+      border: "1px solid rgba(15,23,42,0.12)",
+      shadow: "0 26px 80px rgba(15,23,42,0.14)",
+      text: "#0f172a",
+      subtext: "rgba(15,23,42,0.72)",
+      topBorder: "1px solid rgba(15,23,42,0.08)",
+      pillBg: "rgba(255,255,255,0.80)",
+      pillBorder: "1px solid rgba(15,23,42,0.10)",
+      inputBg: "rgba(255,255,255,0.92)",
+      inputBorder: "1px solid rgba(15,23,42,0.14)",
+    },
+    dark: {
+      pageBg:
+        "radial-gradient(1000px 520px at 18% 0%, rgba(56,189,248,0.18), transparent 60%), radial-gradient(900px 480px at 86% 20%, rgba(99,102,241,0.18), transparent 60%), linear-gradient(135deg, rgba(15,23,42,1), rgba(2,6,23,1))",
+      cardBg: "rgba(255,255,255,0.06)",
+      border: "1px solid rgba(255,255,255,0.12)",
+      shadow: "0 26px 80px rgba(0,0,0,0.35)",
+      text: "#ffffff",
+      subtext: "rgba(226,232,240,0.80)",
+      topBorder: "1px solid rgba(255,255,255,0.10)",
+      pillBg: "rgba(255,255,255,0.10)",
+      pillBorder: "1px solid rgba(255,255,255,0.16)",
+      inputBg: "rgba(2,6,23,0.55)",
+      inputBorder: "1px solid rgba(255,255,255,0.12)",
+    },
+  },
 };
 
-// Small utility for task titles / labels (no dashes, proper case)
-export function toProperCaseLabel(raw) {
-  const words = String(raw || "")
-    .replace(/[_-]+/g, " ")
-    .trim()
-    .split(/\s+/g)
-    .filter(Boolean);
-  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+export function TaskCardFrame({
+  theme = "light",
+  title,
+  subtitle,
+  badge,
+  right,
+  children,
+  maxWidth = 1200,
+  showBackground = true,
+  style,
+}) {
+  const t = UI.theme[theme] || UI.theme.light;
+
+  return (
+    <div
+      style={{
+        ...UI.shell,
+        background: showBackground ? t.pageBg : undefined,
+      }}
+    >
+      <div
+        style={{
+          width: `min(${maxWidth}px, 94vw)`,
+          borderRadius: 28,
+          border: t.border,
+          background: t.cardBg,
+          boxShadow: t.shadow,
+          overflow: "hidden",
+          color: t.text,
+          ...style,
+        }}
+      >
+        {(title || subtitle || badge || right) && (
+          <div
+            style={{
+              padding: 16,
+              borderBottom: t.topBorder,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              backdropFilter: theme === "dark" ? "blur(10px)" : undefined,
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {badge ? <Pill theme={theme}>{badge}</Pill> : null}
+                {subtitle ? <Pill theme={theme} subtle>{subtitle}</Pill> : null}
+              </div>
+              {title ? (
+                <div
+                  style={{
+                    fontSize: "clamp(22px, 2.2vw, 34px)",
+                    fontWeight: 1100,
+                    letterSpacing: -0.2,
+                    lineHeight: 1.08,
+                  }}
+                >
+                  {title}
+                </div>
+              ) : null}
+            </div>
+
+            {right ? <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{right}</div> : null}
+          </div>
+        )}
+
+        <div style={{ padding: 16 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function Pill({ children, subtle = false, theme = "light", style }) {
+  const t = UI.theme[theme] || UI.theme.light;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 12px",
+        borderRadius: 999,
+        border: t.pillBorder,
+        background: subtle ? (theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.62)") : t.pillBg,
+        fontWeight: 950,
+        fontSize: 12,
+        letterSpacing: subtle ? 0 : 0.6,
+        textTransform: subtle ? "none" : "uppercase",
+        color: subtle ? t.subtext : t.text,
+        ...style,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function PrimaryButton({ children, disabled, onClick, theme = "light", style, type = "button" }) {
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        borderRadius: 18,
+        padding: "14px 16px",
+        border: "none",
+        background:
+          "linear-gradient(135deg, rgba(99,102,241,0.96), rgba(56,189,248,0.76))",
+        color: "#0b1220",
+        fontWeight: 1100,
+        cursor: disabled ? "default" : "pointer",
+        boxShadow: "0 18px 50px rgba(15,23,42,0.18)",
+        opacity: disabled ? 0.6 : 1,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function GhostButton({ children, disabled, onClick, theme = "light", style, type = "button" }) {
+  const t = UI.theme[theme] || UI.theme.light;
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        borderRadius: 18,
+        padding: "12px 14px",
+        border: t.inputBorder,
+        background: theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.70)",
+        color: theme === "dark" ? "rgba(255,255,255,0.92)" : "rgba(15,23,42,0.92)",
+        fontWeight: 1000,
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, theme = "light", style, ...rest }) {
+  const t = UI.theme[theme] || UI.theme.light;
+  return (
+    <input
+      value={value}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      placeholder={placeholder}
+      disabled={disabled}
+      style={{
+        height: 52,
+        borderRadius: 18,
+        padding: "0 14px",
+        border: t.inputBorder,
+        background: t.inputBg,
+        color: theme === "dark" ? "#fff" : "#0f172a",
+        fontWeight: 850,
+        outline: "none",
+        width: "100%",
+        ...style,
+      }}
+      {...rest}
+    />
+  );
 }

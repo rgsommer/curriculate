@@ -1,59 +1,47 @@
 // student-app/src/components/tasks/types/BrainstormBattleTask.jsx
-import React, { useState, useEffect, useMemo } from "react";
-import { UI } from "../taskStyles.js";
+import React, { useEffect, useMemo, useState } from "react";
+import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextInput } from "../taskStyles";
 
 export default function BrainstormBattleTask({ task, onSubmit, disabled, socket }) {
   const [ideaInput, setIdeaInput] = useState("");
   const [myIdeas, setMyIdeas] = useState([]);
   const [teamsSummary, setTeamsSummary] = useState({});
   const [timeLeft, setTimeLeft] = useState(
-    typeof task?.timeLimitSeconds === "number" && task.timeLimitSeconds > 0
-      ? task.timeLimitSeconds
-      : 90
+    typeof task?.timeLimitSeconds === "number" && task.timeLimitSeconds > 0 ? task.timeLimitSeconds : 90
   );
   const [submitted, setSubmitted] = useState(false);
-
-  // Tiny “pop” feedback when adding ideas
   const [justAdded, setJustAdded] = useState(false);
 
-  // Basic timer (client-side only)
+  // Timer
   useEffect(() => {
     if (disabled || submitted) return;
     if (timeLeft <= 0) {
       handleSubmit();
       return;
     }
-    const timer = setInterval(() => {
-      setTimeLeft((t) => (t > 0 ? t - 1 : 0));
-    }, 1000);
+    const timer = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft, disabled, submitted]);
 
-  // Listen for brainstorm scoreboard updates from the server
+  // Scoreboard updates
   useEffect(() => {
     if (!socket) return;
-
     const handleUpdate = (payload) => {
       if (!payload || !payload.teams) return;
       setTeamsSummary(payload.teams);
     };
-
     socket.on("brainstorm:update", handleUpdate);
     return () => socket.off("brainstorm:update", handleUpdate);
   }, [socket]);
 
-  const cleanIdea = (text) =>
-    String(text || "")
-      .trim()
-      .replace(/\s+/g, " ");
+  const cleanIdea = (text) => String(text || "").trim().replace(/\s+/g, " ");
 
   const addIdea = () => {
     if (disabled || submitted) return;
     const idea = cleanIdea(ideaInput);
     if (!idea) return;
 
-    // Local de-duplication
     if (myIdeas.some((i) => i.toLowerCase() === idea.toLowerCase())) {
       setIdeaInput("");
       return;
@@ -66,27 +54,20 @@ export default function BrainstormBattleTask({ task, onSubmit, disabled, socket 
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), 450);
 
-    if (socket) {
-      socket.emit("brainstorm:idea", {
-        ideaText: idea,
-        taskIndex: typeof task?.index === "number" ? task.index : undefined,
-      });
-    }
+    socket?.emit?.("brainstorm:idea", {
+      ideaText: idea,
+      taskIndex: typeof task?.index === "number" ? task.index : undefined,
+    });
   };
 
   const handleSubmit = () => {
     if (submitted) return;
     setSubmitted(true);
-    if (typeof onSubmit === "function") {
-      onSubmit({ ideas: myIdeas });
-    }
+    onSubmit?.({ ideas: myIdeas });
   };
 
-  const totalTeams = Object.keys(teamsSummary || {}).length;
-
   const prompt = String(task?.prompt || "").trim();
-  const promptHint =
-    prompt || "In groups, brainstorm as many inventions as you can—wild ideas welcome!";
+  const promptHint = prompt || "Brainstorm as many inventions as you can—wild ideas welcome!";
 
   const teamsList = useMemo(() => {
     const arr = Object.values(teamsSummary || {});
@@ -95,266 +76,287 @@ export default function BrainstormBattleTask({ task, onSubmit, disabled, socket 
   }, [teamsSummary]);
 
   const leaderCount = teamsList?.[0]?.ideaCount || 0;
+  const totalTeams = Object.keys(teamsSummary || {}).length;
 
-  const timePct = useMemo(() => {
-    const total =
-      typeof task?.timeLimitSeconds === "number" && task.timeLimitSeconds > 0
-        ? task.timeLimitSeconds
-        : 90;
-    return Math.max(0, Math.min(1, timeLeft / total));
-  }, [timeLeft, task?.timeLimitSeconds]);
+  const totalSeconds =
+    typeof task?.timeLimitSeconds === "number" && task.timeLimitSeconds > 0 ? task.timeLimitSeconds : 90;
 
+  const timePct = Math.max(0, Math.min(1, timeLeft / totalSeconds));
   const urgency = timeLeft <= 15;
 
+  const right = (
+    <>
+      <Pill theme="dark">⏱️ {timeLeft}s</Pill>
+      <Pill theme="dark">💡 Your ideas {myIdeas.length}</Pill>
+      {submitted ? <Pill theme="dark">✅ Submitted</Pill> : null}
+    </>
+  );
+
+  const chips = ["At school", "At home", "For sports", "For pets", "For backpacks"];
+
   return (
-    <div className="flex flex-col h-full w-full items-center justify-start p-4 sm:p-6 md:p-8 bg-gradient-to-br from-sky-900 via-indigo-900 to-slate-900 text-white">
+    <TaskCardFrame theme="dark" badge="⚔️ Brainstorm Battle" title="Launch ideas one at a time" subtitle={promptHint} right={right}>
       <style>{`
-        @keyframes bb-wiggle { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-2deg)} 75%{transform:rotate(2deg)} }
-        @keyframes bb-pop { 0%{transform:scale(.98);opacity:.6} 100%{transform:scale(1);opacity:1} }
-        @keyframes bb-pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
+        @keyframes bbPop { 0%{transform:scale(.98);opacity:.75} 100%{transform:scale(1);opacity:1} }
+        @keyframes bbPulse { 0%,100%{opacity:1} 50%{opacity:.65} }
       `}</style>
 
-      {/* Top “arena” strip */}
-      <div className="w-full max-w-6xl mb-6">
-        <div className="rounded-3xl border border-white/10 bg-white/10 backdrop-blur-md shadow-2xl px-4 sm:px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-4 py-2 rounded-full border bg-white text-slate-900 font-black tracking-widest text-xs">
-                ⚔️ BRAINSTORM BATTLE
-              </span>
-              <span className="px-3 py-2 rounded-full border border-white/20 bg-slate-950/40 text-sm font-bold text-slate-100/90">
-                Team mode • Fast ideas • No judging
-              </span>
-              {submitted && (
-                <span className="px-3 py-2 rounded-full border border-emerald-400/40 bg-emerald-500/20 text-sm font-extrabold text-emerald-200">
-                  Submitted ✅
-                </span>
-              )}
+      <div style={{ display: "grid", gridTemplateColumns: "1.25fr 0.9fr", gap: 14 }}>
+        {/* Left panel */}
+        <div
+          style={{
+            borderRadius: 26,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(2,6,23,0.30)",
+            boxShadow: "0 18px 60px rgba(0,0,0,0.35)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: 14,
+              borderBottom: "1px solid rgba(255,255,255,0.10)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: 10,
+              background: "rgba(255,255,255,0.04)",
+            }}
+          >
+            <div style={{ fontWeight: 1100, fontSize: 16 }}>🚀 Launch</div>
+            <div style={{ fontWeight: 850, fontSize: 12, color: "rgba(226,232,240,0.70)" }}>Short + clear wins</div>
+          </div>
+
+          <div style={{ padding: 14 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 280px" }}>
+                <TextInput
+                  theme="dark"
+                  value={ideaInput}
+                  onChange={(e) => setIdeaInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addIdea();
+                    }
+                  }}
+                  disabled={disabled || submitted}
+                  placeholder="Invent something that solves a real problem…"
+                />
+              </div>
+
+              <PrimaryButton disabled={disabled || submitted} onClick={addIdea} style={{ height: 52 }}>
+                Launch 🚀
+              </PrimaryButton>
             </div>
 
-            <div className="text-sm sm:text-base text-slate-100/85">
-              {promptHint}
-            </div>
-
-            {/* Quick hint chips (pure UI nudge) */}
-            <div className="flex flex-wrap gap-2">
-              {["At school", "At home", "For sports", "For pets", "For backpacks"].map((chip) => (
-                <button
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {chips.map((chip) => (
+                <GhostButton
                   key={chip}
-                  type="button"
+                  theme="dark"
                   disabled={disabled || submitted}
                   onClick={() => {
-                    // Optional helper: pre-fill input with a nudge
                     if (!ideaInput) setIdeaInput(`${chip}: `);
                   }}
-                  className="px-3 py-1.5 rounded-full bg-white/10 border border-white/10 text-xs font-bold hover:bg-white/15 disabled:opacity-50"
+                  style={{ padding: "10px 12px", borderRadius: 999, fontSize: 12 }}
                 >
                   {chip}
-                </button>
+                </GhostButton>
               ))}
             </div>
-          </div>
 
-          {/* Timer + count */}
-          <div className="flex items-center gap-5">
-            {/* Timer ring */}
-            <div className="relative w-16 h-16 sm:w-20 sm:h-20">
-              <div className="absolute inset-0 rounded-full bg-slate-950/40 border border-white/10" />
-              <div
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: `conic-gradient(${urgency ? "#fb7185" : "#34d399"} ${Math.round(
-                    timePct * 360
-                  )}deg, rgba(255,255,255,0.12) 0deg)`,
-                }}
-              />
-              <div className="absolute inset-2 rounded-full bg-slate-950/70 border border-white/10 flex items-center justify-center">
+            <div
+              style={{
+                marginTop: 12,
+                borderRadius: 20,
+                border: "1px solid rgba(255,255,255,0.10)",
+                background: "rgba(2,6,23,0.35)",
+                padding: 12,
+                minHeight: 220,
+                maxHeight: 360,
+                overflow: "auto",
+              }}
+            >
+              {myIdeas.length === 0 ? (
                 <div
-                  className={
-                    "text-xl sm:text-2xl font-black " +
-                    (urgency ? "text-rose-300" : "text-emerald-200")
-                  }
-                  style={urgency ? { animation: "bb-pulse 0.9s ease-in-out infinite" } : undefined}
+                  style={{
+                    borderRadius: 18,
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "rgba(255,255,255,0.06)",
+                    padding: 14,
+                    color: "rgba(226,232,240,0.80)",
+                    fontWeight: 850,
+                  }}
                 >
-                  {timeLeft}
+                  <div style={{ fontWeight: 1100, marginBottom: 6 }}>No ideas yet—go for it!</div>
+                  <div style={{ opacity: 0.85 }}>First ideas are often the best. Start simple, then get wild.</div>
                 </div>
-              </div>
-              <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-widest text-slate-200/70">
-                seconds
-              </div>
-            </div>
+              ) : (
+                <div>
+                  {myIdeas.map((idea, idx) => (
+                    <span
+                      key={idx}
+                      style={{
+                        display: "inline-flex",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: "10px 12px",
+                        borderRadius: 999,
+                        background: "rgba(252,211,77,1)",
+                        color: "#0b1220",
+                        fontWeight: 1100,
+                        margin: "0 8px 8px 0",
+                        boxShadow: "0 14px 40px rgba(252,211,77,0.16)",
+                        animation: justAdded && idx === myIdeas.length - 1 ? "bbPop 180ms ease-out" : undefined,
+                      }}
+                      title={idea}
+                    >
+                      <span
+                        style={{
+                          maxWidth: 420,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          display: "inline-block",
+                        }}
+                      >
+                        {idea}
+                      </span>
 
-            {/* Idea count */}
-            <div className="text-center">
-              <div className="text-[10px] uppercase tracking-widest text-slate-200/70">
-                Your ideas
-              </div>
-              <div
-                className="text-4xl sm:text-5xl font-black text-amber-300"
-                style={justAdded ? { animation: "bb-pop 220ms ease-out" } : undefined}
-              >
-                {myIdeas.length}
-              </div>
-              {justAdded && (
-                <div className="text-xs font-extrabold text-amber-200" style={{ animation: "bb-pop 220ms ease-out" }}>
-                  +1 💥
+                      {!submitted && !disabled && (
+                        <button
+                          type="button"
+                          onClick={() => setMyIdeas((prev) => prev.filter((_, i) => i !== idx))}
+                          style={{
+                            marginLeft: 4,
+                            border: "none",
+                            background: "transparent",
+                            cursor: "pointer",
+                            fontWeight: 1100,
+                            color: "rgba(2,6,23,0.7)",
+                          }}
+                          aria-label="Remove idea"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Main layout */}
-      <div className="w-full max-w-6xl flex-1 flex flex-col lg:flex-row gap-6">
-        {/* Left: input + my ideas */}
-        <div className="flex-1 flex flex-col rounded-3xl bg-white/10 backdrop-blur-md p-4 sm:p-6 shadow-2xl border border-white/10">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="text-sm sm:text-base font-bold text-slate-100/90">
-              🚀 Launch ideas one at a time
-            </div>
-            <div className="text-xs text-slate-200/70">
-              Tip: short + clear wins
+        {/* Right panel */}
+        <div
+          style={{
+            borderRadius: 26,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(2,6,23,0.30)",
+            boxShadow: "0 18px 60px rgba(0,0,0,0.35)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: 14,
+              borderBottom: "1px solid rgba(255,255,255,0.10)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: 10,
+              background: "rgba(255,255,255,0.04)",
+            }}
+          >
+            <div style={{ fontWeight: 1100, fontSize: 16 }}>🏁 Battle board</div>
+            <div style={{ fontWeight: 850, fontSize: 12, color: "rgba(226,232,240,0.70)" }}>
+              {totalTeams} team{totalTeams === 1 ? "" : "s"} • live
             </div>
           </div>
 
-          {/* Input row */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
-            <input
-              type="text"
-              value={ideaInput}
-              onChange={(e) => setIdeaInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addIdea();
-                }
-              }}
-              disabled={disabled || submitted}
-              placeholder="Invent something that solves a real problem…"
-              className="flex-1 rounded-2xl bg-slate-950/40 border border-white/10 px-4 py-3 text-base sm:text-lg outline-none focus:ring-2 focus:ring-emerald-400/70 focus:border-emerald-400/60 disabled:opacity-60"
-            />
-            <button
-              type="button"
-              onClick={addIdea}
-              disabled={disabled || submitted}
-              className="inline-flex items-center justify-center rounded-2xl px-6 py-3 text-base sm:text-lg font-black bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed shadow-xl shadow-emerald-500/25 transition"
-            >
-              Launch 🚀
-            </button>
-          </div>
-
-          {/* My ideas “sticker board” */}
-          <div className="flex-1 overflow-y-auto rounded-2xl bg-slate-950/35 border border-white/10 p-3 sm:p-4">
-            {myIdeas.length === 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="font-extrabold text-slate-100 mb-1">
-                  No ideas yet—go for it!
-                </div>
-                <div className="text-sm text-slate-200/70">
-                  First ideas are often the best. Start simple, then get wild.
-                </div>
+          <div style={{ padding: 14 }}>
+            {totalTeams === 0 ? (
+              <div
+                style={{
+                  borderRadius: 18,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.06)",
+                  padding: 14,
+                  color: "rgba(226,232,240,0.80)",
+                  fontWeight: 850,
+                }}
+              >
+                When teams start adding ideas, their counts will appear here.
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {myIdeas.map((idea, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-300 text-slate-900 text-xs sm:text-sm font-black shadow-lg shadow-amber-300/20"
-                    style={{ animation: "bb-pop 180ms ease-out" }}
-                    title={idea}
-                  >
-                    <span className="max-w-[16rem] truncate">{idea}</span>
-                    {!submitted && !disabled && (
-                      <button
-                        type="button"
-                        onClick={() => setMyIdeas((prev) => prev.filter((_, i) => i !== idx))}
-                        className="text-slate-800 hover:text-rose-600 text-xs"
-                        aria-label="Remove idea"
+              <div style={{ display: "grid", gap: 10, maxHeight: 420, overflow: "auto" }}>
+                {teamsList.map((t, i) => {
+                  const count = t?.ideaCount || 0;
+                  const pct = leaderCount > 0 ? Math.max(0.08, count / leaderCount) : 0.12;
+                  const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "🏁";
+
+                  return (
+                    <div
+                      key={t.teamId}
+                      style={{
+                        borderRadius: 20,
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        background: "rgba(255,255,255,0.06)",
+                        padding: 12,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                        <div style={{ display: "flex", gap: 10, alignItems: "center", minWidth: 0 }}>
+                          <span style={{ fontSize: 18 }} aria-hidden="true">
+                            {medal}
+                          </span>
+                          <div style={{ fontWeight: 1100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {t.teamName}
+                          </div>
+                        </div>
+                        <div style={{ fontWeight: 1200, fontVariantNumeric: "tabular-nums", color: "rgba(52,211,153,1)" }}>
+                          {count}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          height: 10,
+                          borderRadius: 999,
+                          background: "rgba(2,6,23,0.45)",
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          overflow: "hidden",
+                        }}
                       >
-                        ✕
-                      </button>
-                    )}
-                  </span>
-                ))}
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${Math.round(pct * 100)}%`,
+                            background:
+                              "linear-gradient(90deg, rgba(52,211,153,0.95), rgba(96,165,250,0.85), rgba(167,139,250,0.85))",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Right: battle board */}
-        <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 rounded-3xl bg-slate-950/45 backdrop-blur-md p-4 sm:p-5 shadow-2xl border border-sky-400/30">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg sm:text-xl font-black flex items-center gap-2">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-lime-400" style={{ animation: "bb-pulse 1s ease-in-out infinite" }} />
-              Battle board
-            </h2>
-            <span className="text-xs uppercase tracking-widest text-slate-300/80">
-              {totalTeams} team{totalTeams === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          {totalTeams === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200/75">
-              When teams start adding ideas, their counts will appear here.
+            <div style={{ marginTop: 12, fontSize: 12, color: "rgba(226,232,240,0.70)", fontWeight: 900 }}>
+              Live updates: this board refreshes whenever any team adds an idea.
             </div>
-          ) : (
-            <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
-              {teamsList.map((t, i) => {
-                const count = t?.ideaCount || 0;
-                const pct = leaderCount > 0 ? Math.max(0.08, count / leaderCount) : 0.12;
-                const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "🏁";
 
-                return (
-                  <div key={t.teamId} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex items-center gap-2">
-                        <span className="text-lg">{medal}</span>
-                        <span className="font-extrabold truncate">{t.teamName}</span>
-                      </div>
-                      <div className="text-emerald-200 font-black text-xl">
-                        {count}
-                      </div>
-                    </div>
-
-                    <div className="mt-2 h-3 rounded-full bg-slate-950/40 border border-white/10 overflow-hidden">
-                      <div
-                        className="h-full"
-                        style={{
-                          width: `${Math.round(pct * 100)}%`,
-                          background: "linear-gradient(90deg, #34d399, #60a5fa, #a78bfa)",
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+              <PrimaryButton disabled={disabled || submitted} onClick={handleSubmit}>
+                {submitted ? "Submitted! ✅" : "Submit Ideas 🏁"}
+              </PrimaryButton>
             </div>
-          )}
-
-          <div className="mt-4 text-xs text-slate-300/80">
-            Live updates: this board refreshes whenever any team adds an idea.
           </div>
         </div>
       </div>
-
-      {/* Submit */}
-      <div className="w-full max-w-6xl mt-6 flex justify-center">
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={disabled || submitted}
-          className={
-            "inline-flex items-center justify-center rounded-[1.5rem] px-8 py-4 text-lg sm:text-xl font-black shadow-2xl transition " +
-            (submitted
-              ? "bg-emerald-500/30 text-emerald-100 border border-emerald-400/30"
-              : "bg-indigo-500 hover:bg-indigo-400 text-white shadow-indigo-500/30") +
-            " disabled:opacity-60 disabled:cursor-not-allowed"
-          }
-        >
-          {submitted ? "Submitted! ✅" : "Submit Ideas 🏁"}
-        </button>
-      </div>
-    </div>
+    </TaskCardFrame>
   );
 }
