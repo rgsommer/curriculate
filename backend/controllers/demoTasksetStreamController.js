@@ -3,6 +3,22 @@ import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 import { normalizeSelectedType, retryMustHave, regenerateSingleTask } from "./aiTasksetController.js";
 import fs from "fs/promises";
 import path from "path";
+import mongoose from "mongoose";
+
+function getDemoTasksetModel() {
+  if (mongoose.models.DemoTaskset) return mongoose.models.DemoTaskset;
+
+  const DemoTasksetSchema = new mongoose.Schema(
+    {
+      key: { type: String, unique: true, index: true },
+      taskset: { type: mongoose.Schema.Types.Mixed, default: null },
+      signature: { type: String, default: "" },
+    },
+    { timestamps: true }
+  );
+
+  return mongoose.model("DemoTaskset", DemoTasksetSchema);
+}
 
 /**
  * SSE endpoint: generates a "demo" taskset by stepping through each eligible task type
@@ -350,6 +366,25 @@ sseWrite(res, "task", { index: i, total, taskType, task: fixedTask });
       skipped,
       types
     });
+
+    // ✅ Persist demo taskset to Mongo so /api/demo/taskset shows the new one
+    try {
+      const DemoTaskset = getDemoTasksetModel();
+
+      // lightweight signature (enough to force refresh logic if you use it)
+      const signature = `stream:${new Date().toISOString()}:types=${types.length}`;
+
+      await DemoTaskset.findOneAndUpdate(
+        { key: "default" },
+        { $set: { taskset: taskset.taskset, signature } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } catch (e) {
+      console.error("[demo] failed saving demo taskset:", e);
+      // keep streaming UX: don't fail the whole stream, but surface it to the client
+      sseWrite(res, "error", { ok: false, error: "Generated demo tasks, but failed to save to database." });
+    }
+    
     sseWrite(res, "done", { ok: true, taskset, summary: { total, generated: generated.length, skipped: skipped.length }, logFile });
 // (removed) pre-tasks log
 // (removed) pre-tasks count log

@@ -4,25 +4,31 @@ const API_BASE =
 export async function apiFetch(path, options = {}) {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
 
-  const token =
-    localStorage.getItem("curriculate_token") ||
-    localStorage.getItem("token") ||
-    "";
+  // ✅ attach token if present (supports both keys you showed)
+  let token = "";
+  try {
+    token =
+      localStorage.getItem("curriculate_token") ||
+      localStorage.getItem("token") ||
+      "";
+  } catch {}
 
   const headers = {
+    "Content-Type": "application/json",
     ...(options.headers || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
-  // Only set JSON header when sending a body and caller didn't override it
-  const hasBody = options.body != null;
-  if (hasBody && !("Content-Type" in headers)) {
-    headers["Content-Type"] = "application/json";
+  if (token && !headers.Authorization) {
+    headers.Authorization = `Bearer ${token}`;
   }
 
-  return fetch(url, {
+  const res = await fetch(url, {
     credentials: "include",
-    ...options,
     headers,
+    ...options,
   });
+
+  ...
+  return res.json();
 }
+

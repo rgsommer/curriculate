@@ -930,9 +930,8 @@ function AdminPage({ isAdmin = false }) {
     setDemoErr("");
     setDemoLoading(true);
     try {
-      const res = await apiFetch("/api/demo/taskset");
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
+      const data = await apiFetch("/api/demo/taskset"); // ✅ already JSON
+      if (!data?.ok) {
         setDemoErr(data?.error || "Could not load demo taskset.");
         return;
       }
@@ -942,14 +941,18 @@ function AdminPage({ isAdmin = false }) {
           ? {
               id: ts._id || null,
               title: ts.title || ts.name || "Demo Taskset",
-              count: Array.isArray(ts.tasks) ? ts.tasks.length : Array.isArray(ts.items) ? ts.items.length : 0,
+              count: Array.isArray(ts.tasks)
+                ? ts.tasks.length
+                : Array.isArray(ts.items)
+                ? ts.items.length
+                : 0,
               updatedAt: ts.updatedAt || ts.modifiedAt || ts.createdAt || null,
             }
           : null
       );
     } catch (e) {
       console.warn("[AdminPage] load demo taskset failed:", e);
-      setDemoErr("Network error");
+      setDemoErr(e?.message || "Network error");
     } finally {
       setDemoLoading(false);
     }
@@ -1261,8 +1264,10 @@ function AdminPage({ isAdmin = false }) {
           <div style={{ minWidth: 260, flex: 1 }}>
             <label style={{ ...ui.labelLight }}>Demo admin key</label>
             <input
+              type="password"
               value={demoKey}
               onChange={(e) => setDemoKey(e.target.value)}
+              autoComplete="off"
               placeholder="(x-demo-admin-key header)"
               style={ui.inputLight}
             />
