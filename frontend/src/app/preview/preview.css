@@ -59,7 +59,7 @@
 /* station base */
 .station {
   position: absolute;
-  width: 10%;
+  width: 20%;
   aspect-ratio: 4 / 5;
   border-radius: 6px;
   opacity: 0.95;
@@ -76,7 +76,7 @@
 
 /* active station enlarges automatically */
 .station.active {
-  transform: scale(2);
+  transform: scale(3);
   z-index: 10;
   opacity: 1;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
@@ -131,11 +131,11 @@
 
 /* === POSITIONING (keep/tune as needed) === */
 /* Marked positions from your S1–S8 overlay */
-.s1 { left: 94.31%; top: 51.13%; } /* right wall */
+.s1 { left: 91.31%; top: 51.13%; } /* right wall */
 .s2 { left: 69.03%; top: 54.85%; } /* back table area */
 .s3 { left: 43.15%; top: 64.64%; } /* center table */
 .s4 { left: 15.37%; top: 53.64%; } /* left table */
 .s5 { left: 66.44%; top: 51.13%; } /* near blue wall shapes */
 .s6 { left: 22.78%; top: 44.34%; } /* back-left table */
 .s7 { left: 48.70%; top: 68.93%; } /* right-front table */
-.s8 { left: 93.94%; top: 80.10%; } /* bottom-right floor */
+.s8 { left: 90.94%; top: 80.10%; } /* bottom-right floor */
