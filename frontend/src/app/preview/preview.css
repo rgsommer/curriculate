@@ -109,7 +109,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -22px;            /* pushes caption BELOW the video */
+  bottom: -32px;            /* pushes caption BELOW the video */
 
   padding: 4px 6px;
   font-size: 8px;
@@ -122,10 +122,6 @@
 
   pointer-events: none;
   box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-}
-
-.stationWrap.active .stationCaption {
-  background: rgba(0,0,0,0.7);
 }
 
 /* Inactive stations */
