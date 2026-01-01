@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/BrainstormBattleTask.jsx
 import React, { useState, useEffect, useMemo } from "react";
+import { UI } from "../taskStyles.js";
 
 export default function BrainstormBattleTask({ task, onSubmit, disabled, socket }) {
   const [ideaInput, setIdeaInput] = useState("");

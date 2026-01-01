@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/BrainSparkNotesTask.jsx
 import React, { useEffect, useMemo } from "react";
+import { UI } from "../taskStyles.js";
 
 export default function BrainSparkNotesTask({ task, onSubmit, disabled }) {
   const bullets = Array.isArray(task?.bullets) ? task.bullets : [];
@@ -52,8 +53,8 @@ export default function BrainSparkNotesTask({ task, onSubmit, disabled }) {
         }
       `}</style>
 
-      <div className="relative w-full max-w-5xl">
-        {/* Soft “desk” glow */}
+      <div className="relative w-full max-w-5xl" style={UI.card({ padding: 0, overflow: "hidden" })}>
+{/* Soft “desk” glow */}
         <div className="absolute -inset-4 rounded-[2.25rem] bg-gradient-to-r from-amber-200/40 via-yellow-200/40 to-orange-200/40 blur-2xl" />
 
         {/* Notebook */}

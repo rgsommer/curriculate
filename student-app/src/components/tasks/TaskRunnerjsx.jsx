@@ -66,7 +66,7 @@ const CATEGORY_ANIMATION_FILES = {
   ordering: "ordering.mp4",
   creative: "creative.mp4",
   movement: "movement.mp4",
-  competitive: "competitive.mp4",
+  competitive: "competetive.mp4",
   deduction: "deduction.mp4",
   collaboration: "collaboration.mp4",
   "feedback/meta": "feedback-meta.mp4",
@@ -76,7 +76,23 @@ const CATEGORY_ANIMATION_FILES = {
   other: "other.mp4",
 };
 
+
+// Task types that should NOT show category staging video
+const CATEGORY_ANIMATION_SKIP_TYPES = new Set(
+  [
+    TASK_TYPES.MOOD_CHECKIN,
+    TASK_TYPES.TREASURE_RUNNER,
+    TASK_TYPES.MULTI_PLAYER_FEEDBACK,
+  ]
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase())
+);
+
 function pickCategoryAnimation(taskType, taskObj) {
+  // Some tasks intentionally avoid the category video (mood, treasure runner, multiplayer feedback).
+  const tt = String(taskType || taskObj?.taskType || taskObj?.type || "").toLowerCase();
+  if (CATEGORY_ANIMATION_SKIP_TYPES.has(tt)) return null;
+
   const ui = taskObj?.ui || taskObj?.config?.ui || null;
   const override = ui?.categoryAnimation || ui?.categoryAnim || null; // allow per-task override
   if (override && typeof override === "string") return override;
@@ -1336,8 +1352,8 @@ export default function TaskRunner({
 
     setStagingPhase("show");
 
-    const holdMs = Number.isFinite(ui?.stagingHoldMs) ? ui.stagingHoldMs : 650;
-    const collapseMs = Number.isFinite(ui?.stagingCollapseMs) ? ui.stagingCollapseMs : 1000;
+    const holdMs = Number.isFinite(ui?.stagingHoldMs) ? ui.stagingHoldMs : 8000;
+    const collapseMs = Number.isFinite(ui?.stagingCollapseMs) ? ui.stagingCollapseMs : 2000;
 
     stagingTimersRef.current.push(setTimeout(() => setStagingPhase("hide"), Math.max(0, holdMs)));
     stagingTimersRef.current.push(
@@ -1513,62 +1529,55 @@ export default function TaskRunner({
           <div
             style={{
               overflow: "hidden",
-              maxHeight: stagingPhase === "hide" ? 0 : 230,
+              maxHeight: stagingPhase === "hide" ? 0 : 520,
               opacity: stagingPhase === "hide" ? 0 : 1,
-              transition: "max-height 1000ms ease, opacity 700ms ease",
+              transition: "max-height 2000ms ease, opacity 900ms ease",
             }}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr minmax(220px, 25vw)",
-                gap: 12,
-                alignItems: "center",
-                padding: "10px 12px 14px 12px",
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 900,
-                    letterSpacing: 0.2,
-                    color: "#0f172a",
-                  }}
-                >
-                  {stagingText || "Get ready…"}
-                </div>
-                <div style={{ marginTop: 6, color: "#475569", fontWeight: 700 }}>
-                  {stagingSubtext || "Eyes up — you’ve got this."}
-                </div>
+            <div style={{ padding: "10px 12px 14px 12px" }}>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 900,
+                  letterSpacing: 0.2,
+                  color: "#0f172a",
+                }}
+              >
+                {stagingText || "Get ready…"}
+              </div>
+              <div style={{ marginTop: 6, color: "#475569", fontWeight: 700 }}>
+                {stagingSubtext || "Eyes up — you’ve got this."}
               </div>
 
               <div
                 style={{
-                  borderRadius: 16,
+                  width: "60vw",
+                  maxWidth: 900,
+                  margin: "12px auto 0",
+                  borderRadius: 18,
                   overflow: "hidden",
-                  boxShadow: "0 18px 45px rgba(15,23,42,0.18)",
+                  boxShadow: "0 18px 55px rgba(15,23,42,0.18)",
                   border: "1px solid rgba(148,163,184,0.55)",
                   background: "rgba(0,0,0,0.06)",
                   transform:
                     stagingPhase === "hide"
-                      ? "translateX(18%) translateY(-8%) scale(0.46)"
-                      : "translateX(0) translateY(0) scale(1)",
-                  transformOrigin: "top right",
-                  transition: "transform 1000ms cubic-bezier(.2,.9,.2,1)",
+                      ? "translateY(-10px) scale(0.92)"
+                      : "translateY(0) scale(1)",
+                  transformOrigin: "top center",
+                  transition: "transform 700ms cubic-bezier(.2,.9,.2,1)",
                 }}
               >
                 <video
                   key={animFile}
                   src={`/animations/categories/${animFile}`}
                   autoPlay
-                  loop
+                  loop={false}
                   muted
                   playsInline
                   preload="auto"
                   style={{
                     width: "100%",
-                    height: 160,
+                    height: 320,
                     objectFit: "cover",
                     display: "block",
                   }}

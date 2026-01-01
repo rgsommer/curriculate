@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/BrainBlitzTask.jsx
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import VictoryScreen from "../../VictoryScreen";
+import { UI } from "../taskStyles.js";
 
 export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
   const [isListening, setIsListening] = useState(false);
@@ -190,8 +191,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
   if (!clues.length) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-2xl rounded-3xl border bg-white p-6 shadow">
-          <div className="text-sm font-bold text-gray-600 mb-2">Brain Blitz</div>
+        <div className="w-full max-w-3xl" style={UI.card({ padding: 18 })}>
+<div className="text-sm font-bold text-gray-600 mb-2">Brain Blitz</div>
           <div className="text-2xl font-extrabold mb-2">No clues provided</div>
           <div className="text-gray-700 opacity-80">
             This round didn’t include any clues.

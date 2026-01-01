@@ -855,6 +855,24 @@ export default function DemoPage() {
     []
   );
 
+
+  function prettyTaskTypeLabel(type) {
+    const meta = TASK_TYPE_META?.[type] || {};
+    const label = meta.label || meta.name || "";
+    if (label) return String(label);
+
+    const raw = String(type || "");
+    // Replace separators with spaces and convert to Proper Case
+    const words = raw
+      .replace(/[_-]+/g, " ")
+      .trim()
+      .split(/\s+/g)
+      .filter(Boolean);
+    return words
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
+
   const selectableTaskTypes = useMemo(() => {
     const entries = Object.entries(TASK_TYPE_META || {});
     return entries
@@ -1635,8 +1653,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                     value={t}
                     style={{ color: "#000", fontSize: 16 }}
                   >
-                    {t}
-                  </option>
+                    {prettyTaskTypeLabel(t)}</option>
                 ))}
               </select>
 
