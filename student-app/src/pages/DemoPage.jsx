@@ -7,7 +7,7 @@ import ProgressFillButton from "../components/ProgressFillButton";
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
 // Demo intro video (served from student-app/public)
-const DEMO_INTRO_SRC = "/demointro/demo-intro.mp4";
+const DEMO_INTRO_SRC = "../demointro/demo-intro.mp4";
 
 // Demo pacing
 const DEFAULT_REVIEW_SECONDS = 15;
@@ -1585,7 +1585,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
           <ViewportCard>
             <div>
 <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
-              <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Welcome: Demo introduction)</div>
+              <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Welcome: Demo introduction</div>
               <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
                 Short walkthrough clip (muted autoplay; tap for sound).
               </div>
