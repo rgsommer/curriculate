@@ -1585,15 +1585,19 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               </div>
             </div>
 
-            <video
-              src={DEMO_INTRO_SRC}
-              muted
-              autoPlay
-              loop
-              playsInline
-              controls
-              style={{ width: "100%", display: "block", background: "#000" }}
-            />
+            <div className="w-full flex justify-center my-6">
+              <div className="w-[80%] max-w-5xl bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
+                <video
+                  src={DEMO_INTRO_SRC}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  controls={false}
+                  className="w-full h-auto rounded-2xl"
+                />
+              </div>
+            </div>
           </div>
 
           <div
