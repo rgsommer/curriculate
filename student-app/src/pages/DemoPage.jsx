@@ -583,6 +583,14 @@ async function fetchJsonSafe(url, options = {}) {
   return json;
 }
 
+const DemoInset = ({ children }) => (
+  <div className="w-full flex justify-center my-6">
+    <div className="w-[80%] max-w-5xl bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+      {children}
+    </div>
+  </div>
+);
+
 export default function DemoPage() {
   const [phase, setPhase] = useState("mood"); // mood | runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
@@ -1466,7 +1474,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 cursor: "pointer",
                 border: "1px solid rgba(15,23,42,0.12)",
                 background: "rgba(34,197,94,0.22)",
-                color: "#fff",
+                color: "#0f172a",
                 fontWeight: 900,
                 textDecoration: "none",
               }}
@@ -1551,54 +1559,49 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
 
       {/* Phase: Mood */}
       {phase === "mood" && (
-        <div style={{ marginTop: 16 }}>
-          <TaskRunner
-            task={moodTask}
-            onSubmit={() => setPhase("runner")}
-            disabled={false}
-            mode="play"
-            roomCode={"DEMO"}
-            playerTeam={{ id: "team-you", teamName: "Your Team" }}
-            memberNames={["Demo"]}
-            socket={demoSocket}
-          />
-        </div>
+        <DemoInset>
+          <div style={{ marginTop: 16 }}>
+            <TaskRunner
+              task={moodTask}
+              onSubmit={() => setPhase("runner")}
+              disabled={false}
+              mode="play"
+              roomCode={"DEMO"}
+              playerTeam={{ id: "team-you", teamName: "Your Team" }}
+              memberNames={["Demo"]}
+              socket={demoSocket}
+            />
+          </div>
+        </DemoInset>
       )}
 
       {/* Phase: Runner + Picker */}
       {phase === "runner" && (
         <div style={{ marginTop: 16 }}>
           {/* Demo intro (replaces interactive Treasure Runner on DemoPage) */}
-          <div
-            style={{
-              borderRadius: 18,
-              overflow: "hidden",
-              border: "1px solid rgba(15, 23, 42, 0.10)",
-              background: "rgba(255,255,255,0.85)",
-              boxShadow: "0 18px 60px rgba(15, 23, 42, 0.10)",
-            }}
-          >
-            <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
-              <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Task Runner (demo intro)</div>
-              <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
-                Short walkthrough clip (muted autoplay; tap for sound).
+          <DemoInset>
+            <div>
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>
+                  Task Runner (demo intro)
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.78, marginTop: 2 }}>
+                  Short walkthrough clip (muted autoplay; tap for sound).
+                </div>
               </div>
-            </div>
 
-            <div className="w-full flex justify-center my-6">
-              <div className="w-[80%] max-w-5xl bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-200">
-                <video
-                  src={DEMO_INTRO_SRC}
-                  autoPlay
-                  muted
-                  loop
-                  playsInline
-                  controls={false}
-                  className="w-full h-auto rounded-2xl"
-                />
-              </div>
+              <video
+                src={DEMO_INTRO_SRC}
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls={false}
+                className="w-full h-auto rounded-xl"
+                style={{ background: "#000" }}
+              />
             </div>
-          </div>
+          </DemoInset>
 
           <div
             style={{
@@ -1769,52 +1772,47 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
 
           <div style={{ opacity: taskLocked ? 0.6 : 1 }}>
             {(String(currentTask?.taskType || currentTask?.type) === String(TASK_TYPES.TASK_RUNNER)) ? (
-              <div
-                style={{
-                  borderRadius: 18,
-                  overflow: "hidden",
-                  border: "1px solid rgba(15, 23, 42, 0.10)",
-                  background: "rgba(255,255,255,0.90)",
-                  boxShadow: "0 18px 60px rgba(15, 23, 42, 0.10)",
-                }}
-              >
-                <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
-                  <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>
-                    {currentTask?.title || "Task Runner (Intro)"}
+              <DemoInset>
+                <div>
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>
+                      {currentTask?.title || "Task Runner (Intro)"}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.78, marginTop: 2 }}>
+                      {currentTask?.prompt || "Watch the intro clip, then try a task type."}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
-                    {currentTask?.prompt || "Watch the intro clip, then try a task type."}
+
+                  <video
+                    src={DEMO_INTRO_SRC}
+                    muted
+                    autoPlay
+                    loop
+                    playsInline
+                    controls={false}
+                    className="w-full h-auto rounded-xl"
+                    style={{ background: "#000" }}
+                  />
+
+                  <div style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      onClick={goBackToRunner}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(15,23,42,0.18)",
+                        background: "rgba(255,255,255,0.85)",
+                        color: "#0f172a",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Done
+                    </button>
                   </div>
                 </div>
-
-                <video
-                  src={DEMO_INTRO_SRC}
-                  muted
-                  autoPlay
-                  loop
-                  playsInline
-                  controls
-                  style={{ width: "100%", display: "block", background: "#000" }}
-                />
-
-                <div style={{ padding: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={goBackToRunner}
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(15, 23, 42, 0.18)",
-                      background: "rgba(15, 23, 42, 0.04)",
-                      color: "#fff",
-                      fontWeight: 900,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
+              </DemoInset>
             ) : (
               <TaskRunner
                 task={currentTask}
@@ -1864,7 +1862,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                         borderRadius: 12,
                         border: "1px solid rgba(15,23,42,0.12)",
                         background: "rgba(255,255,255,0.10)",
-                        color: "#fff",
+                        color: "#0f172a",
                         fontWeight: 900,
                         cursor: "pointer",
                       }}
@@ -1890,7 +1888,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 borderRadius: 999,
                 border: "1px solid rgba(15,23,42,0.18)",
                 background: "rgba(255,255,255,0.70)",
-                color: "#fff",
+                color: "#0f172a",
                 fontWeight: 900,
                 cursor: "pointer",
               }}
