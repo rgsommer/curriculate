@@ -55,6 +55,37 @@ const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
 const CONTRAST_ACCENT = "#0ea5e9";
 
+
+
+// ---------------------------------------------------------------------
+// Category animations (looping video) - place files in:
+// student-app/public/animations/categories/<filename>
+// ---------------------------------------------------------------------
+const CATEGORY_ANIMATION_FILES = {
+  question: "question.mp4",
+  ordering: "ordering.mp4",
+  creative: "creative.mp4",
+  movement: "movement.mp4",
+  competitive: "competitive.mp4",
+  deduction: "deduction.mp4",
+  collaboration: "collaboration.mp4",
+  "feedback/meta": "feedback-meta.mp4",
+  synthesis: "synthesis.mp4",
+  recall: "recall.mp4",
+  "role-play": "role-play.mp4",
+  other: "other.mp4",
+};
+
+function pickCategoryAnimation(taskType, taskObj) {
+  const ui = taskObj?.ui || taskObj?.config?.ui || null;
+  const override = ui?.categoryAnimation || ui?.categoryAnim || null; // allow per-task override
+  if (override && typeof override === "string") return override;
+
+  const meta = TASK_TYPE_META?.[taskType] || null;
+  const cat = meta?.category || "other";
+  return CATEGORY_ANIMATION_FILES[cat] || CATEGORY_ANIMATION_FILES.other;
+}
+
 function seededShuffle(array, seedStr) {
   const copy = [...array];
 
@@ -1279,6 +1310,59 @@ export default function TaskRunner({
   const t = task || null;
   const type = t ? normalizeTaskType(t.taskType || t.type) : null;
 
+  // Tier 2 — Contextual moments (staging interstitial)
+  // Shows the category animation briefly when a new task loads, then collapses (1s) so the task UI slides up.
+  const taskKey =
+    t?.id || t?._id || t?.taskId || `${type || "task"}:${t?.title || ""}:${t?.prompt || ""}`;
+
+  const [stagingPhase, setStagingPhase] = useState("show"); // show | hide | gone
+  const stagingTimersRef = useRef([]);
+
+  useEffect(() => {
+    stagingTimersRef.current.forEach((id) => clearTimeout(id));
+    stagingTimersRef.current = [];
+
+    const ui = t?.ui || t?.config?.ui || {};
+    if (ui?.disableStagingVideo) {
+      setStagingPhase("gone");
+      return;
+    }
+
+    // If the backend ever sets a persistent wait state (e.g., waiting for teacher), keep staging visible.
+    if (ui?.stagingMode === "wait") {
+      setStagingPhase("show");
+      return;
+    }
+
+    setStagingPhase("show");
+
+    const holdMs = Number.isFinite(ui?.stagingHoldMs) ? ui.stagingHoldMs : 650;
+    const collapseMs = Number.isFinite(ui?.stagingCollapseMs) ? ui.stagingCollapseMs : 1000;
+
+    stagingTimersRef.current.push(setTimeout(() => setStagingPhase("hide"), Math.max(0, holdMs)));
+    stagingTimersRef.current.push(
+      setTimeout(() => setStagingPhase("gone"), Math.max(0, holdMs + collapseMs))
+    );
+
+    return () => {
+      stagingTimersRef.current.forEach((id) => clearTimeout(id));
+      stagingTimersRef.current = [];
+    };
+  }, [taskKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stagingText = (() => {
+    const ui = t?.ui || t?.config?.ui || {};
+    if (ui?.stagingText) return ui.stagingText;
+    if (ui?.stagingMode === "wait") return "Waiting for teacher to launch…";
+    if (ui?.stagingMode === "teams") return "Teams getting ready…";
+    if (ui?.stagingMode === "next") return "Next task loading…";
+    return "Get ready…";
+  })();
+
+  const stagingSubtext =
+    (t?.ui?.stagingSubtext || t?.config?.ui?.stagingSubtext || "Eyes up — you’ve got this.") + "";
+
+
   // Derived team id for tasks that need it (media uploads, inter-team routing, etc.)
   const derivedTeamId =
     t?.teamId ||
@@ -1416,507 +1500,94 @@ export default function TaskRunner({
     );
   }
 
-  const uiCards = renderUICardsIfPresent();
-  if (uiCards) return uiCards;
-
-  // --- Unified task theming (TaskFrame) ---------------------------------
-
-const THEME_PRESETS = {
-  default: {
-    bg: "linear-gradient(135deg, #e0f2fe 0%, #ffffff 45%, #e0e7ff 100%)",
-    card: "rgba(255,255,255,0.92)",
-    border: "rgba(15,23,42,0.12)",
-    title: "#0f172a",
-    sub: "#475569",
-    accent: "#0ea5e9",
-    badgeBg: "rgba(14,165,233,0.12)",
-    badgeText: "#0369a1",
-  },
-
-  physical: {
-    bg: "linear-gradient(135deg, #fff7ed 0%, #ffffff 45%, #ecfccb 100%)",
-    card: "rgba(255,255,255,0.92)",
-    border: "rgba(15,23,42,0.12)",
-    title: "#0f172a",
-    sub: "#475569",
-    accent: "#16a34a",
-    badgeBg: "rgba(22,163,74,0.12)",
-    badgeText: "#166534",
-  },
-
-  battle: {
-    bg: "linear-gradient(135deg, #0b1220 0%, #111827 55%, #1e293b 100%)",
-    card: "rgba(255,255,255,0.08)",
-    border: "rgba(255,255,255,0.14)",
-    title: "#ffffff",
-    sub: "rgba(255,255,255,0.75)",
-    accent: "#a78bfa",
-    badgeBg: "rgba(167,139,250,0.18)",
-    badgeText: "#ede9fe",
-  },
-
-  notes: {
-    bg: "linear-gradient(135deg, #fffbeb 0%, #ffffff 50%, #fef3c7 100%)",
-    card: "rgba(255,255,255,0.94)",
-    border: "rgba(15,23,42,0.12)",
-    title: "#0f172a",
-    sub: "#475569",
-    accent: "#f59e0b",
-    badgeBg: "rgba(245,158,11,0.16)",
-    badgeText: "#92400e",
-  },
-};
-
-  function pickThemeForTask(type, t) {
-    // Allow JSON overrides from backend/AI
-    const ui = t?.ui || t?.config?.ui || null;
-    const presetId = ui?.themeId || ui?.preset;
-
-    if (presetId && THEME_PRESETS[presetId]) return { ...THEME_PRESETS[presetId], ...ui };
-
-    // Lightweight defaults by type
-    if (type === TASK_TYPES.BODY_BREAK || type === TASK_TYPES.MOTION_MISSION) {
-      return { ...THEME_PRESETS.physical, ...ui };
-    }
-    if (type === TASK_TYPES.BRAINSTORM_BATTLE) return { ...THEME_PRESETS.battle, ...ui };
-    if (type === TASK_TYPES.BRAIN_SPARK_NOTES) return { ...THEME_PRESETS.notes, ...ui };
-
-    return { ...THEME_PRESETS.default, ...ui };
-  }
-
-  function secondsToClock(s) {
-    if (!Number.isFinite(s)) return null;
-    const m = Math.floor(s / 60);
-    const r = s % 60;
-    return `${m}:${String(r).padStart(2, "0")}`;
-  }
-
-    function safeArray(x) {
-    return Array.isArray(x) ? x : [];
-  }
-
-  function pickUI(t) {
-    return t?.ui || t?.config?.ui || null;
-  }
-
-  // Simple animation layer (no libs)
-  function TaskAnimLayer({ ui, theme }) {
-    const anim = ui?.animation || null;
-    const type = anim?.type || null;
-    if (!type) return null;
-
-    // very subtle floating dots / stickers vibe
-    if (type === "float") {
-      return (
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            overflow: "hidden",
-          }}
-        >
-          <style>{`
-            @keyframes uiFloat {
-              0%,100% { transform: translateY(0); opacity: .55; }
-              50% { transform: translateY(-14px); opacity: .35; }
-            }
-          `}</style>
-          {new Array(10).fill(0).map((_, i) => (
-            <div
-              key={i}
-              style={{
-                position: "absolute",
-                width: 10 + (i % 4) * 6,
-                height: 10 + (i % 4) * 6,
-                borderRadius: 999,
-                background: theme.accent,
-                opacity: 0.10,
-                left: `${(i * 11) % 100}%`,
-                top: `${(i * 17) % 100}%`,
-                filter: "blur(0.5px)",
-                animation: `uiFloat ${1800 + i * 120}ms ease-in-out infinite`,
-                animationDelay: `${i * 90}ms`,
-              }}
-            />
-          ))}
-        </div>
-      );
-    }
-
-    if (type === "pulse") {
-      return (
-        <style>{`
-          @keyframes uiPulse {
-            0%,100% { transform: scale(1); }
-            50% { transform: scale(1.01); }
-          }
-        `}</style>
-      );
-    }
-
-    return null;
-  }
-
-  function TaskHero({ ui, theme }) {
-    const hero = ui?.hero || null;
-    if (!hero) return null;
-
-    const title = hero?.title || "";
-    const subtitle = hero?.subtitle || "";
+  // ✅ IMPORTANT: Height-aware wrapper so tasks can truly "fill the task card section"
+  
+  // IMPORTANT: Height-aware wrapper so tasks can truly "fill the task card section"
+  const Wrap = ({ children, animFile, stagingPhase, stagingText, stagingSubtext }) => {
+    const showStaging = !!animFile && stagingPhase !== "gone";
 
     return (
-      <div
-        style={{
-          borderRadius: 18,
-          border: `1px solid ${theme.border}`,
-          background: "rgba(255,255,255,0.65)",
-          padding: "14px 14px",
-          marginBottom: 10,
-          color: theme.title,
-        }}
-      >
-        {title && (
-          <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: 0.2 }}>
-            {title}
-          </div>
-        )}
-        {subtitle && (
-          <div style={{ marginTop: 4, color: theme.sub, fontWeight: 700 }}>
-            {subtitle}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function TaskCardGrid({ ui, theme }) {
-    const cards = safeArray(ui?.cards);
-    if (!cards.length) return null;
-
-    const columns = ui?.cardsColumns || 1;
-    const gridCols = columns >= 2 ? "repeat(2, minmax(0, 1fr))" : "1fr";
-
-    return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: gridCols,
-          gap: 10,
-        }}
-      >
-        {cards.map((c, idx) => {
-          const icon = c?.icon || "";
-          const title = c?.title || "";
-          const text = c?.text || c?.body || "";
-          const meta = c?.meta || "";
-
-          return (
+      <div className="h-full flex flex-col relative">
+        {/* Tier 2 staging moment (in-flow so the task UI slides up when it collapses) */}
+        {showStaging && (
+          <div
+            style={{
+              overflow: "hidden",
+              maxHeight: stagingPhase === "hide" ? 0 : 230,
+              opacity: stagingPhase === "hide" ? 0 : 1,
+              transition: "max-height 1000ms ease, opacity 700ms ease",
+            }}
+          >
             <div
-              key={c?.id || idx}
               style={{
-                borderRadius: 18,
-                border: `1px solid ${theme.border}`,
-                background: "rgba(255,255,255,0.88)",
-                padding: 14,
-                color: theme.title,
-                boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+                display: "grid",
+                gridTemplateColumns: "1fr minmax(220px, 25vw)",
+                gap: 12,
+                alignItems: "center",
+                padding: "10px 12px 14px 12px",
               }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <div>
                 <div
                   style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 14,
-                    background: theme.badgeBg,
-                    border: `1px solid ${theme.border}`,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 20,
-                    flex: "0 0 auto",
+                    fontSize: 22,
+                    fontWeight: 900,
+                    letterSpacing: 0.2,
+                    color: "#0f172a",
                   }}
                 >
-                  {icon || "✨"}
+                  {stagingText || "Get ready…"}
                 </div>
-
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 950, fontSize: 16, lineHeight: 1.2 }}>
-                    {title || `Step ${idx + 1}`}
-                  </div>
-                  {meta && (
-                    <div style={{ marginTop: 2, fontSize: 12, color: theme.sub, fontWeight: 800 }}>
-                      {meta}
-                    </div>
-                  )}
-                  {text && (
-                    <div style={{ marginTop: 8, fontSize: 15, fontWeight: 650, color: theme.title }}>
-                      {text}
-                    </div>
-                  )}
+                <div style={{ marginTop: 6, color: "#475569", fontWeight: 700 }}>
+                  {stagingSubtext || "Eyes up — you’ve got this."}
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
 
-  function TaskActions({ ui, theme, disabled, onAction }) {
-    const actions = safeArray(ui?.actions);
-    if (!actions.length) return null;
-
-    const primary = actions.find((a) => a?.variant === "primary") || actions[0];
-    const secondary = actions.filter((a) => a !== primary);
-
-    return (
-      <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "flex-end" }}>
-        {secondary.map((a) => (
-          <button
-            key={a?.id}
-            type="button"
-            disabled={disabled}
-            onClick={() => onAction(a)}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 999,
-              border: `1px solid ${theme.border}`,
-              background: "rgba(255,255,255,0.75)",
-              color: theme.title,
-              fontWeight: 900,
-              cursor: disabled ? "not-allowed" : "pointer",
-            }}
-          >
-            {a?.label || a?.id}
-          </button>
-        ))}
-
-        {primary && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onAction(primary)}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 999,
-              border: "none",
-              background: theme.accent,
-              color: "#fff",
-              fontWeight: 950,
-              cursor: disabled ? "not-allowed" : "pointer",
-              boxShadow: "0 14px 30px rgba(0,0,0,0.12)",
-            }}
-          >
-            {primary?.label || "Done"}
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  function renderUICardsIfPresent() {
-    const ui = pickUI(t);
-    if (!ui) return null;
-
-    const mode = ui?.renderMode || ui?.mode || null;
-    if (mode !== "cards") return null;
-
-    const theme = pickThemeForTask(type, t);
-
-    const handleAction = (a) => {
-      // Default behavior: DONE submits completion snapshot
-      if (a?.id === "done" || String(a?.label || "").toLowerCase().includes("done")) {
-        handleTaskSubmit({ completed: true, action: a?.id || "done" });
-        return;
-      }
-      handleTaskSubmit({ action: a?.id || a?.label || "action" });
-    };
-
-    return (
-      <TaskFrame>
-        <div style={{ position: "relative", height: "100%", overflow: "auto" }}>
-          <TaskAnimLayer ui={ui} theme={theme} />
-
-          <div style={{ position: "relative", zIndex: 2 }}>
-            <TaskHero ui={ui} theme={theme} />
-            <TaskCardGrid ui={ui} theme={theme} />
-            <TaskActions ui={ui} theme={theme} disabled={effectiveDisabled || isReview} onAction={handleAction} />
-          </div>
-        </div>
-      </TaskFrame>
-    );
-  }
-
-  // ✅ Unified TaskFrame wrapper (every task inherits the same “beautiful shell”)
-  const TaskFrame = ({ children }) => {
-    const theme = pickThemeForTask(type, t);
-
-    const hideTitle =
-      !!t?.ui?.hideTitle || !!t?.config?.ui?.hideTitle || !!t?.config?.hideTaskRunnerTitle;
-
-    const badge =
-      t?.ui?.badge ||
-      t?.config?.ui?.badge ||
-      (theme === THEME_PRESETS.physical ? "PHYSICAL" : null);
-
-    const showTimer =
-      Number.isFinite(t?.timeLimitSeconds) && t.timeLimitSeconds > 0 && !isReview;
-
-    const timerText = showTimer ? secondsToClock(t.timeLimitSeconds) : null;
-
-    return (
-      <div
-        className="h-full flex flex-col"
-        style={{
-          borderRadius: 18,
-          padding: 12,
-          background: theme.bg,
-        }}
-      >
-        {/* Header row */}
-        {!hideTitle && (
-          <div
-            className="shrink-0"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-              {/* Badge */}
-              {(badge || t?.ui?.icon) && (
-                <div
+              <div
+                style={{
+                  borderRadius: 16,
+                  overflow: "hidden",
+                  boxShadow: "0 18px 45px rgba(15,23,42,0.18)",
+                  border: "1px solid rgba(148,163,184,0.55)",
+                  background: "rgba(0,0,0,0.06)",
+                  transform:
+                    stagingPhase === "hide"
+                      ? "translateX(18%) translateY(-8%) scale(0.46)"
+                      : "translateX(0) translateY(0) scale(1)",
+                  transformOrigin: "top right",
+                  transition: "transform 1000ms cubic-bezier(.2,.9,.2,1)",
+                }}
+              >
+                <video
+                  key={animFile}
+                  src={`/animations/categories/${animFile}`}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="auto"
                   style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: `1px solid ${theme.border}`,
-                    background: theme.badgeBg,
-                    color: theme.badgeText,
-                    fontWeight: 900,
-                    fontSize: 12,
-                    letterSpacing: 1,
-                    whiteSpace: "nowrap",
+                    width: "100%",
+                    height: 160,
+                    objectFit: "cover",
+                    display: "block",
                   }}
-                >
-                  {t?.ui?.icon ? <span style={{ fontSize: 16 }}>{t.ui.icon}</span> : null}
-                  <span>{String(badge || "").toUpperCase()}</span>
-                </div>
-              )}
-
-              {/* Title */}
-              {displayTitle && (
-                <div
-                  className="task-title-fun"
-                  style={{
-                    fontFamily:
-                      '"Interstellar Log", system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-                    fontSize: "1.3rem",
-                    letterSpacing: "0.5px",
-                    color: theme.title,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={displayTitle}
-                >
-                  {displayTitle}
-                </div>
-              )}
-            </div>
-
-            {/* Right-side pills */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-              {timerText && (
-                <div
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: `1px solid ${theme.border}`,
-                    background: theme.card,
-                    color: theme.title,
-                    fontWeight: 900,
-                    fontSize: 12,
-                  }}
-                  title="Time limit"
-                >
-                  ⏱ {timerText}
-                </div>
-              )}
-
-              {isReview && (
-                <div
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    border: `1px solid ${theme.border}`,
-                    background: theme.card,
-                    color: theme.title,
-                    fontWeight: 900,
-                    fontSize: 12,
-                  }}
-                >
-                  REVIEW
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Optional display block (kept, but styled to match frame) */}
-        {currentDisplay && (
-          <div
-            className="shrink-0"
-            style={{
-              borderRadius: 16,
-              border: `1px solid ${theme.border}`,
-              background: theme.card,
-              padding: 10,
-              marginBottom: 10,
-              color: theme.title,
-            }}
-          >
-            <div style={{ fontWeight: 900, marginBottom: 4 }}>Station object</div>
-            <div style={{ fontWeight: 800 }}>{currentDisplay.name || currentDisplay.key}</div>
-            {currentDisplay.description && (
-              <div style={{ marginTop: 4, fontSize: 12, color: theme.sub }}>
-                {currentDisplay.description}
+                />
               </div>
-            )}
+            </div>
           </div>
         )}
 
-        {/* Inner card (the big win) */}
-        <div
-          className="flex-1 min-h-0"
-          style={{
-            borderRadius: 18,
-            border: `1px solid ${theme.border}`,
-            background: theme.card,
-            boxShadow: "0 20px 60px rgba(0,0,0,0.10)",
-            overflow: "hidden",
-          }}
-        >
-          <div className="h-full w-full" style={{ padding: 12 }}>
-            {children}
-          </div>
-        </div>
+        <div className="flex-1 min-h-0">{children}</div>
       </div>
     );
   };
 
+
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
     return (
-      <TaskFrame>
+      <Wrap animFile={pickCategoryAnimation(type, t)} stagingPhase={stagingPhase} stagingText={stagingText} stagingSubtext={stagingSubtext}>
         <div className="h-full overflow-auto">
           <MultiPartTask
             mode={multiMode}
@@ -1928,7 +1599,7 @@ const THEME_PRESETS = {
             disabled={effectiveDisabled || isReview}
           />
         </div>
-      </TaskFrame>
+      </Wrap>
     );
   }
 
@@ -2596,5 +2267,5 @@ case "multi_player_feedback":
       );
   }
 
-  return <TaskFrame>{content}</TaskFrame>;
+  return <Wrap animFile={pickCategoryAnimation(type, t)} stagingPhase={stagingPhase} stagingText={stagingText} stagingSubtext={stagingSubtext}>{content}</Wrap>;
 }
