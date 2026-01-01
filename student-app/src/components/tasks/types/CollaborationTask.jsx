@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/CollaborationTask.jsx
 import React, { useState, useEffect } from "react";
+import { TaskCardFrame, Pill, PrimaryButton, TextArea } from "../taskStyles";
 
 export default function CollaborationTask({
   task,
@@ -29,62 +30,102 @@ export default function CollaborationTask({
     onPartnerReply(reply.trim());
   };
 
+  const prompt = task?.prompt || "Work together on this prompt.";
+
+  const right = showPartnerReply ? (
+    <Pill theme="light">✨ Bonus reply stage</Pill>
+  ) : (
+    <Pill theme="light">📝 Write your response</Pill>
+  );
+
   return (
-    <div className="flex flex-col h-full p-4 gap-4">
-      <div className="font-semibold text-lg">{task.prompt}</div>
+    <TaskCardFrame
+      theme="light"
+      badge="🤝 Collaboration"
+      title="Partner prompt"
+      subtitle={showPartnerReply ? "Read your partner’s response and reply thoughtfully." : "Write your best response first."}
+      right={right}
+    >
+      <div style={{ fontSize: 18, fontWeight: 950, color: "rgba(15,23,42,0.90)" }}>
+        {prompt}
+      </div>
 
       {!showPartnerReply ? (
         <>
-          <textarea
-            className="border rounded-lg p-3 flex-1 resize-none"
-            value={answer}
-            onChange={(e) => {
-              setAnswer(e.target.value);
-              onAnswerChange?.({ main: e.target.value, reply });
-            }}
-            disabled={disabled}
-            placeholder="Write your response here..."
-          />
-          <button
-            onClick={handleMainSubmit}
-            disabled={disabled || !answer.trim()}
-            className="px-5 py-2 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700 disabled:opacity-50"
-          >
-            Submit My Answer
-          </button>
+          <div style={{ marginTop: 12 }}>
+            <TextArea
+              theme="light"
+              value={answer}
+              onChange={(e) => {
+                setAnswer(e.target.value);
+                onAnswerChange?.({ main: e.target.value, reply });
+              }}
+              disabled={disabled}
+              rows={8}
+              placeholder="Write your response here…"
+            />
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+            <PrimaryButton
+              onClick={handleMainSubmit}
+              disabled={disabled || !answer.trim()}
+            >
+              Submit My Answer
+            </PrimaryButton>
+          </div>
         </>
       ) : (
         <>
-          <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-            <h3 className="font-bold text-purple-900 mb-2">Your Partner's Response:</h3>
-            <p className="italic text-gray-800">{partnerAnswer}</p>
+          <div
+            style={{
+              marginTop: 14,
+              borderRadius: 22,
+              border: "1px solid rgba(168,85,247,0.28)",
+              background:
+                "radial-gradient(700px 260px at 20% 0%, rgba(168,85,247,0.16), transparent 60%), rgba(255,255,255,0.78)",
+              boxShadow: "0 18px 60px rgba(15,23,42,0.10)",
+              padding: 14,
+            }}
+          >
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <Pill theme="light">💬 Partner response</Pill>
+              <Pill theme="light" subtle>Read carefully, then reply for bonus points.</Pill>
+            </div>
+            <div style={{ marginTop: 10, fontStyle: "italic", fontWeight: 900, color: "rgba(15,23,42,0.86)" }}>
+              {partnerAnswer || "(No partner answer received.)"}
+            </div>
           </div>
 
-          <textarea
-            className="border rounded-lg p-3 flex-1 resize-none"
-            value={reply}
-            onChange={(e) => {
-              setReply(e.target.value);
-              onAnswerChange?.({ main: answer, reply: e.target.value });
-            }}
-            disabled={disabled}
-            placeholder="Write a thoughtful reply to your partner... (earn up to +5 bonus points!)"
-          />
+          <div style={{ marginTop: 12 }}>
+            <TextArea
+              theme="light"
+              value={reply}
+              onChange={(e) => {
+                setReply(e.target.value);
+                onAnswerChange?.({ main: answer, reply: e.target.value });
+              }}
+              disabled={disabled}
+              rows={6}
+              placeholder="Write a thoughtful reply… (earn up to +5 bonus points!)"
+            />
+          </div>
 
-          <div className="flex justify-between items-center">
-            <button
+          <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <Pill theme="light">⭐ +5 bonus points possible</Pill>
+            <PrimaryButton
               onClick={handleReplySubmit}
               disabled={disabled || !reply.trim()}
-              className="px-5 py-2 bg-purple-600 text-white rounded font-medium hover:bg-purple-700 disabled:opacity-50"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(168,85,247,0.96), rgba(56,189,248,0.76))",
+              }}
             >
-              Send Reply & Claim Bonus
-            </button>
-            <span className="text-sm text-purple-700 font-medium">
-              +5 bonus points possible
-            </span>
+              Send Reply &amp; Claim Bonus
+            </PrimaryButton>
           </div>
         </>
       )}
-    </div>
+    </TaskCardFrame>
   );
 }

@@ -13,6 +13,9 @@ export const retryMustHave = {
 
   [TASK_TYPES.OPEN_TEXT]:
     'OPEN_TEXT must include a clear prompt plus settings: { gradeLevel:number, difficulty:"EASY"|"MEDIUM"|"HARD" }. For MEDIUM/HARD, include settings.minWords computed as 2×gradeLevel (MEDIUM) or 3×gradeLevel (HARD). Do NOT include correctAnswer. Include rubricFocus: ["clarity","accuracy","reasoning","evidence"] to guide AI scoring and teacher reporting. Response box should allow multi-paragraph answers.',
+[TASK_TYPES.BRAIN_SPARK_NOTES]:
+    'BRAIN_SPARK_NOTES must include bullets[] (3–8 short, student-friendly notes) that students can copy exactly. Put bullets on the ROOT task object as bullets[]. Do not return empty bullets.',
+
   [TASK_TYPES.DRAW_MIME]:
     "DRAW_MIME must include a short concept prompt (what to draw/act). Optional: config.mode \"DRAW\"|\"MIME\" or \"EITHER\". Include timeLimitSeconds ~60 and encourage teammates to guess. Not objective-scored.",
 

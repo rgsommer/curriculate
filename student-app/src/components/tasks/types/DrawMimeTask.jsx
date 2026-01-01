@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/DrawMimeTask.jsx
 import React, { useRef, useState, useEffect } from "react";
+import { TaskCardFrame } from "../taskStyles";
 
 export default function DrawMimeTask({
   task,
@@ -34,6 +35,7 @@ export default function DrawMimeTask({
       };
       img.src = answerDraft.imageData;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answerDraft]);
 
   // Canvas setup + resize
@@ -55,6 +57,7 @@ export default function DrawMimeTask({
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pushToHistory = () => {
@@ -162,6 +165,7 @@ export default function DrawMimeTask({
 
       pushToHistory();
       setHasDrawn(true);
+      setIsDrawing(false);
     };
 
     canvas.addEventListener("pointermove", draw);
@@ -179,125 +183,127 @@ export default function DrawMimeTask({
   const prompt = task?.prompt || "Draw with feeling! Use Apple Pencil or stylus for pressure magic!";
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 text-white">
-      {/* Header */}
-      <div className="p-6 text-center">
-        <h2 className="text-5xl md:text-7xl font-black drop-shadow-2xl mb-4">
-          DRAW OR MIME IT!
-        </h2>
-        <p className="text-3xl md:text-4xl font-bold drop-shadow-lg px-4">
-          {prompt}
-        </p>
-      </div>
-
-      {/* Canvas */}
-      <div className="flex-1 relative mx-4 mb-4 bg-white rounded-3xl shadow-2xl overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full touch-none"
-          onPointerDown={startDrawing}
-          style={{ touchAction: "none" }} // Critical for pressure on iPad
-        />
-
-        {!hasDrawn && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-6xl font-black text-gray-300 opacity-50">
-              Press hard for thick lines!
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Controls */}
-      <div className="p-6 bg-black/40 backdrop-blur-lg">
-        <div className="flex flex-wrap items-center justify-center gap-6 mb-6">
-          {/* Tool Switcher */}
-          <div className="flex bg-white/20 rounded-2xl p-2">
-            <button
-              onClick={() => setTool("pen")}
-              disabled={disabled}
-              className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
-                tool === "pen" ? "bg-white text-black" : "text-white"
-              }`}
-            >
-              Pen
-            </button>
-            <button
-              onClick={() => setTool("eraser")}
-              disabled={disabled}
-              className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
-                tool === "eraser" ? "bg-white text-black" : "text-white"
-              }`}
-            >
-              Eraser
-            </button>
-          </div>
-
-          {/* Undo / Redo */}
-          <div className="flex gap-4">
-            <button
-              onClick={undo}
-              disabled={!canUndo || disabled}
-              className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
-            >
-              Undo
-            </button>
-            <button
-              onClick={redo}
-              disabled={!canRedo || disabled}
-              className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
-            >
-              Redo
-            </button>
-          </div>
-
-          {/* Color Palette */}
-          {["#000000", "#ef4444", "#3b82f6", "#22c55e", "#eab308", "#a855f7"].map((c) => (
-            <button
-              key={c}
-              onClick={() => { setColor(c); setTool("pen"); }}
-              disabled={disabled}
-              className={`w-16 h-16 rounded-full shadow-xl transition transform hover:scale-110 ${
-                color === c && tool === "pen" ? "ring-8 ring-white scale-125" : ""
-              }`}
-              style={{ backgroundColor: c }}
-            />
-          ))}
-
-          {/* Brush Size */}
-          <div className="flex items-center gap-4 bg-white/20 rounded-2xl px-6 py-3">
-            <span className="text-2xl">Brush</span>
-            {[4, 8, 12, 20].map((w) => (
-              <button
-                key={w}
-                onClick={() => setLineWidth(w)}
-                disabled={disabled}
-                className={`w-${w === 4 ? "10" : w === 8 ? "12" : w === 12 ? "14" : "16"} h-${w === 4 ? "10" : w === 8 ? "12" : w === 12 ? "14" : "16"} rounded-full transition hover:scale-125 ${
-                  lineWidth === w ? "bg-white scale-125" : "bg-gray-400"
-                }`}
-              />
-            ))}
-          </div>
-
-          {/* Clear */}
-          <button
-            onClick={clearCanvas}
-            disabled={disabled}
-            className="px-8 py-4 bg-red-600 text-white text-2xl font-bold rounded-2xl hover:bg-red-700 transition shadow-xl"
-          >
-            Clear All
-          </button>
+    <TaskCardFrame theme="dark" fullBleed showBackground={false}>
+      <div className="flex flex-col h-full bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 text-white">
+        {/* Header */}
+        <div className="p-6 text-center">
+          <h2 className="text-5xl md:text-7xl font-black drop-shadow-2xl mb-4">
+            DRAW OR MIME IT!
+          </h2>
+          <p className="text-3xl md:text-4xl font-bold drop-shadow-lg px-4">
+            {prompt}
+          </p>
         </div>
 
-        {/* Submit */}
-        <button
-          onClick={handleSubmit}
-          disabled={disabled || !hasDrawn}
-          className="w-full py-8 text-6xl font-black bg-gradient-to-r from-green-500 to-emerald-600 rounded-3xl shadow-2xl hover:scale-105 transition disabled:opacity-50"
-        >
-          {hasDrawn ? "SUBMIT MASTERPIECE!" : "DRAW FIRST!"}
-        </button>
+        {/* Canvas */}
+        <div className="flex-1 relative mx-4 mb-4 bg-white rounded-3xl shadow-2xl overflow-hidden">
+          <canvas
+            ref={canvasRef}
+            className="w-full h-full touch-none"
+            onPointerDown={startDrawing}
+            style={{ touchAction: "none" }} // Critical for pressure on iPad
+          />
+
+          {!hasDrawn && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <p className="text-6xl font-black text-gray-300 opacity-50">
+                Press hard for thick lines!
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="p-6 bg-black/40 backdrop-blur-lg">
+          <div className="flex flex-wrap items-center justify-center gap-6 mb-6">
+            {/* Tool Switcher */}
+            <div className="flex bg-white/20 rounded-2xl p-2">
+              <button
+                onClick={() => setTool("pen")}
+                disabled={disabled}
+                className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
+                  tool === "pen" ? "bg-white text-black" : "text-white"
+                }`}
+              >
+                Pen
+              </button>
+              <button
+                onClick={() => setTool("eraser")}
+                disabled={disabled}
+                className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
+                  tool === "eraser" ? "bg-white text-black" : "text-white"
+                }`}
+              >
+                Eraser
+              </button>
+            </div>
+
+            {/* Undo / Redo */}
+            <div className="flex gap-4">
+              <button
+                onClick={undo}
+                disabled={!canUndo || disabled}
+                className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
+              >
+                Undo
+              </button>
+              <button
+                onClick={redo}
+                disabled={!canRedo || disabled}
+                className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
+              >
+                Redo
+              </button>
+            </div>
+
+            {/* Color Palette */}
+            {["#000000", "#ef4444", "#3b82f6", "#22c55e", "#eab308", "#a855f7"].map((c) => (
+              <button
+                key={c}
+                onClick={() => { setColor(c); setTool("pen"); }}
+                disabled={disabled}
+                className={`w-16 h-16 rounded-full shadow-xl transition transform hover:scale-110 ${
+                  color === c && tool === "pen" ? "ring-8 ring-white scale-125" : ""
+                }`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+
+            {/* Brush Size */}
+            <div className="flex items-center gap-4 bg-white/20 rounded-2xl px-6 py-3">
+              <span className="text-2xl">Brush</span>
+              {[4, 8, 12, 20].map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setLineWidth(w)}
+                  disabled={disabled}
+                  className={`w-${w === 4 ? "10" : w === 8 ? "12" : w === 12 ? "14" : "16"} h-${w === 4 ? "10" : w === 8 ? "12" : w === 12 ? "14" : "16"} rounded-full transition hover:scale-125 ${
+                    lineWidth === w ? "bg-white scale-125" : "bg-gray-400"
+                  }`}
+                />
+              ))}
+            </div>
+
+            {/* Clear */}
+            <button
+              onClick={clearCanvas}
+              disabled={disabled}
+              className="px-8 py-4 bg-red-600 text-white text-2xl font-bold rounded-2xl hover:bg-red-700 transition shadow-xl"
+            >
+              Clear All
+            </button>
+          </div>
+
+          {/* Submit */}
+          <button
+            onClick={handleSubmit}
+            disabled={disabled || !hasDrawn}
+            className="w-full py-8 text-6xl font-black bg-gradient-to-r from-green-500 to-emerald-600 rounded-3xl shadow-2xl hover:scale-105 transition disabled:opacity-50"
+          >
+            {hasDrawn ? "SUBMIT MASTERPIECE!" : "DRAW FIRST!"}
+          </button>
+        </div>
       </div>
-    </div>
+    </TaskCardFrame>
   );
 }

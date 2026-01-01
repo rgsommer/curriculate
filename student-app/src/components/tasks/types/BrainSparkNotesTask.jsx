@@ -3,18 +3,18 @@ import React, { useEffect, useMemo } from "react";
 import { TaskCardFrame, Pill, PrimaryButton } from "../taskStyles";
 
 /**
- * Uses TaskCardFrame (shared UI) while preserving ALL prior behavior:
- * - bullets/title/subtitle/pointsText
- * - stickers (task.config.stickers fallback)
- * - gradeLevel sizing
- * - optional fontFamily
- * - completion sound when task.completed flips true
+ * Brain Spark Notes
+ * - Presents a model set of notes for students to copy
+ * - If bullets are missing, we attempt to recover from other fields (notes/text/prompt)
+ * - Clear instructions + grade-aware note about teacher checking (Grades <= 10)
  */
 export default function BrainSparkNotesTask({ task, onSubmit, disabled }) {
-  const bullets = Array.isArray(task?.bullets) ? task.bullets : [];
   const title = String(task?.title || "Brain Spark Notes");
   const subtitle = String(task?.subtitle || "Understanding Key Concepts");
   const pointsText = String(task?.pointsText || "+10 points for everyone!");
+
+  const gradeNum = Number.isFinite(Number(task?.gradeLevel)) ? Number(task.gradeLevel) : null;
+  const addTeacherCheckLine = gradeNum != null && gradeNum <= 10;
 
   const date = useMemo(() => {
     try {
@@ -29,6 +29,78 @@ export default function BrainSparkNotesTask({ task, onSubmit, disabled }) {
     }
   }, []);
 
+  const stickerRow =
+    task?.config?.stickers && Array.isArray(task.config.stickers)
+      ? task.config.stickers
+      : ["✨", "🧠", "📒", "⭐", "✅"];
+
+  const noteFontFamily =
+    task?.fontFamily ||
+    "ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
+
+  const bullets = useMemo(() => {
+    // Primary: bullets array (preferred)
+    let b = Array.isArray(task?.bullets) ? task.bullets : [];
+
+    // If empty, try other common fields from taskGen
+    if (!b.length) {
+      const raw =
+        task?.notes ||
+        task?.modelNotes ||
+        task?.text ||
+        task?.content ||
+        task?.prompt ||
+        task?.description ||
+        task?.config?.notes ||
+        task?.config?.text ||
+        "";
+
+      if (typeof raw === "string" && raw.trim()) {
+        // Split on newlines and common bullet markers
+        b = raw
+          .split(/\r?\n|•\s+|\*\s+|\-\s+|\d+\)\s+/g)
+          .map((s) => String(s).trim())
+          .filter(Boolean);
+      }
+    }
+
+    // Normalize shapes (strings or objects)
+    b = (Array.isArray(b) ? b : [])
+      .map((it, idx) => {
+        if (typeof it === "string") return it.trim();
+        if (it && typeof it === "object") {
+          const text = it.text || it.note || it.value || it.label || `Note ${idx + 1}`;
+          return String(text).trim();
+        }
+        return String(it || `Note ${idx + 1}`).trim();
+      })
+      .filter(Boolean);
+
+    // De-dupe (case-insensitive), preserve order
+    const seen = new Set();
+    b = b.filter((s) => {
+      const k = s.toLowerCase();
+      if (!k) return false;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+
+    // Last resort fallback (never show empty board)
+    if (!b.length) {
+      const topic = String(task?.topic || task?.title || "today’s topic").trim();
+      b = [
+        `Define the key idea in 1 clear sentence (${topic}).`,
+        `List 2–3 important details that support the main idea.`,
+        `Write 1 example that shows the idea in real life.`,
+        `Add 1 “why it matters” sentence (cause/effect or importance).`,
+      ];
+    }
+
+    // Reasonable cap so it stays readable
+    return b.slice(0, 12);
+  }, [task]);
+
   useEffect(() => {
     if (task?.completed) {
       try {
@@ -41,17 +113,6 @@ export default function BrainSparkNotesTask({ task, onSubmit, disabled }) {
     }
   }, [task?.completed]);
 
-  const stickerRow =
-    task?.config?.stickers && Array.isArray(task.config.stickers)
-      ? task.config.stickers
-      : ["✨", "🧠", "📒", "⭐", "✅"];
-
-  const isPrimary = task?.gradeLevel && parseInt(task.gradeLevel, 10) <= 4;
-
-  const noteFontFamily =
-    task?.fontFamily ||
-    "ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
-
   const right = <Pill theme="light">📅 {date}</Pill>;
 
   return (
@@ -61,7 +122,6 @@ export default function BrainSparkNotesTask({ task, onSubmit, disabled }) {
       title={title}
       subtitle={subtitle}
       right={right}
-      // warm notebook vibe inside the shared frame
       style={{
         background:
           "radial-gradient(1200px 500px at 20% 0%, rgba(250,204,21,0.16), transparent 60%), linear-gradient(135deg, rgba(255,251,235,1), rgba(255,255,255,1))",
@@ -80,82 +140,80 @@ export default function BrainSparkNotesTask({ task, onSubmit, disabled }) {
           <Pill theme="light">{pointsText}</Pill>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {stickerRow.map((s, i) => (
-            <div
-              key={i}
-              aria-hidden="true"
-              style={{
-                padding: "10px 12px",
-                borderRadius: 18,
-                border: "1px solid rgba(15,23,42,0.10)",
-                background: "rgba(255,255,255,0.86)",
-                boxShadow: "0 14px 40px rgba(15,23,42,0.08)",
-                fontSize: 20,
-                animation: "bsFloat 1.8s ease-in-out infinite",
-                animationDelay: `${i * 0.08}s`,
-              }}
-            >
-              {s}
-            </div>
-          ))}
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 18,
+            background: "rgba(255,255,255,0.75)",
+            border: "1px solid rgba(15,23,42,0.12)",
+          }}
+        >
+          <div style={{ fontWeight: 950, marginBottom: 8 }}>Instructions</div>
+          <div style={{ lineHeight: 1.35, fontWeight: 850 }}>
+            Copy these <b>exact notes</b> into your notebook.
+            {addTeacherCheckLine && (
+              <>
+                {" "}
+                <span style={{ opacity: 0.85 }}>
+                  Your teacher may check and give you a grade for having this complete!
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
-        <div style={{ display: "grid", gap: 10 }}>
-          {(bullets.length ? bullets : ["(No notes were provided for this task.)"]).map((b, i) => (
-            <div
-              key={i}
-              style={{
-                borderRadius: 22,
-                border: "1px solid rgba(15,23,42,0.10)",
-                background: "rgba(255,255,255,0.86)",
-                boxShadow: "0 14px 40px rgba(15,23,42,0.08)",
-                padding: 14,
-                display: "flex",
-                gap: 12,
-                alignItems: "flex-start",
-              }}
-            >
-              <div
+        {/* Notes */}
+        <div
+          style={{
+            padding: 18,
+            borderRadius: 22,
+            background: "rgba(255,255,255,0.92)",
+            border: "1px solid rgba(15,23,42,0.12)",
+            boxShadow: "0 18px 40px rgba(15,23,42,0.08)",
+            fontFamily: noteFontFamily,
+          }}
+        >
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+            {stickerRow.slice(0, 6).map((s, i) => (
+              <span
+                key={i}
                 style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 16,
-                  display: "grid",
-                  placeItems: "center",
-                  border: "1px solid rgba(15,23,42,0.10)",
-                  background: "rgba(250,204,21,0.22)",
-                  color: "rgba(15,23,42,0.92)",
-                  fontWeight: 1100,
-                  flex: "0 0 auto",
-                  fontVariantNumeric: "tabular-nums",
+                  display: "inline-flex",
+                  width: 34,
+                  height: 34,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 999,
+                  background: "rgba(245,158,11,0.12)",
+                  border: "1px solid rgba(245,158,11,0.22)",
+                  animation: "bsFloat 3.2s ease-in-out infinite",
+                  animationDelay: `${i * 120}ms`,
                 }}
               >
-                {i + 1}
-              </div>
+                {s}
+              </span>
+            ))}
+          </div>
 
-              <div
-                style={{
-                  fontSize: isPrimary ? 22 : 20,
-                  fontWeight: 900,
-                  color: "#0f172a",
-                  lineHeight: 1.25,
-                  fontFamily: noteFontFamily,
-                }}
-              >
-                {String(b)}
-              </div>
-            </div>
-          ))}
+          <ol style={{ margin: 0, paddingLeft: 22, display: "grid", gap: 10 }}>
+            {bullets.map((b, idx) => (
+              <li key={idx} style={{ fontSize: 16, fontWeight: 850, lineHeight: 1.35 }}>
+                {b}
+              </li>
+            ))}
+          </ol>
         </div>
 
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
+        {/* Done button */}
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <PrimaryButton
             disabled={disabled}
-            onClick={() => onSubmit?.({ completed: true })}
-            style={{ fontSize: 18, padding: "14px 18px" }}
+            onClick={() => {
+              // Keep simple completion semantics (matches other tasks)
+              onSubmit?.({ done: true });
+            }}
           >
-            I Wrote It Down! ✍️
+            DONE ✅
           </PrimaryButton>
         </div>
       </div>

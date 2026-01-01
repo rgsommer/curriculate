@@ -233,7 +233,13 @@ export const streamDemoTaskset = async (req, res) => {
       sseWrite(res, "progress", { index: i, total, taskType, status: "generating" });
 
       try {
-        const mustHave = retryMustHave?.[taskType] || null;
+        let mustHave = retryMustHave?.[taskType] || null;
+
+        // Demo generator safety: ensure Brain Spark Notes always contains model notes (bullets[]).
+        if (!mustHave && taskType === TASK_TYPES.BRAIN_SPARK_NOTES) {
+          mustHave = 'BRAIN_SPARK_NOTES must include bullets[] (3–8 short, student-friendly notes) that students can copy exactly. Put bullets on the ROOT task object as bullets[].';
+        }
+
 
 
         const task = await regenerateSingleTask({

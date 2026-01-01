@@ -1,28 +1,24 @@
-// student-app/src/components/tasks/taskStyles.js
+// student-app/src/components/tasks/taskStyles.jsx
 import React from "react";
 
 /**
  * Curriculate Task UI System
- * - Keep TaskRunner thin.
- * - Give each task a consistent, beautiful frame (cards, pills, buttons).
+ * Goal: keep TaskRunner thin while giving every task a consistent, beautiful frame.
+ *
+ * IMPORTANT:
+ * - This file contains JSX, so it MUST be .jsx (or .tsx). If you use .js, Vite/Rollup may error.
  *
  * Usage:
- *   import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextInput } from "../taskStyles";
+ *   import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextInput, TextArea } from "../taskStyles";
  */
 
-export function cx(...parts) {
-  return parts.filter(Boolean).join(" ");
-}
-
 export const UI = {
-  // surfaces
   shell: {
     height: "100%",
     padding: 16,
     display: "grid",
     placeItems: "center",
   },
-  // theme tokens
   theme: {
     light: {
       pageBg:
@@ -66,8 +62,28 @@ export function TaskCardFrame({
   maxWidth = 1200,
   showBackground = true,
   style,
+  contentStyle,
+  fullBleed = false,
+  contentPadding = 16,
 }) {
   const t = UI.theme[theme] || UI.theme.light;
+
+  if (fullBleed) {
+    // For “full screen” tasks (e.g., Draw/Mime). Still “uses TaskCardFrame” but doesn't constrain width.
+    return (
+      <div
+        style={{
+          height: "100%",
+          width: "100%",
+          position: "relative",
+          background: showBackground ? t.pageBg : undefined,
+          ...style,
+        }}
+      >
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -120,11 +136,15 @@ export function TaskCardFrame({
               ) : null}
             </div>
 
-            {right ? <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{right}</div> : null}
+            {right ? (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                {right}
+              </div>
+            ) : null}
           </div>
         )}
 
-        <div style={{ padding: 16 }}>{children}</div>
+        <div style={{ padding: contentPadding, ...contentStyle }}>{children}</div>
       </div>
     </div>
   );
@@ -141,7 +161,11 @@ export function Pill({ children, subtle = false, theme = "light", style }) {
         padding: "8px 12px",
         borderRadius: 999,
         border: t.pillBorder,
-        background: subtle ? (theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.62)") : t.pillBg,
+        background: subtle
+          ? theme === "dark"
+            ? "rgba(255,255,255,0.06)"
+            : "rgba(255,255,255,0.62)"
+          : t.pillBg,
         fontWeight: 950,
         fontSize: 12,
         letterSpacing: subtle ? 0 : 0.6,
@@ -155,7 +179,7 @@ export function Pill({ children, subtle = false, theme = "light", style }) {
   );
 }
 
-export function PrimaryButton({ children, disabled, onClick, theme = "light", style, type = "button" }) {
+export function PrimaryButton({ children, disabled, onClick, style, type = "button" }) {
   return (
     <button
       type={type}
@@ -165,8 +189,7 @@ export function PrimaryButton({ children, disabled, onClick, theme = "light", st
         borderRadius: 18,
         padding: "14px 16px",
         border: "none",
-        background:
-          "linear-gradient(135deg, rgba(99,102,241,0.96), rgba(56,189,248,0.76))",
+        background: "linear-gradient(135deg, rgba(99,102,241,0.96), rgba(56,189,248,0.76))",
         color: "#0b1220",
         fontWeight: 1100,
         cursor: disabled ? "default" : "pointer",
@@ -223,6 +246,33 @@ export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, t
         fontWeight: 850,
         outline: "none",
         width: "100%",
+        ...style,
+      }}
+      {...rest}
+    />
+  );
+}
+
+export function TextArea({ value, onChange, placeholder, disabled, rows = 6, theme = "light", style, ...rest }) {
+  const t = UI.theme[theme] || UI.theme.light;
+  return (
+    <textarea
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      disabled={disabled}
+      rows={rows}
+      style={{
+        width: "100%",
+        padding: 12,
+        borderRadius: 18,
+        border: t.inputBorder,
+        background: t.inputBg,
+        color: theme === "dark" ? "#fff" : "#0f172a",
+        fontWeight: 800,
+        fontSize: "0.98rem",
+        outline: "none",
+        resize: "vertical",
         ...style,
       }}
       {...rest}

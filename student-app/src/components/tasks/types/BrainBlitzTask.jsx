@@ -1,8 +1,19 @@
 // student-app/src/components/tasks/types/BrainBlitzTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import VictoryScreen from "../../VictoryScreen";
-import { TaskCardFrame, Pill, GhostButton } from "../taskStyles";
+import { TaskCardFrame, Pill, PrimaryButton } from "../taskStyles";
 
+/**
+ * Brain Blitz (standard UI)
+ * - Shows clues one-by-one
+ * - SpeechRecognition (or manual button) to capture a shouted question
+ * - Renders guesses live as they are received (local + socket broadcast)
+ * - Confetti burst on correct guess (more obvious than a brief flash)
+ *
+ * NOTE: We listen to multiple possible socket event names to be resilient:
+ *   - "brain-blitz-answer"
+ *   - "brain-blitz-answer-broadcast"
+ */
 export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
   const [isListening, setIsListening] = useState(false);
   const [currentClueIndex, setCurrentClueIndex] = useState(0);
@@ -10,50 +21,83 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
   const [showVictory, setShowVictory] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
+  // “Get ready…” staging
   const [countdown, setCountdown] = useState(null); // null | 3..0
+
+  // Live guess feed (render exactly as received)
+  const [guessFeed, setGuessFeed] = useState([]); // newest last
+  const lastGuessKeysRef = useRef(new Set());
+
+  // Confetti moment on a correct guess
+  const [celebrateKey, setCelebrateKey] = useState(null);
+
   const recognitionRef = useRef(null);
 
-  const raw = useMemo(() => {
-    return (
-      (Array.isArray(task?.config?.clues) && task.config.clues) ||
+  const clues = useMemo(() => {
+    const raw =
       (Array.isArray(task?.clues) && task.clues) ||
-      (Array.isArray(task?.questions) && task.questions) ||
-      []
-    );
+      (Array.isArray(task?.config?.clues) && task.config.clues) ||
+      [];
+    return raw
+      .map((c, idx) => {
+        if (typeof c === "string") return { clue: c, answer: "" };
+        if (c && typeof c === "object") {
+          const clue = String(c.clue ?? c.prompt ?? c.text ?? c.question ?? `Clue ${idx + 1}`).trim();
+          const answer = String(c.answer ?? c.solution ?? c.correctAnswer ?? "").trim();
+          return { clue, answer };
+        }
+        return { clue: `Clue ${idx + 1}`, answer: "" };
+      })
+      .filter((c) => c && c.clue);
   }, [task]);
 
-  const clues = useMemo(() => {
-    return raw
-      .map((x) => ({
-        clue: x.clue ?? x.prompt ?? x.question ?? x.text ?? "",
-        answer: x.answer ?? x.correctAnswer ?? x.correct ?? "",
-      }))
-      .filter((x) => String(x.clue).trim().length > 0);
-  }, [raw]);
-
   const currentClue =
-    currentClueIndex >= 0 && currentClueIndex < clues.length
-      ? clues[currentClueIndex]
-      : null;
+    currentClueIndex >= 0 && currentClueIndex < clues.length ? clues[currentClueIndex] : null;
 
-  const total = Math.max(1, clues.length);
-  const progress = Math.min(1, Math.max(0, currentClueIndex / total));
-
-  const playSound = (src) => {
+  function playSound(src) {
     try {
-      if (typeof Audio !== "undefined") {
-        const audio = new Audio(src);
-        audio.volume = 0.35;
-        audio.play().catch(() => {});
-      }
-    } catch {}
-  };
+      const a = new Audio(src);
+      a.volume = 0.55;
+      a.play().catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
 
-  // Speech Recognition setup
+  function pushGuess({ by, spoken, correct, clueIndex }) {
+    const safeBy = String(by || "Team").slice(0, 32);
+    const safeSpoken = String(spoken || "").trim().slice(0, 120);
+    const key = `${clueIndex ?? "?"}|${safeBy}|${safeSpoken}|${correct ? 1 : 0}`;
+
+    // De-dupe quick duplicates (e.g., local echo from server)
+    if (lastGuessKeysRef.current.has(key)) return;
+    lastGuessKeysRef.current.add(key);
+    // Cap the de-dupe cache
+    if (lastGuessKeysRef.current.size > 60) {
+      const arr = Array.from(lastGuessKeysRef.current);
+      lastGuessKeysRef.current = new Set(arr.slice(arr.length - 40));
+    }
+
+    setGuessFeed((prev) => {
+      const next = [...prev, { by: safeBy, spoken: safeSpoken, correct: !!correct, clueIndex: clueIndex ?? currentClueIndex, ts: Date.now() }];
+      // Keep last 10
+      return next.length > 10 ? next.slice(next.length - 10) : next;
+    });
+  }
+
+  function triggerCelebrate() {
+    setCelebrateKey(`c_${Date.now()}_${Math.random().toString(16).slice(2)}`);
+    // little celebratory sound if you have it; otherwise ignore
+    playSound("/sounds/victory.mp3");
+  }
+
+  // --- Speech recognition setup ------------------------------------------------
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (disabled) return;
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
     if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
@@ -62,34 +106,44 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
     recognition.lang = "en-US";
 
     recognition.onresult = (event) => {
-      const spoken = event.results?.[0]?.[0]?.transcript?.trim?.() || "";
+      const spoken = event?.results?.[0]?.[0]?.transcript?.trim?.() || "";
 
       const clueObj =
-        currentClueIndex >= 0 && currentClueIndex < clues.length ? clues[currentClueIndex] : null;
+        currentClueIndex >= 0 && currentClueIndex < clues.length
+          ? clues[currentClueIndex]
+          : null;
 
-      const correctAnswer = (clueObj?.answer || "").toLowerCase().trim();
-      const spokenLower = spoken.toLowerCase().trim();
+      const correctAnswer = (clueObj?.answer || "").toLowerCase();
+      const spokenLower = String(spoken).toLowerCase();
 
       const isCorrect =
         !!correctAnswer &&
         (spokenLower.includes(correctAnswer) || correctAnswer.includes(spokenLower));
 
+      // Render the guess immediately (local)
+      pushGuess({ by: "You", spoken, correct: isCorrect, clueIndex: currentClueIndex });
+
       if (isCorrect) {
         setScore((prev) => prev + 100);
         playSound("/sounds/correct.mp3");
+        triggerCelebrate();
       } else {
         playSound("/sounds/wrong.mp3");
       }
 
-      socket?.emit?.("brain-blitz-answer", {
-        roomCode: task?.roomCode,
-        clueIndex: currentClueIndex,
-        spoken,
-        correct: isCorrect,
-      });
+      if (socket) {
+        socket.emit("brain-blitz-answer", {
+          roomCode: task?.roomCode,
+          clueIndex: currentClueIndex,
+          spoken,
+          correct: isCorrect,
+        });
+      }
 
       setCountdown(null);
       setIsListening(false);
+
+      // Move to the next clue after each attempt
       setCurrentClueIndex((prev) => prev + 1);
     };
 
@@ -101,7 +155,37 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
       try { recognition.stop(); } catch {}
       recognitionRef.current = null;
     };
-  }, [clues, currentClueIndex, socket, task?.roomCode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clues, currentClueIndex, socket, task?.roomCode, disabled]);
+
+  // --- Socket listener: show guesses exactly as received -----------------------
+  useEffect(() => {
+    if (!socket) return;
+
+    const handle = (payload) => {
+      if (!payload) return;
+      // Some servers may use { teamName } or { team }
+      const by = payload.teamName || payload.team || payload.by || "Team";
+      const spoken = payload.spoken || payload.answer || payload.text || "";
+      const correct = !!payload.correct;
+      const clueIndex = Number.isFinite(Number(payload.clueIndex)) ? Number(payload.clueIndex) : undefined;
+
+      pushGuess({ by, spoken, correct, clueIndex });
+
+      if (correct) {
+        triggerCelebrate();
+      }
+    };
+
+    socket.on("brain-blitz-answer", handle);
+    socket.on("brain-blitz-answer-broadcast", handle);
+
+    return () => {
+      try { socket.off("brain-blitz-answer", handle); } catch {}
+      try { socket.off("brain-blitz-answer-broadcast", handle); } catch {}
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket]);
 
   // Auto-start listening for each new clue (with countdown)
   useEffect(() => {
@@ -172,6 +256,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
     </>
   );
 
+  // ---------------- UI ----------------
+
   if (!clues.length) {
     return (
       <TaskCardFrame theme="light" badge="⚡ Brain Blitz" title="No clues provided" subtitle="This round didn’t include any clues.">
@@ -197,99 +283,167 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket }) {
   }
 
   return (
-    <TaskCardFrame theme="light" badge="⚡ Brain Blitz" title="Shout the answer!" subtitle={statusLabel} right={right}>
+    <TaskCardFrame
+      theme="light"
+      badge="⚡ Brain Blitz"
+      title="SHOUT THE QUESTION!"
+      subtitle={statusLabel}
+      right={right}
+      style={{
+        background:
+          "radial-gradient(900px 380px at 20% 0%, rgba(99,102,241,0.18), transparent 60%), radial-gradient(900px 380px at 80% 0%, rgba(236,72,153,0.14), transparent 60%), linear-gradient(135deg, rgba(238,242,255,1), rgba(255,255,255,1))",
+      }}
+    >
       <style>{`
-        @keyframes bbGlow { 0%,100% { box-shadow: 0 0 0 rgba(99,102,241,0.0); } 50% { box-shadow: 0 0 38px rgba(236,72,153,0.22); } }
-        .bb-status { animation: bbGlow 1.6s ease-in-out infinite; }
+        @keyframes bbConfettiFall {
+          0% { transform: translateY(-10px) rotate(0deg); opacity: 0; }
+          10% { opacity: 1; }
+          100% { transform: translateY(280px) rotate(360deg); opacity: 0; }
+        }
+        @keyframes bbPop {
+          0% { transform: scale(0.92); opacity: 0; }
+          15% { transform: scale(1); opacity: 1; }
+          100% { transform: scale(1); opacity: 0; }
+        }
       `}</style>
 
-      <div
-        style={{
-          height: 10,
-          borderRadius: 999,
-          background: "rgba(15,23,42,0.08)",
-          border: "1px solid rgba(15,23,42,0.08)",
-          overflow: "hidden",
-        }}
-        aria-label="Progress"
-      >
+      {/* Confetti burst overlay */}
+      {celebrateKey && (
+        <div
+          key={celebrateKey}
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            overflow: "hidden",
+            borderRadius: 28,
+          }}
+        >
+          {/* big obvious banner */}
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              padding: "10px 14px",
+              borderRadius: 16,
+              background: "rgba(34,197,94,0.14)",
+              border: "1px solid rgba(34,197,94,0.35)",
+              color: "#065f46",
+              fontWeight: 950,
+              letterSpacing: 0.4,
+              animation: "bbPop 1100ms ease-out forwards",
+            }}
+          >
+            ✅ Correct!
+          </div>
+
+          {Array.from({ length: 28 }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                position: "absolute",
+                top: -10,
+                left: `${(i * 97) % 100}%`,
+                width: 10,
+                height: 10,
+                borderRadius: 999,
+                background: ["#22c55e", "#3b82f6", "#f59e0b", "#ec4899", "#a78bfa"][i % 5],
+                animation: `bbConfettiFall ${900 + (i % 8) * 120}ms ease-in forwards`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 14 }}>
         <div
           style={{
-            height: "100%",
-            width: `${Math.round(progress * 100)}%`,
-            background: "linear-gradient(90deg, rgba(99,102,241,0.95), rgba(236,72,153,0.85))",
-            transition: "width 220ms linear",
+            padding: 16,
+            borderRadius: 18,
+            background: "rgba(255,255,255,0.7)",
+            border: "1px solid rgba(15,23,42,0.12)",
           }}
-        />
-      </div>
+        >
+          <div style={{ fontSize: 14, fontWeight: 900, opacity: 0.7, marginBottom: 6 }}>
+            Clue {currentClueIndex + 1} / {clues.length}
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 950, lineHeight: 1.2 }}>
+            {currentClue?.clue}
+          </div>
+        </div>
 
-      <div
-        style={{
-          marginTop: 14,
-          borderRadius: 24,
-          border: "1px solid rgba(15,23,42,0.10)",
-          background: "linear-gradient(135deg, rgba(15,23,42,0.92), rgba(15,23,42,0.82))",
-          boxShadow: "0 26px 80px rgba(15,23,42,0.22)",
-          color: "#fff",
-          overflow: "hidden",
-        }}
-      >
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <Pill theme="light" subtle>
+            🎤 {isListening ? "Listening for your shout…" : "Ready for your shout"}
+          </Pill>
+
+          {!isListening && recognitionRef.current && (
+            <PrimaryButton onClick={handleManualStart} disabled={disabled}>
+              Start Mic
+            </PrimaryButton>
+          )}
+
+          {!recognitionRef.current && (
+            <Pill theme="light">Mic not available (no SpeechRecognition)</Pill>
+          )}
+        </div>
+
+        {/* Guess feed */}
         <div
           style={{
             padding: 14,
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-            borderBottom: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 18,
+            background: "rgba(15,23,42,0.04)",
+            border: "1px dashed rgba(15,23,42,0.18)",
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 950, opacity: 0.9 }}>Clue</div>
-
-          <div
-            className="bb-status"
-            style={{
-              padding: "10px 12px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(255,255,255,0.10)",
-              fontWeight: 1000,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <span aria-hidden="true">{isListening ? "🎙️" : "⚡"}</span>
-            <span style={{ letterSpacing: 0.2 }}>{statusLabel}</span>
-          </div>
-        </div>
-
-        <div style={{ padding: 18 }}>
-          <div
-            style={{
-              fontSize: "clamp(22px, 3.2vw, 44px)",
-              fontWeight: 1100,
-              lineHeight: 1.08,
-              textShadow: "0 10px 30px rgba(0,0,0,0.35)",
-            }}
-          >
-            {currentClue?.clue}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <div style={{ fontWeight: 950 }}>Live guesses</div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Shows exactly what was heard</div>
           </div>
 
-          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85, fontWeight: 850 }}>
-            Tip: Speak clearly. If your device blocks auto-mic, tap the button below.
+          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+            {guessFeed.length === 0 ? (
+              <div style={{ opacity: 0.7 }}>No guesses yet — be the first to shout! ⚡</div>
+            ) : (
+              guessFeed
+                .slice()
+                .reverse()
+                .map((g, idx) => (
+                  <div
+                    key={`${g.ts}_${idx}`}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      padding: "8px 10px",
+                      borderRadius: 14,
+                      background: g.correct ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.08)",
+                      border: g.correct
+                        ? "1px solid rgba(34,197,94,0.28)"
+                        : "1px solid rgba(15,23,42,0.10)",
+                    }}
+                  >
+                    <div style={{ minWidth: 34, fontWeight: 950 }}>
+                      {g.correct ? "✅" : "💬"}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 850, fontSize: 13, opacity: 0.85 }}>
+                        {g.by} {Number.isFinite(g.clueIndex) ? `• clue ${g.clueIndex + 1}` : ""}
+                      </div>
+                      <div style={{ fontWeight: 900, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {g.spoken || "(inaudible)"}
+                      </div>
+                    </div>
+                    {g.correct && <Pill theme="light">+100</Pill>}
+                  </div>
+                ))
+            )}
           </div>
         </div>
       </div>
-
-      <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <GhostButton onClick={handleManualStart} disabled={disabled} theme="light" style={{ padding: "12px 14px" }}>
-          {isListening ? "Listening…" : "Tap to Start 🎙️"}
-        </GhostButton>
-      </div>
-
-      {showVictory && <VictoryScreen variant="random" onClose={() => setShowVictory(false)} />}
     </TaskCardFrame>
   );
 }
