@@ -190,7 +190,7 @@
 .s1 { left: 73%; top: 72%; }  /* bottom-right floor */
 .s2 { left: 31%; top: 34%; }  /* left side near windows */
 .s3 { left: 24%; top: 42%; }  /* left-center table */
-.s4 { left: 7%; top: 52%; }  /* center-right table */
+.s4 { left: 17%; top: 52%; }  /* center-right table */
 .s5 { left: 69%; top: 53%; }  /* right wall / scan area */
 .s6 { left: 62%; top: 44%; }  /* mid-right */
 .s7 { left: 44%; top: 41%; }  /* mid-left (active center) */
