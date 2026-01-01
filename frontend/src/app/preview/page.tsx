@@ -15,14 +15,14 @@ const DEFAULT_SECONDS_PER_STATION = 8; // tweak to taste
 export default function PreviewPage() {
   const stations: Station[] = useMemo(
     () => [
-      { key: "s1", label: "Scan", src: "/preview/station-01-scan.mp4", className: "s1" },
-      { key: "s2", label: "MCQ", src: "/preview/station-02-mcq.mp4", className: "s2" },
-      { key: "s3", label: "Make & Snap", src: "/preview/station-03-make-snap.mp4", className: "s3" },
-      { key: "s4", label: "MadDash", src: "/preview/station-04-maddash.mp4", className: "s4" },
-      { key: "s5", label: "Word/Brain", src: "/preview/station-05-word-brain.mp4", className: "s5" },
-      { key: "s6", label: "Venn/Sort", src: "/preview/station-06-venn-sort.mp4", className: "s6" },
-      { key: "s7", label: "Physical", src: "/preview/station-07-physical-choice.mp4", className: "s7" },
-      { key: "s8", label: "Feedback", src: "/preview/station-08-feedback.mp4", className: "s8" },
+      { key: "s1", label: "Step 1: Scan to Start", src: "/preview/station-01-scan.mp4", className: "s1" },
+      { key: "s2", label: "First task: Multiple Choice Qs", src: "/preview/station-02-mcq.mp4", className: "s2" },
+      { key: "s3", label: "Second task: Make & Snap", src: "/preview/station-03-make-snap.mp4", className: "s3" },
+      { key: "s4", label: "Third task: Mad Dash", src: "/preview/station-04-maddash.mp4", className: "s4" },
+      { key: "s5", label: "Fourth task: Word Weaver", src: "/preview/station-05-word-brain.mp4", className: "s5" },
+      { key: "s6", label: "Fifth task: Venn Sort", src: "/preview/station-06-venn-sort.mp4", className: "s6" },
+      { key: "s7", label: "Sixth task: Physical", src: "/preview/station-07-physical-choice.mp4", className: "s7" },
+      { key: "s8", label: "End the set: Get Feedback!", src: "/preview/station-08-feedback.mp4", className: "s8" },
     ],
     []
   );
@@ -52,7 +52,7 @@ export default function PreviewPage() {
     const stage = document.querySelector(".stage");
     if (!stage) return;
 
-    const videos = stage.querySelectorAll<HTMLVideoElement>("video.station");
+    const videos = stage.querySelectorAll<HTMLVideoElement>("video.stationVideo");
 
     videos.forEach((video, idx) => {
       video.muted = true;
@@ -100,16 +100,25 @@ export default function PreviewPage() {
 
         {stations.map((st, idx) => {
           const isActive = idx === activeIdx;
+
           return (
-            <video
+            <div
               key={st.key}
-              className={`station ${st.className} ${isActive ? "active" : "inactive"}`}
-              src={st.src}
-              muted
-              playsInline
-              preload="auto"
+              className={`stationWrap ${st.className} ${isActive ? "active" : "inactive"}`}
               onClick={() => setActiveIdx(idx)}
-            />
+            >
+              <video
+                className="stationVideo"
+                src={st.src}
+                muted
+                playsInline
+                preload="auto"
+              />
+
+              <div className="stationCaption">
+                {st.label}
+              </div>
+            </div>
           );
         })}
 
