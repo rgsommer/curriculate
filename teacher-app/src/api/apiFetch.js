@@ -1,74 +1,50 @@
 // teacher-app/src/api/apiFetch.js
+//
+// Two helpers:
+// - apiFetch(): returns the native fetch Response (so callers can handle blobs/streams/etc).
+// - apiFetchJson(): returns parsed JSON (and throws on non-2xx unless you pass { okOnNon2xx: true }).
+//
 
-const API_BASE =
-  import.meta?.env?.VITE_API_BASE_URL || "https://api.curriculate.net";
-
-function getToken() {
-  try {
-    return (
-      localStorage.getItem("curriculate_token") ||
-      localStorage.getItem("token") ||
-      ""
-    );
-  } catch {
-    return "";
-  }
-}
-
-async function readBodySafe(res) {
-  const ct = (res.headers && res.headers.get && res.headers.get("content-type")) || "";
-  if (ct.includes("application/json")) {
-    try {
-      return await res.json();
-    } catch {
-      return null;
-    }
-  }
-  try {
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
-
-export async function apiFetch(path, options = {}) {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
-
-  const token = getToken();
+export function apiFetch(path, options = {}) {
+  const token =
+    (typeof window !== "undefined" &&
+      (localStorage.getItem("curriculate_token") || localStorage.getItem("token"))) ||
+    "";
 
   const headers = {
     ...(options.headers || {}),
+    ...(options.body && !(options.body instanceof FormData)
+      ? { "Content-Type": "application/json" }
+      : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
-  // Add JSON header only when sending a body (and caller didn't override)
-  if (options.body != null && headers["Content-Type"] == null) {
-    headers["Content-Type"] = "application/json";
-  }
+  const API_BASE =
+    (import.meta?.env?.VITE_API_BASE_URL) || "https://api.curriculate.net";
 
-  // Attach Bearer token if present (backend authRequired expects this)
-  if (token && headers.Authorization == null) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const res = await fetch(url, {
-    credentials: "include",
+  return fetch(`${API_BASE}${path}`, {
+    credentials: options.credentials ?? "include",
     ...options,
     headers,
   });
+}
 
-  const body = await readBodySafe(res);
+export async function apiFetchJson(path, options = {}, { okOnNon2xx = false } = {}) {
+  const res = await apiFetch(path, options);
 
-  // Normalize non-OK into a consistent JSON shape
-  if (!res.ok) {
-    const msg =
-      (body && typeof body === "object" && (body.error || body.message)) ||
-      (typeof body === "string" ? body : null) ||
-      `Request failed: ${res.status}`;
-
-    return { ok: false, status: res.status, error: msg };
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
   }
 
-  // If server returned JSON, keep it; otherwise wrap text
-  if (body && typeof body === "object") return body;
-  return { ok: true, data: body };
+  if (!res.ok && !okOnNon2xx) {
+    const msg =
+      (data && (data.error || data.message)) ||
+      `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+
+  return data;
 }

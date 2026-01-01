@@ -369,42 +369,30 @@ sseWrite(res, "task", { index: i, total, taskType, task: fixedTask });
     });
 
     // ✅ Persist demo taskset to Mongo so /api/demo/taskset shows the new one
+    // ✅ Persist streamed taskset WITHOUT changing the demo signature
     try {
-      const DemoTaskset = getDemoTasksetModel();
+      const existing = await DemoTaskset.findOne({ key: "default" }).lean();
 
-      // lightweight signature (enough to force refresh logic if you use it)
-      const signature = `stream:${new Date().toISOString()}:types=${types.length}`;
-
-      await DemoTaskset.findOneAndUpdate(
-        { key: "default" },
-        { $set: { taskset: taskset.taskset, signature } },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-    } catch (e) {
-      console.error("[demo] failed saving demo taskset:", e);
-      // keep streaming UX: don't fail the whole stream, but surface it to the client
-      sseWrite(res, "error", { ok: false, error: "Generated demo tasks, but failed to save to database." });
-    }
-    
-    // ✅ Persist to the exact doc /api/demo/taskset reads (key="default")
-    try {
-      const signature = `stream:${Date.now()}:types=${types.length}`;
+      const signature =
+        existing && typeof existing.signature === "string" && existing.signature.trim()
+          ? existing.signature
+          : undefined;
 
       await DemoTaskset.findOneAndUpdate(
         { key: "default" },
         {
-          $set: {
-            taskset,      // <-- whatever object you want GET to return
-            signature,
+          $set: { taskset: taskset.taskset, ...(signature ? { signature } : {}),
             updatedAt: new Date(),
           },
         },
-        { upsert: true, new: true }
+        { upsert: true, new: true, setDefaultsOnInsert: true }
       );
     } catch (e) {
       console.error("[demo-stream] save failed:", e);
-      // also surface to client so you see it immediately
-      sseWrite(res, "error", { ok: false, error: "Generated tasks but failed saving to Mongo." });
+      sseWrite(res, "error", {
+        ok: false,
+        error: "Generated tasks but failed saving to Mongo.",
+      });
     }
 
     sseWrite(res, "done", { ok: true, taskset, summary: { total, generated: generated.length, skipped: skipped.length }, logFile });

@@ -15,7 +15,7 @@ import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
 import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
 import Login from "./pages/Login.jsx";
-import { apiFetch } from "./api/apiFetch";
+import { apiFetch, apiFetchJson } from "./api/apiFetch";
 
 import { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
@@ -808,8 +808,8 @@ function PlanDetails({ plan, fallbackTier }) {
 
 async function fetchJsonSafe(url, options = {}) {
   try {
-    const data = await apiFetch(url, options);
-    return data;
+    const data = await apiFetchJson(url, options, { okOnNon2xx: true });
+    return data ?? { ok: false, error: "No JSON response" };
   } catch (e) {
     return { ok: false, error: e?.message || "Network error" };
   }
@@ -930,7 +930,7 @@ function AdminPage({ isAdmin = false }) {
     setDemoErr("");
     setDemoLoading(true);
     try {
-      const data = await apiFetch("/api/demo/taskset"); // ✅ already JSON
+      const data = await apiFetchJson("/api/demo/taskset");
       if (!data?.ok) {
         setDemoErr(data?.error || "Could not load demo taskset.");
         return;
@@ -1049,7 +1049,7 @@ function AdminPage({ isAdmin = false }) {
     setErr("");
     setBusy(true);
     try {
-      const data = await apiFetch("/api/admin/access-codes"); // apiFetch returns JSON
+      const data = await apiFetchJson("/api/admin/access-codes");
       if (!data?.ok) {
         setErr(data?.error || "Could not load access codes.");
         return;
@@ -1082,7 +1082,7 @@ function AdminPage({ isAdmin = false }) {
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       };
 
-      const data = await apiFetch("/api/admin/access-codes", {
+      const data = await apiFetchJson("/api/admin/access-codes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
