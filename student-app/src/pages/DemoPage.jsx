@@ -1585,7 +1585,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
           <ViewportCard>
             <div>
 <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
-              <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Task Runner (demo intro)</div>
+              <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Welcome: Demo introduction)</div>
               <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
                 Short walkthrough clip (muted autoplay; tap for sound).
               </div>
