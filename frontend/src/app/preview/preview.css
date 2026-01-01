@@ -130,12 +130,12 @@
 }
 
 /* === POSITIONING (keep/tune as needed) === */
-.s1 { top: 22%; left: 12%; }
-.s2 { top: 38%; left: 12%; }
-.s3 { top: 30%; left: 44%; }
-.s4 { top: 30%; left: 58%; }
-
-.s5 { top: 55%; left: 38%; }
-.s6 { top: 50%; left: 24%; }
-.s7 { top: 52%; left: 62%; }
-.s8 { top: 46%; left: 46%; }
+/* Marked positions from your S1–S8 overlay */
+.s1 { left: 94.31%; top: 51.13%; } /* right wall */
+.s2 { left: 69.03%; top: 54.85%; } /* back table area */
+.s3 { left: 43.15%; top: 64.64%; } /* center table */
+.s4 { left: 15.37%; top: 53.64%; } /* left table */
+.s5 { left: 66.44%; top: 51.13%; } /* near blue wall shapes */
+.s6 { left: 22.78%; top: 44.34%; } /* back-left table */
+.s7 { left: 48.70%; top: 68.93%; } /* right-front table */
+.s8 { left: 93.94%; top: 80.10%; } /* bottom-right floor */
