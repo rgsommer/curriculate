@@ -814,7 +814,7 @@ export default function DemoPage() {
   // Load once
   useEffect(() => {
     loadDemoTaskset()
-      .then(() => showToast("Demo pool loading succeeded", true))
+      // .then(() => showToast("Demo pool loading succeeded", true))
       .catch((e) => {
         console.warn("[DemoPage] load demo pool failed:", e);
         showToast(e?.message || "Demo pool loading failed", false);
@@ -1587,7 +1587,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
 <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
               <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Welcome: Demo introduction</div>
               <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
-                Short walkthrough clip (muted autoplay; tap for sound).
+                Short walkthrough clip (muted autoplay; there is no sound).
               </div>
             </div>
 
@@ -1658,31 +1658,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               >
                 Start Task
               </button>
-              <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <ProgressFillButton
-                  onClick={startGenerateAllTypesStream}
-                  loading={generating}
-                  progress={progress}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 999,
-                    border: "1px solid rgba(15,23,42,0.18)",
-                    background: "rgba(255,255,255,0.10)",
-                    color: "#0f172a",
-                    fontWeight: 900,
-                    cursor: generating ? "progress" : "pointer",
-                    minWidth: 240,
-                  }}
-                >
-                  {generating ? "Generating…" : "Generate demo pool (all eligible types)"}
-                </ProgressFillButton>
-
-                {generating && (
-                  <div style={{ fontSize: 13, opacity: 0.9, fontWeight: 800 }}>
-                    {status || `Working… ${Math.round(progress * 100)}%`}
-                  </div>
-                )}
-              </div>
+              
             </div>
 
             <div style={{ marginTop: 10, opacity: 0.78, fontSize: 13 }}>
