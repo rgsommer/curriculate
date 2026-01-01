@@ -96,7 +96,7 @@ function stableRand01(seedStr) {
 function pickCategoryVideoSrc(taskType, taskObj) {
   const tt = normalizeTaskType(taskType || taskObj?.taskType || taskObj?.type);
 
-  if (CATEGORY_ANIMATION_SKIP_TYPES_LEGACY.has(tt)) return null;
+  if (CATEGORY_ANIMATION_SKIP_TYPES.has(tt)) return null;
 
   // allow per-task override (exact filename in /animations/categories/)
   const ui = taskObj?.ui || taskObj?.config?.ui || null;
@@ -139,22 +139,21 @@ const CATEGORY_ANIMATION_FILES = {
 };
 
 
-// Task types that should NOT show category staging video (legacy helper)
-const CATEGORY_ANIMATION_SKIP_TYPES_LEGACY = new Set(
+// Task types that should NOT show category staging video
+const CATEGORY_ANIMATION_SKIP_TYPES = new Set(
   [
     TASK_TYPES.MOOD_CHECKIN,
-    TASK_TYPES.TASK_RUNNER,
+    TASK_TYPES.TREASURE_RUNNER,
     TASK_TYPES.MULTI_PLAYER_FEEDBACK,
   ]
     .filter(Boolean)
     .map((s) => String(s).toLowerCase())
 );
 
-
 function pickCategoryAnimation(taskType, taskObj) {
   // Some tasks intentionally avoid the category video (mood, treasure runner, multiplayer feedback).
   const tt = String(taskType || taskObj?.taskType || taskObj?.type || "").toLowerCase();
-  if (CATEGORY_ANIMATION_SKIP_TYPES_LEGACY.has(tt)) return null;
+  if (CATEGORY_ANIMATION_SKIP_TYPES.has(tt)) return null;
 
   const ui = taskObj?.ui || taskObj?.config?.ui || null;
   const override = ui?.categoryAnimation || ui?.categoryAnim || null; // allow per-task override
