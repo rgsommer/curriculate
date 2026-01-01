@@ -1935,40 +1935,6 @@ function StudentApp() {
         const shouldReview = !isPhysical;
 
         if (shouldReview) {
-          // If there is no scoring overlay to show, do NOT pause for "review".
-          // (Example: objectiveScoring=false AND aiScoring=false)
-          // (Example: objectiveScoring=false AND aiScoring=false)
-          const objectiveFlag =
-            (typeof currentTask?.objectiveScoring === "boolean"
-              ? currentTask.objectiveScoring
-              : (typeof currentTask?.config?.objectiveScoring === "boolean"
-                  ? currentTask.config.objectiveScoring
-                  : undefined));
-
-          const aiFlag =
-            (typeof currentTask?.aiScoring === "boolean"
-              ? currentTask.aiScoring
-              : (typeof currentTask?.config?.aiScoring === "boolean"
-                  ? currentTask.config.aiScoring
-                  : (typeof currentTask?.aiScoringRequired === "boolean"
-                      ? currentTask.aiScoringRequired
-                      : undefined)));
-
-          const disableReviewPause = objectiveFlag === false && aiFlag === false;
-
-          if (disableReviewPause) {
-            // No correct answers / rubric / scoring overlay to review -> return to scan immediately.
-            setReviewState(null);
-            setPostSubmitSecondsLeft(null);
-            setTaskLocked(false);
-            if (postSubmitTimerRef.current) {
-              clearInterval(postSubmitTimerRef.current);
-              postSubmitTimerRef.current = null;
-            }
-            endReviewAndReturnToScan();
-            return;
-          }
-
           setTaskLocked(true);
 
           const fallbackSeconds =
