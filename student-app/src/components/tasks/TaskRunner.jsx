@@ -1416,6 +1416,9 @@ export default function TaskRunner({
     );
   }
 
+  const uiCards = renderUICardsIfPresent();
+  if (uiCards) return uiCards;
+
   // --- Unified task theming (TaskFrame) ---------------------------------
 
 const THEME_PRESETS = {
@@ -1486,6 +1489,265 @@ const THEME_PRESETS = {
     const m = Math.floor(s / 60);
     const r = s % 60;
     return `${m}:${String(r).padStart(2, "0")}`;
+  }
+
+    function safeArray(x) {
+    return Array.isArray(x) ? x : [];
+  }
+
+  function pickUI(t) {
+    return t?.ui || t?.config?.ui || null;
+  }
+
+  // Simple animation layer (no libs)
+  function TaskAnimLayer({ ui, theme }) {
+    const anim = ui?.animation || null;
+    const type = anim?.type || null;
+    if (!type) return null;
+
+    // very subtle floating dots / stickers vibe
+    if (type === "float") {
+      return (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            overflow: "hidden",
+          }}
+        >
+          <style>{`
+            @keyframes uiFloat {
+              0%,100% { transform: translateY(0); opacity: .55; }
+              50% { transform: translateY(-14px); opacity: .35; }
+            }
+          `}</style>
+          {new Array(10).fill(0).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                width: 10 + (i % 4) * 6,
+                height: 10 + (i % 4) * 6,
+                borderRadius: 999,
+                background: theme.accent,
+                opacity: 0.10,
+                left: `${(i * 11) % 100}%`,
+                top: `${(i * 17) % 100}%`,
+                filter: "blur(0.5px)",
+                animation: `uiFloat ${1800 + i * 120}ms ease-in-out infinite`,
+                animationDelay: `${i * 90}ms`,
+              }}
+            />
+          ))}
+        </div>
+      );
+    }
+
+    if (type === "pulse") {
+      return (
+        <style>{`
+          @keyframes uiPulse {
+            0%,100% { transform: scale(1); }
+            50% { transform: scale(1.01); }
+          }
+        `}</style>
+      );
+    }
+
+    return null;
+  }
+
+  function TaskHero({ ui, theme }) {
+    const hero = ui?.hero || null;
+    if (!hero) return null;
+
+    const title = hero?.title || "";
+    const subtitle = hero?.subtitle || "";
+
+    return (
+      <div
+        style={{
+          borderRadius: 18,
+          border: `1px solid ${theme.border}`,
+          background: "rgba(255,255,255,0.65)",
+          padding: "14px 14px",
+          marginBottom: 10,
+          color: theme.title,
+        }}
+      >
+        {title && (
+          <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: 0.2 }}>
+            {title}
+          </div>
+        )}
+        {subtitle && (
+          <div style={{ marginTop: 4, color: theme.sub, fontWeight: 700 }}>
+            {subtitle}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function TaskCardGrid({ ui, theme }) {
+    const cards = safeArray(ui?.cards);
+    if (!cards.length) return null;
+
+    const columns = ui?.cardsColumns || 1;
+    const gridCols = columns >= 2 ? "repeat(2, minmax(0, 1fr))" : "1fr";
+
+    return (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: gridCols,
+          gap: 10,
+        }}
+      >
+        {cards.map((c, idx) => {
+          const icon = c?.icon || "";
+          const title = c?.title || "";
+          const text = c?.text || c?.body || "";
+          const meta = c?.meta || "";
+
+          return (
+            <div
+              key={c?.id || idx}
+              style={{
+                borderRadius: 18,
+                border: `1px solid ${theme.border}`,
+                background: "rgba(255,255,255,0.88)",
+                padding: 14,
+                color: theme.title,
+                boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <div
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 14,
+                    background: theme.badgeBg,
+                    border: `1px solid ${theme.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 20,
+                    flex: "0 0 auto",
+                  }}
+                >
+                  {icon || "✨"}
+                </div>
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 950, fontSize: 16, lineHeight: 1.2 }}>
+                    {title || `Step ${idx + 1}`}
+                  </div>
+                  {meta && (
+                    <div style={{ marginTop: 2, fontSize: 12, color: theme.sub, fontWeight: 800 }}>
+                      {meta}
+                    </div>
+                  )}
+                  {text && (
+                    <div style={{ marginTop: 8, fontSize: 15, fontWeight: 650, color: theme.title }}>
+                      {text}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function TaskActions({ ui, theme, disabled, onAction }) {
+    const actions = safeArray(ui?.actions);
+    if (!actions.length) return null;
+
+    const primary = actions.find((a) => a?.variant === "primary") || actions[0];
+    const secondary = actions.filter((a) => a !== primary);
+
+    return (
+      <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "flex-end" }}>
+        {secondary.map((a) => (
+          <button
+            key={a?.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onAction(a)}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 999,
+              border: `1px solid ${theme.border}`,
+              background: "rgba(255,255,255,0.75)",
+              color: theme.title,
+              fontWeight: 900,
+              cursor: disabled ? "not-allowed" : "pointer",
+            }}
+          >
+            {a?.label || a?.id}
+          </button>
+        ))}
+
+        {primary && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onAction(primary)}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 999,
+              border: "none",
+              background: theme.accent,
+              color: "#fff",
+              fontWeight: 950,
+              cursor: disabled ? "not-allowed" : "pointer",
+              boxShadow: "0 14px 30px rgba(0,0,0,0.12)",
+            }}
+          >
+            {primary?.label || "Done"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  function renderUICardsIfPresent() {
+    const ui = pickUI(t);
+    if (!ui) return null;
+
+    const mode = ui?.renderMode || ui?.mode || null;
+    if (mode !== "cards") return null;
+
+    const theme = pickThemeForTask(type, t);
+
+    const handleAction = (a) => {
+      // Default behavior: DONE submits completion snapshot
+      if (a?.id === "done" || String(a?.label || "").toLowerCase().includes("done")) {
+        handleTaskSubmit({ completed: true, action: a?.id || "done" });
+        return;
+      }
+      handleTaskSubmit({ action: a?.id || a?.label || "action" });
+    };
+
+    return (
+      <TaskFrame>
+        <div style={{ position: "relative", height: "100%", overflow: "auto" }}>
+          <TaskAnimLayer ui={ui} theme={theme} />
+
+          <div style={{ position: "relative", zIndex: 2 }}>
+            <TaskHero ui={ui} theme={theme} />
+            <TaskCardGrid ui={ui} theme={theme} />
+            <TaskActions ui={ui} theme={theme} disabled={effectiveDisabled || isReview} onAction={handleAction} />
+          </div>
+        </div>
+      </TaskFrame>
+    );
   }
 
   // ✅ Unified TaskFrame wrapper (every task inherits the same “beautiful shell”)
