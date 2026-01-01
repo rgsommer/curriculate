@@ -814,10 +814,10 @@ export default function DemoPage() {
   // Load once
   useEffect(() => {
     loadDemoTaskset()
-      .then(() => showToast("🍏", true))
+      .then(() => showToast("Demo pool loading succeeded", true))
       .catch((e) => {
         console.warn("[DemoPage] load demo pool failed:", e);
-        showToast(e?.message || "🍎", false);
+        showToast(e?.message || "Demo pool loading failed", false);
       });
 
     return () => {
@@ -1528,8 +1528,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
         >
           <div style={{ fontWeight: 900 }}>Leaderboard</div>
           <div style={{ opacity: 0.8, fontSize: 13 }}>
-            Demo pool:{" "}
-            <span style={{ fontWeight: 900 }}>{demoTaskset ? "loaded" : "not loaded"}</span>
+            {/* Demo pool:{" "} */}
+            <span style={{ fontWeight: 900 }}>{demoTaskset ? "🍏" : "🍎"}</span>
           </div>
         </div>
 
