@@ -50,6 +50,9 @@ export const TASK_TYPES = {
   MOOD_CHECKIN: "mood-checkin",
   TREASURE_RUNNER: "treasure-runner",
 
+  // Demo-only intro / walkthrough
+  TASK_RUNNER: "task-runner",
+
   // Post-taskset reflection
   MULTI_PLAYER_FEEDBACK: "multi-player-feedback",
 
@@ -628,6 +631,21 @@ export const TASK_TYPE_META = {
     description:
       "Interstitial mini-game used while waiting for the next task. Keeps teams engaged during transitions and reduces off-task behavior. Can optionally award small bonus points.",
   },
+
+  [TASK_TYPES.TASK_RUNNER]: {
+    label: "Task Runner (Intro)",
+    category: CATEGORY.OTHER,
+    implemented: true,
+    // Demo-only: selectable from DemoPage, but never AI-generated.
+    demoEligible: false,
+    generatorEligible: false,
+    scoringMode: "none",
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    demoSelectable: true,
+    description: "Demo-only intro / walkthrough video.",
+  },
+
 
   // =========================
   // COMPETITIVE / GAME MODES

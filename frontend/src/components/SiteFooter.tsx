@@ -38,30 +38,13 @@ export default function SiteFooter() {
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
             <FooterCol title="Product">
-              <Link className="hover:text-gray-900" href="/features">
-                Features
-              </Link>
-              <Link className="hover:text-gray-900" href="/how-it-works">
-                How it Works
-              </Link>
-              <Link className="hover:text-gray-900" href="/preview">
-                Preview
-              </Link>
-              <Link className="hover:text-gray-900" href="/compare">
-                Compare
-              </Link>
-              <Link className="hover:text-gray-900" href="/compare/kahoot">
-                vs Kahoot
-              </Link>
-              <Link className="hover:text-gray-900" href="/compare/quizlet">
-                vs Quizlet
-              </Link>
-              <Link className="hover:text-gray-900" href="/reports">
-                Reports
-              </Link>
-              <Link className="hover:text-gray-900" href="/station-posters">
-                Station Posters
-              </Link>
+              <Link href="/how-it-works">How it Works</Link>
+              <Link href="/preview">Preview</Link>
+              <Link href="/reports">Reports</Link>
+              <Link href="/compare">Compare</Link>
+              <Link href="/compare/kahoot">vs Kahoot</Link>
+              <Link href="/compare/quizlet">vs Quizlet</Link>
+              <Link href="/station-posters">Station Posters</Link>
             </FooterCol>
 
             <FooterCol title="Get Started">

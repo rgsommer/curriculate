@@ -6,6 +6,9 @@ import ProgressFillButton from "../components/ProgressFillButton";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
+// Demo intro video (served from student-app/public)
+const DEMO_INTRO_SRC = "/demointro/demo-intro.mp4";
+
 // Demo pacing
 const DEFAULT_REVIEW_SECONDS = 15;
 const BOT_THINK_MIN_MS = 900;
@@ -688,7 +691,7 @@ export default function DemoPage() {
     cleanupEventSource();
     setGenerating(true);
     setDone(0);
-    setTotal(Math.max(1, eligibleTaskTypes.length));
+    setTotal(Math.max(1, generatorEligibleTaskTypes.length));
     setStatus("Starting…");
 
     // Build the payload the backend stream endpoint expects
@@ -700,7 +703,7 @@ export default function DemoPage() {
       topicLabel: "Demo",
       duration: 30,
       // Force the server to generate exactly the same eligible list your dropdown uses
-      selectedTypes: eligibleTaskTypes,
+      selectedTypes: generatorEligibleTaskTypes,
     };
 
     const url = `${API_BASE}/api/demo/taskset/stream?payload=${encodeURIComponent(
@@ -713,8 +716,8 @@ export default function DemoPage() {
     es.addEventListener("init", (evt) => {
       try {
         const data = JSON.parse(evt.data || "{}");
-        setTotal(Math.max(1, Number(data.total) || eligibleTaskTypes.length || 1));
-        setStatus(`Generating… (0 / ${Number(data.total) || eligibleTaskTypes.length})`);
+        setTotal(Math.max(1, Number(data.total) || generatorEligibleTaskTypes.length || 1));
+        setStatus(`Generating… (0 / ${Number(data.total) || generatorEligibleTaskTypes.length})`);
       } catch {
         setStatus("Generating…");
       }
@@ -830,7 +833,17 @@ export default function DemoPage() {
     []
   );
 
-  const eligibleTaskTypes = useMemo(() => {
+  const selectableTaskTypes = useMemo(() => {
+    const entries = Object.entries(TASK_TYPE_META || {});
+    return entries
+      .filter(([, meta]) => meta && meta.implemented !== false)
+      // Normal demo list: AI+generator eligible, plus a few demo-only/manual picks
+      .filter(([, meta]) => (meta.aiEligible === true && meta.generatorEligible === true) || meta.demoSelectable === true)
+      .map(([type]) => type)
+      .sort((a, b) => String(a).localeCompare(String(b)));
+  }, []);
+
+  const generatorEligibleTaskTypes = useMemo(() => {
     const entries = Object.entries(TASK_TYPE_META || {});
     return entries
       .filter(([, meta]) => meta && meta.implemented !== false)
@@ -839,11 +852,12 @@ export default function DemoPage() {
       .sort((a, b) => String(a).localeCompare(String(b)));
   }, []);
 
+
   const selectWidthPx = useMemo(() => {
-    const maxLen = eligibleTaskTypes.reduce((m, t) => Math.max(m, String(t).length), 0);
+    const maxLen = selectableTaskTypes.reduce((m, t) => Math.max(m, String(t).length), 0);
     // Rough estimate: ~9px per char + padding
     return Math.min(720, Math.max(380, maxLen * 9 + 90));
-  }, [eligibleTaskTypes]);
+  }, [selectableTaskTypes]);
 
   function pickDemoTask(type) {
     const tasks = demoTaskset?.tasks || demoTaskset?.items || [];
@@ -1035,6 +1049,18 @@ export default function DemoPage() {
             ],
           },
         },
+      };
+    }
+
+
+    // Task Runner (Demo intro video): rendered directly by DemoPage (not TaskRunner component)
+    if (type === TASK_TYPES.TASK_RUNNER) {
+      return {
+        taskType: TASK_TYPES.TASK_RUNNER,
+        title: "Task Runner (Intro)",
+        prompt: "A short walkthrough clip showing the Task Runner flow.",
+        timeLimitSeconds: 0,
+        points: 0,
       };
     }
 
@@ -1319,9 +1345,9 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
     borderRadius: 999,
     fontSize: "0.8rem",
     fontWeight: 650,
-    background: "rgba(15,23,42,0.65)",
-    border: "1px solid rgba(148,163,184,0.55)",
-    color: "#e5e7eb",
+    background: "rgba(255,255,255,0.80)",
+    border: "1px solid rgba(15,23,42,0.12)",
+    color: "#0f172a",
   };
 
   const instructionPill = {
@@ -1329,8 +1355,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
     cursor: "pointer",
     userSelect: "none",
     padding: "8px 12px",
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "rgba(255,255,255,0.70)",
     fontWeight: 900,
     lineHeight: 1.25,
     maxWidth: 820,
@@ -1346,8 +1372,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
         minHeight: "100vh",
         padding: 16,
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        background: "radial-gradient(circle at top, #0f172a, #020617)",
-        color: "#e5e7eb",
+        background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 40%, #eef2ff 100%)",
+        color: "#0f172a",
       }}
     >
       {/* HEADER (StudentApp-ish) */}
@@ -1363,7 +1389,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
       >
         <div>
           <div style={{ marginBottom: 6 }}>
-            <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#ffffff" }}>
+            <h1 style={{ margin: 0, fontSize: "1.4rem", color: "#0f172a" }}>
               Curriculate – Demo
             </h1>
             <button
@@ -1384,8 +1410,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   marginTop: 8,
                   padding: "10px 12px",
                   borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(15,23,42,0.10)",
+                  background: "rgba(255,255,255,0.70)",
                   maxWidth: 820,
                   lineHeight: 1.35,
                   fontSize: 13,
@@ -1438,7 +1464,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               style={{
                 ...pill,
                 cursor: "pointer",
-                border: "1px solid rgba(255,255,255,0.18)",
+                border: "1px solid rgba(15,23,42,0.12)",
                 background: "rgba(34,197,94,0.22)",
                 color: "#fff",
                 fontWeight: 900,
@@ -1460,7 +1486,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
             marginBottom: 10,
             padding: "10px 12px",
             borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.18)",
+            border: "1px solid rgba(15,23,42,0.12)",
             background: toast.positive ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)",
             fontWeight: 900,
           }}
@@ -1475,8 +1501,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
           marginTop: 10,
           padding: 12,
           borderRadius: 14,
-          border: "1px solid rgba(255,255,255,0.14)",
-          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(15,23,42,0.10)",
+          background: "rgba(255,255,255,0.70)",
         }}
       >
         <div
@@ -1542,24 +1568,41 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
       {/* Phase: Runner + Picker */}
       {phase === "runner" && (
         <div style={{ marginTop: 16 }}>
-          <TaskRunner
-            task={runnerTask}
-            onSubmit={() => {}}
-            disabled={false}
-            mode="play"
-            roomCode={"DEMO"}
-            playerTeam={{ id: "team-you", teamName: "Your Team" }}
-            memberNames={["Demo"]}
-            socket={demoSocket}
-          />
+          {/* Demo intro (replaces interactive Treasure Runner on DemoPage) */}
+          <div
+            style={{
+              borderRadius: 18,
+              overflow: "hidden",
+              border: "1px solid rgba(15, 23, 42, 0.10)",
+              background: "rgba(255,255,255,0.85)",
+              boxShadow: "0 18px 60px rgba(15, 23, 42, 0.10)",
+            }}
+          >
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
+              <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>Task Runner (demo intro)</div>
+              <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
+                Short walkthrough clip (muted autoplay; tap for sound).
+              </div>
+            </div>
+
+            <video
+              src={DEMO_INTRO_SRC}
+              muted
+              autoPlay
+              loop
+              playsInline
+              controls
+              style={{ width: "100%", display: "block", background: "#000" }}
+            />
+          </div>
 
           <div
             style={{
               marginTop: 16,
               borderRadius: 16,
               padding: 16,
-              border: "1px solid rgba(255,255,255,0.14)",
-              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(15,23,42,0.10)",
+              background: "rgba(255,255,255,0.70)",
             }}
           >
             <div style={{ fontWeight: 900, marginBottom: 10 }}>Choose a task to demo</div>
@@ -1574,9 +1617,9 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   height: 56,
                   padding: "14px 14px",
                   borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  background: "rgba(0,0,0,0.18)",
-                  color: "#fff",
+                  border: "1px solid rgba(15,23,42,0.12)",
+                  background: "rgba(255,255,255,0.85)",
+                  color: "#0f172a",
                   fontWeight: 900,
                   fontSize: 17,
                   lineHeight: "22px",
@@ -1586,7 +1629,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   Select a task type…
                 </option>
 
-                {eligibleTaskTypes.map((t) => (
+                {selectableTaskTypes.map((t) => (
                   <option
                     key={t}
                     value={t}
@@ -1603,11 +1646,11 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                 style={{
                   padding: "10px 12px",
                   borderRadius: 999,
-                  border: "1px solid rgba(148,163,184,0.55)",
+                  border: "1px solid rgba(15,23,42,0.18)",
                   background: !selectedType
                     ? "rgba(255,255,255,0.06)"
                     : "linear-gradient(135deg, rgba(34,197,94,0.65), rgba(14,165,233,0.65))",
-                  color: "#fff",
+                  color: "#0f172a",
                   fontWeight: 900,
                   cursor: !selectedType ? "not-allowed" : "pointer",
                 }}
@@ -1623,7 +1666,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   style={{
                     padding: "10px 14px",
                     borderRadius: 999,
-                    border: "1px solid rgba(148,163,184,0.55)",
+                    border: "1px solid rgba(15,23,42,0.18)",
                     background: "rgba(255,255,255,0.10)",
                     color: "#fff",
                     fontWeight: 900,
@@ -1721,17 +1764,66 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
           )}
 
           <div style={{ opacity: taskLocked ? 0.6 : 1 }}>
-            <TaskRunner
-              task={currentTask}
-              onSubmit={handleSubmit}
-              disabled={taskLocked}
-              submitting={false}
-              mode="play"
-              roomCode={"DEMO"}
-              playerTeam={{ id: "team-you", teamName: "Your Team" }}
-              memberNames={["Demo"]}
-              socket={demoSocket}
-            />
+            {(String(currentTask?.taskType || currentTask?.type) === String(TASK_TYPES.TASK_RUNNER)) ? (
+              <div
+                style={{
+                  borderRadius: 18,
+                  overflow: "hidden",
+                  border: "1px solid rgba(15, 23, 42, 0.10)",
+                  background: "rgba(255,255,255,0.90)",
+                  boxShadow: "0 18px 60px rgba(15, 23, 42, 0.10)",
+                }}
+              >
+                <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(15, 23, 42, 0.08)" }}>
+                  <div style={{ fontWeight: 900, fontSize: 14, color: "#0f172a" }}>
+                    {currentTask?.title || "Task Runner (Intro)"}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.78, color: "#0f172a", marginTop: 2 }}>
+                    {currentTask?.prompt || "Watch the intro clip, then try a task type."}
+                  </div>
+                </div>
+
+                <video
+                  src={DEMO_INTRO_SRC}
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                  controls
+                  style={{ width: "100%", display: "block", background: "#000" }}
+                />
+
+                <div style={{ padding: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={goBackToRunner}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(15, 23, 42, 0.18)",
+                      background: "rgba(15, 23, 42, 0.04)",
+                      color: "#fff",
+                      fontWeight: 900,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <TaskRunner
+                task={currentTask}
+                onSubmit={handleSubmit}
+                disabled={taskLocked}
+                submitting={false}
+                mode="play"
+                roomCode={"DEMO"}
+                playerTeam={{ id: "team-you", teamName: "Your Team" }}
+                memberNames={["Demo"]}
+                socket={demoSocket}
+              />
+            )}
 
             {/* Demo helper: simulate a station scan (no camera in demo) */}
             {((currentTask?.taskType || currentTask?.type) === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) && (
@@ -1766,7 +1858,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                       style={{
                         padding: "8px 10px",
                         borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,0.18)",
+                        border: "1px solid rgba(15,23,42,0.12)",
                         background: "rgba(255,255,255,0.10)",
                         color: "#fff",
                         fontWeight: 900,
@@ -1792,8 +1884,8 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               style={{
                 padding: "10px 12px",
                 borderRadius: 999,
-                border: "1px solid rgba(148,163,184,0.55)",
-                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(15,23,42,0.18)",
+                background: "rgba(255,255,255,0.70)",
                 color: "#fff",
                 fontWeight: 900,
                 cursor: "pointer",
@@ -1812,9 +1904,9 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               style={{
                 padding: "10px 12px",
                 borderRadius: 999,
-                border: "1px solid rgba(148,163,184,0.55)",
-                background: "rgba(255,255,255,0.10)",
-                color: "#fff",
+                border: "1px solid rgba(15,23,42,0.18)",
+                background: "rgba(255,255,255,0.85)",
+                color: "#0f172a",
                 fontWeight: 900,
                 cursor: "pointer",
               }}
