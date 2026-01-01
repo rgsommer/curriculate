@@ -1449,7 +1449,6 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
                   <strong>Try Treasure Runner</strong> (for fun) → <strong>Pick a task type</strong> →
                   <strong> Try as many as you like</strong>
                 </div>
-        </ViewportCard>
       )}
           </div>
 
@@ -1574,7 +1573,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
             memberNames={["Demo"]}
             socket={demoSocket}
           />
-        </div>
+        </ViewportCard>
       )}
 
       {/* Phase: Runner + Picker */}
@@ -1599,8 +1598,7 @@ if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
               loop
               playsInline
               controls
-              style={{ width: "100%", display: "block", background: "#000" }}
-             style={{ width: "100%", height: "auto", display: "block", background: "#000" }} />
+              style={{ width: "100%", height: "auto", display: "block", background: "#000" }} />
               </div>
             </div>
           </ViewportCard>
