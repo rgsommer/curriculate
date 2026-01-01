@@ -4,6 +4,7 @@ import { normalizeSelectedType, retryMustHave, regenerateSingleTask } from "./ai
 import fs from "fs/promises";
 import path from "path";
 import mongoose from "mongoose";
+import DemoTaskset from "../models/DemoTaskset.js";
 
 function getDemoTasksetModel() {
   if (mongoose.models.DemoTaskset) return mongoose.models.DemoTaskset;
@@ -385,6 +386,27 @@ sseWrite(res, "task", { index: i, total, taskType, task: fixedTask });
       sseWrite(res, "error", { ok: false, error: "Generated demo tasks, but failed to save to database." });
     }
     
+    // ✅ Persist to the exact doc /api/demo/taskset reads (key="default")
+    try {
+      const signature = `stream:${Date.now()}:types=${types.length}`;
+
+      await DemoTaskset.findOneAndUpdate(
+        { key: "default" },
+        {
+          $set: {
+            taskset,      // <-- whatever object you want GET to return
+            signature,
+            updatedAt: new Date(),
+          },
+        },
+        { upsert: true, new: true }
+      );
+    } catch (e) {
+      console.error("[demo-stream] save failed:", e);
+      // also surface to client so you see it immediately
+      sseWrite(res, "error", { ok: false, error: "Generated tasks but failed saving to Mongo." });
+    }
+
     sseWrite(res, "done", { ok: true, taskset, summary: { total, generated: generated.length, skipped: skipped.length }, logFile });
 // (removed) pre-tasks log
 // (removed) pre-tasks count log

@@ -807,12 +807,12 @@ function PlanDetails({ plan, fallbackTier }) {
 }
 
 async function fetchJsonSafe(url, options = {}) {
-  const res = await fetch(url, options);
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    return { ok: false, error: data?.error || `Request failed (${res.status})`, status: res.status };
+  try {
+    const data = await apiFetch(url, options);
+    return data;
+  } catch (e) {
+    return { ok: false, error: e?.message || "Network error" };
   }
-  return { ok: true, ...data, status: res.status };
 }
 
 /**
@@ -1049,15 +1049,14 @@ function AdminPage({ isAdmin = false }) {
     setErr("");
     setBusy(true);
     try {
-      const res = await apiFetch("/api/admin/access-codes");
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
+      const data = await apiFetch("/api/admin/access-codes"); // apiFetch returns JSON
+      if (!data?.ok) {
         setErr(data?.error || "Could not load access codes.");
         return;
       }
       setCodes(Array.isArray(data.codes) ? data.codes : []);
-    } catch {
-      setErr("Network error");
+    } catch (e) {
+      setErr(e?.message || "Network error");
     } finally {
       setBusy(false);
     }
@@ -1083,25 +1082,26 @@ function AdminPage({ isAdmin = false }) {
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       };
 
-      const res = await apiFetch("/api/admin/access-codes", {
+      const data = await apiFetch("/api/admin/access-codes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      });
+      }); // apiFetch returns JSON
 
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
+      if (!data?.ok) {
         setErr(data?.error || "Could not create code.");
         return;
       }
+
       await load();
     } catch (e) {
       console.error("Admin create code failed:", e);
-      setErr("Network error");
+      setErr(e?.message || "Network error");
     } finally {
       setBusy(false);
     }
   };
+
   async function loadEmailAdmin() {
     if (!isAdmin) return;
     setEmailErr("");
