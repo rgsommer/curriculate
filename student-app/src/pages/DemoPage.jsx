@@ -7,7 +7,7 @@ import ProgressFillButton from "../components/ProgressFillButton";
 const API_BASE = import.meta.env.VITE_API_BASE || "https://api.curriculate.net";
 
 // Demo intro video (served from student-app/public)
-const DEMO_INTRO_SRC = "../demointro/demo-intro.mp4";
+const DEMO_INTRO_SRC = "/demointro/demo-intro.mp4";
 
 // Demo pacing
 const DEFAULT_REVIEW_SECONDS = 15;
