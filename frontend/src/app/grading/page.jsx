@@ -161,11 +161,35 @@ export default function GradingPage() {
       const vw = video.videoWidth || 1280;
       const vh = video.videoHeight || 720;
 
-      canvas.width = vw;
-      canvas.height = vh;
+      // Desired aspect ratio for capture
+      const targetAspect = isMobile ? 3 / 4 : 16 / 9;
 
-      const ctx = canvas.getContext("2d", { alpha: false });
-      ctx.drawImage(video, 0, 0, vw, vh);
+      // Compute crop to match preview aspect
+      let cropW = vw;
+      let cropH = Math.round(vw / targetAspect);
+
+      if (cropH > vh) {
+        cropH = vh;
+        cropW = Math.round(vh * targetAspect);
+      }
+
+      const sx = Math.round((vw - cropW) / 2);
+      const sy = Math.round((vh - cropH) / 2);
+
+      canvas.width = cropW;
+      canvas.height = cropH;
+
+      ctx.drawImage(
+        video,
+        sx,
+        sy,
+        cropW,
+        cropH,
+        0,
+        0,
+        cropW,
+        cropH
+      );
 
       const rawDataUrl = canvas.toDataURL("image/jpeg", 0.9);
 
