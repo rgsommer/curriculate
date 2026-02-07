@@ -107,9 +107,21 @@ function normalizeAssessment(anything) {
     if (parsed) return normalizeAssessment(parsed);
   }
 
+  // ✅ If wrapper: { raw: "{...json...}" }  (your “non-JSON output” path)
+  if (typeof anything === "object" && typeof anything.raw === "string") {
+    const parsed = safeJsonParse(anything.raw) || tryJsonParse(anything.raw);
+    if (parsed) return normalizeAssessment(parsed);
+  }
+
+  // (Optional) Sometimes errors put JSON in details
+  if (typeof anything === "object" && typeof anything.details === "string") {
+    const parsed = safeJsonParse(anything.details) || tryJsonParse(anything.details);
+    if (parsed) return normalizeAssessment(parsed);
+  }
+
   // If raw string JSON
   if (typeof anything === "string") {
-    const parsed = safeJsonParse(anything);
+    const parsed = safeJsonParse(anything) || tryJsonParse(anything);
     if (parsed) return normalizeAssessment(parsed);
   }
 
@@ -131,39 +143,21 @@ function formatPoints(p) {
 }
 
 function computeFinalScore(a) {
-  // Prefer explicit final_score_out_of_10
   if (a?.final_score_out_of_10 !== undefined && a?.final_score_out_of_10 !== null) {
     return a.final_score_out_of_10;
   }
 
-  // Fall back: score_out_of_10 + sum(deductions points)
   const base = Number(a?.score_out_of_10);
   const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
-  const delta = deductions.reduce((sum, d) => {
+
+  const totalDeduction = deductions.reduce((sum, d) => {
     const p = Number(d?.points);
-    return sum + (Number.isFinite(p) ? p : 0);
+    return sum + (Number.isFinite(p) ? Math.abs(p) : 0);
   }, 0);
 
-  if (Number.isFinite(base)) return base + delta;
+  if (Number.isFinite(base)) return Math.max(0, base - totalDeduction);
   return "";
 }
-
-function safeParseGrade(response) {
-  if (!response) return null;
-
-  try {
-    // Case 1: already an object
-    if (typeof response === "object" && response.score_out_of_10 !== undefined) {
-      return response;
-    }
-
-    // Case 2: JSON string inside result/raw
-    const text = response.result || response.raw || response;
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-} 
 
 function tryJsonParse(str) {
   if (typeof str !== "string") return null;
@@ -185,27 +179,6 @@ function tryJsonParse(str) {
     }
     return null;
   }
-}
-
-function extractGradePayload(apiResponse) {
-  // Case A: backend already returns the grade object
-  if (apiResponse && typeof apiResponse === "object" && apiResponse.score_out_of_10 != null) {
-    return apiResponse;
-  }
-
-  // Case B: backend returns { result: "...." } (JSON string)
-  if (apiResponse?.result && typeof apiResponse.result === "string") {
-    const parsed = tryJsonParse(apiResponse.result);
-    if (parsed) return parsed;
-  }
-
-  // Case C: backend returns { error: "...", raw: "...." } where raw is JSON string
-  if (apiResponse?.raw && typeof apiResponse.raw === "string") {
-    const parsed = tryJsonParse(apiResponse.raw);
-    if (parsed) return parsed;
-  }
-
-  return null;
 }
 
 function formatGradeForCopy(g) {
