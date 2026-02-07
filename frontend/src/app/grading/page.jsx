@@ -165,6 +165,86 @@ function safeParseGrade(response) {
   }
 } 
 
+function tryJsonParse(str) {
+  if (typeof str !== "string") return null;
+  const s = str.trim();
+  if (!s) return null;
+
+  try {
+    return JSON.parse(s);
+  } catch {
+    // Sometimes your backend wraps a JSON string inside quotes or includes leading text.
+    // Try to extract first {...} block as a last resort.
+    const start = s.indexOf("{");
+    const end = s.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      const maybe = s.slice(start, end + 1);
+      try {
+        return JSON.parse(maybe);
+      } catch {}
+    }
+    return null;
+  }
+}
+
+function extractGradePayload(apiResponse) {
+  // Case A: backend already returns the grade object
+  if (apiResponse && typeof apiResponse === "object" && apiResponse.score_out_of_10 != null) {
+    return apiResponse;
+  }
+
+  // Case B: backend returns { result: "...." } (JSON string)
+  if (apiResponse?.result && typeof apiResponse.result === "string") {
+    const parsed = tryJsonParse(apiResponse.result);
+    if (parsed) return parsed;
+  }
+
+  // Case C: backend returns { error: "...", raw: "...." } where raw is JSON string
+  if (apiResponse?.raw && typeof apiResponse.raw === "string") {
+    const parsed = tryJsonParse(apiResponse.raw);
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+function formatGradeForCopy(g) {
+  const lines = [];
+  lines.push(`Grade: ${g.final_score_out_of_10 ?? g.score_out_of_10} / 10`);
+  lines.push("");
+
+  if (Array.isArray(g.deductions) && g.deductions.length) {
+    lines.push("Deduction:");
+    // Your “deduct once” rule: show all reasons, but treat as one deduction if you want
+    // (If you truly want only one line, keep just the first.)
+    for (const d of g.deductions) {
+      const pts = typeof d.points === "number" ? d.points : 0;
+      const displayPts = pts <= 0 ? pts : -pts; // handles if API returns +1
+      lines.push(`– ${d.reason} (${displayPts})`);
+    }
+    lines.push("");
+  }
+
+  if (Array.isArray(g.strengths) && g.strengths.length) {
+    lines.push("Strengths:");
+    for (const s of g.strengths) lines.push(`• ${s}`);
+    lines.push("");
+  }
+
+  if (Array.isArray(g.improvements) && g.improvements.length) {
+    lines.push("Next Steps:");
+    for (const i of g.improvements) lines.push(`• ${i}`);
+    lines.push("");
+  }
+
+  if (g.teacher_comment) {
+    lines.push("Teacher Comment:");
+    lines.push(g.teacher_comment);
+  }
+
+  return lines.join("\n").trim();
+}
+
 function formatTeacherBlock(a) {
   const finalScore = computeFinalScore(a);
   const baseScore =
@@ -264,15 +344,12 @@ export default function GradingPage() {
   }, [backendBase]);
 
   const normalizedAssessment = useMemo(() => {
-    // Prefer structured result object if present
-    const a1 = normalizeAssessment(result);
-    if (a1) return a1;
+    // 1) If result is already a usable grade object
+    const a = normalizeAssessment(result);
+    if (a) return a;
 
-    // If result not set yet but rawResponse exists, try parse
-    const parsed = normalizeAssessment(rawResponse);
-    if (parsed) return parsed;
-
-    return null;
+    // 2) If rawResponse is JSON string or contains JSON object
+    return normalizeAssessment(rawResponse);
   }, [result, rawResponse]);
 
   const formattedTeacherText = useMemo(() => {
@@ -452,6 +529,12 @@ export default function GradingPage() {
       const data = safeJsonParse(text);
 
       if (!res.ok) {
+        const rescued = normalizeAssessment(data?.raw || data?.result || "");
+        if (rescued) {
+          setResult(rescued);
+          setSubmitError("");
+          return;
+        }
         throw new Error(
           `HTTP ${res.status} from grading endpoint: ${data?.error || text || "(empty response)"}`
         );
@@ -464,7 +547,10 @@ export default function GradingPage() {
         return;
       }
 
-      setResult(data);
+      const maybe = normalizeAssessment(data);
+      if (maybe) setResult(maybe);
+      else setResult(data); // only for debug
+
     } catch (err) {
       console.error("Submit error:", err);
       setSubmitError(err?.message || "Network error submitting for grading.");
