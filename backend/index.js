@@ -40,6 +40,7 @@ import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import { sendSystemEmail } from "./email/shareInviteEmailer.js";
+import OpenAI from "openai";
 
 // 8) Controllers
 import { getMeController } from "./controllers/meController.js"; // you’ll create this
@@ -6106,6 +6107,10 @@ app.post("/api/tasksets", async (req, res) => {
     console.error("POST /api/tasksets error:", err);
     res.status(500).json({ error: "Failed to create task set" });
   }
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 app.post("/grading", async (req, res) => {
