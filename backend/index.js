@@ -6118,10 +6118,11 @@ const RUBRIC_INSTRUCTIONS = `
   You are a teacher grading student assignments from photos.
   Grade for: completeness, accuracy, clarity, and effort.
 
-  Apply these formatting deductions (each is –1):
-  1) missing date
-  2) missing a proper title (not just “check-in”)
-  3) missing page/question reference (if there is one)
+  FORMATTING DEDUCTION RULE:
+  If ANY of these are missing, apply ONE total deduction of –1 (not –1 each):
+  1) date
+  2) proper title (not just “check-in”)
+  3) page/question reference (if there is one)
 
   Return JSON only with the following fields:
   - score_out_of_10
@@ -6137,14 +6138,20 @@ const RUBRIC_INSTRUCTIONS = `
 app.post("/grading", async (req, res) => {
   try {
     const { images } = req.body;
-    if (!images?.length) {
+
+    if (!Array.isArray(images) || images.length === 0) {
       return res.status(400).json({ error: "No images provided" });
     }
 
-    console.log("images count:", images?.length);
+    console.log("images count:", images.length);
     console.log("first image prefix:", images?.[0]?.slice(0, 30));
     console.log("first image length:", images?.[0]?.length);
     console.log("content-length header:", req.headers["content-length"]);
+
+    // IMPORTANT: Make sure RUBRIC_INSTRUCTIONS is defined in this file (top-level const).
+    // It should include the "deduct -1 once if any are missing" rule.
+    // Example rule text:
+    // "If ANY of date/title/page-ref are missing, apply ONE total deduction of -1 (not -1 each)."
 
     const response = await openai.responses.create({
       model: "gpt-5-mini",
@@ -6153,7 +6160,7 @@ app.post("/grading", async (req, res) => {
           role: "user",
           content: [
             { type: "input_text", text: RUBRIC_INSTRUCTIONS },
-            ...images.map(img => ({
+            ...images.map((img) => ({
               type: "input_image",
               image_url: img,
             })),
@@ -6163,7 +6170,7 @@ app.post("/grading", async (req, res) => {
       text: {
         format: {
           type: "json_schema",
-          name: "grading_response",   // 🔴 THIS was missing
+          name: "grading_response",
           schema: {
             type: "object",
             additionalProperties: false,
@@ -6200,22 +6207,41 @@ app.post("/grading", async (req, res) => {
       max_output_tokens: 800,
     });
 
-    res.json({ result: response.output_text });
-  } catch (err) {
-      console.error("🔥 /grading failed:", err?.message || err);
-      console.error("full err:", err);
+    const outText = response.output_text || "";
 
-      // If it's an OpenAI error, this often exists:
-      if (err?.status) console.error("status:", err.status);
-      if (err?.code) console.error("code:", err.code);
-      if (err?.response?.data) console.error("response.data:", err.response.data);
-
+    // With json_schema, output_text SHOULD be valid JSON — parse it and return the object.
+    let parsed;
+    try {
+      parsed = JSON.parse(outText);
+    } catch (e) {
+      console.error("⚠️ output_text was not valid JSON:", outText);
       return res.status(500).json({
         error: "Grading failed",
-        details: err?.message || "unknown error",
-        status: err?.status || err?.response?.status || 500,
+        details: "Model returned non-JSON output",
+        raw: outText,
       });
     }
+
+    // Optional safety clamp (in case the model ever returns decimals or out-of-range)
+    if (typeof parsed.final_score_out_of_10 === "number") {
+      parsed.final_score_out_of_10 = Math.max(0, Math.min(10, parsed.final_score_out_of_10));
+    }
+
+    return res.json(parsed);
+  } catch (err) {
+    console.error("🔥 /grading failed:", err?.message || err);
+    console.error("full err:", err);
+
+    if (err?.status) console.error("status:", err.status);
+    if (err?.code) console.error("code:", err.code);
+    if (err?.response?.data) console.error("response.data:", err.response.data);
+
+    return res.status(500).json({
+      error: "Grading failed",
+      details: err?.message || "unknown error",
+      status: err?.status || err?.response?.status || 500,
+    });
+  }
 });
 
 // Verify TeacherApp entry code (auth required)
