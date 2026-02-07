@@ -13,7 +13,7 @@ function formatBytes(bytes) {
   }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
-
+ 
 // Downscale + JPEG compress for faster uploads / fewer tokens.
 // (Vision cost is related to image size; downscaling helps.) :contentReference[oaicite:1]{index=1}
 async function downscaleToJpegDataUrl(blob, { maxW = 1280, maxH = 1280, quality = 0.75 } = {}) {
