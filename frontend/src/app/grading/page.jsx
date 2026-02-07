@@ -165,10 +165,13 @@ export default function GradingPage() {
       const vw = video.videoWidth || 1280;
       const vh = video.videoHeight || 720;
 
-      // Desired aspect ratio for capture
+      // Create drawing context (THIS WAS MISSING)
+      const ctx = canvas.getContext("2d", { alpha: false });
+
+      // Desired aspect ratio
       const targetAspect = isMobile ? 3 / 4 : 16 / 9;
 
-      // Compute crop to match preview aspect
+      // Calculate center crop to match preview
       let cropW = vw;
       let cropH = Math.round(vw / targetAspect);
 
@@ -180,9 +183,11 @@ export default function GradingPage() {
       const sx = Math.round((vw - cropW) / 2);
       const sy = Math.round((vh - cropH) / 2);
 
+      // Match canvas to crop size
       canvas.width = cropW;
       canvas.height = cropH;
 
+      // Draw cropped frame
       ctx.drawImage(
         video,
         sx,
