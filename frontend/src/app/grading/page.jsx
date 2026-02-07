@@ -720,7 +720,7 @@ export default function GradingPage() {
                   <div style={styles.gradingTitle}>
                     Grade: {computeFinalScore(normalizedAssessment)} / 10
                   </div>
-                  <div style={styles.copyPill}>
+                  <div style={styles.copyPillInline}>
                     {copied ? "Copied ✓" : "Tap to copy"}
                   </div>
                 </div>
@@ -1011,7 +1011,7 @@ const styles = {
     border: "1px solid rgba(37,99,235,0.35)",
     background: "rgba(37,99,235,0.05)",
   },
-  copyPill: {
+  copyPillAbs: {
     position: "absolute",
     top: 10,
     right: 10,
@@ -1023,6 +1023,17 @@ const styles = {
     border: "1px solid rgba(15,23,42,0.12)",
     opacity: 0.95,
   },
+  copyPillInline: {
+    fontSize: 12,
+    fontWeight: 800,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "rgba(15,23,42,0.06)",
+    border: "1px solid rgba(15,23,42,0.12)",
+    opacity: 0.95,
+    whiteSpace: "nowrap",
+  },
+
 
   pre: { margin: 0, fontSize: 12, lineHeight: 1.4, whiteSpace: "pre-wrap" },
   preBig: { margin: 0, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" },
