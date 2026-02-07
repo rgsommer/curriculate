@@ -6148,11 +6148,6 @@ app.post("/grading", async (req, res) => {
     console.log("first image length:", images?.[0]?.length);
     console.log("content-length header:", req.headers["content-length"]);
 
-    // IMPORTANT: Make sure RUBRIC_INSTRUCTIONS is defined in this file (top-level const).
-    // It should include the "deduct -1 once if any are missing" rule.
-    // Example rule text:
-    // "If ANY of date/title/page-ref are missing, apply ONE total deduction of -1 (not -1 each)."
-
     const response = await openai.responses.create({
       model: "gpt-5-mini",
       input: [
@@ -6207,35 +6202,34 @@ app.post("/grading", async (req, res) => {
       max_output_tokens: 800,
     });
 
+    // With json_schema, output_text SHOULD be valid JSON — parse it and return the object.
+    let parsed = null;
     const outText = response.output_text || "";
 
-    // With json_schema, output_text SHOULD be valid JSON — parse it and return the object.
-    let parsed;
     try {
-      parsed = JSON.parse(outText);
-    } catch (e) {
-      console.error("⚠️ output_text was not valid JSON:", outText);
-      return res.status(500).json({
-        error: "Grading failed",
-        details: "Model returned non-JSON output",
+      parsed = outText ? JSON.parse(outText) : null;
+    } catch {
+      parsed = null;
+    }
+
+    if (!parsed) {
+      return res.status(502).json({
+        error: "Model returned non-JSON output",
         raw: outText,
       });
     }
 
-    // Optional safety clamp (in case the model ever returns decimals or out-of-range)
+    // Optional safety clamp (do this BEFORE responding)
     if (typeof parsed.final_score_out_of_10 === "number") {
-      parsed.final_score_out_of_10 = Math.max(0, Math.min(10, parsed.final_score_out_of_10));
+      parsed.final_score_out_of_10 = Math.max(
+        0,
+        Math.min(10, parsed.final_score_out_of_10)
+      );
     }
 
     return res.json(parsed);
   } catch (err) {
-    console.error("🔥 /grading failed:", err?.message || err);
-    console.error("full err:", err);
-
-    if (err?.status) console.error("status:", err.status);
-    if (err?.code) console.error("code:", err.code);
-    if (err?.response?.data) console.error("response.data:", err.response.data);
-
+    console.error("🔥 /grading failed:", err);
     return res.status(500).json({
       error: "Grading failed",
       details: err?.message || "unknown error",
