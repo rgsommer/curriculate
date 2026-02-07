@@ -148,6 +148,23 @@ function computeFinalScore(a) {
   return "";
 }
 
+function safeParseGrade(response) {
+  if (!response) return null;
+
+  try {
+    // Case 1: already an object
+    if (typeof response === "object" && response.score_out_of_10 !== undefined) {
+      return response;
+    }
+
+    // Case 2: JSON string inside result/raw
+    const text = response.result || response.raw || response;
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+} 
+
 function formatTeacherBlock(a) {
   const finalScore = computeFinalScore(a);
   const baseScore =
@@ -441,8 +458,10 @@ export default function GradingPage() {
       }
 
       if (!data) {
-        // Still store rawResponse so we can display it
-        throw new Error("Grading endpoint returned non-JSON response.");
+        // Don’t throw: rawResponse will still display, and normalizeAssessment(rawResponse)
+        // may still succeed if it contains usable JSON.
+        setResult(null);
+        return;
       }
 
       setResult(data);
@@ -689,30 +708,82 @@ export default function GradingPage() {
           <div
             style={{
               ...styles.responseBox,
-              ...(formattedTeacherText ? styles.responseBoxClickable : null),
+              ...(normalizedAssessment ? styles.responseBoxClickable : null),
             }}
-            onClick={formattedTeacherText ? copyFormatted : undefined}
-            role={formattedTeacherText ? "button" : undefined}
-            title={formattedTeacherText ? "Tap to copy formatted comment" : ""}
+            onClick={normalizedAssessment ? copyFormatted : undefined}
+            role={normalizedAssessment ? "button" : undefined}
+            title={normalizedAssessment ? "Tap to copy formatted comment" : ""}
           >
-            {formattedTeacherText ? (
-              <>
-                <div style={styles.copyPill}>
-                  {copied ? "Copied ✓" : "Tap to copy"}
+            {normalizedAssessment ? (
+              <div style={styles.gradingCard}>
+                <div style={styles.gradingTopRow}>
+                  <div style={styles.gradingTitle}>
+                    Grade: {computeFinalScore(normalizedAssessment)} / 10
+                  </div>
+                  <div style={styles.copyPill}>
+                    {copied ? "Copied ✓" : "Tap to copy"}
+                  </div>
                 </div>
-                <pre style={styles.preBig}>{formattedTeacherText}</pre>
-              </>
+
+                {Array.isArray(normalizedAssessment.deductions) &&
+                normalizedAssessment.deductions.length ? (
+                  <>
+                    <div style={styles.gradingSectionTitle}>Deduction</div>
+                    <div style={styles.gradingDeduction}>
+                      {(normalizedAssessment.deductions[0]?.reason || "").trim()}{" "}
+                      <span style={{ opacity: 0.8 }}>
+                        {formatPoints(normalizedAssessment.deductions[0]?.points)}
+                      </span>
+                    </div>
+                  </>
+                ) : null}
+
+                {toArrayStrings(normalizedAssessment.strengths).length ? (
+                  <>
+                    <div style={styles.gradingSectionTitle}>Strengths</div>
+                    <ul style={styles.gradingUl}>
+                      {toArrayStrings(normalizedAssessment.strengths).map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+
+                {toArrayStrings(normalizedAssessment.improvements).length ? (
+                  <>
+                    <div style={styles.gradingSectionTitle}>Next Steps</div>
+                    <ul style={styles.gradingUl}>
+                      {toArrayStrings(normalizedAssessment.improvements).map((it, i) => (
+                        <li key={i}>{it}</li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+
+                {(normalizedAssessment.teacher_comment || "").trim() ? (
+                  <>
+                    <div style={styles.gradingSectionTitle}>Teacher Comment</div>
+                    <div style={styles.gradingComment}>
+                      {(normalizedAssessment.teacher_comment || "").trim()}
+                    </div>
+                  </>
+                ) : null}
+
+                <div style={styles.gradingHint}>Tap anywhere to copy</div>
+              </div>
             ) : result ? (
               <pre style={styles.pre}>{JSON.stringify(result, null, 2)}</pre>
             ) : rawResponse ? (
               <pre style={styles.pre}>{rawResponse}</pre>
             ) : (
-              <div style={{ opacity: 0.75 }}>Results will appear here after submission.</div>
+              <div style={{ opacity: 0.75 }}>
+                Results will appear here after submission.
+              </div>
             )}
           </div>
 
           <div style={styles.footerHint}>
-            If you see HTTP 404/405: confirm backend route + CORS + correct URL.
+            Free to try until subscription plan is enforced.
           </div>
         </div>
       </div>
@@ -955,6 +1026,55 @@ const styles = {
 
   pre: { margin: 0, fontSize: 12, lineHeight: 1.4, whiteSpace: "pre-wrap" },
   preBig: { margin: 0, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" },
+
+  gradingCard: {
+    background: "#f8f9fc",
+    borderRadius: 14,
+    padding: 14,
+    lineHeight: 1.45,
+    border: "1px solid rgba(15,23,42,0.10)",
+  },
+  gradingTopRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+    marginBottom: 8,
+  },
+  gradingTitle: {
+    fontSize: 18,
+    fontWeight: 900,
+    letterSpacing: -0.2,
+  },
+  gradingSectionTitle: {
+    fontSize: 13,
+    fontWeight: 900,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  gradingDeduction: {
+    background: "rgba(239,68,68,0.08)",
+    border: "1px solid rgba(239,68,68,0.22)",
+    padding: "10px 12px",
+    borderRadius: 12,
+    fontSize: 13,
+  },
+  gradingUl: {
+    margin: "6px 0 0 18px",
+  },
+  gradingComment: {
+    background: "white",
+    border: "1px solid rgba(15,23,42,0.10)",
+    borderRadius: 12,
+    padding: "10px 12px",
+    fontSize: 14,
+  },
+  gradingHint: {
+    marginTop: 10,
+    fontSize: 12,
+    opacity: 0.7,
+  },
 
   footerHint: { marginTop: 10, fontSize: 12, opacity: 0.75 },
 };
