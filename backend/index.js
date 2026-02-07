@@ -6105,6 +6105,38 @@ app.post("/api/tasksets", async (req, res) => {
   }
 });
 
+app.post("/grading", async (req, res) => {
+  try {
+    const { images } = req.body;
+    if (!images?.length) {
+      return res.status(400).json({ error: "No images provided" });
+    }
+
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: RUBRIC_INSTRUCTIONS },
+            ...images.map(img => ({
+              type: "input_image",
+              image_url: img,
+            })),
+          ],
+        },
+      ],
+      max_output_tokens: 800,
+    });
+
+    res.json({ result: response.output_text });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Grading failed" });
+  }
+});
+
+
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
   try {

@@ -82,7 +82,7 @@ export default function GradingPage() {
 
   const gradingUrl = useMemo(() => {
     if (!backendBase) return "";
-    return `${backendBase}/api/grading`;
+    return `${backendBase.replace(/\/$/, "")}/grading`;
   }, [backendBase]);
 
   function triggerFlash() {
