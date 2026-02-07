@@ -6119,10 +6119,16 @@ const RUBRIC_INSTRUCTIONS = `
   Grade for: completeness, accuracy, clarity, and effort.
 
   FORMATTING DEDUCTION RULE:
-  If ANY of these are missing, apply ONE total deduction of –1 (not –1 each):
-  1) date
-  2) proper title (not just “check-in”)
-  3) page/question reference (if there is one)
+  If ANY of the following formatting requirements are missing, include AT MOST ONE
+  entry in the deductions array with points: 1 and a single combined reason.
+  Do NOT add multiple formatting deductions.
+
+  If NONE of the items below are missing, do NOT include any formatting deduction.
+
+  Formatting requirements:
+  1) Date
+  2) Proper title (not just “check-in”)
+  3) Page/question reference (only if applicable)
 
   Return JSON only with the following fields:
   - score_out_of_10
