@@ -367,6 +367,9 @@ app.use("/api/tasksets", tasksetsRouter);
 // 5) Shared taskset links (public, no auth)
 app.use("/api/shared", sharedRoutes);
 
+// 6) Grading (and other large payload) file limit
+app.use(express.json({ limit: "25mb" }));
+
 // Admin gate (server-side)
 const adminRequired = [
   authRequired,
@@ -6112,30 +6115,81 @@ app.post("/grading", async (req, res) => {
       return res.status(400).json({ error: "No images provided" });
     }
 
+    console.log("images count:", images?.length);
+    console.log("first image prefix:", images?.[0]?.slice(0, 30));
+    console.log("first image length:", images?.[0]?.length);
+    console.log("content-length header:", req.headers["content-length"]);
+
     const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
+      model: "gpt-5-mini",
       input: [
         {
           role: "user",
           content: [
             { type: "text", text: RUBRIC_INSTRUCTIONS },
-            ...images.map(img => ({
-              type: "input_image",
-              image_url: img,
-            })),
+            ...images.map((img) => ({ type: "input_image", image_url: img })),
           ],
         },
       ],
+      text: {
+        format: {
+          type: "json_schema",
+          json_schema: {
+            name: "grading_response",
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                score_out_of_10: { type: "number" },
+                deductions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      reason: { type: "string" },
+                      points: { type: "number" },
+                    },
+                    required: ["reason", "points"],
+                  },
+                },
+                final_score_out_of_10: { type: "number" },
+                strengths: { type: "array", items: { type: "string" } },
+                improvements: { type: "array", items: { type: "string" } },
+                teacher_comment: { type: "string" },
+              },
+              required: [
+                "score_out_of_10",
+                "deductions",
+                "final_score_out_of_10",
+                "strengths",
+                "improvements",
+                "teacher_comment",
+              ],
+            },
+          },
+        },
+      },
       max_output_tokens: 800,
     });
 
     res.json({ result: response.output_text });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Grading failed" });
-  }
-});
+      console.error("🔥 /grading failed:", err?.message || err);
+      console.error("full err:", err);
 
+      // If it's an OpenAI error, this often exists:
+      if (err?.status) console.error("status:", err.status);
+      if (err?.code) console.error("code:", err.code);
+      if (err?.response?.data) console.error("response.data:", err.response.data);
+
+      return res.status(500).json({
+        error: "Grading failed",
+        details: err?.message || "unknown error",
+        status: err?.status || err?.response?.status || 500,
+      });
+    }
+});
 
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
