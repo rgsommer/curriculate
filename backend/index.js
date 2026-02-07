@@ -6113,6 +6113,25 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Default rubric (server can also enforce its own default if rubricOverride is null)
+const RUBRIC_INSTRUCTIONS = `
+  You are a teacher grading student assignments from photos.
+  Grade for: completeness, accuracy, clarity, and effort.
+
+  Apply these formatting deductions (each is –1):
+  1) missing date
+  2) missing a proper title (not just “check-in”)
+  3) missing page/question reference (if there is one)
+
+  Return JSON only with:
+  - score_out_of_10
+  - deductions (array of { reason, points })
+  - final_score_out_of_10
+  - strengths
+  - improvements
+  - teacher_comment
+  `.trim();
+
 app.post("/grading", async (req, res) => {
   try {
     const { images } = req.body;
