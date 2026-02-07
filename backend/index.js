@@ -6164,7 +6164,7 @@ app.post("/grading", async (req, res) => {
         format: {
           type: "json_schema",
           name: "grading_response",   // 🔴 THIS was missing
-          json_schema: {
+          schema: {
             type: "object",
             additionalProperties: false,
             properties: {
