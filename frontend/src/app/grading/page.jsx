@@ -11,7 +11,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  *
  * Expects backend endpoint:
  *   POST {BACKEND}/grading
- *   Body JSON: { images: [dataUrlJpeg...], meta: { ... } }
+ *   Body JSON: { images: [dataUrlJpeg...], rubricOverride?: string|null, meta: { ... } }
  *   Returns JSON (assessment object)
  */
 
@@ -22,7 +22,11 @@ function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
 
-async function compressDataUrlToJpeg(dataUrl, maxW = DEFAULT_MAX_W, quality = DEFAULT_QUALITY) {
+async function compressDataUrlToJpeg(
+  dataUrl,
+  maxW = DEFAULT_MAX_W,
+  quality = DEFAULT_QUALITY
+) {
   const img = new Image();
   img.src = dataUrl;
 
@@ -57,10 +61,30 @@ export default function GradingPage() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(null);
+
   const isMobile = useMemo(() => {
     if (typeof navigator === "undefined") return false;
     return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   }, []);
+
+  // Default rubric (server can also enforce its own default if rubricOverride is null)
+  const DEFAULT_RUBRIC_INSTRUCTIONS = `
+You are a teacher grading student assignments from photos.
+Grade for: completeness, accuracy, clarity, and effort.
+
+Apply these formatting deductions (each is –1):
+1) missing date
+2) missing a proper title (not just “check-in”)
+3) missing page/question reference (if there is one)
+
+Return JSON only with:
+- score_out_of_10
+- deductions (array of { reason, points })
+- final_score_out_of_10
+- strengths
+- improvements
+- teacher_comment
+`.trim();
 
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -74,6 +98,10 @@ export default function GradingPage() {
   const [submitError, setSubmitError] = useState("");
   const [result, setResult] = useState(null);
   const [rawResponse, setRawResponse] = useState("");
+
+  // Optional rubric override UI
+  const [showRubric, setShowRubric] = useState(false);
+  const [rubricOverride, setRubricOverride] = useState("");
 
   const backendBase = useMemo(
     () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
@@ -165,7 +193,7 @@ export default function GradingPage() {
       const vw = video.videoWidth || 1280;
       const vh = video.videoHeight || 720;
 
-      // Create drawing context (THIS WAS MISSING)
+      // Create drawing context
       const ctx = canvas.getContext("2d", { alpha: false });
 
       // Desired aspect ratio
@@ -188,24 +216,18 @@ export default function GradingPage() {
       canvas.height = cropH;
 
       // Draw cropped frame
-      ctx.drawImage(
-        video,
-        sx,
-        sy,
-        cropW,
-        cropH,
-        0,
-        0,
-        cropW,
-        cropH
-      );
+      ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
 
       const rawDataUrl = canvas.toDataURL("image/jpeg", 0.9);
 
       triggerFlash();
 
       // Compress/downscale for transport reliability
-      const compressed = await compressDataUrlToJpeg(rawDataUrl, DEFAULT_MAX_W, DEFAULT_QUALITY);
+      const compressed = await compressDataUrlToJpeg(
+        rawDataUrl,
+        DEFAULT_MAX_W,
+        DEFAULT_QUALITY
+      );
 
       setPhotos((prev) => [
         ...prev,
@@ -248,13 +270,16 @@ export default function GradingPage() {
 
     setSubmitting(true);
     try {
+      const ro = rubricOverride.trim();
       const payload = {
         images: photos.map((p) => p.dataUrl),
+        rubricOverride: ro.length ? ro : null, // optional override
         meta: {
           source: "web-grading-page",
           capturedCount: photos.length,
           capturedAt: Date.now(),
-          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+          userAgent:
+            typeof navigator !== "undefined" ? navigator.userAgent : "",
         },
       };
 
@@ -294,13 +319,15 @@ export default function GradingPage() {
     await startCamera({ front: next });
   }
 
+  function useDefaultRubric() {
+    setRubricOverride("");
+  }
+
   return (
     <div style={styles.page}>
       <div style={styles.header}>
         <h1 style={styles.h1}>Grading</h1>
-        <div style={styles.sub}>
-          Capture photos, then submit for an assessment.
-        </div>
+        <div style={styles.sub}>Capture photos, then submit for an assessment.</div>
       </div>
 
       <div style={styles.grid}>
@@ -363,14 +390,20 @@ export default function GradingPage() {
             <button
               onClick={clearAll}
               style={styles.secondaryBtn}
-              disabled={submitting || busyCapture || (!photos.length && !result && !rawResponse)}
+              disabled={
+                submitting ||
+                busyCapture ||
+                (!photos.length && !result && !rawResponse)
+              }
             >
               Clear
             </button>
           </div>
 
           <div style={styles.photoMeta}>
-            <div><b>Photos:</b> {photos.length}</div>
+            <div>
+              <b>Photos:</b> {photos.length}
+            </div>
             <div style={{ opacity: 0.8 }}>
               Tip: Keep pages flat, fill the frame, avoid glare.
             </div>
@@ -407,11 +440,67 @@ export default function GradingPage() {
           <div style={styles.cardTitle}>Submit</div>
 
           <div style={styles.note}>
-            <div><b>Endpoint:</b> {gradingUrl || "(not set)"}</div>
+            <div>
+              <b>Endpoint:</b> {gradingUrl || "(not set)"}
+            </div>
             {!backendBase && (
               <div style={styles.warn}>
-                Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel and redeploy.
+                Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel
+                and redeploy.
               </div>
+            )}
+          </div>
+
+          {/* Rubric override card */}
+          <div style={styles.rubricCard}>
+            <div style={styles.rubricHeader}>
+              <div>
+                <div style={{ fontWeight: 800 }}>Rubric (optional)</div>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                  Leave blank to use the default rubric.
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setShowRubric((v) => !v)}
+                  style={styles.secondaryBtn}
+                  type="button"
+                >
+                  {showRubric ? "Hide" : "Show"}
+                </button>
+                <button
+                  onClick={useDefaultRubric}
+                  style={styles.secondaryBtn}
+                  disabled={!rubricOverride.trim().length}
+                  type="button"
+                  title="Clear override"
+                >
+                  Use Default
+                </button>
+              </div>
+            </div>
+
+            {showRubric && (
+              <>
+                <textarea
+                  value={rubricOverride}
+                  onChange={(e) => setRubricOverride(e.target.value)}
+                  placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 for missing date/title/page\n- 2–3 sentence teacher comment\n`}
+                  rows={9}
+                  style={styles.rubricTextarea}
+                />
+                <details style={styles.rubricDetails}>
+                  <summary style={styles.rubricSummary}>
+                    View default rubric
+                  </summary>
+                  <pre style={styles.rubricPre}>{DEFAULT_RUBRIC_INSTRUCTIONS}</pre>
+                </details>
+                <div style={styles.rubricTip}>
+                  Tip: keep rubrics short (a few bullets). Long rubrics increase
+                  cost and latency.
+                </div>
+              </>
             )}
           </div>
 
@@ -429,7 +518,8 @@ export default function GradingPage() {
             <div style={styles.errorBox}>
               <b>Error:</b> {submitError}
               <div style={{ marginTop: 8, opacity: 0.85, fontSize: 12 }}>
-                If this persists, check Network tab for status code and confirm the backend route is <code>POST /grading</code>.
+                If this persists, check Network tab for status code and confirm
+                the backend route is <code>POST /grading</code>.
               </div>
             </div>
           )}
@@ -438,7 +528,9 @@ export default function GradingPage() {
             <div style={styles.cardTitle}>Response</div>
             {result && (
               <button
-                onClick={() => navigator.clipboard?.writeText(JSON.stringify(result, null, 2))}
+                onClick={() =>
+                  navigator.clipboard?.writeText(JSON.stringify(result, null, 2))
+                }
                 style={styles.secondaryBtn}
               >
                 Copy JSON
@@ -534,7 +626,8 @@ const styles = {
     padding: 18,
     gap: 10,
     color: "white",
-    background: "linear-gradient(180deg, rgba(2,6,23,0.2), rgba(2,6,23,0.85))",
+    background:
+      "linear-gradient(180deg, rgba(2,6,23,0.2), rgba(2,6,23,0.85))",
     textAlign: "center",
   },
   overlayTitle: { fontWeight: 800, fontSize: 18 },
@@ -626,6 +719,56 @@ const styles = {
     color: "#7c2d12",
   },
 
+  // Rubric UI
+  rubricCard: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 14,
+    background: "rgba(15,23,42,0.02)",
+    border: "1px solid rgba(15,23,42,0.10)",
+  },
+  rubricHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  rubricTextarea: {
+    width: "100%",
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.18)",
+    fontFamily:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    fontSize: 13,
+    lineHeight: 1.35,
+    resize: "vertical",
+    background: "white",
+  },
+  rubricDetails: {
+    marginTop: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.12)",
+    padding: 10,
+    background: "rgba(15,23,42,0.02)",
+  },
+  rubricSummary: {
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 13,
+    opacity: 0.9,
+  },
+  rubricPre: {
+    margin: "10px 0 0",
+    fontSize: 12,
+    lineHeight: 1.4,
+    whiteSpace: "pre-wrap",
+    opacity: 0.9,
+  },
+  rubricTip: { marginTop: 8, fontSize: 12, opacity: 0.75 },
+
   errorBox: {
     marginTop: 12,
     padding: 12,
@@ -659,10 +802,6 @@ if (typeof document !== "undefined") {
     style.textContent = `
       @keyframes flashAnim { from { opacity: 0.9; } to { opacity: 0; } }
       button:disabled { opacity: 0.55; cursor: not-allowed; }
-      @media (min-width: 980px) {
-        /* make the two cards sit side-by-side on desktop */
-        body .__gradingGridFix {}
-      }
     `;
     document.head.appendChild(style);
   }
