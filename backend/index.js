@@ -6143,103 +6143,80 @@ const RUBRIC_INSTRUCTIONS = `
 
 app.post("/grading", async (req, res) => {
   try {
-    const { images } = req.body;
+    const { images, rubric } = req.body;
+    if (!images?.length) return res.status(400).json({ error: "No images provided" });
 
-    if (!Array.isArray(images) || images.length === 0) {
-      return res.status(400).json({ error: "No images provided" });
-    }
-
-    console.log("images count:", images.length);
-    console.log("first image prefix:", images?.[0]?.slice(0, 30));
-    console.log("first image length:", images?.[0]?.length);
-    console.log("content-length header:", req.headers["content-length"]);
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        score_out_of_10: { type: "number" },
+        deductions: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              reason: { type: "string" },
+              points: { type: "number" }
+            },
+            required: ["reason", "points"]
+          }
+        },
+        final_score_out_of_10: { type: "number" },
+        strengths: { type: "array", items: { type: "string" } },
+        improvements: { type: "array", items: { type: "string" } },
+        teacher_comment: { type: "string" }
+      },
+      required: [
+        "score_out_of_10",
+        "deductions",
+        "final_score_out_of_10",
+        "strengths",
+        "improvements",
+        "teacher_comment"
+      ]
+    };
 
     const response = await openai.responses.create({
-      model: "gpt-5-mini",
+      model: "gpt-4.1-mini",
       input: [
         {
           role: "user",
           content: [
-            { type: "input_text", text: RUBRIC_INSTRUCTIONS },
+            { type: "input_text", text: rubric || RUBRIC_INSTRUCTIONS },
             ...images.map((img) => ({
               type: "input_image",
-              image_url: img,
-            })),
-          ],
-        },
+              image_url: img
+            }))
+          ]
+        }
       ],
+
+      // ✅ Structured output (guaranteed schema match)
       text: {
         format: {
           type: "json_schema",
-          name: "grading_response",
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              score_out_of_10: { type: "number" },
-              deductions: {
-                type: "array",
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    reason: { type: "string" },
-                    points: { type: "number" },
-                  },
-                  required: ["reason", "points"],
-                },
-              },
-              final_score_out_of_10: { type: "number" },
-              strengths: { type: "array", items: { type: "string" } },
-              improvements: { type: "array", items: { type: "string" } },
-              teacher_comment: { type: "string" },
-            },
-            required: [
-              "score_out_of_10",
-              "deductions",
-              "final_score_out_of_10",
-              "strengths",
-              "improvements",
-              "teacher_comment",
-            ],
-          },
-        },
+          json_schema: {
+            name: "grade_result",
+            schema,
+            strict: true
+          }
+        }
       },
-      max_output_tokens: 800,
+
+      max_output_tokens: 800
     });
 
-    // With json_schema, output_text SHOULD be valid JSON — parse it and return the object.
-    let parsed = null;
-    const outText = response.output_text || "";
+    // Return parsed JSON (best) so the frontend never has to guess
+    const json = JSON.parse(response.output_text);
+    return res.json(json);
 
-    try {
-      parsed = outText ? JSON.parse(outText) : null;
-    } catch {
-      parsed = null;
-    }
-
-    if (!parsed) {
-      return res.status(502).json({
-        error: "Model returned non-JSON output",
-        raw: outText,
-      });
-    }
-
-    // Optional safety clamp (do this BEFORE responding)
-    if (typeof parsed.final_score_out_of_10 === "number") {
-      parsed.final_score_out_of_10 = Math.max(
-        0,
-        Math.min(10, parsed.final_score_out_of_10)
-      );
-    }
-
-    return res.json(parsed);
   } catch (err) {
-    console.error("🔥 /grading failed:", err);
+    console.error("🔥 /grading failed:", err?.message || err);
     return res.status(500).json({
       error: "Grading failed",
-      details: err?.message || "unknown error",
-      status: err?.status || err?.response?.status || 500,
+      details: err?.message || "unknown error"
     });
   }
 });

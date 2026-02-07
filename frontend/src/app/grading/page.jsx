@@ -71,21 +71,59 @@ function safeJsonParse(text) {
   if (typeof text !== "string") return null;
   const s = text.trim();
   if (!s) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    // Attempt to rescue first {...} block
-    const start = s.indexOf("{");
-    const end = s.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(s.slice(start, end + 1));
-      } catch {
-        return null;
-      }
+
+  const tryParse = (str) => {
+    try {
+      return JSON.parse(str);
+    } catch {
+      return null;
     }
+  };
+
+  // 1) normal
+  const direct = tryParse(s);
+  if (direct) return direct;
+
+  // Helper: extract the largest {...} block
+  const extractObjectBlock = (str) => {
+    const start = str.indexOf("{");
+    const end = str.lastIndexOf("}");
+    if (start >= 0 && end > start) return str.slice(start, end + 1);
     return null;
+  };
+
+  // 2) rescue {...}
+  const rescued = extractObjectBlock(s);
+  if (rescued) {
+    const parsed = tryParse(rescued);
+    if (parsed) return parsed;
   }
+
+  // 3) handle “escaped JSON looking” payloads like: { \"score_out_of_10\": 8, ... }
+  const looksEscaped =
+    /\\\"score_out_of_10\\\"|\\\"final_score_out_of_10\\\"/.test(s) || /\\n/.test(s);
+
+  if (looksEscaped) {
+    const candidate = rescued || s;
+
+    // Unescape common sequences. Order matters.
+    const unescaped = candidate
+      .replace(/\\\\/g, "\\")   // \\ -> \
+      .replace(/\\"/g, '"')    // \" -> "
+      .replace(/\\n/g, "\n")   // \n -> newline
+      .replace(/\\t/g, "\t");  // \t -> tab
+
+    const parsed2 = tryParse(unescaped);
+    if (parsed2) return parsed2;
+
+    const rescued2 = extractObjectBlock(unescaped);
+    if (rescued2) {
+      const parsed3 = tryParse(rescued2);
+      if (parsed3) return parsed3;
+    }
+  }
+
+  return null;
 }
 
 function isAssessmentObject(o) {
