@@ -1,0 +1,91 @@
+/* student-app/src/student-app.css */
+.student-app {
+  min-height: 100vh;
+  background: #0f172a;
+  color: white;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.student-header {
+  padding: 1rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  font-size: 1.2rem;
+}
+
+/* Team name – huge and proud */
+.team-name {
+  font-size: 4rem;
+  font-weight: 900;
+  text-align: center;
+  margin: 1rem 0;
+  text-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+
+/* Main instruction */
+.instruction {
+  font-size: 2.4rem;
+  font-weight: 900;
+  text-align: center;
+  padding: 2rem 1rem;
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  margin: 1rem;
+  border-radius: 32px;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+  animation: pulse 2s infinite;
+}
+
+/* Progress bar – massive */
+.progress-container {
+  height: 140px;
+  background: rgba(0,0,0,0.5);
+  border-radius: 70px;
+  overflow: hidden;
+  margin: 2rem 1rem;
+  position: relative;
+  box-shadow: inset 0 8px 20px rgba(0,0,0,0.6);
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  width: 0%;
+  transition: width 0.5s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 5rem;
+  font-weight: bold;
+}
+
+/* GO! text */
+.go-text {
+  font-size: 8rem;
+  font-weight: 900;
+  text-align: center;
+  animation: bounce 1s infinite;
+}
+
+/* Bottom color band – team identity */
+.team-color-band {
+  flex: 1;
+  min-height: 40vh;
+  background: var(--team-color, #64748b);
+  position: relative;
+}
+
+/* Pulse & bounce animations */
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-30px); }
+}

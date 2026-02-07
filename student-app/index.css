@@ -1,0 +1,42 @@
+/* student-app/index.css */
+/* ==========================================================================
+   Curriculate Student App – Global Styles
+   ========================================================================== */
+
+/* Load Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Permanent+Marker&display=swap');
+
+/* Grade 4 and under: Clean printing font (like handwriting worksheets) */
+.font-printing {
+  font-family: 'Comic Neue', 'Comic Sans MS', cursive;
+  font-weight: bold;
+  font-size: 2.4em;
+  line-height: 1.5;
+  letter-spacing: 0.5px;
+}
+
+/* Grade 5 and up: Real handwriting feel */
+.font-handwriting {
+  font-family: 'Permanent Marker', cursive;
+  font-size: 2.3em;
+  line-height: 1.5;
+  letter-spacing: 0.8px;
+}
+
+@font-face {
+  font-family: 'Interstellar Log';
+  src: url('/fonts/interstellar-log.woff2') format('woff2'),
+       url('/fonts/interstellar-log.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+
+.task-title-fun {
+  font-family: 'Interstellar Log', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 1.4rem;
+  letter-spacing: 1px;
+  text-transform: none; /* Let JS handle Title Case */
+}
+
+/* Load Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Permanent+Marker&display=swap');

@@ -1,0 +1,34 @@
+{
+  "name": "curriculate-student",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@hello-pangea/dnd": "^18.0.1",
+    "canvas-confetti": "^1.9.4",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.5",
+    "framer-motion": "^12.23.26",
+    "jsqr": "^1.4.0",
+    "lottie-react": "^2.4.1",
+    "lucide-react": "^0.556.0",
+    "react": "^18.3.1",
+    "react-confetti": "^6.4.0",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.11.0",
+    "socket.io-client": "^4.7.5",
+    "use-sound": "^5.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^7.2.7"
+  }
+}

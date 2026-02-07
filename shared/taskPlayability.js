@@ -1,0 +1,477 @@
+// shared/taskPlayability.js
+import { TASK_TYPES, normalizeTaskType } from "./taskTypes.js";
+
+/**
+ * Playability (runtime viability) checks.
+ * Returns { playable, issues, normalizedType }.
+ *
+ * Goal: catch "schema-valid but unusable" tasks before DemoPage/TaskRunner shows
+ * "No rounds were provided..." etc.
+ */
+export function assessTaskPlayability(rawTask) {
+  const issues = [];
+  const t = rawTask || {};
+  const normalizedType = normalizeTaskType(t.taskType || t.type);
+
+  // Small generic requirements (very mild)
+  if (!String(t.title || "").trim()) issues.push("missing title");
+  if (!String(t.prompt || "").trim()) issues.push("missing prompt");
+
+  // Helpers
+  const isNonEmptyString = (v) => typeof v === "string" && v.trim().length > 0;
+
+  const getArr = (...paths) => {
+    for (const p of paths) {
+      const val = p();
+      if (Array.isArray(val)) return val;
+    }
+    return null;
+  };
+
+  const arrLen = (...paths) => {
+    const a = getArr(...paths);
+    return a ? a.length : 0;
+  };
+
+  const hasAtLeast = (n, name, ...paths) => {
+    const len = arrLen(...paths);
+    if (len < n) issues.push(`${name} must have at least ${n} items (got ${len})`);
+  };
+
+  const requireNonEmpty = (name, getter) => {
+    const v = getter();
+    if (!isNonEmptyString(v)) issues.push(`${name} is required`);
+  };
+
+  const requireNumber = (name, getter, { min } = {}) => {
+    const v = getter();
+    if (typeof v !== "number" || Number.isNaN(v)) {
+      issues.push(`${name} must be a number`);
+      return;
+    }
+    if (min != null && v < min) issues.push(`${name} must be >= ${min} (got ${v})`);
+  };
+
+  // ---- Per-type playability rules ----
+  switch (normalizedType) {
+    case TASK_TYPES.MAD_DASH: {
+      const n = arrLen(() => t.sequence, () => t.items, () => t.config?.sequence, () => t.config?.items);
+      if (n < 3) issues.push(`sequence/items must have at least 3 steps (got ${n})`);
+      break;
+    }
+
+    case TASK_TYPES.MAD_DASH_SEQUENCE: {
+      const n = arrLen(() => t.sequence, () => t.items, () => t.config?.sequence, () => t.config?.items, () => t.config?.items);
+      if (n < 3) issues.push(`sequence/items must have at least 3 steps (got ${n})`);
+
+      // Require an order key for sequence-scored gameplay
+      const order =
+        t.config?.correctOrder ??
+        t.correctOrder ??
+        t.config?.answerKey ??
+        t.answerKey ??
+        t.config?.correctAnswer ??
+        t.correctAnswer;
+
+      if (!order) issues.push("correct order is required (config.correctOrder/correctOrder/answerKey)");
+      break;
+    }
+    // =========================
+    // Core Q&A (multi-item)
+    // =========================
+    case TASK_TYPES.MULTIPLE_CHOICE:
+    case TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE: {
+      const items = getArr(() => t.items, () => t.config?.items);
+      if (!items) {
+        issues.push("items[] is required (config.items also accepted)");
+        break;
+      }
+      if (items.length < 1) issues.push(`items[] must have at least 1 item (got ${items.length})`);
+
+      // Light per-item sanity
+      for (let i = 0; i < Math.min(items.length, 5); i++) {
+        const it = items[i] || {};
+        const q = it.question ?? it.prompt ?? it.text;
+        if (!isNonEmptyString(q)) issues.push(`items[${i}].question/prompt is required`);
+        const opts = Array.isArray(it.options) ? it.options.filter(isNonEmptyString) : [];
+        if (opts.length < 2) issues.push(`items[${i}].options must have at least 2 options`);
+        const ci = it.correctIndex ?? it.correctAnswer;
+        if (!Number.isInteger(ci)) issues.push(`items[${i}].correctIndex/correctAnswer must be an integer`);
+      }
+      break;
+    }
+
+    case TASK_TYPES.ECHO_CHAIN:
+      // If you already have a narration-synthesize-ish check, reuse it;
+      // otherwise minimal playable rule: prompts >=2 and playerCount is a number.
+      {
+        const pc = t.config?.playerCount;
+        if (typeof pc !== "number") issues.push("config.playerCount must be a number");
+        const p = Array.isArray(t.config?.prompts) ? t.config.prompts.length : 0;
+        if (p < 2) issues.push(`config.prompts must have at least 2 items (got ${p})`);
+        break;
+      }
+
+    case TASK_TYPES.TRUE_FALSE: {
+      const statements = getArr(() => t.items, () => t.statements, () => t.config?.items, () => t.config?.statements);
+      if (!statements) issues.push("statements/items array required");
+      else if (statements.length < 1) issues.push("need at least 1 true/false statement");
+      break;
+    }
+
+    case TASK_TYPES.SHORT_ANSWER: {
+      const items = getArr(() => t.items, () => t.config?.items);
+      if (!items) issues.push("items[] is required (config.items also accepted)");
+      else if (items.length < 1) issues.push("need at least 1 short-answer item");
+      break;
+    }
+
+    case TASK_TYPES.READING_COMP: {
+      // Your description says: passage + questions, but your runtime might accept simpler.
+      // We check for at least some reading content.
+      const passage = t.passage ?? t.reading ?? t.text ?? t.config?.passage ?? t.config?.reading ?? t.config?.text;
+      if (!isNonEmptyString(passage)) issues.push("reading passage text is required (passage/reading/text)");
+      // Optional Qs, but if your UI expects them, enforce >= 1:
+      const qs = arrLen(() => t.questions, () => t.items, () => t.config?.questions, () => t.config?.items);
+      if (qs < 1) issues.push(`questions/items must have at least 1 (got ${qs})`);
+      break;
+    }
+
+    // =========================
+    // Ordering / classify
+    // =========================
+    case TASK_TYPES.SORT: {
+      hasAtLeast(2, "categories", () => t.categories, () => t.config?.categories);
+      hasAtLeast(4, "items", () => t.items, () => t.config?.items);
+      const answer = t.correctAnswer ?? t.config?.correctAnswer ?? t.answerKey ?? t.config?.answerKey;
+      if (!answer || typeof answer !== "object") issues.push("correctAnswer/answerKey mapping is required");
+      break;
+    }
+
+    case TASK_TYPES.SEQUENCE:
+    case TASK_TYPES.TIMELINE: {
+      hasAtLeast(4, "items", () => t.items, () => t.config?.items);
+      // Some implementations store correct order separately; allow either.
+      const order =
+        t.correctOrder ?? t.config?.correctOrder ?? t.correctAnswer ?? t.config?.correctAnswer ?? t.answerKey;
+      if (!order) issues.push("correct order is required (correctOrder/correctAnswer/answerKey)");
+      break;
+    }
+
+    case TASK_TYPES.MATCHING: {
+      hasAtLeast(5, "leftItems", () => t.config?.leftItems, () => t.leftItems);
+      hasAtLeast(5, "rightItems", () => t.config?.rightItems, () => t.rightItems);
+      const m = t.config?.correctMatches ?? t.correctMatches;
+      if (!m || typeof m !== "object") issues.push("config.correctMatches is required");
+      break;
+    }
+
+    case TASK_TYPES.VENNSORT: {
+      hasAtLeast(2, "categories", () => t.categories, () => t.config?.categories);
+      hasAtLeast(5, "items", () => t.items, () => t.config?.items);
+      const map = t.correctAnswer ?? t.config?.correctAnswer;
+      if (!map || typeof map !== "object") issues.push("correctAnswer mapping is required");
+      break;
+    }
+
+    // =========================
+    // Open response / media
+    // =========================
+    case TASK_TYPES.OPEN_TEXT:
+    case TASK_TYPES.PHOTO:
+    case TASK_TYPES.MAKE_AND_SNAP:
+    case TASK_TYPES.PHOTO_JOURNAL:
+    case TASK_TYPES.DRAW:
+    case TASK_TYPES.MIME:
+    case TASK_TYPES.RECORD_AUDIO: {
+      // Generally playable if title+prompt exist.
+      break;
+    }
+
+    // =========================
+    // Movement / physical games
+    // =========================
+    case TASK_TYPES.BODY_BREAK:
+    case TASK_TYPES.MOTION_MISSION: {
+      // Playable if prompt exists.
+      break;
+    }
+
+    case TASK_TYPES.MUSICAL_CHAIRS: {
+      // Playability (runtime viability) for musical-chairs:
+      // Be mild, but ensure the UI won't crash.
+      const items = getArr(() => t.items, () => t.config?.items);
+
+      // Allow either config.rounds OR infer rounds from items length.
+      const rounds = t.config?.rounds;
+      const inferredRounds = Array.isArray(items) ? items.length : 0;
+
+      if (typeof rounds !== "number" || Number.isNaN(rounds)) {
+        if (inferredRounds < 1) issues.push("config.rounds is required (or provide items/config.items with at least 1 item)");
+      } else if (rounds < 1) {
+        issues.push(`config.rounds must be >= 1 (got ${rounds})`);
+      }
+
+      if (!items) {
+        issues.push("items[] is required (config.items also accepted)");
+        break;
+      }
+      if (items.length < 1) {
+        issues.push(`items[] must have at least 1 item (got ${items.length})`);
+        break;
+      }
+
+      // Light per-item sanity (first few only)
+      for (let i = 0; i < Math.min(items.length, 8); i++) {
+        const it = items[i] || {};
+        if (!isNonEmptyString(it.prompt)) issues.push(`items[${i}].prompt is required`);
+        const opts = Array.isArray(it.options) ? it.options.filter(isNonEmptyString) : [];
+        if (opts.length < 2) issues.push(`items[${i}].options must have at least 2 options`);
+        if (opts.length > 4) issues.push(`items[${i}].options must have at most 4 options`);
+        const ca = it.correctAnswer;
+        if (!Number.isInteger(ca)) issues.push(`items[${i}].correctAnswer must be an integer`);
+        else if (opts.length >= 2 && (ca < 0 || ca >= opts.length)) {
+          issues.push(`items[${i}].correctAnswer out of range for options length ${opts.length}`);
+        }
+      }
+
+      break;
+    }
+
+    case TASK_TYPES.HIDENSEEK: {
+      // Needs prompt and usually some location hint
+      // (keep mild to avoid rejecting good tasks)
+      break;
+    }
+
+    // =========================
+    // Competitive / games
+    // =========================
+    case TASK_TYPES.JEOPARDY: {
+      // NOTE: TASK_TYPES.JEOPARDY is "brain-blitz" in your constants. :contentReference[oaicite:1]{index=1}
+      // BrainBlitz runtime seems to expect clues[] (you saw "no clues"). Enforce >= 5.
+      hasAtLeast(5, "clues", () => t.clues, () => t.config?.clues);
+      break;
+    }
+
+    case TASK_TYPES.TRUE_FALSE_TICTACTOE: {
+      // Needs at least 9 statements OR statementSets with >= 9
+      const set0 = getArr(() => t.statements, () => t.config?.statements);
+      const sets = getArr(() => t.config?.statementSets);
+      const count = set0 ? set0.length : sets?.[0]?.length || 0;
+      if (count < 9) issues.push(`need at least 9 statements (got ${count})`);
+      break;
+    }
+
+    case TASK_TYPES.FLASHCARDS: {
+      hasAtLeast(8, "cards/items", () => t.items, () => t.cards, () => t.config?.items, () => t.config?.cards);
+      break;
+    }
+
+    case TASK_TYPES.FLASHCARDS_RACE: {
+      hasAtLeast(5, "items", () => t.config?.items, () => t.items);
+      break;
+    }
+
+    case TASK_TYPES.GUESS_WHO: {
+      // Needs a concept pool / suspects list depending on your implementation
+      const pool = arrLen(() => t.items, () => t.config?.items, () => t.characters, () => t.config?.characters);
+      if (pool < 6) issues.push(`need at least 6 candidates/items (got ${pool})`);
+      break;
+    }
+
+    case TASK_TYPES.HANGMAN_DUEL: {
+      // You spec wordsByStation[8]
+      hasAtLeast(8, "config.wordsByStation", () => t.config?.wordsByStation);
+      break;
+    }
+
+    case TASK_TYPES.WORD_WEAVER_DUEL: {
+      // Needs at least some word list / tiles / targets
+      const n = arrLen(() => t.items, () => t.config?.items, () => t.words, () => t.config?.words);
+      if (n < 5) issues.push(`need at least 5 words/items (got ${n})`);
+      break;
+    }
+
+    case TASK_TYPES.DIFF_DETECTIVE: {
+      requireNonEmpty("original", () => t.original);
+      requireNonEmpty("modified", () => t.modified);
+      // Differences optional (AI or teacher review), but if provided must be >= 3
+      const d = arrLen(() => t.differences, () => t.config?.differences);
+      if (d > 0 && d < 3) issues.push(`differences must have at least 3 entries when provided (got ${d})`);
+      break;
+    }
+
+    case TASK_TYPES.SPEED_DRAW: {
+      requireNonEmpty("word/prompt", () => t.word ?? t.prompt);
+      break;
+    }
+
+    case TASK_TYPES.PET_FEEDING: {
+      // Usually just needs prompt; pack optional.
+      break;
+    }
+
+    // =========================
+    // Collaboration / debate
+    // =========================
+    case TASK_TYPES.COLLABORATION:
+    case TASK_TYPES.LIVE_DEBATE:
+    case TASK_TYPES.AI_DEBATE_JUDGE:
+    case TASK_TYPES.BRAINSTORM_BATTLE: {
+      // title+prompt is generally enough; optionally check config fields if you later hard-require them.
+      break;
+    }
+
+    // =========================
+    // Deduction / clue-based
+    // =========================
+    case TASK_TYPES.MYSTERY_CLUES:
+    case TASK_TYPES.PHYSICAL_MYSTERY_CLUES: {
+      // requires clues[] at least 2; isFinal true tasks must have bigger set, but keep mild here
+      hasAtLeast(2, "clues", () => t.clues, () => t.config?.clues);
+      // isFinal should be boolean if present
+      if (t.isFinal != null && typeof t.isFinal !== "boolean") issues.push("isFinal must be boolean when provided");
+      break;
+    }
+
+    case TASK_TYPES.FAKE_OUT: {
+      // Runtime needs rounds (you've seen "No rounds were provided...").
+      hasAtLeast(1, "config.rounds", () => t.config?.rounds, () => t.rounds);
+
+      const rounds = getArr(() => t.config?.rounds, () => t.rounds) || [];
+      for (let i = 0; i < Math.min(rounds.length, 10); i++) {
+        const r = rounds[i] || {};
+        if (!isNonEmptyString(r.prompt)) issues.push(`rounds[${i}].prompt is required`);
+
+        const opts = Array.isArray(r.options) ? r.options.filter(isNonEmptyString) : [];
+        if (opts.length !== 3) issues.push(`rounds[${i}].options must have exactly 3 items (got ${opts.length})`);
+
+        if (!Number.isInteger(r.correctIndex)) issues.push(`rounds[${i}].correctIndex must be integer`);
+        else if (r.correctIndex < 0 || r.correctIndex > 2) issues.push(`rounds[${i}].correctIndex must be 0, 1, or 2`);
+
+        if (!isNonEmptyString(r.jokeOption)) issues.push(`rounds[${i}].jokeOption is required`);
+        else if (opts.includes(r.jokeOption)) issues.push(`rounds[${i}].jokeOption must NOT be in options`);
+
+        if (!Number.isInteger(r.jokeIndex) || ![0, 1, 2, 3].includes(r.jokeIndex)) {
+          issues.push(`rounds[${i}].jokeIndex must be 0, 1, 2, or 3`);
+        }
+      }
+      break;
+    }
+
+    // =========================
+    // Synthesis / “structured” tasks
+    // =========================
+    case TASK_TYPES.BRAIN_SPARK_NOTES: {
+      hasAtLeast(3, "bullets", () => t.bullets, () => t.config?.bullets);
+      break;
+    }
+
+    case TASK_TYPES.MIND_MAPPER: {
+      hasAtLeast(4, "items", () => t.items, () => t.config?.items);
+
+      const s = t.config?.structure ?? t.structure;
+
+      // Accept either array structure OR object structure
+      if (Array.isArray(s)) {
+        if (s.length < 1) issues.push("config.structure is required");
+        else {
+          const flat = s.flatMap((x) => (Array.isArray(x) ? x : [x]));
+          const hasBlank = flat.some((x) => x === "" || String(x).includes("_____"));
+          if (!hasBlank) issues.push("config.structure must include blank slots ('' or '_____')");
+        }
+      } else if (s && typeof s === "object") {
+        const blob = JSON.stringify(s);
+        if (!blob.includes("_____") && !blob.includes('""')) {
+          issues.push("config.structure must include blank slots ('' or '_____')");
+        }
+      } else {
+        issues.push("config.structure is required");
+      }
+
+      break;
+    }
+
+    case TASK_TYPES.NARRATION_SYNTHESIZE: {
+      requireNumber("config.playerCount", () => t.config?.playerCount, { min: 2 });
+      hasAtLeast(2, "config.prompts", () => t.config?.prompts);
+      break;
+    }
+
+    case TASK_TYPES.ROLE_PLAY_DECK: {
+      const roles = getArr(() => t.config?.roles);
+      if (!roles || roles.length < 2) issues.push(`config.roles must have at least 2 roles (got ${roles?.length || 0})`);
+      requireNonEmpty("config.scenario", () => t.config?.scenario);
+      break;
+    }
+
+    case TASK_TYPES.SCRIPT_PLAY: {
+      // Expect lines/dialogue array somewhere
+      const n = arrLen(() => t.lines, () => t.config?.lines, () => t.dialogue, () => t.config?.dialogue);
+      if (n < 4) issues.push(`script lines/dialogue must have at least 4 lines (got ${n})`);
+      break;
+    }
+
+    case TASK_TYPES.DRAW_MIME: {
+      requireNonEmpty("prompt", () => t.prompt);
+      break;
+    }
+
+    // =========================
+    // Language / speaking
+    // =========================
+    case TASK_TYPES.PRONUNCIATION: {
+      requireNonEmpty("referenceText", () => t.referenceText ?? t.config?.referenceText);
+      break;
+    }
+
+    case TASK_TYPES.SPEECH_RECOGNITION: {
+      // prompt is enough; referenceText optional
+      break;
+    }
+
+    // =========================
+    // Demo-only / meta
+    // =========================
+    case TASK_TYPES.TASK_RUNNER:
+    case TASK_TYPES.MOOD_CHECKIN:
+    case TASK_TYPES.TREASURE_RUNNER:
+    case TASK_TYPES.MULTI_PLAYER_FEEDBACK: {
+      // Always playable with title+prompt
+      break;
+    }
+
+    default: {
+      // Unknown types: only enforce generic title/prompt
+      issues.push(`unknown taskType "${t.taskType}" (normalized to "${normalizedType}")`);
+      break;
+    }
+  }
+
+  return {
+    playable: issues.length === 0,
+    issues,
+    normalizedType,
+  };
+}
+
+/**
+ * Convenience: check a whole taskset and return a compact report.
+ */
+export function auditPlayability(tasks = []) {
+  const results = tasks.map((t, idx) => ({ idx, ...assessTaskPlayability(t) }));
+  const bad = results.filter((r) => !r.playable);
+  return {
+    total: results.length,
+    playable: results.length - bad.length,
+    notPlayable: bad.length,
+    bad,
+    byType: results.reduce((acc, r) => {
+      acc[r.normalizedType] = acc[r.normalizedType] || { total: 0, bad: 0 };
+      acc[r.normalizedType].total += 1;
+      if (!r.playable) acc[r.normalizedType].bad += 1;
+      return acc;
+    }, {}),
+  };
+}

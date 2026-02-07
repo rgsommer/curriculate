@@ -1,0 +1,29 @@
+node_modules/
+**/node_modules/
+*.log
+.env
+backend/backend-server.log
+backend/backend-server.pid
+student-dev.log
+teacher-dev.log
+.DS_Store
+.idea/
+dist/
+build/
+.env.local
+# Ignore env files
+.env
+.env.*
+backend/.env
+
+# Ignore env files
+.env
+.env.*
+backend/.env
+
+# Next.js build output
+.next
+frontend/.next
+curriculate-codex.zip
+curriculate-codex.zip
+curriculate-codex.zip

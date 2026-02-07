@@ -1,0 +1,1381 @@
+// teacher-app/src/pages/AiTasksetGenerator.jsx
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { fetchMyProfile } from "../api/profile";
+import { apiFetchJson } from "../api/apiFetch";
+import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
+
+const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
+const LEARNING_GOALS = ["REVIEW", "INTRODUCTION", "ENRICHMENT", "ASSESSMENT"];
+
+// --- Task-specific generation constraints (additive). These get appended to topicDescription
+// so the backend AI prompt is forced to include required fields for certain task types.
+const TASK_GEN_CONSTRAINTS = {
+  "fake-out": `
+FAKE-OUT TASK GENERATION RULES (MUST FOLLOW):
+- You MUST include config.rounds as a non-empty array.
+- Each round MUST include:
+  - prompt: string (the term/concept to be read aloud)
+  - options: exactly 3 strings (AI-provided). These are the ONLY AI-provided options.
+  - correctIndex: number (0-2) pointing to the correct option inside options[]
+  - jokeOption: string (an obviously false / hilarious option)
+  - jokeIndex: number (0-3) indicating where jokeOption should appear among the 4 displayed options.
+    - IMPORTANT: jokeIndex MUST be random per round; do NOT always use 3.
+- The 4th displayed "option" is NOT AI-provided: the reader will invent it during play (leave a blank slot in UI).
+- Keep the three AI options verbose and difficult-to-discern; only ONE is correct; the other TWO are clever fakes.
+- The jokeOption should be clearly, comically wrong, but still thematically connected.
+OUTPUT SHAPE EXAMPLE (per round):
+{ prompt, options:[...3], correctIndex:0|1|2, jokeOption, jokeIndex:0|1|2|3 }
+`,
+  "echo-chain": `
+ECHO-CHAIN TASK GENERATION RULES (MUST FOLLOW):
+- You MUST include config.startWord (string).
+- You MUST include config.minChainLength as a number >= 5.
+- Optionally include config.perTurnSeconds (default 10) and config.hasTimer (boolean).
+- The task should not end until at least minChainLength words are added to the chain.
+`,
+  "matching": `
+MATCHING TASK GENERATION RULES (MUST FOLLOW):
+- You MUST include config.leftItems (5-7 strings) and config.rightItems (same count, strings).
+- You MUST include config.correctMatches as an object mapping each left item to its correct right item.
+- Ensure all left items are unique; all right items are unique.
+ `,
+  "mad-dash-sequence": `
+MAD-DASH-SEQUENCE TASK GENERATION RULES (MUST FOLLOW):
+- You MUST include config.items as an array of 3–5 short strings.
+- You MUST include config.correctOrder as an array of indices (same length as items) representing the correct order.
+- correctOrder MUST be a valid permutation of [0..items.length-1] with no repeats.
+- Do NOT include colors; colors/stations are assigned at runtime.
+`,
+  "reading-comp": `
+READING-COMP TASK GENERATION RULES (MUST FOLLOW):
+- You MUST include generatedParagraph as a single string paragraph.
+- The paragraph MUST contain exactly X sentences, where X = gradeLevel if gradeLevel is a number (e.g., 7, 8, 10, 12).
+- If gradeLevel is NOT a number (e.g., 'conference', 'adult', 'mixed'), then X = 10 sentences.
+- You MUST include prompt that instructs the student to write ONE sentence showing comprehension.
+- Include isTeamVariation as a boolean. If true, the task is intra-team (hide & pass + team vote).
+- Inter-team play must be disabled (interTeamEnabled: false).
+- Intra-team play must be enabled (intraTeamEnabled: true) when isTeamVariation is true.
+- Keep the paragraph age-appropriate and aligned to the requested topic.
+`,
+  "open-text": `
+OPEN-TEXT (VOCAB WEAVE) TASK GENERATION RULES (USE THIS MODE WHEN APPROPRIATE):
+- If you generate an open-text task intended as a vocabulary paragraph challenge, set config.kind = "vocabulary-paragraph".
+- You MUST include config.requiredWords as an array of 5–10 strings, drawn from aiWordBank.
+- Prompt MUST instruct: write ONE coherent paragraph using every required word at least once (inflections allowed).
+- The goal is demonstrating meaning, natural usage, and coherent writing (not a list).
+- You MUST set interTeamEnabled: false and intraTeamEnabled: false.
+- Include config.minWords (default 45) and config.maxWords (default 140) unless a better range is justified for grade level.
+- The answer will be AI-scored for: inclusion, contextual correctness, grammatical coherence, and optional creativity bonus.
+`,
+};
+
+// Generator-eligible task types (mirror backend intent)
+const GENERATOR_ELIGIBLE_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false)
+  .map(([type]) => type);
+
+// Subset that likely benefits from AI-generated content (UI-only hints)
+const AI_GENERATED_TYPES = Object.entries(TASK_TYPE_META)
+  .filter(([, meta]) => meta.implemented !== false && meta.generatorEligible !== false)
+  .filter(([, meta]) => (meta.scoringMode ? String(meta.scoringMode).toLowerCase() : "") !== "none")
+  .map(([type]) => type);
+
+function safeArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
+function uniqStrings(list) {
+  const seen = new Set();
+  const out = [];
+  for (const v of safeArray(list)) {
+    const s = String(v || "").trim();
+    if (!s) continue;
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+  }
+  return out;
+}
+
+function joinLines(list) {
+  return uniqStrings(list).join("\n");
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(String(text || ""));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export default function AiTasksetGenerator() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const prefillWordListFromState =
+    location.state && Array.isArray(location.state.prefillWordList)
+      ? location.state.prefillWordList
+      : null;
+
+  const prefillWordText = prefillWordListFromState
+    ? prefillWordListFromState.join("\n")
+    : "";
+
+  const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  const [form, setForm] = useState({
+    name: "",
+    roomLocation: "Classroom",
+    gradeLevel: "",
+    subject: "",
+    difficulty: "MEDIUM",
+    learningGoal: "REVIEW",
+    topicDescription: "", // special considerations
+    durationMinutes: 45,
+    isFixedStation: false,
+    isMultiRoomScavenger: false,
+  });
+
+  const [displays, setDisplays] = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+
+  const [limitTasks, setLimitTasks] = useState(false);
+  const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
+
+  // Task-type filters (UI-only)
+  const [taskTypeCategory, setTaskTypeCategory] = useState("all");
+  const [onlyIntraTeam, setOnlyIntraTeam] = useState(false);
+  const [onlyInterTeam, setOnlyInterTeam] = useState(false);
+
+  // Vocabulary / key terms (REQUIRED)
+  const [wordListText, setWordListText] = useState(prefillWordText);
+
+  // Multi-room list as text
+  const [multiRoomText, setMultiRoomText] = useState("");
+
+  // UI feedback for copy buttons
+  const [copiedTag, setCopiedTag] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      try {
+        const data = await fetchMyProfile();
+        if (cancelled) return;
+        setProfile(data || null);
+
+        const defaultGrade =
+          (data && (data.defaultGradeLevel || data.gradeLevel)) || "";
+        const defaultSubject =
+          (data && (data.defaultSubject || data.subject)) || "";
+
+        setForm((prev) => ({
+          ...prev,
+          gradeLevel: prev.gradeLevel || defaultGrade,
+          subject: prev.subject || defaultSubject,
+          roomLocation:
+            prev.roomLocation || data?.defaultRoomLocation || "Classroom",
+        }));
+      } catch (err) {
+        console.error("Failed to load profile for AI generator:", err);
+      } finally {
+        if (!cancelled) setLoadingProfile(false);
+      }
+    }
+
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleChange = (field, value) =>
+    setForm((prev) => ({ ...prev, [field]: value }));
+
+  const toggleTaskType = (type) => {
+    setSelectedTaskTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  };
+
+  const addDisplay = () => {
+    setDisplays((prev) => [
+      ...prev,
+      {
+        key: `display-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: "",
+        description: "",
+        stationColor: "",
+        notesForTeacher: "",
+        imageUrl: "",
+      },
+    ]);
+  };
+
+  const updateDisplay = (index, field, value) => {
+    setDisplays((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...(copy[index] || {}), [field]: value };
+      return copy;
+    });
+  };
+
+  const removeDisplay = (index) => {
+    setDisplays((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const coverage = useMemo(() => {
+    const cov = result?.taskset?.meta?.coverage;
+    if (!cov || typeof cov !== "object") return null;
+    const requested = uniqStrings(cov.requested);
+    const covered = uniqStrings(cov.covered);
+    const missing = uniqStrings(cov.missing);
+
+    return {
+      requestedCount: Number(cov.requestedCount) || requested.length,
+      coveredCount: Number(cov.coveredCount) || covered.length,
+      missingCount: Number(cov.missingCount) || missing.length,
+      requested,
+      covered,
+      missing,
+      mentionCounts: cov.mentionCounts && typeof cov.mentionCounts === "object" ? cov.mentionCounts : {},
+    };
+  }, [result]);
+
+  const allocation = useMemo(() => {
+    const perTask = result?.taskset?.meta?.conceptAllocation?.perTask;
+    if (!Array.isArray(perTask) || !perTask.length) return null;
+
+    // Compact + defensive
+    return perTask
+      .map((r) => ({
+        index: Number.isFinite(Number(r?.index)) ? Number(r.index) : null,
+        taskType: String(r?.taskType || "").trim(),
+        terms: uniqStrings(r?.terms),
+      }))
+      .filter((r) => r.index != null && r.taskType);
+  }, [result]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (generating) return;
+
+    setError("");
+    setResult(null);
+    setGenerating(true);
+    setCopiedTag("");
+
+    if (!form.name.trim()) {
+      setError("Task set title is required.");
+      setGenerating(false);
+      return;
+    }
+
+    // Word bank
+    const aiWordBank = wordListText
+      .split(/[\n,;]+/)
+      .map((w) => w.trim())
+      .filter(Boolean);
+
+    if (!aiWordBank.length) {
+      setError(
+        "Please provide at least one vocabulary term or key word. The AI uses these to stay on topic."
+      );
+      setGenerating(false);
+      return;
+    }
+
+    // Multi-room rooms
+    let multiRoomRooms = [];
+    if (form.isMultiRoomScavenger) {
+      multiRoomRooms = multiRoomText
+        .split(/[\n,;]+/)
+        .map((r) => r.trim())
+        .filter(Boolean);
+
+      if (!multiRoomRooms.length) {
+        setError(
+          "For a multi-room scavenger hunt, please list at least one room/location."
+        );
+        setGenerating(false);
+        return;
+      }
+    }
+
+    try {
+      // Clean displays if using fixed-station mode
+      let cleanedDisplays = displays;
+      if (!form.isFixedStation) {
+        cleanedDisplays = [];
+      } else {
+        cleanedDisplays = (displays || []).filter(
+          (d) => d && (d.name || d.description || d.stationColor)
+        );
+      }
+
+      const totalDurationMinutes =
+        Number.isFinite(form.durationMinutes) && form.durationMinutes > 0
+          ? form.durationMinutes
+          : 45;
+
+      // Base task count estimate
+      let estimatedTaskCount = Math.max(
+        4,
+        Math.min(20, Math.round(totalDurationMinutes / 5))
+      );
+
+      let requiredTaskTypes = [];
+      const baseSpecialConsiderations = (form.topicDescription || "").trim();
+
+      // Append task-specific constraints so the backend AI prompt reliably returns the required fields.
+      const selectedOrRequiredTypes = Array.from(
+        new Set([...(selectedTaskTypes || []), ...(requiredTaskTypes || [])])
+      );
+
+      const constraintsToAppend = selectedOrRequiredTypes
+        .map((t) => TASK_GEN_CONSTRAINTS[t])
+        .filter(Boolean)
+        .join("\n\n");
+
+      const specialConsiderations = [baseSpecialConsiderations, constraintsToAppend]
+        .filter((s) => (s || "").trim().length)
+        .join("\n\n");
+
+      if (limitTasks) {
+        if (selectedTaskTypes.length === 0) {
+          setError(
+            "Please select at least one task type when limiting task types."
+          );
+          setGenerating(false);
+          return;
+        }
+        // If limiting, don’t generate more tasks than unique types
+        const uniqueTypes = Array.from(new Set(selectedTaskTypes));
+        estimatedTaskCount = Math.min(estimatedTaskCount, uniqueTypes.length);
+        requiredTaskTypes = uniqueTypes;
+      }
+
+      const curriculumLenses =
+        (profile && (profile.curriculumLenses || profile.perspectives)) || [];
+
+      const payload = {
+        gradeLevel: form.gradeLevel,
+        subject: form.subject,
+        difficulty: form.difficulty,
+        learningGoal: form.learningGoal,
+
+        uniqueTaskTypes: !!limitTasks,
+        allowMovementTasks: true,
+        maxMovementRatio: 0.10,
+
+        topicTitle: form.name.trim(),
+        topicDescription: specialConsiderations,
+        presenterProfile: { curriculumLenses },
+
+        aiWordBank,
+
+        totalDurationMinutes,
+        numberOfTasks: limitTasks ? estimatedTaskCount : undefined,
+        requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
+
+        tasksetName: form.name || undefined,
+        roomLocation: form.roomLocation || "Classroom",
+        locationCode: form.roomLocation || "Classroom",
+
+        isFixedStationTaskset: form.isFixedStation || cleanedDisplays.length > 0,
+        displays: cleanedDisplays.length ? cleanedDisplays : undefined,
+
+        multiRoomScavenger: form.isMultiRoomScavenger,
+        multiRoomRooms,
+      };
+
+      const data = await apiFetchJson("/api/ai/tasksets", {
+        method: "POST",
+        body: payload,
+      });
+
+      setError("");
+      setResult(data);
+    } catch (err) {
+      console.error("AI Taskset generation error:", err);
+      setError(err?.message || "Something went wrong while generating the task set.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const ALL_CATEGORIES = Array.from(
+    new Set(
+      Object.values(TASK_TYPE_META)
+        .map((m) => String(m?.category || "other").toLowerCase())
+        .filter(Boolean)
+    )
+  ).sort();
+
+  const filteredEligibleTypes = GENERATOR_ELIGIBLE_TYPES.filter((type) => {
+    const meta = TASK_TYPE_META[type] || {};
+    const cat = String(meta.category || "other").toLowerCase();
+    if (taskTypeCategory !== "all" && cat !== taskTypeCategory) return false;
+    if (onlyIntraTeam && meta.intraTeamEnabled !== true) return false;
+    if (onlyInterTeam && meta.interTeamEnabled !== true) return false;
+    return true;
+  });
+
+  const toggleAllFiltered = () => {
+    setSelectedTaskTypes((prev) => {
+      const set = new Set(prev);
+      const all = filteredEligibleTypes;
+      const everySelected = all.length > 0 && all.every((t) => set.has(t));
+      if (everySelected) {
+        all.forEach((t) => set.delete(t));
+      } else {
+        all.forEach((t) => set.add(t));
+      }
+      return Array.from(set);
+    });
+  };
+
+  const typeIcon = (type) => {
+    const t = String(type || "");
+    if (t === (TASK_TYPES.ECHO_CHAIN || "echo-chain")) return "🔁";
+    if (t === (TASK_TYPES.NARRATION_SYNTHESIZE || "narration-synthesize")) return "🎙️";
+    if (t === (TASK_TYPES.SCRIPT_PLAY || "script-play")) return "🎭";
+    if (t === TASK_TYPES.HANGMAN_DUEL) return "🧩";
+    if (t === TASK_TYPES.TRUE_FALSE_TICTACTOE) return "❎⭕️";
+    if (t === TASK_TYPES.PRONUNCIATION) return "🗣️";
+    if (t === TASK_TYPES.SPEECH_RECOGNITION) return "🎤";
+    if (t === TASK_TYPES.WORD_WEAVER_DUEL) return "🧶";
+    if (t === TASK_TYPES.JEOPARDY) return "⚡";
+    if (t === TASK_TYPES.FLASHCARDS) return "🗂️";
+    if (t === TASK_TYPES.FLASHCARDS_RACE) return "🏁";
+    if (t === TASK_TYPES.HIDENSEEK) return "🕵️";
+    if (t === TASK_TYPES.PHOTO) return "📸";
+    if (t === TASK_TYPES.PHOTO_JOURNAL) return "🖼️📝";
+    if (t === TASK_TYPES.MAKE_AND_SNAP) return "🛠️📸";
+    if (t === TASK_TYPES.FAKE_OUT) return "🃏";
+    if (t === TASK_TYPES.DIFF_DETECTIVE) return "🔎";
+    if (t === TASK_TYPES.VENNSORT) return "⭕️";
+    if (t === TASK_TYPES.SPEED_DRAW) return "✏️⚡";
+    if (t === TASK_TYPES.DRAW_MIME) return "🎨🤐";
+    if (t === TASK_TYPES.MYSTERY_CLUES) return "🧠🃏";
+    if (t === TASK_TYPES.PHYSICAL_MYSTERY_CLUES) return "🗺️🕵️";
+    return "✨";
+  };
+
+  const renderTaskTypeBadge = (type) => {
+    const meta = TASK_TYPE_META[type] || {};
+    const label = meta.label || type;
+    const category = meta.category || "other";
+    const selected = selectedTaskTypes.includes(type);
+    const desc = String(meta.description || "").trim();
+    const shortDesc = desc ? desc.split("\n")[0].replace(/^[-•]\s*/, "").trim() : "";
+
+    return (
+      <button
+        key={type}
+        type="button"
+        title={desc || label}
+        onClick={() => toggleTaskType(type)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 12px",
+          borderRadius: 14,
+          border: selected ? "2px solid #2563eb" : "1px solid #d1d5db",
+          background: selected ? "#eff6ff" : "#ffffff",
+          cursor: "pointer",
+          textAlign: "left",
+          minWidth: 260,
+        }}
+      >
+        <span style={{ fontSize: "0.95rem" }}>{typeIcon(type)}</span>
+
+        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+          <span style={{ fontWeight: 700 }}>{label}</span>
+          {shortDesc && (
+            <span style={{ fontSize: "0.72rem", color: "#6b7280", maxWidth: 340 }}>
+              {shortDesc}
+            </span>
+          )}
+        </span>
+
+        <span
+          style={{
+            fontSize: "0.7rem",
+            color: "#6b7280",
+            textTransform: "capitalize",
+            marginLeft: 2,
+            whiteSpace: "nowrap",
+          }}
+        >
+          · {category}
+        </span>
+
+        {(meta.scoringMode ? String(meta.scoringMode).toLowerCase() : "") === "none" && (
+          <span
+            style={{
+              fontSize: "0.7rem",
+              fontWeight: 800,
+              padding: "2px 8px",
+              borderRadius: 999,
+              border: "1px solid rgba(234,88,12,0.35)",
+              background: "rgba(234,88,12,0.10)",
+              color: "#9a3412",
+              marginLeft: 2,
+              whiteSpace: "nowrap",
+            }}
+          >
+            No-score
+          </span>
+        )}
+
+        {meta.intraTeamEnabled === true && (
+          <span
+            style={{
+              fontSize: "0.68rem",
+              fontWeight: 700,
+              padding: "2px 8px",
+              borderRadius: 999,
+              border: "1px solid rgba(16,185,129,0.35)",
+              background: "rgba(16,185,129,0.10)",
+              color: "#065f46",
+              marginLeft: 2,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Intra-team
+          </span>
+        )}
+
+        {meta.interTeamEnabled === true && (
+          <span
+            style={{
+              fontSize: "0.68rem",
+              fontWeight: 700,
+              padding: "2px 8px",
+              borderRadius: 999,
+              border: "1px solid rgba(59,130,246,0.35)",
+              background: "rgba(59,130,246,0.10)",
+              color: "#1d4ed8",
+              marginLeft: 2,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Inter-team
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const renderCoveragePanel = () => {
+    if (!coverage) return null;
+
+    const isPerfect = coverage.missingCount === 0 && coverage.requestedCount > 0;
+
+    return (
+      <div
+        style={{
+          marginTop: 16,
+          padding: 14,
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
+          background: isPerfect ? "#ecfdf5" : "#fff7ed",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 800, marginBottom: 2 }}>Coverage Report</div>
+            <div style={{ fontSize: "0.85rem", color: "#374151" }}>
+              Covered <strong>{coverage.coveredCount}</strong> / {coverage.requestedCount}
+              {coverage.requestedCount ? (
+                <span style={{ marginLeft: 8, fontWeight: 700 }}>
+                  ({Math.round((coverage.coveredCount / coverage.requestedCount) * 100)}%)
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {coverage.missingCount > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await copyToClipboard(joinLines(coverage.missing));
+                  setCopiedTag(ok ? "missing" : "copyfail");
+                  setTimeout(() => setCopiedTag(""), 1400);
+                }}
+                style={{
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  fontSize: "0.85rem",
+                  border: "1px solid #fb923c",
+                  background: "#fff7ed",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                {copiedTag === "missing" ? "Copied!" : "Copy missing"}
+              </button>
+            )}
+
+            {coverage.missingCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Prefill generator with missing terms for a follow-up set
+                  navigate("/ai/generate", { state: { prefillWordList: coverage.missing } });
+                }}
+                style={{
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  fontSize: "0.85rem",
+                  border: "1px solid #ea580c",
+                  background: "#ea580c",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Start follow-up with missing
+              </button>
+            )}
+          </div>
+        </div>
+
+        {coverage.missingCount > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: "0.85rem", fontWeight: 800, marginBottom: 6, color: "#9a3412" }}>
+              Missing concepts ({coverage.missingCount})
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+              }}
+            >
+              {coverage.missing.slice(0, 40).map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(234,88,12,0.35)",
+                    background: "rgba(234,88,12,0.08)",
+                    color: "#9a3412",
+                    fontSize: "0.8rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  {t}
+                </span>
+              ))}
+              {coverage.missing.length > 40 && (
+                <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                  +{coverage.missing.length - 40} more…
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {allocation && allocation.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: "0.85rem", fontWeight: 800, marginBottom: 6 }}>
+              Allocation plan (preview)
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "#374151", marginBottom: 8 }}>
+              This shows which terms were assigned to which generated task (if your backend stored it).
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                overflow: "hidden",
+                background: "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "70px 220px 1fr",
+                  gap: 0,
+                  padding: "8px 10px",
+                  background: "#f9fafb",
+                  fontSize: "0.78rem",
+                  fontWeight: 800,
+                  color: "#374151",
+                }}
+              >
+                <div>#</div>
+                <div>Task type</div>
+                <div>Assigned concepts</div>
+              </div>
+
+              {allocation.slice(0, 12).map((row) => (
+                <div
+                  key={`${row.index}-${row.taskType}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "70px 220px 1fr",
+                    gap: 0,
+                    padding: "8px 10px",
+                    borderTop: "1px solid #f3f4f6",
+                    fontSize: "0.8rem",
+                    color: "#111827",
+                  }}
+                >
+                  <div style={{ color: "#6b7280", fontWeight: 800 }}>{row.index + 1}</div>
+                  <div style={{ fontWeight: 800 }}>{TASK_TYPE_META[row.taskType]?.label || row.taskType}</div>
+                  <div style={{ color: "#374151" }}>
+                    {row.terms && row.terms.length ? row.terms.join(", ") : <span style={{ color: "#9ca3af" }}>—</span>}
+                  </div>
+                </div>
+              ))}
+
+              {allocation.length > 12 && (
+                <div style={{ padding: "8px 10px", borderTop: "1px solid #f3f4f6", fontSize: "0.8rem", color: "#6b7280" }}>
+                  Showing first 12 rows.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {coverage.requestedCount === 0 && (
+          <div style={{ marginTop: 10, fontSize: "0.85rem", color: "#6b7280" }}>
+            (No requested concepts found to check coverage.)
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
+      <h1 style={{ marginBottom: 4 }}>AI Task Set Generator</h1>
+      <p style={{ marginTop: 0, color: "#4b5563", fontSize: "0.95rem" }}>
+        Give the AI your topic, vocabulary list, and any special considerations.
+        It will build a station-based task set that stays on that exact content.
+      </p>
+
+      {error && (
+        <div
+          style={{
+            margin: "8px 0",
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "#fef2f2",
+            color: "#b91c1c",
+            fontSize: "0.85rem",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit}>
+        {/* TOP ROW: title + base room */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1.5fr)",
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Task set title (topic)
+            </label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => handleChange("name", e.target.value)}
+              placeholder="Hist7 Ch3: The Seven Years' War and the Conquest of New France"
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.95rem",
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Default room / location
+            </label>
+            <input
+              type="text"
+              value={form.roomLocation}
+              onChange={(e) => handleChange("roomLocation", e.target.value)}
+              placeholder="Classroom, Gym, Hallway..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+
+            {/* Multi-room switch */}
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 6,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={form.isMultiRoomScavenger}
+                onChange={(e) => handleChange("isMultiRoomScavenger", e.target.checked)}
+              />
+              <span>Multi-room scavenger hunt</span>
+            </label>
+            <p style={{ marginTop: 2, fontSize: "0.75rem", color: "#6b7280" }}>
+              Leave unchecked if the whole activity stays in one room. When checked,
+              you can specify multiple locations (e.g., Classroom, Hallway, Library)
+              for a multi-room scavenger hunt.
+            </p>
+          </div>
+        </div>
+
+        {/* SECOND ROW: grade, subject, difficulty, goal */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Grade level
+            </label>
+            <input
+              type="text"
+              value={form.gradeLevel}
+              onChange={(e) => handleChange("gradeLevel", e.target.value)}
+              placeholder="7, 8, 7/8 split..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Subject
+            </label>
+            <input
+              type="text"
+              value={form.subject}
+              onChange={(e) => handleChange("subject", e.target.value)}
+              placeholder="History, Geography, Bible..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Difficulty
+            </label>
+            <select
+              value={form.difficulty}
+              onChange={(e) => handleChange("difficulty", e.target.value)}
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            >
+              {DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>
+                  {d.charAt(0) + d.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Learning goal
+            </label>
+            <select
+              value={form.learningGoal}
+              onChange={(e) => handleChange("learningGoal", e.target.value)}
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            >
+              {LEARNING_GOALS.map((g) => (
+                <option key={g} value={g}>
+                  {g.charAt(0) + g.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* TIME + CONSIDERATIONS + VOCAB + MULTI-ROOM ROOM LIST */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1.3fr)",
+            gap: 16,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Approx lesson duration (minutes)
+            </label>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              value={form.durationMinutes}
+              onChange={(e) => handleChange("durationMinutes", Number(e.target.value))}
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+              }}
+            />
+
+            <div style={{ height: 8 }} />
+
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Special considerations (optional)
+            </label>
+            <textarea
+              value={form.topicDescription}
+              onChange={(e) => handleChange("topicDescription", e.target.value)}
+              rows={5}
+              placeholder="e.g., 'Reviewing for a test', 'Keep it low-noise', 'They just did a quiz—keep it lighter'..."
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+                resize: "vertical",
+              }}
+            />
+
+            {form.isMultiRoomScavenger && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+                  Rooms / locations for this scavenger hunt
+                </label>
+                <textarea
+                  value={multiRoomText}
+                  onChange={(e) => setMultiRoomText(e.target.value)}
+                  rows={4}
+                  placeholder={"One per line or separated by commas, e.g.\nClassroom\nHallway\nLibrary\nGym"}
+                  style={{
+                    width: "100%",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    padding: 8,
+                    fontSize: "0.9rem",
+                    resize: "vertical",
+                  }}
+                />
+                <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
+                  These rooms are options for where stations might be located.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
+              Vocabulary / key terms <span style={{ color: "#b91c1c" }}>*</span>
+            </label>
+            <textarea
+              value={wordListText}
+              onChange={(e) => setWordListText(e.target.value)}
+              rows={8}
+              placeholder={
+                "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
+              }
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                padding: 8,
+                fontSize: "0.9rem",
+                resize: "vertical",
+              }}
+            />
+            <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
+              These words define the topic. After generation, you’ll see which concepts were covered vs missing.
+            </p>
+          </div>
+        </div>
+
+        {/* LIMIT TASK TYPES */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+            <input type="checkbox" checked={limitTasks} onChange={(e) => setLimitTasks(e.target.checked)} />
+            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              Limit which task types the AI can use
+            </span>
+          </label>
+
+          {limitTasks && (
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 10,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: "0.85rem", color: "#374151" }}>Filter:</span>
+                  <select
+                    value={taskTypeCategory}
+                    onChange={(e) => setTaskTypeCategory(e.target.value)}
+                    style={{
+                      borderRadius: 8,
+                      border: "1px solid #d1d5db",
+                      padding: "6px 10px",
+                      fontSize: "0.85rem",
+                      background: "#ffffff",
+                    }}
+                  >
+                    <option value="all">All categories</option>
+                    {ALL_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c.charAt(0).toUpperCase() + c.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}>
+                  <input type="checkbox" checked={onlyIntraTeam} onChange={(e) => setOnlyIntraTeam(e.target.checked)} />
+                  Only intra-team
+                </label>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}>
+                  <input type="checkbox" checked={onlyInterTeam} onChange={(e) => setOnlyInterTeam(e.target.checked)} />
+                  Only inter-team
+                </label>
+
+                <button
+                  type="button"
+                  onClick={toggleAllFiltered}
+                  style={{
+                    borderRadius: 999,
+                    padding: "6px 12px",
+                    fontSize: "0.85rem",
+                    border: "1px solid #d1d5db",
+                    background: "#ffffff",
+                    cursor: "pointer",
+                  }}
+                >
+                  Toggle all shown
+                </button>
+
+                <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                  Showing {filteredEligibleTypes.length} types
+                </span>
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {filteredEligibleTypes.map(renderTaskTypeBadge)}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* FIXED-STATION / DISPLAYS */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.isFixedStation}
+              onChange={(e) => handleChange("isFixedStation", e.target.checked)}
+            />
+            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              Attach this task set to specific displays / stations
+            </span>
+          </label>
+
+          {form.isFixedStation && (
+            <div style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={addDisplay}
+                style={{
+                  borderRadius: 999,
+                  padding: "4px 10px",
+                  fontSize: "0.8rem",
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  cursor: "pointer",
+                  marginBottom: 8,
+                }}
+              >
+                + Add display
+              </button>
+
+              {displays.map((d, index) => (
+                <div
+                  key={d.key}
+                  style={{
+                    borderRadius: 8,
+                    border: "1px solid #e5e7eb",
+                    background: "#ffffff",
+                    padding: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+                      Display {index + 1}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeDisplay(index)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "#b91c1c",
+                        fontSize: "0.75rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                      gap: 6,
+                    }}
+                  >
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                        Name
+                      </label>
+                      <input
+                        type="text"
+                        value={d.name || ""}
+                        onChange={(e) => updateDisplay(index, "name", e.target.value)}
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                        Station color
+                      </label>
+                      <input
+                        type="text"
+                        value={d.stationColor || ""}
+                        onChange={(e) => updateDisplay(index, "stationColor", e.target.value)}
+                        placeholder="red, blue..."
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", marginBottom: 2 }}>
+                        Notes for you
+                      </label>
+                      <input
+                        type="text"
+                        value={d.notesForTeacher || ""}
+                        onChange={(e) => updateDisplay(index, "notesForTeacher", e.target.value)}
+                        style={{
+                          width: "100%",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          padding: 6,
+                          fontSize: "0.8rem",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ACTION BUTTONS */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            onClick={() => navigate("/tasksets")}
+            style={{
+              borderRadius: 999,
+              padding: "6px 12px",
+              fontSize: "0.85rem",
+              border: "1px solid #d1d5db",
+              background: "#ffffff",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={generating}
+            style={{
+              borderRadius: 999,
+              padding: "6px 16px",
+              fontSize: "0.9rem",
+              border: "1px solid #2563eb",
+              background: generating ? "#93c5fd" : "#2563eb",
+              color: "#ffffff",
+              cursor: generating ? "wait" : "pointer",
+            }}
+          >
+            {generating ? "Generating…" : "Generate task set"}
+          </button>
+        </div>
+      </form>
+
+      {/* RESULT SUMMARY */}
+      {result && result.taskset && (
+        <div
+          style={{
+            marginTop: 20,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#ecfdf5",
+            fontSize: "0.9rem",
+          }}
+        >
+          <div style={{ marginBottom: 6 }}>
+            ✅ Task set <strong>{result.taskset.name}</strong> created.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => navigate(`/tasksets/${result.tasksetId || result.taskset._id}`)}
+              style={{
+                borderRadius: 999,
+                padding: "6px 12px",
+                fontSize: "0.85rem",
+                border: "1px solid #16a34a",
+                background: "#16a34a",
+                color: "#ffffff",
+                cursor: "pointer",
+                fontWeight: 800,
+              }}
+            >
+              Open task set
+            </button>
+
+            {coverage?.missingCount > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await copyToClipboard(joinLines(coverage.missing));
+                  setCopiedTag(ok ? "missing2" : "copyfail2");
+                  setTimeout(() => setCopiedTag(""), 1400);
+                }}
+                style={{
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  fontSize: "0.85rem",
+                  border: "1px solid #fb923c",
+                  background: "#fff7ed",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                {copiedTag === "missing2" ? "Copied!" : "Copy missing concepts"}
+              </button>
+            )}
+          </div>
+
+          {/* NEW: coverage report */}
+          {renderCoveragePanel()}
+        </div>
+      )}
+    </div>
+  );
+}

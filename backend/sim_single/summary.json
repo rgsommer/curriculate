@@ -1,0 +1,72 @@
+{
+  "runs_fail": 20,
+  "runs_total": 20,
+  "ok_rate": 0.0,
+  "latency_ms_p50": 6789,
+  "latency_ms_p95": 8558,
+  "latency_ms_ok_p95": null,
+  "latency_ms_fail_p95": 8558,
+  "attempts_by_type": {},
+  "top_failure_types": [
+    [
+      "multiple-choice",
+      20
+    ],
+    [
+      "physical-multiple-choice",
+      20
+    ],
+    [
+      "true-false",
+      20
+    ],
+    [
+      "short-answer",
+      20
+    ],
+    [
+      "reading-comp",
+      20
+    ],
+    [
+      "sort",
+      20
+    ],
+    [
+      "sequence",
+      20
+    ],
+    [
+      "timeline",
+      20
+    ],
+    [
+      "matching",
+      20
+    ],
+    [
+      "open-text",
+      20
+    ],
+    [
+      "photo",
+      20
+    ],
+    [
+      "make-and-snap",
+      20
+    ],
+    [
+      "photo-journal",
+      20
+    ],
+    [
+      "body-break",
+      20
+    ],
+    [
+      "motion-mission",
+      20
+    ]
+  ]
+}

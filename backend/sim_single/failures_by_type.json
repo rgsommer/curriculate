@@ -1,0 +1,230 @@
+{
+  "multiple-choice": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "physical-multiple-choice": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "true-false": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "short-answer": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "reading-comp": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "sort": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "sequence": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "timeline": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "matching": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "open-text": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "photo": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "make-and-snap": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "photo-journal": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "body-break": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "motion-mission": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "musical-chairs": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "mad-dash-sequence": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "hidenseek": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "brain-blitz": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "true-false-tictactoe": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "flashcards": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "flashcards-race": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "guess-who": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "hangman-duel": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "word-weaver-duel": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "pet-feeding": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "collaboration": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "live-debate": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "brainstorm-battle": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "fake-out": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "brain-spark-notes": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "mind-mapper": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "narration-synthesize": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "role-play-deck": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "script-play": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "echo-chain": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "pronunciation": [
+    [
+      "Invalid token",
+      20
+    ]
+  ],
+  "speech-recognition": [
+    [
+      "Invalid token",
+      20
+    ]
+  ]
+}

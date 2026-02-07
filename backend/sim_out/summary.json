@@ -1,0 +1,11 @@
+{
+  "runs_fail": 25,
+  "runs_total": 25,
+  "ok_rate": 0.0,
+  "latency_ms_p50": 144,
+  "latency_ms_p95": 425,
+  "latency_ms_ok_p95": null,
+  "latency_ms_fail_p95": 425,
+  "attempts_by_type": {},
+  "top_failure_types": []
+}

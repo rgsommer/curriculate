@@ -1,0 +1,144 @@
+name: Generate changes summary
+
+on:
+  push:
+    branches:
+      - main
+      - 'session-sync/**'
+      - 'feature/**'
+  pull_request:
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    needs: summary
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Run backend tests
+        working-directory: ./backend
+        run: |
+          npm ci
+          node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand
+
+      - name: Fetch main for diff
+        run: |
+          git fetch origin main --depth=1 || true
+
+      - name: Generate JSON summary
+        run: |
+          mkdir -p dev
+          git log -n 10 --pretty=format:'%h|%an|%ad|%s' > dev/last-commits.txt || true
+          git diff --name-status origin/main...HEAD > dev/changes-files.txt || true
+          python3 - <<'PY'
+import json, os
+commits = []
+try:
+    with open('dev/last-commits.txt') as f:
+        commits = f.read().splitlines()
+except Exception:
+    commits = []
+files = []
+try:
+    with open('dev/changes-files.txt') as f:
+        files = f.read().splitlines()
+except Exception:
+    files = []
+out = {'commits': commits, 'files': files, 'branch': os.getenv('GITHUB_REF')}
+with open('dev/changes-summary.json','w') as f:
+    json.dump(out, f, indent=2)
+PY
+
+      - name: Upload changes summary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changes-summary
+          path: dev/changes-summary.json
+
+      - name: Post summary as PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = 'dev/changes-summary.json';
+            if (!fs.existsSync(path)) {
+              core.info('No changes-summary.json found, skipping PR comment.');
+            } else {
+              const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+              const commits = (data.commits || []).map(c => `- ${c}`).join('\n') || 'None';
+              const files = (data.files || []).map(f => `- ${f}`).join('\n') || 'None';
+              const body = `**Automated changes summary**\n\n**Branch**: ${process.env.GITHUB_REF}\n\n**Commits:**\n${commits}\n\n**Files:**\n${files}`;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }
+
+  socket-smoke:
+    runs-on: ubuntu-latest
+    needs: backend-tests
+    services:
+      mongo:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongo --eval 'db.adminCommand(\"ping\")' || exit 1"
+          --health-interval 5s
+          --health-timeout 2s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Start backend
+        working-directory: ./backend
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017/curriculate_test
+          PORT: 4000
+        run: |
+          npm ci
+          node index.js &
+          echo $! > /tmp/backend.pid
+
+      - name: Wait for backend to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -sS http://localhost:4000/db-check | grep -q "MongoDB connected"; then
+              echo "backend ready"; exit 0;
+            fi
+            sleep 2
+          done
+          echo "backend failed to start"; exit 1
+
+      - name: Run socket smoke test
+        working-directory: ./backend
+        run: |
+          node scripts/socket_test.js
+
+      - name: Stop backend
+        if: always()
+        run: |
+          kill $(cat /tmp/backend.pid) || true
+

@@ -1,0 +1,197 @@
+.preview-root {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+}
+
+.preview-stage {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* On-stage animated arrows */
+.navArrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,0.25));
+  animation: floaty 1.6s ease-in-out infinite;
+}
+
+.navArrow img {
+  width: 64px;
+  height: 64px;
+  display: block;
+}
+
+.navArrow.left { left: 1.2%; }
+.navArrow.right { right: 1.2%; }
+
+/* Flip horizontally for the FORWARD arrow (right side) */
+.navArrow.right img { transform: scaleX(-1); }
+
+.navArrow:hover {
+  animation-duration: 1.0s;
+  transform: translateY(-50%) scale(1.06);
+}
+
+.navArrow:active {
+  transform: translateY(-50%) scale(0.98);
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(-50%); }
+  50% { transform: translateY(calc(-50% - 8px)); }
+}
+
+/* station base */
+.station {
+  position: absolute;
+  width: 10%;
+  transform: translate(-50%, -50%) scale(1);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+  z-index: 10;
+
+  border-radius: 14px;
+  overflow: hidden; /* critical for video clipping */
+}
+
+/* non-active stations are subdued */
+.station.inactive {
+  opacity: 0.25;
+  filter: saturate(0.8);
+}
+
+/* active station enlarges automatically */
+.station.active {
+  transform: translate(-50%, -50%) scale(2);
+  z-index: 25;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+
+  border-radius: 18px; /* slightly softer when active */
+}
+
+/* Wrapper now controls positioning + scaling */
+.stationWrap {
+  position: absolute;
+  width: 10%;
+  transform: translate(-50%, -50%) scale(1);
+  transition: transform 0.35s ease, box-shadow 0.35s ease, opacity 0.35s ease;
+  z-index: 10;
+
+  border-radius: 14px;
+  overflow: visible; /* required if caption sits below otherwise overflow: hidden;*/
+  cursor: pointer;
+}
+
+/* Video fills wrapper */
+.stationVideo {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+}
+
+/* Caption overlay */
+.stationCaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -32px;            /* pushes caption BELOW the video */
+
+  padding: 4px 6px;
+  font-size: 8px;
+  font-weight: 600;
+  text-align: center;
+
+  color: #222;
+  background: rgba(255,255,255,0.9);
+  border-radius: 0 0 8px 8px;
+
+  pointer-events: none;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+/* Inactive stations */
+.stationWrap.inactive {
+  opacity: 0.25;
+  filter: saturate(0.8);
+}
+
+/* Active station */
+.stationWrap.active {
+  transform: translate(-50%, -50%) scale(2);
+  z-index: 25;
+  box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+  border-radius: 18px;
+}
+
+/* Controls UI */
+.controls {
+  position: absolute;
+  left: 50%;
+  bottom: 2%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 20;
+}
+
+.btn {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 18px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.btn.small {
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* === POSITIONING (keep/tune as needed) === */
+/* move right: increase left :: move down: increase top */
+.s1 { left: 73%; top: 72%; }  /* bottom-right floor */
+.s2 { left: 31%; top: 34%; }  /* left side near windows */
+.s3 { left: 24%; top: 42%; }  /* left-center table */
+.s4 { left: 17%; top: 52%; }  /* center-right table */
+.s5 { left: 69%; top: 53%; }  /* right wall / scan area */
+.s6 { left: 62%; top: 44%; }  /* mid-right */
+.s7 { left: 44%; top: 41%; }  /* mid-left (active center) */
+.s8 { left: 35%; top: 69%; }  /* bottom-left */
