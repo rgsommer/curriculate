@@ -6150,7 +6150,7 @@ app.post("/grading", async (req, res) => {
         {
           role: "user",
           content: [
-            { type: "text", text: RUBRIC_INSTRUCTIONS },
+            { type: "input_text", text: RUBRIC_INSTRUCTIONS },
             ...images.map((img) => ({ type: "input_image", image_url: img })),
           ],
         },
