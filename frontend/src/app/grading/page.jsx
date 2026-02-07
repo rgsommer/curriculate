@@ -1,350 +1,636 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes)) return "";
-  const units = ["B", "KB", "MB", "GB"];
-  let v = bytes;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+/**
+ * Drop-in Next.js App Router page:
+ *   app/grading/page.jsx
+ *
+ * Requires:
+ *   NEXT_PUBLIC_BACKEND_URL=https://api.curriculate.net   (set in Vercel, redeploy)
+ *
+ * Expects backend endpoint:
+ *   POST {BACKEND}/grading
+ *   Body JSON: { images: [dataUrlJpeg...], meta: { ... } }
+ *   Returns JSON (assessment object)
+ */
+
+const DEFAULT_MAX_W = 1400; // reduce if you still hit payload limits
+const DEFAULT_QUALITY = 0.72;
+
+function stripTrailingSlash(s) {
+  return (s || "").replace(/\/+$/, "");
 }
- 
-// Downscale + JPEG compress for faster uploads / fewer tokens.
-// (Vision cost is related to image size; downscaling helps.) :contentReference[oaicite:1]{index=1}
-async function downscaleToJpegDataUrl(blob, { maxW = 1280, maxH = 1280, quality = 0.75 } = {}) {
-  const img = document.createElement("img");
-  const url = URL.createObjectURL(blob);
 
+async function compressDataUrlToJpeg(dataUrl, maxW = DEFAULT_MAX_W, quality = DEFAULT_QUALITY) {
+  const img = new Image();
+  img.src = dataUrl;
+
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+  });
+
+  const scale = Math.min(1, maxW / img.width);
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext("2d", { alpha: false });
+  ctx.drawImage(img, 0, 0, w, h);
+
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+function safeJsonParse(text) {
   try {
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src = url;
-    });
-
-    const { width: w0, height: h0 } = img;
-    const scale = Math.min(1, maxW / w0, maxH / h0);
-    const w = Math.max(1, Math.round(w0 * scale));
-    const h = Math.max(1, Math.round(h0 * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d", { alpha: false });
-    ctx.drawImage(img, 0, 0, w, h);
-
-    return canvas.toDataURL("image/jpeg", quality);
-  } finally {
-    URL.revokeObjectURL(url);
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null;
   }
 }
 
 export default function GradingPage() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const canvasRef = useRef(null);
 
-  const [cameraError, setCameraError] = useState(null);
-  const [isCameraOn, setIsCameraOn] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [usingFrontCamera, setUsingFrontCamera] = useState(false);
 
-  const [shots, setShots] = useState([]); // { id, dataUrl, bytesApprox }
-  const [resultJsonText, setResultJsonText] = useState("");
-  const [rawText, setRawText] = useState("");
+  const [flash, setFlash] = useState(false);
+  const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
+  const [busyCapture, setBusyCapture] = useState(false);
 
-  const totalApproxBytes = useMemo(
-    () => shots.reduce((sum, s) => sum + (s.bytesApprox || 0), 0),
-    [shots]
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [result, setResult] = useState(null);
+  const [rawResponse, setRawResponse] = useState("");
+
+  const backendBase = useMemo(
+    () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
+    []
   );
 
-  async function startCamera() {
-    setCameraError(null);
+  const gradingUrl = useMemo(() => {
+    if (!backendBase) return "";
+    return `${backendBase}/grading`;
+  }, [backendBase]);
 
-    // Prefer rear camera on phones
-    const constraints = {
-      audio: false,
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    };
+  function triggerFlash() {
+    setFlash(true);
+    if (navigator.vibrate) navigator.vibrate(25);
+    window.setTimeout(() => setFlash(false), 120);
+  }
+
+  async function stopCamera() {
+    setCameraReady(false);
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) track.stop();
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }
+
+  async function startCamera({ front = false } = {}) {
+    setCameraError("");
+    setCameraReady(false);
+
+    await stopCamera();
 
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Camera not supported in this browser.");
+      }
+
+      // Prefer environment camera for document capture
+      const constraints = {
+        video: {
+          facingMode: front ? "user" : "environment",
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      };
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // iOS Safari needs these sometimes:
+        videoRef.current.playsInline = true;
         await videoRef.current.play();
       }
 
-      setIsCameraOn(true);
+      setCameraReady(true);
     } catch (err) {
-      console.error(err);
-      setCameraError(
-        err?.name === "NotAllowedError"
-          ? "Camera permission denied. Please allow camera access and refresh."
-          : "Could not start camera on this device/browser."
-      );
-      setIsCameraOn(false);
-    }
-  }
-
-  function stopCamera() {
-    try {
-      const stream = streamRef.current;
-      if (stream) {
-        for (const track of stream.getTracks()) track.stop();
-      }
-    } finally {
-      streamRef.current = null;
-      setIsCameraOn(false);
+      console.error("Camera start error:", err);
+      setCameraError(err?.message || "Could not start camera.");
     }
   }
 
   useEffect(() => {
-    // Auto-start camera on load (mobile-friendly), but don’t crash SSR.
-    if (typeof window !== "undefined" && navigator?.mediaDevices?.getUserMedia) {
-      startCamera();
-    } else {
-      setCameraError("Camera not supported in this browser.");
-    }
-
-    return () => stopCamera();
+    // Start camera on mount
+    startCamera({ front: false });
+    return () => {
+      stopCamera();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function snapPhoto() {
-    setCameraError(null);
-    const video = videoRef.current;
-    if (!video) return;
+  async function capturePhoto() {
+    if (!cameraReady || !videoRef.current || !canvasRef.current) return;
+    if (busyCapture) return;
+
+    setBusyCapture(true);
+    setSubmitError("");
+    setResult(null);
+    setRawResponse("");
 
     try {
-      // Draw current frame to canvas
-      const canvas = document.createElement("canvas");
-      const w = video.videoWidth || 1280;
-      const h = video.videoHeight || 720;
-      canvas.width = w;
-      canvas.height = h;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      const vw = video.videoWidth || 1280;
+      const vh = video.videoHeight || 720;
+
+      canvas.width = vw;
+      canvas.height = vh;
+
       const ctx = canvas.getContext("2d", { alpha: false });
-      ctx.drawImage(video, 0, 0, w, h);
+      ctx.drawImage(video, 0, 0, vw, vh);
 
-      // Convert to Blob then downscale/compress
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-      const dataUrl = await downscaleToJpegDataUrl(blob, { maxW: 1280, maxH: 1280, quality: 0.75 });
+      const rawDataUrl = canvas.toDataURL("image/jpeg", 0.9);
 
-      // Approx bytes: base64 length * 3/4 (minus prefix)
-      const b64 = dataUrl.split(",")[1] || "";
-      const bytesApprox = Math.floor((b64.length * 3) / 4);
+      triggerFlash();
 
-      setShots((prev) => [
+      // Compress/downscale for transport reliability
+      const compressed = await compressDataUrlToJpeg(rawDataUrl, DEFAULT_MAX_W, DEFAULT_QUALITY);
+
+      setPhotos((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), dataUrl, bytesApprox },
+        { id: crypto.randomUUID(), dataUrl: compressed, createdAt: Date.now() },
       ]);
     } catch (err) {
-      console.error(err);
-      setCameraError("Could not capture photo. Try again.");
+      console.error("Capture error:", err);
+      setSubmitError(err?.message || "Failed to capture photo.");
+    } finally {
+      setBusyCapture(false);
     }
   }
 
-  function removeShot(id) {
-    setShots((prev) => prev.filter((s) => s.id !== id));
+  function removePhoto(id) {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
   }
 
   function clearAll() {
-    setShots([]);
-    setResultJsonText("");
-    setRawText("");
+    setPhotos([]);
+    setResult(null);
+    setSubmitError("");
+    setRawResponse("");
   }
 
   async function submitForGrading() {
-    setResultJsonText("");
-    setRawText("");
-    setCameraError(null);
+    setSubmitError("");
+    setResult(null);
+    setRawResponse("");
 
-    if (shots.length === 0) {
-      setCameraError("Add at least one photo before submitting.");
+    if (!gradingUrl) {
+      setSubmitError(
+        "Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy."
+      );
+      return;
+    }
+    if (!photos.length) {
+      setSubmitError("Capture at least one photo before submitting.");
       return;
     }
 
-    setIsSubmitting(true);
+    setSubmitting(true);
     try {
-      const res = await fetch("/api/grading", {
+      const payload = {
+        images: photos.map((p) => p.dataUrl),
+        meta: {
+          source: "web-grading-page",
+          capturedCount: photos.length,
+          capturedAt: Date.now(),
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        },
+      };
+
+      const res = await fetch(gradingUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          images: shots.map((s) => s.dataUrl),
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      setRawResponse(text);
+
+      const data = safeJsonParse(text);
 
       if (!res.ok) {
-        setCameraError(data?.error || "Submission failed.");
-        return;
+        throw new Error(
+          `HTTP ${res.status} from grading endpoint: ${data?.error || text || "(empty response)"}`
+        );
       }
 
-      if (data?.json) {
-        setResultJsonText(JSON.stringify(data.json, null, 2));
-      } else {
-        setRawText(data?.raw || "");
+      if (!data) {
+        throw new Error("Grading endpoint returned non-JSON response.");
       }
+
+      setResult(data);
     } catch (err) {
-      console.error(err);
-      setCameraError("Network error submitting for grading.");
+      console.error("Submit error:", err);
+      setSubmitError(err?.message || "Network error submitting for grading.");
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   }
 
-  return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 16, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
-      <h1 style={{ margin: "8px 0 4px" }}>Grading Scanner</h1>
-      <p style={{ marginTop: 0, opacity: 0.8 }}>
-        Snap multiple photos, then submit for an assessment.
-      </p>
+  async function toggleCamera() {
+    const next = !usingFrontCamera;
+    setUsingFrontCamera(next);
+    await startCamera({ front: next });
+  }
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
-        <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, overflow: "hidden", background: "#fff" }}>
-          <div style={{ padding: 12, display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ fontWeight: 600 }}>Live Camera</span>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>{isCameraOn ? "On" : "Off"}</span>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {!isCameraOn ? (
-                <button onClick={startCamera} style={btn()}>
-                  Start
-                </button>
-              ) : (
-                <button onClick={stopCamera} style={btn({ secondary: true })}>
-                  Stop
-                </button>
-              )}
-              <button onClick={snapPhoto} disabled={!isCameraOn || isSubmitting} style={btn({ primary: true, disabled: !isCameraOn || isSubmitting })}>
-                Snap Photo
-              </button>
-            </div>
+  return (
+    <div style={styles.page}>
+      <div style={styles.header}>
+        <h1 style={styles.h1}>Grading</h1>
+        <div style={styles.sub}>
+          Capture photos, then submit for an assessment.
+        </div>
+      </div>
+
+      <div style={styles.grid}>
+        {/* CAMERA CARD */}
+        <div style={styles.card}>
+          <div style={styles.cardTitleRow}>
+            <div style={styles.cardTitle}>Camera</div>
+            <button
+              onClick={toggleCamera}
+              style={styles.secondaryBtn}
+              disabled={submitting}
+              title="Switch camera"
+            >
+              Switch
+            </button>
           </div>
 
-          <div style={{ background: "#000" }}>
+          <div style={styles.cameraWrap}>
             <video
               ref={videoRef}
-              playsInline
+              style={styles.video}
               muted
-              style={{ width: "100%", height: "auto", display: "block" }}
+              playsInline
+              autoPlay
             />
-          </div>
-
-          {cameraError && (
-            <div style={{ padding: 12, color: "#b00020", fontWeight: 600 }}>
-              {cameraError}
-            </div>
-          )}
-        </div>
-
-        <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, padding: 12, background: "#fff" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>Captured Photos</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>
-                {shots.length} photo(s) • approx upload {formatBytes(totalApproxBytes)}
+            {flash && <div style={styles.flash} />}
+            {!cameraReady && (
+              <div style={styles.cameraOverlay}>
+                {cameraError ? (
+                  <>
+                    <div style={styles.overlayTitle}>Camera Error</div>
+                    <div style={styles.overlayText}>{cameraError}</div>
+                    <button
+                      onClick={() => startCamera({ front: usingFrontCamera })}
+                      style={styles.primaryBtn}
+                    >
+                      Retry Camera
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={styles.overlayTitle}>Starting camera…</div>
+                    <div style={styles.overlayText}>Allow camera permissions.</div>
+                  </>
+                )}
               </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={clearAll} disabled={shots.length === 0 || isSubmitting} style={btn({ secondary: true, disabled: shots.length === 0 || isSubmitting })}>
-                Clear
-              </button>
-              <button onClick={submitForGrading} disabled={shots.length === 0 || isSubmitting} style={btn({ primary: true, disabled: shots.length === 0 || isSubmitting })}>
-                {isSubmitting ? "Submitting…" : "Submit for Grading"}
-              </button>
+            )}
+          </div>
+
+          <canvas ref={canvasRef} style={{ display: "none" }} />
+
+          <div style={styles.btnRow}>
+            <button
+              onClick={capturePhoto}
+              style={styles.primaryBtn}
+              disabled={!cameraReady || submitting || busyCapture}
+            >
+              {busyCapture ? "Capturing…" : "Capture Photo"}
+            </button>
+            <button
+              onClick={clearAll}
+              style={styles.secondaryBtn}
+              disabled={submitting || busyCapture || (!photos.length && !result && !rawResponse)}
+            >
+              Clear
+            </button>
+          </div>
+
+          <div style={styles.photoMeta}>
+            <div><b>Photos:</b> {photos.length}</div>
+            <div style={{ opacity: 0.8 }}>
+              Tip: Keep pages flat, fill the frame, avoid glare.
             </div>
           </div>
 
-          {shots.length > 0 && (
-            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
-              {shots.map((s) => (
-                <div key={s.id} style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 10, overflow: "hidden", position: "relative" }}>
-                  <img src={s.dataUrl} alt="Captured" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
-                  <button
-                    onClick={() => removeShot(s.id)}
-                    disabled={isSubmitting}
-                    title="Remove"
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 6,
-                      border: "none",
-                      borderRadius: 999,
-                      width: 28,
-                      height: 28,
-                      cursor: "pointer",
-                      background: "rgba(0,0,0,0.65)",
-                      color: "#fff",
-                      fontWeight: 700,
-                      lineHeight: "28px",
-                      textAlign: "center",
-                      opacity: isSubmitting ? 0.5 : 1,
-                    }}
-                  >
-                    ×
-                  </button>
+          {photos.length > 0 && (
+            <div style={styles.thumbGrid}>
+              {photos.map((p, idx) => (
+                <div key={p.id} style={styles.thumb}>
+                  <img
+                    src={p.dataUrl}
+                    alt={`Captured ${idx + 1}`}
+                    style={styles.thumbImg}
+                  />
+                  <div style={styles.thumbBar}>
+                    <div style={styles.thumbLabel}>#{idx + 1}</div>
+                    <button
+                      onClick={() => removePhoto(p.id)}
+                      style={styles.thumbRemove}
+                      disabled={submitting}
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, padding: 12, background: "#fff" }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Assessment Response</div>
+        {/* SUBMIT + RESPONSE CARD */}
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>Submit</div>
 
-          {resultJsonText ? (
-            <pre style={pre()}>
-              {resultJsonText}
-            </pre>
-          ) : rawText ? (
-            <pre style={pre()}>
-              {rawText}
-            </pre>
-          ) : (
-            <div style={{ opacity: 0.7 }}>Submit photos to see the grading JSON here.</div>
+          <div style={styles.note}>
+            <div><b>Endpoint:</b> {gradingUrl || "(not set)"}</div>
+            {!backendBase && (
+              <div style={styles.warn}>
+                Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel and redeploy.
+              </div>
+            )}
+          </div>
+
+          <div style={styles.btnRow}>
+            <button
+              onClick={submitForGrading}
+              style={styles.primaryBtn}
+              disabled={submitting || !photos.length || !gradingUrl}
+            >
+              {submitting ? "Submitting…" : "Submit for Grading"}
+            </button>
+          </div>
+
+          {submitError && (
+            <div style={styles.errorBox}>
+              <b>Error:</b> {submitError}
+              <div style={{ marginTop: 8, opacity: 0.85, fontSize: 12 }}>
+                If this persists, check Network tab for status code and confirm the backend route is <code>POST /grading</code>.
+              </div>
+            </div>
           )}
+
+          <div style={styles.responseTitleRow}>
+            <div style={styles.cardTitle}>Response</div>
+            {result && (
+              <button
+                onClick={() => navigator.clipboard?.writeText(JSON.stringify(result, null, 2))}
+                style={styles.secondaryBtn}
+              >
+                Copy JSON
+              </button>
+            )}
+          </div>
+
+          <div style={styles.responseBox}>
+            {result ? (
+              <pre style={styles.pre}>{JSON.stringify(result, null, 2)}</pre>
+            ) : rawResponse ? (
+              <pre style={styles.pre}>{rawResponse}</pre>
+            ) : (
+              <div style={{ opacity: 0.75 }}>
+                Results will appear here after submission.
+              </div>
+            )}
+          </div>
+
+          <div style={styles.footerHint}>
+            If you see HTTP 404/405: confirm backend route + CORS + correct URL.
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function btn({ primary = false, secondary = false, disabled = false } = {}) {
-  const bg = primary ? "#111" : secondary ? "#fff" : "#f5f5f5";
-  const color = primary ? "#fff" : "#111";
-  return {
-    padding: "10px 12px",
-    borderRadius: 10,
-    border: secondary ? "1px solid rgba(0,0,0,0.2)" : "1px solid rgba(0,0,0,0.12)",
-    background: bg,
-    color,
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.6 : 1,
-    fontWeight: 650,
-  };
-}
+const styles = {
+  page: {
+    padding: "24px 18px 40px",
+    maxWidth: 1200,
+    margin: "0 auto",
+    fontFamily:
+      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
+    color: "#0b1220",
+  },
+  header: { marginBottom: 16 },
+  h1: { margin: 0, fontSize: 28, letterSpacing: -0.3 },
+  sub: { marginTop: 6, opacity: 0.78 },
 
-function pre() {
-  return {
-    margin: 0,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    padding: 12,
-    borderRadius: 10,
-    background: "rgba(0,0,0,0.04)",
-    border: "1px solid rgba(0,0,0,0.08)",
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: 14,
+  },
+
+  card: {
+    border: "1px solid rgba(15,23,42,0.12)",
+    borderRadius: 16,
+    padding: 14,
+    boxShadow: "0 8px 20px rgba(2, 6, 23, 0.06)",
+    background: "white",
+  },
+
+  cardTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 10,
+  },
+  responseTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  cardTitle: { fontWeight: 700 },
+
+  cameraWrap: {
+    position: "relative",
+    borderRadius: 14,
+    overflow: "hidden",
+    background: "#0b1220",
+    aspectRatio: "16 / 9",
+  },
+  video: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
+  },
+  cameraOverlay: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 18,
+    gap: 10,
+    color: "white",
+    background: "linear-gradient(180deg, rgba(2,6,23,0.2), rgba(2,6,23,0.85))",
+    textAlign: "center",
+  },
+  overlayTitle: { fontWeight: 800, fontSize: 18 },
+  overlayText: { opacity: 0.9, maxWidth: 420 },
+
+  flash: {
+    position: "absolute",
+    inset: 0,
+    background: "#fff",
+    opacity: 0.9,
+    pointerEvents: "none",
+    animation: "flashAnim 120ms ease-out forwards",
+  },
+
+  btnRow: { display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" },
+
+  primaryBtn: {
+    background: "#2563eb",
+    color: "white",
+    border: "none",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  secondaryBtn: {
+    background: "rgba(15,23,42,0.06)",
+    color: "#0b1220",
+    border: "1px solid rgba(15,23,42,0.12)",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  photoMeta: {
+    marginTop: 12,
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    flexWrap: "wrap",
     fontSize: 13,
-    lineHeight: 1.35,
-  };
+  },
+
+  thumbGrid: {
+    marginTop: 12,
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+    gap: 10,
+  },
+  thumb: {
+    borderRadius: 12,
+    overflow: "hidden",
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "#fff",
+  },
+  thumbImg: { width: "100%", height: 140, objectFit: "cover", display: "block" },
+  thumbBar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "8px 10px",
+    fontSize: 12,
+    background: "rgba(15,23,42,0.03)",
+  },
+  thumbLabel: { opacity: 0.85, fontWeight: 700 },
+  thumbRemove: {
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontSize: 14,
+    opacity: 0.75,
+  },
+
+  note: {
+    fontSize: 13,
+    opacity: 0.9,
+    padding: 10,
+    borderRadius: 12,
+    background: "rgba(15,23,42,0.03)",
+    border: "1px solid rgba(15,23,42,0.10)",
+  },
+  warn: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 12,
+    background: "rgba(245,158,11,0.12)",
+    border: "1px solid rgba(245,158,11,0.30)",
+    color: "#7c2d12",
+  },
+
+  errorBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    background: "rgba(239,68,68,0.10)",
+    border: "1px solid rgba(239,68,68,0.25)",
+    color: "#7f1d1d",
+    fontSize: 13,
+  },
+
+  responseBox: {
+    marginTop: 0,
+    minHeight: 220,
+    borderRadius: 12,
+    padding: 12,
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "rgba(15,23,42,0.02)",
+    overflow: "auto",
+  },
+  pre: { margin: 0, fontSize: 12, lineHeight: 1.4, whiteSpace: "pre-wrap" },
+
+  footerHint: { marginTop: 10, fontSize: 12, opacity: 0.75 },
+};
+
+// Keyframes injected once (no external css file required)
+if (typeof document !== "undefined") {
+  const id = "grading-page-flash-keyframes";
+  if (!document.getElementById(id)) {
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+      @keyframes flashAnim { from { opacity: 0.9; } to { opacity: 0; } }
+      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      @media (min-width: 980px) {
+        /* make the two cards sit side-by-side on desktop */
+        body .__gradingGridFix {}
+      }
+    `;
+    document.head.appendChild(style);
+  }
 }
