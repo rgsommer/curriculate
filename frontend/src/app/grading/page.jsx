@@ -3,19 +3,23 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Drop-in Next.js App Router page:
- *   app/grading/page.jsx
+ * app/grading/page.jsx
  *
  * Requires:
- *   NEXT_PUBLIC_BACKEND_URL=https://api.curriculate.net   (set in Vercel, redeploy)
+ *   NEXT_PUBLIC_BACKEND_URL=https://api.curriculate.net
  *
- * Expects backend endpoint:
+ * Backend:
  *   POST {BACKEND}/grading
- *   Body JSON: { images: [dataUrlJpeg...], rubricOverride?: string|null, meta: { ... } }
- *   Returns JSON (assessment object) or a wrapper { result: "json-string" }
+ *   Body: { images: [dataUrl...], rubricOverride?: string|null, meta?: object }
+ *
+ * Backend may return:
+ *   1) assessment object directly
+ *   2) { result: "{...json string...}" }
+ *   3) { error: "...", raw: "{...json string...}" }
+ *   4) { error: "...", raw: "" }  (rare)
  */
 
-const DEFAULT_MAX_W = 1400; // reduce if you still hit payload limits
+const DEFAULT_MAX_W = 1400;
 const DEFAULT_QUALITY = 0.72;
 
 const DEFAULT_RUBRIC_INSTRUCTIONS = `
@@ -40,11 +44,7 @@ function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
 
-async function compressDataUrlToJpeg(
-  dataUrl,
-  maxW = DEFAULT_MAX_W,
-  quality = DEFAULT_QUALITY
-) {
+async function compressDataUrlToJpeg(dataUrl, maxW = DEFAULT_MAX_W, quality = DEFAULT_QUALITY) {
   const img = new Image();
   img.src = dataUrl;
 
@@ -68,64 +68,94 @@ async function compressDataUrlToJpeg(
 }
 
 function safeJsonParse(text) {
+  if (typeof text !== "string") return null;
+  const s = text.trim();
+  if (!s) return null;
   try {
-    return text ? JSON.parse(text) : null;
+    return JSON.parse(s);
   } catch {
+    // Attempt to rescue first {...} block
+    const start = s.indexOf("{");
+    const end = s.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(s.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 }
 
+function isAssessmentObject(o) {
+  return (
+    o &&
+    typeof o === "object" &&
+    (o.score_out_of_10 !== undefined ||
+      o.final_score_out_of_10 !== undefined ||
+      Array.isArray(o.deductions) ||
+      Array.isArray(o.strengths) ||
+      Array.isArray(o.improvements) ||
+      typeof o.teacher_comment === "string")
+  );
+}
+
 /**
- * Normalize all the response shapes you’ve been seeing:
- * - assessment object directly
- * - wrapper { result: "{...json string...}" }
- * - wrapper { json: {...} }
- * - raw string JSON
+ * Single, canonical normalizer.
+ * Returns { assessment, wrapperError, rawTextUsed }
  */
-function normalizeAssessment(anything) {
-  if (!anything) return null;
-
-  // If already an assessment object
-  if (
-    typeof anything === "object" &&
-    (anything.final_score_out_of_10 !== undefined ||
-      anything.score_out_of_10 !== undefined ||
-      Array.isArray(anything.strengths) ||
-      typeof anything.teacher_comment === "string")
-  ) {
-    return anything;
+function normalizeFromAny(serverTextOrObj) {
+  // If already parsed object
+  if (isAssessmentObject(serverTextOrObj)) {
+    return { assessment: serverTextOrObj, wrapperError: "", rawTextUsed: "" };
   }
 
-  // If wrapper: { json: {...} }
-  if (typeof anything === "object" && anything.json && typeof anything.json === "object") {
-    return normalizeAssessment(anything.json);
+  // If string, parse
+  if (typeof serverTextOrObj === "string") {
+    const parsed = safeJsonParse(serverTextOrObj);
+    if (!parsed) return { assessment: null, wrapperError: "", rawTextUsed: serverTextOrObj };
+    return normalizeFromAny(parsed);
   }
 
-  // If wrapper: { result: "{...json...}" }
-  if (typeof anything === "object" && typeof anything.result === "string") {
-    const parsed = safeJsonParse(anything.result);
-    if (parsed) return normalizeAssessment(parsed);
+  // If wrapper object
+  if (serverTextOrObj && typeof serverTextOrObj === "object") {
+    // direct assessment in json field
+    if (isAssessmentObject(serverTextOrObj.json)) {
+      return { assessment: serverTextOrObj.json, wrapperError: "", rawTextUsed: "" };
+    }
+
+    // wrapper: { result: "json-string" }
+    if (typeof serverTextOrObj.result === "string") {
+      const parsed = safeJsonParse(serverTextOrObj.result);
+      if (parsed) return normalizeFromAny(parsed);
+    }
+
+    // wrapper: { raw: "json-string" }
+    if (typeof serverTextOrObj.raw === "string") {
+      const parsed = safeJsonParse(serverTextOrObj.raw);
+      if (parsed) return normalizeFromAny(parsed);
+      // keep raw around if empty/unparseable
+      return {
+        assessment: null,
+        wrapperError: serverTextOrObj.error || "",
+        rawTextUsed: serverTextOrObj.raw,
+      };
+    }
+
+    // Sometimes backend returns { result: {..} }
+    if (isAssessmentObject(serverTextOrObj.result)) {
+      return { assessment: serverTextOrObj.result, wrapperError: "", rawTextUsed: "" };
+    }
+
+    return {
+      assessment: null,
+      wrapperError: serverTextOrObj.error || "",
+      rawTextUsed: "",
+    };
   }
 
-  // ✅ If wrapper: { raw: "{...json...}" }  (your “non-JSON output” path)
-  if (typeof anything === "object" && typeof anything.raw === "string") {
-    const parsed = safeJsonParse(anything.raw) || tryJsonParse(anything.raw);
-    if (parsed) return normalizeAssessment(parsed);
-  }
-
-  // (Optional) Sometimes errors put JSON in details
-  if (typeof anything === "object" && typeof anything.details === "string") {
-    const parsed = safeJsonParse(anything.details) || tryJsonParse(anything.details);
-    if (parsed) return normalizeAssessment(parsed);
-  }
-
-  // If raw string JSON
-  if (typeof anything === "string") {
-    const parsed = safeJsonParse(anything) || tryJsonParse(anything);
-    if (parsed) return normalizeAssessment(parsed);
-  }
-
-  return null;
+  return { assessment: null, wrapperError: "", rawTextUsed: "" };
 }
 
 function toArrayStrings(v) {
@@ -135,138 +165,56 @@ function toArrayStrings(v) {
 }
 
 function formatPoints(p) {
-  // Your backend sometimes returns -1, sometimes 1. Display as “–1”.
   const n = Number(p);
   if (!Number.isFinite(n) || n === 0) return "";
-  const abs = Math.abs(n);
-  return `(\u2013${abs})`;
+  return `(\u2013${Math.abs(n)})`; // always show as “–1”
 }
 
 function computeFinalScore(a) {
   if (a?.final_score_out_of_10 !== undefined && a?.final_score_out_of_10 !== null) {
     return a.final_score_out_of_10;
   }
-
   const base = Number(a?.score_out_of_10);
+  if (!Number.isFinite(base)) return "";
   const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
-
-  const totalDeduction = deductions.reduce((sum, d) => {
+  const total = deductions.reduce((sum, d) => {
     const p = Number(d?.points);
     return sum + (Number.isFinite(p) ? Math.abs(p) : 0);
   }, 0);
-
-  if (Number.isFinite(base)) return Math.max(0, base - totalDeduction);
-  return "";
-}
-
-function tryJsonParse(str) {
-  if (typeof str !== "string") return null;
-  const s = str.trim();
-  if (!s) return null;
-
-  try {
-    return JSON.parse(s);
-  } catch {
-    // Sometimes your backend wraps a JSON string inside quotes or includes leading text.
-    // Try to extract first {...} block as a last resort.
-    const start = s.indexOf("{");
-    const end = s.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      const maybe = s.slice(start, end + 1);
-      try {
-        return JSON.parse(maybe);
-      } catch {}
-    }
-    return null;
-  }
-}
-
-function formatGradeForCopy(g) {
-  const lines = [];
-  lines.push(`Grade: ${g.final_score_out_of_10 ?? g.score_out_of_10} / 10`);
-  lines.push("");
-
-  if (Array.isArray(g.deductions) && g.deductions.length) {
-    lines.push("Deduction:");
-    // Your “deduct once” rule: show all reasons, but treat as one deduction if you want
-    // (If you truly want only one line, keep just the first.)
-    for (const d of g.deductions) {
-      const pts = typeof d.points === "number" ? d.points : 0;
-      const displayPts = pts <= 0 ? pts : -pts; // handles if API returns +1
-      lines.push(`– ${d.reason} (${displayPts})`);
-    }
-    lines.push("");
-  }
-
-  if (Array.isArray(g.strengths) && g.strengths.length) {
-    lines.push("Strengths:");
-    for (const s of g.strengths) lines.push(`• ${s}`);
-    lines.push("");
-  }
-
-  if (Array.isArray(g.improvements) && g.improvements.length) {
-    lines.push("Next Steps:");
-    for (const i of g.improvements) lines.push(`• ${i}`);
-    lines.push("");
-  }
-
-  if (g.teacher_comment) {
-    lines.push("Teacher Comment:");
-    lines.push(g.teacher_comment);
-  }
-
-  return lines.join("\n").trim();
+  return Math.max(0, base - total);
 }
 
 function formatTeacherBlock(a) {
   const finalScore = computeFinalScore(a);
-  const baseScore =
-    a?.score_out_of_10 !== undefined && a?.score_out_of_10 !== null
-      ? a.score_out_of_10
-      : null;
-
   const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
   const strengths = toArrayStrings(a?.strengths);
   const improvements = toArrayStrings(a?.improvements);
   const teacherComment = (a?.teacher_comment || "").trim();
 
   const lines = [];
+  lines.push(`Grade: ${finalScore !== "" ? finalScore : "(not provided)"} / 10`);
 
-  // Score line
-  if (finalScore !== "") {
-    lines.push(`Grade: ${finalScore} / 10`);
-  } else if (baseScore !== null) {
-    lines.push(`Grade: ${baseScore} / 10`);
-  } else {
-    lines.push("Grade: (not provided)");
-  }
-
-  // Deductions
   if (deductions.length) {
     lines.push("");
-    lines.push("Deductions:");
-    for (const d of deductions) {
-      const reason = (d?.reason || "").trim();
-      const pts = formatPoints(d?.points);
-      lines.push(`- ${reason}${pts ? " " + pts : ""}`.trim());
-    }
+    lines.push("Deduction:");
+    // “deduct once” => show first reason (or combine if you prefer)
+    const d0 = deductions[0];
+    const reason = (d0?.reason || "").trim();
+    lines.push(`- ${reason} ${formatPoints(d0?.points)}`.trim());
   }
 
-  // Strengths
   if (strengths.length) {
     lines.push("");
     lines.push("Strengths:");
     for (const s of strengths) lines.push(`- ${s}`);
   }
 
-  // Improvements
   if (improvements.length) {
     lines.push("");
     lines.push("Next Steps:");
     for (const i of improvements) lines.push(`- ${i}`);
   }
 
-  // Teacher comment
   if (teacherComment) {
     lines.push("");
     lines.push("Teacher Comment:");
@@ -296,8 +244,9 @@ export default function GradingPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const [result, setResult] = useState(null);
-  const [rawResponse, setRawResponse] = useState("");
+
+  // ✅ One raw response string (always)
+  const [serverText, setServerText] = useState("");
 
   // Optional rubric override UI
   const [showRubric, setShowRubric] = useState(false);
@@ -316,18 +265,19 @@ export default function GradingPage() {
     return `${backendBase.replace(/\/$/, "")}/grading`;
   }, [backendBase]);
 
-  const normalizedAssessment = useMemo(() => {
-    // 1) If result is already a usable grade object
-    const a = normalizeAssessment(result);
-    if (a) return a;
+  const normalized = useMemo(() => {
+    // Normalize from text first; if it’s JSON, we’ll get assessment.
+    const parsed = safeJsonParse(serverText);
+    if (parsed) return normalizeFromAny(parsed);
+    // If not JSON, normalization may still preserve raw
+    return normalizeFromAny(serverText);
+  }, [serverText]);
 
-    // 2) If rawResponse is JSON string or contains JSON object
-    return normalizeAssessment(rawResponse);
-  }, [result, rawResponse]);
+  const assessment = normalized.assessment;
 
   const formattedTeacherText = useMemo(() => {
-    return normalizedAssessment ? formatTeacherBlock(normalizedAssessment) : "";
-  }, [normalizedAssessment]);
+    return assessment ? formatTeacherBlock(assessment) : "";
+  }, [assessment]);
 
   function triggerFlash() {
     setFlash(true);
@@ -341,9 +291,7 @@ export default function GradingPage() {
       for (const track of streamRef.current.getTracks()) track.stop();
       streamRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
   }
 
   async function startCamera({ front = false } = {}) {
@@ -384,9 +332,7 @@ export default function GradingPage() {
 
   useEffect(() => {
     startCamera({ front: false });
-    return () => {
-      stopCamera();
-    };
+    return () => stopCamera();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -396,8 +342,8 @@ export default function GradingPage() {
 
     setBusyCapture(true);
     setSubmitError("");
-    setResult(null);
-    setRawResponse("");
+    setServerText("");
+    setCopied(false);
 
     try {
       const video = videoRef.current;
@@ -436,10 +382,11 @@ export default function GradingPage() {
         DEFAULT_QUALITY
       );
 
-      setPhotos((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), dataUrl: compressed, createdAt: Date.now() },
-      ]);
+      const id =
+        (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) ||
+        String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+
+      setPhotos((prev) => [...prev, { id, dataUrl: compressed, createdAt: Date.now() }]);
     } catch (err) {
       console.error("Capture error:", err);
       setSubmitError(err?.message || "Failed to capture photo.");
@@ -454,21 +401,18 @@ export default function GradingPage() {
 
   function clearAll() {
     setPhotos([]);
-    setResult(null);
     setSubmitError("");
-    setRawResponse("");
+    setServerText("");
+    setCopied(false);
   }
 
   async function submitForGrading() {
     setSubmitError("");
-    setResult(null);
-    setRawResponse("");
+    setServerText("");
     setCopied(false);
 
     if (!gradingUrl) {
-      setSubmitError(
-        "Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy."
-      );
+      setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
       return;
     }
     if (!photos.length) {
@@ -497,33 +441,28 @@ export default function GradingPage() {
       });
 
       const text = await res.text();
-      setRawResponse(text);
+      setServerText(text);
 
-      const data = safeJsonParse(text);
-
+      // If non-OK and there IS NO usable JSON inside, show a human error
       if (!res.ok) {
-        const rescued = normalizeAssessment(data?.raw || data?.result || "");
-        if (rescued) {
-          setResult(rescued);
+        const parsed = safeJsonParse(text);
+        const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
+
+        if (norm.assessment) {
+          // ✅ Don’t show error if we can render the grade.
           setSubmitError("");
           return;
         }
-        throw new Error(
-          `HTTP ${res.status} from grading endpoint: ${data?.error || text || "(empty response)"}`
-        );
+
+        // true failure
+        const msg =
+          parsed?.details ||
+          parsed?.error ||
+          `HTTP ${res.status} from grading endpoint`;
+        throw new Error(msg);
       }
 
-      if (!data) {
-        // Don’t throw: rawResponse will still display, and normalizeAssessment(rawResponse)
-        // may still succeed if it contains usable JSON.
-        setResult(null);
-        return;
-      }
-
-      const maybe = normalizeAssessment(data);
-      if (maybe) setResult(maybe);
-      else setResult(data); // only for debug
-
+      // OK: even if wrapper includes {error, raw}, our renderer will prefer grade if parseable
     } catch (err) {
       console.error("Submit error:", err);
       setSubmitError(err?.message || "Network error submitting for grading.");
@@ -549,7 +488,6 @@ export default function GradingPage() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
-      // Fallback: select text (best-effort)
       setCopied(false);
     }
   }
@@ -615,11 +553,7 @@ export default function GradingPage() {
             <button
               onClick={clearAll}
               style={styles.secondaryBtn}
-              disabled={
-                submitting ||
-                busyCapture ||
-                (!photos.length && !result && !rawResponse)
-              }
+              disabled={submitting || busyCapture || (!photos.length && !serverText)}
             >
               Clear
             </button>
@@ -734,10 +668,6 @@ export default function GradingPage() {
           {submitError && (
             <div style={styles.errorBox}>
               <b>Error:</b> {submitError}
-              <div style={{ marginTop: 8, opacity: 0.85, fontSize: 12 }}>
-                If this persists, check Network tab for status code and confirm
-                the backend route is <code>POST /grading</code>.
-              </div>
             </div>
           )}
 
@@ -750,11 +680,9 @@ export default function GradingPage() {
                   {copied ? "Copied ✓" : "Copy Comment"}
                 </button>
               )}
-              {result && (
+              {assessment && (
                 <button
-                  onClick={() =>
-                    navigator.clipboard?.writeText(JSON.stringify(result, null, 2))
-                  }
+                  onClick={() => navigator.clipboard?.writeText(JSON.stringify(assessment, null, 2))}
                   style={styles.secondaryBtn}
                 >
                   Copy JSON
@@ -767,83 +695,85 @@ export default function GradingPage() {
           <div
             style={{
               ...styles.responseBox,
-              ...(normalizedAssessment ? styles.responseBoxClickable : null),
+              ...(assessment ? styles.responseBoxClickable : null),
             }}
-            onClick={normalizedAssessment ? copyFormatted : undefined}
-            role={normalizedAssessment ? "button" : undefined}
-            title={normalizedAssessment ? "Tap to copy formatted comment" : ""}
+            onClick={assessment ? copyFormatted : undefined}
+            role={assessment ? "button" : undefined}
+            title={assessment ? "Tap to copy formatted comment" : ""}
           >
-            {normalizedAssessment ? (
+            {assessment ? (
               <div style={styles.gradingCard}>
                 <div style={styles.gradingTopRow}>
                   <div style={styles.gradingTitle}>
-                    Grade: {computeFinalScore(normalizedAssessment)} / 10
+                    Grade: {computeFinalScore(assessment)} / 10
                   </div>
                   <div style={styles.copyPillInline}>
                     {copied ? "Copied ✓" : "Tap to copy"}
                   </div>
                 </div>
 
-                {Array.isArray(normalizedAssessment.deductions) &&
-                normalizedAssessment.deductions.length ? (
+                {Array.isArray(assessment.deductions) && assessment.deductions.length ? (
                   <>
                     <div style={styles.gradingSectionTitle}>Deduction</div>
                     <div style={styles.gradingDeduction}>
-                      {(normalizedAssessment.deductions[0]?.reason || "").trim()}{" "}
+                      {(assessment.deductions[0]?.reason || "").trim()}{" "}
                       <span style={{ opacity: 0.8 }}>
-                        {formatPoints(normalizedAssessment.deductions[0]?.points)}
+                        {formatPoints(assessment.deductions[0]?.points)}
                       </span>
                     </div>
                   </>
                 ) : null}
 
-                {toArrayStrings(normalizedAssessment.strengths).length ? (
+                {toArrayStrings(assessment.strengths).length ? (
                   <>
                     <div style={styles.gradingSectionTitle}>Strengths</div>
                     <ul style={styles.gradingUl}>
-                      {toArrayStrings(normalizedAssessment.strengths).map((s, i) => (
+                      {toArrayStrings(assessment.strengths).map((s, i) => (
                         <li key={i}>{s}</li>
                       ))}
                     </ul>
                   </>
                 ) : null}
 
-                {toArrayStrings(normalizedAssessment.improvements).length ? (
+                {toArrayStrings(assessment.improvements).length ? (
                   <>
                     <div style={styles.gradingSectionTitle}>Next Steps</div>
                     <ul style={styles.gradingUl}>
-                      {toArrayStrings(normalizedAssessment.improvements).map((it, i) => (
+                      {toArrayStrings(assessment.improvements).map((it, i) => (
                         <li key={i}>{it}</li>
                       ))}
                     </ul>
                   </>
                 ) : null}
 
-                {(normalizedAssessment.teacher_comment || "").trim() ? (
+                {(assessment.teacher_comment || "").trim() ? (
                   <>
                     <div style={styles.gradingSectionTitle}>Teacher Comment</div>
                     <div style={styles.gradingComment}>
-                      {(normalizedAssessment.teacher_comment || "").trim()}
+                      {(assessment.teacher_comment || "").trim()}
                     </div>
                   </>
                 ) : null}
 
                 <div style={styles.gradingHint}>Tap anywhere to copy</div>
               </div>
-            ) : result ? (
-              <pre style={styles.pre}>{JSON.stringify(result, null, 2)}</pre>
-            ) : rawResponse ? (
-              <pre style={styles.pre}>{rawResponse}</pre>
+            ) : serverText ? (
+              <pre style={styles.pre}>{serverText}</pre>
             ) : (
-              <div style={{ opacity: 0.75 }}>
-                Results will appear here after submission.
-              </div>
+              <div style={{ opacity: 0.75 }}>Results will appear here after submission.</div>
             )}
           </div>
 
-          <div style={styles.footerHint}>
-            Free to try until subscription plan is enforced.
-          </div>
+          {/* Calm retry note if wrapper error but no assessment */}
+          {!assessment && normalized.wrapperError && (
+            <div style={styles.softWarn}>
+              {normalized.rawTextUsed?.trim()
+                ? "We received a response but couldn’t parse it. Try again."
+                : "Grading didn’t complete this time. Try again."}
+            </div>
+          )}
+
+          <div style={styles.footerHint}>Free to try until subscription plan is enforced.</div>
         </div>
       </div>
     </div>
@@ -863,11 +793,7 @@ const styles = {
   h1: { margin: 0, fontSize: 28, letterSpacing: -0.3 },
   sub: { marginTop: 6, opacity: 0.78 },
 
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr",
-    gap: 14,
-  },
+  grid: { display: "grid", gridTemplateColumns: "1fr", gap: 14 },
 
   card: {
     border: "1px solid rgba(15,23,42,0.12)",
@@ -901,12 +827,7 @@ const styles = {
     background: "#0b1220",
     aspectRatio: "16 / 9",
   },
-  video: {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    display: "block",
-  },
+  video: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
   cameraOverlay: {
     position: "absolute",
     inset: 0,
@@ -917,8 +838,7 @@ const styles = {
     padding: 18,
     gap: 10,
     color: "white",
-    background:
-      "linear-gradient(180deg, rgba(2,6,23,0.2), rgba(2,6,23,0.85))",
+    background: "linear-gradient(180deg, rgba(2,6,23,0.2), rgba(2,6,23,0.85))",
     textAlign: "center",
   },
   overlayTitle: { fontWeight: 800, fontSize: 18 },
@@ -1047,118 +967,66 @@ const styles = {
 
   errorBox: {
     marginTop: 12,
+    borderRadius: 14,
     padding: 12,
-    borderRadius: 12,
-    background: "rgba(239,68,68,0.10)",
-    border: "1px solid rgba(239,68,68,0.25)",
+    background: "rgba(220,38,38,0.08)",
+    border: "1px solid rgba(220,38,38,0.18)",
     color: "#7f1d1d",
     fontSize: 13,
   },
 
   responseBox: {
-    marginTop: 0,
-    minHeight: 220,
-    borderRadius: 12,
-    padding: 12,
+    marginTop: 10,
+    borderRadius: 14,
     border: "1px solid rgba(15,23,42,0.12)",
     background: "rgba(15,23,42,0.02)",
-    overflow: "auto",
-    position: "relative",
+    padding: 12,
+    minHeight: 220,
   },
   responseBoxClickable: {
     cursor: "pointer",
-    border: "1px solid rgba(37,99,235,0.35)",
-    background: "rgba(37,99,235,0.05)",
+    background: "#f8f9fc",
   },
-  copyPillAbs: {
-    position: "absolute",
-    top: 10,
-    right: 10,
+  pre: {
+    margin: 0,
+    whiteSpace: "pre-wrap",
     fontSize: 12,
-    fontWeight: 800,
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "rgba(15,23,42,0.06)",
-    border: "1px solid rgba(15,23,42,0.12)",
-    opacity: 0.95,
+    lineHeight: 1.45,
+    opacity: 0.9,
   },
-  copyPillInline: {
-    fontSize: 12,
-    fontWeight: 800,
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "rgba(15,23,42,0.06)",
-    border: "1px solid rgba(15,23,42,0.12)",
-    opacity: 0.95,
-    whiteSpace: "nowrap",
-  },
-
-
-  pre: { margin: 0, fontSize: 12, lineHeight: 1.4, whiteSpace: "pre-wrap" },
-  preBig: { margin: 0, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" },
 
   gradingCard: {
-    background: "#f8f9fc",
-    borderRadius: 14,
-    padding: 14,
-    lineHeight: 1.45,
-    border: "1px solid rgba(15,23,42,0.10)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
   },
   gradingTopRow: {
     display: "flex",
+    alignItems: "baseline",
     justifyContent: "space-between",
-    alignItems: "center",
     gap: 10,
     flexWrap: "wrap",
-    marginBottom: 8,
   },
-  gradingTitle: {
-    fontSize: 18,
-    fontWeight: 900,
-    letterSpacing: -0.2,
+  gradingTitle: { fontWeight: 900, fontSize: 16 },
+  copyPillInline: {
+    fontSize: 12,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "rgba(15,23,42,0.06)",
+    border: "1px solid rgba(15,23,42,0.12)",
+    opacity: 0.85,
   },
-  gradingSectionTitle: {
-    fontSize: 13,
-    fontWeight: 900,
-    marginTop: 12,
-    marginBottom: 6,
-  },
-  gradingDeduction: {
-    background: "rgba(239,68,68,0.08)",
-    border: "1px solid rgba(239,68,68,0.22)",
-    padding: "10px 12px",
-    borderRadius: 12,
-    fontSize: 13,
-  },
-  gradingUl: {
-    margin: "6px 0 0 18px",
-  },
-  gradingComment: {
-    background: "white",
-    border: "1px solid rgba(15,23,42,0.10)",
-    borderRadius: 12,
-    padding: "10px 12px",
-    fontSize: 14,
-  },
-  gradingHint: {
+  gradingSectionTitle: { fontWeight: 900, marginTop: 4 },
+  gradingDeduction: { fontSize: 13 },
+  gradingUl: { margin: "0 0 0 18px", padding: 0, lineHeight: 1.45 },
+  gradingComment: { fontSize: 13, lineHeight: 1.45 },
+  gradingHint: { fontSize: 12, opacity: 0.7, marginTop: 4 },
+
+  softWarn: {
     marginTop: 10,
     fontSize: 12,
-    opacity: 0.7,
+    opacity: 0.75,
   },
 
-  footerHint: { marginTop: 10, fontSize: 12, opacity: 0.75 },
+  footerHint: { marginTop: 12, fontSize: 12, opacity: 0.7 },
 };
-
-// Keyframes injected once (no external css file required)
-if (typeof document !== "undefined") {
-  const id = "grading-page-flash-keyframes";
-  if (!document.getElementById(id)) {
-    const style = document.createElement("style");
-    style.id = id;
-    style.textContent = `
-      @keyframes flashAnim { from { opacity: 0.9; } to { opacity: 0; } }
-      button:disabled { opacity: 0.55; cursor: not-allowed; }
-    `;
-    document.head.appendChild(style);
-  }
-}
