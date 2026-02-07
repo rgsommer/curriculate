@@ -12,11 +12,29 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * Expects backend endpoint:
  *   POST {BACKEND}/grading
  *   Body JSON: { images: [dataUrlJpeg...], rubricOverride?: string|null, meta: { ... } }
- *   Returns JSON (assessment object)
+ *   Returns JSON (assessment object) or a wrapper { result: "json-string" }
  */
 
 const DEFAULT_MAX_W = 1400; // reduce if you still hit payload limits
 const DEFAULT_QUALITY = 0.72;
+
+const DEFAULT_RUBRIC_INSTRUCTIONS = `
+You are a teacher grading student assignments from photos.
+Grade for: completeness, accuracy, clarity, and effort.
+
+Formatting deduction (apply ONCE total, –1), if any are missing/unclear:
+- date
+- proper descriptive title (not just “check-in”)
+- page/question reference (if there is one)
+
+Return JSON only with:
+score_out_of_10,
+deductions (array of {reason, points}),
+final_score_out_of_10,
+strengths (array of strings),
+improvements (array of strings),
+teacher_comment (string).
+`.trim();
 
 function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
@@ -57,6 +75,137 @@ function safeJsonParse(text) {
   }
 }
 
+/**
+ * Normalize all the response shapes you’ve been seeing:
+ * - assessment object directly
+ * - wrapper { result: "{...json string...}" }
+ * - wrapper { json: {...} }
+ * - raw string JSON
+ */
+function normalizeAssessment(anything) {
+  if (!anything) return null;
+
+  // If already an assessment object
+  if (
+    typeof anything === "object" &&
+    (anything.final_score_out_of_10 !== undefined ||
+      anything.score_out_of_10 !== undefined ||
+      Array.isArray(anything.strengths) ||
+      typeof anything.teacher_comment === "string")
+  ) {
+    return anything;
+  }
+
+  // If wrapper: { json: {...} }
+  if (typeof anything === "object" && anything.json && typeof anything.json === "object") {
+    return normalizeAssessment(anything.json);
+  }
+
+  // If wrapper: { result: "{...json...}" }
+  if (typeof anything === "object" && typeof anything.result === "string") {
+    const parsed = safeJsonParse(anything.result);
+    if (parsed) return normalizeAssessment(parsed);
+  }
+
+  // If raw string JSON
+  if (typeof anything === "string") {
+    const parsed = safeJsonParse(anything);
+    if (parsed) return normalizeAssessment(parsed);
+  }
+
+  return null;
+}
+
+function toArrayStrings(v) {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.filter(Boolean).map(String);
+  return [String(v)];
+}
+
+function formatPoints(p) {
+  // Your backend sometimes returns -1, sometimes 1. Display as “–1”.
+  const n = Number(p);
+  if (!Number.isFinite(n) || n === 0) return "";
+  const abs = Math.abs(n);
+  return `(\u2013${abs})`;
+}
+
+function computeFinalScore(a) {
+  // Prefer explicit final_score_out_of_10
+  if (a?.final_score_out_of_10 !== undefined && a?.final_score_out_of_10 !== null) {
+    return a.final_score_out_of_10;
+  }
+
+  // Fall back: score_out_of_10 + sum(deductions points)
+  const base = Number(a?.score_out_of_10);
+  const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
+  const delta = deductions.reduce((sum, d) => {
+    const p = Number(d?.points);
+    return sum + (Number.isFinite(p) ? p : 0);
+  }, 0);
+
+  if (Number.isFinite(base)) return base + delta;
+  return "";
+}
+
+function formatTeacherBlock(a) {
+  const finalScore = computeFinalScore(a);
+  const baseScore =
+    a?.score_out_of_10 !== undefined && a?.score_out_of_10 !== null
+      ? a.score_out_of_10
+      : null;
+
+  const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
+  const strengths = toArrayStrings(a?.strengths);
+  const improvements = toArrayStrings(a?.improvements);
+  const teacherComment = (a?.teacher_comment || "").trim();
+
+  const lines = [];
+
+  // Score line
+  if (finalScore !== "") {
+    lines.push(`Grade: ${finalScore} / 10`);
+  } else if (baseScore !== null) {
+    lines.push(`Grade: ${baseScore} / 10`);
+  } else {
+    lines.push("Grade: (not provided)");
+  }
+
+  // Deductions
+  if (deductions.length) {
+    lines.push("");
+    lines.push("Deductions:");
+    for (const d of deductions) {
+      const reason = (d?.reason || "").trim();
+      const pts = formatPoints(d?.points);
+      lines.push(`- ${reason}${pts ? " " + pts : ""}`.trim());
+    }
+  }
+
+  // Strengths
+  if (strengths.length) {
+    lines.push("");
+    lines.push("Strengths:");
+    for (const s of strengths) lines.push(`- ${s}`);
+  }
+
+  // Improvements
+  if (improvements.length) {
+    lines.push("");
+    lines.push("Next Steps:");
+    for (const i of improvements) lines.push(`- ${i}`);
+  }
+
+  // Teacher comment
+  if (teacherComment) {
+    lines.push("");
+    lines.push("Teacher Comment:");
+    lines.push(teacherComment);
+  }
+
+  return lines.join("\n");
+}
+
 export default function GradingPage() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -84,6 +233,9 @@ export default function GradingPage() {
   const [showRubric, setShowRubric] = useState(false);
   const [rubricOverride, setRubricOverride] = useState("");
 
+  // Copy UX
+  const [copied, setCopied] = useState(false);
+
   const backendBase = useMemo(
     () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
     []
@@ -93,6 +245,22 @@ export default function GradingPage() {
     if (!backendBase) return "";
     return `${backendBase.replace(/\/$/, "")}/grading`;
   }, [backendBase]);
+
+  const normalizedAssessment = useMemo(() => {
+    // Prefer structured result object if present
+    const a1 = normalizeAssessment(result);
+    if (a1) return a1;
+
+    // If result not set yet but rawResponse exists, try parse
+    const parsed = normalizeAssessment(rawResponse);
+    if (parsed) return parsed;
+
+    return null;
+  }, [result, rawResponse]);
+
+  const formattedTeacherText = useMemo(() => {
+    return normalizedAssessment ? formatTeacherBlock(normalizedAssessment) : "";
+  }, [normalizedAssessment]);
 
   function triggerFlash() {
     setFlash(true);
@@ -122,7 +290,6 @@ export default function GradingPage() {
         throw new Error("Camera not supported in this browser.");
       }
 
-      // Prefer environment camera for document capture
       const constraints = {
         video: {
           facingMode: front ? "user" : "environment",
@@ -137,7 +304,6 @@ export default function GradingPage() {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // iOS Safari needs these sometimes:
         videoRef.current.playsInline = true;
         await videoRef.current.play();
       }
@@ -150,7 +316,6 @@ export default function GradingPage() {
   }
 
   useEffect(() => {
-    // Start camera on mount
     startCamera({ front: false });
     return () => {
       stopCamera();
@@ -174,13 +339,10 @@ export default function GradingPage() {
       const vw = video.videoWidth || 1280;
       const vh = video.videoHeight || 720;
 
-      // Create drawing context
       const ctx = canvas.getContext("2d", { alpha: false });
 
-      // Desired aspect ratio
       const targetAspect = isMobile ? 3 / 4 : 16 / 9;
 
-      // Calculate center crop to match preview
       let cropW = vw;
       let cropH = Math.round(vw / targetAspect);
 
@@ -192,18 +354,15 @@ export default function GradingPage() {
       const sx = Math.round((vw - cropW) / 2);
       const sy = Math.round((vh - cropH) / 2);
 
-      // Match canvas to crop size
       canvas.width = cropW;
       canvas.height = cropH;
 
-      // Draw cropped frame
       ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
 
       const rawDataUrl = canvas.toDataURL("image/jpeg", 0.9);
 
       triggerFlash();
 
-      // Compress/downscale for transport reliability
       const compressed = await compressDataUrlToJpeg(
         rawDataUrl,
         DEFAULT_MAX_W,
@@ -237,6 +396,7 @@ export default function GradingPage() {
     setSubmitError("");
     setResult(null);
     setRawResponse("");
+    setCopied(false);
 
     if (!gradingUrl) {
       setSubmitError(
@@ -254,13 +414,12 @@ export default function GradingPage() {
       const ro = rubricOverride.trim();
       const payload = {
         images: photos.map((p) => p.dataUrl),
-        rubricOverride: ro.length ? ro : null, // optional override
+        rubricOverride: ro.length ? ro : null,
         meta: {
           source: "web-grading-page",
           capturedCount: photos.length,
           capturedAt: Date.now(),
-          userAgent:
-            typeof navigator !== "undefined" ? navigator.userAgent : "",
+          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
         },
       };
 
@@ -282,6 +441,7 @@ export default function GradingPage() {
       }
 
       if (!data) {
+        // Still store rawResponse so we can display it
         throw new Error("Grading endpoint returned non-JSON response.");
       }
 
@@ -302,6 +462,18 @@ export default function GradingPage() {
 
   function useDefaultRubric() {
     setRubricOverride("");
+  }
+
+  async function copyFormatted() {
+    if (!formattedTeacherText) return;
+    try {
+      await navigator.clipboard?.writeText(formattedTeacherText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // Fallback: select text (best-effort)
+      setCopied(false);
+    }
   }
 
   return (
@@ -327,13 +499,7 @@ export default function GradingPage() {
           </div>
 
           <div style={styles.cameraWrap}>
-            <video
-              ref={videoRef}
-              style={styles.video}
-              muted
-              playsInline
-              autoPlay
-            />
+            <video ref={videoRef} style={styles.video} muted playsInline autoPlay />
             {flash && <div style={styles.flash} />}
             {!cameraReady && (
               <div style={styles.cameraOverlay}>
@@ -394,11 +560,7 @@ export default function GradingPage() {
             <div style={styles.thumbGrid}>
               {photos.map((p, idx) => (
                 <div key={p.id} style={styles.thumb}>
-                  <img
-                    src={p.dataUrl}
-                    alt={`Captured ${idx + 1}`}
-                    style={styles.thumbImg}
-                  />
+                  <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
                   <div style={styles.thumbBar}>
                     <div style={styles.thumbLabel}>#{idx + 1}</div>
                     <button
@@ -426,8 +588,7 @@ export default function GradingPage() {
             </div>
             {!backendBase && (
               <div style={styles.warn}>
-                Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel
-                and redeploy.
+                Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel and redeploy.
               </div>
             )}
           </div>
@@ -467,19 +628,16 @@ export default function GradingPage() {
                 <textarea
                   value={rubricOverride}
                   onChange={(e) => setRubricOverride(e.target.value)}
-                  placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 for missing date/title/page\n- 2–3 sentence teacher comment\n`}
+                  placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 total if any formatting missing\n- 2–3 sentence teacher comment\n`}
                   rows={9}
                   style={styles.rubricTextarea}
                 />
                 <details style={styles.rubricDetails}>
-                  <summary style={styles.rubricSummary}>
-                    View default rubric
-                  </summary>
+                  <summary style={styles.rubricSummary}>View default rubric</summary>
                   <pre style={styles.rubricPre}>{DEFAULT_RUBRIC_INSTRUCTIONS}</pre>
                 </details>
                 <div style={styles.rubricTip}>
-                  Tip: keep rubrics short (a few bullets). Long rubrics increase
-                  cost and latency.
+                  Tip: keep rubrics short (a few bullets). Long rubrics increase cost and latency.
                 </div>
               </>
             )}
@@ -507,27 +665,49 @@ export default function GradingPage() {
 
           <div style={styles.responseTitleRow}>
             <div style={styles.cardTitle}>Response</div>
-            {result && (
-              <button
-                onClick={() =>
-                  navigator.clipboard?.writeText(JSON.stringify(result, null, 2))
-                }
-                style={styles.secondaryBtn}
-              >
-                Copy JSON
-              </button>
-            )}
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {formattedTeacherText && (
+                <button onClick={copyFormatted} style={styles.secondaryBtn}>
+                  {copied ? "Copied ✓" : "Copy Comment"}
+                </button>
+              )}
+              {result && (
+                <button
+                  onClick={() =>
+                    navigator.clipboard?.writeText(JSON.stringify(result, null, 2))
+                  }
+                  style={styles.secondaryBtn}
+                >
+                  Copy JSON
+                </button>
+              )}
+            </div>
           </div>
 
-          <div style={styles.responseBox}>
-            {result ? (
+          {/* FORMATTED RENDER (tap-to-copy) */}
+          <div
+            style={{
+              ...styles.responseBox,
+              ...(formattedTeacherText ? styles.responseBoxClickable : null),
+            }}
+            onClick={formattedTeacherText ? copyFormatted : undefined}
+            role={formattedTeacherText ? "button" : undefined}
+            title={formattedTeacherText ? "Tap to copy formatted comment" : ""}
+          >
+            {formattedTeacherText ? (
+              <>
+                <div style={styles.copyPill}>
+                  {copied ? "Copied ✓" : "Tap to copy"}
+                </div>
+                <pre style={styles.preBig}>{formattedTeacherText}</pre>
+              </>
+            ) : result ? (
               <pre style={styles.pre}>{JSON.stringify(result, null, 2)}</pre>
             ) : rawResponse ? (
               <pre style={styles.pre}>{rawResponse}</pre>
             ) : (
-              <div style={{ opacity: 0.75 }}>
-                Results will appear here after submission.
-              </div>
+              <div style={{ opacity: 0.75 }}>Results will appear here after submission.</div>
             )}
           </div>
 
@@ -648,84 +828,74 @@ const styles = {
     marginTop: 12,
     display: "flex",
     justifyContent: "space-between",
-    gap: 12,
+    gap: 10,
     flexWrap: "wrap",
-    fontSize: 13,
   },
 
   thumbGrid: {
     marginTop: 12,
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
     gap: 10,
   },
   thumb: {
     borderRadius: 12,
     overflow: "hidden",
     border: "1px solid rgba(15,23,42,0.12)",
-    background: "#fff",
+    background: "white",
   },
-  thumbImg: { width: "100%", height: 140, objectFit: "cover", display: "block" },
+  thumbImg: { width: "100%", height: 130, objectFit: "cover", display: "block" },
   thumbBar: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     padding: "8px 10px",
-    fontSize: 12,
-    background: "rgba(15,23,42,0.03)",
   },
-  thumbLabel: { opacity: 0.85, fontWeight: 700 },
+  thumbLabel: { fontWeight: 800, fontSize: 12, opacity: 0.75 },
   thumbRemove: {
-    background: "transparent",
     border: "none",
+    background: "transparent",
     cursor: "pointer",
-    fontSize: 14,
-    opacity: 0.75,
+    fontSize: 16,
+    lineHeight: 1,
+    padding: "4px 6px",
+    borderRadius: 10,
   },
 
-  note: {
-    fontSize: 13,
-    opacity: 0.9,
-    padding: 10,
-    borderRadius: 12,
-    background: "rgba(15,23,42,0.03)",
-    border: "1px solid rgba(15,23,42,0.10)",
-  },
+  note: { marginTop: 10, fontSize: 13, opacity: 0.9 },
   warn: {
     marginTop: 8,
+    fontSize: 12,
+    color: "#7c2d12",
+    background: "rgba(234,88,12,0.10)",
+    border: "1px solid rgba(234,88,12,0.18)",
     padding: 10,
     borderRadius: 12,
-    background: "rgba(245,158,11,0.12)",
-    border: "1px solid rgba(245,158,11,0.30)",
-    color: "#7c2d12",
   },
 
-  // Rubric UI
   rubricCard: {
     marginTop: 12,
-    padding: 12,
     borderRadius: 14,
+    border: "1px solid rgba(15,23,42,0.12)",
+    padding: 12,
     background: "rgba(15,23,42,0.02)",
-    border: "1px solid rgba(15,23,42,0.10)",
   },
   rubricHeader: {
     display: "flex",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
     gap: 12,
     flexWrap: "wrap",
   },
   rubricTextarea: {
     width: "100%",
     marginTop: 10,
-    padding: 10,
     borderRadius: 12,
-    border: "1px solid rgba(15,23,42,0.18)",
-    fontFamily:
-      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    border: "1px solid rgba(15,23,42,0.12)",
+    padding: 10,
     fontSize: 13,
     lineHeight: 1.35,
-    resize: "vertical",
+    outline: "none",
     background: "white",
   },
   rubricDetails: {
@@ -735,12 +905,7 @@ const styles = {
     padding: 10,
     background: "rgba(15,23,42,0.02)",
   },
-  rubricSummary: {
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 13,
-    opacity: 0.9,
-  },
+  rubricSummary: { cursor: "pointer", fontWeight: 800, fontSize: 13, opacity: 0.9 },
   rubricPre: {
     margin: "10px 0 0",
     fontSize: 12,
@@ -768,8 +933,28 @@ const styles = {
     border: "1px solid rgba(15,23,42,0.12)",
     background: "rgba(15,23,42,0.02)",
     overflow: "auto",
+    position: "relative",
   },
+  responseBoxClickable: {
+    cursor: "pointer",
+    border: "1px solid rgba(37,99,235,0.35)",
+    background: "rgba(37,99,235,0.05)",
+  },
+  copyPill: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    fontSize: 12,
+    fontWeight: 800,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "rgba(15,23,42,0.06)",
+    border: "1px solid rgba(15,23,42,0.12)",
+    opacity: 0.95,
+  },
+
   pre: { margin: 0, fontSize: 12, lineHeight: 1.4, whiteSpace: "pre-wrap" },
+  preBig: { margin: 0, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" },
 
   footerHint: { marginTop: 10, fontSize: 12, opacity: 0.75 },
 };
