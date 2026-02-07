@@ -6123,9 +6123,11 @@ const RUBRIC_INSTRUCTIONS = `
   2) missing a proper title (not just “check-in”)
   3) missing page/question reference (if there is one)
 
-  Return JSON only with:
+  Return JSON only with the following fields:
   - score_out_of_10
   - deductions (array of { reason, points })
+  - ai_suspected_cheating (string or null; brief explanation only if clearly suspected)
+  - copying_suspected (string or null; brief explanation only if clearly suspected)
   - final_score_out_of_10
   - strengths
   - improvements
@@ -6151,46 +6153,47 @@ app.post("/grading", async (req, res) => {
           role: "user",
           content: [
             { type: "input_text", text: RUBRIC_INSTRUCTIONS },
-            ...images.map((img) => ({ type: "input_image", image_url: img })),
+            ...images.map(img => ({
+              type: "input_image",
+              image_url: img,
+            })),
           ],
         },
       ],
       text: {
         format: {
           type: "json_schema",
+          name: "grading_response",   // 🔴 THIS was missing
           json_schema: {
-            name: "grading_response",
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                score_out_of_10: { type: "number" },
-                deductions: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      reason: { type: "string" },
-                      points: { type: "number" },
-                    },
-                    required: ["reason", "points"],
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              score_out_of_10: { type: "number" },
+              deductions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    reason: { type: "string" },
+                    points: { type: "number" },
                   },
+                  required: ["reason", "points"],
                 },
-                final_score_out_of_10: { type: "number" },
-                strengths: { type: "array", items: { type: "string" } },
-                improvements: { type: "array", items: { type: "string" } },
-                teacher_comment: { type: "string" },
               },
-              required: [
-                "score_out_of_10",
-                "deductions",
-                "final_score_out_of_10",
-                "strengths",
-                "improvements",
-                "teacher_comment",
-              ],
+              final_score_out_of_10: { type: "number" },
+              strengths: { type: "array", items: { type: "string" } },
+              improvements: { type: "array", items: { type: "string" } },
+              teacher_comment: { type: "string" },
             },
+            required: [
+              "score_out_of_10",
+              "deductions",
+              "final_score_out_of_10",
+              "strengths",
+              "improvements",
+              "teacher_comment",
+            ],
           },
         },
       },
