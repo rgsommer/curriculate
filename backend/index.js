@@ -6207,6 +6207,19 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
     2) Proper title (not just “check-in”)
     3) Page or question reference (ONLY if applicable)
 
+    Teacher comment requirements:
+    - 2–3 sentences only
+    - Sentence 1: overall praise + what they did well (specific to the work)
+    - Sentence 2: one clear improvement suggestion (specific)
+    - Optional sentence 3: one more small tip (brief)
+    Only suggest improvements that are demonstrably missing or weak in the student work shown.
+    Do NOT invent or assume problems.
+
+    Handwriting rules:
+    - If handwriting is neat and legible, do not mention it at all.
+    - Only comment on handwriting if it clearly interferes with readability.
+    - You may praise handwriting only if it is notably neat, consistent, or well-presented.
+
     ACADEMIC INTEGRITY:
     Only set ai_suspected_cheating or copying_suspected if there is a clear, visible reason. Be conservative.
 
