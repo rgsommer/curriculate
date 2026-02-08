@@ -6197,10 +6197,9 @@ app.post("/grading", async (req, res) => {
       text: {
         format: {
           name: "grade_result",
-          json_schema: {
-            schema,
-            strict: true
-          }
+          type: "json_schema",
+          schema,
+          strict: true
         }
       },
 
