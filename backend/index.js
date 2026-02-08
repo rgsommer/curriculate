@@ -6123,16 +6123,31 @@ const RUBRIC_INSTRUCTIONS = `
   - clarity
   - effort
 
-  IMPORTANT: All feedback must make clear reference to the STUDENT’S ACTUAL WORK.
+  IMPORTANT:
+  All feedback must make clear reference to the STUDENT’S ACTUAL WORK.
   Do not use generic praise or vague statements.
   When possible, refer to:
   - specific questions, answers, sections, or columns
   - what the student wrote or attempted
   - visible strengths or omissions in the photographed work
 
+  SCORING RULE (REQUIRED):
+  First determine a base academic score out of 10 for the quality of the work
+  (completeness, accuracy, clarity, and effort ONLY).
+  This base score MUST be returned as score_out_of_10.
+
+  Then apply the formatting rule below.
+  If a formatting deduction applies, subtract it from score_out_of_10 to calculate
+  final_score_out_of_10.
+
+  The math must be consistent:
+  final_score_out_of_10 = score_out_of_10 minus total deduction points.
+
   FORMATTING DEDUCTION RULE:
   If ANY of the following formatting requirements are missing, include AT MOST ONE
-  entry in the deductions array with points: 1 and a single combined reason.
+  entry in the deductions array with points: 1 and a single combined reason labeled
+  as a formatting issue.
+
   Do NOT add multiple formatting deductions.
 
   If NONE of the items below are missing, do NOT include any formatting deduction.
@@ -6148,14 +6163,14 @@ const RUBRIC_INSTRUCTIONS = `
   in style, answers far beyond expected level). Be conservative.
 
   Return JSON only with the following fields:
-  - score_out_of_10
+  - score_out_of_10 (base academic score before formatting)
   - deductions (array of { reason, points })
   - ai_suspected_cheating (string or null; brief explanation only if clearly suspected)
   - copying_suspected (string or null; brief explanation only if clearly suspected)
-  - final_score_out_of_10
+  - final_score_out_of_10 (must reflect deductions applied to score_out_of_10)
   - strengths (specific to this assignment)
   - improvements (specific, actionable, and based on what is visible)
-  - teacher_comment (referencing the student’s actual work)
+  - teacher_comment (must align with the scores and deductions given)
   `.trim();
 
 app.post("/grading", async (req, res) => {
