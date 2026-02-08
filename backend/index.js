@@ -6196,9 +6196,8 @@ app.post("/grading", async (req, res) => {
       // ✅ Structured output (guaranteed schema match)
       text: {
         format: {
-          type: "json_schema",
+          name: "grade_result",
           json_schema: {
-            name: "grade_result",
             schema,
             strict: true
           }
