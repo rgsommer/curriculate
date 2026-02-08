@@ -6115,7 +6115,7 @@ const openai = new OpenAI({
 
 // Default rubric (server can also enforce its own default if rubricOverride is null)
 const RUBRIC_INSTRUCTIONS = `
-  You are a teacher grading a specific student assignment based on the attached photos.
+  You are a caring, encouraging teacher grading a specific student assignment based on the attached photos.
 
   Grade for:
   - completeness
@@ -6134,43 +6134,41 @@ const RUBRIC_INSTRUCTIONS = `
   SCORING RULE (REQUIRED):
   First determine a base academic score out of 10 for the quality of the work
   (completeness, accuracy, clarity, and effort ONLY).
-  This base score MUST be returned as score_out_of_10.
+  Return this as score_out_of_10.
 
   Then apply the formatting rule below.
-  If a formatting deduction applies, subtract it from score_out_of_10 to calculate
-  final_score_out_of_10.
-
-  The math must be consistent:
-  final_score_out_of_10 = score_out_of_10 minus total deduction points.
+  final_score_out_of_10 must equal score_out_of_10 minus total deduction points.
 
   FORMATTING DEDUCTION RULE:
-  If ANY of the following formatting requirements are missing, include AT MOST ONE
-  entry in the deductions array with points: 1 and a single combined reason labeled
-  as a formatting issue.
+  If ANY formatting requirement is missing, include AT MOST ONE deduction
+  with points: 1 and the reason exactly as:
+  "Formatting requirements missing".
 
-  Do NOT add multiple formatting deductions.
+  Do NOT explain, justify, or elaborate on formatting issues in:
+  - strengths
+  - improvements
+  - teacher_comment
 
-  If NONE of the items below are missing, do NOT include any formatting deduction.
+  If no formatting issues are present, do NOT include a formatting deduction.
 
   Formatting requirements:
   1) Date
   2) Proper title (not just “check-in”)
-  3) Page or question reference (ONLY if applicable to this assignment)
+  3) Page or question reference (ONLY if applicable)
 
   ACADEMIC INTEGRITY:
   Only flag ai_suspected_cheating or copying_suspected if there is a CLEAR,
-  VISIBLE reason based on the work shown (e.g., identical phrasing, abrupt shifts
-  in style, answers far beyond expected level). Be conservative.
+  VISIBLE reason based on the work shown. Be conservative.
 
   Return JSON only with the following fields:
-  - score_out_of_10 (base academic score before formatting)
+  - score_out_of_10
   - deductions (array of { reason, points })
   - ai_suspected_cheating (string or null; brief explanation only if clearly suspected)
   - copying_suspected (string or null; brief explanation only if clearly suspected)
-  - final_score_out_of_10 (must reflect deductions applied to score_out_of_10)
-  - strengths (specific to this assignment)
-  - improvements (specific, actionable, and based on what is visible)
-  - teacher_comment (must align with the scores and deductions given)
+  - final_score_out_of_10
+  - strengths (specific to academic content only)
+  - improvements (specific, academic, and content-focused only)
+  - teacher_comment (focused on learning, not formatting)
   `.trim();
 
 app.post("/grading", async (req, res) => {
