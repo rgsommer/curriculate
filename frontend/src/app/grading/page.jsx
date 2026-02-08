@@ -269,584 +269,584 @@ function formatTeacherBlock(a) {
   return lines.join("\n");
 }
 
-export default function GradingPage() {
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const canvasRef = useRef(null);
+  export default function GradingPage() {
+    const videoRef = useRef(null);
+    const streamRef = useRef(null);
+    const canvasRef = useRef(null);
 
-  const isMobile = useMemo(() => {
-    if (typeof navigator === "undefined") return false;
-    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  }, []);
+    const isMobile = useMemo(() => {
+      if (typeof navigator === "undefined") return false;
+      return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    }, []);
 
-  const [cameraReady, setCameraReady] = useState(false);
-  const [cameraError, setCameraError] = useState("");
-  const [usingFrontCamera, setUsingFrontCamera] = useState(false);
+    const [cameraReady, setCameraReady] = useState(false);
+    const [cameraError, setCameraError] = useState("");
+    const [usingFrontCamera, setUsingFrontCamera] = useState(false);
 
-  const [flash, setFlash] = useState(false);
-  const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
-  const [busyCapture, setBusyCapture] = useState(false);
+    const [flash, setFlash] = useState(false);
+    const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
+    const [busyCapture, setBusyCapture] = useState(false);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState("");
 
-  // ✅ One raw response string (always)
-  const [serverText, setServerText] = useState("");
+    // ✅ One raw response string (always)
+    const [serverText, setServerText] = useState("");
 
-  // Optional rubric override UI
-  const [showRubric, setShowRubric] = useState(false);
-  const [rubricOverride, setRubricOverride] = useState("");
-  const [gradeBand, setGradeBand] = useState("6-8");
+    // Optional rubric override UI
+    const [showRubric, setShowRubric] = useState(false);
+    const [rubricOverride, setRubricOverride] = useState("");
+    const [gradeBand, setGradeBand] = useState("6-8");
+    
+    // Copy UX
+    const [copied, setCopied] = useState(false);
 
-  // Copy UX
-  const [copied, setCopied] = useState(false);
+    const backendBase = useMemo(
+      () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
+      []
+    );
 
-  const backendBase = useMemo(
-    () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
-    []
-  );
+    const gradingUrl = useMemo(() => {
+      if (!backendBase) return "";
+      return `${backendBase.replace(/\/$/, "")}/grading`;
+    }, [backendBase]);
 
-  const gradingUrl = useMemo(() => {
-    if (!backendBase) return "";
-    return `${backendBase.replace(/\/$/, "")}/grading`;
-  }, [backendBase]);
+    const normalized = useMemo(() => {
+      // Normalize from text first; if it’s JSON, we’ll get assessment.
+      const parsed = safeJsonParse(serverText);
+      if (parsed) return normalizeFromAny(parsed);
+      // If not JSON, normalization may still preserve raw
+      return normalizeFromAny(serverText);
+    }, [serverText]);
 
-  const normalized = useMemo(() => {
-    // Normalize from text first; if it’s JSON, we’ll get assessment.
-    const parsed = safeJsonParse(serverText);
-    if (parsed) return normalizeFromAny(parsed);
-    // If not JSON, normalization may still preserve raw
-    return normalizeFromAny(serverText);
-  }, [serverText]);
+    const assessment = normalized.assessment;
 
-  const assessment = normalized.assessment;
+    const formattedTeacherText = useMemo(() => {
+      return assessment ? formatTeacherBlock(assessment) : "";
+    }, [assessment]);
 
-  const formattedTeacherText = useMemo(() => {
-    return assessment ? formatTeacherBlock(assessment) : "";
-  }, [assessment]);
-
-  function triggerFlash() {
-    setFlash(true);
-    if (navigator.vibrate) navigator.vibrate(25);
-    window.setTimeout(() => setFlash(false), 120);
-  }
-
-  async function stopCamera() {
-    setCameraReady(false);
-    if (streamRef.current) {
-      for (const track of streamRef.current.getTracks()) track.stop();
-      streamRef.current = null;
+    function triggerFlash() {
+      setFlash(true);
+      if (navigator.vibrate) navigator.vibrate(25);
+      window.setTimeout(() => setFlash(false), 120);
     }
-    if (videoRef.current) videoRef.current.srcObject = null;
-  }
 
-  async function startCamera({ front = false } = {}) {
-    setCameraError("");
-    setCameraReady(false);
-
-    await stopCamera();
-
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("Camera not supported in this browser.");
+    async function stopCamera() {
+      setCameraReady(false);
+      if (streamRef.current) {
+        for (const track of streamRef.current.getTracks()) track.stop();
+        streamRef.current = null;
       }
-
-      const constraints = {
-        video: {
-          facingMode: front ? "user" : "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.playsInline = true;
-        await videoRef.current.play();
-      }
-
-      setCameraReady(true);
-    } catch (err) {
-      console.error("Camera start error:", err);
-      setCameraError(err?.message || "Could not start camera.");
-    }
-  }
-
-  useEffect(() => {
-    startCamera({ front: false });
-    return () => stopCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function capturePhoto() {
-    if (!cameraReady || !videoRef.current || !canvasRef.current) return;
-    if (busyCapture) return;
-
-    setBusyCapture(true);
-    setSubmitError("");
-    setServerText("");
-    setCopied(false);
-
-    try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-
-      const vw = video.videoWidth || 1280;
-      const vh = video.videoHeight || 720;
-
-      const ctx = canvas.getContext("2d", { alpha: false });
-
-      const targetAspect = isMobile ? 3 / 4 : 16 / 9;
-
-      let cropW = vw;
-      let cropH = Math.round(vw / targetAspect);
-
-      if (cropH > vh) {
-        cropH = vh;
-        cropW = Math.round(vh * targetAspect);
-      }
-
-      const sx = Math.round((vw - cropW) / 2);
-      const sy = Math.round((vh - cropH) / 2);
-
-      canvas.width = cropW;
-      canvas.height = cropH;
-
-      ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-
-      const rawDataUrl = canvas.toDataURL("image/jpeg", 0.9);
-
-      triggerFlash();
-
-      const compressed = await compressDataUrlToJpeg(
-        rawDataUrl,
-        DEFAULT_MAX_W,
-        DEFAULT_QUALITY
-      );
-
-      const id =
-        (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) ||
-        String(Date.now()) + "_" + Math.random().toString(16).slice(2);
-
-      setPhotos((prev) => [...prev, { id, dataUrl: compressed, createdAt: Date.now() }]);
-    } catch (err) {
-      console.error("Capture error:", err);
-      setSubmitError(err?.message || "Failed to capture photo.");
-    } finally {
-      setBusyCapture(false);
-    }
-  }
-
-  function removePhoto(id) {
-    setPhotos((prev) => prev.filter((p) => p.id !== id));
-  }
-
-  function clearAll() {
-    setPhotos([]);
-    setSubmitError("");
-    setServerText("");
-    setCopied(false);
-  }
-
-  async function submitForGrading() {
-    setSubmitError("");
-    setServerText("");
-    setCopied(false);
-
-    if (!gradingUrl) {
-      setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
-      return;
-    }
-    if (!photos.length) {
-      setSubmitError("Capture at least one photo before submitting.");
-      return;
+      if (videoRef.current) videoRef.current.srcObject = null;
     }
 
-    setSubmitting(true);
-    try {
-      const ro = (rubricOverride || "").trim();
-      const images = await Promise.all(
-        photos.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
-      );
+    async function startCamera({ front = false } = {}) {
+      setCameraError("");
+      setCameraReady(false);
 
-      const payload = {
-        images,
-        rubricOverride: ro.length ? ro : null,
-        gradeBand,  
-        meta: {
-          source: "web-grading-page",
-          capturedCount: photos.length,
-          capturedAt: Date.now(),
-          userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
-        },
-      };
+      await stopCamera();
 
-      const res = await fetch(gradingUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const text = await res.text();
-      setServerText(text);
-
-      // If non-OK and there IS NO usable JSON inside, show a human error
-      if (!res.ok) {
-        const parsed = safeJsonParse(text);
-        const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
-
-        if (norm.assessment) {
-          // ✅ Don’t show error if we can render the grade.
-          setSubmitError("");
-          return;
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Camera not supported in this browser.");
         }
 
-        // true failure
-        const msg =
-          parsed?.details ||
-          parsed?.error ||
-          `HTTP ${res.status} from grading endpoint`;
-        throw new Error(msg);
+        const constraints = {
+          video: {
+            facingMode: front ? "user" : "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.playsInline = true;
+          await videoRef.current.play();
+        }
+
+        setCameraReady(true);
+      } catch (err) {
+        console.error("Camera start error:", err);
+        setCameraError(err?.message || "Could not start camera.");
       }
-
-      // OK: even if wrapper includes {error, raw}, our renderer will prefer grade if parseable
-    } catch (err) {
-      console.error("Submit error:", err);
-      setSubmitError(err?.message || "Network error submitting for grading.");
-    } finally {
-      setSubmitting(false);
     }
-  }
 
-  async function toggleCamera() {
-    const next = !usingFrontCamera; 
-    setUsingFrontCamera(next);
-    await startCamera({ front: next });
-  }
+    useEffect(() => {
+      startCamera({ front: false });
+      return () => stopCamera();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-  function useDefaultRubric() {
-    setRubricOverride("");
-  }
+    async function capturePhoto() {
+      if (!cameraReady || !videoRef.current || !canvasRef.current) return;
+      if (busyCapture) return;
 
-  async function copyFormatted() {
-    if (!formattedTeacherText) return;
-    try {
-      await navigator.clipboard?.writeText(formattedTeacherText);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
+      setBusyCapture(true);
+      setSubmitError("");
+      setServerText("");
+      setCopied(false);
+
+      try {
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+
+        const vw = video.videoWidth || 1280;
+        const vh = video.videoHeight || 720;
+
+        const ctx = canvas.getContext("2d", { alpha: false });
+
+        const targetAspect = isMobile ? 3 / 4 : 16 / 9;
+
+        let cropW = vw;
+        let cropH = Math.round(vw / targetAspect);
+
+        if (cropH > vh) {
+          cropH = vh;
+          cropW = Math.round(vh * targetAspect);
+        }
+
+        const sx = Math.round((vw - cropW) / 2);
+        const sy = Math.round((vh - cropH) / 2);
+
+        canvas.width = cropW;
+        canvas.height = cropH;
+
+        ctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+
+        const rawDataUrl = canvas.toDataURL("image/jpeg", 0.9);
+
+        triggerFlash();
+
+        const compressed = await compressDataUrlToJpeg(
+          rawDataUrl,
+          DEFAULT_MAX_W,
+          DEFAULT_QUALITY
+        );
+
+        const id =
+          (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) ||
+          String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+
+        setPhotos((prev) => [...prev, { id, dataUrl: compressed, createdAt: Date.now() }]);
+      } catch (err) {
+        console.error("Capture error:", err);
+        setSubmitError(err?.message || "Failed to capture photo.");
+      } finally {
+        setBusyCapture(false);
+      }
+    }
+
+    function removePhoto(id) {
+      setPhotos((prev) => prev.filter((p) => p.id !== id));
+    }
+
+    function clearAll() {
+      setPhotos([]);
+      setSubmitError("");
+      setServerText("");
       setCopied(false);
     }
-  }
 
-  return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.h1}>Grading</h1>
-        <div style={styles.sub}>Capture photos, then submit for an assessment.</div>
-      </div>
+    async function submitForGrading() {
+      setSubmitError("");
+      setServerText("");
+      setCopied(false);
 
-      <div style={styles.controlsRow}>
-        <label style={styles.controlLabel}>
-          Grade Band
-          <select
-            value={gradeBand}
-            onChange={(e) => setGradeBand(e.target.value)}
-            style={styles.select}
-          >
-            {GRADE_BANDS.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      if (!gradingUrl) {
+        setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
+        return;
+      }
+      if (!photos.length) {
+        setSubmitError("Capture at least one photo before submitting.");
+        return;
+      }
 
-      <div style={styles.grid}>
-        {/* CAMERA CARD */}
-        <div style={styles.card}>
-          <div style={styles.cardTitleRow}>
-            <div style={styles.cardTitle}>Camera</div>
-            <button
-              onClick={toggleCamera}
-              style={styles.secondaryBtn}
-              disabled={submitting}
-              title="Switch camera"
-            >
-              Switch
-            </button>
-          </div>
+      setSubmitting(true);
+      try {
+        const ro = (rubricOverride || "").trim();
+        const images = await Promise.all(
+          photos.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
+        );
 
-          <div style={styles.cameraWrap}>
-            <video ref={videoRef} style={styles.video} muted playsInline autoPlay />
-            {flash && <div style={styles.flash} />}
-            {!cameraReady && (
-              <div style={styles.cameraOverlay}>
-                {cameraError ? (
-                  <>
-                    <div style={styles.overlayTitle}>Camera Error</div>
-                    <div style={styles.overlayText}>{cameraError}</div>
-                    <button
-                      onClick={() => startCamera({ front: usingFrontCamera })}
-                      style={styles.primaryBtn}
-                    >
-                      Retry Camera
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div style={styles.overlayTitle}>Starting camera…</div>
-                    <div style={styles.overlayText}>Allow camera permissions.</div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+        const payload = {
+          images,
+          rubricOverride: ro.length ? ro : null,
+          gradeBand,  
+          meta: {
+            source: "web-grading-page",
+            capturedCount: photos.length,
+            capturedAt: Date.now(),
+            userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+          },
+        };
 
-          <canvas ref={canvasRef} style={{ display: "none" }} />
+        const res = await fetch(gradingUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-          <div style={styles.btnRow}>
-            <button
-              onClick={capturePhoto}
-              style={styles.primaryBtn}
-              disabled={!cameraReady || submitting || busyCapture}
-            >
-              {busyCapture ? "Capturing…" : "Capture Photo"}
-            </button>
-            <button
-              onClick={clearAll}
-              style={styles.secondaryBtn}
-              disabled={submitting || busyCapture || (!photos.length && !serverText)}
-            >
-              Clear
-            </button>
-          </div>
+        const text = await res.text();
+        setServerText(text);
 
-          <div style={styles.photoMeta}>
-            <div>
-              <b>Photos:</b> {photos.length}
-            </div>
-            <div style={{ opacity: 0.8 }}>
-              Tip: Keep pages flat, fill the frame, avoid glare.
-            </div>
-          </div>
+        // If non-OK and there IS NO usable JSON inside, show a human error
+        if (!res.ok) {
+          const parsed = safeJsonParse(text);
+          const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
 
-          {photos.length > 0 && (
-            <div style={styles.thumbGrid}>
-              {photos.map((p, idx) => (
-                <div key={p.id} style={styles.thumb}>
-                  <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
-                  <div style={styles.thumbBar}>
-                    <div style={styles.thumbLabel}>#{idx + 1}</div>
-                    <button
-                      onClick={() => removePhoto(p.id)}
-                      style={styles.thumbRemove}
-                      disabled={submitting}
-                      title="Remove"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          if (norm.assessment) {
+            // ✅ Don’t show error if we can render the grade.
+            setSubmitError("");
+            return;
+          }
+
+          // true failure
+          const msg =
+            parsed?.details ||
+            parsed?.error ||
+            `HTTP ${res.status} from grading endpoint`;
+          throw new Error(msg);
+        }
+
+        // OK: even if wrapper includes {error, raw}, our renderer will prefer grade if parseable
+      } catch (err) {
+        console.error("Submit error:", err);
+        setSubmitError(err?.message || "Network error submitting for grading.");
+      } finally {
+        setSubmitting(false);
+      }
+    }
+
+    async function toggleCamera() {
+      const next = !usingFrontCamera; 
+      setUsingFrontCamera(next);
+      await startCamera({ front: next });
+    }
+
+    function useDefaultRubric() {
+      setRubricOverride("");
+    }
+
+    async function copyFormatted() {
+      if (!formattedTeacherText) return;
+      try {
+        await navigator.clipboard?.writeText(formattedTeacherText);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      } catch {
+        setCopied(false);
+      }
+    }
+
+    return (
+      <div style={styles.page}>
+        <div style={styles.header}>
+          <h1 style={styles.h1}>Grading</h1>
+          <div style={styles.sub}>Capture photos, then submit for an assessment.</div>
         </div>
 
-        {/* SUBMIT + RESPONSE CARD */}
-        <div style={styles.card}>
-          <div style={styles.cardTitle}>Submit</div>
+        <div style={styles.controlsRow}>
+          <label style={styles.controlLabel}>
+            Grade Band
+            <select
+              value={gradeBand}
+              onChange={(e) => setGradeBand(e.target.value)}
+              style={styles.select}
+            >
+              {GRADE_BANDS.map((g) => (
+                <option key={g.value} value={g.value}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
-          <div style={styles.note}>
-            <div>
-              <b>Endpoint:</b> {gradingUrl || "(not set)"}
+        <div style={styles.grid}>
+          {/* CAMERA CARD */}
+          <div style={styles.card}>
+            <div style={styles.cardTitleRow}>
+              <div style={styles.cardTitle}>Camera</div>
+              <button
+                onClick={toggleCamera}
+                style={styles.secondaryBtn}
+                disabled={submitting}
+                title="Switch camera"
+              >
+                Switch
+              </button>
             </div>
-            {!backendBase && (
-              <div style={styles.warn}>
-                Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel and redeploy.
+
+            <div style={styles.cameraWrap}>
+              <video ref={videoRef} style={styles.video} muted playsInline autoPlay />
+              {flash && <div style={styles.flash} />}
+              {!cameraReady && (
+                <div style={styles.cameraOverlay}>
+                  {cameraError ? (
+                    <>
+                      <div style={styles.overlayTitle}>Camera Error</div>
+                      <div style={styles.overlayText}>{cameraError}</div>
+                      <button
+                        onClick={() => startCamera({ front: usingFrontCamera })}
+                        style={styles.primaryBtn}
+                      >
+                        Retry Camera
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={styles.overlayTitle}>Starting camera…</div>
+                      <div style={styles.overlayText}>Allow camera permissions.</div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <canvas ref={canvasRef} style={{ display: "none" }} />
+
+            <div style={styles.btnRow}>
+              <button
+                onClick={capturePhoto}
+                style={styles.primaryBtn}
+                disabled={!cameraReady || submitting || busyCapture}
+              >
+                {busyCapture ? "Capturing…" : "Capture Photo"}
+              </button>
+              <button
+                onClick={clearAll}
+                style={styles.secondaryBtn}
+                disabled={submitting || busyCapture || (!photos.length && !serverText)}
+              >
+                Clear
+              </button>
+            </div>
+
+            <div style={styles.photoMeta}>
+              <div>
+                <b>Photos:</b> {photos.length}
+              </div>
+              <div style={{ opacity: 0.8 }}>
+                Tip: Keep pages flat, fill the frame, avoid glare.
+              </div>
+            </div>
+
+            {photos.length > 0 && (
+              <div style={styles.thumbGrid}>
+                {photos.map((p, idx) => (
+                  <div key={p.id} style={styles.thumb}>
+                    <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
+                    <div style={styles.thumbBar}>
+                      <div style={styles.thumbLabel}>#{idx + 1}</div>
+                      <button
+                        onClick={() => removePhoto(p.id)}
+                        style={styles.thumbRemove}
+                        disabled={submitting}
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Rubric override card */}
-          <div style={styles.rubricCard}>
-            <div style={styles.rubricHeader}>
+          {/* SUBMIT + RESPONSE CARD */}
+          <div style={styles.card}>
+            <div style={styles.cardTitle}>Submit</div>
+
+            <div style={styles.note}>
               <div>
-                <div style={{ fontWeight: 800 }}>Rubric (optional)</div>
-                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                  Leave blank to use the default rubric.
+                <b>Endpoint:</b> {gradingUrl || "(not set)"}
+              </div>
+              {!backendBase && (
+                <div style={styles.warn}>
+                  Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel and redeploy.
+                </div>
+              )}
+            </div>
+
+            {/* Rubric override card */}
+            <div style={styles.rubricCard}>
+              <div style={styles.rubricHeader}>
+                <div>
+                  <div style={{ fontWeight: 800 }}>Rubric (optional)</div>
+                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                    Leave blank to use the default rubric.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setShowRubric((v) => !v)}
+                    style={styles.secondaryBtn}
+                    type="button"
+                  >
+                    {showRubric ? "Hide" : "Show"}
+                  </button>
+                  <button
+                    onClick={useDefaultRubric}
+                    style={styles.secondaryBtn}
+                    disabled={!rubricOverride.trim().length}
+                    type="button"
+                    title="Clear override"
+                  >
+                    Use Default
+                  </button>
                 </div>
               </div>
+
+              {showRubric && (
+                <>
+                  <textarea
+                    value={rubricOverride}
+                    onChange={(e) => setRubricOverride(e.target.value)}
+                    placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 total if any formatting missing\n- 2–3 sentence teacher comment\n`}
+                    rows={9}
+                    style={styles.rubricTextarea}
+                  />
+                  <details style={styles.rubricDetails}>
+                    <summary style={styles.rubricSummary}>View default rubric</summary>
+                    <pre style={styles.rubricPre}>{DEFAULT_RUBRIC_INSTRUCTIONS}</pre>
+                  </details>
+                  <div style={styles.rubricTip}>
+                    Tip: keep rubrics short (a few bullets). Long rubrics increase cost and latency.
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div style={styles.btnRow}>
+              <button
+                onClick={submitForGrading}
+                style={styles.primaryBtn}
+                disabled={submitting || !photos.length || !gradingUrl}
+              >
+                {submitting ? "Submitting…" : "Submit for Grading"}
+              </button>
+            </div>
+
+            {submitError && (
+              <div style={styles.errorBox}>
+                <b>Error:</b> {submitError}
+              </div>
+            )}
+
+            <div style={styles.responseTitleRow}>
+              <div style={styles.cardTitle}>Response</div>
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button
-                  onClick={() => setShowRubric((v) => !v)}
-                  style={styles.secondaryBtn}
-                  type="button"
-                >
-                  {showRubric ? "Hide" : "Show"}
-                </button>
-                <button
-                  onClick={useDefaultRubric}
-                  style={styles.secondaryBtn}
-                  disabled={!rubricOverride.trim().length}
-                  type="button"
-                  title="Clear override"
-                >
-                  Use Default
-                </button>
+                {formattedTeacherText && (
+                  <button onClick={copyFormatted} style={styles.secondaryBtn}>
+                    {copied ? "Copied ✓" : "Copy Comment"}
+                  </button>
+                )}
+                {assessment && (
+                  <button
+                    onClick={() => navigator.clipboard?.writeText(JSON.stringify(assessment, null, 2))}
+                    style={styles.secondaryBtn}
+                  >
+                    Copy JSON
+                  </button>
+                )}
               </div>
             </div>
 
-            {showRubric && (
-              <>
-                <textarea
-                  value={rubricOverride}
-                  onChange={(e) => setRubricOverride(e.target.value)}
-                  placeholder={`Paste a teacher rubric here (optional)...\n\nExamples:\n- Mark out of 10\n- Focus on understanding, relevance, completion\n- Mechanics secondary\n- Deduct 1 total if any formatting missing\n- 2–3 sentence teacher comment\n`}
-                  rows={9}
-                  style={styles.rubricTextarea}
-                />
-                <details style={styles.rubricDetails}>
-                  <summary style={styles.rubricSummary}>View default rubric</summary>
-                  <pre style={styles.rubricPre}>{DEFAULT_RUBRIC_INSTRUCTIONS}</pre>
-                </details>
-                <div style={styles.rubricTip}>
-                  Tip: keep rubrics short (a few bullets). Long rubrics increase cost and latency.
-                </div>
-              </>
-            )}
-          </div>
-
-          <div style={styles.btnRow}>
-            <button
-              onClick={submitForGrading}
-              style={styles.primaryBtn}
-              disabled={submitting || !photos.length || !gradingUrl}
+            {/* FORMATTED RENDER (tap-to-copy) */}
+            <div
+              style={{
+                ...styles.responseBox,
+                ...(assessment ? styles.responseBoxClickable : null),
+              }}
+              onClick={assessment ? copyFormatted : undefined}
+              role={assessment ? "button" : undefined}
+              title={assessment ? "Tap to copy formatted comment" : ""}
             >
-              {submitting ? "Submitting…" : "Submit for Grading"}
-            </button>
-          </div>
-
-          {submitError && (
-            <div style={styles.errorBox}>
-              <b>Error:</b> {submitError}
-            </div>
-          )}
-
-          <div style={styles.responseTitleRow}>
-            <div style={styles.cardTitle}>Response</div>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {formattedTeacherText && (
-                <button onClick={copyFormatted} style={styles.secondaryBtn}>
-                  {copied ? "Copied ✓" : "Copy Comment"}
-                </button>
-              )}
-              {assessment && (
-                <button
-                  onClick={() => navigator.clipboard?.writeText(JSON.stringify(assessment, null, 2))}
-                  style={styles.secondaryBtn}
-                >
-                  Copy JSON
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* FORMATTED RENDER (tap-to-copy) */}
-          <div
-            style={{
-              ...styles.responseBox,
-              ...(assessment ? styles.responseBoxClickable : null),
-            }}
-            onClick={assessment ? copyFormatted : undefined}
-            role={assessment ? "button" : undefined}
-            title={assessment ? "Tap to copy formatted comment" : ""}
-          >
-            {assessment ? (
-              <div style={styles.gradingCard}>
-                <div style={styles.gradingTopRow}>
-                  <div style={styles.gradingTitle}>
-                    Grade: {computeFinalScore(assessment)} / 10
+              {assessment ? (
+                <div style={styles.gradingCard}>
+                  <div style={styles.gradingTopRow}>
+                    <div style={styles.gradingTitle}>
+                      Grade: {computeFinalScore(assessment)} / 10
+                    </div>
+                    <div style={styles.copyPillInline}>
+                      {copied ? "Copied ✓" : "Tap to copy"}
+                    </div>
                   </div>
-                  <div style={styles.copyPillInline}>
-                    {copied ? "Copied ✓" : "Tap to copy"}
-                  </div>
+
+                  {Array.isArray(assessment.deductions) && assessment.deductions.length ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Deduction</div>
+                      <div style={styles.gradingDeduction}>
+                        {(assessment.deductions[0]?.reason || "").trim()}{" "}
+                        <span style={{ opacity: 0.8 }}>
+                          {formatPoints(assessment.deductions[0]?.points)}
+                        </span>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {toArrayStrings(assessment.strengths).length ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Strengths</div>
+                      <ul style={styles.gradingUl}>
+                        {toArrayStrings(assessment.strengths).map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+
+                  {toArrayStrings(assessment.improvements).length ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Next Steps</div>
+                      <ul style={styles.gradingUl}>
+                        {toArrayStrings(assessment.improvements).map((it, i) => (
+                          <li key={i}>{it}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+
+                  {(assessment.teacher_comment || "").trim() ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Teacher Comment</div>
+                      <div style={styles.gradingComment}>
+                        {(assessment.teacher_comment || "").trim()}
+                      </div>
+                    </>
+                  ) : null}
+
+                  <div style={styles.gradingHint}>Tap anywhere to copy</div>
                 </div>
-
-                {Array.isArray(assessment.deductions) && assessment.deductions.length ? (
-                  <>
-                    <div style={styles.gradingSectionTitle}>Deduction</div>
-                    <div style={styles.gradingDeduction}>
-                      {(assessment.deductions[0]?.reason || "").trim()}{" "}
-                      <span style={{ opacity: 0.8 }}>
-                        {formatPoints(assessment.deductions[0]?.points)}
-                      </span>
-                    </div>
-                  </>
-                ) : null}
-
-                {toArrayStrings(assessment.strengths).length ? (
-                  <>
-                    <div style={styles.gradingSectionTitle}>Strengths</div>
-                    <ul style={styles.gradingUl}>
-                      {toArrayStrings(assessment.strengths).map((s, i) => (
-                        <li key={i}>{s}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-
-                {toArrayStrings(assessment.improvements).length ? (
-                  <>
-                    <div style={styles.gradingSectionTitle}>Next Steps</div>
-                    <ul style={styles.gradingUl}>
-                      {toArrayStrings(assessment.improvements).map((it, i) => (
-                        <li key={i}>{it}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-
-                {(assessment.teacher_comment || "").trim() ? (
-                  <>
-                    <div style={styles.gradingSectionTitle}>Teacher Comment</div>
-                    <div style={styles.gradingComment}>
-                      {(assessment.teacher_comment || "").trim()}
-                    </div>
-                  </>
-                ) : null}
-
-                <div style={styles.gradingHint}>Tap anywhere to copy</div>
-              </div>
-            ) : serverText ? (
-              <pre style={styles.pre}>{serverText}</pre>
-            ) : (
-              <div style={{ opacity: 0.75 }}>Results will appear here after submission.</div>
-            )}
-          </div>
-
-          {/* Calm retry note if wrapper error but no assessment */}
-          {!assessment && normalized.wrapperError && (
-            <div style={styles.softWarn}>
-              {normalized.rawTextUsed?.trim()
-                ? "We received a response but couldn’t parse it. Try again."
-                : "Grading didn’t complete this time. Try again."}
+              ) : serverText ? (
+                <pre style={styles.pre}>{serverText}</pre>
+              ) : (
+                <div style={{ opacity: 0.75 }}>Results will appear here after submission.</div>
+              )}
             </div>
-          )}
 
-          <div style={styles.footerHint}>Free to try until subscription plan is enforced.</div>
+            {/* Calm retry note if wrapper error but no assessment */}
+            {!assessment && normalized.wrapperError && (
+              <div style={styles.softWarn}>
+                {normalized.rawTextUsed?.trim()
+                  ? "We received a response but couldn’t parse it. Try again."
+                  : "Grading didn’t complete this time. Try again."}
+              </div>
+            )}
+
+            <div style={styles.footerHint}>Free to try until subscription plan is enforced.</div>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
 const styles = {
   page: {
