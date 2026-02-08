@@ -6115,8 +6115,20 @@ const openai = new OpenAI({
 
 // Default rubric (server can also enforce its own default if rubricOverride is null)
 const RUBRIC_INSTRUCTIONS = `
-  You are a teacher grading student assignments from photos.
-  Grade for: completeness, accuracy, clarity, and effort.
+  You are a teacher grading a specific student assignment based on the attached photos.
+
+  Grade for:
+  - completeness
+  - accuracy
+  - clarity
+  - effort
+
+  IMPORTANT: All feedback must make clear reference to the STUDENT’S ACTUAL WORK.
+  Do not use generic praise or vague statements.
+  When possible, refer to:
+  - specific questions, answers, sections, or columns
+  - what the student wrote or attempted
+  - visible strengths or omissions in the photographed work
 
   FORMATTING DEDUCTION RULE:
   If ANY of the following formatting requirements are missing, include AT MOST ONE
@@ -6128,7 +6140,12 @@ const RUBRIC_INSTRUCTIONS = `
   Formatting requirements:
   1) Date
   2) Proper title (not just “check-in”)
-  3) Page/question reference (only if applicable)
+  3) Page or question reference (ONLY if applicable to this assignment)
+
+  ACADEMIC INTEGRITY:
+  Only flag ai_suspected_cheating or copying_suspected if there is a CLEAR,
+  VISIBLE reason based on the work shown (e.g., identical phrasing, abrupt shifts
+  in style, answers far beyond expected level). Be conservative.
 
   Return JSON only with the following fields:
   - score_out_of_10
@@ -6136,9 +6153,9 @@ const RUBRIC_INSTRUCTIONS = `
   - ai_suspected_cheating (string or null; brief explanation only if clearly suspected)
   - copying_suspected (string or null; brief explanation only if clearly suspected)
   - final_score_out_of_10
-  - strengths
-  - improvements
-  - teacher_comment
+  - strengths (specific to this assignment)
+  - improvements (specific, actionable, and based on what is visible)
+  - teacher_comment (referencing the student’s actual work)
   `.trim();
 
 app.post("/grading", async (req, res) => {
