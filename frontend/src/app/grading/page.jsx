@@ -49,17 +49,6 @@ const GRADE_BANDS = [
 
 const [gradeBand, setGradeBand] = useState("6-8");
 
-<select
-  value={gradeBand}
-  onChange={(e) => setGradeBand(e.target.value)}
->
-  {GRADE_BANDS.map((g) => (
-    <option key={g.value} value={g.value}>
-      {g.label}
-    </option>
-  ))}
-</select>
-
 function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
@@ -480,9 +469,13 @@ export default function GradingPage() {
 
     setSubmitting(true);
     try {
-      const ro = rubricOverride.trim();
+      const ro = (rubricOverride || "").trim();
+      const images = await Promise.all(
+        photos.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
+      );
+
       const payload = {
-        images: photos.map((p) => p.dataUrl),
+        images,
         rubricOverride: ro.length ? ro : null,
         gradeBand,  
         meta: {
@@ -557,6 +550,17 @@ export default function GradingPage() {
         <h1 style={styles.h1}>Grading</h1>
         <div style={styles.sub}>Capture photos, then submit for an assessment.</div>
       </div>
+
+      <select
+        value={gradeBand}
+        onChange={(e) => setGradeBand(e.target.value)}
+      >
+        {GRADE_BANDS.map((g) => (
+          <option key={g.value} value={g.value}>
+            {g.label}
+          </option>
+        ))}
+      </select>
 
       <div style={styles.grid}>
         {/* CAMERA CARD */}
