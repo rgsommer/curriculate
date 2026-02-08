@@ -6151,6 +6151,24 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
 
     ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
 
+    GRADE BAND EXPECTATIONS:
+    - Grades 3–5: Short answers, phrases, or simple sentences are acceptable. Focus on effort, basic accuracy, and clear attempts.
+    - Grades 6–8: Short-answer responses with 2–3 accurate points per question are sufficient. Paragraph-length answers are NOT required unless explicitly assigned.
+    - Grades 9–10: Expect more detailed explanations, clearer reasoning, and some supporting detail.
+    - Grades 11+: Expect thorough explanations, evidence, precision, and academic structure.
+
+    ASSIGNMENT TYPE CALIBRATION (IMPORTANT):
+    First determine whether the assignment is:
+    A) Short-answer / check-in
+    B) Paragraph / extended response
+
+    For SHORT-ANSWER work (especially Grades 3–8):
+    - Do NOT penalize for lack of paragraph structure.
+    - If most questions have 2–3 relevant, accurate points, base score should usually be 7–9 before deductions.
+
+    For PARAGRAPH work:
+    - Depth, structure, and clarity matter more.
+
     TASK FORMAT DETECTION (REQUIRED):
     First decide which best describes the student work visible in the photos:
     - "short-answer" (brief responses, point form, a few lines each)
