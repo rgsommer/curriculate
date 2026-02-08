@@ -6276,7 +6276,7 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
       }
 
       const response = await openai.responses.create({
-        model: "gpt-4.1-mini",
+        model: "gpt-5.2",
         input: [
           {
             role: "user",
