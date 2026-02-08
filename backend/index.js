@@ -6205,94 +6205,122 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
     `.trim();
     }
 
-app.post("/grading", async (req, res) => {
-  try {
-    const { images, rubric } = req.body;
-    if (!images?.length) return res.status(400).json({ error: "No images provided" });
+  app.post("/grading", async (req, res) => {
+    try {
+      const { images, rubricOverride, gradeBand } = req.body;
 
-    const schema = {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        response_format_detected: {
-          type: "string",
-          enum: ["short-answer", "paragraph", "mixed"],
-        },
+      if (!Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ error: "No images provided" });
+      }
 
-        score_out_of_10: { type: "number" },
-        deductions: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              reason: { type: "string" },
-              points: { type: "number" },
-            },
-            required: ["reason", "points"],
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+      const submissionId = crypto.randomUUID();
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          response_format_detected: { type: "string", enum: ["short-answer", "paragraph", "mixed"] },
+
+          score_out_of_10: { type: "number" },
+          deductions: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                reason: { type: "string" },
+                points: { type: "number" }
+              },
+              required: ["reason", "points"]
+            }
           },
+          ai_suspected_cheating: { anyOf: [{ type: "string" }, { type: "null" }] },
+          copying_suspected: { anyOf: [{ type: "string" }, { type: "null" }] },
+          final_score_out_of_10: { type: "number" },
+          strengths: { type: "array", items: { type: "string" } },
+          improvements: { type: "array", items: { type: "string" } },
+          teacher_comment: { type: "string" }
         },
-        ai_suspected_cheating: { anyOf: [{ type: "string" }, { type: "null" }] },
-        copying_suspected: { anyOf: [{ type: "string" }, { type: "null" }] },
-        final_score_out_of_10: { type: "number" },
-        strengths: { type: "array", items: { type: "string" } },
-        improvements: { type: "array", items: { type: "string" } },
-        teacher_comment: { type: "string" },
-      },
-      required: [
-        "response_format_detected",
-        "score_out_of_10",
-        "deductions",
-        "ai_suspected_cheating",
-        "copying_suspected",
-        "final_score_out_of_10",
-        "strengths",
-        "improvements",
-        "teacher_comment",
-      ],
-    };
+        required: [
+          "response_format_detected",
+          "score_out_of_10",
+          "deductions",
+          "ai_suspected_cheating",
+          "copying_suspected",
+          "final_score_out_of_10",
+          "strengths",
+          "improvements",
+          "teacher_comment"
+        ]
+      };
 
-    const instructions = buildRubricInstructions({ gradeBand });
+      const instructions =
+        (rubricOverride || "").trim() ||
+        buildRubricInstructions({ gradeBand: band });
 
-    const response = await openai.responses.create({
-      model: "gpt-4.1-mini",
-      input: [{
-        role: "user",
-        content: [
-          { type: "input_text", text: instructions },
-          ...images.map((img) => ({
-              type: "input_image",
-              image_url: img
-            }))
-          ]
+      const imageRefs = images.map((_, i) => ({
+        index: i + 1,
+        url: `https://cdn.curriculate.net/grading/${submissionId}/image-${i + 1}.jpg`
+      }));
+
+      function safeJsonParse(s) {
+        if (typeof s !== "string") return null;
+        const t = s.trim();
+        if (!t) return null;
+        try {
+          return JSON.parse(t);
+        } catch {
+          return null;
         }
-      ],
+      }
 
-      // ✅ Structured output (guaranteed schema match)
-      text: {
-        format: {
-          name: "grade_result",
-          type: "json_schema",
-          schema,
-          strict: true
-        }
-      },
+      const response = await openai.responses.create({
+        model: "gpt-4.1-mini",
+        input: [
+          {
+            role: "user",
+            content: [
+              { type: "input_text", text: instructions },
+              ...images.map((img) => ({ type: "input_image", image_url: img }))
+            ]
+          }
+        ],
+        text: {
+          format: {
+            name: "grade_result",
+            type: "json_schema",
+            schema,
+            strict: true
+          }
+        },
+        max_output_tokens: 800
+      });
 
-      max_output_tokens: 800
-    });
+      const grade = safeJsonParse(response.output_text);
 
-    // Return parsed JSON (best) so the frontend never has to guess
-    const json = JSON.parse(response.output_text);
-    return res.json(json);
+      if (!grade) {
+        return res.status(502).json({
+          error: "Grading returned invalid JSON",
+          raw: response.output_text || "",
+          assignment_images: imageRefs,
+          meta: { submissionId, gradeBand: band }
+        });
+      }
 
-  } catch (err) {
-    console.error("🔥 /grading failed:", err?.message || err);
-    return res.status(500).json({
-      error: "Grading failed",
-      details: err?.message || "unknown error"
-    });
-  }
-});
+      return res.json({
+        ...grade,
+        assignment_images: imageRefs,
+        meta: { submissionId, gradeBand: band }
+      });
+    } catch (err) {
+      console.error("🔥 /grading failed:", err?.message || err);
+      return res.status(500).json({
+        error: "Grading failed",
+        details: err?.message || "unknown error"
+      });
+    }
+  });
 
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {

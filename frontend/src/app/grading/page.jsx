@@ -47,8 +47,6 @@ const GRADE_BANDS = [
   { value: "11+", label: "Grades 11+" },
 ];
 
-const [gradeBand, setGradeBand] = useState("6-8");
-
 function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
@@ -298,6 +296,7 @@ export default function GradingPage() {
   // Optional rubric override UI
   const [showRubric, setShowRubric] = useState(false);
   const [rubricOverride, setRubricOverride] = useState("");
+  const [gradeBand, setGradeBand] = useState("6-8");
 
   // Copy UX
   const [copied, setCopied] = useState(false);
@@ -551,16 +550,22 @@ export default function GradingPage() {
         <div style={styles.sub}>Capture photos, then submit for an assessment.</div>
       </div>
 
-      <select
-        value={gradeBand}
-        onChange={(e) => setGradeBand(e.target.value)}
-      >
-        {GRADE_BANDS.map((g) => (
-          <option key={g.value} value={g.value}>
-            {g.label}
-          </option>
-        ))}
-      </select>
+      <div style={styles.controlsRow}>
+        <label style={styles.controlLabel}>
+          Grade Band
+          <select
+            value={gradeBand}
+            onChange={(e) => setGradeBand(e.target.value)}
+            style={styles.select}
+          >
+            {GRADE_BANDS.map((g) => (
+              <option key={g.value} value={g.value}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       <div style={styles.grid}>
         {/* CAMERA CARD */}
@@ -984,6 +989,29 @@ const styles = {
     border: "1px solid rgba(234,88,12,0.18)",
     padding: 10,
     borderRadius: 12,
+  },
+
+  controlsRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  controlLabel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    fontSize: 12,
+    fontWeight: 800,
+  },
+  select: {
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.18)",
+    background: "white",
+    fontSize: 14,
+    fontWeight: 700,
+    minWidth: 240,
   },
 
   rubricCard: {
