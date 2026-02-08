@@ -40,6 +40,26 @@ improvements (array of strings),
 teacher_comment (string).
 `.trim();
 
+const GRADE_BANDS = [
+  { value: "3-5", label: "Grades 3–5" },
+  { value: "6-8", label: "Grades 6–8 (default)" },
+  { value: "9-10", label: "Grades 9–10" },
+  { value: "11+", label: "Grades 11+" },
+];
+
+const [gradeBand, setGradeBand] = useState("6-8");
+
+<select
+  value={gradeBand}
+  onChange={(e) => setGradeBand(e.target.value)}
+>
+  {GRADE_BANDS.map((g) => (
+    <option key={g.value} value={g.value}>
+      {g.label}
+    </option>
+  ))}
+</select>
+
 function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
@@ -464,6 +484,7 @@ export default function GradingPage() {
       const payload = {
         images: photos.map((p) => p.dataUrl),
         rubricOverride: ro.length ? ro : null,
+        gradeBand,  
         meta: {
           source: "web-grading-page",
           capturedCount: photos.length,
@@ -510,7 +531,7 @@ export default function GradingPage() {
   }
 
   async function toggleCamera() {
-    const next = !usingFrontCamera;
+    const next = !usingFrontCamera; 
     setUsingFrontCamera(next);
     await startCamera({ front: next });
   }

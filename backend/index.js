@@ -6113,63 +6113,97 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Default rubric (server can also enforce its own default if rubricOverride is null)
-const RUBRIC_INSTRUCTIONS = `
-  You are a caring, encouraging teacher grading a specific student assignment based on the attached photos.
+function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
+  const gradeExpectations = {
+    "3-5": `
+    GRADE LEVEL: Grades 3–5.
+    Expect simple sentences or point-form.
+    Meeting expectations: 1–2 correct points per question is often sufficient.
+    Be encouraging, focus on understanding and completion; mechanics are secondary.
+        `.trim(),
 
-  Grade for:
-  - completeness
-  - accuracy
-  - clarity
-  - effort
+        "6-8": `
+    GRADE LEVEL: Grades 6–8 (middle school).
+    Meeting expectations:
+    - Short-answer work: 2–3 accurate, relevant points per question is sufficient.
+    - Paragraph work: a clear claim + some explanation + an example (when applicable).
+    Do not demand essay-level detail for short-answer questions.
+    Keep tone firm-kind and practical.
+        `.trim(),
 
-  IMPORTANT:
-  All feedback must make clear reference to the STUDENT’S ACTUAL WORK.
-  Do not use generic praise or vague statements.
-  When possible, refer to:
-  - specific questions, answers, sections, or columns
-  - what the student wrote or attempted
-  - visible strengths or omissions in the photographed work
+        "9-10": `
+    GRADE LEVEL: Grades 9–10.
+    Expect clearer explanation, more precision, and occasional support/examples.
+    Short-answer: 3+ strong points or brief explanation per point.
+    Paragraph: clearer structure, specificity, and evidence when appropriate.
+        `.trim(),
 
-  SCORING RULE (REQUIRED):
-  First determine a base academic score out of 10 for the quality of the work
-  (completeness, accuracy, clarity, and effort ONLY).
-  Return this as score_out_of_10.
+        "11+": `
+    GRADE LEVEL: Grades 11+.
+    Expect well-developed explanations and stronger evidence/precision.
+    Paragraph work should show structure and support.
+    Short-answer should still be concise, but more analytical and specific.
+        `.trim(),
+      };
 
-  Then apply the formatting rule below.
-  final_score_out_of_10 must equal score_out_of_10 minus total deduction points.
+      return `
+    You are a teacher grading a specific student assignment based on the attached photos.
 
-  FORMATTING DEDUCTION RULE:
-  If ANY formatting requirement is missing, include AT MOST ONE deduction
-  with points: 1 and the reason exactly as:
-  "Formatting requirements missing".
+    ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
 
-  Do NOT explain, justify, or elaborate on formatting issues in:
-  - strengths
-  - improvements
-  - teacher_comment
+    TASK FORMAT DETECTION (REQUIRED):
+    First decide which best describes the student work visible in the photos:
+    - "short-answer" (brief responses, point form, a few lines each)
+    - "paragraph" (multi-sentence paragraphs with explanations)
+    - "mixed" (a combination)
 
-  If no formatting issues are present, do NOT include a formatting deduction.
+    Adjust expectations accordingly:
+    - If "short-answer": do NOT penalize for not being paragraph-length. Reward correct, relevant points.
+    - If "paragraph": expect clearer structure and fuller explanation.
+    - If "mixed": apply the appropriate expectation per section.
 
-  Formatting requirements:
-  1) Date
-  2) Proper title (not just “check-in”)
-  3) Page or question reference (ONLY if applicable)
+    Grade for:
+    - completeness
+    - accuracy
+    - clarity
+    - effort
 
-  ACADEMIC INTEGRITY:
-  Only flag ai_suspected_cheating or copying_suspected if there is a CLEAR,
-  VISIBLE reason based on the work shown. Be conservative.
+    IMPORTANT:
+    All feedback must reference the STUDENT’S ACTUAL WORK.
+    Avoid vague praise. Point to visible features (e.g., “your table in question 1…”, “question 3 is brief…”).
 
-  Return JSON only with the following fields:
-  - score_out_of_10
-  - deductions (array of { reason, points })
-  - ai_suspected_cheating (string or null; brief explanation only if clearly suspected)
-  - copying_suspected (string or null; brief explanation only if clearly suspected)
-  - final_score_out_of_10
-  - strengths (specific to academic content only)
-  - improvements (specific, academic, and content-focused only)
-  - teacher_comment (focused on learning, not formatting)
-  `.trim();
+    SCORING RULE:
+    1) Choose a base academic score out of 10 (content quality only).
+    Return this as score_out_of_10.
+    2) Apply the formatting rule below (at most –1 total).
+    final_score_out_of_10 MUST equal score_out_of_10 minus total deduction points.
+
+    FORMATTING DEDUCTION RULE (QUIET):
+    If ANY formatting requirement is missing, include AT MOST ONE deduction with:
+    - points: 1
+    - reason exactly: "Formatting requirements missing"
+    Do NOT explain or discuss formatting issues in strengths, improvements, or teacher_comment.
+
+    Formatting requirements:
+    1) Date
+    2) Proper title (not just “check-in”)
+    3) Page or question reference (ONLY if applicable)
+
+    ACADEMIC INTEGRITY:
+    Only set ai_suspected_cheating or copying_suspected if there is a clear, visible reason. Be conservative.
+
+    Return JSON only with these fields:
+    - response_format_detected ("short-answer"|"paragraph"|"mixed")
+    - score_out_of_10
+    - deductions (array of { reason, points })
+    - ai_suspected_cheating (string or null)
+    - copying_suspected (string or null)
+    - final_score_out_of_10
+    - strengths (content-focused, specific to the assignment)
+    - improvements (content-focused, 1–3 items max, appropriate to detected format)
+    - teacher_comment (content-focused, aligned with the scores)
+    `.trim();
+    }
 
 app.post("/grading", async (req, res) => {
   try {
@@ -6180,6 +6214,11 @@ app.post("/grading", async (req, res) => {
       type: "object",
       additionalProperties: false,
       properties: {
+        response_format_detected: {
+          type: "string",
+          enum: ["short-answer", "paragraph", "mixed"],
+        },
+
         score_out_of_10: { type: "number" },
         deductions: {
           type: "array",
@@ -6188,34 +6227,40 @@ app.post("/grading", async (req, res) => {
             additionalProperties: false,
             properties: {
               reason: { type: "string" },
-              points: { type: "number" }
+              points: { type: "number" },
             },
-            required: ["reason", "points"]
-          }
+            required: ["reason", "points"],
+          },
         },
+        ai_suspected_cheating: { anyOf: [{ type: "string" }, { type: "null" }] },
+        copying_suspected: { anyOf: [{ type: "string" }, { type: "null" }] },
         final_score_out_of_10: { type: "number" },
         strengths: { type: "array", items: { type: "string" } },
         improvements: { type: "array", items: { type: "string" } },
-        teacher_comment: { type: "string" }
+        teacher_comment: { type: "string" },
       },
       required: [
+        "response_format_detected",
         "score_out_of_10",
         "deductions",
+        "ai_suspected_cheating",
+        "copying_suspected",
         "final_score_out_of_10",
         "strengths",
         "improvements",
-        "teacher_comment"
-      ]
+        "teacher_comment",
+      ],
     };
+
+    const instructions = buildRubricInstructions({ gradeBand });
 
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: rubric || RUBRIC_INSTRUCTIONS },
-            ...images.map((img) => ({
+      input: [{
+        role: "user",
+        content: [
+          { type: "input_text", text: instructions },
+          ...images.map((img) => ({
               type: "input_image",
               image_url: img
             }))
