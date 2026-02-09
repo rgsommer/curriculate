@@ -382,9 +382,19 @@ function formatTeacherBlock(a) {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // for double-tap capture to capture and submit
+    const lastCaptureTapRef = useRef(0);
+    const captureTapTimerRef = useRef(null);
+
+    useEffect(() => {
+      return () => {
+        if (captureTapTimerRef.current) clearTimeout(captureTapTimerRef.current);
+      };
+    }, []);
+
     async function capturePhoto() {
-      if (!cameraReady || !videoRef.current || !canvasRef.current) return;
-      if (busyCapture) return;
+      if (!cameraReady || !videoRef.current || !canvasRef.current) return null;
+      if (busyCapture) return null;
 
       setBusyCapture(true);
       setSubmitError("");
@@ -432,13 +442,57 @@ function formatTeacherBlock(a) {
           (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) ||
           String(Date.now()) + "_" + Math.random().toString(16).slice(2);
 
-        setPhotos((prev) => [...prev, { id, dataUrl: compressed, createdAt: Date.now() }]);
+        const photoObj = { id, dataUrl: compressed, createdAt: Date.now() };
+
+        setPhotos((prev) => [...prev, photoObj]);
+
+        return photoObj;
       } catch (err) {
         console.error("Capture error:", err);
         setSubmitError(err?.message || "Failed to capture photo.");
+        return null;
       } finally {
         setBusyCapture(false);
       }
+    }
+
+    function getAssignmentImagesFromAssessment(a) {
+      return Array.isArray(a?.assignment_images) ? a.assignment_images : [];
+    }
+
+    function handleCaptureTap() {
+      if (!cameraReady || submitting || busyCapture) return;
+
+      const now = Date.now();
+      const DOUBLE_TAP_MS = 320;
+
+      // Double tap => capture once + submit
+      if (now - lastCaptureTapRef.current < DOUBLE_TAP_MS) {
+        lastCaptureTapRef.current = 0;
+
+        if (captureTapTimerRef.current) {
+          clearTimeout(captureTapTimerRef.current);
+          captureTapTimerRef.current = null;
+        }
+
+        (async () => {
+          const newPhoto = await capturePhoto();
+          if (!newPhoto) return;
+
+          const merged = [...photos, newPhoto];
+          await submitForGrading(merged);
+        })();
+
+        return;
+      }
+
+      // Single tap => wait briefly to see if it becomes a double tap
+      lastCaptureTapRef.current = now;
+      captureTapTimerRef.current = setTimeout(() => {
+        lastCaptureTapRef.current = 0;
+        captureTapTimerRef.current = null;
+        capturePhoto();
+      }, DOUBLE_TAP_MS);
     }
 
     function removePhoto(id) {
@@ -452,7 +506,7 @@ function formatTeacherBlock(a) {
       setCopied(false);
     }
 
-    async function submitForGrading() {
+    async function submitForGrading(photosOverride = null) {
       setSubmitError("");
       setServerText("");
       setCopied(false);
@@ -461,7 +515,10 @@ function formatTeacherBlock(a) {
         setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
         return;
       }
-      if (!photos.length) {
+
+      const photosToUse = Array.isArray(photosOverride) ? photosOverride : photos;
+
+      if (!photosToUse.length) {
         setSubmitError("Capture at least one photo before submitting.");
         return;
       }
@@ -470,16 +527,16 @@ function formatTeacherBlock(a) {
       try {
         const ro = (rubricOverride || "").trim();
         const images = await Promise.all(
-          photos.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
+          photosToUse.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
         );
 
         const payload = {
           images,
           rubricOverride: ro.length ? ro : null,
-          gradeBand,  
+          gradeBand,
           meta: {
             source: "web-grading-page",
-            capturedCount: photos.length,
+            capturedCount: photosToUse.length,
             capturedAt: Date.now(),
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
           },
@@ -494,26 +551,21 @@ function formatTeacherBlock(a) {
         const text = await res.text();
         setServerText(text);
 
-        // If non-OK and there IS NO usable JSON inside, show a human error
         if (!res.ok) {
           const parsed = safeJsonParse(text);
           const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
 
           if (norm.assessment) {
-            // ✅ Don’t show error if we can render the grade.
             setSubmitError("");
             return;
           }
 
-          // true failure
           const msg =
             parsed?.details ||
             parsed?.error ||
             `HTTP ${res.status} from grading endpoint`;
           throw new Error(msg);
         }
-
-        // OK: even if wrapper includes {error, raw}, our renderer will prefer grade if parseable
       } catch (err) {
         console.error("Submit error:", err);
         setSubmitError(err?.message || "Network error submitting for grading.");
@@ -612,7 +664,7 @@ function formatTeacherBlock(a) {
 
             <div style={styles.btnRow}>
               <button
-                onClick={capturePhoto}
+                onClick={handleCaptureTap}
                 style={styles.primaryBtn}
                 disabled={!cameraReady || submitting || busyCapture}
               >
@@ -632,7 +684,7 @@ function formatTeacherBlock(a) {
                 <b>Photos:</b> {photos.length}
               </div>
               <div style={{ opacity: 0.8 }}>
-                Tip: Keep pages flat, fill the frame, avoid glare.
+                Tip: Keep pages flat, fill the frame, avoid glare. Single tap = capture. Double tap = capture + submit.
               </div>
             </div>
 
@@ -820,6 +872,29 @@ function formatTeacherBlock(a) {
                       <div style={styles.gradingComment}>
                         {(assessment.teacher_comment || "").trim()}
                       </div>
+                    </>
+                  ) : null}
+
+                  {getAssignmentImagesFromAssessment(assessment).length > 0 ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Saved captures</div>
+                      <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
+                        These links work for ~30 days.
+                      </div>
+                      <ul style={styles.gradingUl}>
+                        {getAssignmentImagesFromAssessment(assessment).map((img) => (
+                          <li key={img.url}>
+                            <a
+                              href={img.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              View photo {img.index}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
                     </>
                   ) : null}
 

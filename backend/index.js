@@ -6109,9 +6109,92 @@ app.post("/api/tasksets", async (req, res) => {
   }
 });
 
+app.get("/grading/capture/:submissionId/:file", async (req, res) => {
+  try {
+    const { submissionId, file } = req.params;
+
+    const record = await GradingCapture.findOne({ submissionId }).lean();
+    if (!record) {
+      // expired or never existed
+      res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
+      return;
+    }
+
+    const s3 = getS3Client();
+    if (!s3) {
+      // If S3 isn't configured, treat as expired UX-wise
+      res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
+      return;
+    }
+
+    const key = `grading/${submissionId}/${file}`;
+
+    // Basic containment check: only allow keys that were recorded for this submission
+    // (prevents guessing random keys)
+    if (!record.keys.includes(key)) {
+      res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
+      return;
+    }
+
+    const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: key });
+    const signedUrl = await getSignedUrl(s3, getCmd, { expiresIn: 300 }); // 5 minutes
+
+    // Redirect to signed URL
+    res.redirect(302, signedUrl);
+  } catch (err) {
+    console.error("grading capture error:", err);
+    res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
+  }
+});
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+function parseDataUrlImage(dataUrl) {
+  const s = String(dataUrl || "");
+  const m = s.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!m) return null;
+  const contentType = m[1];
+  const b64 = m[2];
+  const buf = Buffer.from(b64, "base64");
+  return { contentType, buf };
+}
+
+function gradingExpiredHtml({ brand = "Curriculate" } = {}) {
+  return `<!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      <title>Link Expired • ${brand}</title>
+      <style>
+        body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:0; background:#0b1220; color:#e5e7eb;}
+        .wrap{max-width:760px; margin:0 auto; padding:36px 18px;}
+        .card{background:#111a2e; border:1px solid rgba(255,255,255,.10); border-radius:16px; padding:22px;}
+        h1{margin:0 0 10px; font-size:22px;}
+        p{margin:0 0 12px; line-height:1.5; color:#cbd5e1;}
+        .cta{display:inline-block; margin-top:12px; background:#2563eb; color:#fff; text-decoration:none; padding:10px 14px; border-radius:12px; font-weight:800;}
+        .muted{font-size:13px; color:#94a3b8; margin-top:12px;}
+        .pill{display:inline-block; background:rgba(37,99,235,.15); border:1px solid rgba(37,99,235,.35); color:#bfdbfe;
+          padding:6px 10px; border-radius:999px; font-weight:700; font-size:12px; margin-bottom:10px;}
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <div class="card">
+          <div class="pill">This grading link has expired</div>
+          <h1>Thanks for supporting learning.</h1>
+          <p>This link was created to share a temporary snapshot of student work and automatically expires after a period of time.</p>
+          <p><b>Parents:</b> Want faster feedback, clearer progress, and more engaging learning at school?</p>
+          <p>Ask your child’s teacher: <b>“Are we using Curriculate yet?”</b></p>
+          <a class="cta" href="https://www.curriculate.net">Learn about Curriculate</a>
+          <div class="muted">Curriculate helps classrooms run interactive learning stations with meaningful assessment and reporting.</div>
+        </div>
+      </div>
+    </body>
+    </html>`;
+    }
 
 function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
   const gradeExpectations = {
@@ -6259,10 +6342,43 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
         (rubricOverride || "").trim() ||
         buildRubricInstructions({ gradeBand: band });
 
-      const imageRefs = images.map((_, i) => ({
-        index: i + 1,
-        url: `https://cdn.curriculate.net/grading/${submissionId}/image-${i + 1}.jpg`
-      }));
+      const s3 = getS3Client();
+        if (!s3) {
+          return res.status(400).json({
+            error: "S3 is not configured (missing S3_BUCKET). Cannot save grading captures.",
+          });
+        }
+
+        const keys = [];
+        for (let i = 0; i < images.length; i++) {
+          const parsed = parseDataUrlImage(images[i]);
+          if (!parsed) {
+            return res.status(400).json({ error: `Image ${i + 1} is not a valid data URL.` });
+          }
+
+          const key = `grading/${submissionId}/image-${i + 1}.jpg`;
+          keys.push(key);
+
+          await s3.send(
+            new PutObjectCommand({
+              Bucket: S3_BUCKET,
+              Key: key,
+              Body: parsed.buf,
+              ContentType: "image/jpeg",
+              CacheControl: "private, max-age=0, no-store",
+              Metadata: { submissionid: submissionId, kind: "grading-capture" },
+            })
+          );
+        }
+
+        // Record in Mongo (TTL will expire doc in 30 days)
+        await GradingCapture.create({ submissionId, keys, createdAt: new Date() });
+
+        // Links should be on www (via rewrite). If no rewrite, they still work on api.
+        const imageRefs = images.map((_, i) => ({
+          index: i + 1,
+          url: `https://www.curriculate.net/grading/capture/${submissionId}/image-${i + 1}.jpg`,
+        }));
 
       function safeJsonParse(s) {
         if (typeof s !== "string") return null;
@@ -6854,6 +6970,21 @@ const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
 })
+
+// ------------------------------
+// Grading Captures (30-day TTL)
+// ------------------------------
+const GradingCapture = mongoose.models.GradingCapture || mongoose.model(
+  "GradingCapture",
+  new mongoose.Schema(
+    {
+      submissionId: { type: String, unique: true, index: true, required: true },
+      keys: { type: [String], default: [] }, // S3 object keys
+      createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 }, // 30 days TTL
+    },
+    { timestamps: false }
+  )
+);
 
 // --------------------------------------------------------------------
 // Admin: Access Codes (create + list)
