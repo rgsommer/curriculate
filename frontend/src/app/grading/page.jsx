@@ -641,6 +641,7 @@ function formatTeacherBlock(a) {
 
       const links = getAssignmentImagesFromAssessment(assessment);
 
+      // ---------- Plain text (fallback) ----------
       const lines = [];
       if (assessment.final_score_out_of_10 != null) {
         lines.push(`Grade: ${assessment.final_score_out_of_10} / 10`);
@@ -671,43 +672,63 @@ function formatTeacherBlock(a) {
         lines.push("");
       }
 
-      const plainText = lines.join("\n");
+      const plainText = lines.join("\n").trim();
 
-      // HTML version (for email clients that preserve clickable links)
+      // ---------- HTML (pretty clickable links) ----------
       const htmlParts = [];
-      htmlParts.push(`<div><b>Grade:</b> ${escapeHtml(assessment.final_score_out_of_10)} / 10</div>`);
+      htmlParts.push(
+        `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+          <div><b>Grade:</b> ${escapeHtml(assessment.final_score_out_of_10)} / 10</div>
+        </div>`
+      );
 
       if (assessment.strengths?.length) {
-        htmlParts.push(`<div style="margin-top:10px;"><b>Strengths:</b><ul>${assessment.strengths
-          .map((s) => `<li>${escapeHtml(s)}</li>`)
-          .join("")}</ul></div>`);
+        htmlParts.push(
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Strengths:</b>
+            <ul>${assessment.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
+          </div>`
+        );
       }
 
       if (assessment.improvements?.length) {
-        htmlParts.push(`<div style="margin-top:10px;"><b>Next Steps:</b><ul>${assessment.improvements
-          .map((s) => `<li>${escapeHtml(s)}</li>`)
-          .join("")}</ul></div>`);
+        htmlParts.push(
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Next Steps:</b>
+            <ul>${assessment.improvements.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
+          </div>`
+        );
       }
 
       if ((assessment.teacher_comment || "").trim()) {
         htmlParts.push(
-          `<div style="margin-top:10px;"><b>Teacher Comment:</b><div>${escapeHtml(
-            String(assessment.teacher_comment).trim()
-          )}</div></div>`
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Teacher Comment:</b>
+            <div>${escapeHtml(String(assessment.teacher_comment).trim())}</div>
+          </div>`
         );
       }
 
       if (links.length) {
         htmlParts.push(
-          `<div style="margin-top:10px;"><b>Saved captures (30-day links):</b><ul>${links
-            .map((img) => `<li><a href="${img.url}" target="_blank" rel="noreferrer">Photo ${img.index}</a></li>`)
-            .join("")}</ul></div>`
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Saved captures (30-day links):</b>
+            <ul>
+              ${links
+                .map(
+                  (img) =>
+                    `<li><a href="${img.url}" target="_blank" rel="noreferrer">Photo ${img.index}</a></li>`
+                )
+                .join("")}
+            </ul>
+          </div>`
         );
       }
 
-      const htmlText = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial">${htmlParts.join("")}</div>`;
+      const htmlText = htmlParts.join("");
 
       try {
+        // IMPORTANT: This is what makes “Photo 1” clickable without showing URL
         if (navigator.clipboard?.write && window.ClipboardItem) {
           await navigator.clipboard.write([
             new ClipboardItem({
@@ -716,14 +737,26 @@ function formatTeacherBlock(a) {
             }),
           ]);
         } else {
+          // Fallback: plain text only (no embedded links possible)
           await navigator.clipboard.writeText(plainText);
         }
+
         setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
+        window.setTimeout(() => setCopied(false), 1200);
       } catch (e) {
         console.error("copy failed", e);
+        setCopied(false);
         setSubmitError("Copy failed—your browser may block clipboard access.");
       }
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
     }
 
     function escapeHtml(s) {
