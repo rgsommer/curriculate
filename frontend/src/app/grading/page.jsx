@@ -700,7 +700,7 @@ function formatTeacherBlock(a) {
       if (links.length) {
         htmlParts.push(
           `<div style="margin-top:10px;"><b>Saved captures (30-day links):</b><ul>${links
-            .map((img) => `<li><a href="${img.url}">Photo ${img.index}</a></li>`)
+            .map((img) => `<li><a href="${img.url}" target="_blank" rel="noreferrer">Photo ${img.index}</a></li>`)
             .join("")}</ul></div>`
         );
       }
