@@ -229,6 +229,34 @@ function computeFinalScore(a) {
   return Math.max(0, base - total);
 }
 
+function logCurrentToSession() {
+  if (!assessment) return;
+
+  const entry = {
+    id:
+      (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
+      String(Date.now()) + "_" + Math.random().toString(16).slice(2),
+    createdAt: Date.now(),
+    assessment,
+  };
+
+  setSessionItems((prev) => {
+    const last = prev[prev.length - 1];
+    // simple dedupe: same comment + score within 2 seconds
+    if (
+      last &&
+      last.assessment?.teacher_comment === assessment.teacher_comment &&
+      (last.assessment?.final_score_out_of_10 ??
+        last.assessment?.score_out_of_10) ===
+        (assessment.final_score_out_of_10 ?? assessment.score_out_of_10) &&
+      Date.now() - last.createdAt < 2000
+    ) {
+      return prev;
+    }
+    return [...prev, entry];
+  });
+}
+
 function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const { width: w, height: h } = canvas;
@@ -320,7 +348,35 @@ function formatTeacherBlock(a) {
   return lines.join("\n");
 }
 
+  const SESSION_KEY = "curriculate_grading_session_v1";
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveSession(items) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(items));
+    } catch {}
+  }
+
   export default function GradingPage() {
+  
+    const [sessionItems, setSessionItems] = useState(() => {
+      if (typeof window === "undefined") return [];
+      return loadSession();
+    });
+
+    useEffect(() => {
+      saveSession(sessionItems);
+    }, [sessionItems]);
+
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const canvasRef = useRef(null);
@@ -641,6 +697,7 @@ function formatTeacherBlock(a) {
 
       const links = getAssignmentImagesFromAssessment(assessment);
 
+      // ---------- Plain text (fallback) ----------
       const lines = [];
       if (assessment.final_score_out_of_10 != null) {
         lines.push(`Grade: ${assessment.final_score_out_of_10} / 10`);
@@ -671,43 +728,63 @@ function formatTeacherBlock(a) {
         lines.push("");
       }
 
-      const plainText = lines.join("\n");
+      const plainText = lines.join("\n").trim();
 
-      // HTML version (for email clients that preserve clickable links)
+      // ---------- HTML (pretty clickable links) ----------
       const htmlParts = [];
-      htmlParts.push(`<div><b>Grade:</b> ${escapeHtml(assessment.final_score_out_of_10)} / 10</div>`);
+      htmlParts.push(
+        `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+          <div><b>Grade:</b> ${escapeHtml(assessment.final_score_out_of_10)} / 10</div>
+        </div>`
+      );
 
       if (assessment.strengths?.length) {
-        htmlParts.push(`<div style="margin-top:10px;"><b>Strengths:</b><ul>${assessment.strengths
-          .map((s) => `<li>${escapeHtml(s)}</li>`)
-          .join("")}</ul></div>`);
+        htmlParts.push(
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Strengths:</b>
+            <ul>${assessment.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
+          </div>`
+        );
       }
 
       if (assessment.improvements?.length) {
-        htmlParts.push(`<div style="margin-top:10px;"><b>Next Steps:</b><ul>${assessment.improvements
-          .map((s) => `<li>${escapeHtml(s)}</li>`)
-          .join("")}</ul></div>`);
+        htmlParts.push(
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Next Steps:</b>
+            <ul>${assessment.improvements.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
+          </div>`
+        );
       }
 
       if ((assessment.teacher_comment || "").trim()) {
         htmlParts.push(
-          `<div style="margin-top:10px;"><b>Teacher Comment:</b><div>${escapeHtml(
-            String(assessment.teacher_comment).trim()
-          )}</div></div>`
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Teacher Comment:</b>
+            <div>${escapeHtml(String(assessment.teacher_comment).trim())}</div>
+          </div>`
         );
       }
 
       if (links.length) {
         htmlParts.push(
-          `<div style="margin-top:10px;"><b>Saved captures (30-day links):</b><ul>${links
-            .map((img) => `<li><a href="${img.url}">Photo ${img.index}</a></li>`)
-            .join("")}</ul></div>`
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Saved captures (30-day links):</b>
+            <ul>
+              ${links
+                .map(
+                  (img) =>
+                    `<li><a href="${img.url}" target="_blank" rel="noreferrer">Photo ${img.index}</a></li>`
+                )
+                .join("")}
+            </ul>
+          </div>`
         );
       }
 
-      const htmlText = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial">${htmlParts.join("")}</div>`;
+      const htmlText = htmlParts.join("");
 
       try {
+        // IMPORTANT: This is what makes “Photo 1” clickable without showing URL
         if (navigator.clipboard?.write && window.ClipboardItem) {
           await navigator.clipboard.write([
             new ClipboardItem({
@@ -716,14 +793,27 @@ function formatTeacherBlock(a) {
             }),
           ]);
         } else {
+          // Fallback: plain text only (no embedded links possible)
           await navigator.clipboard.writeText(plainText);
         }
+
         setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
+        window.setTimeout(() => setCopied(false), 1200);
+        logCurrentToSession();
       } catch (e) {
         console.error("copy failed", e);
+        setCopied(false);
         setSubmitError("Copy failed—your browser may block clipboard access.");
       }
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
     }
 
     function escapeHtml(s) {
@@ -923,6 +1013,21 @@ function formatTeacherBlock(a) {
               >
                 {submitting ? "Submitting…" : "Submit for Grading"}
               </button>
+              <button
+                onClick={copySessionToClipboard}
+                disabled={!sessionItems.length}
+                style={styles.secondaryBtn}
+              >
+                Copy Session ({sessionItems.length})
+              </button>
+              <button
+                onClick={() => setSessionItems([])}
+                disabled={!sessionItems.length}
+                style={styles.ghostBtn}
+              >
+                Clear Session
+              </button>
+
             </div>
 
             {submitError && (

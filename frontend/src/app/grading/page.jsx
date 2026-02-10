@@ -229,6 +229,34 @@ function computeFinalScore(a) {
   return Math.max(0, base - total);
 }
 
+function logCurrentToSession() {
+  if (!assessment) return;
+
+  const entry = {
+    id:
+      (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
+      String(Date.now()) + "_" + Math.random().toString(16).slice(2),
+    createdAt: Date.now(),
+    assessment,
+  };
+
+  setSessionItems((prev) => {
+    const last = prev[prev.length - 1];
+    // simple dedupe: same comment + score within 2 seconds
+    if (
+      last &&
+      last.assessment?.teacher_comment === assessment.teacher_comment &&
+      (last.assessment?.final_score_out_of_10 ??
+        last.assessment?.score_out_of_10) ===
+        (assessment.final_score_out_of_10 ?? assessment.score_out_of_10) &&
+      Date.now() - last.createdAt < 2000
+    ) {
+      return prev;
+    }
+    return [...prev, entry];
+  });
+}
+
 function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const { width: w, height: h } = canvas;
@@ -320,7 +348,35 @@ function formatTeacherBlock(a) {
   return lines.join("\n");
 }
 
+  const SESSION_KEY = "curriculate_grading_session_v1";
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveSession(items) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(items));
+    } catch {}
+  }
+
   export default function GradingPage() {
+  
+    const [sessionItems, setSessionItems] = useState(() => {
+      if (typeof window === "undefined") return [];
+      return loadSession();
+    });
+
+    useEffect(() => {
+      saveSession(sessionItems);
+    }, [sessionItems]);
+
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const canvasRef = useRef(null);
@@ -743,6 +799,7 @@ function formatTeacherBlock(a) {
 
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1200);
+        logCurrentToSession();
       } catch (e) {
         console.error("copy failed", e);
         setCopied(false);
@@ -956,6 +1013,21 @@ function formatTeacherBlock(a) {
               >
                 {submitting ? "Submitting…" : "Submit for Grading"}
               </button>
+              <button
+                onClick={copySessionToClipboard}
+                disabled={!sessionItems.length}
+                style={styles.secondaryBtn}
+              >
+                Copy Session ({sessionItems.length})
+              </button>
+              <button
+                onClick={() => setSessionItems([])}
+                disabled={!sessionItems.length}
+                style={styles.ghostBtn}
+              >
+                Clear Session
+              </button>
+
             </div>
 
             {submitError && (
