@@ -108,7 +108,9 @@ function safeJsonParse(text) {
 
   // 3) handle “escaped JSON looking” payloads like: { \"score_out_of_10\": 8, ... }
   const looksEscaped =
-    /\\\"score_out_of_10\\\"|\\\"final_score_out_of_10\\\"/.test(s) || /\\n/.test(s);
+    /\\\"(response_format_detected|overall_score|overall_out_of|sections|student_name|teacher_comment)\\\"/.test(s) ||
+    /\\\"score_out_of_10\\\"|\\\"final_score_out_of_10\\\"/.test(s) ||
+    /\\n/.test(s);
 
   if (looksEscaped) {
     const candidate = rescued || s;

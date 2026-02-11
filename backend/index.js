@@ -6279,9 +6279,12 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     - Set overall_out_of to the rubric total (sum of section out_of, or stated total).
     - Set overall_score to the sum of section scores.
     - If the rubric conflicts with defaults, rubric wins.
+    - For rubric-based sections, do NOT include incorrect_items; instead, cite specific evidence in teacher_comment for each section.
 
-    SECTIONS DEFAULT:
-    If NOT a test and no rubric categories are provided: set sections = null.
+    SECTIONS REQUIREMENT (schema-critical):
+    Every section object MUST include incorrect_items.
+    - If the section is NOT a test-style section (rubric category, writing, etc.): incorrect_items MUST be null.
+    - If the section IS test-style: incorrect_items is either an array of incorrect question objects OR null (if none wrong).
 
     Important fairness rule:
     Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
