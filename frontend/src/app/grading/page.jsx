@@ -134,16 +134,25 @@ function safeJsonParse(text) {
 }
 
 function isAssessmentObject(o) {
-  return (
-    o &&
-    typeof o === "object" &&
-    (o.score_out_of_10 !== undefined ||
-      o.final_score_out_of_10 !== undefined ||
-      Array.isArray(o.deductions) ||
-      Array.isArray(o.strengths) ||
-      Array.isArray(o.improvements) ||
-      typeof o.teacher_comment === "string")
-  );
+  if (!o || typeof o !== "object") return false;
+
+  // Must have a real score with a denominator
+  const hasOverallScore =
+    typeof o.overall_score === "number" &&
+    typeof o.overall_out_of === "number";
+
+  if (!hasOverallScore) return false;
+
+  // Either sectioned (tests/rubrics) OR normal feedback
+  const hasSections =
+    Array.isArray(o.sections) && o.sections.length > 0;
+
+  const hasFeedback =
+    Array.isArray(o.strengths) ||
+    Array.isArray(o.improvements) ||
+    typeof o.teacher_comment === "string";
+
+  return hasSections || hasFeedback;
 }
 
 /**
@@ -215,6 +224,11 @@ function formatPoints(p) {
   return `(\u2013${Math.abs(n)})`; // always show as “–1”
 }
 
+function getSessionLabel(assessment, idx1) {
+  const nm = String(assessment?.student_name || "").trim();
+  return nm ? nm : `Submission ${idx1}`;
+}
+
 function computeFinalScore(a) {
   if (a?.final_score_out_of_10 !== undefined && a?.final_score_out_of_10 !== null) {
     return a.final_score_out_of_10;
@@ -227,34 +241,6 @@ function computeFinalScore(a) {
     return sum + (Number.isFinite(p) ? Math.abs(p) : 0);
   }, 0);
   return Math.max(0, base - total);
-}
-
-function logCurrentToSession() {
-  if (!assessment) return;
-
-  const entry = {
-    id:
-      (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
-      String(Date.now()) + "_" + Math.random().toString(16).slice(2),
-    createdAt: Date.now(),
-    assessment,
-  };
-
-  setSessionItems((prev) => {
-    const last = prev[prev.length - 1];
-    // simple dedupe: same comment + score within 2 seconds
-    if (
-      last &&
-      last.assessment?.teacher_comment === assessment.teacher_comment &&
-      (last.assessment?.final_score_out_of_10 ??
-        last.assessment?.score_out_of_10) ===
-        (assessment.final_score_out_of_10 ?? assessment.score_out_of_10) &&
-      Date.now() - last.createdAt < 2000
-    ) {
-      return prev;
-    }
-    return [...prev, entry];
-  });
 }
 
 function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
@@ -309,14 +295,14 @@ function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
 }
 
 function formatTeacherBlock(a) {
-  const finalScore = computeFinalScore(a);
   const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
   const strengths = toArrayStrings(a?.strengths);
   const improvements = toArrayStrings(a?.improvements);
   const teacherComment = (a?.teacher_comment || "").trim();
 
   const lines = [];
-  lines.push(`Grade: ${finalScore !== "" ? finalScore : "(not provided)"} / 10`);
+  const g = getDisplayScore(a);
+  lines.push(`Grade: ${g.score !== "" ? g.score : "(not provided)"} / ${g.outOf}`);
 
   if (deductions.length) {
     lines.push("");
@@ -366,8 +352,37 @@ function formatTeacherBlock(a) {
     } catch {}
   }
 
+  function getPrimaryScoreLine(a) {
+    const outOf = Number(a?.overall_out_of);
+    const score = Number(a?.overall_score);
+    if (Number.isFinite(outOf) && Number.isFinite(score)) return `${score}/${outOf}`;
+
+    const f10 = a?.final_score_out_of_10;
+    if (f10 != null) return `${f10}/10`;
+    const s10 = a?.score_out_of_10;
+    if (s10 != null) return `${s10}/10`;
+
+    return "(no score)";
+  }
+
+  function getDisplayScore(a) {
+    const outOf = Number(a?.overall_out_of);
+    const score = Number(a?.overall_score);
+
+    if (Number.isFinite(outOf) && Number.isFinite(score)) {
+      return { score, outOf };
+    }
+
+    const f10 = a?.final_score_out_of_10;
+    if (f10 != null) return { score: f10, outOf: 10 };
+
+    const s10 = a?.score_out_of_10;
+    if (s10 != null) return { score: s10, outOf: 10 };
+
+    return { score: "", outOf: 10 };
+  }
+
   export default function GradingPage() {
-  
     const [sessionItems, setSessionItems] = useState(() => {
       if (typeof window === "undefined") return [];
       return loadSession();
@@ -692,6 +707,79 @@ function formatTeacherBlock(a) {
       setRubricOverride("");
     }
 
+    function getDisplayGrade(a) {
+      const outOf = Number(a?.overall_out_of);
+      const score = Number(a?.overall_score);
+
+      if (Number.isFinite(outOf) && Number.isFinite(score)) {
+        return { score, outOf };
+      }
+
+      // fallback to /10 fields (legacy)
+      const f10 = a?.final_score_out_of_10;
+      if (f10 != null) return { score: f10, outOf: 10 };
+
+      const s10 = a?.score_out_of_10;
+      if (s10 != null) return { score: s10, outOf: 10 };
+
+      return { score: "", outOf: 10 };
+    }
+
+    function getSessionLabelLocal(a, idx1) {
+      const nm = String(a?.student_name || "").trim();
+      return nm ? nm : `Submission ${idx1}`;
+    }
+
+    function logCurrentToSessionLocal(formattedText) {
+      if (!assessment) return;
+
+      const entry = {
+        id:
+          (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
+          String(Date.now()) + "_" + Math.random().toString(16).slice(2),
+        createdAt: Date.now(),
+        assessment,
+        formattedText: String(formattedText || "").trim(),
+      };
+
+      setSessionItems((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.formattedText === entry.formattedText && Date.now() - last.createdAt < 2000) {
+          return prev;
+        }
+        return [...prev, entry];
+      });
+    }
+
+    async function copySession() {
+      if (!sessionItems.length) return;
+
+      const summaryLines = sessionItems.map((it, idx) => {
+        const label = getSessionLabelLocal(it.assessment, idx + 1);
+        const scoreLine = getPrimaryScoreLine(it.assessment);
+        return `${label} ${scoreLine}`;
+      });
+
+      const plain = [
+        `Session Summary: ${summaryLines.join(", ")}`,
+        "",
+        ...sessionItems.map((it, idx) => {
+          const label = getSessionLabelLocal(it.assessment, idx + 1);
+          const body = String(it.formattedText || "").trim();
+          return `=== ${label} ===\n${body}\n`;
+        }),
+      ].join("\n").trim();
+
+      try {
+        await navigator.clipboard?.writeText(plain);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      } catch (e) {
+        console.error("copy session failed", e);
+        setSubmitError("Copy session failed—your browser may block clipboard access.");
+      }
+    }
+
     async function copyFormatted() {
       if (!assessment) return;
 
@@ -699,10 +787,11 @@ function formatTeacherBlock(a) {
 
       // ---------- Plain text (fallback) ----------
       const lines = [];
-      if (assessment.final_score_out_of_10 != null) {
-        lines.push(`Grade: ${assessment.final_score_out_of_10} / 10`);
-        lines.push("");
-      }
+      const g = getDisplayGrade(assessment);
+        if (g.score !== "") {
+          lines.push(`Grade: ${g.score} / ${g.outOf}`);
+          lines.push("");
+        }
 
       if (Array.isArray(assessment.strengths) && assessment.strengths.length) {
         lines.push("Strengths:");
@@ -728,15 +817,42 @@ function formatTeacherBlock(a) {
         lines.push("");
       }
 
+      if (Array.isArray(assessment.sections) && assessment.sections.length) {
+        lines.push("Sections:");
+        assessment.sections.forEach((sec) => {
+          lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of} — ${String(sec.teacher_comment || "").trim()}`);
+        });
+        lines.push("");
+      }
+
       const plainText = lines.join("\n").trim();
 
       // ---------- HTML (pretty clickable links) ----------
       const htmlParts = [];
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-          <div><b>Grade:</b> ${escapeHtml(assessment.final_score_out_of_10)} / 10</div>
+          ${(() => {
+            const g = getDisplayGrade(assessment);
+            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}</div>`;
+          })()}
         </div>`
       );
+
+      if (Array.isArray(assessment.sections) && assessment.sections.length) {
+        htmlParts.push(
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Sections:</b>
+            <ul>${assessment.sections
+              .map(
+                (sec) =>
+                  `<li><b>${escapeHtml(sec.name)}:</b> ${escapeHtml(sec.score)}/${escapeHtml(
+                    sec.out_of
+                  )} — ${escapeHtml(String(sec.teacher_comment || "").trim())}</li>`
+              )
+              .join("")}</ul>
+          </div>`
+        );
+      }
 
       if (assessment.strengths?.length) {
         htmlParts.push(
@@ -799,21 +915,13 @@ function formatTeacherBlock(a) {
 
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1200);
-        logCurrentToSession();
+        logCurrentToSessionLocal(plainText);
+
       } catch (e) {
         console.error("copy failed", e);
         setCopied(false);
         setSubmitError("Copy failed—your browser may block clipboard access.");
       }
-    }
-
-    function escapeHtml(s) {
-      return String(s ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
     }
 
     function escapeHtml(s) {
@@ -1013,11 +1121,7 @@ function formatTeacherBlock(a) {
               >
                 {submitting ? "Submitting…" : "Submit for Grading"}
               </button>
-              <button
-                onClick={copySessionToClipboard}
-                disabled={!sessionItems.length}
-                style={styles.secondaryBtn}
-              >
+              <button onClick={copySession} disabled={!sessionItems.length} style={styles.secondaryBtn}>
                 Copy Session ({sessionItems.length})
               </button>
               <button
@@ -1070,12 +1174,49 @@ function formatTeacherBlock(a) {
                 <div style={styles.gradingCard}>
                   <div style={styles.gradingTopRow}>
                     <div style={styles.gradingTitle}>
-                      Grade: {computeFinalScore(assessment)} / 10
+                      {(() => {
+                        const g = getDisplayGrade(assessment);
+                        return (
+                          <>
+                            Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
+                          </>
+                        );
+                      })()}
                     </div>
                     <div style={styles.copyPillInline}>
                       {copied ? "Copied ✓" : "Tap to copy"}
                     </div>
                   </div>
+
+                  {Array.isArray(assessment.sections) && assessment.sections.length ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Sections</div>
+                      <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, overflow: "hidden" }}>
+                        {assessment.sections.map((sec, i) => (
+                          <div
+                            key={`${sec.name}-${i}`}
+                            style={{
+                              padding: 10,
+                              borderTop: i === 0 ? "none" : "1px solid rgba(0,0,0,0.10)",
+                              background: "rgba(0,0,0,0.01)",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                              <div style={{ fontWeight: 800 }}>{sec.name}</div>
+                              <div style={{ fontWeight: 900 }}>
+                                {sec.score}/{sec.out_of}
+                              </div>
+                            </div>
+                            {String(sec.teacher_comment || "").trim() ? (
+                              <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.35 }}>
+                                {String(sec.teacher_comment).trim()}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
 
                   {Array.isArray(assessment.deductions) && assessment.deductions.length ? (
                     <>

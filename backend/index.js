@@ -6196,96 +6196,134 @@ function gradingExpiredHtml({ brand = "Curriculate" } = {}) {
     </html>`;
     }
 
-function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
+function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}) {
   const gradeExpectations = {
-  "3-5": `
-  GRADE LEVEL: 3–5
-  - Simple sentences or point-form is fine.
-  - Meeting expectations: 1–2 correct points per question is often sufficient.
-  - Be encouraging; focus on understanding and completion. Mechanics are secondary.
-  `.trim(),
+      "3-5": `
+    GRADE LEVEL: 3–5
+    - Simple sentences or point-form is fine.
+    - Meeting expectations: 1–2 correct points per question is often sufficient.
+    - Be encouraging; focus on understanding and completion. Mechanics are secondary.
+    `.trim(),
 
-    "6-8": `
-  GRADE LEVEL: 6–8
-  - Short-answer: 2–3 accurate, relevant points per question is sufficient.
-  - Paragraph: clear claim + some explanation + an example when applicable.
-  - Do not demand essay-level depth for short-answer. Tone: firm-kind, practical.
-  `.trim(),
+      "6-8": `
+    GRADE LEVEL: 6–8
+    - Short-answer: 2–3 accurate, relevant points per question is sufficient.
+    - Paragraph: clear claim + some explanation + an example when applicable.
+    - Do not demand essay-level depth for short-answer. Tone: firm-kind, practical.
+    `.trim(),
 
-    "9-10": `
-  GRADE LEVEL: 9–10
-  - Expect clearer reasoning and more precision.
-  - Short-answer: 3+ strong points or brief explanation per point.
-  - Paragraph: clearer structure and some evidence when appropriate.
-  `.trim(),
+      "9-10": `
+    GRADE LEVEL: 9–10
+    - Expect clearer reasoning and more precision.
+    - Short-answer: 3+ strong points or brief explanation per point.
+    - Paragraph: clearer structure and some evidence when appropriate.
+    `.trim(),
 
-    "11+": `
-  GRADE LEVEL: 11+
-  - Expect well-developed explanations, evidence, precision, academic structure.
-  - Short-answer still concise but more analytical and specific.
-  `.trim(),
-  };
+      "11+": `
+    GRADE LEVEL: 11+
+    - Expect well-developed explanations, evidence, precision, academic structure.
+    - Short-answer still concise but more analytical and specific.
+    `.trim(),
+    };
 
-  return `
-  You are a teacher grading a specific student assignment based ONLY on the attached photos.
+    return `
+    You are a teacher grading a specific student assignment based ONLY on the attached photos.
 
-  ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
+    WORLDVIEW LENS (gentle):
+    When the task involves values, purpose, identity, morality, justice, meaning, or worldview-type reflection, respond from a respectful Christian perspective (grace + truth, human dignity). Do not preach; keep it classroom-appropriate and kind. For non-worldview questions, grade normally.
 
-  STEP 1 — DETECT RESPONSE FORMAT (required):
-  Choose ONE:
-  - "short-answer" (brief/point-form, a few lines each)
-  - "paragraph" (multi-sentence explanations)
-  - "mixed" (both)
-  Set response_format_detected accordingly and calibrate expectations to that format.
+    ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
 
-  STEP 2 — GRADE CONTENT (primary):
-  Grade for: completeness, accuracy/understanding, clarity, effort.
-  All feedback must cite visible evidence from the student work (e.g., “In question 2…”, “Your chart…”).
-  Do NOT invent issues.
+    STUDENT NAME: If a student name is clearly visible anywhere on the page, return it in student_name exactly as written. If not clearly visible, set student_name to null. Do not guess.
 
-  Score calibration (content-only base score out of 10):
-  - 9–10: excellent understanding, accurate, thoughtful connections, strong organization for the format
-  - 8–8.5: very good with minor clarity/mechanics gaps
-  - 7–7.5: adequate with noticeable gaps or weak explanations
-  - <7: incomplete, unclear, or inaccurate
-  If the work shows strong understanding + accurate details + organized response for the format, the base score should not be below 8.
+    STEP 1 — DETECT RESPONSE FORMAT (required):
+    Choose ONE:
+    - "short-answer" (brief/point-form, a few lines each)
+    - "paragraph" (multi-sentence explanations)
+    - "mixed" (both)
+    - "test" (multiple sections like matching, MC, short answer)
+    Set response_format_detected accordingly and calibrate expectations to that format.
 
-  Important fairness rule:
-  Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
-  
-  STEP 3 — FORMATTING DEDUCTION (quiet, max –1 total):
-  Check ONLY if clearly missing in the photos:
-  - date
-  - proper title (not just “check-in”)
-  - page/question reference (ONLY if applicable)
-  If any are missing, add exactly one deduction item:
-  { "reason": "Formatting requirements missing", "points": 1 }
-  Otherwise deductions is [].
-  Do NOT mention formatting in strengths, improvements, or teacher_comment.
+    STEP 2 — DETERMINE THE GRADING SCALE (critical):
+    Use /10 ONLY when no explicit denominator is visible.
+    “Explicit denominator” includes any visible point totals like “/20”, “/40”, “out of 25”, section totals like “Matching /10”, or rubric category points.
+    - If NO explicit denominator is visible: set overall_out_of = 10 and use /10 fields.
+    - If an explicit denominator IS visible (test sections or rubric categories): the final grade MUST use that denominator instead of /10.
 
-  IMPROVEMENTS RULE (critical):
-  Only suggest improvements that are demonstrably missing or weak in the student work shown.
-  If an item is already present (labels, spacing, etc.), do not suggest it.
+    STEP 3 — GRADE CONTENT (primary):
+    Grade for: completeness, accuracy/understanding, clarity, effort.
+    All feedback must cite visible evidence from the student work (e.g., “In question 2…”, “Your chart…”).
+    Do NOT invent issues.
 
-  HANDWRITING RULE:
-  - If neat and legible: do not mention handwriting (unless praising notably neat/consistent presentation).
-  - Only comment if readability is clearly impacted.
+    Score calibration (content-only base score out of 10) — ONLY used when overall_out_of is 10:
+    - 9–10: excellent understanding, accurate, thoughtful connections, strong organization for the format (minor mechanics do not prevent a 9–10)
+    - 8–8.5: very good with minor clarity/mechanics gaps
+    - 7–7.5: adequate with noticeable gaps or weak explanations
+    - <7: incomplete, unclear, or inaccurate
+    If the work shows strong understanding + accurate details + organized response for the format, the base score should not be below 8.
 
-  ACADEMIC INTEGRITY:
-  Only set ai_suspected_cheating or copying_suspected if there is a clear visible reason; otherwise null.
+    TEST/QUIZ RULE:
+    If the work clearly has multiple sections with point totals (matching/MC/short answer etc.), set response_format_detected = "test".
+    - Create sections[] for each visible section.
+    - Each section must include: name, score, out_of, and a ONE-sentence teacher_comment.
+    - Set overall_out_of to the sum of section out_of totals.
+    - Set overall_score to the sum of section scores.
 
-  OUTPUT:
-  Return JSON ONLY with exactly these fields:
-  - response_format_detected ("short-answer"|"paragraph"|"mixed")
-  - score_out_of_10 (number)
-  - deductions (array of { reason, points })
-  - ai_suspected_cheating (string or null)
-  - copying_suspected (string or null)
-  - final_score_out_of_10 (number; must equal score_out_of_10 minus total deduction points)
-  - strengths (array of 2–4 specific content-focused bullets)
-  - improvements (array of 1–3 specific content-focused bullets)
-  - teacher_comment (2–3 sentences; sentence 1 praise specific, sentence 2 one clear improvement, optional sentence 3 brief tip)
-  `.trim();
+    RUBRIC OVERRIDE RULE:
+    If a rubric override is provided and it specifies categories and point values:
+    - Create sections[] that match the rubric categories and totals.
+    - Use the rubric’s totals for out_of values.
+    - Set overall_out_of to the rubric total (sum of section out_of, or stated total).
+    - Set overall_score to the sum of section scores.
+    - If the rubric conflicts with defaults, rubric wins.
+
+    SECTIONS DEFAULT:
+    If NOT a test and no rubric categories are provided: set sections = null.
+
+    Important fairness rule:
+    Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
+
+    STEP 4 — FORMATTING DEDUCTION (quiet, max –1 total):
+    Check ONLY if clearly missing in the photos:
+    - date
+    - proper title (not just “check-in”)
+    - page/question reference (ONLY if applicable)
+    If any are missing, add exactly one deduction item:
+    { "reason": "Formatting requirements missing", "points": 1 }
+    Otherwise deductions is [].
+    Do NOT mention formatting in strengths, improvements, or teacher_comment.
+
+    IMPROVEMENTS RULE (critical):
+    Only suggest improvements that are demonstrably missing or weak in the student work shown.
+    If an item is already present (labels, spacing, etc.), do not suggest it.
+
+    HANDWRITING RULE:
+    - If neat and legible: do not mention handwriting (unless praising notably neat/consistent presentation).
+    - Only comment if readability is clearly impacted.
+
+    ACADEMIC INTEGRITY:
+    Only set ai_suspected_cheating or copying_suspected if there is a clear visible reason; otherwise null.
+
+    OUTPUT (JSON only; EXACT fields):
+    - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
+    - overall_score (number)
+    - overall_out_of (number)
+    - sections (array of { name, score, out_of, teacher_comment } OR null)
+
+    - score_out_of_10 (number or null; ONLY when overall_out_of is 10)
+    - final_score_out_of_10 (number or null; ONLY when overall_out_of is 10; if present must equal score_out_of_10 minus total deduction points)
+
+    - deductions (array of { reason, points })
+    - ai_suspected_cheating (string or null)
+    - copying_suspected (string or null)
+    - strengths (array of 2–4 specific content-focused bullets)
+    - improvements (array of 1–3 specific content-focused bullets)
+    - teacher_comment (2–3 sentences; sentence 1 praise specific, sentence 2 one clear improvement, optional sentence 3 brief tip)
+
+    FINAL CONSISTENCY RULES (required):
+    - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
+    - If overall_out_of === 10: set score_out_of_10 and final_score_out_of_10 as numbers and apply the deduction rule.
+    `.trim();
     }
 
   app.post("/grading", async (req, res) => {
@@ -6300,12 +6338,34 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
       const submissionId = crypto.randomUUID();
 
       const schema = {
+        name: "grade_result",
         type: "object",
         additionalProperties: false,
-        properties: {
-          response_format_detected: { type: "string", enum: ["short-answer", "paragraph", "mixed"] },
 
-          score_out_of_10: { type: "number" },
+        properties: {
+          response_format_detected: {
+            enum: ["short-answer", "paragraph", "mixed", "test"]
+          },
+
+          // --- Primary grading scale (always authoritative) ---
+          overall_score: { type: "number", minimum: 0 },
+          overall_out_of: { type: "number", minimum: 1 },
+
+          // --- /10 compatibility (USED ONLY when overall_out_of === 10) ---
+          score_out_of_10: {
+            anyOf: [
+              { type: "number", minimum: 0, maximum: 10 },
+              { type: "null" }
+            ]
+          },
+          final_score_out_of_10: {
+            anyOf: [
+              { type: "number", minimum: 0, maximum: 10 },
+              { type: "null" }
+            ]
+          },
+
+          // --- Formatting deductions (max –1 total, enforced in prompt/server) ---
           deductions: {
             type: "array",
             items: {
@@ -6318,29 +6378,88 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
               required: ["reason", "points"]
             }
           },
-          ai_suspected_cheating: { anyOf: [{ type: "string" }, { type: "null" }] },
-          copying_suspected: { anyOf: [{ type: "string" }, { type: "null" }] },
-          final_score_out_of_10: { type: "number" },
-          strengths: { type: "array", items: { type: "string" } },
-          improvements: { type: "array", items: { type: "string" } },
-          teacher_comment: { type: "string" }
+
+          // --- Test sections or rubric categories ---
+          sections: {
+            anyOf: [
+              { type: "null" },
+              {
+                type: "array",
+                minItems: 1,
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: "string" },
+                    score: { type: "number", minimum: 0 },
+                    out_of: { type: "number", minimum: 1 },
+                    teacher_comment: { type: "string" }
+                  },
+                  required: ["name", "score", "out_of", "teacher_comment"]
+                }
+              }
+            ]
+          },
+
+          // --- Student name extracted from the photo (never guessed) ---
+          student_name: {
+            anyOf: [
+              { type: "string" },
+              { type: "null" }
+            ]
+          },
+
+          // --- Integrity flags (conservative use) ---
+          ai_suspected_cheating: {
+            anyOf: [{ type: "string" }, { type: "null" }]
+          },
+          copying_suspected: {
+            anyOf: [{ type: "string" }, { type: "null" }]
+          },
+
+          // --- Feedback ---
+          strengths: {
+            type: "array",
+            minItems: 1,
+            items: { type: "string" }
+          },
+          improvements: {
+            type: "array",
+            minItems: 1,
+            items: { type: "string" }
+          },
+          teacher_comment: {
+            type: "string"
+          }
         },
+
         required: [
           "response_format_detected",
+
+          "overall_score",
+          "overall_out_of",
+
           "score_out_of_10",
+          "final_score_out_of_10",
+
           "deductions",
+          "sections",
+
+          "student_name",
+
           "ai_suspected_cheating",
           "copying_suspected",
-          "final_score_out_of_10",
+
           "strengths",
           "improvements",
           "teacher_comment"
         ]
       };
 
-      const instructions =
-        (rubricOverride || "").trim() ||
-        buildRubricInstructions({ gradeBand: band });
+      const instructions = buildRubricInstructions({
+        gradeBand: band,
+        rubricOverride: (rubricOverride || "").trim(),
+      });
 
       const s3 = getS3Client();
         if (!s3) {
@@ -6424,8 +6543,63 @@ function buildRubricInstructions({ gradeBand = "6-8" } = {}) {
         });
       }
 
+      function totalDeductionPoints(deductions) {
+        const arr = Array.isArray(deductions) ? deductions : [];
+        return arr.reduce((sum, d) => {
+          const p = Number(d?.points);
+          return sum + (Number.isFinite(p) ? Math.abs(p) : 0);
+        }, 0);
+      }
+
+      function enforceDenominatorRules(g) {
+        if (!g || typeof g !== "object") return g;
+
+        const outOf = Number(g.overall_out_of);
+
+        // If model returned nonsense, fall back to /10 using existing fields
+        if (!Number.isFinite(outOf) || outOf <= 0) {
+          const base = Number(g.score_out_of_10);
+          const ded = totalDeductionPoints(g.deductions);
+          const final10 = Number.isFinite(base) ? Math.max(0, Math.min(10, base - ded)) : null;
+
+          g.overall_out_of = 10;
+          g.score_out_of_10 = Number.isFinite(base) ? base : (final10 ?? 0);
+          g.final_score_out_of_10 = final10 ?? 0;
+          g.overall_score = g.final_score_out_of_10;
+          if (!g.sections) g.sections = null;
+          return g;
+        }
+
+        // RULE: If overall_out_of !== 10, /10 fields must be null
+        if (outOf !== 10) {
+          g.score_out_of_10 = null;
+          g.final_score_out_of_10 = null;
+          return g;
+        }
+
+        // RULE: If overall_out_of === 10, ensure /10 fields exist and are consistent with deductions
+        const base = Number(g.score_out_of_10);
+        const ded = totalDeductionPoints(g.deductions);
+
+        // prefer provided base; else fall back to overall_score
+        const base10 = Number.isFinite(base) ? base : Number(g.overall_score);
+        const cleanBase10 = Number.isFinite(base10) ? Math.max(0, Math.min(10, base10)) : 0;
+
+        const final10 = Math.max(0, Math.min(10, cleanBase10 - ded));
+
+        g.score_out_of_10 = cleanBase10;
+        g.final_score_out_of_10 = final10;
+
+        // Keep overall aligned when /10 is the chosen denominator
+        g.overall_out_of = 10;
+        g.overall_score = final10;
+
+        return g;
+      }
+
+      const enforced = enforceDenominatorRules(grade);
       return res.json({
-        ...grade,
+        ...enforced,
         assignment_images: imageRefs,
         meta: { submissionId, gradeBand: band }
       });
