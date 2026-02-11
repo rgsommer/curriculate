@@ -842,14 +842,23 @@ function formatTeacherBlock(a) {
         htmlParts.push(
           `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
             <b>Sections:</b>
-            <ul>${assessment.sections
-              .map(
-                (sec) =>
-                  `<li><b>${escapeHtml(sec.name)}:</b> ${escapeHtml(sec.score)}/${escapeHtml(
-                    sec.out_of
-                  )} — ${escapeHtml(String(sec.teacher_comment || "").trim())}</li>`
-              )
-              .join("")}</ul>
+            <ul>
+              ${assessment.sections.map(sec => `
+                <li>
+                  <b>${escapeHtml(sec.name)}:</b>
+                  ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
+                  ${sec.teacher_comment ? `— ${escapeHtml(sec.teacher_comment)}` : ""}
+
+                  ${
+                    Array.isArray(sec.incorrect_items) && sec.incorrect_items.length
+                      ? `<div style="margin-top:4px; font-size:12px; opacity:0.85;">
+                          Incorrect: ${sec.incorrect_items.map(escapeHtml).join(", ")}
+                        </div>`
+                      : ""
+                  }
+                </li>
+              `).join("")}
+            </ul>
           </div>`
         );
       }

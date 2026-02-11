@@ -6268,6 +6268,10 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     - Each section must include: name, score, out_of, and a ONE-sentence teacher_comment.
     - Set overall_out_of to the sum of section out_of totals.
     - Set overall_score to the sum of section scores.
+    For test-style sections (multiple choice, true/false, matching, etc.), include an incorrect_items array listing only the incorrect questions.
+    - Do not list correct answers.
+    - Keep prompts short (e.g., “Q4: Treaty of Paris”).
+    - If all items are correct, return incorrect_items: null.
 
     RUBRIC OVERRIDE RULE:
     If a rubric override is provided and it specifies categories and point values:
@@ -6393,7 +6397,25 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
                     name: { type: "string" },
                     score: { type: "number", minimum: 0 },
                     out_of: { type: "number", minimum: 1 },
-                    teacher_comment: { type: "string" }
+                    teacher_comment: { type: "string" },
+                    incorrect_items: {
+                      anyOf: [
+                        { type: "null" },
+                        {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            additionalProperties: false,
+                            properties: {
+                              prompt: { type: "string" },          // question or clue
+                              student_answer: { type: "string" },  // what they chose/wrote
+                              correct_answer: { type: "string" }   // correct response
+                            },
+                            required: ["prompt", "student_answer", "correct_answer"]
+                          }
+                        }
+                      ]
+                    }
                   },
                   required: ["name", "score", "out_of", "teacher_comment"]
                 }
