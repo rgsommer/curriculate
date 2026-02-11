@@ -6343,111 +6343,114 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
       const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
       const submissionId = crypto.randomUUID();
 
+      // 1) The actual JSON Schema object (this is what OpenAI needs)
+      const gradeResultSchema = {
+        type: "object",
+        additionalProperties: false,
+
+        properties: {
+          response_format_detected: {
+            type: "string",
+            enum: ["short-answer", "paragraph", "mixed", "test"],
+          },
+
+          // --- Primary grading scale (always authoritative) ---
+          overall_score: { type: "number", minimum: 0 },
+          overall_out_of: { type: "number", minimum: 1 },
+
+          // --- /10 compatibility (backend enforces when overall_out_of === 10) ---
+          score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
+          final_score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
+
+          // --- Formatting deductions (max –1 total, enforced upstream) ---
+          deductions: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                reason: { type: "string", minLength: 1 },
+                points: { type: "number" },
+              },
+              required: ["reason", "points"],
+            },
+          },
+
+          // --- Test sections or rubric categories (backend enforces test=>array, else=>null) ---
+          sections: {
+            type: ["array", "null"],
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                name: { type: "string", minLength: 1 },
+                score: { type: "number", minimum: 0 },
+                out_of: { type: "number", minimum: 1 },
+                teacher_comment: { type: "string" },
+
+                incorrect_items: {
+                  type: ["array", "null"],
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      prompt: { type: "string", minLength: 1 },
+                      student_answer: { type: "string" },
+                      correct_answer: { type: "string" },
+                    },
+                    required: ["prompt", "student_answer", "correct_answer"],
+                  },
+                },
+              },
+              required: ["name", "score", "out_of", "teacher_comment", "incorrect_items"],
+            },
+          },
+
+          // --- Student name extracted from the photo (never guessed) ---
+          student_name: { type: ["string", "null"] },
+
+          // --- Integrity flags (conservative use) ---
+          ai_suspected_cheating: { type: ["string", "null"] },
+          copying_suspected: { type: ["string", "null"] },
+
+          // --- Feedback ---
+          strengths: {
+            type: "array",
+            minItems: 2,
+            maxItems: 4,
+            items: { type: "string" },
+          },
+          improvements: {
+            type: "array",
+            minItems: 1,
+            maxItems: 3,
+            items: { type: "string" },
+          },
+          teacher_comment: { type: "string", minLength: 1 },
+        },
+
+        required: [
+          "response_format_detected",
+          "overall_score",
+          "overall_out_of",
+          "score_out_of_10",
+          "final_score_out_of_10",
+          "deductions",
+          "sections",
+          "student_name",
+          "ai_suspected_cheating",
+          "copying_suspected",
+          "strengths",
+          "improvements",
+          "teacher_comment",
+        ],
+      };
+
+      // 2) Optional wrapper if you like keeping it around locally
       const schema = {
         name: "grade_result",
         strict: true,
-        schema: {
-          type: "object",
-          additionalProperties: false,
-
-          properties: {
-            response_format_detected: {
-              type: "string",
-              enum: ["short-answer", "paragraph", "mixed", "test"],
-            },
-
-            // --- Primary grading scale (always authoritative) ---
-            overall_score: { type: "number", minimum: 0 },
-            overall_out_of: { type: "number", minimum: 1 },
-
-            // --- /10 compatibility (backend will enforce when overall_out_of === 10) ---
-            // Use type unions (not anyOf) to avoid schema features that often break.
-            score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
-            final_score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
-
-            // --- Formatting deductions (max –1 total, enforced upstream) ---
-            deductions: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  reason: { type: "string", minLength: 1 },
-                  points: { type: "number" },
-                },
-                required: ["reason", "points"],
-              },
-            },
-
-            // --- Test sections or rubric categories (backend will enforce test=>array, else=>null) ---
-            sections: {
-              type: ["array", "null"],
-              items: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  name: { type: "string", minLength: 1 },
-                  score: { type: "number", minimum: 0 },
-                  out_of: { type: "number", minimum: 1 },
-                  teacher_comment: { type: "string" },
-
-                  incorrect_items: {
-                    type: ["array", "null"],
-                    items: {
-                      type: "object",
-                      additionalProperties: false,
-                      properties: {
-                        prompt: { type: "string", minLength: 1 },
-                        student_answer: { type: "string" },
-                        correct_answer: { type: "string" },
-                      },
-                      required: ["prompt", "student_answer", "correct_answer"],
-                    },
-                  },
-                },
-                required: ["name", "score", "out_of", "teacher_comment", "incorrect_items"],
-              },
-            },
-
-            // --- Student name extracted from the photo (never guessed) ---
-            student_name: { type: ["string", "null"] },
-
-            // --- Integrity flags (conservative use) ---
-            ai_suspected_cheating: { type: ["string", "null"] },
-            copying_suspected: { type: ["string", "null"] },
-
-            // --- Feedback ---
-            strengths: {
-              type: "array",
-              minItems: 2,
-              maxItems: 4,
-              items: { type: "string" },
-            },
-            improvements: {
-              type: "array",
-              minItems: 1,
-              maxItems: 3,
-              items: { type: "string" },
-            },
-            teacher_comment: { type: "string", minLength: 1 },
-          },
-
-          required: [
-            "response_format_detected",
-            "overall_score",
-            "overall_out_of",
-            "score_out_of_10",
-            "final_score_out_of_10",
-            "deductions",
-            "sections",
-            "student_name",
-            "ai_suspected_cheating",
-            "copying_suspected",
-            "strengths",
-            "improvements",
-            "teacher_comment",
-          ],
-        },
+        schema: gradeResultSchema,
       };
 
       const instructions = buildRubricInstructions({
@@ -6517,11 +6520,11 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
         ],
         text: {
           format: {
-            name: "grade_result",
             type: "json_schema",
-            schema,
-            strict: true
-          }
+            name: schema.name,       // "grade_result"
+            strict: true,
+            schema: schema.schema,   // <-- the actual JSON Schema object
+          },
         },
         max_output_tokens: 800
       });
