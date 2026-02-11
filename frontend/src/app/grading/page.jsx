@@ -212,6 +212,37 @@ function normalizeFromAny(serverTextOrObj) {
   return { assessment: null, wrapperError: "", rawTextUsed: "" };
 }
 
+function formatIncorrectItemPlain(item, idx) {
+  if (!item || typeof item !== "object") return null;
+
+  const prompt = String(item.prompt || "").trim();
+  const student = String(item.student_answer || "").trim();
+  const correct = String(item.correct_answer || "").trim();
+
+  // Keep it compact (copy/paste friendly)
+  const p = prompt ? `Q${idx + 1}: ${prompt}` : `Q${idx + 1}`;
+  const s = student ? `Your answer: ${student}` : "Your answer: (blank)";
+  const c = correct ? `Correct: ${correct}` : "Correct: (unknown)";
+
+  return `${p} — ${s} | ${c}`;
+}
+
+function formatIncorrectItemHtml(item, idx, escapeHtml) {
+  if (!item || typeof item !== "object") return "";
+
+  const prompt = String(item.prompt || "").trim();
+  const student = String(item.student_answer || "").trim();
+  const correct = String(item.correct_answer || "").trim();
+
+  return `<li style="margin:2px 0;">
+    <b>Q${idx + 1}:</b> ${escapeHtml(prompt || "(question)")}
+    <div style="opacity:0.9; margin-left:10px;">
+      <span><b>Your:</b> ${escapeHtml(student || "(blank)")}</span>
+      <span style="margin-left:10px;"><b>Correct:</b> ${escapeHtml(correct || "(unknown)")}</span>
+    </div>
+  </li>`;
+}
+
 function toArrayStrings(v) {
   if (!v) return [];
   if (Array.isArray(v)) return v.filter(Boolean).map(String);
@@ -707,24 +738,6 @@ function formatTeacherBlock(a) {
       setRubricOverride("");
     }
 
-    function getDisplayGrade(a) {
-      const outOf = Number(a?.overall_out_of);
-      const score = Number(a?.overall_score);
-
-      if (Number.isFinite(outOf) && Number.isFinite(score)) {
-        return { score, outOf };
-      }
-
-      // fallback to /10 fields (legacy)
-      const f10 = a?.final_score_out_of_10;
-      if (f10 != null) return { score: f10, outOf: 10 };
-
-      const s10 = a?.score_out_of_10;
-      if (s10 != null) return { score: s10, outOf: 10 };
-
-      return { score: "", outOf: 10 };
-    }
-
     function getSessionLabelLocal(a, idx1) {
       const nm = String(a?.student_name || "").trim();
       return nm ? nm : `Submission ${idx1}`;
@@ -787,7 +800,7 @@ function formatTeacherBlock(a) {
 
       // ---------- Plain text (fallback) ----------
       const lines = [];
-      const g = getDisplayGrade(assessment);
+      const g = getDisplayScore(assessment);
         if (g.score !== "") {
           lines.push(`Grade: ${g.score} / ${g.outOf}`);
           lines.push("");
@@ -820,7 +833,19 @@ function formatTeacherBlock(a) {
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
         lines.push("Sections:");
         assessment.sections.forEach((sec) => {
-          lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of} — ${String(sec.teacher_comment || "").trim()}`);
+          lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of}${sec.teacher_comment ? ` — ${String(sec.teacher_comment).trim()}` : ""}`);
+
+          if (Array.isArray(sec.incorrect_items) && sec.incorrect_items.length) {
+            lines.push(`  Incorrect items:`);
+            const show = sec.incorrect_items.slice(0, 20);
+            show.forEach((it, idx) => {
+              const row = formatIncorrectItemPlain(it, idx);
+              if (row) lines.push(`  - ${row}`);
+            });
+            if (sec.incorrect_items.length > show.length) {
+              lines.push(`  - (+ ${sec.incorrect_items.length - show.length} more)`);
+            }
+          }
         });
         lines.push("");
       }
@@ -832,7 +857,7 @@ function formatTeacherBlock(a) {
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
           ${(() => {
-            const g = getDisplayGrade(assessment);
+            const g = getDisplayScore(assessment);
             return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}</div>`;
           })()}
         </div>`
@@ -842,22 +867,28 @@ function formatTeacherBlock(a) {
         htmlParts.push(
           `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
             <b>Sections:</b>
-            <ul>
-              ${assessment.sections.map(sec => `
-                <li>
-                  <b>${escapeHtml(sec.name)}:</b>
-                  ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
-                  ${sec.teacher_comment ? `— ${escapeHtml(sec.teacher_comment)}` : ""}
+            <ul style="margin:6px 0 0 18px; padding:0;">
+              ${assessment.sections
+                .map((sec) => {
+                  const secLine = `<div>
+                    <b>${escapeHtml(sec.name)}:</b> ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
+                    ${String(sec.teacher_comment || "").trim() ? ` — ${escapeHtml(String(sec.teacher_comment).trim())}` : ""}
+                  </div>`;
 
-                  ${
+                  const incorrect =
                     Array.isArray(sec.incorrect_items) && sec.incorrect_items.length
-                      ? `<div style="margin-top:4px; font-size:12px; opacity:0.85;">
-                          Incorrect: ${sec.incorrect_items.map(escapeHtml).join(", ")}
+                      ? `<div style="margin-top:6px; font-size:12px; opacity:0.9;">
+                          <b>Incorrect items:</b>
+                          <ul style="margin:6px 0 0 18px; padding:0;">
+                            ${sec.incorrect_items.slice(0, 20).map((it, idx) => formatIncorrectItemHtml(it, idx, escapeHtml)).join("")}
+                            ${sec.incorrect_items.length > 20 ? `<li style="opacity:0.75;">(+ ${sec.incorrect_items.length - 20} more…)</li>` : ""}
+                          </ul>
                         </div>`
-                      : ""
-                  }
-                </li>
-              `).join("")}
+                      : "";
+
+                  return `<li style="margin:6px 0;">${secLine}${incorrect}</li>`;
+                })
+                .join("")}
             </ul>
           </div>`
         );
@@ -1184,7 +1215,7 @@ function formatTeacherBlock(a) {
                   <div style={styles.gradingTopRow}>
                     <div style={styles.gradingTitle}>
                       {(() => {
-                        const g = getDisplayGrade(assessment);
+                        const g = getDisplayScore(assessment);
                         return (
                           <>
                             Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
@@ -1219,6 +1250,28 @@ function formatTeacherBlock(a) {
                             {String(sec.teacher_comment || "").trim() ? (
                               <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.35 }}>
                                 {String(sec.teacher_comment).trim()}
+                                {Array.isArray(sec.incorrect_items) && sec.incorrect_items.length ? (
+                                  <div style={{ marginTop: 8 }}>
+                                    <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.85 }}>
+                                      Incorrect items
+                                    </div>
+                                    <ul style={{ margin: "6px 0 0 18px", padding: 0, lineHeight: 1.35, fontSize: 13, opacity: 0.9 }}>
+                                      {sec.incorrect_items.slice(0, 20).map((it, j) => (
+                                        <li key={j}>
+                                          <span style={{ fontWeight: 700 }}>Q{j + 1}:</span>{" "}
+                                          {String(it.prompt || "").trim() ? String(it.prompt).trim() : "(question)"}{" "}
+                                          <span style={{ opacity: 0.85 }}>
+                                            — Your: {String(it.student_answer || "").trim() || "(blank)"} | Correct:{" "}
+                                            {String(it.correct_answer || "").trim() || "(unknown)"}
+                                          </span>
+                                        </li>
+                                      ))}
+                                      {sec.incorrect_items.length > 20 ? (
+                                        <li style={{ opacity: 0.75 }}>(+ {sec.incorrect_items.length - 20} more…)</li>
+                                      ) : null}
+                                    </ul>
+                                  </div>
+                                ) : null}
                               </div>
                             ) : null}
                           </div>
