@@ -443,7 +443,10 @@ function formatTeacherBlock(a) {
     const [flash, setFlash] = useState(false);
     const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
     const [busyCapture, setBusyCapture] = useState(false);
-
+    const photosRef = useRef([]);
+    
+    useEffect(() => { photosRef.current = photos; }, [photos]);
+    
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState("");
 
@@ -637,8 +640,9 @@ function formatTeacherBlock(a) {
           const newPhoto = await capturePhoto();
           if (!newPhoto) return;
 
-          const merged = [...photos, newPhoto];
+          const merged = [...photosRef.current, newPhoto];
           await submitForGrading(merged);
+
         })();
 
         return;
@@ -659,6 +663,7 @@ function formatTeacherBlock(a) {
 
     function clearAll() {
       setPhotos([]);
+      photosRef.current = [];
       setSubmitError("");
       setServerText("");
       setCopied(false);
@@ -835,6 +840,16 @@ function formatTeacherBlock(a) {
       }
       
       const htmlParts = [];
+
+      // ---------- HTML (pretty clickable links) ----------
+      htmlParts.push(
+        `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+          ${(() => {
+            const g = getDisplayScore(assessment);
+            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}</div>`;
+          })()}
+        </div>`
+      );
       
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
         htmlParts.push(
@@ -865,18 +880,6 @@ function formatTeacherBlock(a) {
         );
       }
 
-      const plainText = lines.join("\n").trim();
-
-      // ---------- HTML (pretty clickable links) ----------
-      htmlParts.push(
-        `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-          ${(() => {
-            const g = getDisplayScore(assessment);
-            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}</div>`;
-          })()}
-        </div>`
-      );
-
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
         lines.push("Sections:");
         assessment.sections.forEach((sec) => {
@@ -894,6 +897,8 @@ function formatTeacherBlock(a) {
         });
         lines.push("");
       }
+
+      const plainText = lines.join("\n").trim();
 
       if (assessment.strengths?.length) {
         htmlParts.push(
