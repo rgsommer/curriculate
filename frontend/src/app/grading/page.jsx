@@ -988,7 +988,7 @@ function formatTeacherBlock(a) {
       <div style={styles.page}>
         <div style={styles.header}>
           <h1 style={styles.h1}>Grading</h1>
-          <div style={styles.sub}>Capture photos, then submit for an assessment.</div>
+          <div style={styles.sub}>Capture tests, quizzes, essays, posters, math sheets, even art, then submit for an assessment using the built-in rubric or your own.</div>
         </div>
 
         <div style={styles.controlsRow}>

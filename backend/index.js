@@ -6397,6 +6397,7 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
                     score: { type: "number", minimum: 0 },
                     out_of: { type: "number", minimum: 1 },
                     teacher_comment: { type: "string" },
+
                     incorrect_items: {
                       anyOf: [
                         { type: "null" },
@@ -6406,9 +6407,9 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
                             type: "object",
                             additionalProperties: false,
                             properties: {
-                              prompt: { type: "string" },          // question or clue
-                              student_answer: { type: "string" },  // what they chose/wrote
-                              correct_answer: { type: "string" }   // correct response
+                              prompt: { type: "string" },
+                              student_answer: { type: "string" },
+                              correct_answer: { type: "string" }
                             },
                             required: ["prompt", "student_answer", "correct_answer"]
                           }
@@ -6416,7 +6417,13 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
                       ]
                     }
                   },
-                  required: ["name", "score", "out_of", "teacher_comment"]
+                  required: [
+                    "name",
+                    "score",
+                    "out_of",
+                    "teacher_comment",
+                    "incorrect_items"
+                  ]
                 }
               }
             ]
