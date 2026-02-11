@@ -6268,9 +6268,8 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     - Each section must include: name, score, out_of, and a ONE-sentence teacher_comment.
     - Set overall_out_of to the sum of section out_of totals.
     - Set overall_score to the sum of section scores.
-    For test-style sections (multiple choice, true/false, matching, etc.), include an incorrect_items array listing only the incorrect questions.
-    - Do not list correct answers.
-    - Keep prompts short (e.g., “Q4: Treaty of Paris”).
+    For test-style sections … include incorrect_items listing only incorrect questions.
+    - Keep prompts short. Include student_answer and correct_answer for each incorrect item.
     - If all items are correct, return incorrect_items: null.
 
     RUBRIC OVERRIDE RULE:

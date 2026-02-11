@@ -831,23 +831,32 @@ function formatTeacherBlock(a) {
       }
 
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
-        lines.push("Sections:");
-        assessment.sections.forEach((sec) => {
-          lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of}${sec.teacher_comment ? ` — ${String(sec.teacher_comment).trim()}` : ""}`);
-
-          if (Array.isArray(sec.incorrect_items) && sec.incorrect_items.length) {
-            lines.push(`  Incorrect items:`);
-            const show = sec.incorrect_items.slice(0, 20);
-            show.forEach((it, idx) => {
-              const row = formatIncorrectItemPlain(it, idx);
-              if (row) lines.push(`  - ${row}`);
-            });
-            if (sec.incorrect_items.length > show.length) {
-              lines.push(`  - (+ ${sec.incorrect_items.length - show.length} more)`);
-            }
-          }
-        });
-        lines.push("");
+        htmlParts.push(
+          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Sections:</b>
+            <ul>
+              ${assessment.sections
+                .map((sec) => {
+                  const incorrectLine = formatIncorrectItemsInline(sec);
+                  return `
+                    <li>
+                      <b>${escapeHtml(sec.name)}:</b>
+                      ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
+                      ${String(sec.teacher_comment || "").trim() ? ` — ${escapeHtml(String(sec.teacher_comment).trim())}` : ""}
+                      ${
+                        incorrectLine
+                          ? `<div style="margin-top:4px;font-size:12px;opacity:0.85;">
+                              <b>Incorrect:</b> ${escapeHtml(incorrectLine)}
+                            </div>`
+                          : ""
+                      }
+                    </li>
+                  `;
+                })
+                .join("")}
+            </ul>
+          </div>`
+        );
       }
 
       const plainText = lines.join("\n").trim();
@@ -864,34 +873,21 @@ function formatTeacherBlock(a) {
       );
 
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
-        htmlParts.push(
-          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-            <b>Sections:</b>
-            <ul style="margin:6px 0 0 18px; padding:0;">
-              ${assessment.sections
-                .map((sec) => {
-                  const secLine = `<div>
-                    <b>${escapeHtml(sec.name)}:</b> ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
-                    ${String(sec.teacher_comment || "").trim() ? ` — ${escapeHtml(String(sec.teacher_comment).trim())}` : ""}
-                  </div>`;
+        lines.push("Sections:");
+        assessment.sections.forEach((sec) => {
+          lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of}${sec.teacher_comment ? ` — ${String(sec.teacher_comment).trim()}` : ""}`);
 
-                  const incorrect =
-                    Array.isArray(sec.incorrect_items) && sec.incorrect_items.length
-                      ? `<div style="margin-top:6px; font-size:12px; opacity:0.9;">
-                          <b>Incorrect items:</b>
-                          <ul style="margin:6px 0 0 18px; padding:0;">
-                            ${sec.incorrect_items.slice(0, 20).map((it, idx) => formatIncorrectItemHtml(it, idx, escapeHtml)).join("")}
-                            ${sec.incorrect_items.length > 20 ? `<li style="opacity:0.75;">(+ ${sec.incorrect_items.length - 20} more…)</li>` : ""}
-                          </ul>
-                        </div>`
-                      : "";
-
-                  return `<li style="margin:6px 0;">${secLine}${incorrect}</li>`;
-                })
-                .join("")}
-            </ul>
-          </div>`
-        );
+          if (Array.isArray(sec.incorrect_items) && sec.incorrect_items.length) {
+            lines.push(`  Incorrect:`);
+            sec.incorrect_items.forEach((it, idx) => {
+              const p = String(it?.prompt || `Item ${idx + 1}`).trim();
+              const sa = String(it?.student_answer || "—").trim();
+              const ca = String(it?.correct_answer || "—").trim();
+              lines.push(`  - ${p} (you: ${sa}; correct: ${ca})`);
+            });
+          }
+        });
+        lines.push("");
       }
 
       if (assessment.strengths?.length) {
@@ -971,6 +967,21 @@ function formatTeacherBlock(a) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    }
+
+    function formatIncorrectItemsInline(sec) {
+      const items = Array.isArray(sec?.incorrect_items) ? sec.incorrect_items : [];
+      if (!items.length) return "";
+
+      // Keep it compact: "Q4 (you: B; correct: D)" etc.
+      return items
+        .map((it, idx) => {
+          const p = String(it?.prompt || `Item ${idx + 1}`).trim();
+          const sa = String(it?.student_answer || "").trim();
+          const ca = String(it?.correct_answer || "").trim();
+          return `${p}${sa || ca ? ` (you: ${sa || "—"}; correct: ${ca || "—"})` : ""}`;
+        })
+        .join("; ");
     }
 
     return (
@@ -1251,24 +1262,15 @@ function formatTeacherBlock(a) {
                               <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.35 }}>
                                 {String(sec.teacher_comment).trim()}
                                 {Array.isArray(sec.incorrect_items) && sec.incorrect_items.length ? (
-                                  <div style={{ marginTop: 8 }}>
-                                    <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.85 }}>
-                                      Incorrect items
-                                    </div>
-                                    <ul style={{ margin: "6px 0 0 18px", padding: 0, lineHeight: 1.35, fontSize: 13, opacity: 0.9 }}>
-                                      {sec.incorrect_items.slice(0, 20).map((it, j) => (
-                                        <li key={j}>
-                                          <span style={{ fontWeight: 700 }}>Q{j + 1}:</span>{" "}
-                                          {String(it.prompt || "").trim() ? String(it.prompt).trim() : "(question)"}{" "}
-                                          <span style={{ opacity: 0.85 }}>
-                                            — Your: {String(it.student_answer || "").trim() || "(blank)"} | Correct:{" "}
-                                            {String(it.correct_answer || "").trim() || "(unknown)"}
-                                          </span>
+                                  <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
+                                    <div style={{ fontWeight: 800, marginBottom: 4 }}>Incorrect</div>
+                                    <ul style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.35 }}>
+                                      {sec.incorrect_items.map((it, idx) => (
+                                        <li key={idx}>
+                                          <span style={{ fontWeight: 700 }}>{String(it.prompt || `Item ${idx + 1}`)}</span>
+                                          {` — you: ${String(it.student_answer || "—")}; correct: ${String(it.correct_answer || "—")}`}
                                         </li>
                                       ))}
-                                      {sec.incorrect_items.length > 20 ? (
-                                        <li style={{ opacity: 0.75 }}>(+ {sec.incorrect_items.length - 20} more…)</li>
-                                      ) : null}
                                     </ul>
                                   </div>
                                 ) : null}
