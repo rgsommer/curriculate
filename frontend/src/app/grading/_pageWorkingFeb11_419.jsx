@@ -461,10 +461,6 @@ function formatTeacherBlock(a) {
     // Copy UX
     const [copied, setCopied] = useState(false);
 
-    // Prevent re-adding same result to clipboard/session
-    const [lockedCopySig, setLockedCopySig] = useState(""); // signature of last-copied assessment
-    const lastCopySigRef = useRef(""); // keeps stable even during rerenders
-
     const backendBase = useMemo(
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
       []
@@ -485,26 +481,9 @@ function formatTeacherBlock(a) {
 
     const assessment = normalized.assessment;
 
-    const currentCopySig = useMemo(() => {
-      if (!assessment) return "";
-      try {
-        // JSON stringify is fine if your object keys are stable. (They should be from backend.)
-        return JSON.stringify(assessment);
-      } catch {
-        return String(Date.now()); // worst-case fallback
-      }
-    }, [assessment]);
-
     const formattedTeacherText = useMemo(() => {
       return assessment ? formatTeacherBlock(assessment) : "";
     }, [assessment]);
-
-    useEffect(() => {
-      // If the assessment changed, allow copying again
-      if (currentCopySig && currentCopySig !== lastCopySigRef.current) {
-        setLockedCopySig("");
-      }
-    }, [currentCopySig]);
 
     function triggerFlash() {
       setFlash(true);
@@ -687,17 +666,12 @@ function formatTeacherBlock(a) {
       photosRef.current = [];
       setSubmitError("");
       setServerText("");
-      setLockedCopySig("");
-      lastCopySigRef.current = "";
       setCopied(false);
     }
 
     async function submitForGrading(photosOverride = null) {
       setSubmitError("");
       setServerText("");
-      setLockedCopySig("");
-      lastCopySigRef.current = "";
-
       setCopied(false);
 
       if (!gradingUrl) {
@@ -762,9 +736,6 @@ function formatTeacherBlock(a) {
         setSubmitting(false);
       }
     }
-
-    setLockedCopySig("");
-    lastCopySigRef.current = "";
 
     async function toggleCamera() {
       const next = !usingFrontCamera; 
@@ -1193,10 +1164,6 @@ function formatTeacherBlock(a) {
         window.setTimeout(() => setCopied(false), 1200);
         logCurrentToSessionLocal(plainText);
 
-        // Lock copying for this exact result so it can't be re-added
-        setLockedCopySig(currentCopySig);
-        lastCopySigRef.current = currentCopySig;
-
       } catch (e) {
         console.error("copy failed", e);
         setCopied(false);
@@ -1212,8 +1179,6 @@ function formatTeacherBlock(a) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
     }
-
-    const copyLocked = !!currentCopySig && lockedCopySig === currentCopySig;
 
     function formatIncorrectItemsInline(sec) {
       const items = Array.isArray(sec?.incorrect_items) ? sec.incorrect_items : [];
@@ -1442,12 +1407,7 @@ function formatTeacherBlock(a) {
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {formattedTeacherText && (
-                  <button
-                    onClick={copyLocked ? undefined : copyFormatted}
-                    style={styles.secondaryBtn}
-                    disabled={copyLocked}
-                    title={copyLocked ? "Already copied for this result" : "Copy comment"}
-                  >
+                  <button onClick={copyFormatted} style={styles.secondaryBtn}>
                     {copied ? "Copied ✓" : "Copy Comment"}
                   </button>
                 )}
@@ -1468,9 +1428,9 @@ function formatTeacherBlock(a) {
                 ...styles.responseBox,
                 ...(assessment ? styles.responseBoxClickable : null),
               }}
-              onClick={assessment && !copyLocked ? copyFormatted : undefined}
-              role={assessment && !copyLocked ? "button" : undefined}
-              title={assessment ? (copyLocked ? "Already copied for this result" : "Tap to copy formatted comment") : ""}
+              onClick={assessment ? copyFormatted : undefined}
+              role={assessment ? "button" : undefined}
+              title={assessment ? "Tap to copy formatted comment" : ""}
             >
               {assessment ? (
                 <div style={styles.gradingCard}>
@@ -1486,7 +1446,7 @@ function formatTeacherBlock(a) {
                       })()}
                     </div>
                     <div style={styles.copyPillInline}>
-                      {copyLocked ? "Copied ✓" : (copied ? "Copied ✓" : "Tap to copy")}
+                      {copied ? "Copied ✓" : "Tap to copy"}
                     </div>
                   </div>
 
