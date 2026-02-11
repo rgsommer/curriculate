@@ -6234,6 +6234,13 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
 
     ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
 
+    FEEDBACK LANGUAGE RULE (grade-band aligned):
+    - For 3–5: Use simple, direct language. Short sentences. Avoid abstract vocabulary.
+    - For 6–8: Use clear middle-school teacher tone. Practical, specific, not overly academic.
+    - For 9–10: Use more precise academic language and clearer reasoning.
+    - For 11+: Use mature, concise, academically appropriate phrasing.
+    - Strengths, improvements, and teacher_comment must match the selected grade level tone.
+
     STUDENT NAME: If a student name is clearly visible anywhere on the page, return it in student_name exactly as written. If not clearly visible, set student_name to null. Do not guess.
 
     STEP 1 — DETECT RESPONSE FORMAT (required):
