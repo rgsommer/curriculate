@@ -6496,15 +6496,72 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
           url: `https://www.curriculate.net/grading/capture/${submissionId}/image-${i + 1}.jpg`,
         }));
 
-      function safeJsonParse(s) {
-        if (typeof s !== "string") return null;
-        const t = s.trim();
-        if (!t) return null;
-        try {
-          return JSON.parse(t);
-        } catch {
+      function safeJsonParse(text) {
+        if (text == null) return null;
+
+        // If it’s already an object, return it
+        if (typeof text === "object") return text;
+
+        if (typeof text !== "string") return null;
+        let s = text.trim();
+        if (!s) return null;
+
+        const tryParse = (str) => {
+          try {
+            return JSON.parse(str);
+          } catch {
+            return null;
+          }
+        };
+
+        const extractObjectBlock = (str) => {
+          const start = str.indexOf("{");
+          const end = str.lastIndexOf("}");
+          if (start >= 0 && end > start) return str.slice(start, end + 1);
           return null;
+        };
+
+        // 1) direct
+        const direct = tryParse(s);
+        if (direct) return direct;
+
+        // 2) if it’s a quoted JSON string (double-encoded), decode once then parse again
+        // Example: "\"{ \\\"a\\\": 1 }\""
+        if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+          const unquoted = tryParse(s);
+          if (typeof unquoted === "string") {
+            const parsedAgain = tryParse(unquoted);
+            if (parsedAgain) return parsedAgain;
+            s = unquoted; // keep going with the inner string
+          }
         }
+
+        // 3) extract {...} and try
+        const rescued = extractObjectBlock(s);
+        if (rescued) {
+          const parsed = tryParse(rescued);
+          if (parsed) return parsed;
+        }
+
+        // 4) unescape common sequences and try (ALWAYS, no gating)
+        const candidate = rescued || s;
+        const unescaped = candidate
+          .replace(/\\\\/g, "\\")
+          .replace(/\\"/g, '"')
+          .replace(/\\n/g, "\n")
+          .replace(/\\t/g, "\t")
+          .replace(/\\r/g, "\r");
+
+        const parsed2 = tryParse(unescaped);
+        if (parsed2) return parsed2;
+
+        const rescued2 = extractObjectBlock(unescaped);
+        if (rescued2) {
+          const parsed3 = tryParse(rescued2);
+          if (parsed3) return parsed3;
+        }
+
+        return null;
       }
 
       const response = await openai.responses.create({
