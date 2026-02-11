@@ -6345,176 +6345,109 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
 
       const schema = {
         name: "grade_result",
-        type: "object",
-        additionalProperties: false,
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
 
-        properties: {
-          response_format_detected: {
-            type: "string",
-            enum: ["short-answer", "paragraph", "mixed", "test"],
-          },
-
-          // --- Primary grading scale (always authoritative) ---
-          overall_score: { type: "number", minimum: 0 },
-          overall_out_of: { type: "number", minimum: 1 },
-
-          // --- /10 compatibility (ONLY when overall_out_of === 10) ---
-          score_out_of_10: {
-            anyOf: [{ type: "number", minimum: 0, maximum: 10 }, { type: "null" }],
-          },
-          final_score_out_of_10: {
-            anyOf: [{ type: "number", minimum: 0, maximum: 10 }, { type: "null" }],
-          },
-
-          // --- Formatting deductions (max –1 total, enforced upstream) ---
-          deductions: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                reason: { type: "string", minLength: 1 },
-                points: { type: "number" },
-              },
-              required: ["reason", "points"],
+          properties: {
+            response_format_detected: {
+              type: "string",
+              enum: ["short-answer", "paragraph", "mixed", "test"],
             },
-          },
 
-          // --- Test sections or rubric categories ---
-          sections: {
-            anyOf: [
-              { type: "null" },
-              {
-                type: "array",
-                minItems: 1,
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    name: { type: "string", minLength: 1 },
-                    score: { type: "number", minimum: 0 },
-                    out_of: { type: "number", minimum: 1 },
-                    teacher_comment: { type: "string" },
+            // --- Primary grading scale (always authoritative) ---
+            overall_score: { type: "number", minimum: 0 },
+            overall_out_of: { type: "number", minimum: 1 },
 
-                    // For test sections only: list incorrect items (or null if none)
-                    incorrect_items: {
-                      anyOf: [
-                        { type: "null" },
-                        {
-                          type: "array",
-                          minItems: 1,
-                          items: {
-                            type: "object",
-                            additionalProperties: false,
-                            properties: {
-                              prompt: { type: "string", minLength: 1 },
-                              student_answer: { type: "string" },
-                              correct_answer: { type: "string" },
-                            },
-                            required: ["prompt", "student_answer", "correct_answer"],
-                          },
-                        },
-                      ],
+            // --- /10 compatibility (backend will enforce when overall_out_of === 10) ---
+            // Use type unions (not anyOf) to avoid schema features that often break.
+            score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
+            final_score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
+
+            // --- Formatting deductions (max –1 total, enforced upstream) ---
+            deductions: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  reason: { type: "string", minLength: 1 },
+                  points: { type: "number" },
+                },
+                required: ["reason", "points"],
+              },
+            },
+
+            // --- Test sections or rubric categories (backend will enforce test=>array, else=>null) ---
+            sections: {
+              type: ["array", "null"],
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  name: { type: "string", minLength: 1 },
+                  score: { type: "number", minimum: 0 },
+                  out_of: { type: "number", minimum: 1 },
+                  teacher_comment: { type: "string" },
+
+                  incorrect_items: {
+                    type: ["array", "null"],
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        prompt: { type: "string", minLength: 1 },
+                        student_answer: { type: "string" },
+                        correct_answer: { type: "string" },
+                      },
+                      required: ["prompt", "student_answer", "correct_answer"],
                     },
                   },
-                  required: ["name", "score", "out_of", "teacher_comment", "incorrect_items"],
                 },
+                required: ["name", "score", "out_of", "teacher_comment", "incorrect_items"],
               },
-            ],
+            },
+
+            // --- Student name extracted from the photo (never guessed) ---
+            student_name: { type: ["string", "null"] },
+
+            // --- Integrity flags (conservative use) ---
+            ai_suspected_cheating: { type: ["string", "null"] },
+            copying_suspected: { type: ["string", "null"] },
+
+            // --- Feedback ---
+            strengths: {
+              type: "array",
+              minItems: 2,
+              maxItems: 4,
+              items: { type: "string" },
+            },
+            improvements: {
+              type: "array",
+              minItems: 1,
+              maxItems: 3,
+              items: { type: "string" },
+            },
+            teacher_comment: { type: "string", minLength: 1 },
           },
 
-          // --- Student name extracted from the photo (never guessed) ---
-          student_name: {
-            anyOf: [{ type: "string" }, { type: "null" }],
-          },
-
-          // --- Integrity flags (conservative use) ---
-          ai_suspected_cheating: {
-            anyOf: [{ type: "string" }, { type: "null" }],
-          },
-          copying_suspected: {
-            anyOf: [{ type: "string" }, { type: "null" }],
-          },
-
-          // --- Feedback ---
-          strengths: {
-            type: "array",
-            minItems: 2,
-            maxItems: 4,
-            items: { type: "string" },
-          },
-          improvements: {
-            type: "array",
-            minItems: 1,
-            maxItems: 3,
-            items: { type: "string" },
-          },
-          teacher_comment: {
-            type: "string",
-            minLength: 1,
-          },
+          required: [
+            "response_format_detected",
+            "overall_score",
+            "overall_out_of",
+            "score_out_of_10",
+            "final_score_out_of_10",
+            "deductions",
+            "sections",
+            "student_name",
+            "ai_suspected_cheating",
+            "copying_suspected",
+            "strengths",
+            "improvements",
+            "teacher_comment",
+          ],
         },
-
-        required: [
-          "response_format_detected",
-          "overall_score",
-          "overall_out_of",
-          "score_out_of_10",
-          "final_score_out_of_10",
-          "deductions",
-          "sections",
-          "student_name",
-          "ai_suspected_cheating",
-          "copying_suspected",
-          "strengths",
-          "improvements",
-          "teacher_comment",
-        ],
-
-        allOf: [
-          // Rule A: If overall_out_of === 10 => /10 fields must be numbers.
-          // Otherwise => they must be null.
-          {
-            if: {
-              properties: { overall_out_of: { const: 10 } },
-              required: ["overall_out_of"],
-            },
-            then: {
-              properties: {
-                score_out_of_10: { type: "number", minimum: 0, maximum: 10 },
-                final_score_out_of_10: { type: "number", minimum: 0, maximum: 10 },
-              },
-            },
-            else: {
-              properties: {
-                score_out_of_10: { type: "null" },
-                final_score_out_of_10: { type: "null" },
-              },
-            },
-          },
-
-          // Rule B: If response_format_detected === "test" => sections must be an array.
-          // Otherwise => sections must be null.
-          {
-            if: {
-              properties: { response_format_detected: { const: "test" } },
-              required: ["response_format_detected"],
-            },
-            then: {
-              properties: {
-                sections: {
-                  type: "array",
-                  minItems: 1,
-                },
-              },
-            },
-            else: {
-              properties: {
-                sections: { type: "null" },
-              },
-            },
-          },
-        ],
       };
 
       const instructions = buildRubricInstructions({
