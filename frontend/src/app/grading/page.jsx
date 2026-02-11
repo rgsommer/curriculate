@@ -106,9 +106,9 @@ function safeJsonParse(text) {
     if (parsed) return parsed;
   }
 
-  // 3) handle “escaped JSON looking” payloads like: { \"score_out_of_10\": 8, ... }
+  // 3) handle “escaped JSON looking” payloads like: { \"overall_score\": 18, ... }
   const looksEscaped =
-    /\\\"(response_format_detected|overall_score|overall_out_of|sections|student_name|teacher_comment)\\\"/.test(s) ||
+    /\\\"(response_format_detected|overall_score|overall_out_of|sections|student_name|teacher_comment|strengths|improvements|deductions)\\\"/.test(s) ||
     /\\\"score_out_of_10\\\"|\\\"final_score_out_of_10\\\"/.test(s) ||
     /\\n/.test(s);
 
@@ -245,6 +245,15 @@ function formatIncorrectItemHtml(item, idx, escapeHtml) {
       <span style="margin-left:10px;"><b>Correct:</b> ${escapeHtml(correct || "(unknown)")}</span>
     </div>
   </li>`;
+}
+
+function formatIncorrectItemsInline(sec) {
+  if (!Array.isArray(sec?.incorrect_items) || !sec.incorrect_items.length) return "";
+  return sec.incorrect_items
+    .slice(0, 12)
+    .map((it, idx) => String(it?.prompt || `Item ${idx + 1}`).trim())
+    .filter(Boolean)
+    .join(", ");
 }
 
 function toArrayStrings(v) {
@@ -747,11 +756,6 @@ function formatTeacherBlock(a) {
       setRubricOverride("");
     }
 
-    function getSessionLabelLocal(a, idx1) {
-      const nm = String(a?.student_name || "").trim();
-      return nm ? nm : `Submission ${idx1}`;
-    }
-
     function logCurrentToSessionLocal(formattedText) {
       if (!assessment) return;
 
@@ -855,26 +859,36 @@ function formatTeacherBlock(a) {
         htmlParts.push(
           `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
             <b>Sections:</b>
-            <ul>
-              ${assessment.sections
-                .map((sec) => {
-                  const incorrectLine = formatIncorrectItemsInline(sec);
-                  return `
-                    <li>
-                      <b>${escapeHtml(sec.name)}:</b>
-                      ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
-                      ${String(sec.teacher_comment || "").trim() ? ` — ${escapeHtml(String(sec.teacher_comment).trim())}` : ""}
-                      ${
-                        incorrectLine
-                          ? `<div style="margin-top:4px;font-size:12px;opacity:0.85;">
-                              <b>Incorrect:</b> ${escapeHtml(incorrectLine)}
-                            </div>`
-                          : ""
-                      }
-                    </li>
-                  `;
-                })
-                .join("")}
+            <ul style="margin:6px 0 0 18px; padding:0;">
+              ${assessment.sections.map((sec) => {
+                const secHeader = `
+                  <div>
+                    <b>${escapeHtml(sec.name)}:</b>
+                    ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
+                    ${String(sec.teacher_comment || "").trim()
+                      ? ` — ${escapeHtml(String(sec.teacher_comment).trim())}`
+                      : ""}
+                  </div>
+                `;
+
+                const incorrect =
+                  Array.isArray(sec.incorrect_items) && sec.incorrect_items.length
+                    ? `<div style="margin-top:6px; font-size:12px; opacity:0.9;">
+                        <b>Incorrect items:</b>
+                        <ul style="margin:6px 0 0 18px; padding:0;">
+                          ${sec.incorrect_items
+                            .slice(0, 20)
+                            .map((it, idx) => formatIncorrectItemHtml(it, idx, escapeHtml))
+                            .join("")}
+                          ${sec.incorrect_items.length > 20
+                            ? `<li style="opacity:0.75;">(+ ${sec.incorrect_items.length - 20} more…)</li>`
+                            : ""}
+                        </ul>
+                      </div>`
+                    : "";
+
+                return `<li style="margin:6px 0;">${secHeader}${incorrect}</li>`;
+              }).join("")}
             </ul>
           </div>`
         );
@@ -977,6 +991,17 @@ function formatTeacherBlock(a) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    }
+
+    function formatIncorrectItemPlain(it, idx) {
+      const p = String(it?.prompt || `Item ${idx + 1}`).trim();
+      const sa = String(it?.student_answer || "—").trim();
+      const ca = String(it?.correct_answer || "—").trim();
+      return `${p} (you: ${sa}; correct: ${ca})`;
+    }
+
+    function formatIncorrectItemHtml(it, idx) {
+      return `<li>${escapeHtml(formatIncorrectItemPlain(it, idx))}</li>`;
     }
 
     function formatIncorrectItemsInline(sec) {
