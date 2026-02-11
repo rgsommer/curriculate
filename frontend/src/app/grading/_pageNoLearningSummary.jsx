@@ -247,6 +247,15 @@ function formatIncorrectItemHtml(item, idx, escapeHtml) {
   </li>`;
 }
 
+function formatIncorrectItemsInline(sec) {
+  if (!Array.isArray(sec?.incorrect_items) || !sec.incorrect_items.length) return "";
+  return sec.incorrect_items
+    .slice(0, 12)
+    .map((it, idx) => String(it?.prompt || `Item ${idx + 1}`).trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
 function toArrayStrings(v) {
   if (!v) return [];
   if (Array.isArray(v)) return v.filter(Boolean).map(String);
@@ -257,6 +266,11 @@ function formatPoints(p) {
   const n = Number(p);
   if (!Number.isFinite(n) || n === 0) return "";
   return `(\u2013${Math.abs(n)})`; // always show as “–1”
+}
+
+function getSessionLabel(assessment, idx1) {
+  const nm = String(assessment?.student_name || "").trim();
+  return nm ? nm : `Submission ${idx1}`;
 }
 
 function computeFinalScore(a) {
@@ -357,7 +371,7 @@ function formatTeacherBlock(a) {
 
   if (teacherComment) {
     lines.push("");
-    lines.push("Overall Comment:");
+    lines.push("Teacher Comment:");
     lines.push(teacherComment);
   }
 
@@ -452,11 +466,6 @@ function formatTeacherBlock(a) {
     const [showRubric, setShowRubric] = useState(false);
     const [rubricOverride, setRubricOverride] = useState("");
     const [gradeBand, setGradeBand] = useState("6-8");
-
-    // Learning Recommendations
-    const [sessionSummary, setSessionSummary] = useState(null); // { A:[], B:[], C:[] } shape below
-    const [sessionSummaryError, setSessionSummaryError] = useState("");
-    const [summarizingSession, setSummarizingSession] = useState(false);
     
     // Copy UX
     const [copied, setCopied] = useState(false);
@@ -768,228 +777,32 @@ function formatTeacherBlock(a) {
       });
     }
 
-    function getSessionLabelLocal(a, idx1) {
-      const nm = String(a?.student_name || "").trim();
-      return nm ? nm : `Submission ${idx1}`;
-    }
-
-    function buildSessionEvidence(items) {
-      // Keep it compact to control cost/latency
-      return items.slice(-40).map((it, idx) => {
-        const a = it.assessment || {};
-        const label = getSessionLabelLocal(a, idx + 1);
-
-        const sections = Array.isArray(a.sections) ? a.sections : [];
-        const sectionEvidence = sections.slice(0, 8).map((sec) => {
-          const incorrect = Array.isArray(sec.incorrect_items) ? sec.incorrect_items : [];
-          return {
-            name: String(sec.name || "").slice(0, 80),
-            score: sec.score,
-            out_of: sec.out_of,
-            teacher_comment: String(sec.teacher_comment || "").slice(0, 220),
-            incorrect_items: incorrect.slice(0, 12).map((x) => ({
-              prompt: String(x?.prompt || "").slice(0, 120),
-              student_answer: String(x?.student_answer || "").slice(0, 80),
-              correct_answer: String(x?.correct_answer || "").slice(0, 80),
-            })),
-          };
-        });
-
-        return {
-          label,
-          score_line: getPrimaryScoreLine(a),
-          strengths: toArrayStrings(a.strengths).slice(0, 6),
-          improvements: toArrayStrings(a.improvements).slice(0, 6),
-          teacher_comment: String(a.teacher_comment || "").slice(0, 260),
-          sections: sectionEvidence,
-        };
-      });
-    }
-
-    function localHeuristicSessionSummary(items) {
-      const stop = new Set([
-        "the","a","an","and","or","but","to","of","in","on","for","with","is","are","was","were",
-        "this","that","these","those","it","they","he","she","you","your","their","his","her",
-        "explain","describe","answer","question","choose","circle","match","true","false"
-      ]);
-
-      const counts = new Map();
-      const goodCounts = new Map();
-      const bump = (map, key, amt=1) => map.set(key, (map.get(key) || 0) + amt);
-
-      const normalizePhrase = (s) =>
-        String(s || "")
-          .toLowerCase()
-          .replace(/[^\w\s\-]/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-
-      const extractPhrases = (text) => {
-        const s = normalizePhrase(text);
-        if (!s) return [];
-        const tokens = s.split(" ").filter(t => t && !stop.has(t) && t.length > 2);
-        const out = [];
-        for (let i = 0; i < tokens.length; i++) out.push(tokens[i]);
-        for (let i = 0; i < tokens.length - 1; i++) out.push(tokens[i] + " " + tokens[i+1]);
-        return out.slice(0, 30);
-      };
-
-      for (const it of items) {
-        const a = it.assessment || {};
-        const sections = Array.isArray(a.sections) ? a.sections : [];
-
-        for (const sec of sections) {
-          const incorrect = Array.isArray(sec.incorrect_items) ? sec.incorrect_items : [];
-          for (const x of incorrect) {
-            for (const p of extractPhrases(x?.prompt)) bump(counts, p, 1);
-          }
-        }
-
-        for (const imp of toArrayStrings(a.improvements)) {
-          for (const p of extractPhrases(imp)) bump(counts, p, 1);
-        }
-
-        for (const st of toArrayStrings(a.strengths)) {
-          for (const p of extractPhrases(st)) bump(goodCounts, p, 1);
-        }
-      }
-
-      const topN = (map, n=8) =>
-        [...map.entries()]
-          .sort((a,b) => b[1]-a[1])
-          .slice(0, n)
-          .map(([k,v]) => `${k} (${v})`);
-
-      const A = topN(counts, 10);
-      const B = topN(goodCounts, 8);
-
-      const C = [];
-      if (A.length) {
-        C.push("Reteach the top 2–3 weak areas using a quick mini-lesson + 3 practice checks.");
-        C.push("Use 1 example + 1 non-example to target misconceptions.");
-        C.push("Have students correct their own mistakes: correct answer + one-sentence why.");
-      } else {
-        C.push("Overall understanding looks solid; reinforce with a short review and extension questions.");
-      }
-
-      return {
-        concepts_not_understood: A,
-        concepts_understood_well: B,
-        recommendations: C,
-        source: "heuristic",
-      };
-    }
-
-    function formatSessionAnalysisBlock(summary) {
-      if (!summary) return "";
-
-      const A = Array.isArray(summary.concepts_not_understood) ? summary.concepts_not_understood : [];
-      const B = Array.isArray(summary.concepts_understood_well) ? summary.concepts_understood_well : [];
-      const C = Array.isArray(summary.recommendations) ? summary.recommendations : [];
-
-      const lines = [];
-      lines.push("=== Session Analysis ===");
-      lines.push("");
-
-      lines.push("A) Concepts students did not seem to understand:");
-      lines.push(A.length ? A.map(x => `- ${x}`).join("\n") : "- (none detected)");
-      lines.push("");
-
-      lines.push("B) Concepts students understand well:");
-      lines.push(B.length ? B.map(x => `- ${x}`).join("\n") : "- (none detected)");
-      lines.push("");
-
-      lines.push("C) Recommendations:");
-      lines.push(C.length ? C.map(x => `- ${x}`).join("\n") : "- (none provided)");
-      lines.push("");
-
-      return lines.join("\n");
-    }
-
-    async function fetchAiSessionSummary(items) {
-      if (!backendBase) throw new Error("Missing backend base URL");
-
-      const url = `${backendBase.replace(/\/$/, "")}/grading/session-summary`;
-      const evidence = buildSessionEvidence(items);
-
-      const payload = {
-        gradeBand,
-        rubricOverride: (rubricOverride || "").trim() || null,
-        evidence,
-      };
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const text = await res.text();
-      const parsed = safeJsonParse(text);
-
-      if (!res.ok) {
-        const msg = parsed?.details || parsed?.error || `HTTP ${res.status} from session-summary`;
-        throw new Error(msg);
-      }
-
-      if (!parsed || typeof parsed !== "object") {
-        throw new Error("Session summary returned invalid JSON");
-      }
-
-      return parsed;
-    }
-
     async function copySession() {
       if (!sessionItems.length) return;
 
-      setSessionSummaryError("");
-      setSummarizingSession(true);
+      const summaryLines = sessionItems.map((it, idx) => {
+        const label = getSessionLabelLocal(it.assessment, idx + 1);
+        const scoreLine = getPrimaryScoreLine(it.assessment);
+        return `${label} ${scoreLine}`;
+      });
+
+      const plain = [
+        `Session Summary: ${summaryLines.join(", ")}`,
+        "",
+        ...sessionItems.map((it, idx) => {
+          const label = getSessionLabelLocal(it.assessment, idx + 1);
+          const body = String(it.formattedText || "").trim();
+          return `=== ${label} ===\n${body}\n`;
+        }),
+      ].join("\n").trim();
 
       try {
-        let summary = null;
-
-        try {
-          summary = await fetchAiSessionSummary(sessionItems);
-        } catch (e) {
-          console.warn("AI session summary failed; using fallback:", e?.message || e);
-          setSessionSummaryError(e?.message || "AI summary failed; used fallback.");
-          summary = null;
-        }
-
-        if (!summary) {
-          summary = localHeuristicSessionSummary(sessionItems);
-        }
-
-        setSessionSummary(summary);
-
-        const analysisBlock = formatSessionAnalysisBlock(summary);
-
-        const summaryLines = sessionItems.map((it, idx) => {
-          const label = getSessionLabelLocal(it.assessment, idx + 1);
-          const scoreLine = getPrimaryScoreLine(it.assessment);
-          return `${label} ${scoreLine}`;
-        });
-
-        const plain = [
-          `Session Summary: ${summaryLines.join(", ")}`,
-          "",
-          analysisBlock.trim(),
-          "",
-          ...sessionItems.map((it, idx) => {
-            const label = getSessionLabelLocal(it.assessment, idx + 1);
-            const body = String(it.formattedText || "").trim();
-            return `=== ${label} ===\n${body}\n`;
-          }),
-        ].join("\n").trim();
-
         await navigator.clipboard?.writeText(plain);
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1200);
       } catch (e) {
         console.error("copy session failed", e);
         setSubmitError("Copy session failed—your browser may block clipboard access.");
-      } finally {
-        setSummarizingSession(false);
       }
     }
 
@@ -1019,7 +832,7 @@ function formatTeacherBlock(a) {
       }
 
       if ((assessment.teacher_comment || "").trim()) {
-        lines.push("Overall Comment:");
+        lines.push("Teacher Comment:");
         lines.push(String(assessment.teacher_comment).trim());
         lines.push("");
       }
@@ -1122,7 +935,7 @@ function formatTeacherBlock(a) {
       if ((assessment.teacher_comment || "").trim()) {
         htmlParts.push(
           `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-            <b>Overall Comment:</b>
+            <b>Teacher Comment:</b>
             <div>${escapeHtml(String(assessment.teacher_comment).trim())}</div>
           </div>`
         );
@@ -1178,6 +991,17 @@ function formatTeacherBlock(a) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    }
+
+    function formatIncorrectItemPlain(it, idx) {
+      const p = String(it?.prompt || `Item ${idx + 1}`).trim();
+      const sa = String(it?.student_answer || "—").trim();
+      const ca = String(it?.correct_answer || "—").trim();
+      return `${p} (you: ${sa}; correct: ${ca})`;
+    }
+
+    function formatIncorrectItemHtml(it, idx) {
+      return `<li>${escapeHtml(formatIncorrectItemPlain(it, idx))}</li>`;
     }
 
     function formatIncorrectItemsInline(sec) {
@@ -1383,8 +1207,8 @@ function formatTeacherBlock(a) {
               >
                 {submitting ? "Submitting…" : "Submit for Grading"}
               </button>
-              <button onClick={copySession} disabled={!sessionItems.length || summarizingSession} style={styles.secondaryBtn}>
-                {summarizingSession ? `Analyzing… (${sessionItems.length})` : `Copy Session (${sessionItems.length})`}
+              <button onClick={copySession} disabled={!sessionItems.length} style={styles.secondaryBtn}>
+                Copy Session ({sessionItems.length})
               </button>
               <button
                 onClick={() => setSessionItems([])}
@@ -1529,7 +1353,7 @@ function formatTeacherBlock(a) {
 
                   {(assessment.teacher_comment || "").trim() ? (
                     <>
-                      <div style={styles.gradingSectionTitle}>Overall Comment</div>
+                      <div style={styles.gradingSectionTitle}>Teacher Comment</div>
                       <div style={styles.gradingComment}>
                         {(assessment.teacher_comment || "").trim()}
                       </div>
@@ -1684,17 +1508,6 @@ const styles = {
     justifyContent: "space-between",
     gap: 10,
     flexWrap: "wrap",
-  },
-
-  ghostBtn: {
-    background: "transparent",
-    color: "#0b1220",
-    border: "1px dashed rgba(15,23,42,0.22)",
-    borderRadius: 12,
-    padding: "10px 14px",
-    fontWeight: 800,
-    cursor: "pointer",
-    opacity: 0.9,
   },
 
   thumbGrid: {

@@ -6666,6 +6666,121 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     }
   });
 
+  // ====================================================================
+  //  Grading Session Summary (concept-level trends across a copied session)
+  //  POST /grading/session-summary
+  // ====================================================================
+  app.post("/grading/session-summary", async (req, res) => {
+    try {
+      const { gradeBand, evidence, rubricOverride } = req.body || {};
+
+      // evidence is intended to be "everything in that collection"
+      // (e.g., array of grade results you already received from /grading, plus optional extra context)
+      if (!Array.isArray(evidence) || evidence.length === 0) {
+        return res.status(400).json({ error: "Missing evidence array" });
+      }
+
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      // IMPORTANT: keep schema simple (NO allOf/oneOf) to avoid the errors you're seeing
+      const sessionSummarySchema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          concepts_not_understood: {
+            type: "array",
+            minItems: 1,
+            maxItems: 12,
+            items: { type: "string", minLength: 2 },
+          },
+          concepts_understood_well: {
+            type: "array",
+            minItems: 1,
+            maxItems: 12,
+            items: { type: "string", minLength: 2 },
+          },
+          recommendations: {
+            type: "array",
+            minItems: 1,
+            maxItems: 12,
+            items: { type: "string", minLength: 2 },
+          },
+        },
+        required: ["concepts_not_understood", "concepts_understood_well", "recommendations"],
+      };
+
+      const instructions = buildSessionSummaryInstructions({
+        gradeBand: band,
+        rubricOverride: (rubricOverride || "").trim(),
+        evidence,
+      });
+
+      const response = await openai.responses.create({
+        model: "gpt-5.2",
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: instructions }],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "grading_session_summary",
+            strict: true,
+            schema: sessionSummarySchema,
+          },
+        },
+        max_output_tokens: 500,
+      });
+
+      const summary = safeJsonParse(response.output_text);
+      if (!summary) {
+        return res.status(502).json({
+          error: "Session summary returned invalid JSON",
+          raw: response.output_text || "",
+        });
+      }
+
+      return res.json(summary);
+    } catch (err) {
+      console.error("🔥 /grading/session-summary failed:", err?.message || err);
+      return res.status(500).json({
+        error: "Session summary failed",
+        details: err?.message || "unknown error",
+      });
+    }
+  });
+
+  // Helper: build instructions for concept-level summary
+  function buildSessionSummaryInstructions({ gradeBand = "6-8", rubricOverride = "", evidence = [] } = {}) {
+    // Keep it simple + stable: don't rely on huge verbose rubrics here.
+    return `
+  You are a teacher analyzing a set of grading results to find class-wide learning trends.
+
+  GRADE BAND: ${gradeBand}
+
+  INPUT EVIDENCE:
+  You will receive an array called "evidence". Each item represents one student's graded work result.
+  Each item may include things like: sections, teacher_comment, strengths, improvements, deductions, overall_score/out_of, etc.
+
+  TASK:
+  Aggregate across ALL evidence items and output ONLY JSON matching the required schema.
+
+  Rules:
+  - Be concrete: concepts should be short curriculum-aligned phrases (e.g., "distinguishing Patriots vs Loyalists", "push vs pull factors", "treaty promises vs outcomes").
+  - Do not mention student names.
+  - If rubricOverride is present, use it only as context for what the teacher cares about, not as facts.
+
+  rubricOverride (optional):
+  ${rubricOverride ? rubricOverride : "(none)"}
+
+  evidence (JSON):
+  ${JSON.stringify(evidence).slice(0, 180000)}
+  `.trim();
+  }
+
+
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
   try {
