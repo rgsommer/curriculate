@@ -138,21 +138,23 @@ function safeJsonParse(text) {
 function isAssessmentObject(o) {
   if (!o || typeof o !== "object") return false;
 
-  // Must have a real score with a denominator
   const hasOverallScore =
     typeof o.overall_score === "number" &&
     typeof o.overall_out_of === "number";
 
-  if (!hasOverallScore) return false;
+  const has10Score =
+    typeof o.score_out_of_10 === "number" ||
+    typeof o.final_score_out_of_10 === "number";
 
-  // Either sectioned (tests/rubrics) OR normal feedback
-  const hasSections =
-    Array.isArray(o.sections) && o.sections.length > 0;
+  if (!hasOverallScore && !has10Score) return false;
+
+  const hasSections = Array.isArray(o.sections) && o.sections.length > 0;
 
   const hasFeedback =
     Array.isArray(o.strengths) ||
     Array.isArray(o.improvements) ||
-    typeof o.teacher_comment === "string";
+    typeof o.teacher_comment === "string" ||
+    Array.isArray(o.deductions);
 
   return hasSections || hasFeedback;
 }
@@ -831,7 +833,9 @@ function formatTeacherBlock(a) {
         links.forEach((img) => lines.push(`Photo ${img.index}: ${img.url}`));
         lines.push("");
       }
-
+      
+      const htmlParts = [];
+      
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
         htmlParts.push(
           `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
@@ -864,7 +868,6 @@ function formatTeacherBlock(a) {
       const plainText = lines.join("\n").trim();
 
       // ---------- HTML (pretty clickable links) ----------
-      const htmlParts = [];
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
           ${(() => {
