@@ -19,8 +19,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  *   4) { error: "...", raw: "" }  (rare)
  */
 
-const DEFAULT_MAX_W = 1400;
-const DEFAULT_QUALITY = 0.72;
+const DEFAULT_MAX_W = 1800;
+const DEFAULT_QUALITY = 0.85;
 
 const DEFAULT_RUBRIC_INSTRUCTIONS = `
 You are a teacher grading student assignments from photos.
@@ -244,46 +244,42 @@ function isAssessmentObject(o) {
  * Returns { assessment, wrapperError, rawTextUsed }
  */
 function normalizeFromAny(serverTextOrObj) {
-  // If already parsed object
+  // 1) already an assessment object
   if (isAssessmentObject(serverTextOrObj)) {
     return { assessment: serverTextOrObj, wrapperError: "", rawTextUsed: "" };
   }
 
-  // If string, parse
-  // wrapper: { raw: "json-string" }
-  if (typeof serverTextOrObj.raw === "string") {
-    // Try strict-ish parse
-    const parsed = safeJsonParse(serverTextOrObj.raw);
-    if (parsed) return normalizeFromAny(parsed);
+  // 2) wrapper object: { raw: "...", error?: "..." } OR { result: "..." }
+  if (serverTextOrObj && typeof serverTextOrObj === "object") {
+    const wrapped =
+      typeof serverTextOrObj.raw === "string"
+        ? serverTextOrObj.raw
+        : (typeof serverTextOrObj.result === "string" ? serverTextOrObj.result : null);
 
-    // If that fails, try unescape + best-effort salvage (handles truncation)
-    const salvaged = parseEscapedJsonString(serverTextOrObj.raw);
-    if (salvaged) return normalizeFromAny(salvaged);
+    if (wrapped != null) {
+      const parsed = safeJsonParse(wrapped);
+      if (parsed) return normalizeFromAny(parsed);
 
-    // keep raw around if empty/unparseable
-    return {
-      assessment: null,
-      wrapperError: serverTextOrObj.error || "",
-      rawTextUsed: serverTextOrObj.raw,
-    };
+      const salvaged = parseEscapedJsonString(wrapped);
+      if (salvaged) return normalizeFromAny(salvaged);
+
+      return {
+        assessment: null,
+        wrapperError: String(serverTextOrObj.error || serverTextOrObj.details || ""),
+        rawTextUsed: wrapped,
+      };
+    }
   }
 
+  // 3) plain string => try parse
+  if (typeof serverTextOrObj === "string") {
+    const parsed = safeJsonParse(serverTextOrObj);
+    if (parsed) return normalizeFromAny(parsed);
+    return { assessment: null, wrapperError: "", rawTextUsed: serverTextOrObj };
+  }
+
+  // 4) nothing usable
   return { assessment: null, wrapperError: "", rawTextUsed: "" };
-}
-
-function formatIncorrectItemPlain(item, idx) {
-  if (!item || typeof item !== "object") return null;
-
-  const prompt = String(item.prompt || "").trim();
-  const student = String(item.student_answer || "").trim();
-  const correct = String(item.correct_answer || "").trim();
-
-  // Keep it compact (copy/paste friendly)
-  const p = prompt ? `Q${idx + 1}: ${prompt}` : `Q${idx + 1}`;
-  const s = student ? `Your answer: ${student}` : "Your answer: (blank)";
-  const c = correct ? `Correct: ${correct}` : "Correct: (unknown)";
-
-  return `${p} — ${s} | ${c}`;
 }
 
 function formatIncorrectItemHtml(item, idx, escapeHtml) {
@@ -312,20 +308,6 @@ function formatPoints(p) {
   const n = Number(p);
   if (!Number.isFinite(n) || n === 0) return "";
   return `(\u2013${Math.abs(n)})`; // always show as “–1”
-}
-
-function computeFinalScore(a) {
-  if (a?.final_score_out_of_10 !== undefined && a?.final_score_out_of_10 !== null) {
-    return a.final_score_out_of_10;
-  }
-  const base = Number(a?.score_out_of_10);
-  if (!Number.isFinite(base)) return "";
-  const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
-  const total = deductions.reduce((sum, d) => {
-    const p = Number(d?.points);
-    return sum + (Number.isFinite(p) ? Math.abs(p) : 0);
-  }, 0);
-  return Math.max(0, base - total);
 }
 
 function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
@@ -467,6 +449,25 @@ function formatTeacherBlock(a) {
     return { score: "", outOf: 10 };
   }
 
+  // -----------------------------
+  // Session analysis (for Copy Session)
+  // -----------------------------
+
+  // Prefer: prompts like "Q4: Treaty of Paris" / "Matching: Acadians" etc.
+  function keyFromIncorrectItem(it) {
+    const p = String(it?.prompt || "").trim();
+    if (!p) return "";
+    // Keep short, stable concept key
+    return p.replace(/\s+/g, " ").slice(0, 80);
+  }
+
+  // Prefer the actual improvement bullet text as the “concept”
+  function keyFromImprovement(s) {
+    const t = String(s || "").trim();
+    if (!t) return "";
+    return t.replace(/\s+/g, " ").slice(0, 120);
+  }
+
   export default function GradingPage() {
     const [sessionItems, setSessionItems] = useState(() => {
       if (typeof window === "undefined") return [];
@@ -516,9 +517,13 @@ function formatTeacherBlock(a) {
     // Copy UX
     const [copied, setCopied] = useState(false);
 
-    // Prevent re-adding same result to clipboard/session
-    const [lockedCopySig, setLockedCopySig] = useState(""); // signature of last-copied assessment
-    const lastCopySigRef = useRef(""); // keeps stable even during rerenders
+    // ✅ lock per submission
+    const submissionIdRef = useRef(0);
+    const [submissionId, setSubmissionId] = useState(0);
+    const [copiedSubmissionId, setCopiedSubmissionId] = useState(-1);
+
+    // prevent double-trigger while clipboard work runs
+    const copyInFlightRef = useRef(false);
 
     const backendBase = useMemo(
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
@@ -536,8 +541,8 @@ function formatTeacherBlock(a) {
       if (parsed) return normalizeFromAny(parsed);
 
       // If wrapper JSON is invalid, try extracting the "raw" field manually
-      const raw = extractJsonStringValue(serverText, "raw");
-      const err = extractJsonStringValue(serverText, "error") || "";
+      const raw = extractJsonStringValue(serverText, "raw") || extractJsonStringValue(serverText, "result");
+      const err = extractJsonStringValue(serverText, "error") || extractJsonStringValue(serverText, "details") || "";
 
       if (raw) {
         // raw is the *contents* of the JSON string, with escapes preserved
@@ -553,15 +558,6 @@ function formatTeacherBlock(a) {
     }, [serverText]);
 
     const assessment = normalized.assessment;
-
-    const currentCopySig = useMemo(() => {
-      const sid = assessment?.meta?.submissionId;
-      if (sid) return String(sid);
-
-      // fallback if needed
-      const u = assessment?.assignment_images?.[0]?.url;
-      return u ? String(u) : "";
-    }, [assessment]);
 
     const formattedTeacherText = useMemo(() => {
       return assessment ? formatTeacherBlock(assessment) : "";
@@ -640,7 +636,6 @@ function formatTeacherBlock(a) {
 
       setBusyCapture(true);
       setSubmitError("");
-      setServerText("");
       setCopied(false);
 
       try {
@@ -748,17 +743,20 @@ function formatTeacherBlock(a) {
       photosRef.current = [];
       setSubmitError("");
       setServerText("");
-      setLockedCopySig("");
-      lastCopySigRef.current = "";
       setCopied(false);
+
+      // ✅ reset submission lock state
+      setCopiedSubmissionId(-1);
+      submissionIdRef.current = 0;
+      setSubmissionId(0);
     }
 
     async function submitForGrading(photosOverride = null) {
       setSubmitError("");
       setServerText("");
-      setLockedCopySig("");
-      lastCopySigRef.current = "";
-
+      submissionIdRef.current += 1;
+      setSubmissionId(submissionIdRef.current);
+      setCopiedSubmissionId(-1);   // ✅ unlock for the new submission
       setCopied(false);
 
       if (!gradingUrl) {
@@ -894,69 +892,51 @@ function formatTeacherBlock(a) {
     }
 
     function localHeuristicSessionSummary(items) {
-      const stop = new Set([
-        "the","a","an","and","or","but","to","of","in","on","for","with","is","are","was","were",
-        "this","that","these","those","it","they","he","she","you","your","their","his","her",
-        "explain","describe","answer","question","choose","circle","match","true","false"
-      ]);
+      const miss = new Map();   // prompt -> count
+      const need = new Map();   // improvement -> count
+      const good = new Map();   // strength -> count
 
-      const counts = new Map();
-      const goodCounts = new Map();
-      const bump = (map, key, amt=1) => map.set(key, (map.get(key) || 0) + amt);
-
-      const normalizePhrase = (s) =>
-        String(s || "")
-          .toLowerCase()
-          .replace(/[^\w\s\-]/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-
-      const extractPhrases = (text) => {
-        const s = normalizePhrase(text);
-        if (!s) return [];
-        const tokens = s.split(" ").filter(t => t && !stop.has(t) && t.length > 2);
-        const out = [];
-        for (let i = 0; i < tokens.length; i++) out.push(tokens[i]);
-        for (let i = 0; i < tokens.length - 1; i++) out.push(tokens[i] + " " + tokens[i+1]);
-        return out.slice(0, 30);
-      };
+      const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
 
       for (const it of items) {
-        const a = it.assessment || {};
-        const sections = Array.isArray(a.sections) ? a.sections : [];
+        const a = it?.assessment || {};
 
-        for (const sec of sections) {
-          const incorrect = Array.isArray(sec.incorrect_items) ? sec.incorrect_items : [];
-          for (const x of incorrect) {
-            for (const p of extractPhrases(x?.prompt)) bump(counts, p, 1);
+        // incorrect prompts
+        for (const sec of (Array.isArray(a.sections) ? a.sections : [])) {
+          for (const inc of (Array.isArray(sec?.incorrect_items) ? sec.incorrect_items : [])) {
+            const p = String(inc?.prompt || "").trim();
+            if (p) bump(miss, p);
           }
         }
 
-        for (const imp of toArrayStrings(a.improvements)) {
-          for (const p of extractPhrases(imp)) bump(counts, p, 1);
+        // improvements/strengths verbatim
+        for (const s of toArrayStrings(a.improvements)) {
+          const t = String(s).trim();
+          if (t) bump(need, t);
         }
-
-        for (const st of toArrayStrings(a.strengths)) {
-          for (const p of extractPhrases(st)) bump(goodCounts, p, 1);
+        for (const s of toArrayStrings(a.strengths)) {
+          const t = String(s).trim();
+          if (t) bump(good, t);
         }
       }
 
-      const topN = (map, n=8) =>
-        [...map.entries()]
-          .sort((a,b) => b[1]-a[1])
-          .slice(0, n)
-          .map(([k,v]) => `${k} (${v})`);
+      const top = (m, n) => [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,n).map(([k,c]) => `${k} (${c})`);
 
-      const A = topN(counts, 10);
-      const B = topN(goodCounts, 8);
+      const A = top(miss, 10);
+      const B = top(good, 8);
 
       const C = [];
-      if (A.length) {
-        C.push("Reteach the top 2–3 weak areas using a quick mini-lesson + 3 practice checks.");
-        C.push("Use 1 example + 1 non-example to target misconceptions.");
-        C.push("Have students correct their own mistakes: correct answer + one-sentence why.");
+      if (A.length || need.size) {
+        const focus = [...new Set([
+          ...A.slice(0,3).map(x => x.replace(/\s*\(\d+\)\s*$/, "")),
+          ...top(need, 2).map(x => x.replace(/\s*\(\d+\)\s*$/, "")),
+        ])].slice(0,3);
+
+        if (focus.length) C.push(`Mini-lesson focus: ${focus.join(" | ")}`);
+        C.push("Students correct mistakes: write the correct answer + 1 sentence why.");
+        C.push("3-question re-check targeting the same skill.");
       } else {
-        C.push("Overall understanding looks solid; reinforce with a short review and extension questions.");
+        C.push("No consistent weak pattern detected; do a short review + one extension question.");
       }
 
       return {
@@ -1051,22 +1031,21 @@ function formatTeacherBlock(a) {
 
         const analysisBlock = formatSessionAnalysisBlock(summary);
 
-        const summaryLines = sessionItems.map((it, idx) => {
-          const label = getSessionLabelLocal(it.assessment, idx + 1);
-          const scoreLine = getPrimaryScoreLine(it.assessment);
-          return `${label} ${scoreLine}`;
-        });
+        const summaryLines = [
+          ...(summary?.concepts_not_understood?.slice?.(0, 3) || []),
+          ...(summary?.concepts_understood_well?.slice?.(0, 2) || []),
+        ].filter(Boolean);
 
         const plain = [
           `Session Summary: ${summaryLines.join(", ")}`,
-          "",
-          analysisBlock.trim(),
           "",
           ...sessionItems.map((it, idx) => {
             const label = getSessionLabelLocal(it.assessment, idx + 1);
             const body = String(it.formattedText || "").trim();
             return `=== ${label} ===\n${body}\n`;
           }),
+          "",
+          analysisBlock ? analysisBlock : ""
         ].join("\n").trim();
 
         await navigator.clipboard?.writeText(plain);
@@ -1080,22 +1059,24 @@ function formatTeacherBlock(a) {
       }
     }
 
-    const copyInFlightRef = useRef(false);
-
     async function copyFormatted() {
+      console.log("copy attempt", {
+        submissionId,
+        copiedSubmissionId,
+        copyLocked: !!assessment && copiedSubmissionId === submissionId,
+        inFlight: copyInFlightRef.current,
+      });
+
       if (!assessment) return;
-      if (!currentCopySig) return;
+      
+      // ✅ hard lock until next submission
+      if (copiedSubmissionId === submissionId) return;
 
-      // ✅ hard lock until Submit/Clear resets it
-      if (lastCopySigRef.current === currentCopySig) return;
-
-      // ✅ prevent double-trigger while clipboard work runs
       if (copyInFlightRef.current) return;
       copyInFlightRef.current = true;
 
       // ✅ lock immediately (sync), before any await
-      lastCopySigRef.current = currentCopySig;
-      setLockedCopySig(currentCopySig);
+      setCopiedSubmissionId(submissionId);
 
       const links = getAssignmentImagesFromAssessment(assessment);
 
@@ -1264,16 +1245,14 @@ function formatTeacherBlock(a) {
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1200);
         logCurrentToSessionLocal(plainText);
-
-        } catch (e) {
-          // if copy failed, allow retry
-          lastCopySigRef.current = "";
-          setLockedCopySig("");
-          setSubmitError("Copy failed—your browser may block clipboard access.");
-        } finally {
-          copyInFlightRef.current = false;
-        }
+      } catch (e) {
+        // ✅ if copy failed, allow retry for this submission
+        setCopiedSubmissionId(-1);
+        setSubmitError("Copy failed—your browser may block clipboard access.");
+      } finally {
+        copyInFlightRef.current = false;
       }
+    }
 
     function escapeHtml(s) {
       return String(s ?? "")
@@ -1284,24 +1263,7 @@ function formatTeacherBlock(a) {
         .replaceAll("'", "&#039;");
     }
 
-    const copyLocked =
-      !!currentCopySig &&
-      (lockedCopySig === currentCopySig || lastCopySigRef.current === currentCopySig);
-
-    function formatIncorrectItemsInline(sec) {
-      const items = Array.isArray(sec?.incorrect_items) ? sec.incorrect_items : [];
-      if (!items.length) return "";
-
-      // Keep it compact: "Q4 (you: B; correct: D)" etc.
-      return items
-        .map((it, idx) => {
-          const p = String(it?.prompt || `Item ${idx + 1}`).trim();
-          const sa = String(it?.student_answer || "").trim();
-          const ca = String(it?.correct_answer || "").trim();
-          return `${p}${sa || ca ? ` (you: ${sa || "—"}; correct: ${ca || "—"})` : ""}`;
-        })
-        .join("; ");
-    }
+    const copyLocked = assessment && copiedSubmissionId === submissionId;
 
     return (
       <div style={styles.page}>

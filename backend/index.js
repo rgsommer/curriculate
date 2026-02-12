@@ -6278,6 +6278,9 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     For test-style sections … include incorrect_items listing only incorrect questions.
     - Keep prompts short. Include student_answer and correct_answer for each incorrect item.
     - If all items are correct, return incorrect_items: null.
+    Math units rule: If a numeric answer is correct but missing a required unit (cm, m, kg, °C, etc.), subtract 0.5 points for that item. Apply only when a unit is clearly expected from the question/context.
+    - If it’s a test with sections, reflect that by lowering the section score accordingly (no special extra fields needed).
+    - If it’s not sectioned, reflect it in overall_score
 
     RUBRIC OVERRIDE RULE:
     If a rubric override is provided and it specifies categories and point values:
@@ -6298,9 +6301,10 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
 
     STEP 4 — FORMATTING DEDUCTION (quiet, max –1 total):
     Check ONLY if clearly missing in the photos:
-    - date
-    - proper title (not just “check-in”)
-    - page/question reference (ONLY if applicable)
+    - ONLY if it is a hand-written assignment:
+      - date
+      - proper title (not just “check-in”)
+      - page/question reference (ONLY if applicable)
     If any are missing, add exactly one deduction item:
     { "reason": "Formatting requirements missing", "points": 1 }
     Otherwise deductions is [].
