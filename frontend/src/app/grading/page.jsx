@@ -461,25 +461,17 @@ function formatTeacherBlock(a) {
     const assessment = normalized.assessment;
 
     const currentCopySig = useMemo(() => {
-      if (!assessment) return "";
-      try {
-        // JSON stringify is fine if your object keys are stable. (They should be from backend.)
-        return JSON.stringify(assessment);
-      } catch {
-        return String(Date.now()); // worst-case fallback
-      }
+      const sid = assessment?.meta?.submissionId;
+      if (sid) return String(sid);
+
+      // fallback if needed
+      const u = assessment?.assignment_images?.[0]?.url;
+      return u ? String(u) : "";
     }, [assessment]);
 
     const formattedTeacherText = useMemo(() => {
       return assessment ? formatTeacherBlock(assessment) : "";
     }, [assessment]);
-
-    useEffect(() => {
-      // Only unlock when we have an assessment AND it's not the one we copied.
-      if (currentCopySig && currentCopySig !== lockedCopySig && currentCopySig !== lastCopySigRef.current) {
-        setLockedCopySig("");
-      }
-    }, [currentCopySig]); 
 
     function triggerFlash() {
       setFlash(true);
@@ -994,13 +986,26 @@ function formatTeacherBlock(a) {
       }
     }
 
+    const copyInFlightRef = useRef(false);
+
     async function copyFormatted() {
       if (!assessment) return;
-      if (copyLocked) return;
+      if (!currentCopySig) return;
+
+      // ✅ hard lock until Submit/Clear resets it
+      if (lastCopySigRef.current === currentCopySig) return;
+
+      // ✅ prevent double-trigger while clipboard work runs
+      if (copyInFlightRef.current) return;
+      copyInFlightRef.current = true;
+
+      // ✅ lock immediately (sync), before any await
+      lastCopySigRef.current = currentCopySig;
+      setLockedCopySig(currentCopySig);
 
       const links = getAssignmentImagesFromAssessment(assessment);
 
-      // ---------- Plain text (fallback) ----------
+    // ---------- Plain text (fallback) ----------
       const lines = [];
       const g = getDisplayScore(assessment);
         if (g.score !== "") {
@@ -1166,16 +1171,15 @@ function formatTeacherBlock(a) {
         window.setTimeout(() => setCopied(false), 1200);
         logCurrentToSessionLocal(plainText);
 
-        // Lock copying for this exact result so it can't be re-added
-        setLockedCopySig(currentCopySig);
-        lastCopySigRef.current = currentCopySig;
-
-      } catch (e) {
-        console.error("copy failed", e);
-        setCopied(false);
-        setSubmitError("Copy failed—your browser may block clipboard access.");
+        } catch (e) {
+          // if copy failed, allow retry
+          lastCopySigRef.current = "";
+          setLockedCopySig("");
+          setSubmitError("Copy failed—your browser may block clipboard access.");
+        } finally {
+          copyInFlightRef.current = false;
+        }
       }
-    }
 
     function escapeHtml(s) {
       return String(s ?? "")
