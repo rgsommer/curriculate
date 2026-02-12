@@ -6278,9 +6278,19 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     For test-style sections … include incorrect_items listing only incorrect questions.
     - Keep prompts short. Include student_answer and correct_answer for each incorrect item.
     - If all items are correct, return incorrect_items: null.
-    Math units rule: If a numeric answer is correct but missing a required unit (cm, m, kg, °C, etc.), subtract 0.5 points for that item. Apply only when a unit is clearly expected from the question/context.
-    - If it’s a test with sections, reflect that by lowering the section score accordingly (no special extra fields needed).
-    - If it’s not sectioned, reflect it in overall_score
+    For math questions:
+    - If numeric answer is correct but unit is missing when required, deduct 0.5 from that question.
+    - Reflect this in the section score.
+    - Do NOT treat this as a formatting deduction.
+    For multiple choice and true/false:
+    - Read the student mark carefully.
+    - If the mark is ambiguous, say it is unclear.
+    - Do NOT assume a choice.
+    - Only report an answer as incorrect if the student’s selected letter clearly differs from the correct answer.
+    - If student answer equals correct answer, do NOT list it as incorrect.
+    When reporting incorrect_items:
+    - Double-check that student_answer !== correct_answer before including it.
+    - Never include items where they match.
 
     RUBRIC OVERRIDE RULE:
     If a rubric override is provided and it specifies categories and point values:

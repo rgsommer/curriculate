@@ -473,6 +473,7 @@ function formatTeacherBlock(a) {
       if (typeof window === "undefined") return [];
       return loadSession();
     });
+    const [copyEnabled, setCopyEnabled] = useState(false);
 
     useEffect(() => {
       saveSession(sessionItems);
@@ -521,9 +522,6 @@ function formatTeacherBlock(a) {
     const submissionIdRef = useRef(0);
     const [submissionId, setSubmissionId] = useState(0);
     const [copiedSubmissionId, setCopiedSubmissionId] = useState(-1);
-
-    // prevent double-trigger while clipboard work runs
-    const copyInFlightRef = useRef(false);
 
     const backendBase = useMemo(
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
@@ -746,6 +744,7 @@ function formatTeacherBlock(a) {
       setCopied(false);
 
       // ✅ reset submission lock state
+      setCopyEnabled(false);
       setCopiedSubmissionId(-1);
       submissionIdRef.current = 0;
       setSubmissionId(0);
@@ -758,6 +757,7 @@ function formatTeacherBlock(a) {
       setSubmissionId(submissionIdRef.current);
       setCopiedSubmissionId(-1);   // ✅ unlock for the new submission
       setCopied(false);
+      setCopyEnabled(false); // lock during submission
 
       if (!gradingUrl) {
         setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
@@ -798,6 +798,8 @@ function formatTeacherBlock(a) {
 
         const text = await res.text();
         setServerText(text);
+        setCopyEnabled(true);
+        setCopied(false);
 
         if (!res.ok) {
           const parsed = safeJsonParse(text);
@@ -1045,7 +1047,7 @@ function formatTeacherBlock(a) {
             return `=== ${label} ===\n${body}\n`;
           }),
           "",
-          analysisBlock ? analysisBlock : ""
+          analysisBlock, // ✅ THIS is the one you want appended
         ].join("\n").trim();
 
         await navigator.clipboard?.writeText(plain);
@@ -1060,22 +1062,22 @@ function formatTeacherBlock(a) {
     }
 
     async function copyFormatted() {
+      if (!assessment) return;
+
+      // already copied for this submission => stay disabled
+      if (copiedSubmissionId === submissionId) {
+          setCopyEnabled(false);
+          return;
+        }
       console.log("copy attempt", {
         submissionId,
         copiedSubmissionId,
-        copyLocked: !!assessment && copiedSubmissionId === submissionId,
-        inFlight: copyInFlightRef.current,
+        copyEnabled,
       });
 
-      if (!assessment) return;
+      if (!copyEnabled) return;
       
-      // ✅ hard lock until next submission
-      if (copiedSubmissionId === submissionId) return;
-
-      if (copyInFlightRef.current) return;
-      copyInFlightRef.current = true;
-
-      // ✅ lock immediately (sync), before any await
+      setCopyEnabled(false);
       setCopiedSubmissionId(submissionId);
 
       const links = getAssignmentImagesFromAssessment(assessment);
@@ -1248,9 +1250,8 @@ function formatTeacherBlock(a) {
       } catch (e) {
         // ✅ if copy failed, allow retry for this submission
         setCopiedSubmissionId(-1);
+        setCopyEnabled(true);
         setSubmitError("Copy failed—your browser may block clipboard access.");
-      } finally {
-        copyInFlightRef.current = false;
       }
     }
 
@@ -1262,8 +1263,6 @@ function formatTeacherBlock(a) {
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
     }
-
-    const copyLocked = assessment && copiedSubmissionId === submissionId;
 
     return (
       <div style={styles.page}>
@@ -1478,10 +1477,12 @@ function formatTeacherBlock(a) {
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {formattedTeacherText && (
                   <button
-                    onClick={copyLocked ? undefined : copyFormatted}
+                    onClick={assessment && copyEnabled ? copyFormatted : undefined}
+
                     style={styles.secondaryBtn}
-                    disabled={copyLocked}
-                    title={copyLocked ? "Already copied for this result" : "Copy comment"}
+                    disabled={!copyEnabled}
+
+                    title={!copyEnabled ? "Already copied for this result" : "Copy comment"}
                   >
                     {copied ? "Copied ✓" : "Copy Comment"}
                   </button>
@@ -1503,9 +1504,9 @@ function formatTeacherBlock(a) {
                 ...styles.responseBox,
                 ...(assessment ? styles.responseBoxClickable : null),
               }}
-              onClick={assessment && !copyLocked ? copyFormatted : undefined}
-              role={assessment && !copyLocked ? "button" : undefined}
-              title={assessment ? (copyLocked ? "Already copied for this result" : "Tap to copy formatted comment") : ""}
+              onClick={assessment && copyEnabled ? copyFormatted : undefined}
+              role={assessment && copyEnabled ? "button" : undefined}
+              title={assessment ? (!copyEnabled ? "Already copied for this result" : "Tap to copy formatted comment") : ""}
             >
               {assessment ? (
                 <div style={styles.gradingCard}>
@@ -1521,7 +1522,7 @@ function formatTeacherBlock(a) {
                       })()}
                     </div>
                     <div style={styles.copyPillInline}>
-                      {copyLocked ? "Copied ✓" : (copied ? "Copied ✓" : "Tap to copy")}
+                      {!copyEnabled ? "Copied ✓" : (copied ? "Copied ✓" : "Tap to copy")}
                     </div>
                   </div>
 
