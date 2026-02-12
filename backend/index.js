@@ -6311,9 +6311,9 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
 
     STEP 4 — FORMATTING DEDUCTION (quiet, max –1 total):
     Check ONLY if clearly missing in the photos:
-    - ONLY if it is a hand-written assignment:
+    - proper title (not just “check-in”; do not apply to art work or posters)
+    - ONLY if it is student hand-written or student-typed assignment:
       - date
-      - proper title (not just “check-in”)
       - page/question reference (ONLY if applicable)
     If any are missing, add exactly one deduction item:
     { "reason": "Formatting requirements missing", "points": 1 }

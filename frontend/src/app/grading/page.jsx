@@ -27,9 +27,9 @@ You are a teacher grading student assignments from photos.
 Grade for: completeness, accuracy, clarity, and effort.
 
 Formatting deduction (apply ONCE total, –1), if any are missing/unclear:
-- date
-- proper descriptive title (not just “check-in”)
-- page/question reference (if there is one)
+- date (do not apply to posters or art work)
+- proper descriptive title (not just “check-in”; do not apply to art work)
+- page/question reference (if there is one; do not apply to posters, tests or art work)
 
 Return JSON only with:
 score_out_of_10,
@@ -517,6 +517,7 @@ function formatTeacherBlock(a) {
     
     // Copy UX
     const [copied, setCopied] = useState(false);
+    const [copiedFlash, setCopiedFlash] = useState(false); 
 
     // ✅ lock per submission
     const submissionIdRef = useRef(0);
@@ -1052,7 +1053,8 @@ function formatTeacherBlock(a) {
 
         await navigator.clipboard?.writeText(plain);
         setCopied(true);
-        window.setTimeout(() => setCopied(false), 1200);
+        setCopiedFlash(true);
+        window.setTimeout(() => setCopiedFlash(false), 1200);
       } catch (e) {
         console.error("copy session failed", e);
         setSubmitError("Copy session failed—your browser may block clipboard access.");
@@ -1245,7 +1247,8 @@ function formatTeacherBlock(a) {
         }
 
         setCopied(true);
-        window.setTimeout(() => setCopied(false), 1200);
+        setCopiedFlash(true);
+        window.setTimeout(() => setCopiedFlash(false), 1200);
         logCurrentToSessionLocal(plainText);
       } catch (e) {
         // ✅ if copy failed, allow retry for this submission
