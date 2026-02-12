@@ -135,6 +135,86 @@ function safeJsonParse(text) {
   return null;
 }
 
+function extractJsonStringValue(text, key) {
+  if (typeof text !== "string") return null;
+  const needle = `"${key}"`;
+  const k = text.indexOf(needle);
+  if (k < 0) return null;
+
+  // Find the colon after "key"
+  let i = k + needle.length;
+  while (i < text.length && text[i] !== ":") i++;
+  if (i >= text.length) return null;
+  i++; // past ':'
+
+  // Skip whitespace
+  while (i < text.length && /\s/.test(text[i])) i++;
+
+  // Expect opening quote for a JSON string value
+  if (text[i] !== '"') return null;
+  i++; // past opening quote
+
+  let out = "";
+  let escaped = false;
+
+  for (; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escaped) {
+      // keep escape sequences as-is; safeJsonParse/parseEscapedJsonString will handle
+      out += "\\" + ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      // end of string
+      return out;
+    }
+
+    out += ch;
+  }
+
+  return null;
+}
+
+function parseEscapedJsonString(raw) {
+  if (typeof raw !== "string") return null;
+
+  // raw may already be unescaped JSON, or an escaped JSON string
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // Try direct parse first
+  const direct = safeJsonParse(trimmed);
+  if (direct) return direct;
+
+  // Unescape common sequences (same idea as safeJsonParse looksEscaped branch,
+  // but raw here is usually the inner string WITHOUT outer quotes)
+  const unescaped = trimmed
+    .replace(/\\\\/g, "\\")   // \\ -> \
+    .replace(/\\"/g, '"')    // \" -> "
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
+
+  const parsed = safeJsonParse(unescaped);
+  if (parsed) return parsed;
+
+  // Last-ditch: extract object block and parse
+  const start = unescaped.indexOf("{");
+  const end = unescaped.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return safeJsonParse(unescaped.slice(start, end + 1));
+  }
+
+  return null;
+}
+
 function isAssessmentObject(o) {
   if (!o || typeof o !== "object") return false;
 
@@ -451,10 +531,24 @@ function formatTeacherBlock(a) {
     }, [backendBase]);
 
     const normalized = useMemo(() => {
-      // Normalize from text first; if it’s JSON, we’ll get assessment.
+      // First: try normal JSON parse of the whole response
       const parsed = safeJsonParse(serverText);
       if (parsed) return normalizeFromAny(parsed);
-      // If not JSON, normalization may still preserve raw
+
+      // If wrapper JSON is invalid, try extracting the "raw" field manually
+      const raw = extractJsonStringValue(serverText, "raw");
+      const err = extractJsonStringValue(serverText, "error") || "";
+
+      if (raw) {
+        // raw is the *contents* of the JSON string, with escapes preserved
+        const salvaged = parseEscapedJsonString(raw);
+        if (salvaged) return normalizeFromAny(salvaged);
+
+        // fallback: at least surface wrapper error & raw text
+        return { assessment: null, wrapperError: err, rawTextUsed: raw };
+      }
+
+      // nothing salvageable
       return normalizeFromAny(serverText);
     }, [serverText]);
 
