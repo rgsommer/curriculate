@@ -6521,6 +6521,59 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
           }
         };
 
+        function bestEffortParseJsonObject(s) {
+          if (typeof s !== "string") return null;
+          const str = s.trim();
+          if (!str) return null;
+
+          const tryParse = (x) => {
+            try { return JSON.parse(x); } catch { return null; }
+          };
+
+          // First attempt
+          const direct = tryParse(str);
+          if (direct) return direct;
+
+          // If truncated, trim to last complete } and try again
+          const lastBrace = str.lastIndexOf("}");
+          if (lastBrace > 0) {
+            const trimmed = str.slice(0, lastBrace + 1);
+            const parsed2 = tryParse(trimmed);
+            if (parsed2) return parsed2;
+          }
+
+          // As a final rescue: take biggest {...} block
+          const start = str.indexOf("{");
+          const end = str.lastIndexOf("}");
+          if (start >= 0 && end > start) {
+            const block = str.slice(start, end + 1);
+            const parsed3 = tryParse(block);
+            if (parsed3) return parsed3;
+          }
+
+          return null;
+        }
+
+        function parseEscapedJsonString(raw) {
+          if (typeof raw !== "string") return null;
+
+          // raw is like: "{\"a\":1,\"b\":\"x\"}"
+          // Step 1: try to parse it as JSON string -> returns inner string
+          try {
+            const inner = JSON.parse(`"${raw.replaceAll('"', '\\"')}"`);
+            // That trick is unreliable across all cases; better do manual unescape:
+          } catch {}
+
+          const unescaped = raw
+            .replace(/\\\\/g, "\\")
+            .replace(/\\"/g, '"')
+            .replace(/\\n/g, "\n")
+            .replace(/\\r/g, "\r")
+            .replace(/\\t/g, "\t");
+
+          return bestEffortParseJsonObject(unescaped);
+        }
+
         const extractObjectBlock = (str) => {
           const start = str.indexOf("{");
           const end = str.lastIndexOf("}");
@@ -6559,13 +6612,30 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
           .replace(/\\t/g, "\t")
           .replace(/\\r/g, "\r");
 
+        // Try normal parse
         const parsed2 = tryParse(unescaped);
         if (parsed2) return parsed2;
 
+        // Try trimming to last complete object brace (handles truncation)
+        const lastBrace = unescaped.lastIndexOf("}");
+        if (lastBrace > 0) {
+          const trimmed = unescaped.slice(0, lastBrace + 1);
+          const parsedTrim = tryParse(trimmed);
+          if (parsedTrim) return parsedTrim;
+        }
+
+        // Try “largest {...} block”
         const rescued2 = extractObjectBlock(unescaped);
         if (rescued2) {
           const parsed3 = tryParse(rescued2);
           if (parsed3) return parsed3;
+
+          const lastBrace2 = rescued2.lastIndexOf("}");
+          if (lastBrace2 > 0) {
+            const trimmed2 = rescued2.slice(0, lastBrace2 + 1);
+            const parsed4 = tryParse(trimmed2);
+            if (parsed4) return parsed4;
+          }
         }
 
         return null;
@@ -6596,7 +6666,8 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
       const grade = safeJsonParse(response.output_text);
 
       if (!grade) {
-        return res.status(502).json({
+        // Still return the raw payload, but DO NOT 502 (frontend shouldn't panic)
+        return res.json({
           error: "Grading returned invalid JSON",
           raw: response.output_text || "",
           assignment_images: imageRefs,
@@ -6738,7 +6809,7 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
             schema: sessionSummarySchema,
           },
         },
-        max_output_tokens: 500,
+        max_output_tokens: 1400,
       });
 
       const summary = safeJsonParse(response.output_text);

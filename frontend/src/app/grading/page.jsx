@@ -170,46 +170,21 @@ function normalizeFromAny(serverTextOrObj) {
   }
 
   // If string, parse
-  if (typeof serverTextOrObj === "string") {
-    const parsed = safeJsonParse(serverTextOrObj);
-    if (!parsed) return { assessment: null, wrapperError: "", rawTextUsed: serverTextOrObj };
-    return normalizeFromAny(parsed);
-  }
+  // wrapper: { raw: "json-string" }
+  if (typeof serverTextOrObj.raw === "string") {
+    // Try strict-ish parse
+    const parsed = safeJsonParse(serverTextOrObj.raw);
+    if (parsed) return normalizeFromAny(parsed);
 
-  // If wrapper object
-  if (serverTextOrObj && typeof serverTextOrObj === "object") {
-    // direct assessment in json field
-    if (isAssessmentObject(serverTextOrObj.json)) {
-      return { assessment: serverTextOrObj.json, wrapperError: "", rawTextUsed: "" };
-    }
+    // If that fails, try unescape + best-effort salvage (handles truncation)
+    const salvaged = parseEscapedJsonString(serverTextOrObj.raw);
+    if (salvaged) return normalizeFromAny(salvaged);
 
-    // wrapper: { result: "json-string" }
-    if (typeof serverTextOrObj.result === "string") {
-      const parsed = safeJsonParse(serverTextOrObj.result);
-      if (parsed) return normalizeFromAny(parsed);
-    }
-
-    // wrapper: { raw: "json-string" }
-    if (typeof serverTextOrObj.raw === "string") {
-      const parsed = safeJsonParse(serverTextOrObj.raw);
-      if (parsed) return normalizeFromAny(parsed);
-      // keep raw around if empty/unparseable
-      return {
-        assessment: null,
-        wrapperError: serverTextOrObj.error || "",
-        rawTextUsed: serverTextOrObj.raw,
-      };
-    }
-
-    // Sometimes backend returns { result: {..} }
-    if (isAssessmentObject(serverTextOrObj.result)) {
-      return { assessment: serverTextOrObj.result, wrapperError: "", rawTextUsed: "" };
-    }
-
+    // keep raw around if empty/unparseable
     return {
       assessment: null,
       wrapperError: serverTextOrObj.error || "",
-      rawTextUsed: "",
+      rawTextUsed: serverTextOrObj.raw,
     };
   }
 
@@ -500,11 +475,11 @@ function formatTeacherBlock(a) {
     }, [assessment]);
 
     useEffect(() => {
-      // If the assessment changed, allow copying again
-      if (currentCopySig && currentCopySig !== lastCopySigRef.current) {
+      // Only unlock when we have an assessment AND it's not the one we copied.
+      if (currentCopySig && currentCopySig !== lockedCopySig && currentCopySig !== lastCopySigRef.current) {
         setLockedCopySig("");
       }
-    }, [currentCopySig]);
+    }, [currentCopySig]); 
 
     function triggerFlash() {
       setFlash(true);
@@ -762,9 +737,6 @@ function formatTeacherBlock(a) {
         setSubmitting(false);
       }
     }
-
-    setLockedCopySig("");
-    lastCopySigRef.current = "";
 
     async function toggleCamera() {
       const next = !usingFrontCamera; 
@@ -1024,6 +996,7 @@ function formatTeacherBlock(a) {
 
     async function copyFormatted() {
       if (!assessment) return;
+      if (copyLocked) return;
 
       const links = getAssignmentImagesFromAssessment(assessment);
 
@@ -1213,7 +1186,9 @@ function formatTeacherBlock(a) {
         .replaceAll("'", "&#039;");
     }
 
-    const copyLocked = !!currentCopySig && lockedCopySig === currentCopySig;
+    const copyLocked =
+      !!currentCopySig &&
+      (lockedCopySig === currentCopySig || lastCopySigRef.current === currentCopySig);
 
     function formatIncorrectItemsInline(sec) {
       const items = Array.isArray(sec?.incorrect_items) ? sec.incorrect_items : [];
