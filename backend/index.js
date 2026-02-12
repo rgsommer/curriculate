@@ -6393,7 +6393,7 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
                 name: { type: "string", minLength: 1 },
                 score: { type: "number", minimum: 0 },
                 out_of: { type: "number", minimum: 1 },
-                teacher_comment: { type: "string" },
+                teacher_comment: { type: "string", maxLength: 450 },
 
                 incorrect_items: {
                   type: ["array", "null"],
@@ -6401,9 +6401,9 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
                     type: "object",
                     additionalProperties: false,
                     properties: {
-                      prompt: { type: "string", minLength: 1 },
-                      student_answer: { type: "string" },
-                      correct_answer: { type: "string" },
+                      prompt: { type: "string", minLength: 1, maxLength: 140 },
+                      student_answer: { type: "string", maxLength: 60 },
+                      correct_answer: { type: "string", maxLength: 60 },
                     },
                     required: ["prompt", "student_answer", "correct_answer"],
                   },
@@ -6660,7 +6660,7 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
             schema: schema.schema,   // <-- the actual JSON Schema object
           },
         },
-        max_output_tokens: 800
+        max_output_tokens: 2500
       });
 
       const grade = safeJsonParse(response.output_text);
