@@ -6196,7 +6196,93 @@ function gradingExpiredHtml({ brand = "Curriculate" } = {}) {
     </html>`;
     }
 
-function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}) {
+function voiceStyleSpec(voice = "warm") {
+  const baseGuardrails = `
+VOICE GUARDRAILS (always):
+- Be kind, respectful, and teacher-appropriate.
+- Never insult, shame, mock, or use harsh sarcasm.
+- No "roasting" or mean humor. If humor is used, keep it light and supportive.
+- Avoid slang that could be misunderstood by students/parents.
+- Keep feedback practical and specific to visible evidence.
+`.trim();
+
+  const specs = {
+    professional: `
+VOICE: Professional
+- Tone: neutral, calm, formal-but-friendly.
+- Sentence length: medium.
+- Style: clear, objective, minimal emotion.
+- Teacher_comment: encouraging but measured.
+`.trim(),
+
+    warm: `
+VOICE: Warm & encouraging
+- Tone: positive, supportive, uplifting.
+- Sentence length: short-to-medium.
+- Style: celebrate wins first; gentle phrasing for corrections.
+- Teacher_comment: affirm effort + one clear improvement + brief tip.
+`.trim(),
+
+    direct: `
+VOICE: Direct & concise
+- Tone: straightforward, no fluff.
+- Sentence length: short.
+- Style: prioritize clarity, quick actionable next step.
+- Teacher_comment: 2 short sentences max unless absolutely needed.
+`.trim(),
+
+    coach: `
+VOICE: Detailed coach
+- Tone: supportive, instructional, growth-minded.
+- Sentence length: medium.
+- Style: include 1 concrete example of how to improve (based on the work).
+- Teacher_comment: can use 3 sentences if it adds clarity.
+`.trim(),
+
+    gentle_firm: `
+VOICE: Gentle but firm
+- Tone: caring, steady, clear expectations.
+- Sentence length: short-to-medium.
+- Style: name what’s good; state what must improve; keep it respectful.
+- Teacher_comment: avoid softness that hides the main issue.
+`.trim(),
+
+    witty_light: `
+VOICE: Witty (light)
+- Tone: friendly, light humor permitted.
+- Sentence length: short-to-medium.
+- Style: 0–1 playful phrase max; never distract from clarity.
+- Teacher_comment: must remain respectful and useful.
+`.trim(),
+
+    standards: `
+VOICE: Standards-based (rubric language)
+- Tone: objective, criteria-aligned.
+- Sentence length: medium.
+- Style: use assessment language (e.g., "meets", "approaching", "exceeds") without sounding robotic.
+- Teacher_comment: reference criteria briefly (clarity/accuracy/completeness) without overdoing it.
+`.trim(),
+
+    student_friendly: `
+VOICE: Student-friendly (simple wording)
+- Tone: clear, encouraging, accessible.
+- Sentence length: short.
+- Style: avoid advanced vocabulary; make next steps easy to follow.
+- Teacher_comment: write as if the student will read it directly.
+`.trim(),
+  };
+
+  const chosen = specs[voice] || specs.warm;
+
+  return `${baseGuardrails}\n\n${chosen}`.trim();
+}
+
+  function buildRubricInstructions({
+    gradeBand = "6-8",
+    rubricOverride = "",
+    feedbackVoice = "warm",
+    feedbackVoiceMode = "default",
+  } = {}) {
   const gradeExpectations = {
       "3-5": `
     GRADE LEVEL: 3–5
@@ -6233,6 +6319,14 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     When the task involves values, purpose, identity, morality, justice, meaning, or worldview-type reflection, respond from a respectful Christian perspective (grace + truth, human dignity). Do not preach; keep it classroom-appropriate and kind. For non-worldview questions, grade normally.
 
     ${gradeExpectations[gradeBand] || gradeExpectations["6-8"]}
+
+    ${voiceStyleSpec(feedbackVoice)}
+
+    VOICE APPLICATION (required):
+    - Apply the selected VOICE to: strengths, improvements, teacher_comment, and every sections[].teacher_comment.
+    - Keep structure the same; only change phrasing and tone.
+    - Do not add extra fields.
+    - Do not add jokes unless VOICE allows light humor (and even then, max 0–1 brief phrase).
 
     FEEDBACK LANGUAGE RULE (grade-band aligned):
     - For 3–5: Use simple, direct language. Short sentences. Avoid abstract vocabulary.
@@ -6361,26 +6455,37 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     `.trim();
     }
 
-    const session_summary_instructions = `
-      You are helping a busy teacher write short, natural feedback for a class set of graded assignments.
+    function buildSessionSummaryInstructions({ feedbackVoice = "warm" } = {}) {
+      return `
+    You are helping a busy teacher write short, natural feedback for a class set of graded assignments.
 
-      Given the following graded submissions (each with strengths, improvements, teacher comment, etc.):
-      Write ONLY 3–7 short sentences total, in plain paragraph form:
-      - First 1–3 sentences: describe the main things most students performed poorly, struggled with, or lost marks on. Mention 1–2 clear patterns if they exist.
-      - Next 1–3 sentences: describe what was performed well, showed good effort, understanding, or creativity.
+    VOICE (required):
+    - Match this tone: ${feedbackVoice}
+    - Adjust warmth, directness, and sentence length accordingly.
+    - Always remain kind, respectful, and classroom-appropriate.
+    - No sarcasm, no shaming, no edgy humor.
 
-      Rules:
-      - Do NOT use bullet points, numbered lists, headings, or section labels.
-      - Do NOT mention individual scores, point breakdowns, or specific rubrics.
-      - Do NOT suggest lesson plans, next steps, or re-check questions.
-      - Write conversationally — like quick notes a teacher would paste into a report, email to parents, or say during class review.
-      - Keep it encouraging and professional even when pointing out weaknesses.
-      - If no strong patterns exist, write something balanced and brief.
-      - Do NOT mention the words “evidence”, “JSON”, or “schema”.
-      - Do NOT quote student answers; summarize patterns only.
+    Given the following graded submissions (each with strengths, improvements, teacher comment, etc.):
+    Write ONLY 3–7 short sentences total in ONE single paragraph.
 
-      Respond with the paragraph text only — no JSON wrapper, no extra commentary.
+    Structure:
+    - First 1–3 sentences: describe the main things most students struggled with or lost marks on. Mention 1–2 clear patterns if they exist.
+    - Next 1–3 sentences: describe what was done well overall (effort, understanding, clarity, creativity).
+
+    Rules:
+    - Do NOT use bullet points, numbered lists, headings, or section labels.
+    - Do NOT mention individual scores, point breakdowns, or specific rubrics.
+    - Do NOT suggest lesson plans, next steps, or re-check questions.
+    - Write conversationally — like quick notes a teacher would paste into a report, email to parents, or say during class review.
+    - Keep it encouraging and professional even when pointing out weaknesses.
+    - If no strong patterns exist, write something balanced and brief.
+    - Do NOT mention the words “evidence”, “JSON”, or “schema”.
+    - Do NOT quote student answers; summarize patterns only.
+    - Return exactly ONE paragraph with no extra commentary.
+
+    Respond with the paragraph text only.
       `.trim();
+    }
   
   function safeJsonParse(text) {
     if (text == null) return null;
@@ -6641,9 +6746,14 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
         schema: gradeResultSchema,
       };
 
+      const feedbackVoice = req.body?.meta?.feedbackVoice || "warm";
+      const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
+
       const instructions = buildRubricInstructions({
-        gradeBand: band,
-        rubricOverride: (rubricOverride || "").trim(),
+        gradeBand,
+        rubricOverride,
+        feedbackVoice,
+        feedbackVoiceMode,
       });
 
       const s3 = getS3Client();
@@ -6792,56 +6902,79 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
   //  POST /grading/session-summary
   // ====================================================================
   app.post("/grading/session-summary", async (req, res) => {
-  try {
-    const { gradeBand, evidence, rubricOverride } = req.body || {};
+    try {
+      const { gradeBand, evidence, rubricOverride, meta } = req.body || {};
 
-    if (!Array.isArray(evidence) || evidence.length === 0) {
-      return res.status(400).json({ error: "Missing evidence array" });
-    }
+      if (!Array.isArray(evidence) || evidence.length === 0) {
+        return res.status(400).json({ error: "Missing evidence array" });
+      }
 
-    const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
 
-    const instructions = `
-      ${session_summary_instructions}
+      // ✅ Pull voice from meta (front-end can send it later; defaults are safe)
+      const feedbackVoice = String(meta?.feedbackVoice || "warm");
+      const feedbackVoiceMode = String(meta?.feedbackVoiceMode || "default");
 
-      GRADE BAND: ${band}
+      const voiceMap = {
+        professional: "professional, measured, neutral",
+        warm: "warm, encouraging, positive",
+        direct: "direct, concise, minimal fluff",
+        coach: "supportive, instructional, coaching tone",
+        gentle_firm: "gentle but firm, clear expectations, respectful",
+        witty_light: "light and friendly, subtle kind humor at most once",
+        standards: "objective, criteria-aligned academic tone",
+        student_friendly: "simple, student-friendly language",
+      };
+      const voiceDesc = voiceMap[feedbackVoice] || voiceMap.warm;
 
-      rubricOverride (optional context only):
-      ${(rubricOverride || "").trim() || "(none)"}
+      const instructions = `
+        ${session_summary_instructions}
 
-      evidence (JSON):
-      ${JSON.stringify(evidence).slice(0, 180000)}
-      `.trim();
+        GRADE BAND: ${band}
 
-          const response = await openai.responses.create({
-            model: "gpt-5.2",
-            input: [
-              {
-                role: "user",
-                content: [{ type: "input_text", text: instructions }],
-              },
-            ],
-            max_output_tokens: 450,
-          });
+        VOICE (apply to the paragraph):
+        - feedbackVoice: ${voiceDesc}
+        - feedbackVoiceMode: ${feedbackVoiceMode}
+        - Match tone to the selected voice, but keep it professional and kind.
+        - No sarcasm, no insults, no edgy humor.
+        - Return exactly ONE paragraph (no line breaks).
 
-          const paragraph = String(response.output_text || "").trim();
+        rubricOverride (optional context only):
+        ${(rubricOverride || "").trim() || "(none)"}
 
-          if (!paragraph) {
-            return res.status(502).json({
-              error: "Session summary returned empty text",
-              raw: response.output_text || "",
-            });
-          }
+        evidence (JSON):
+        ${JSON.stringify(evidence).slice(0, 180000)}
+        `.trim();
 
-          res.status(200).set("Content-Type", "text/plain").send(paragraph);
-        } catch (err) {
-          console.error("🔥 /grading/session-summary failed:", err?.message || err);
-          return res.status(500).json({
-            error: "Session summary failed",
-            details: err?.message || "unknown error",
-          });
-        }
+      const response = await openai.responses.create({
+        model: "gpt-5.2",
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: instructions }],
+          },
+        ],
+        max_output_tokens: 450,
       });
+
+      const paragraph = String(response.output_text || "").trim();
+
+      if (!paragraph) {
+        return res.status(502).json({
+          error: "Session summary returned empty text",
+          raw: response.output_text || "",
+        });
+      }
+
+      res.status(200).set("Content-Type", "text/plain").send(paragraph);
+    } catch (err) {
+      console.error("🔥 /grading/session-summary failed:", err?.message || err);
+      return res.status(500).json({
+        error: "Session summary failed",
+        details: err?.message || "unknown error",
+      });
+    }
+  });
 
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {

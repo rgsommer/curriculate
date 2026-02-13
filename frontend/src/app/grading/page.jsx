@@ -47,6 +47,36 @@ const GRADE_BANDS = [
   { value: "11+", label: "Grades 11+" },
 ];
 
+const VOICE_OPTIONS = [
+  { value: "professional", label: "Professional" },
+  { value: "warm", label: "Warm & encouraging (default)" },
+  { value: "direct", label: "Direct & concise" },
+  { value: "coach", label: "Detailed coach" },
+  { value: "gentle_firm", label: "Gentle but firm" },
+  { value: "witty_light", label: "Witty (light)" },
+  { value: "standards", label: "Standards-based (rubric language)" },
+  { value: "student_friendly", label: "Student-friendly (simple wording)" },
+];
+
+const VOICE_KEY = "curriculate_grading_voice_v1";
+const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
+const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
+
+function loadLS(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveLS(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+
 function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
@@ -512,6 +542,25 @@ function formatTeacherBlock(a, ref) {
     const [rubricOverride, setRubricOverride] = useState("");
     const [gradeBand, setGradeBand] = useState("6-8");
 
+    // Feedback Voice (tone/personality)
+    const [voice, setVoice] = useState(() => {
+      if (typeof window === "undefined") return "warm";
+      return loadLS(VOICE_KEY, "warm");
+    });
+    const [voiceOverrideOn, setVoiceOverrideOn] = useState(() => {
+      if (typeof window === "undefined") return false;
+      return loadLS(VOICE_OVERRIDE_KEY, "0") === "1";
+    });
+    const [voiceOverride, setVoiceOverride] = useState(() => {
+      if (typeof window === "undefined") return "warm";
+      return loadLS(VOICE_OVERRIDE_VALUE_KEY, "warm");
+    });
+
+    // Persist
+    useEffect(() => saveLS(VOICE_KEY, voice), [voice]);
+    useEffect(() => saveLS(VOICE_OVERRIDE_KEY, voiceOverrideOn ? "1" : "0"), [voiceOverrideOn]);
+    useEffect(() => saveLS(VOICE_OVERRIDE_VALUE_KEY, voiceOverride), [voiceOverride]);
+
     // Learning Recommendations
     const [sessionSummary, setSessionSummary] = useState(""); // was null object
     const [sessionSummaryError, setSessionSummaryError] = useState("");
@@ -787,6 +836,10 @@ function formatTeacherBlock(a, ref) {
             capturedCount: photosToUse.length,
             capturedAt: Date.now(),
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+
+            // NEW: feedback voice controls
+            feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
+            feedbackVoice: voiceOverrideOn ? voiceOverride : voice,
           },
         };
 
@@ -810,6 +863,9 @@ function formatTeacherBlock(a, ref) {
         } else {
           setCopyEnabled(false);
         }
+
+        // Optional: treat override as one-time
+        if (voiceOverrideOn) setVoiceOverrideOn(false);
 
         if (!res.ok) {
           if (norm.assessment) {
@@ -995,6 +1051,10 @@ function formatTeacherBlock(a, ref) {
         gradeBand,
         rubricOverride: (rubricOverride || "").trim() || null,
         evidence,
+        meta: {
+          feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
+          feedbackVoice: voiceOverrideOn ? voiceOverride : voice,
+        },
       };
 
       const res = await fetch(url, {
@@ -1280,6 +1340,67 @@ function formatTeacherBlock(a, ref) {
             </select>
           </label>
         </div>
+
+        <div style={styles.controlsRow}>
+        <label style={styles.controlLabel}>
+          Grade Band
+          <select
+            value={gradeBand}
+            onChange={(e) => setGradeBand(e.target.value)}
+            style={styles.select}
+          >
+            {GRADE_BANDS.map((g) => (
+              <option key={g.value} value={g.value}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={styles.controlLabel}>
+          Feedback Voice
+          <select
+            value={voice}
+            onChange={(e) => setVoice(e.target.value)}
+            style={styles.select}
+            title="Sets the default tone of feedback"
+          >
+            {VOICE_OPTIONS.map((v) => (
+              <option key={v.value} value={v.value}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ ...styles.controlLabel, flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18 }}>
+          <input
+            type="checkbox"
+            checked={voiceOverrideOn}
+            onChange={(e) => setVoiceOverrideOn(e.target.checked)}
+            style={{ transform: "scale(1.1)" }}
+          />
+          <span style={{ fontWeight: 900, fontSize: 12, opacity: 0.9 }}>Override for this assessment</span>
+        </label>
+
+        {voiceOverrideOn && (
+          <label style={styles.controlLabel}>
+            Override Voice
+            <select
+              value={voiceOverride}
+              onChange={(e) => setVoiceOverride(e.target.value)}
+              style={styles.select}
+              title="Overrides the voice for the next submission only"
+            >
+              {VOICE_OPTIONS.map((v) => (
+                <option key={v.value} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
 
         <div style={styles.grid}>
           {/* CAMERA CARD */}
@@ -1816,10 +1937,12 @@ const styles = {
 
   controlsRow: {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-end",
     gap: 12,
     marginBottom: 12,
+    flexWrap: "wrap",
   },
+
   controlLabel: {
     display: "flex",
     flexDirection: "column",
