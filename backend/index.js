@@ -6361,6 +6361,165 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     `.trim();
     }
 
+    const session_summary_instructions = `
+      You are helping a busy teacher write short, natural feedback for a class set of graded assignments.
+
+      Given the following graded submissions (each with strengths, improvements, teacher comment, etc.):
+      Write ONLY 3–7 short sentences total, in plain paragraph form:
+      - First 1–3 sentences: describe the main things most students performed poorly, struggled with, or lost marks on. Mention 1–2 clear patterns if they exist.
+      - Next 1–3 sentences: describe what was performed well, showed good effort, understanding, or creativity.
+
+      Rules:
+      - Do NOT use bullet points, numbered lists, headings, or section labels.
+      - Do NOT mention individual scores, point breakdowns, or specific rubrics.
+      - Do NOT suggest lesson plans, next steps, or re-check questions.
+      - Write conversationally — like quick notes a teacher would paste into a report, email to parents, or say during class review.
+      - Keep it encouraging and professional even when pointing out weaknesses.
+      - If no strong patterns exist, write something balanced and brief.
+      - Do NOT mention the words “evidence”, “JSON”, or “schema”.
+      - Do NOT quote student answers; summarize patterns only.
+
+      Respond with the paragraph text only — no JSON wrapper, no extra commentary.
+      `.trim();
+  
+  function safeJsonParse(text) {
+    if (text == null) return null;
+
+    // If it’s already an object, return it
+    if (typeof text === "object") return text;
+
+    if (typeof text !== "string") return null;
+    let s = text.trim();
+    if (!s) return null;
+
+    const tryParse = (str) => {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return null;
+      }
+    };
+
+    function bestEffortParseJsonObject(s) {
+      if (typeof s !== "string") return null;
+      const str = s.trim();
+      if (!str) return null;
+
+      const tryParse = (x) => {
+        try { return JSON.parse(x); } catch { return null; }
+      };
+
+      // First attempt
+      const direct = tryParse(str);
+      if (direct) return direct;
+
+      // If truncated, trim to last complete } and try again
+      const lastBrace = str.lastIndexOf("}");
+      if (lastBrace > 0) {
+        const trimmed = str.slice(0, lastBrace + 1);
+        const parsed2 = tryParse(trimmed);
+        if (parsed2) return parsed2;
+      }
+
+      // As a final rescue: take biggest {...} block
+      const start = str.indexOf("{");
+      const end = str.lastIndexOf("}");
+      if (start >= 0 && end > start) {
+        const block = str.slice(start, end + 1);
+        const parsed3 = tryParse(block);
+        if (parsed3) return parsed3;
+      }
+
+      return null;
+    }
+
+    function parseEscapedJsonString(raw) {
+      if (typeof raw !== "string") return null;
+
+      // raw is like: "{\"a\":1,\"b\":\"x\"}"
+      // Step 1: try to parse it as JSON string -> returns inner string
+      try {
+        const inner = JSON.parse(`"${raw.replaceAll('"', '\\"')}"`);
+        // That trick is unreliable across all cases; better do manual unescape:
+      } catch {}
+
+      const unescaped = raw
+        .replace(/\\\\/g, "\\")
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t");
+
+      return bestEffortParseJsonObject(unescaped);
+    }
+
+    const extractObjectBlock = (str) => {
+      const start = str.indexOf("{");
+      const end = str.lastIndexOf("}");
+      if (start >= 0 && end > start) return str.slice(start, end + 1);
+      return null;
+    };
+
+    // 1) direct
+    const direct = tryParse(s);
+    if (direct) return direct;
+
+    // 2) if it’s a quoted JSON string (double-encoded), decode once then parse again
+    // Example: "\"{ \\\"a\\\": 1 }\""
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+      const unquoted = tryParse(s);
+      if (typeof unquoted === "string") {
+        const parsedAgain = tryParse(unquoted);
+        if (parsedAgain) return parsedAgain;
+        s = unquoted; // keep going with the inner string
+      }
+    }
+
+    // 3) extract {...} and try
+    const rescued = extractObjectBlock(s);
+    if (rescued) {
+      const parsed = tryParse(rescued);
+      if (parsed) return parsed;
+    }
+
+    // 4) unescape common sequences and try (ALWAYS, no gating)
+    const candidate = rescued || s;
+    const unescaped = candidate
+      .replace(/\\\\/g, "\\")
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\r/g, "\r");
+
+    // Try normal parse
+    const parsed2 = tryParse(unescaped);
+    if (parsed2) return parsed2;
+
+    // Try trimming to last complete object brace (handles truncation)
+    const lastBrace = unescaped.lastIndexOf("}");
+    if (lastBrace > 0) {
+      const trimmed = unescaped.slice(0, lastBrace + 1);
+      const parsedTrim = tryParse(trimmed);
+      if (parsedTrim) return parsedTrim;
+    }
+
+    // Try “largest {...} block”
+    const rescued2 = extractObjectBlock(unescaped);
+    if (rescued2) {
+      const parsed3 = tryParse(rescued2);
+      if (parsed3) return parsed3;
+
+      const lastBrace2 = rescued2.lastIndexOf("}");
+      if (lastBrace2 > 0) {
+        const trimmed2 = rescued2.slice(0, lastBrace2 + 1);
+        const parsed4 = tryParse(trimmed2);
+        if (parsed4) return parsed4;
+      }
+    }
+
+    return null;
+  }
+
   app.post("/grading", async (req, res) => {
     try {
       const { images, rubricOverride, gradeBand } = req.body;
@@ -6525,144 +6684,6 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
           url: `https://www.curriculate.net/grading/capture/${submissionId}/image-${i + 1}.jpg`,
         }));
 
-      function safeJsonParse(text) {
-        if (text == null) return null;
-
-        // If it’s already an object, return it
-        if (typeof text === "object") return text;
-
-        if (typeof text !== "string") return null;
-        let s = text.trim();
-        if (!s) return null;
-
-        const tryParse = (str) => {
-          try {
-            return JSON.parse(str);
-          } catch {
-            return null;
-          }
-        };
-
-        function bestEffortParseJsonObject(s) {
-          if (typeof s !== "string") return null;
-          const str = s.trim();
-          if (!str) return null;
-
-          const tryParse = (x) => {
-            try { return JSON.parse(x); } catch { return null; }
-          };
-
-          // First attempt
-          const direct = tryParse(str);
-          if (direct) return direct;
-
-          // If truncated, trim to last complete } and try again
-          const lastBrace = str.lastIndexOf("}");
-          if (lastBrace > 0) {
-            const trimmed = str.slice(0, lastBrace + 1);
-            const parsed2 = tryParse(trimmed);
-            if (parsed2) return parsed2;
-          }
-
-          // As a final rescue: take biggest {...} block
-          const start = str.indexOf("{");
-          const end = str.lastIndexOf("}");
-          if (start >= 0 && end > start) {
-            const block = str.slice(start, end + 1);
-            const parsed3 = tryParse(block);
-            if (parsed3) return parsed3;
-          }
-
-          return null;
-        }
-
-        function parseEscapedJsonString(raw) {
-          if (typeof raw !== "string") return null;
-
-          // raw is like: "{\"a\":1,\"b\":\"x\"}"
-          // Step 1: try to parse it as JSON string -> returns inner string
-          try {
-            const inner = JSON.parse(`"${raw.replaceAll('"', '\\"')}"`);
-            // That trick is unreliable across all cases; better do manual unescape:
-          } catch {}
-
-          const unescaped = raw
-            .replace(/\\\\/g, "\\")
-            .replace(/\\"/g, '"')
-            .replace(/\\n/g, "\n")
-            .replace(/\\r/g, "\r")
-            .replace(/\\t/g, "\t");
-
-          return bestEffortParseJsonObject(unescaped);
-        }
-
-        const extractObjectBlock = (str) => {
-          const start = str.indexOf("{");
-          const end = str.lastIndexOf("}");
-          if (start >= 0 && end > start) return str.slice(start, end + 1);
-          return null;
-        };
-
-        // 1) direct
-        const direct = tryParse(s);
-        if (direct) return direct;
-
-        // 2) if it’s a quoted JSON string (double-encoded), decode once then parse again
-        // Example: "\"{ \\\"a\\\": 1 }\""
-        if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-          const unquoted = tryParse(s);
-          if (typeof unquoted === "string") {
-            const parsedAgain = tryParse(unquoted);
-            if (parsedAgain) return parsedAgain;
-            s = unquoted; // keep going with the inner string
-          }
-        }
-
-        // 3) extract {...} and try
-        const rescued = extractObjectBlock(s);
-        if (rescued) {
-          const parsed = tryParse(rescued);
-          if (parsed) return parsed;
-        }
-
-        // 4) unescape common sequences and try (ALWAYS, no gating)
-        const candidate = rescued || s;
-        const unescaped = candidate
-          .replace(/\\\\/g, "\\")
-          .replace(/\\"/g, '"')
-          .replace(/\\n/g, "\n")
-          .replace(/\\t/g, "\t")
-          .replace(/\\r/g, "\r");
-
-        // Try normal parse
-        const parsed2 = tryParse(unescaped);
-        if (parsed2) return parsed2;
-
-        // Try trimming to last complete object brace (handles truncation)
-        const lastBrace = unescaped.lastIndexOf("}");
-        if (lastBrace > 0) {
-          const trimmed = unescaped.slice(0, lastBrace + 1);
-          const parsedTrim = tryParse(trimmed);
-          if (parsedTrim) return parsedTrim;
-        }
-
-        // Try “largest {...} block”
-        const rescued2 = extractObjectBlock(unescaped);
-        if (rescued2) {
-          const parsed3 = tryParse(rescued2);
-          if (parsed3) return parsed3;
-
-          const lastBrace2 = rescued2.lastIndexOf("}");
-          if (lastBrace2 > 0) {
-            const trimmed2 = rescued2.slice(0, lastBrace2 + 1);
-            const parsed4 = tryParse(trimmed2);
-            if (parsed4) return parsed4;
-          }
-        }
-
-        return null;
-      }
-
       const response = await openai.responses.create({
         model: "gpt-5.2",
         input: [
@@ -6771,115 +6792,56 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
   //  POST /grading/session-summary
   // ====================================================================
   app.post("/grading/session-summary", async (req, res) => {
-    try {
-      const { gradeBand, evidence, rubricOverride } = req.body || {};
+  try {
+    const { gradeBand, evidence, rubricOverride } = req.body || {};
 
-      // evidence is intended to be "everything in that collection"
-      // (e.g., array of grade results you already received from /grading, plus optional extra context)
-      if (!Array.isArray(evidence) || evidence.length === 0) {
-        return res.status(400).json({ error: "Missing evidence array" });
-      }
-
-      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
-
-      // IMPORTANT: keep schema simple (NO allOf/oneOf) to avoid the errors you're seeing
-      const sessionSummarySchema = {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          concepts_not_understood: {
-            type: "array",
-            minItems: 1,
-            maxItems: 12,
-            items: { type: "string", minLength: 2 },
-          },
-          concepts_understood_well: {
-            type: "array",
-            minItems: 1,
-            maxItems: 12,
-            items: { type: "string", minLength: 2 },
-          },
-          recommendations: {
-            type: "array",
-            minItems: 1,
-            maxItems: 12,
-            items: { type: "string", minLength: 2 },
-          },
-        },
-        required: ["concepts_not_understood", "concepts_understood_well", "recommendations"],
-      };
-
-      const instructions = buildSessionSummaryInstructions({
-        gradeBand: band,
-        rubricOverride: (rubricOverride || "").trim(),
-        evidence,
-      });
-
-      const response = await openai.responses.create({
-        model: "gpt-5.2",
-        input: [
-          {
-            role: "user",
-            content: [{ type: "input_text", text: instructions }],
-          },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "grading_session_summary",
-            strict: true,
-            schema: sessionSummarySchema,
-          },
-        },
-        max_output_tokens: 1400,
-      });
-
-      const summary = safeJsonParse(response.output_text);
-      if (!summary) {
-        return res.status(502).json({
-          error: "Session summary returned invalid JSON",
-          raw: response.output_text || "",
-        });
-      }
-
-      return res.json(summary);
-    } catch (err) {
-      console.error("🔥 /grading/session-summary failed:", err?.message || err);
-      return res.status(500).json({
-        error: "Session summary failed",
-        details: err?.message || "unknown error",
-      });
+    if (!Array.isArray(evidence) || evidence.length === 0) {
+      return res.status(400).json({ error: "Missing evidence array" });
     }
-  });
 
-  // Helper: build instructions for concept-level summary
-  function buildSessionSummaryInstructions({ gradeBand = "6-8", rubricOverride = "", evidence = [] } = {}) {
-    // Keep it simple + stable: don't rely on huge verbose rubrics here.
-    return `
-  You are a teacher analyzing a set of grading results to find class-wide learning trends.
+    const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
 
-  GRADE BAND: ${gradeBand}
+    const instructions = `
+      ${session_summary_instructions}
 
-  INPUT EVIDENCE:
-  You will receive an array called "evidence". Each item represents one student's graded work result.
-  Each item may include things like: sections, teacher_comment, strengths, improvements, deductions, overall_score/out_of, etc.
+      GRADE BAND: ${band}
 
-  TASK:
-  Aggregate across ALL evidence items and output ONLY JSON matching the required schema.
+      rubricOverride (optional context only):
+      ${(rubricOverride || "").trim() || "(none)"}
 
-  Rules:
-  - Be concrete: concepts should be short curriculum-aligned phrases (e.g., "distinguishing Patriots vs Loyalists", "push vs pull factors", "treaty promises vs outcomes").
-  - Do not mention student names.
-  - If rubricOverride is present, use it only as context for what the teacher cares about, not as facts.
+      evidence (JSON):
+      ${JSON.stringify(evidence).slice(0, 180000)}
+      `.trim();
 
-  rubricOverride (optional):
-  ${rubricOverride ? rubricOverride : "(none)"}
+          const response = await openai.responses.create({
+            model: "gpt-5.2",
+            input: [
+              {
+                role: "user",
+                content: [{ type: "input_text", text: instructions }],
+              },
+            ],
+            max_output_tokens: 450,
+          });
 
-  evidence (JSON):
-  ${JSON.stringify(evidence).slice(0, 180000)}
-  `.trim();
-  }
+          const paragraph = String(response.output_text || "").trim();
 
+          if (!paragraph) {
+            return res.status(502).json({
+              error: "Session summary returned empty text",
+              raw: response.output_text || "",
+            });
+          }
+
+          res.status(200).set("Content-Type", "text/plain").send(paragraph);
+        } catch (err) {
+          console.error("🔥 /grading/session-summary failed:", err?.message || err);
+          return res.status(500).json({
+            error: "Session summary failed",
+            details: err?.message || "unknown error",
+          });
+        }
+      });
 
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {

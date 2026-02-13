@@ -361,7 +361,7 @@ function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   return out;
 }
 
-function formatTeacherBlock(a) {
+function formatTeacherBlock(a, ref) {
   const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
   const strengths = toArrayStrings(a?.strengths);
   const improvements = toArrayStrings(a?.improvements);
@@ -369,7 +369,9 @@ function formatTeacherBlock(a) {
 
   const lines = [];
   const g = getDisplayScore(a);
-  lines.push(`Grade: ${g.score !== "" ? g.score : "(not provided)"} / ${g.outOf}`);
+  lines.push(
+    `Grade: ${g.score !== "" ? g.score : "(not provided)"} / ${g.outOf}${ref ? `  Ref: ${ref}` : ""}`
+  );
 
   if (deductions.length) {
     lines.push("");
@@ -511,13 +513,20 @@ function formatTeacherBlock(a) {
     const [gradeBand, setGradeBand] = useState("6-8");
 
     // Learning Recommendations
-    const [sessionSummary, setSessionSummary] = useState(null); // { A:[], B:[], C:[] } shape below
+    const [sessionSummary, setSessionSummary] = useState(""); // was null object
     const [sessionSummaryError, setSessionSummaryError] = useState("");
     const [summarizingSession, setSummarizingSession] = useState(false);
     
     // Copy UX
     const [copied, setCopied] = useState(false);
     const [copiedFlash, setCopiedFlash] = useState(false); 
+    // 3-digit reference code per result (shown + copied)
+    const [refCode, setRefCode] = useState("");
+
+    function genRef3() {
+      // 100–999 (always 3 digits)
+      return String(Math.floor(100 + Math.random() * 900));
+    }
 
     const backendBase = useMemo(
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
@@ -553,9 +562,15 @@ function formatTeacherBlock(a) {
 
     const assessment = normalized.assessment;
 
+    useEffect(() => {
+      if (assessment && !refCode) {
+        setRefCode(genRef3());
+      }
+    }, [assessment, refCode]);
+
     const formattedTeacherText = useMemo(() => {
-      return assessment ? formatTeacherBlock(assessment) : "";
-    }, [assessment]);
+      return assessment ? formatTeacherBlock(assessment, refCode) : "";
+    }, [assessment, refCode]);
 
     function triggerFlash() {
       setFlash(true);
@@ -737,6 +752,7 @@ function formatTeacherBlock(a) {
       setSubmitError("");
       setServerText("");
       setCopied(false);
+      setRefCode(""); // ✅ reset ref
 
       // ✅ reset submission lock state
       setCopyEnabled(false);
@@ -747,6 +763,7 @@ function formatTeacherBlock(a) {
       setServerText("");
       setCopied(false);
       setCopyEnabled(false); // lock during submission
+      setRefCode(""); // ✅ new submission => new ref (generated when assessment arrives)
 
       if (!gradingUrl) {
         setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
@@ -811,7 +828,9 @@ function formatTeacherBlock(a) {
           throw new Error(msg);
         }
 
-      } catch (err) {
+      } 
+        catch (err) {
+        setCopyEnabled(false);
         console.error("Submit error:", err);
         setSubmitError(err?.message || "Network error submitting for grading.");
       } finally {
@@ -989,18 +1008,17 @@ function formatTeacherBlock(a) {
       });
 
       const text = await res.text();
-      const parsed = safeJsonParse(text);
 
       if (!res.ok) {
+        const parsed = safeJsonParse(text); // might be JSON error payload
         const msg = parsed?.details || parsed?.error || `HTTP ${res.status} from session-summary`;
         throw new Error(msg);
       }
 
-      if (!parsed || typeof parsed !== "object") {
-        throw new Error("Session summary returned invalid JSON");
-      }
+      const paragraph = String(text || "").trim();
+      if (!paragraph) throw new Error("Session summary returned empty text");
 
-      return parsed;
+      return paragraph;
     }
 
     async function copySession() {
@@ -1010,39 +1028,36 @@ function formatTeacherBlock(a) {
       setSummarizingSession(true);
 
       try {
-        let summary = null;
+        let paragraph = "";
 
         try {
-          summary = await fetchAiSessionSummary(sessionItems);
+          paragraph = await fetchAiSessionSummary(sessionItems);
         } catch (e) {
           console.warn("AI session summary failed; using fallback:", e?.message || e);
           setSessionSummaryError(e?.message || "AI summary failed; used fallback.");
-          summary = null;
+          paragraph = "";
         }
 
-        if (!summary) {
-          summary = localHeuristicSessionSummary(sessionItems);
+        if (!paragraph) {
+          // fallback: turn your heuristic object into a short paragraph
+          const fb = localHeuristicSessionSummary(sessionItems);
+          const weak = (fb.concepts_not_understood || []).slice(0, 2).map(x => x.replace(/\s*\(\d+\)\s*$/, ""));
+          const strong = (fb.concepts_understood_well || []).slice(0, 2).map(x => x.replace(/\s*\(\d+\)\s*$/, ""));
+          paragraph =
+            (weak.length ? `Most students struggled most with ${weak.join(" and ")}. ` : "") +
+            (strong.length ? `Overall, students did well with ${strong.join(" and ")}.` : "Overall, performance was mixed with no single dominant pattern.");
         }
 
-        setSessionSummary(summary);
-
-        const analysisBlock = formatSessionAnalysisBlock(summary);
-
-        const summaryLines = [
-          ...(summary?.concepts_not_understood?.slice?.(0, 3) || []),
-          ...(summary?.concepts_understood_well?.slice?.(0, 2) || []),
-        ].filter(Boolean);
+        setSessionSummary(paragraph);
 
         const plain = [
-          `Session Summary: ${summaryLines.join(", ")}`,
+          `Session Summary: ${paragraph}`,
           "",
           ...sessionItems.map((it, idx) => {
             const label = getSessionLabelLocal(it.assessment, idx + 1);
             const body = String(it.formattedText || "").trim();
             return `=== ${label} ===\n${body}\n`;
           }),
-          "",
-          analysisBlock, // ✅ THIS is the one you want appended
         ].join("\n").trim();
 
         await navigator.clipboard?.writeText(plain);
@@ -1058,9 +1073,7 @@ function formatTeacherBlock(a) {
     }
 
     async function copyFormatted() {
-      if (!assessment) return;
-
-      if (!copyEnabled) return;
+      if (!assessment || !copyEnabled) return;
       
       setCopyEnabled(false);
       
@@ -1070,7 +1083,7 @@ function formatTeacherBlock(a) {
       const lines = [];
       const g = getDisplayScore(assessment);
         if (g.score !== "") {
-          lines.push(`Grade: ${g.score} / ${g.outOf}`);
+          lines.push(`Grade: ${g.score} / ${g.outOf}${refCode ? `  Ref: ${refCode}` : ""}`);
           lines.push("");
         }
 
@@ -1105,7 +1118,7 @@ function formatTeacherBlock(a) {
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
           ${(() => {
             const g = getDisplayScore(assessment);
-            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}</div>`;
+            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}${refCode ? ` <span style="opacity:0.8; margin-left:10px;"><b>Ref:</b> ${escapeHtml(refCode)}</span>` : ""}</div>`;
           })()}
         </div>`
       );
@@ -1464,9 +1477,9 @@ function formatTeacherBlock(a) {
                     onClick={assessment && copyEnabled ? copyFormatted : undefined}
 
                     style={styles.secondaryBtn}
-                    disabled={!copyEnabled}
+                    disabled={!copyEnabled || submitting}
 
-                    title={!copyEnabled ? "Already copied for this result" : "Copy comment"}
+                    title={copyEnabled ? "Copy comment" : "Already copied for this result"}
                   >
                     {copied ? "Copied ✓" : "Copy Comment"}
                   </button>
@@ -1501,12 +1514,19 @@ function formatTeacherBlock(a) {
                         return (
                           <>
                             Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
+                            {refCode ? <span style={{ opacity: 0.8, marginLeft: 10 }}>Ref: {refCode}</span> : null}
                           </>
                         );
                       })()}
                     </div>
                     <div style={styles.copyPillInline}>
-                      {copyEnabled ? (copied ? "Copied ✓" : "Tap to copy") : "Copied ✓"}
+                      {assessment ? (
+                        copyEnabled ? (
+                          copied ? "Copied ✓" : "Tap to copy"
+                        ) : (
+                          "Copied ✓"
+                        )
+                      ) : null}
                     </div>
                   </div>
 
