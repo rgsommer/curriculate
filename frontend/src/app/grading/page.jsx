@@ -562,12 +562,6 @@ function formatTeacherBlock(a, ref) {
 
     const assessment = normalized.assessment;
 
-    useEffect(() => {
-      if (assessment && !refCode) {
-        setRefCode(genRef3());
-      }
-    }, [assessment, refCode]);
-
     const formattedTeacherText = useMemo(() => {
       return assessment ? formatTeacherBlock(assessment, refCode) : "";
     }, [assessment, refCode]);
@@ -810,6 +804,8 @@ function formatTeacherBlock(a, ref) {
         const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
         
         if (norm.assessment) {
+          // ✅ generate ref immediately (not in useEffect)
+          setRefCode((prev) => prev || genRef3());
           setCopyEnabled(true);
         } else {
           setCopyEnabled(false);
