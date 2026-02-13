@@ -6282,6 +6282,14 @@ function buildRubricInstructions({ gradeBand = "6-8", rubricOverride = "" } = {}
     - If numeric answer is correct but unit is missing when required, deduct 0.5 from that question.
     - Reflect this in the section score.
     - Do NOT treat this as a formatting deduction.
+    True/False extraction rule: True/False questions appear as a question number followed by the letters T and F (e.g., 12. T F). The student indicates their choice by circling exactly one letter.
+    - Your job is to read exactly which letter is circled and record it as "T" or "F".
+    - Do not infer from context. Do not “correct” the student.
+    - If you cannot clearly see which letter is circled, return "unclear" for that item.
+    - The circled letter will have a pencil/pen circle around it; the other letter will not.
+    - Ignore the non-circled letter completely.
+    - Never swap T and F. Only report what is circled, even if it seems “wrong.”
+    - Only count a letter as chosen if it is circled; do not treat darker ink, proximity, or smudges as a choice.
     For multiple choice and true/false:
     - Read the student mark carefully.
     - If the mark is ambiguous, say it is unclear.

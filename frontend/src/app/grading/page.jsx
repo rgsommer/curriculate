@@ -519,11 +519,6 @@ function formatTeacherBlock(a) {
     const [copied, setCopied] = useState(false);
     const [copiedFlash, setCopiedFlash] = useState(false); 
 
-    // ✅ lock per submission
-    const submissionIdRef = useRef(0);
-    const [submissionId, setSubmissionId] = useState(0);
-    const [copiedSubmissionId, setCopiedSubmissionId] = useState(-1);
-
     const backendBase = useMemo(
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
       []
@@ -635,8 +630,7 @@ function formatTeacherBlock(a) {
 
       setBusyCapture(true);
       setSubmitError("");
-      setCopied(false);
-
+      
       try {
         const video = videoRef.current;
         const canvas = canvasRef.current;
@@ -746,17 +740,11 @@ function formatTeacherBlock(a) {
 
       // ✅ reset submission lock state
       setCopyEnabled(false);
-      setCopiedSubmissionId(-1);
-      submissionIdRef.current = 0;
-      setSubmissionId(0);
     }
 
     async function submitForGrading(photosOverride = null) {
       setSubmitError("");
       setServerText("");
-      submissionIdRef.current += 1;
-      setSubmissionId(submissionIdRef.current);
-      setCopiedSubmissionId(-1);   // ✅ unlock for the new submission
       setCopied(false);
       setCopyEnabled(false); // lock during submission
 
@@ -799,13 +787,18 @@ function formatTeacherBlock(a) {
 
         const text = await res.text();
         setServerText(text);
-        setCopyEnabled(true);
         setCopied(false);
 
-        if (!res.ok) {
-          const parsed = safeJsonParse(text);
-          const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
+        const parsed = safeJsonParse(text);
+        const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
+        
+        if (norm.assessment) {
+          setCopyEnabled(true);
+        } else {
+          setCopyEnabled(false);
+        }
 
+        if (!res.ok) {
           if (norm.assessment) {
             setSubmitError("");
             return;
@@ -817,6 +810,7 @@ function formatTeacherBlock(a) {
             `HTTP ${res.status} from grading endpoint`;
           throw new Error(msg);
         }
+
       } catch (err) {
         console.error("Submit error:", err);
         setSubmitError(err?.message || "Network error submitting for grading.");
@@ -1066,22 +1060,10 @@ function formatTeacherBlock(a) {
     async function copyFormatted() {
       if (!assessment) return;
 
-      // already copied for this submission => stay disabled
-      if (copiedSubmissionId === submissionId) {
-          setCopyEnabled(false);
-          return;
-        }
-      console.log("copy attempt", {
-        submissionId,
-        copiedSubmissionId,
-        copyEnabled,
-      });
-
       if (!copyEnabled) return;
       
       setCopyEnabled(false);
-      setCopiedSubmissionId(submissionId);
-
+      
       const links = getAssignmentImagesFromAssessment(assessment);
 
     // ---------- Plain text (fallback) ----------
@@ -1252,7 +1234,6 @@ function formatTeacherBlock(a) {
         logCurrentToSessionLocal(plainText);
       } catch (e) {
         // ✅ if copy failed, allow retry for this submission
-        setCopiedSubmissionId(-1);
         setCopyEnabled(true);
         setSubmitError("Copy failed—your browser may block clipboard access.");
       }
@@ -1505,7 +1486,7 @@ function formatTeacherBlock(a) {
             <div
               style={{
                 ...styles.responseBox,
-                ...(assessment ? styles.responseBoxClickable : null),
+                ...(assessment && copyEnabled ? styles.responseBoxClickable : null),
               }}
               onClick={assessment && copyEnabled ? copyFormatted : undefined}
               role={assessment && copyEnabled ? "button" : undefined}
@@ -1525,7 +1506,7 @@ function formatTeacherBlock(a) {
                       })()}
                     </div>
                     <div style={styles.copyPillInline}>
-                      {!copyEnabled ? "Copied ✓" : (copied ? "Copied ✓" : "Tap to copy")}
+                      {copyEnabled ? (copied ? "Copied ✓" : "Tap to copy") : "Copied ✓"}
                     </div>
                   </div>
 
