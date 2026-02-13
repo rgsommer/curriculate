@@ -1325,23 +1325,6 @@ function formatTeacherBlock(a, ref) {
         </div>
 
         <div style={styles.controlsRow}>
-          <label style={styles.controlLabel}>
-            Grade Band
-            <select
-              value={gradeBand}
-              onChange={(e) => setGradeBand(e.target.value)}
-              style={styles.select}
-            >
-              {GRADE_BANDS.map((g) => (
-                <option key={g.value} value={g.value}>
-                  {g.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div style={styles.controlsRow}>
         <label style={styles.controlLabel}>
           Grade Band
           <select
