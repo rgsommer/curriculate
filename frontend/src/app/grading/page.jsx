@@ -1437,7 +1437,7 @@ function formatTeacherBlock(a, ref) {
       <div style={styles.page}>
         <div style={styles.header}>
           <h1 style={styles.h1}>Grading</h1>
-          <div style={styles.sub}>Capture tests, quizzes, essays, posters, math sheets, even art, then submit for an assessment using the built-in rubric or your own.</div>
+          <div style={styles.sub}>Capture tests, quizzes, essays, posters, math sheets, even art, then submit for an assessment using the built-in rubric or your own. Include a rubric with your first images to use it for the session.</div>
         </div>
 
         <div style={styles.controlsRow}>
@@ -1472,7 +1472,7 @@ function formatTeacherBlock(a, ref) {
           </select>
         </label>
 
-        <label style={{ ...styles.controlLabel, flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18 }}>
+        {/* <label style={{ ...styles.controlLabel, flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18 }}>
           <input
             type="checkbox"
             checked={voiceOverrideOn}
@@ -1480,7 +1480,7 @@ function formatTeacherBlock(a, ref) {
             style={{ transform: "scale(1.1)" }}
           />
           <span style={{ fontWeight: 900, fontSize: 12, opacity: 0.9 }}>Override for this assessment</span>
-        </label>
+        </label>*/}
 
         {voiceOverrideOn && (
           <label style={styles.controlLabel}>
