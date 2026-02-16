@@ -6937,15 +6937,6 @@ VOICE: Student-friendly (simple wording)
         return Math.max(min, Math.min(max, x));
       }
 
-      // NEW: hard rule — each section score must be within 0..out_of
-        if (Array.isArray(g.sections)) {
-          g.sections = g.sections.map((s) => {
-            const o = Number(s?.out_of);
-            if (!Number.isFinite(o) || o <= 0) return s;
-            return { ...s, score: clampNum(s?.score, 0, o) ?? 0 };
-          });
-        }
-
       function enforceDenominatorRules(g) {
         if (!g || typeof g !== "object") return g;
 
