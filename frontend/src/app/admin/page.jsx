@@ -259,11 +259,11 @@ export default function AdminUsageDashboard() {
             </div>
           </Card>
 
-          <Card title="Raw JSON (sanity checks)">
+          {/*<Card title="Raw JSON (sanity checks)">
             <div className="max-h-64 overflow-auto rounded-xl bg-black/30 p-3 text-xs text-white/80">
               <pre>{loading ? "Loading..." : JSON.stringify(data, null, 2)}</pre>
             </div>
-          </Card>
+          </Card>*/}
         </div>
       </div>
     </div>

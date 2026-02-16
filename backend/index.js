@@ -6930,11 +6930,35 @@ VOICE: Student-friendly (simple wording)
         }, 0);
       }
 
+      function clampNum(n, min, max) {
+        const x = Number(n);
+        if (!Number.isFinite(x)) return null;
+        return Math.max(min, Math.min(max, x));
+      }
+
+      // NEW: hard rule — each section score must be within 0..out_of
+        if (Array.isArray(g.sections)) {
+          g.sections = g.sections.map((s) => {
+            const o = Number(s?.out_of);
+            if (!Number.isFinite(o) || o <= 0) return s;
+            return { ...s, score: clampNum(s?.score, 0, o) ?? 0 };
+          });
+        }
+
       function enforceDenominatorRules(g) {
         if (!g || typeof g !== "object") return g;
 
-        const outOf = Number(g.overall_out_of);
+        // Clamp sections first (independent of overall_out_of)
+        if (Array.isArray(g.sections)) {
+          g.sections = g.sections.map((s) => {
+            const o = Number(s?.out_of);
+            if (!Number.isFinite(o) || o <= 0) return s;
+            return { ...s, score: clampNum(s?.score, 0, o) ?? 0 };
+          });
+        }
 
+        const outOf = Number(g.overall_out_of);
+        
         // If model returned nonsense, fall back to /10 using existing fields
         if (!Number.isFinite(outOf) || outOf <= 0) {
           const base = Number(g.score_out_of_10);
@@ -6949,7 +6973,8 @@ VOICE: Student-friendly (simple wording)
           return g;
         }
 
-        // RULE: If overall_out_of !== 10, /10 fields must be null
+        g.overall_score = clampNum(g.overall_score, 0, outOf) ?? 0;
+
         if (outOf !== 10) {
           g.score_out_of_10 = null;
           g.final_score_out_of_10 = null;
