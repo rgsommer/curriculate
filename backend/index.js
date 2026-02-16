@@ -6781,6 +6781,11 @@ VOICE: Student-friendly (simple wording)
 
         required: [
           "response_format_detected",
+
+          "inferred_subject",
+          "inferred_assessment_type",
+          "inferred_grade_level",
+
           "overall_score",
           "overall_out_of",
           "score_out_of_10",
