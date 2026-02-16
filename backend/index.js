@@ -6404,6 +6404,7 @@ VOICE: Student-friendly (simple wording)
     - Set overall_score to the sum of section scores.
     - If the rubric conflicts with defaults, rubric wins.
     - For rubric-based sections, do NOT include incorrect_items; instead, cite specific evidence in teacher_comment for each section.
+    - Never interpret unchecked boxes on a rubric sheet as missing work.
 
     SECTIONS REQUIREMENT (schema-critical):
     Every section object MUST include incorrect_items.
