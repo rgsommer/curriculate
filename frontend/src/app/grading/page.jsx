@@ -61,6 +61,21 @@ const VOICE_OPTIONS = [
 const VOICE_KEY = "curriculate_grading_voice_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
 const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
+const SESSION_ID_KEY = "curriculate_session_id_v1";
+
+function getSessionId() {
+  try {
+    let id = localStorage.getItem(SESSION_ID_KEY);
+    if (!id) {
+      id = (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
+        String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+      localStorage.setItem(SESSION_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
 
 function loadLS(key, fallback) {
   try {
@@ -832,6 +847,7 @@ function formatTeacherBlock(a, ref) {
           rubricOverride: ro.length ? ro : null,
           gradeBand,
           meta: {
+            sessionId: getSessionId(),
             source: "web-grading-page",
             capturedCount: photosToUse.length,
             capturedAt: Date.now(),

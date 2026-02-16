@@ -370,6 +370,8 @@ app.use("/api/shared", sharedRoutes);
 
 // 6) Grading (and other large payload) file limit
 app.use(express.json({ limit: "25mb" }));
+import adminUsageSummaryRouter from "./routes/adminUsageSummary.js";
+app.use("/admin", adminUsageSummaryRouter);
 
 // Admin gate (server-side)
 const adminRequired = [
@@ -6625,9 +6627,52 @@ VOICE: Student-friendly (simple wording)
     return null;
   }
 
+  // ------------------------------
+  // Grading Usage (Analytics)
+  // ------------------------------
+  const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
+    "GradingUsage",
+    new mongoose.Schema(
+      {
+        timestamp: { type: Date, default: Date.now },
+
+        sessionId: { type: String, index: true },
+        ip: String,
+
+        location: {
+          country: String,
+          region: String,
+          city: String,
+        },
+
+        subject: String,
+        assessmentType: String,
+        gradeLevel: String, // store band like "6-8" (or model inference)
+
+        imageCount: Number,
+        rubricOverrideUsed: Boolean,
+        responseTimeMs: Number,
+
+        refCode: String,
+        userAgent: String,
+      },
+      { timestamps: false }
+    )
+  );
+
   app.post("/grading", async (req, res) => {
     try {
+      const startTime = Date.now();
       const { images, rubricOverride, gradeBand } = req.body;
+      const ip =
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        null;
+
+      const userAgent = req.headers["user-agent"] || null;
+      const meta = req.body?.meta || {};
+      const sessionId = meta.sessionId || null;
+      const refCode = meta.refCode || null;
 
       if (!Array.isArray(images) || images.length === 0) {
         return res.status(400).json({ error: "No images provided" });
@@ -6645,6 +6690,18 @@ VOICE: Student-friendly (simple wording)
           response_format_detected: {
             type: "string",
             enum: ["short-answer", "paragraph", "mixed", "test"],
+          },
+          inferred_subject: {
+            type: "string",
+            enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Other"],
+          },
+          inferred_assessment_type: {
+            type: "string",
+            enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Other"],
+          },
+          inferred_grade_level: {
+            type: "string",
+            enum: ["3-5", "6-8", "9-10", "11+", "Unknown"],
           },
 
           // --- Primary grading scale (always authoritative) ---
@@ -6750,11 +6807,24 @@ VOICE: Student-friendly (simple wording)
       const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
 
       const instructions = buildRubricInstructions({
-        gradeBand,
+        gradeBand: band,
         rubricOverride,
         feedbackVoice,
         feedbackVoiceMode,
       });
+
+      const instructionsWithInference = `
+        ${instructions}
+
+        INFERENCE (required):
+        - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Other]
+        - inferred_assessment_type: one of [Essay, Test, Quiz, Homework, Project, Poster, Worksheet, Other]
+        - inferred_grade_level: one of [3-5, 6-8, 9-10, 11+, Unknown]
+
+        Rules:
+        - Do NOT guess wildly. If unsure, use Other / Unknown.
+        - inferred_grade_level should usually match the provided grade band (${band}) unless the work clearly indicates otherwise.
+      `.trim();
 
       const s3 = getS3Client();
         if (!s3) {
@@ -6800,7 +6870,7 @@ VOICE: Student-friendly (simple wording)
           {
             role: "user",
             content: [
-              { type: "input_text", text: instructions },
+              { type: "input_text", text: instructionsWithInference },
               ...images.map((img) => ({ type: "input_image", image_url: img }))
             ]
           }
@@ -6819,6 +6889,25 @@ VOICE: Student-friendly (simple wording)
       const grade = safeJsonParse(response.output_text);
 
       if (!grade) {
+        const responseTimeMs = Date.now() - startTime;
+        (async () => {
+          try {
+            await GradingUsage.create({
+              timestamp: new Date(),
+              sessionId,
+              ip,
+              location: null,
+              subject: "Other",
+              assessmentType: "Other",
+              gradeLevel: band,
+              imageCount: Array.isArray(images) ? images.length : 0,
+              rubricOverrideUsed: Boolean(rubricOverride),
+              responseTimeMs,
+              refCode,
+              userAgent,
+            });
+          } catch {}
+        })();
         // Still return the raw payload, but DO NOT 502 (frontend shouldn't panic)
         return res.json({
           error: "Grading returned invalid JSON",
@@ -6883,11 +6972,63 @@ VOICE: Student-friendly (simple wording)
       }
 
       const enforced = enforceDenominatorRules(grade);
+
+      // ---- Fire-and-forget analytics logging (never blocks grading) ----
+      const responseTimeMs = Date.now() - startTime;
+
+      const inferredSubject = enforced?.inferred_subject || "Other";
+      const inferredAssessmentType = enforced?.inferred_assessment_type || "Other";
+      const inferredGradeLevel = enforced?.inferred_grade_level || band || "Unknown";
+
+      (async () => {
+        try {
+          let location = null;
+
+          // Node 18+ has global fetch. If your runtime is older, skip geo.
+          if (typeof fetch === "function" && ip) {
+            try {
+              const geoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+              const geo = await geoRes.json();
+              location = {
+                country: geo?.country_name || null,
+                region: geo?.region || null,
+                city: geo?.city || null,
+              };
+            } catch {
+              location = null;
+            }
+          }
+
+          await GradingUsage.create({
+            timestamp: new Date(),
+
+            sessionId,
+            ip,
+            location,
+
+            subject: inferredSubject,
+            assessmentType: inferredAssessmentType,
+            gradeLevel: inferredGradeLevel,
+
+            imageCount: Array.isArray(images) ? images.length : 0,
+            rubricOverrideUsed: Boolean(rubricOverride),
+            responseTimeMs,
+
+            refCode,
+            userAgent,
+          });
+        } catch (e) {
+          console.error("GradingUsage log failed:", e?.message || e);
+        }
+      })();
+
+      // ---- Response stays unchanged ----
       return res.json({
         ...enforced,
         assignment_images: imageRefs,
         meta: { submissionId, gradeBand: band }
       });
+
     } catch (err) {
       console.error("🔥 /grading failed:", err?.message || err);
       return res.status(500).json({
