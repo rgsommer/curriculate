@@ -6764,6 +6764,10 @@ VOICE: Student-friendly (simple wording)
           ai_suspected_cheating: { type: ["string", "null"] },
           copying_suspected: { type: ["string", "null"] },
 
+          rubricText: { type: ["string", "null"], maxLength: 2200 },
+          rubricDetected: { type: "boolean" },
+          rubricConfidence: { type: "number", minimum: 0, maximum: 1 },
+
           // --- Feedback ---
           strengths: {
             type: "array",
@@ -6796,6 +6800,9 @@ VOICE: Student-friendly (simple wording)
           "student_name",
           "ai_suspected_cheating",
           "copying_suspected",
+          "rubricText",
+          "rubricConfidence",
+          "rubricDetected",
           "strengths",
           "improvements",
           "teacher_comment",
@@ -6830,6 +6837,41 @@ VOICE: Student-friendly (simple wording)
         Rules:
         - Do NOT guess wildly. If unsure, use Other / Unknown.
         - inferred_grade_level should usually match the provided grade band (${band}) unless the work clearly indicates otherwise.
+        
+        RUBRIC DETECTION (very important):
+
+        You must determine whether any image contains a TEACHER GRADING RUBRIC TEMPLATE.
+
+        A rubric template typically includes:
+        - A grid or table of criteria with levels (e.g., Level 1–4, Excellent/Good/Satisfactory)
+        - Point values or scoring bands
+        - Checkboxes or empty scoring boxes
+        - Criteria headings such as "Content", "Organization", "Mechanics", "Creativity", etc.
+        - Descriptions of performance levels (not student answers)
+
+        A rubric is NOT:
+        - A completed student test
+        - A worksheet with student answers
+        - A checklist filled out by the student
+        - A grading summary already written by the teacher
+
+        If a teacher rubric template is clearly present:
+        - Extract only the rubric criteria and scoring structure.
+        - Do NOT include student writing.
+        - Summarize it as concise bullet points (max 12 lines).
+        - Preserve point values and levels if visible.
+        - Set rubricDetected = true.
+        - Set rubricConfidence between 0 and 1 (0.75+ if clearly a rubric).
+
+        If no teacher rubric template is present:
+        - rubricText = null
+        - rubricDetected = false
+        - rubricConfidence = 0
+
+        Consistency rules:
+        - If rubricDetected = false, rubricText must be null and rubricConfidence must be 0.
+        - If rubricDetected = true, rubricText must be a non-empty string and rubricConfidence must be > 0.
+
       `.trim();
 
       const s3 = getS3Client();
