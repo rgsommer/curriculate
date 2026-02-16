@@ -327,6 +327,45 @@ function normalizeFromAny(serverTextOrObj) {
   return { assessment: null, wrapperError: "", rawTextUsed: "" };
 }
 
+function extractDetectedRubric(anyObj) {
+  if (!anyObj) return null;
+
+  // Direct shapes
+  if (typeof anyObj.rubricText === "string" && anyObj.rubricText.trim()) {
+    return {
+      text: anyObj.rubricText.trim(),
+      confidence: Number(anyObj.rubricConfidence ?? anyObj.confidence ?? 0),
+      detected: Boolean(anyObj.rubricDetected ?? true),
+      source: "captured",
+    };
+  }
+
+  if (anyObj.detectedRubric && typeof anyObj.detectedRubric.text === "string" && anyObj.detectedRubric.text.trim()) {
+    return {
+      text: anyObj.detectedRubric.text.trim(),
+      confidence: Number(anyObj.detectedRubric.confidence ?? 0),
+      detected: Boolean(anyObj.detectedRubric.detected ?? true),
+      source: "captured",
+    };
+  }
+
+  // Nested common places
+  const candidates = [
+    anyObj.meta,
+    anyObj.data,
+    anyObj.assessment,
+    anyObj.result,
+    anyObj.raw,
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    const found = extractDetectedRubric(c);
+    if (found) return found;
+  }
+
+  return null;
+}
+
 function formatIncorrectItemHtml(item, idx, escapeHtml) {
   if (!item || typeof item !== "object") return "";
 
@@ -449,6 +488,9 @@ function formatTeacherBlock(a, ref) {
 }
 
   const SESSION_KEY = "curriculate_grading_session_v1";
+  const RUBRIC_STICKY_TEXT_KEY = "curriculate_grading_rubric_sticky_text_v1";
+  const RUBRIC_STICKY_SRC_KEY = "curriculate_grading_rubric_sticky_src_v1"; // "captured" | "manual"
+  const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
 
   function loadSession() {
     try {
@@ -556,6 +598,24 @@ function formatTeacherBlock(a, ref) {
     const [showRubric, setShowRubric] = useState(false);
     const [rubricOverride, setRubricOverride] = useState("");
     const [gradeBand, setGradeBand] = useState("6-8");
+    // ✅ Sticky rubric captured from rubric photo (session-level)
+    const [stickyRubricText, setStickyRubricText] = useState(() => {
+      if (typeof window === "undefined") return "";
+      return loadLS(RUBRIC_STICKY_TEXT_KEY, "");
+    });
+    const [stickyRubricSource, setStickyRubricSource] = useState(() => {
+      if (typeof window === "undefined") return "";
+      return loadLS(RUBRIC_STICKY_SRC_KEY, "");
+    });
+    const [stickyRubricCapturedAt, setStickyRubricCapturedAt] = useState(() => {
+      if (typeof window === "undefined") return "";
+      return loadLS(RUBRIC_STICKY_TS_KEY, "");
+    });
+
+    // Persist sticky rubric
+    useEffect(() => saveLS(RUBRIC_STICKY_TEXT_KEY, stickyRubricText || ""), [stickyRubricText]);
+    useEffect(() => saveLS(RUBRIC_STICKY_SRC_KEY, stickyRubricSource || ""), [stickyRubricSource]);
+    useEffect(() => saveLS(RUBRIC_STICKY_TS_KEY, stickyRubricCapturedAt || ""), [stickyRubricCapturedAt]);
 
     // Feedback Voice (tone/personality)
     const [voice, setVoice] = useState(() => {
@@ -837,14 +897,19 @@ function formatTeacherBlock(a, ref) {
 
       setSubmitting(true);
       try {
-        const ro = (rubricOverride || "").trim();
+        const manual = (rubricOverride || "").trim();
+        const sticky = (stickyRubricText || "").trim();
+
+        // Priority: manual override > sticky captured > null (default rubric)
+        const effectiveRubric = manual.length ? manual : (sticky.length ? sticky : "");
         const images = await Promise.all(
           photosToUse.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
         );
 
         const payload = {
           images,
-          rubricOverride: ro.length ? ro : null,
+          rubricOverride: effectiveRubric.length ? effectiveRubric : null,
+
           gradeBand,
           meta: {
             sessionId: getSessionId(),
@@ -856,6 +921,9 @@ function formatTeacherBlock(a, ref) {
             // NEW: feedback voice controls
             feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
             feedbackVoice: voiceOverrideOn ? voiceOverride : voice,
+            rubricMode: manual.length ? "manual" : (sticky.length ? "sticky" : "default"),
+            wantsRubricCapture: !manual.length && !sticky.length, // ✅ first submission can capture rubric
+
           },
         };
 
@@ -872,6 +940,34 @@ function formatTeacherBlock(a, ref) {
         const parsed = safeJsonParse(text);
         const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
         
+        // ✅ If no manual override is active, allow backend-detected rubric to become sticky
+        try {
+          const found =
+            extractDetectedRubric(parsed) ||
+            extractDetectedRubric(norm) ||
+            extractDetectedRubric(norm?.assessment);
+
+          const manual = (rubricOverride || "").trim();
+          const sticky = (stickyRubricText || "").trim();
+
+          if (!manual.length && !sticky.length) {
+
+            if (found?.text && (found.detected !== false)) {
+              const conf = Number(found.confidence || 0);
+
+              // Auto-stick if confidence high, otherwise still stick (you can later add a confirm UI)
+              const THRESH = 0.75;
+              if (conf >= THRESH || conf === 0) {
+                setStickyRubricText(found.text);
+                setStickyRubricSource("captured");
+                setStickyRubricCapturedAt(String(Date.now()));
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("rubric capture parse failed", e);
+        }
+
         if (norm.assessment) {
           // ✅ generate ref immediately (not in useEffect)
           setRefCode((prev) => prev || genRef3());
@@ -1063,9 +1159,13 @@ function formatTeacherBlock(a, ref) {
       const url = `${backendBase.replace(/\/$/, "")}/grading/session-summary`;
       const evidence = buildSessionEvidence(items);
 
+      const manual = (rubricOverride || "").trim();
+      const sticky = (stickyRubricText || "").trim();
+      const effectiveRubric = manual.length ? manual : (sticky.length ? sticky : "");
+
       const payload = {
         gradeBand,
-        rubricOverride: (rubricOverride || "").trim() || null,
+        rubricOverride: effectiveRubric.length ? effectiveRubric : null,
         evidence,
         meta: {
           feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
@@ -1513,7 +1613,15 @@ function formatTeacherBlock(a, ref) {
                 <div>
                   <div style={{ fontWeight: 800 }}>Rubric (optional)</div>
                   <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                    Leave blank to use the default rubric.
+                    {(() => {
+                      const manual = (rubricOverride || "").trim();
+                      const sticky = (stickyRubricText || "").trim();
+
+                      if (manual.length) return "Using pasted rubric override (this submission).";
+                      if (sticky.length && stickyRubricSource === "captured") return "Using captured rubric (sticky for this session).";
+                      if (sticky.length && stickyRubricSource === "manual") return "Using saved rubric (sticky for this session).";
+                      return "Leave blank to use the default rubric.";
+                    })()}
                   </div>
                 </div>
 
@@ -1534,11 +1642,41 @@ function formatTeacherBlock(a, ref) {
                   >
                     Use Default
                   </button>
+                  <button
+                    onClick={() => {
+                      setStickyRubricText("");
+                      setStickyRubricSource("");
+                      setStickyRubricCapturedAt("");
+                    }}
+                    style={styles.secondaryBtn}
+                    disabled={!(stickyRubricText || "").trim().length}
+                    type="button"
+                    title="Clear the captured rubric for this session"
+                  >
+                    Clear Captured
+                  </button>
+
                 </div>
               </div>
 
               {showRubric && (
                 <>
+                  {!(rubricOverride || "").trim().length && (stickyRubricText || "").trim().length ? (
+                    <div style={{
+                      marginTop: 10,
+                      borderRadius: 12,
+                      border: "1px solid rgba(15,23,42,0.12)",
+                      padding: 10,
+                      background: "rgba(255,255,255,0.9)",
+                      fontSize: 12,
+                      whiteSpace: "pre-wrap",
+                      lineHeight: 1.35,
+                      opacity: 0.9
+                    }}>
+                      <div style={{ fontWeight: 900, marginBottom: 6 }}>Captured rubric (sticky)</div>
+                      {stickyRubricText}
+                    </div>
+                  ) : null}
                   <textarea
                     value={rubricOverride}
                     onChange={(e) => setRubricOverride(e.target.value)}
@@ -1569,12 +1707,18 @@ function formatTeacherBlock(a, ref) {
                 {summarizingSession ? `Analyzing… (${sessionItems.length})` : `Copy Session (${sessionItems.length})`}
               </button>
               <button
-                onClick={() => setSessionItems([])}
-                disabled={!sessionItems.length}
+                onClick={() => {
+                  setSessionItems([]);
+                  setStickyRubricText("");
+                  setStickyRubricSource("");
+                  setStickyRubricCapturedAt("");
+                  setRubricOverride("");
+                }}
+                disabled={!sessionItems.length && !(stickyRubricText || "").trim().length && !(rubricOverride || "").trim().length}
                 style={styles.ghostBtn}
               >
                 Clear Session
-              </button>
+              </button> 
 
             </div>
 
