@@ -37,13 +37,32 @@ export default function AdminUsageDashboard() {
   const [loading, setLoading] = useState(true);
   const [force, setForce] = useState(false);
 
-  async function load() {
+  async function load(force = false) {
     setLoading(true);
     setErr("");
     try {
-      const res = await fetch(`/api/admin/usage-summary${force ? "?force=true" : ""}`, { cache: "no-store" });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+      const url = `/api/admin/usage-summary${force ? "?force=true" : ""}`;
+      const res = await fetch(url, { cache: "no-store" });
+
+      const ct = res.headers.get("content-type") || "";
+      const raw = await res.text();
+
+      let j = null;
+      if (ct.includes("application/json")) {
+        try { j = JSON.parse(raw); } catch {}
+      }
+
+      if (!res.ok) {
+        const msg =
+          (j && (j.error || j.details)) ||
+          `HTTP ${res.status} from ${url}: ${raw.slice(0, 160)}`;
+        throw new Error(msg);
+      }
+
+      if (!j) {
+        throw new Error(`Expected JSON but got ${ct || "unknown content-type"}: ${raw.slice(0, 160)}`);
+      }
+
       setData(j);
     } catch (e) {
       setErr(e?.message || "Failed to load");
