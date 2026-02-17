@@ -1602,7 +1602,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                 <b>Photos:</b> {photos.length}
               </div>
               <div style={{ opacity: 0.8 }}>
-                Tip: Keep pages flat, fill the frame, avoid glare. Single tap = capture. Double tap = capture + submit.
+                Tip: Keep pages flat, fill the frame, avoid glare. Double tap for capture + submit.
               </div>
             </div>
 
@@ -1672,7 +1672,10 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                   <button
                     onClick={useDefaultRubric}
                     style={styles.secondaryBtn}
-                    disabled={!rubricOverride.trim().length}
+                    disabled={
+                      !(rubricOverride || "").trim().length &&
+                      !(stickyRubricText || "").trim().length
+                    }
                     type="button"
                     title="Clear override"
                   >
@@ -1685,7 +1688,10 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                       setStickyRubricCapturedAt("");
                     }}
                     style={styles.secondaryBtn}
-                    disabled={!(stickyRubricText || "").trim().length}
+                    disabled={
+                      !(stickyRubricText || "").trim().length ||
+                      stickyRubricSource !== "captured"
+                    }
                     type="button"
                     title="Clear the captured rubric for this session"
                   >
@@ -1936,18 +1942,25 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                     </>
                   ) : null}
 
-                  {formattedTeacherText ? (
-                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.45, fontSize: 13 }}>
-                      {formattedTeacherText}
-                    </pre>
-                  ) : null}
-
                   <div style={styles.gradingHint}>Tap anywhere to copy</div>
                 </div>
               ) : serverText ? (
                 <pre style={styles.pre}>{serverText}</pre>
               ) : (
-                <div style={{ opacity: 0.75 }}>Results will appear here after submission.</div>
+                <div style={{ opacity: 0.75, lineHeight: 1.5 }}>
+                  Results will appear here after submission.
+                  <br />
+                  Write the grade and reference code (e.g., AA123) on the student’s paper.
+                  <br />
+                  Students and parents can view full feedback at{" "}
+                  <a
+                    href="https://www.curriculate.net/results"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    www.curriculate.net/results
+                  </a>.
+                </div>
               )}
             </div>
 
@@ -2059,6 +2072,8 @@ const styles = {
     padding: "10px 14px",
     fontWeight: 700,
     cursor: "pointer",
+    opacity: disabled ? 0.5 : 1,
+    cursor: disabled ? "not-allowed" : "pointer",
   },
 
   photoMeta: {
