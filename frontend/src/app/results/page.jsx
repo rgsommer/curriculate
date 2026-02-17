@@ -8,6 +8,42 @@ function normalizeCode(s) {
   return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
 }
 
+function linkifyTextToReactNodes(text) {
+  const s = String(text || "");
+
+  // Match:
+  // - https://...
+  // - http://...
+  // - www....
+  const urlRe = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/g;
+
+  const parts = s.split(urlRe);
+
+  return parts.map((part, i) => {
+    if (!part) return null;
+
+    const isUrl = urlRe.test(part);
+    // Reset regex state (because we used .test with /g)
+    urlRe.lastIndex = 0;
+
+    if (!isUrl) return part;
+
+    const href = part.startsWith("www.") ? `https://${part}` : part;
+
+    return (
+      <a
+        key={`u-${i}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        style={{ textDecoration: "underline" }}
+      >
+        {part}
+      </a>
+    );
+  });
+}
+
 export default function ResultsPage() {
   const [codeInput, setCodeInput] = useState("");
   const [status, setStatus] = useState("idle"); // idle | loading | error | ok
@@ -78,7 +114,10 @@ export default function ResultsPage() {
         <div style={{ marginTop: 16, padding: 16, borderRadius: 12, border: "1px solid rgba(0,0,0,.15)" }}>
           {/* Render nicely if payload is structured JSON; otherwise show as text */}
           {typeof data.payload === "string" ? (
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{data.payload}</pre>
+            <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+                {linkifyTextToReactNodes(data.payload)}
+            </pre>
+
           ) : (
             <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
               {JSON.stringify(data.payload, null, 2)}

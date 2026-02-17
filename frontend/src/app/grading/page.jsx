@@ -1411,6 +1411,28 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
         );
       }
 
+      // ✅ Add clickable photo links to HTML clipboard
+      const htmlLinks = getAssignmentImagesFromAssessment(assessment);
+      if (htmlLinks.length) {
+        htmlParts.push(`
+          <div style="margin-top:10px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Saved captures</b>
+            <div style="font-size:12px; opacity:0.85; margin-bottom:6px;">
+              These links work for ~30 days.
+            </div>
+            <ul style="margin:0 0 0 18px; padding:0;">
+              ${htmlLinks.map(img => `
+                <li>
+                  <a href="${escapeHtml(img.url)}" target="_blank" rel="noreferrer">
+                    View photo ${escapeHtml(img.index)}
+                  </a>
+                </li>
+              `).join("")}
+            </ul>
+          </div>
+        `);
+      }
+
       const htmlText = htmlParts.join("");
 
       try {
