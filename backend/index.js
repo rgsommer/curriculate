@@ -58,6 +58,7 @@ import aiTasksetsRouter from "./routes/aiTasksets.js";
 import tasksetsRouter from "./routes/tasksets.js";
 import sharedRoutes from "./routes/shared.js";
 import { hashShareToken } from "./models/SharedTasksetLink.js"; // adjust path if needed
+import resultsRoutes from "./routes/resultsRoutes.js";
 
 
 // --------------------------------------------------------------------
@@ -372,6 +373,9 @@ app.use("/api/shared", sharedRoutes);
 app.use(express.json({ limit: "25mb" }));
 import adminUsageSummaryRouter from "./routes/adminUsageSummary.js";
 app.use("/admin", adminUsageSummaryRouter);
+// Results sharing routes
+app.use(express.json({ limit: "2mb" })); // bump if your payload is bigger
+app.use("/results", resultsRoutes);
 
 // Admin gate (server-side)
 const adminRequired = [
@@ -6406,6 +6410,13 @@ VOICE: Student-friendly (simple wording)
     - For rubric-based sections, do NOT include incorrect_items; instead, cite specific evidence in teacher_comment for each section.
     - Never interpret unchecked boxes on a rubric sheet as missing work.
 
+    If a rubricOverride or extracted rubricText is provided:
+    - You MUST grade strictly according to that rubric.
+    - You MUST use its scoring scale and denominator.
+    - If the rubric specifies a total (e.g., /20, /40, /50), set overall_out_of to that number.
+    - Do NOT default to /10 unless the rubric explicitly uses /10.
+    - Do NOT invent a new denominator.
+
     SECTIONS REQUIREMENT (schema-critical):
     Every section object MUST include incorrect_items.
     - If the section is NOT a test-style section (rubric category, writing, etc.): incorrect_items MUST be null.
@@ -6455,6 +6466,7 @@ VOICE: Student-friendly (simple wording)
     FINAL CONSISTENCY RULES (required):
     - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
     - If overall_out_of === 10: set score_out_of_10 and final_score_out_of_10 as numbers and apply the deduction rule.
+    - The overall_out_of value must match the total possible points defined in the rubric.
     `.trim();
     }
 

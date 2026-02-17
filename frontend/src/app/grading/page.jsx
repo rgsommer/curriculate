@@ -459,6 +459,11 @@ function formatTeacherBlock(a, ref) {
     `Grade: ${g.score !== "" ? g.score : "(not provided)"} / ${g.outOf}${ref ? `  Ref: ${ref}` : ""}`
   );
 
+  if (ref) {
+    lines.push(`View feedback online: www.curriculate.net/results (code: ${ref})`);
+    lines.push("");
+  }
+
   if (deductions.length) {
     lines.push("");
     lines.push("Deduction:");
@@ -646,13 +651,8 @@ function formatTeacherBlock(a, ref) {
     // Copy UX
     const [copied, setCopied] = useState(false);
     const [copiedFlash, setCopiedFlash] = useState(false); 
-    // 3-digit reference code per result (shown + copied)
+    // AA123 reference code per result (shown + copied)
     const [refCode, setRefCode] = useState("");
-
-    function genRef3() {
-      // 100–999 (always 3 digits)
-      return String(Math.floor(100 + Math.random() * 900));
-    }
 
     const backendBase = useMemo(
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
@@ -663,6 +663,30 @@ function formatTeacherBlock(a, ref) {
       if (!backendBase) return "";
       return `${backendBase.replace(/\/$/, "")}/grading`;
     }, [backendBase]);
+
+    const resultsCreateUrl = useMemo(() => {
+      if (!backendBase) return "";
+      return `${backendBase.replace(/\/$/, "")}/results`;
+    }, [backendBase]);
+
+    async function publishResultToPortal({ payload, meta }) {
+      if (!resultsCreateUrl) throw new Error("Missing NEXT_PUBLIC_BACKEND_URL (results endpoint).");
+
+      const res = await fetch(resultsCreateUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload, // we’ll store a string so /results can show it nicely
+          meta: meta || null,
+          sessionId: getSessionId(),
+        }),
+      });
+
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status} from results endpoint`);
+      if (!j?.code) throw new Error("Results endpoint did not return a code.");
+      return j; // { code, expiresAt }
+    }
 
     const normalized = useMemo(() => {
       // First: try normal JSON parse of the whole response
@@ -971,8 +995,7 @@ function formatTeacherBlock(a, ref) {
         }
 
         if (norm.assessment) {
-          // ✅ generate ref immediately (not in useEffect)
-          setRefCode((prev) => prev || genRef3());
+          // Ref code is created when teacher taps Copy (publishes to /results)
           setCopyEnabled(true);
         } else {
           setCopyEnabled(false);
@@ -1250,6 +1273,52 @@ function formatTeacherBlock(a, ref) {
       if (!assessment || !copyEnabled) return;
       
       setCopyEnabled(false);
+
+      // Ensure this result is published when teacher copies.
+      // We want AA123 returned from backend and included in the copied text.
+      let codeLocal = refCode;
+
+      if (!codeLocal) {
+        try {
+          // Build a “teacher-facing” string payload (simple + universal)
+          // We’ll generate it again below for clipboard, but we need a payload now.
+          // Use no ref here; backend gives ref; we’ll rebuild after.
+          const g0 = getDisplayScore(assessment);
+          const tempLines = [];
+          if (g0.score !== "") tempLines.push(`Grade: ${g0.score} / ${g0.outOf}`);
+          if (Array.isArray(assessment.strengths) && assessment.strengths.length) {
+            tempLines.push("", "Strengths:");
+            assessment.strengths.forEach((s) => tempLines.push(`- ${s}`));
+          }
+          if (Array.isArray(assessment.improvements) && assessment.improvements.length) {
+            tempLines.push("", "Next Steps:");
+            assessment.improvements.forEach((s) => tempLines.push(`- ${s}`));
+          }
+          if ((assessment.teacher_comment || "").trim()) {
+            tempLines.push("", "Overall Comment:");
+            tempLines.push(String(assessment.teacher_comment).trim());
+          }
+          const payloadText = tempLines.join("\n").trim();
+
+          const pub = await publishResultToPortal({
+            payload: payloadText,
+            meta: {
+              source: "grading-copy",
+              gradeBand,
+              capturedCount: photosRef.current?.length || undefined,
+            },
+          });
+
+          codeLocal = String(pub.code || "").toUpperCase();
+          setRefCode(codeLocal);
+        } catch (e) {
+          // Still allow clipboard copy, but no ref code / portal link
+          console.warn("publish to /results failed:", e);
+          setSubmitError(`Portal publish failed (still copying): ${e?.message || "Unknown error"}`);
+          setCopyEnabled(true);
+
+        }
+      }
       
       const links = getAssignmentImagesFromAssessment(assessment);
 
@@ -1257,7 +1326,12 @@ function formatTeacherBlock(a, ref) {
       const lines = [];
       const g = getDisplayScore(assessment);
         if (g.score !== "") {
-          lines.push(`Grade: ${g.score} / ${g.outOf}${refCode ? `  Ref: ${refCode}` : ""}`);
+          lines.push(`Grade: ${g.score} / ${g.outOf}${codeLocal ? `  Ref: ${codeLocal}` : ""}`);
+          lines.push("");
+        }
+
+        if (codeLocal) {
+          lines.push(`View feedback online: www.curriculate.net/results (code: ${codeLocal})`);
           lines.push("");
         }
 
@@ -1292,7 +1366,7 @@ function formatTeacherBlock(a, ref) {
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
           ${(() => {
             const g = getDisplayScore(assessment);
-            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}${refCode ? ` <span style="opacity:0.8; margin-left:10px;"><b>Ref:</b> ${escapeHtml(refCode)}</span>` : ""}</div>`;
+            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}${codeLocal ? ` <span style="opacity:0.8; margin-left:10px;"><b>Ref:</b> ${escapeHtml(codeLocal)}</span>` : ""}</div>`;
           })()}
         </div>`
       );
