@@ -1433,6 +1433,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
         logCurrentToSessionLocal(plainText);
       } catch (e) {
         // ✅ if copy failed, allow retry for this submission
+        setCopyEnabled(true);
         setSubmitError("Copy failed—your browser may block clipboard access.");
       }
     }
@@ -1911,6 +1912,12 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                         ))}
                       </ul>
                     </>
+                  ) : null}
+
+                  {formattedTeacherText ? (
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.45, fontSize: 13 }}>
+                      {formattedTeacherText}
+                    </pre>
                   ) : null}
 
                   <div style={styles.gradingHint}>Tap anywhere to copy</div>
