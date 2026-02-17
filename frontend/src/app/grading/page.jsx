@@ -494,6 +494,84 @@ function formatTeacherBlock(a, ref) {
   return lines.join("\n");
 }
 
+function buildFullTeacherPayloadText(assessment, codeLocal = "") {
+  const links = Array.isArray(assessment?.assignment_images) ? assessment.assignment_images : [];
+
+  const lines = [];
+  const g = getDisplayScore(assessment);
+
+  if (g.score !== "") {
+    lines.push(`Grade: ${g.score} / ${g.outOf}${codeLocal ? `  Ref: ${codeLocal}` : ""}`);
+    lines.push("");
+  }
+
+  if (codeLocal) {
+    lines.push(`View feedback online: www.curriculate.net/results (code: ${codeLocal})`);
+    lines.push("");
+  }
+
+  // Deduction (first one only, as you display)
+  if (Array.isArray(assessment.deductions) && assessment.deductions.length) {
+    const d0 = assessment.deductions[0];
+    const reason = String(d0?.reason || "").trim();
+    if (reason) {
+      lines.push("Deduction:");
+      lines.push(`- ${reason} ${formatPoints(d0?.points)}`.trim());
+      lines.push("");
+    }
+  }
+
+  if (Array.isArray(assessment.strengths) && assessment.strengths.length) {
+    lines.push("Strengths:");
+    assessment.strengths.forEach((s) => lines.push(`- ${s}`));
+    lines.push("");
+  }
+
+  if (Array.isArray(assessment.improvements) && assessment.improvements.length) {
+    lines.push("Next Steps:");
+    assessment.improvements.forEach((s) => lines.push(`- ${s}`));
+    lines.push("");
+  }
+
+  if (String(assessment.teacher_comment || "").trim()) {
+    lines.push("Overall Comment:");
+    lines.push(String(assessment.teacher_comment).trim());
+    lines.push("");
+  }
+
+  // ✅ Sections + incorrect items
+  if (Array.isArray(assessment.sections) && assessment.sections.length) {
+    lines.push("Sections:");
+    assessment.sections.forEach((sec) => {
+      lines.push(
+        `- ${sec.name}: ${sec.score}/${sec.out_of}${
+          sec.teacher_comment ? ` — ${String(sec.teacher_comment).trim()}` : ""
+        }`
+      );
+
+      if (Array.isArray(sec.incorrect_items) && sec.incorrect_items.length) {
+        lines.push(`  Incorrect:`);
+        sec.incorrect_items.forEach((it, idx) => {
+          const p = String(it?.prompt || `Item ${idx + 1}`).trim();
+          const sa = String(it?.student_answer || "—").trim();
+          const ca = String(it?.correct_answer || "—").trim();
+          lines.push(`  - ${p} (you: ${sa}; correct: ${ca})`);
+        });
+      }
+    });
+    lines.push("");
+  }
+
+  // (Optional) keep links in portal payload too
+  if (links.length) {
+    lines.push("Saved captures (30-day links):");
+    links.forEach((img) => lines.push(`Photo ${img.index}: ${img.url}`));
+    lines.push("");
+  }
+
+  return lines.join("\n").trim();
+}
+
   const SESSION_KEY = "curriculate_grading_session_v1";
   const RUBRIC_STICKY_TEXT_KEY = "curriculate_grading_rubric_sticky_text_v1";
   const RUBRIC_STICKY_SRC_KEY = "curriculate_grading_rubric_sticky_src_v1"; // "captured" | "manual"
@@ -713,7 +791,7 @@ function formatTeacherBlock(a, ref) {
     const assessment = normalized.assessment;
 
     const formattedTeacherText = useMemo(() => {
-      return assessment ? formatTeacherBlock(assessment, refCode) : "";
+      return assessment ? buildFullTeacherPayloadText(assessment, refCode) : "";
     }, [assessment, refCode]);
 
     function triggerFlash() {
@@ -1280,26 +1358,7 @@ function formatTeacherBlock(a, ref) {
 
       if (!codeLocal) {
         try {
-          // Build a “teacher-facing” string payload (simple + universal)
-          // We’ll generate it again below for clipboard, but we need a payload now.
-          // Use no ref here; backend gives ref; we’ll rebuild after.
-          const g0 = getDisplayScore(assessment);
-          const tempLines = [];
-          if (g0.score !== "") tempLines.push(`Grade: ${g0.score} / ${g0.outOf}`);
-          if (Array.isArray(assessment.strengths) && assessment.strengths.length) {
-            tempLines.push("", "Strengths:");
-            assessment.strengths.forEach((s) => tempLines.push(`- ${s}`));
-          }
-          if (Array.isArray(assessment.improvements) && assessment.improvements.length) {
-            tempLines.push("", "Next Steps:");
-            assessment.improvements.forEach((s) => tempLines.push(`- ${s}`));
-          }
-          if ((assessment.teacher_comment || "").trim()) {
-            tempLines.push("", "Overall Comment:");
-            tempLines.push(String(assessment.teacher_comment).trim());
-          }
-          const payloadText = tempLines.join("\n").trim();
-
+          const payloadText = buildFullTeacherPayloadText(assessment, "");
           const pub = await publishResultToPortal({
             payload: payloadText,
             meta: {
@@ -1312,162 +1371,41 @@ function formatTeacherBlock(a, ref) {
           codeLocal = String(pub.code || "").toUpperCase();
           setRefCode(codeLocal);
         } catch (e) {
-          // Still allow clipboard copy, but no ref code / portal link
           console.warn("publish to /results failed:", e);
           setSubmitError(`Portal publish failed (still copying): ${e?.message || "Unknown error"}`);
           setCopyEnabled(true);
-
         }
       }
       
-      const links = getAssignmentImagesFromAssessment(assessment);
+      const plainText = buildFullTeacherPayloadText(assessment, codeLocal);
 
-    // ---------- Plain text (fallback) ----------
-      const lines = [];
-      const g = getDisplayScore(assessment);
-        if (g.score !== "") {
-          lines.push(`Grade: ${g.score} / ${g.outOf}${codeLocal ? `  Ref: ${codeLocal}` : ""}`);
-          lines.push("");
-        }
-
-        if (codeLocal) {
-          lines.push(`View feedback online: www.curriculate.net/results (code: ${codeLocal})`);
-          lines.push("");
-        }
-
-      if (Array.isArray(assessment.strengths) && assessment.strengths.length) {
-        lines.push("Strengths:");
-        assessment.strengths.forEach((s) => lines.push(`- ${s}`));
-        lines.push("");
-      }
-
-      if (Array.isArray(assessment.improvements) && assessment.improvements.length) {
-        lines.push("Next Steps:");
-        assessment.improvements.forEach((s) => lines.push(`- ${s}`));
-        lines.push("");
-      }
-
-      if ((assessment.teacher_comment || "").trim()) {
-        lines.push("Overall Comment:");
-        lines.push(String(assessment.teacher_comment).trim());
-        lines.push("");
-      }
-
-      if (links.length) {
-        lines.push("Saved captures (30-day links):");
-        links.forEach((img) => lines.push(`Photo ${img.index}: ${img.url}`));
-        lines.push("");
-      }
-      
       const htmlParts = [];
-
-      // ---------- HTML (pretty clickable links) ----------
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-          ${(() => {
-            const g = getDisplayScore(assessment);
-            return `<div><b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}${codeLocal ? ` <span style="opacity:0.8; margin-left:10px;"><b>Ref:</b> ${escapeHtml(codeLocal)}</span>` : ""}</div>`;
-          })()}
+          <div><b>Grade:</b> ${escapeHtml(getDisplayScore(assessment).score)} / ${escapeHtml(getDisplayScore(assessment).outOf)}${codeLocal ? ` <span style="opacity:0.8; margin-left:10px;"><b>Ref:</b> ${escapeHtml(codeLocal)}</span>` : ""}</div>
         </div>`
       );
-      
+
+      // Optional: include sections in HTML too (recommended)
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
         htmlParts.push(
           `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
             <b>Sections:</b>
             <ul style="margin:6px 0 0 18px; padding:0;">
               ${assessment.sections.map((sec) => {
-                const secHeader = `
-                  <div>
-                    <b>${escapeHtml(sec.name)}:</b>
-                    ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}
-                    ${String(sec.teacher_comment || "").trim()
-                      ? ` — ${escapeHtml(String(sec.teacher_comment).trim())}`
-                      : ""}
-                  </div>
-                `;
-
-                const incorrect =
-                  Array.isArray(sec.incorrect_items) && sec.incorrect_items.length
-                    ? `<div style="margin-top:6px; font-size:12px; opacity:0.9;">
-                        <b>Incorrect items:</b>
-                        <ul style="margin:6px 0 0 18px; padding:0;">
-                          ${sec.incorrect_items
-                            .slice(0, 20)
-                            .map((it, idx) => formatIncorrectItemHtml(it, idx, escapeHtml))
-                            .join("")}
-                          ${sec.incorrect_items.length > 20
-                            ? `<li style="opacity:0.75;">(+ ${sec.incorrect_items.length - 20} more…)</li>`
-                            : ""}
-                        </ul>
-                      </div>`
-                    : "";
-
-                return `<li style="margin:6px 0;">${secHeader}${incorrect}</li>`;
+                const comment = String(sec.teacher_comment || "").trim();
+                const incorrect = Array.isArray(sec.incorrect_items) ? sec.incorrect_items : [];
+                return `<li style="margin:6px 0;">
+                  <div><b>${escapeHtml(sec.name)}:</b> ${escapeHtml(sec.score)}/${escapeHtml(sec.out_of)}${comment ? ` — ${escapeHtml(comment)}` : ""}</div>
+                  ${incorrect.length ? `<div style="margin-top:6px; font-size:12px; opacity:0.9;">
+                    <b>Incorrect:</b>
+                    <ul style="margin:6px 0 0 18px; padding:0;">
+                      ${incorrect.slice(0,20).map((it, idx) => formatIncorrectItemHtml(it, idx, escapeHtml)).join("")}
+                      ${incorrect.length > 20 ? `<li style="opacity:0.75;">(+ ${incorrect.length - 20} more…)</li>` : ""}
+                    </ul>
+                  </div>` : ""}
+                </li>`;
               }).join("")}
-            </ul>
-          </div>`
-        );
-      }
-
-      if (Array.isArray(assessment.sections) && assessment.sections.length) {
-        lines.push("Sections:");
-        assessment.sections.forEach((sec) => {
-          lines.push(`- ${sec.name}: ${sec.score}/${sec.out_of}${sec.teacher_comment ? ` — ${String(sec.teacher_comment).trim()}` : ""}`);
-
-          if (Array.isArray(sec.incorrect_items) && sec.incorrect_items.length) {
-            lines.push(`  Incorrect:`);
-            sec.incorrect_items.forEach((it, idx) => {
-              const p = String(it?.prompt || `Item ${idx + 1}`).trim();
-              const sa = String(it?.student_answer || "—").trim();
-              const ca = String(it?.correct_answer || "—").trim();
-              lines.push(`  - ${p} (you: ${sa}; correct: ${ca})`);
-            });
-          }
-        });
-        lines.push("");
-      }
-
-      const plainText = lines.join("\n").trim();
-
-      if (assessment.strengths?.length) {
-        htmlParts.push(
-          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-            <b>Strengths:</b>
-            <ul>${assessment.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
-          </div>`
-        );
-      }
-
-      if (assessment.improvements?.length) {
-        htmlParts.push(
-          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-            <b>Next Steps:</b>
-            <ul>${assessment.improvements.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
-          </div>`
-        );
-      }
-
-      if ((assessment.teacher_comment || "").trim()) {
-        htmlParts.push(
-          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-            <b>Overall Comment:</b>
-            <div>${escapeHtml(String(assessment.teacher_comment).trim())}</div>
-          </div>`
-        );
-      }
-
-      if (links.length) {
-        htmlParts.push(
-          `<div style="margin-top:10px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-            <b>Saved captures (30-day links):</b>
-            <ul>
-              ${links
-                .map(
-                  (img) =>
-                    `<li><a href="${img.url}" target="_blank" rel="noreferrer">Photo ${img.index}</a></li>`
-                )
-                .join("")}
             </ul>
           </div>`
         );
@@ -1495,7 +1433,6 @@ function formatTeacherBlock(a, ref) {
         logCurrentToSessionLocal(plainText);
       } catch (e) {
         // ✅ if copy failed, allow retry for this submission
-        setCopyEnabled(true);
         setSubmitError("Copy failed—your browser may block clipboard access.");
       }
     }
@@ -1888,19 +1825,20 @@ function formatTeacherBlock(a, ref) {
                             {String(sec.teacher_comment || "").trim() ? (
                               <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.35 }}>
                                 {String(sec.teacher_comment).trim()}
-                                {Array.isArray(sec.incorrect_items) && sec.incorrect_items.length ? (
-                                  <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
-                                    <div style={{ fontWeight: 800, marginBottom: 4 }}>Incorrect</div>
-                                    <ul style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.35 }}>
-                                      {sec.incorrect_items.map((it, idx) => (
-                                        <li key={idx}>
-                                          <span style={{ fontWeight: 700 }}>{String(it.prompt || `Item ${idx + 1}`)}</span>
-                                          {` — you: ${String(it.student_answer || "—")}; correct: ${String(it.correct_answer || "—")}`}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                ) : null}
+                              </div>
+                            ) : null}
+
+                            {Array.isArray(sec.incorrect_items) && sec.incorrect_items.length ? (
+                              <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9 }}>
+                                <div style={{ fontWeight: 800, marginBottom: 4 }}>Incorrect</div>
+                                <ul style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.35 }}>
+                                  {sec.incorrect_items.map((it, idx) => (
+                                    <li key={idx}>
+                                      <span style={{ fontWeight: 700 }}>{String(it.prompt || `Item ${idx + 1}`)}</span>
+                                      {` — you: ${String(it.student_answer || "—")}; correct: ${String(it.correct_answer || "—")}`}
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             ) : null}
                           </div>
