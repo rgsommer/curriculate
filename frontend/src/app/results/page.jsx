@@ -17,33 +17,44 @@ function normalizeCode(s) {
  */
 function linkifyTextToReactNodes(text) {
   const s = String(text || "");
-  const re = /(https?:\/\/[^\s]+|www\.[^\s]+)/g; // keep for split
+  const re = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi; // note: i flag
   const parts = s.split(re);
 
   return parts.map((part, i) => {
-    if (!part) return null;
+    if (part == null || part === "") return null;
 
-    const looksUrl =
-      part.startsWith("http://") ||
-      part.startsWith("https://") ||
-      part.startsWith("www.");
-    if (!looksUrl) return <React.Fragment key={i}>{part}</React.Fragment>;
+    // Keep the original exactly (so spacing stays correct)
+    const original = String(part);
 
-    const m = part.match(/^(.*?)([)\].,;:!?]+)?$/);
-    const urlPart = m?.[1] || part;
-    const trailing = m?.[2] || "";
-    const href = urlPart.startsWith("http") ? urlPart : `https://${urlPart}`;
+    // Trim whitespace for testing only (don’t lose it in output)
+    const test = original.trim();
+
+    // If the split token has leading punctuation like "(" or "[" it won’t match,
+    // but sometimes it sneaks in via copy/paste. Strip leading punct for detection.
+    const mLeadTrail = test.match(/^([(\[{<"'“”‘’]*)(.*?)([)\]}>"'“”‘’.,;:!?]+)?$/);
+    const leading = mLeadTrail?.[1] || "";
+    const core = mLeadTrail?.[2] || test;
+    const trailing = mLeadTrail?.[3] || "";
+
+    const lower = core.toLowerCase();
+    const isUrl = lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("www.");
+    if (!isUrl) return <React.Fragment key={i}>{original}</React.Fragment>;
+
+    const href = lower.startsWith("http") ? core : `https://${core}`;
 
     return (
       <React.Fragment key={i}>
+        {/* preserve any leading punctuation that was attached */}
+        {leading}
         <a
           href={href}
           target="_blank"
           rel="noreferrer"
           style={{ color: "#2563eb", textDecoration: "underline" }}
         >
-          {urlPart}
+          {core}
         </a>
+        {/* preserve trailing punctuation like "." or ")" */}
         {trailing}
       </React.Fragment>
     );
