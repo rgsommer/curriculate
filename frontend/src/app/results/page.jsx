@@ -160,18 +160,35 @@ function parseTeacherBlock(payloadText) {
     }
 
     if (current === "Sections:") {
-      // Section line begins with "- "
-      const t = ln.trim();
-      if (t.startsWith("- ")) {
-        // Close previous
-        if (currentSection) out.sections.push(currentSection);
+      const raw = ln;              // keep raw line
+      const trimmed = raw.trim();
 
-        currentSection = { title: t.slice(2).trim(), lines: [] };
+      // Start a new section ONLY for bullets that look like section headers.
+      // e.g. "- Part A — Matching: 10/10 — ..."
+      if (raw.startsWith("- ")) {
+        const afterDash = raw.slice(2).trim();
+
+        const isSectionHeader =
+          /^Part\s+[A-Z0-9]+\b/i.test(afterDash) ||          // Part A, Part 1, etc
+          /^Section\b/i.test(afterDash);                     // Section ...
+
+        // Also: if it's a numbered question bullet like "- 2. ...", treat as detail
+        const isNumberedItem = /^\d+\./.test(afterDash);
+
+        if (isSectionHeader && !isNumberedItem) {
+          if (currentSection) out.sections.push(currentSection);
+          currentSection = { title: afterDash, lines: [] };
+          continue;
+        }
+
+        // otherwise, it's a detail line inside current section
+        if (currentSection) currentSection.lines.push(afterDash);
         continue;
       }
-      // Indented details
-      if (currentSection && ln.trim()) {
-        currentSection.lines.push(ln.trim());
+
+      // Indented or non-bullet detail lines (e.g. "Incorrect:")
+      if (currentSection && trimmed) {
+        currentSection.lines.push(trimmed);
       }
       continue;
     }
