@@ -123,7 +123,6 @@ function parseTeacherBlock(payloadText) {
   };
 
   let overallLines = [];
-  let inSections = false;
   let currentSection = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -131,9 +130,23 @@ function parseTeacherBlock(payloadText) {
 
     if (headingSet.has(ln.trim())) {
       const h = ln.trim();
+
+      // stop before links
       if (h === "Saved captures (30-day links):") break;
+
+      // ✅ if we are leaving Overall Comment, save it now
+      if (current === "Overall Comment:" && overallLines.length) {
+        out.overallComment = overallLines.join("\n").trim();
+        overallLines = [];
+      }
+
       current = h;
-      if (current !== "Overall Comment:") overallLines = [];
+
+      // start fresh for new overall comment block
+      if (current === "Overall Comment:") {
+        overallLines = [];
+      }
+
       continue;
     }
 
@@ -230,6 +243,22 @@ function Pill({ children }) {
   );
 }
 
+function renderSectionTitle(title) {
+  const t = String(title || "");
+  const idx = t.indexOf(":");
+  if (idx === -1) {
+    return <span style={{ fontWeight: 900 }}>{linkifyTextToReactNodes(t)}</span>;
+  }
+  const left = t.slice(0, idx + 1);   // include colon
+  const right = t.slice(idx + 1);     // remainder
+  return (
+    <span>
+      <span style={{ fontWeight: 900 }}>{linkifyTextToReactNodes(left)}</span>
+      <span>{linkifyTextToReactNodes(right)}</span>
+    </span>
+  );
+}
+
 export default function ResultsPage() {
   const [codeInput, setCodeInput] = useState("");
   const [status, setStatus] = useState("idle"); // idle | loading | error | ok
@@ -282,14 +311,37 @@ export default function ResultsPage() {
         </p>
       </div>
       <style>{`
-        @media print {
-          /* Hide the search UI when printing */
-          .no-print { display: none !important; }
+        @page { margin: 12mm; }
 
-          /* Make the printed content feel like a doc */
-          body { background: white !important; }
+        @media print {
+          /* Hide everything */
+          body * { visibility: hidden !important; }
+
+          /* Show only the print area */
+          #print-area, #print-area * { visibility: visible !important; }
+
+          /* Print area positioning */
+          #print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+          }
+
+          /* Remove “app UI” styling for print */
+          #print-area * {
+            box-shadow: none !important;
+          }
+
+          /* If your Cards use white backgrounds, keep them,
+            but remove any tinted backgrounds inside sections */
+          #print-area [data-print-plain="true"] {
+            background: transparent !important;
+            border-color: rgba(0,0,0,.15) !important;
+          }
+
+          /* Clean doc look */
           a { color: #000 !important; text-decoration: underline; }
-          pre, div { white-space: pre-wrap; }
         }
       `}</style>
 
@@ -386,7 +438,7 @@ export default function ResultsPage() {
       )}
 
       {status === "ok" && data && (
-        <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+        <div id="print-area" style={{ marginTop: 14, display: "grid", gap: 12 }}>
           {/* Header */}
           <Card title={null}>
             <div
@@ -478,9 +530,10 @@ export default function ResultsPage() {
                           background: "rgba(15,23,42,.02)",
                         }}
                       >
-                        <div style={{ fontWeight: 950 }}>
-                          {linkifyTextToReactNodes(sec.title)}
+                        <div>
+                          {renderSectionTitle(sec.title)}
                         </div>
+
                         {sec.lines?.length ? (
                           <div
                             style={{
