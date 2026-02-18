@@ -1469,6 +1469,14 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
         .replaceAll("'", "&#039;");
     }
 
+    const disableUseDefault =
+      !(rubricOverride || "").trim().length &&
+      !(stickyRubricText || "").trim().length;
+
+    const disableClearCaptured =
+      !(stickyRubricText || "").trim().length ||
+      stickyRubricSource !== "captured";
+      
     return (
       <div style={styles.page}>
         <div style={styles.header}>
@@ -1671,13 +1679,12 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                   </button>
                   <button
                     onClick={useDefaultRubric}
-                    style={styles.secondaryBtn}
-                    disabled={
-                      !(rubricOverride || "").trim().length &&
-                      !(stickyRubricText || "").trim().length
-                    }
-                    type="button"
-                    title="Clear override"
+                    disabled={disableUseDefault}
+                    style={{
+                      ...styles.secondaryBtn,
+                      opacity: disableUseDefault ? 0.5 : 1,
+                      cursor: disableUseDefault ? "not-allowed" : "pointer",
+                    }}
                   >
                     Use Default
                   </button>
@@ -1687,17 +1694,17 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                       setStickyRubricSource("");
                       setStickyRubricCapturedAt("");
                     }}
-                    style={styles.secondaryBtn}
-                    disabled={
-                      !(stickyRubricText || "").trim().length ||
-                      stickyRubricSource !== "captured"
-                    }
+                    disabled={disableClearCaptured}
+                    style={{
+                      ...styles.secondaryBtn,
+                      opacity: disableClearCaptured ? 0.5 : 1,
+                      cursor: disableClearCaptured ? "not-allowed" : "pointer",
+                    }}
                     type="button"
                     title="Clear the captured rubric for this session"
                   >
                     Clear Captured
                   </button>
-
                 </div>
               </div>
 
@@ -2072,8 +2079,6 @@ const styles = {
     padding: "10px 14px",
     fontWeight: 700,
     cursor: "pointer",
-    opacity: disabled ? 0.5 : 1,
-    cursor: disabled ? "not-allowed" : "pointer",
   },
 
   photoMeta: {
