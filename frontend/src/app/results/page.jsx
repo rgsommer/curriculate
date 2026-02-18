@@ -132,6 +132,7 @@ function parseTeacherBlock(payloadText) {
     "Next Steps:": "nextSteps",
     "Overall Comment:": "overallComment",
     "Sections:": "sections",
+    "Saved captures (30-day links):": "savedCaptures",  // ✅ add
   };
 
   let overallLines = [];
@@ -144,7 +145,10 @@ function parseTeacherBlock(payloadText) {
       const h = ln.trim();
 
       // stop before links
-      if (h === "Saved captures (30-day links):") break;
+      if (h === "Saved captures (30-day links):") {
+        current = "Saved captures (30-day links):";
+        continue;
+      }
 
       // ✅ if we are leaving Overall Comment, save it now
       if (current === "Overall Comment:" && overallLines.length) {
@@ -582,6 +586,16 @@ export default function ResultsPage() {
                   </div>
                 </Card>
               ) : null}
+              {parsed.savedCaptures.length ? (
+                <Card title="Saved captures (30-day links)">
+                  <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
+                    {parsed.savedCaptures.map((x, i) => (
+                      <li key={i}>{linkifyTextToReactNodes(x)}</li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
+
             </>
           ) : (
             // Fallback: show payload as-is
