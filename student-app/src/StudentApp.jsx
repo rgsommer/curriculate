@@ -707,6 +707,16 @@ function StudentApp() {
   const countdownTimerRef = useRef(null);
   const postSubmitTimerRef = useRef(null);
 
+  // ---- Debug mode (enable via ?debug=1 or localStorage flag) ----
+  const debugMode = (() => {
+    try {
+      const qp = new URLSearchParams(window.location.search);
+      if (qp.get("debug") === "1") return true;
+      if (localStorage.getItem("curriculate.debug") === "1") return true;
+    } catch {}
+    return false;
+  })();
+
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
@@ -1974,6 +1984,20 @@ function StudentApp() {
       setReviewState(null);
     };
 
+    const debugForceEndTaskNow = () => {
+      // Kill any overlay timers immediately
+      try {
+        if (postSubmitTimerRef.current) {
+          clearInterval(postSubmitTimerRef.current);
+          postSubmitTimerRef.current = null;
+        }
+      } catch {}
+
+      // If we're currently showing a task, just bail out of it like the overlay finished.
+      // This is client-side only (no scoring), but perfect for UI/debug speed.
+      endReviewAndReturnToScan();
+    };
+
     const handleSubmitAnswer = (answerPayload) => {
       if (!roomCode || !joined || submitting || taskLocked) return;
 
@@ -2174,7 +2198,18 @@ socket.emit("task:submit", payload, (response) => {
   // ─────────────────────────────────────────────
 
   const handleScan = (data) => {
-    console.log("[SCAN] raw data:", data);
+    console.log("[SCAN] enter", {
+      data,
+      joined,
+      teamId,
+      taskLocked,
+      mustScan,
+      scannerActive,
+      currentTaskType: currentTaskRef.current?.taskType || currentTaskRef.current?.type || null,
+      assignedStationId,
+      scannedStationId,
+      assignedColor,
+    });
 
     if (!data || !joined || !teamId) return false;
 
@@ -4021,6 +4056,24 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
         minHeight: isMotionMission || isPetFeeding ? "60vh" : undefined,
       }}
     >
+      {debugMode && (
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <button
+          type="button"
+          onClick={debugForceEndTaskNow}
+          style={{
+            background: "rgba(15,23,42,0.85)",
+            color: "#fff",
+            padding: "8px 12px",
+            borderRadius: 999,
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          🧪 Debug: Skip / Next
+        </button>
+      </div>
+    )}
       {echoPulse && isEchoChain && (
         <div
           aria-hidden="true"
