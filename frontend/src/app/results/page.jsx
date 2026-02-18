@@ -2,52 +2,239 @@
 
 import React, { useMemo, useState } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
+const API_BASE =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
 
 function normalizeCode(s) {
-  return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+  return String(s || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 5);
 }
 
+/**
+ * Linkify: makes urls clickable, trims trailing punctuation like "." or ")"
+ */
 function linkifyTextToReactNodes(text) {
   const s = String(text || "");
-
-  // Match:
-  // - https://...
-  // - http://...
-  // - www....
-  const urlRe = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/g;
-
-  const parts = s.split(urlRe);
+  const re = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+  const parts = s.split(re);
 
   return parts.map((part, i) => {
     if (!part) return null;
 
-    const isUrl = urlRe.test(part);
-    // Reset regex state (because we used .test with /g)
-    urlRe.lastIndex = 0;
+    const looksUrl =
+      part.startsWith("http://") ||
+      part.startsWith("https://") ||
+      part.startsWith("www.");
+    if (!looksUrl) return <React.Fragment key={i}>{part}</React.Fragment>;
 
-    if (!isUrl) return part;
+    const m = part.match(/^(.*?)([)\].,;:!?]+)?$/);
+    const urlPart = m?.[1] || part;
+    const trailing = m?.[2] || "";
 
-    const href = part.startsWith("www.") ? `https://${part}` : part;
+    const href = urlPart.startsWith("http") ? urlPart : `https://${urlPart}`;
 
     return (
-      <a
-        key={`u-${i}`}
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        style={{ textDecoration: "underline" }}
-      >
-        {part}
-      </a>
+      <React.Fragment key={i}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "#2563eb", textDecoration: "underline" }}
+        >
+          {urlPart}
+        </a>
+        {trailing}
+      </React.Fragment>
     );
   });
+}
+
+/**
+ * Parses your saved teacher block into sections.
+ * Works with blocks like:
+ * Grade: 7.5 / 10  Ref: AT534
+ * View feedback online: www.curriculate.net/results (code: AT534)
+ *
+ * Deduction:
+ * - Formatting requirements missing (–1)
+ *
+ * Strengths:
+ * - ...
+ *
+ * Next Steps:
+ * - ...
+ *
+ * Overall Comment:
+ * ...
+ *
+ * Sections:
+ * - Name: 3/4 — comment
+ *   Incorrect:
+ *   - ...
+ */
+function parseTeacherBlock(payloadText) {
+  const text = String(payloadText || "").replace(/\r\n/g, "\n");
+  const lines = text.split("\n");
+
+  const out = {
+    gradeLine: "",
+    viewLine: "",
+    deduction: [],
+    strengths: [],
+    nextSteps: [],
+    overallComment: "",
+    sections: [], // { title, lines: [] }
+    raw: text,
+  };
+
+  // Grab first "Grade:" line if present
+  for (const ln of lines) {
+    if (ln.trim().startsWith("Grade:")) {
+      out.gradeLine = ln.trim();
+      break;
+    }
+  }
+
+  // Grab "View feedback" line if present
+  for (const ln of lines) {
+    if (ln.toLowerCase().includes("view feedback")) {
+      out.viewLine = ln.trim();
+      break;
+    }
+  }
+
+  const headingSet = new Set([
+    "Deduction:",
+    "Strengths:",
+    "Next Steps:",
+    "Overall Comment:",
+    "Sections:",
+    "Saved captures (30-day links):",
+  ]);
+
+  let current = null;
+  const bucket = {
+    "Deduction:": "deduction",
+    "Strengths:": "strengths",
+    "Next Steps:": "nextSteps",
+    "Overall Comment:": "overallComment",
+    "Sections:": "sections",
+  };
+
+  let overallLines = [];
+  let inSections = false;
+  let currentSection = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+
+    if (headingSet.has(ln.trim())) {
+      current = ln.trim();
+      inSections = current === "Sections:";
+      if (current !== "Overall Comment:") overallLines = [];
+      continue;
+    }
+
+    if (!current) continue;
+
+    // Overall Comment can be multi-line
+    if (current === "Overall Comment:") {
+      if (ln.trim() === "" && overallLines.length) continue;
+      overallLines.push(ln);
+      continue;
+    }
+
+    if (current === "Sections:") {
+      // Section line begins with "- "
+      const t = ln.trim();
+      if (t.startsWith("- ")) {
+        // Close previous
+        if (currentSection) out.sections.push(currentSection);
+
+        currentSection = { title: t.slice(2).trim(), lines: [] };
+        continue;
+      }
+      // Indented details
+      if (currentSection && ln.trim()) {
+        currentSection.lines.push(ln.trim());
+      }
+      continue;
+    }
+
+    const target = bucket[current];
+    if (!target) continue;
+
+    const t = ln.trim();
+    if (!t) continue;
+    // Keep list items, but also allow plain lines
+    out[target].push(t);
+  }
+
+  if (overallLines.length) {
+    out.overallComment = overallLines.join("\n").trim();
+  }
+  if (currentSection) out.sections.push(currentSection);
+
+  // If we didn't find any structure, return null (so we can fallback)
+  const hasAny =
+    out.gradeLine ||
+    out.viewLine ||
+    out.deduction.length ||
+    out.strengths.length ||
+    out.nextSteps.length ||
+    out.overallComment ||
+    out.sections.length;
+
+  return hasAny ? out : null;
+}
+
+function Card({ title, children }) {
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(0,0,0,.10)",
+        borderRadius: 14,
+        padding: 16,
+        background: "white",
+        boxShadow: "0 8px 18px rgba(2,6,23,.05)",
+      }}
+    >
+      {title ? (
+        <div style={{ fontWeight: 900, marginBottom: 10, fontSize: 14 }}>
+          {title}
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
+function Pill({ children }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "6px 10px",
+        borderRadius: 999,
+        border: "1px solid rgba(0,0,0,.10)",
+        background: "rgba(15,23,42,.03)",
+        fontSize: 12,
+        fontWeight: 800,
+        color: "rgba(15,23,42,.85)",
+      }}
+    >
+      {children}
+    </span>
+  );
 }
 
 export default function ResultsPage() {
   const [codeInput, setCodeInput] = useState("");
   const [status, setStatus] = useState("idle"); // idle | loading | error | ok
   const [data, setData] = useState(null);
+  const [errMsg, setErrMsg] = useState("");
 
   const code = useMemo(() => normalizeCode(codeInput), [codeInput]);
 
@@ -55,6 +242,7 @@ export default function ResultsPage() {
     e.preventDefault();
     setStatus("loading");
     setData(null);
+    setErrMsg("");
 
     try {
       const r = await fetch(`${API_BASE}/results/${code}`, { cache: "no-store" });
@@ -65,68 +253,212 @@ export default function ResultsPage() {
       setStatus("ok");
     } catch (err) {
       setStatus("error");
+      setErrMsg(err?.message || "Code not found.");
     }
   }
 
-  return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 16px" }}>
-      <h1 style={{ fontSize: 24, marginBottom: 8 }}>View Feedback</h1>
-      <p style={{ marginTop: 0, opacity: 0.8 }}>
-        Enter the reference code written on the paper (expires after 30 days).
-      </p>
+  const parsed = useMemo(() => {
+    if (!data?.payload) return null;
+    if (typeof data.payload === "string") return parseTeacherBlock(data.payload);
+    return null;
+  }, [data]);
 
-      <form onSubmit={onSubmit} style={{ display: "flex", gap: 10, marginTop: 16 }}>
-        <input
-          value={codeInput}
-          onChange={(e) => setCodeInput(e.target.value)}
-          placeholder="AA123"
-          inputMode="text"
-          autoCapitalize="characters"
-          style={{
-            flex: 1,
-            fontSize: 18,
-            padding: "12px 14px",
-            borderRadius: 10,
-            border: "1px solid rgba(0,0,0,.2)",
-          }}
-        />
-        <button
-          type="submit"
-          disabled={code.length !== 5 || status === "loading"}
-          style={{
-            padding: "12px 14px",
-            borderRadius: 10,
-            border: "1px solid rgba(0,0,0,.2)",
-            cursor: "pointer",
-          }}
+  return (
+    <div
+      style={{
+        maxWidth: 820,
+        margin: "0 auto",
+        padding: "28px 16px",
+        fontFamily:
+          'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
+        color: "#0b1220",
+      }}
+    >
+      <div style={{ marginBottom: 14 }}>
+        <h1 style={{ fontSize: 28, margin: 0, letterSpacing: -0.3 }}>
+          View Feedback
+        </h1>
+        <p style={{ marginTop: 8, opacity: 0.78, lineHeight: 1.45 }}>
+          Enter the reference code written on the paper (expires after 30 days).
+        </p>
+      </div>
+
+      <Card title={null}>
+        <form
+          onSubmit={onSubmit}
+          style={{ display: "flex", gap: 10, alignItems: "center" }}
         >
-          {status === "loading" ? "Loading…" : "View"}
-        </button>
-      </form>
+          <input
+            value={codeInput}
+            onChange={(e) => setCodeInput(e.target.value)}
+            placeholder="AA123"
+            inputMode="text"
+            autoCapitalize="characters"
+            style={{
+              flex: 1,
+              fontSize: 18,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: "1px solid rgba(0,0,0,.18)",
+              outline: "none",
+            }}
+          />
+          <button
+            type="submit"
+            disabled={code.length !== 5 || status === "loading"}
+            style={{
+              padding: "12px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(0,0,0,.18)",
+              background: code.length === 5 ? "#2563eb" : "rgba(0,0,0,.06)",
+              color: code.length === 5 ? "white" : "rgba(0,0,0,.6)",
+              fontWeight: 900,
+              cursor: code.length === 5 ? "pointer" : "not-allowed",
+            }}
+          >
+            {status === "loading" ? "Loading…" : "View"}
+          </button>
+        </form>
+      </Card>
 
       {status === "error" && (
-        <div style={{ marginTop: 16, padding: 14, borderRadius: 10, border: "1px solid rgba(0,0,0,.15)" }}>
-          Code not found.
+        <div style={{ marginTop: 14 }}>
+          <Card title="Not found">
+            <div style={{ opacity: 0.85 }}>{errMsg || "Code not found."}</div>
+          </Card>
         </div>
       )}
 
       {status === "ok" && data && (
-        <div style={{ marginTop: 16, padding: 16, borderRadius: 12, border: "1px solid rgba(0,0,0,.15)" }}>
-          {/* Render nicely if payload is structured JSON; otherwise show as text */}
-          {typeof data.payload === "string" ? (
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
-                {linkifyTextToReactNodes(data.payload)}
-            </pre>
+        <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+          {/* Header */}
+          <Card title={null}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                alignItems: "baseline",
+              }}
+            >
+              <div style={{ fontSize: 18, fontWeight: 1000 }}>
+                {parsed?.gradeLine ? (
+                  <span>{linkifyTextToReactNodes(parsed.gradeLine)}</span>
+                ) : (
+                  <span>Feedback</span>
+                )}
+              </div>
 
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Pill>Code: {code}</Pill>
+                <Pill>
+                  Expires:{" "}
+                  {data.expiresAt
+                    ? new Date(data.expiresAt).toLocaleString()
+                    : "—"}
+                </Pill>
+              </div>
+            </div>
+
+            {parsed?.viewLine ? (
+              <div style={{ marginTop: 10, opacity: 0.85 }}>
+                {linkifyTextToReactNodes(parsed.viewLine)}
+              </div>
+            ) : null}
+          </Card>
+
+          {/* Structured payload */}
+          {parsed ? (
+            <>
+              {parsed.deduction.length ? (
+                <Card title="Deduction">
+                  <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
+                    {parsed.deduction.map((x, i) => (
+                      <li key={i}>{linkifyTextToReactNodes(x)}</li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
+
+              {parsed.strengths.length ? (
+                <Card title="Strengths">
+                  <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
+                    {parsed.strengths.map((x, i) => (
+                      <li key={i}>{linkifyTextToReactNodes(x)}</li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
+
+              {parsed.nextSteps.length ? (
+                <Card title="Next steps">
+                  <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
+                    {parsed.nextSteps.map((x, i) => (
+                      <li key={i}>{linkifyTextToReactNodes(x)}</li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
+
+              {parsed.overallComment ? (
+                <Card title="Overall comment">
+                  <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+                    {linkifyTextToReactNodes(parsed.overallComment)}
+                  </div>
+                </Card>
+              ) : null}
+
+              {parsed.sections.length ? (
+                <Card title="Sections">
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {parsed.sections.map((sec, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          border: "1px solid rgba(0,0,0,.08)",
+                          borderRadius: 12,
+                          padding: 12,
+                          background: "rgba(15,23,42,.02)",
+                        }}
+                      >
+                        <div style={{ fontWeight: 950 }}>
+                          {linkifyTextToReactNodes(sec.title)}
+                        </div>
+                        {sec.lines?.length ? (
+                          <div
+                            style={{
+                              marginTop: 8,
+                              opacity: 0.9,
+                              lineHeight: 1.55,
+                              whiteSpace: "pre-wrap",
+                            }}
+                          >
+                            {sec.lines.map((ln, idx) => (
+                              <div key={idx}>{linkifyTextToReactNodes(ln)}</div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              ) : null}
+            </>
           ) : (
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
-              {JSON.stringify(data.payload, null, 2)}
-            </pre>
+            // Fallback: show payload as-is
+            <Card title="Feedback">
+              {typeof data.payload === "string" ? (
+                <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+                  {linkifyTextToReactNodes(data.payload)}
+                </div>
+              ) : (
+                <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
+                  {JSON.stringify(data.payload, null, 2)}
+                </pre>
+              )}
+            </Card>
           )}
-
-          <div style={{ marginTop: 12, opacity: 0.7, fontSize: 13 }}>
-            Expires: {data.expiresAt ? new Date(data.expiresAt).toLocaleString() : "—"}
-          </div>
         </div>
       )}
     </div>
