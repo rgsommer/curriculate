@@ -968,7 +968,7 @@ function StudentApp() {
       }
 
       // Physical MC needs the global scanner panel. MadDash uses the embedded task scanner.
-      const assignedNeedsScanner = assignedIsPhysicalMC;
+      const assignedNeedsScanner = assignedIsPhysicalMC || assignedIsMadDash;
       setScannerActive(assignedNeedsScanner);
 
       if (assignedIsMadDash) {
@@ -2174,6 +2174,8 @@ socket.emit("task:submit", payload, (response) => {
   // ─────────────────────────────────────────────
 
   const handleScan = (data) => {
+    console.log("[SCAN] raw data:", data);
+
     if (!data || !joined || !teamId) return false;
 
     // De-dupe repeated reads of the same QR (camera often detects the same code many frames in a row).
@@ -3915,7 +3917,10 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
       }}>
         {scannerActive && (
           <div style={{ position: "relative", width: "100%" }}>
-            <QrScanner onScan={handleScan} onError={setScanError} />
+            <QrScanner
+              onScan={(d) => { console.log("[QrScanner] onScan fired", d); return handleScan(d); }}
+              onError={(e) => { console.log("[QrScanner] error", e); setScanError(e); }}
+            />
           {waitingForLaunch && (
             <div
               style={{
