@@ -96,6 +96,7 @@ function parseTeacherBlock(payloadText) {
     nextSteps: [],
     overallComment: "",
     sections: [], // { title, lines: [] }
+    savedCaptures: [],
     raw: text,
   };
 
