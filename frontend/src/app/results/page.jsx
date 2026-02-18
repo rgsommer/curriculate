@@ -17,7 +17,7 @@ function normalizeCode(s) {
  */
 function linkifyTextToReactNodes(text) {
   const s = String(text || "");
-  const re = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+  const re = /(https?:\/\/[^\s]+|www\.[^\s]+)/g; // keep for split
   const parts = s.split(re);
 
   return parts.map((part, i) => {
@@ -32,7 +32,6 @@ function linkifyTextToReactNodes(text) {
     const m = part.match(/^(.*?)([)\].,;:!?]+)?$/);
     const urlPart = m?.[1] || part;
     const trailing = m?.[2] || "";
-
     const href = urlPart.startsWith("http") ? urlPart : `https://${urlPart}`;
 
     return (
@@ -77,7 +76,7 @@ function linkifyTextToReactNodes(text) {
 function parseTeacherBlock(payloadText) {
   const text = String(payloadText || "").replace(/\r\n/g, "\n");
   const lines = text.split("\n");
-
+  
   const out = {
     gradeLine: "",
     viewLine: "",
@@ -131,8 +130,9 @@ function parseTeacherBlock(payloadText) {
     const ln = lines[i];
 
     if (headingSet.has(ln.trim())) {
-      current = ln.trim();
-      inSections = current === "Sections:";
+      const h = ln.trim();
+      if (h === "Saved captures (30-day links):") break;
+      current = h;
       if (current !== "Overall Comment:") overallLines = [];
       continue;
     }
@@ -235,6 +235,7 @@ export default function ResultsPage() {
   const [status, setStatus] = useState("idle"); // idle | loading | error | ok
   const [data, setData] = useState(null);
   const [errMsg, setErrMsg] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const code = useMemo(() => normalizeCode(codeInput), [codeInput]);
 
@@ -274,19 +275,29 @@ export default function ResultsPage() {
         color: "#0b1220",
       }}
     >
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 28, margin: 0, letterSpacing: -0.3 }}>
-          View Feedback
-        </h1>
-        <p style={{ marginTop: 8, opacity: 0.78, lineHeight: 1.45 }}>
+      <div className="no-print">
+        <h1 style={{ fontSize: 24, marginBottom: 8 }}>View Feedback</h1>
+        <p style={{ marginTop: 0, opacity: 0.8 }}>
           Enter the reference code written on the paper (expires after 30 days).
         </p>
       </div>
+      <style>{`
+        @media print {
+          /* Hide the search UI when printing */
+          .no-print { display: none !important; }
+
+          /* Make the printed content feel like a doc */
+          body { background: white !important; }
+          a { color: #000 !important; text-decoration: underline; }
+          pre, div { white-space: pre-wrap; }
+        }
+      `}</style>
 
       <Card title={null}>
         <form
           onSubmit={onSubmit}
           style={{ display: "flex", gap: 10, alignItems: "center" }}
+          className="no-print"
         >
           <input
             value={codeInput}
@@ -319,6 +330,51 @@ export default function ResultsPage() {
             {status === "loading" ? "Loading…" : "View"}
           </button>
         </form>
+
+        {status === "ok" && data?.payload && (
+          <div className="no-print" style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => {
+                const text =
+                  typeof data.payload === "string"
+                    ? data.payload
+                    : JSON.stringify(data.payload, null, 2);
+
+                navigator.clipboard?.writeText(text);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1200);
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid rgba(0,0,0,.2)",
+                background: "rgba(0,0,0,.04)",
+                cursor: "pointer",
+                fontSize: 14,
+              }}
+            >
+              {copied ? "Copied ✓" : "Copy Feedback"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid rgba(0,0,0,.2)",
+                background: "transparent",
+                cursor: "pointer",
+                fontSize: 14,
+                opacity: 0.8,
+              }}
+              title="Opens print dialog (choose “Save as PDF”)"
+            >
+              Download as PDF
+            </button>
+          </div>
+        )}
       </Card>
 
       {status === "error" && (
