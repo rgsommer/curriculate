@@ -38,8 +38,24 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <head>
+        {/* Existing script */}
         <Script src="/config/copy.js" strategy="beforeInteractive" />
+
+        {/* Google tag (gtag.js) */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-PV7DD848BT"
+          strategy="afterInteractive"
+        />
+        <Script id="gtag-init" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){window.dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-PV7DD848BT');
+          `}
+        </Script>
       </head>
+
       <body className="min-h-screen bg-white text-gray-900 antialiased">
         <SiteHeader />
         <div className="min-h-[70vh]">{children}</div>
