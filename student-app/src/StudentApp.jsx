@@ -1417,6 +1417,13 @@ function StudentApp() {
       try { return !!window.__curriculateTaskWantsScan; } catch { return false; }
     })();
 
+    const shouldScannerBeOn = (!taskLocked) && (mustScan || taskWantsScan);
+
+    useEffect(() => {
+      if (!joined) return;
+      setScannerActive(shouldScannerBeOn);
+    }, [joined, mustScan, taskLocked, currentTask, postSubmitSecondsLeft]);
+
     if (taskLocked && !taskWantsScan) {
       setScannerActive(false);
       return;

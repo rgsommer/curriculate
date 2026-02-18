@@ -1,8 +1,7 @@
 // student-app/src/components/tasks/TaskRunner.jsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../../shared/taskTypes.js";
-import ReadyCountdown from "../../components/ui/ReadyCountdown.jsx";
-import SmoothCountdownBarUI from "../../components/ui/SmoothCountdownBar.jsx";
+//import ReadyCountdown from "../../components/ui/ReadyCountdown.jsx";
 
 import BodyBreakTask from "./types/BodyBreakTask";
 import MakeAndSnapTask from "./types/MakeAndSnapTask";
@@ -169,7 +168,7 @@ function BrainSparkNotesInline({ task, onSubmit, disabled }) {
 }
 
 function SmoothCountdownBar({
-  durationMs = 5000,
+  durationMs = 2000,
   running = true,
   resetKey,
   height = 10,
@@ -272,13 +271,6 @@ const CATEGORY_ANIMATION_BASE_FILES = {
   other: "other.mp4",
 };
 
-// Task types that should NOT show the category staging video.
-const CATEGORY_ANIMATION_SKIP_TYPES = new Set([
-  TASK_TYPES.MOOD_CHECKIN,
-  TASK_TYPES.TASK_RUNNER,
-  TASK_TYPES.MULTI_PLAYER_FEEDBACK,
-]);
-
 function stableRand01(seedStr) {
   // deterministic 0..1 for the same seedStr (fast hash)
   let h = 2166136261;
@@ -317,7 +309,7 @@ function buildStableTaskKey(taskObj, normalizedType) {
 const CATEGORY_ANIMATION_SKIP_TYPES_LEGACY = new Set(
   [
     TASK_TYPES.MOOD_CHECKIN,
-    TASK_TYPES.TASK_RUNNER,
+    TASK_TYPES.TREASURE_RUNNER,
     TASK_TYPES.MULTI_PLAYER_FEEDBACK,
   ]
     .filter(Boolean)
@@ -356,54 +348,6 @@ function pickCategoryVideoSrc(taskType, taskObj) {
   const useAlt = stableRand01(seed) >= 0.5;
 
   return `/animations/categories/${useAlt ? alt : base}`;
-}
-
-
-
-// ---------------------------------------------------------------------
-// Category animations (looping video) - place files in:
-// student-app/public/animations/categories/<filename>
-// ---------------------------------------------------------------------
-const CATEGORY_ANIMATION_FILES = {
-  question: "question.mp4",
-  ordering: "ordering.mp4",
-  creative: "creative.mp4",
-  movement: "movement.mp4",
-  competitive: "competetive.mp4",
-  deduction: "deduction.mp4",
-  collaboration: "collaboration.mp4",
-  "feedback/meta": "feedback-meta.mp4",
-  synthesis: "synthesis.mp4",
-  recall: "recall.mp4",
-  "role-play": "role-play.mp4",
-  other: "other.mp4",
-};
-
-
-// (moved above pickCategoryVideoSrc to avoid TDZ crash) Task types that should NOT show category staging video (legacy helper)
-// const CATEGORY_ANIMATION_SKIP_TYPES_LEGACY = new Set(
-//   [
-//     TASK_TYPES.MOOD_CHECKIN,
-//     TASK_TYPES.TASK_RUNNER,
-//     TASK_TYPES.MULTI_PLAYER_FEEDBACK,
-//   ]
-//     .filter(Boolean)
-//     .map((s) => String(s).toLowerCase())
-// );
-
-
-function pickCategoryAnimation(taskType, taskObj) {
-  // Some tasks intentionally avoid the category video (mood, treasure runner, multiplayer feedback).
-  const tt = String(taskType || taskObj?.taskType || taskObj?.type || "").toLowerCase();
-  if (CATEGORY_ANIMATION_SKIP_TYPES_LEGACY.has(tt)) return null;
-
-  const ui = taskObj?.ui || taskObj?.config?.ui || null;
-  const override = ui?.categoryAnimation || ui?.categoryAnim || null; // allow per-task override
-  if (override && typeof override === "string") return override;
-
-  const meta = TASK_TYPE_META?.[taskType] || null;
-  const cat = meta?.category || "other";
-  return CATEGORY_ANIMATION_FILES[cat] || CATEGORY_ANIMATION_FILES.other;
 }
 
 function seededShuffle(array, seedStr) {
@@ -1352,15 +1296,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
    Multi-part renderer for MC / TF / Short Answer
    ───────────────────────────────────────────── */
 
-function MultiPartTask({
-  mode,
-  task,
-  review,
-  readOnly = false,
-  onSubmit,
-  submitting,
-  disabled,
-}) {
+function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitting, disabled }) {
   const isChoice = mode === "choice";
   const isReview = !!readOnly;
 
@@ -1368,22 +1304,26 @@ function MultiPartTask({
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
     (Array.isArray(task.questions) && task.questions.length > 0 && task.questions) ||
     (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
-    (Array.isArray(task.multiQuestions) &&
-      task.multiQuestions.length > 0 &&
-      task.multiQuestions) ||
+    (Array.isArray(task.multiQuestions) && task.multiQuestions.length > 0 && task.multiQuestions) ||
     [];
 
   const items =
     rawItems.length > 0
       ? rawItems
-      : [
-          {
-            id: task.id || "only",
-            prompt: task.prompt,
-            options: task.options || [],
-            correctAnswer: task.correctAnswer ?? null,
-          },
-        ];
+      : [{
+          id: task.id || "only",
+          prompt: task.prompt,
+          options: task.options || [],
+          correctAnswer: task.correctAnswer ?? null,
+        }];
+
+  const [answers, setAnswers] = useState(() =>
+    items.map(() => ({ value: isChoice ? null : "" }))
+  );
+
+  useEffect(() => {
+    setAnswers(items.map(() => ({ value: isChoice ? null : "" })));
+  }, [items.length, isChoice, task?._id, task?.id]);
 
   const itemOptions = useMemo(() => {
     const taskKey = String(task?._id || task?.id || "task");
@@ -1402,10 +1342,6 @@ function MultiPartTask({
       return seededShuffle(base, `${taskKey}:${itemKey}`);
     });
   }, [task?._id, task?.id, items]);
-
-  const [answers, setAnswers] = useState(() =>
-    items.map(() => ({ value: isChoice ? null : "" }))
-  );
 
   const handleChoiceClick = (itemIndex, option) => {
     setAnswers((prev) =>
@@ -1663,25 +1599,6 @@ export default function TaskRunner({
   if (!task) return null;
 
   // -------------------------------------------------------------------
-  // Global QR scan dispatcher helper (does NOT mount a camera)
-  // Your single app-wide scanner can call:
-  //   window.__curriculateDispatchQrScan(value)
-  // which dispatches the event tasks listen for.
-  // -------------------------------------------------------------------
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (typeof window.__curriculateDispatchQrScan !== "function") {
-      window.__curriculateDispatchQrScan = (value) => {
-        try {
-          window.dispatchEvent(
-            new CustomEvent("curriculate:qr-scan", { detail: value })
-          );
-        } catch (_) {}
-      };
-    }
-  }, []);
-
-  // -------------------------------------------------------------------
   // TaskRunner Presenter Overlay (shared, reusable across tasks)
   // Tasks can call props.presenter.showCountdown(...) to display a standard 1-2-3 GO! overlay.
   // -------------------------------------------------------------------
@@ -1697,6 +1614,20 @@ export default function TaskRunner({
 
   const [taskVictory, setTaskVictory] = useState(null); // { key, src }
   const presenterResolveRef = useRef(null);
+
+  const activeTaskScanHandlerRef = useRef(null);
+
+  const registerTaskScanHandler = (handler) => {
+    activeTaskScanHandlerRef.current = handler;
+  };
+
+  const unregisterTaskScanHandler = () => {
+    activeTaskScanHandlerRef.current = null;
+  };
+
+  const t = task || null;
+  const type = t ? normalizeTaskType(t.taskType || t.type) : null;
+  const taskKey = buildStableTaskKey(t, type);
 
   function playSound(src, volume = 0.6) {
     try {
@@ -1724,10 +1655,6 @@ export default function TaskRunner({
     // Best-effort: autoplay with audio is often blocked; still attempt a victory sound.
     playSound("/sounds/victory.mp3", 0.7);
   }
-
-  
-
-  
 
   const hidePresenter = React.useCallback((result = { ok: false, reason: "hidden" }) => {
     try {
@@ -1777,10 +1704,6 @@ export default function TaskRunner({
     [showCountdown, hidePresenter]
   );
 
-
-  const t = task || null;
-  const type = t ? normalizeTaskType(t.taskType || t.type) : null;
-
   // Defensive per-type payload normalizing (keeps UI resilient during AI/taskset iteration)
   const tPrepared = useMemo(() => {
     if (!t) return t;
@@ -1796,55 +1719,29 @@ export default function TaskRunner({
   // Shows the category animation briefly when a new task loads, then collapses (1s) so the task UI slides up.
   // IMPORTANT: use a stable task key so UI elements (like staging/victory videos)
   // don't constantly reset on unrelated re-renders (e.g., countdown bar updates).
-  const taskKey = buildStableTaskKey(t, type);
-
-  const [stagingPhase, setStagingPhase] = useState("show"); // show | hide | gone
-  const stagingTimersRef = useRef([]);
-
+  
+  // -------------------------------------------------------------------
+  // Global QR scan dispatcher helper (does NOT mount a camera)
+  //
+  // Your single app-wide scanner can call:
+  //   window.__curriculateTaskRunnerScanHandler = (raw) => { ... }
+  //
+  // It will:
+  //  1) dispatch a window event that tasks can listen for
+  //  2) also forward to TaskRunner’s active scan handler (if installed)
+  // -------------------------------------------------------------------
   useEffect(() => {
-    stagingTimersRef.current.forEach((id) => clearTimeout(id));
-    stagingTimersRef.current = [];
+    if (typeof window === "undefined") return;
 
-    const ui = tp?.ui || tp?.config?.ui || {};
-    if (ui?.disableStagingVideo) {
-      setStagingPhase("gone");
-      return;
-    }
-
-    // If the backend ever sets a persistent wait state (e.g., waiting for teacher), keep staging visible.
-    if (ui?.stagingMode === "wait") {
-      setStagingPhase("show");
-      return;
-    }
-
-    setStagingPhase("show");
-
-    const holdMs = Number.isFinite(ui?.stagingHoldMs) ? ui.stagingHoldMs : 8000;
-    const collapseMs = Number.isFinite(ui?.stagingCollapseMs) ? ui.stagingCollapseMs : 2000;
-
-    stagingTimersRef.current.push(setTimeout(() => setStagingPhase("hide"), Math.max(0, holdMs)));
-    stagingTimersRef.current.push(
-      setTimeout(() => setStagingPhase("gone"), Math.max(0, holdMs + collapseMs))
-    );
+    window.__curriculateTaskRunnerScanHandler = (raw) => {
+      const fn = activeTaskScanHandlerRef.current;
+      return typeof fn === "function" ? fn(raw) === true : false;
+    };
 
     return () => {
-      stagingTimersRef.current.forEach((id) => clearTimeout(id));
-      stagingTimersRef.current = [];
+      window.__curriculateTaskRunnerScanHandler = null;
     };
-  }, [taskKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const stagingText = (() => {
-    const ui = tp?.ui || tp?.config?.ui || {};
-    if (ui?.stagingText) return ui.stagingText;
-    if (ui?.stagingMode === "wait") return "Waiting for teacher to launch…";
-    if (ui?.stagingMode === "teams") return "Teams getting ready…";
-    if (ui?.stagingMode === "next") return "Next task loading…";
-    return "Get ready…";
-  })();
-
-  const stagingSubtext =
-    (tp?.ui?.stagingSubtext || tp?.config?.ui?.stagingSubtext || "Eyes up — you’ve got this.") + "";
-
+  }, [taskKey]);
 
   // Derived team id for tasks that need it (media uploads, inter-team routing, etc.)
   const derivedTeamId =
@@ -1890,10 +1787,14 @@ export default function TaskRunner({
     }
 
     // Every successful task completion: play a random victory video + sound (TaskRunner-level)
-    if (submitOk && mode !== "review") {
-      triggerTaskVictory();
-    }
-};
+    const isCompletion =
+      outgoing?.completed === true ||
+      outgoing?.ok === true ||
+      outgoing?.type === "submit" ||
+      outgoing?.final === true;
+
+    if (submitOk && isCompletion && mode !== "review") triggerTaskVictory();
+    };
 
   // Hangman expects socket.current; keep existing socket usage for other tasks.
   const socketRef = useRef(null);
@@ -1907,11 +1808,11 @@ export default function TaskRunner({
   const isShortType = type === TASK_TYPES.SHORT_ANSWER;
 
   const hasMultiItems =
-    (Array.isArray(tp.items) && t.items.length > 1) ||
-    (Array.isArray(tp.questions) && t.questions.length > 1) ||
-    (Array.isArray(tp.subItems) && t.subItems.length > 1) ||
-    (Array.isArray(tp.multiQuestions) && t.multiQuestions.length > 1);
-
+    (Array.isArray(tp.items) && tp.items.length > 1) ||
+    (Array.isArray(tp.questions) && tp.questions.length > 1) ||
+    (Array.isArray(tp.subItems) && tp.subItems.length > 1) ||
+    (Array.isArray(tp.multiQuestions) && tp.multiQuestions.length > 1);
+    
   const meta = TASK_TYPE_META[type];
   const [diffRaceStatus, setDiffRaceStatus] = useState(null);
 
@@ -1932,14 +1833,17 @@ export default function TaskRunner({
         startedAt: payload.startedAt || Date.now(),
         leader: null,
         timeLeft: null,
+        winnerTeamId: null,
+        winnerTeamName: null,
       });
     };
 
     const handleRaceWinner = (payload) => {
       setDiffRaceStatus((prev) => ({
         ...(prev || {}),
-        leader: payload.teamName,
-        winnerTeamId: payload.teamId,
+        leader: payload.teamName ?? prev?.leader ?? null,
+        winnerTeamId: payload.teamId ?? prev?.winnerTeamId ?? null,
+        winnerTeamName: payload.teamName ?? prev?.winnerTeamName ?? null,
       }));
     };
 
@@ -1958,26 +1862,45 @@ export default function TaskRunner({
     };
 
     const handleRaceFinish = (payload) => {
-      setDiffRaceStatus((prev) => ({
-        ...(prev || {}),
-        lastFinish: {
-          teamId: payload.teamId,
-          teamName: payload.teamName,
-          rank: payload.rank,
-          correct: payload.correct,
-        },
-      }));
+      setDiffRaceStatus((prev) => {
+        const next = {
+          ...(prev || {}),
+          lastFinish: {
+            teamId: payload.teamId,
+            teamName: payload.teamName,
+            rank: payload.rank,
+            correct: payload.correct,
+          },
+        };
+
+        // Backends sometimes only emit "end" with rank info.
+        if (payload.rank === 1 || payload.isWinner === true) {
+          next.winnerTeamId = payload.teamId ?? next.winnerTeamId ?? null;
+          next.winnerTeamName = payload.teamName ?? next.winnerTeamName ?? null;
+          next.leader = payload.teamName ?? next.leader ?? null;
+        }
+
+        return next;
+      });
     };
 
     socket.on("diff:race-start", handleRaceStart);
     socket.on("diff:race-tick", handleRaceTick);
     socket.on("diff:race-update", handleRaceUpdate);
+
+    // ✅ THIS WAS MISSING
+    socket.on("diff:race-winner", handleRaceWinner);
+
     socket.on("diff:race-end", handleRaceFinish);
 
     return () => {
       socket.off("diff:race-start", handleRaceStart);
       socket.off("diff:race-tick", handleRaceTick);
       socket.off("diff:race-update", handleRaceUpdate);
+
+      // ✅ AND THIS
+      socket.off("diff:race-winner", handleRaceWinner);
+
       socket.off("diff:race-end", handleRaceFinish);
     };
   }, [socket, tp.taskType, tp.type]);
@@ -1995,26 +1918,18 @@ export default function TaskRunner({
   else if (tp.taskType && TASK_TYPE_META[tp.taskType]?.label)
     displayTitle = toTitleCase(TASK_TYPE_META[tp.taskType].label);
 
-  console.log("[TaskRunner] Task received:", {
-    rawTask: t,
-    normalizedType: type,
-    multiItems: hasMultiItems,
-  });
-
   // -------------------------------------------------------------------
   // Category video: plays once for ~8s at task start, then collapses to 0 height (3s)
   // -------------------------------------------------------------------
   const categoryVideoSrc = useMemo(() => {
-    return pickCategoryVideoSrc(type, t);
+    return pickCategoryVideoSrc(type, tp);
   }, [
     type,
-    t?._id,
-    t?.id,
-    t?.taskId,
-    t?.taskType,
-    t?.type,
-    tp?.config?.ui?.categoryVideo,
+    taskKey,
     tp?.ui?.categoryVideo,
+    tp?.config?.ui?.categoryVideo,
+    tp?.ui?.categoryAnimation,
+    tp?.config?.ui?.categoryAnimation,
   ]);
 
   // Keep the staging video src stable for the duration of a task (prevents flicker if parent re-renders).
@@ -2074,205 +1989,9 @@ export default function TaskRunner({
     );
   }
 
-  // ✅ IMPORTANT: Height-aware wrapper so tasks can truly "fill the task card section"
-  
-  // IMPORTANT: Height-aware wrapper so tasks can truly "fill the task card section"
-  const Wrap = ({ children, animFile, stagingPhase, stagingText, stagingSubtext }) => {
-    const showStaging = !!categoryVideoSrc && !stageDone;
-
-    return (
-      <div className="h-full flex flex-col relative">
-        {/* Tier 2 staging moment (in-flow so the task UI slides up when it collapses) */}
-        {showStaging && (
-          <div
-            style={{
-              overflow: "hidden",
-              maxHeight: stageCollapsed ? 0 : 520,
-              opacity: stageCollapsed ? 0 : 1,
-              transition: "max-height 2000ms ease, opacity 900ms ease",
-            }}
-          >
-            <div style={{ padding: "10px 12px 14px 12px" }}>
-              <div
-                style={{
-                  fontSize: 22,
-                  fontWeight: 900,
-                  letterSpacing: 0.2,
-                  color: "#0f172a",
-                }}
-              >
-                {stagingText || "Get ready…"}
-              </div>
-              <div style={{ marginTop: 6, color: "#475569", fontWeight: 700 }}>
-                {stagingSubtext || "Eyes up — you’ve got this."}
-              </div>
-
-              <div style={{ marginTop: 10 }}>
-                <SmoothCountdownBarUI
-                  durationMs={8000}
-                  running={!stageCollapsed}
-                  resetKey={`${taskKey}:stage`}
-                  height={8}
-                  style={{ opacity: 0.9 }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-  
-      {/* Category staging video (Tier 2 contextual moment) */}
-      {categoryVideoSrc && !stageDone && mode === "play" && (
-        <div
-          style={{
-            width: "55vw",
-            maxWidth: 900,
-            minWidth: 320,
-
-            marginLeft: "auto",
-            marginRight: "auto",
-
-            overflow: "hidden",
-            borderRadius: 18,
-            border: "1px solid rgba(15,23,42,0.10)",
-            boxShadow: "0 10px 30px rgba(2,6,23,0.08)",
-            background: "rgba(0,0,0,0.85)",
-
-            maxHeight: stageCollapsed ? 0 : 520,
-            transition: "max-height 3s cubic-bezier(.2,.8,.2,1)",
-          }}
-        >
-          {/* Preload stage/category video to avoid initial black flash */}
-          <video
-            src={stageSrcRef.current || categoryVideoSrc}
-            preload="auto"
-            muted
-            playsInline
-            style={{ display: "none" }}
-          />
-
-          <video
-            key={`stagevid:${taskKey}`}
-            src={stageSrcRef.current || categoryVideoSrc}
-            autoPlay
-            muted
-            playsInline
-            preload="auto"
-            controls={false}
-            onLoadedData={() => setStageReady(true)}
-            onCanPlay={() => setStageReady(true)}
-            style={{
-              opacity: stageReady ? 1 : 0,
-              transition: "opacity 250ms ease",
-              width: "100%",
-              height: "auto",
-              display: "block",
-              objectFit: "contain",
-              background: "#000",          // letterbox bars look intentional
-              transformOrigin: "top",
-            }}
-            onEnded={() => {
-              // if the asset is shorter than expected, still collapse + finish cleanly
-              setStageCollapsed(true);
-              window.setTimeout(() => setStageDone(true), 3000);
-            }}
-            onError={() => {
-              // if a specific category file is missing, fail open (no stage) rather than breaking task UI
-              setStageDone(true);
-            }}
-          />
-        </div>
-      )}
-
-      
-      {/* Presenter overlay (absolute) */}
-      {presenterOverlay?.kind === "countdown" && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 50,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            background: "rgba(2,6,23,0.45)",
-            backdropFilter: "blur(6px)",
-          }}
-        >
-          <div style={{ width: "min(560px, 92vw)", display: "grid", gap: 10 }}>
-            <div
-              style={{
-                borderRadius: 18,
-                padding: 14,
-                border: "1px solid rgba(255,255,255,0.18)",
-                background: "rgba(2,6,23,0.35)",
-                color: "white",
-                boxShadow: "0 20px 80px rgba(0,0,0,0.35)",
-              }}
-            >
-              <div style={{ fontWeight: 1000, fontSize: 18, letterSpacing: 0.2 }}>
-                {String(presenterOverlay.title || "Get ready")}
-              </div>
-              {!!presenterOverlay.subtext && (
-                <div style={{ opacity: 0.9, marginTop: 6, fontWeight: 800 }}>
-                  {String(presenterOverlay.subtext)}
-                </div>
-              )}
-            </div>
-
-            <ReadyCountdown
-              key={presenterOverlay.key}
-              enabled={true}
-              seconds={presenterOverlay.seconds}
-              label="1-2-3…"
-              showBeep={true}
-              onGo={() => {
-                // Best-effort: optional external sound if present
-                try {
-                  playSound("/sounds/go.mp3", 0.55);
-                } catch (_) {}
-              }}
-              onDone={() => {
-                // Resolve then close
-                try {
-                  if (presenterResolveRef.current) presenterResolveRef.current({ ok: true });
-                } catch (_) {}
-                presenterResolveRef.current = null;
-                setPresenterOverlay(null);
-              }}
-            />
-
-            <button
-              onClick={() => hidePresenter({ ok: false, reason: "cancel" })}
-              style={{
-                width: "100%",
-                padding: "12px 14px",
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.22)",
-                background: "rgba(255,255,255,0.10)",
-                color: "white",
-                fontWeight: 900,
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 min-h-0">{children}</div>
-
-      </div>
-    );
-  };
-
-
   if (hasMultiItems && (isChoiceType || isShortType)) {
     const multiMode = isChoiceType ? "choice" : "short";
     return (
-      <Wrap animFile={pickCategoryAnimation(type, t)} stagingPhase={stagingPhase} stagingText={stagingText} stagingSubtext={stagingSubtext}>
         <div className="h-full overflow-auto">
           <MultiPartTask
             mode={multiMode}
@@ -2284,7 +2003,6 @@ export default function TaskRunner({
             disabled={effectiveDisabled || isReview}
           />
         </div>
-      </Wrap>
     );
   }
 
@@ -2643,8 +2361,7 @@ case "multi_player_feedback":
       );
       break;
     }
-      break;
-
+    
     case TASK_TYPES.RECORD_AUDIO:
       content = (
         <RecordAudioTask
@@ -3011,26 +2728,34 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
   // Inject shared presenter API into every task component (no per-task edits needed).
   if (content && React.isValidElement(content)) {
     try {
-      content = React.cloneElement(content, { presenter });
+      content = React.cloneElement(content, {
+        presenter,
+        registerScanHandler: registerTaskScanHandler,
+        unregisterScanHandler: unregisterTaskScanHandler,
+      });
+
     } catch (_) {}
   }
+const showVictory = (taskVictory?.key || tasksetVictoryKey) && mode !== "review";
+const showStageVideo = categoryVideoSrc && !stageDone && mode === "play";
 
-  return <Wrap animFile={pickCategoryAnimation(type, t)} stagingPhase={stagingPhase} stagingText={stagingText} stagingSubtext={stagingSubtext}>{
-        (taskVictory?.key || tasksetVictoryKey) && mode !== "review" ? (
-          <div
-            key={taskVictory?.key || tasksetVictoryKey}
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 9999,
-              pointerEvents: "none",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-            }}
-          >
-            <style>{`
+return (
+  <div className="h-full flex flex-col relative">
+    {showVictory ? (
+      <div
+        key={taskVictory?.key || tasksetVictoryKey}
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 9999,
+          pointerEvents: "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+        }}
+      >
+        <style>{`
               @keyframes trConfettiFall {
                 0% { transform: translateY(-20px) rotate(0deg); opacity: 0; }
                 10% { opacity: 1; }
@@ -3123,10 +2848,113 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
               />
             ))}
           </div>
-        ) : null
-      }
+    ) : null}
 
-      {content ? (<TaskErrorBoundary title={(tp?.title || tp?.name || type || 'Task')}>
-            {content}
-          </TaskErrorBoundary>) : null}</Wrap>;
-}
+    {showStageVideo ? (
+      <div
+        style={{
+          width: "55vw",
+          maxWidth: 900,
+          minWidth: 320,
+          marginLeft: "auto",
+          marginRight: "auto",
+          overflow: "hidden",
+          borderRadius: 18,
+          border: "1px solid rgba(15,23,42,0.10)",
+          boxShadow: "0 10px 30px rgba(2,6,23,0.08)",
+          background: "rgba(0,0,0,0.85)",
+          maxHeight: stageCollapsed ? 0 : 520,
+          transition: "max-height 3s cubic-bezier(.2,.8,.2,1)",
+        }}
+      >
+        <video
+          src={stageSrcRef.current || categoryVideoSrc}
+          preload="auto"
+          muted
+          playsInline
+          style={{ display: "none" }}
+        />
+        <video
+          key={`stagevid:${taskKey}`}
+          src={stageSrcRef.current || categoryVideoSrc}
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          controls={false}
+          onLoadedData={() => setStageReady(true)}
+          onCanPlay={() => setStageReady(true)}
+          style={{
+            opacity: stageReady ? 1 : 0,
+            transition: "opacity 250ms ease",
+            width: "100%",
+            height: "auto",
+            display: "block",
+            objectFit: "contain",
+            background: "#000",
+            transformOrigin: "top",
+          }}
+          onEnded={() => {
+            setStageCollapsed(true);
+            window.setTimeout(() => setStageDone(true), 3000);
+          }}
+          onError={() => setStageDone(true)}
+        />
+      </div>
+    ) : null}
+
+    {presenterOverlay?.kind === "countdown" ? (
+      <div
+        key={presenterOverlay.key}
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 9000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "rgba(2,6,23,0.55)",
+          backdropFilter: "blur(6px)",
+        }}
+        onClick={() => hidePresenter({ ok: false, reason: "clicked" })}
+      >
+        <div
+          style={{
+            width: "min(520px, 92vw)",
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.18)",
+            background: "rgba(15,23,42,0.92)",
+            color: "#fff",
+            padding: 18,
+            boxShadow: "0 18px 60px rgba(2,6,23,0.45)",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontWeight: 950, fontSize: 18, marginBottom: 8 }}>
+            {presenterOverlay.title}
+          </div>
+          <div style={{ opacity: 0.9, marginBottom: 12 }}>
+            {presenterOverlay.subtext}
+          </div>
+
+          <SmoothCountdownBar
+            durationMs={presenterOverlay.seconds * 1000}
+            running={true}
+            resetKey={presenterOverlay.key}
+            height={12}
+            onDone={() => hidePresenter({ ok: true })}
+          />
+        </div>
+      </div>
+    ) : null}
+
+    <div className="flex-1 min-h-0 overflow-auto">
+      {content ? (
+        <TaskErrorBoundary title={(tp?.title || tp?.name || type || "Task")}>
+          {content}
+        </TaskErrorBoundary>
+      ) : null}
+    </div>
+  </div>
+);
+};
