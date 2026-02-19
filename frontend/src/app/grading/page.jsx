@@ -1863,7 +1863,7 @@ export default function GradingPage() {
                 disabled={!sessionItems.length && !(stickyRubricText || "").trim().length && !(rubricOverride || "").trim().length}
                 style={styles.ghostBtn}
               >
-                Clear Session
+                Clear
               </button> 
 
             </div>
@@ -1875,7 +1875,7 @@ export default function GradingPage() {
             )}
 
             <label style={{ ...styles.controlLabel, marginBottom: 8 }}>
-              Student Name
+              Student Name (optional - for tracking and feedback)
               <input
                 value={detectedStudentName}
                 onChange={(e) => {
