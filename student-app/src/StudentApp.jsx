@@ -7,13 +7,14 @@ import NoiseSensor from "./components/NoiseSensor.jsx";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import MoodCheckInTask from "./components/tasks/types/MoodCheckInTask";
 import TreasureRunner from "./components/tasks/types/TreasureRunnerTask";
+import MultiPlayerFeedbackTask from "./components/tasks/types/MultiPlayerFeedbackTask.jsx";
 
 import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2026-01-02a, API_BASE_URL:", API_BASE_URL);
+console.log("STUDENT BUILD MARKER v2026-02-20a, API_BASE_URL:", API_BASE_URL);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -361,12 +362,12 @@ const getItemPrompt = (item, idx) => {
 const tfCorrectToText = (val) => {
   // supports: boolean, "true"/"false", 0/1, "0"/"1"
   if (typeof val === "boolean") return val ? "True" : "False";
-  if (typeof val === "number") return val === 0 ? "True" : "False";
+  if (typeof val === "number") return val === 1 ? "True" : "False";
   const s = String(val ?? "").trim().toLowerCase();
   if (s === "true") return "True";
   if (s === "false") return "False";
-  if (s === "0") return "True";
-  if (s === "1") return "False";
+  if (s === "1") return "True";
+  if (s === "0") return "False";
   return "";
 };
 
@@ -992,11 +993,6 @@ function StudentApp() {
         window.setTimeout(() => setTreatMessage(null), 4200);
       }
 
-      if (assignedIsMadDash) {
-        tryPlayAlertSound();
-        setTreatMessage("🏁 Mad Dash — watch the sequence, then scan the colors IN ORDER as fast as you can!");
-        window.setTimeout(() => setTreatMessage(null), 4200);
-      }
       // EchoChain: quick audio + subtle pulse so the team knows it's a "say-it-aloud" round.
       if (assignedType === TASK_TYPES.ECHO_CHAIN) {
         tryPlayEchoSound();
@@ -1018,8 +1014,7 @@ function StudentApp() {
 
       // RolePlayDeck: subtle reveal cue + glow theme
       if (
-        assignedType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
-        assignedType === "role-play-deck"
+        assignedType === TASK_TYPES.ROLE_PLAY_DECK || assignedType === "role-play-deck"
       ) {
         tryPlayRolePlaySound();
         setRolePlayGlow(true);
@@ -1324,7 +1319,14 @@ function StudentApp() {
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
-  }, [teamId, reviewPauseSeconds, taskLocked, postSubmitSecondsLeft]);
+  }, [
+    teamId,
+    assignedColor,
+    assignedStationId,
+    reviewPauseSeconds,
+    taskLocked,
+    postSubmitSecondsLeft,
+  ]);
 
   // ----------------------------------------------------
   // NoiseSensor special effects:
@@ -1416,13 +1418,6 @@ function StudentApp() {
     const taskWantsScan = (() => {
       try { return !!window.__curriculateTaskWantsScan; } catch { return false; }
     })();
-
-    const shouldScannerBeOn = (!taskLocked) && (mustScan || taskWantsScan);
-
-    useEffect(() => {
-      if (!joined) return;
-      setScannerActive(shouldScannerBeOn);
-    }, [joined, mustScan, taskLocked, currentTask, postSubmitSecondsLeft]);
 
     if (taskLocked && !taskWantsScan) {
       setScannerActive(false);
@@ -2102,7 +2097,8 @@ function StudentApp() {
         answer: normalizedAnswer,
       };
 
-socket.emit("task:submit", payload, (response) => {
+      setSubmitting(true);
+      socket.emit("task:submit", payload, (response) => {
         if (!response || response.error) {
           console.warn("Submit error:", response?.error || "Unknown error");
           setSubmitting(false);
@@ -2503,7 +2499,8 @@ socket.emit("task:submit", payload, (response) => {
   // ─────────────────────────────────────────────
   // Derived values for UI
   // ─────────────────────────────────────────────
-  const stationInfo = normalizeStationId(assignedStationId);
+  const stationInfo = normalizeStationId(assignedStationId); // ok, but redundant
+
   const stationIndex = (() => {
     const m = /^station-(\d+)$/.exec(String(stationInfo?.id || ""));
     if (!m) return 0;
@@ -2579,7 +2576,7 @@ socket.emit("task:submit", payload, (response) => {
     currentTask?.taskType === "narration-synthesize";
 
   const isRolePlayDeck =
-    currentTask?.taskType === (TASK_TYPES.ROLE_PLAY_DECK || "role-play-deck") ||
+    currentTask?.taskType === TASK_TYPES.ROLE_PLAY_DECK ||
     currentTask?.taskType === "role-play-deck";
 
   const isFakeOut =
@@ -3927,7 +3924,10 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
       // Multi-room only: show location + colour
       if (isMultiRoom && enforceLocation && locationUpper) {
-        return expectedColor ? `Scan QR Code at ${destinationText}` : "Scan station QR code";
+        if (isMultiRoom && enforceLocation) {
+          return destinationText ? `Scan QR Code at ${destinationText}` : "Scan station QR code";
+        }
+        return colorUpper ? `Scan QR Code at ${colorUpper}` : "Scan station QR code";
       }
 
       // Single-room: colour only

@@ -890,7 +890,7 @@ export const retryMustHave = {
   [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]:
     'PHYSICAL_MULTIPLE_CHOICE must include items[] with EXACTLY 4 questions. Put questions ONLY in top-level items[] (do NOT include config.items). Each item: { id, prompt, options[4], correctAnswer } where correctAnswer is a 0-based index.',
   [TASK_TYPES.TRUE_FALSE]:
-    "TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 0=True, 1=False.",
+    "TRUE_FALSE must include items[] with at least 3 statements. Each item: { id, prompt, correctAnswer: 0|1 } where 1=True, 0=False.",
   [TASK_TYPES.MUSICAL_CHAIRS]:
     'MUSICAL_CHAIRS must include items[] with EXACTLY 7 tap-based questions. Each item: { id, prompt, options[2..4], correctAnswer:number } where correctAnswer is a 0-based index into options. ALSO include config.rounds=7 and config.items as an IDENTICAL copy of items.',
   [TASK_TYPES.SHORT_ANSWER]:
