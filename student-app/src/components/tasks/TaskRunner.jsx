@@ -1844,6 +1844,7 @@ export default function TaskRunner({
         leader: payload.teamName ?? prev?.leader ?? null,
         winnerTeamId: payload.teamId ?? prev?.winnerTeamId ?? null,
         winnerTeamName: payload.teamName ?? prev?.winnerTeamName ?? null,
+        winnerAt: payload.winnerAt || Date.now(),
       }));
     };
 
@@ -1862,33 +1863,22 @@ export default function TaskRunner({
     };
 
     const handleRaceFinish = (payload) => {
-      setDiffRaceStatus((prev) => {
-        const next = {
-          ...(prev || {}),
-          lastFinish: {
-            teamId: payload.teamId,
-            teamName: payload.teamName,
-            rank: payload.rank,
-            correct: payload.correct,
-          },
-        };
-
-        // Backends sometimes only emit "end" with rank info.
-        if (payload.rank === 1 || payload.isWinner === true) {
-          next.winnerTeamId = payload.teamId ?? next.winnerTeamId ?? null;
-          next.winnerTeamName = payload.teamName ?? next.winnerTeamName ?? null;
-          next.leader = payload.teamName ?? next.leader ?? null;
-        }
-
-        return next;
-      });
+      setDiffRaceStatus((prev) => ({
+        ...(prev || {}),
+        lastFinish: {
+          teamId: payload.teamId,
+          teamName: payload.teamName,
+          rank: payload.rank,
+          correct: payload.correct,
+        },
+      }));
     };
 
     socket.on("diff:race-start", handleRaceStart);
     socket.on("diff:race-tick", handleRaceTick);
     socket.on("diff:race-update", handleRaceUpdate);
 
-    // ✅ THIS WAS MISSING
+    // ✅ add this (match your server event name)
     socket.on("diff:race-winner", handleRaceWinner);
 
     socket.on("diff:race-end", handleRaceFinish);
@@ -1898,7 +1888,7 @@ export default function TaskRunner({
       socket.off("diff:race-tick", handleRaceTick);
       socket.off("diff:race-update", handleRaceUpdate);
 
-      // ✅ AND THIS
+      // ✅ cleanup
       socket.off("diff:race-winner", handleRaceWinner);
 
       socket.off("diff:race-end", handleRaceFinish);
@@ -1924,8 +1914,8 @@ export default function TaskRunner({
   const categoryVideoSrc = useMemo(() => {
     return pickCategoryVideoSrc(type, tp);
   }, [
+    taskKey, // easiest “new task” signal (already stable)
     type,
-    taskKey,
     tp?.ui?.categoryVideo,
     tp?.config?.ui?.categoryVideo,
     tp?.ui?.categoryAnimation,
