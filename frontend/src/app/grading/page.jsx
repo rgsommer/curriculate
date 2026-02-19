@@ -448,53 +448,6 @@ function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   return out;
 }
 
-function formatTeacherBlock(a, ref) {
-  const deductions = Array.isArray(a?.deductions) ? a.deductions : [];
-  const strengths = toArrayStrings(a?.strengths);
-  const improvements = toArrayStrings(a?.improvements);
-  const teacherComment = (a?.teacher_comment || "").trim();
-
-  const lines = [];
-  const g = getDisplayScore(a);
-  lines.push(
-    `Grade: ${g.score !== "" ? g.score : "(not provided)"} / ${g.outOf}${ref ? `  Ref: ${ref}` : ""}`
-  );
-
-  if (ref) {
-    lines.push(`View feedback online: www.curriculate.net/results (code: ${ref})`);
-    lines.push("");
-  }
-
-  if (deductions.length) {
-    lines.push("");
-    lines.push("Deduction:");
-    // “deduct once” => show first reason (or combine if you prefer)
-    const d0 = deductions[0];
-    const reason = (d0?.reason || "").trim();
-    lines.push(`- ${reason} ${formatPoints(d0?.points)}`.trim());
-  }
-
-  if (strengths.length) {
-    lines.push("");
-    lines.push("Strengths:");
-    for (const s of strengths) lines.push(`- ${s}`);
-  }
-
-  if (improvements.length) {
-    lines.push("");
-    lines.push("Next Steps:");
-    for (const i of improvements) lines.push(`- ${i}`);
-  }
-
-  if (teacherComment) {
-    lines.push("");
-    lines.push("Overall Comment:");
-    lines.push(teacherComment);
-  }
-
-  return lines.join("\n");
-}
-
 function buildFullTeacherPayloadText(assessment, codeLocal = "") {
   const links = Array.isArray(assessment?.assignment_images) ? assessment.assignment_images : [];
 
@@ -643,7 +596,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     return t.replace(/\s+/g, " ").slice(0, 120);
   }
 
-  export default function GradingPage() {
+export default function GradingPage() {
     const [sessionItems, setSessionItems] = useState(() => {
       if (typeof window === "undefined") return [];
       return loadSession();
@@ -693,9 +646,6 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     const [pasteLink, setPasteLink] = useState("");
     const [pasteText, setPasteText] = useState("");
 
-    // Student name (optional)
-    const [studentName, setStudentName] = useState("");
-
     // ✅ Sticky rubric captured from rubric photo (session-level)
     const [stickyRubricText, setStickyRubricText] = useState(() => {
       if (typeof window === "undefined") return "";
@@ -714,16 +664,6 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     useEffect(() => saveLS(RUBRIC_STICKY_TEXT_KEY, stickyRubricText || ""), [stickyRubricText]);
     useEffect(() => saveLS(RUBRIC_STICKY_SRC_KEY, stickyRubricSource || ""), [stickyRubricSource]);
     useEffect(() => saveLS(RUBRIC_STICKY_TS_KEY, stickyRubricCapturedAt || ""), [stickyRubricCapturedAt]);
-
-    useEffect(() => {
-      if (inputMode === "paste") {
-        stopCamera();
-        return;
-      }
-      startCamera({ front: usingFrontCamera });
-      return () => stopCamera();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [inputMode, usingFrontCamera]);
 
     // Feedback Voice (tone/personality)
     const [voice, setVoice] = useState(() => {
@@ -832,6 +772,16 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
       if (videoRef.current) videoRef.current.srcObject = null;
     }
 
+    useEffect(() => {
+      if (inputMode === "paste") {
+        stopCamera();
+        return;
+      }
+      startCamera({ front: usingFrontCamera });
+      return () => stopCamera();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inputMode, usingFrontCamera]);
+
     async function startCamera({ front = false } = {}) {
       setCameraError("");
       setCameraReady(false);
@@ -877,6 +827,17 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
         if (captureTapTimerRef.current) clearTimeout(captureTapTimerRef.current);
       };
     }, []);
+
+    useEffect(() => {
+      const aiName = String(assessment?.student_name || "").trim();
+      if (!studentNameEdited && aiName) {
+        setDetectedStudentName(aiName);
+      }
+      // If you want it blank when none detected:
+      if (!studentNameEdited && !aiName) {
+        setDetectedStudentName("");
+      }
+    }, [assessment?.student_name, studentNameEdited]);
 
     async function capturePhoto() {
       if (!cameraReady || !videoRef.current || !canvasRef.current) return null;
@@ -994,8 +955,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
       setRefCode(""); // ✅ reset ref
       setPasteLink("");
       setPasteText("");
-      setStudentName("");
-
+      
       // ✅ reset submission lock state
       setCopyEnabled(false);
     }
@@ -1041,9 +1001,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
         let images = null;
 
         if (inputMode === "photo") {
-          images = await Promise.all(
-            photosToUse.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
-          );
+          images = photosToUse.map(p => p.dataUrl);
         }
 
         const payload = {
@@ -1065,7 +1023,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
 
             // Student (optional)
-            studentName: (studentName || "").trim() || null,
+            studentName: (detectedStudentName || "").trim() || null,
 
             // NEW: feedback voice controls
             feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
@@ -1093,7 +1051,6 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
         try {
           const found =
             extractDetectedRubric(parsed) ||
-            extractDetectedRubric(norm) ||
             extractDetectedRubric(norm?.assessment);
 
           const manual = (rubricOverride || "").trim();
@@ -1519,6 +1476,9 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     const disableClearCaptured =
       !(stickyRubricText || "").trim().length ||
       stickyRubricSource !== "captured";
+
+    const [detectedStudentName, setDetectedStudentName] = useState("");
+    const [studentNameEdited, setStudentNameEdited] = useState(false);
       
     return (
       <div style={styles.page}>
@@ -1767,16 +1727,6 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
           <div style={styles.card}>
             <div style={styles.cardTitle}>Submit</div>
 
-            <label style={{ ...styles.controlLabel, marginTop: 8 }}>
-              Student name (optional)
-              <input
-                value={studentName}
-                onChange={(e) => setStudentName(e.target.value)}
-                placeholder="First Last"
-                style={styles.input}
-              />
-            </label>
-
             {/* Rubric (collapsible) */}
             <div style={styles.rubricCard}>
               {/* Collapsed/expanded header bar */}
@@ -1790,7 +1740,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                 aria-expanded={showRubric}
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
-                  <div style={{ fontWeight: 900 }}>Rubric Options)</div>
+                  <div style={{ fontWeight: 900 }}>Rubric Options</div>
                   <div style={{ fontSize: 12, opacity: 0.75 }}>
                     {(() => {
                       const manual = (rubricOverride || "").trim();
@@ -1925,6 +1875,21 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
               </div>
             )}
 
+            <label style={{ ...styles.controlLabel, marginBottom: 8 }}>
+              Student Name
+              <input
+                value={detectedStudentName}
+                onChange={(e) => {
+                  setDetectedStudentName(e.target.value);
+                  setStudentNameEdited(true);
+                }}
+                placeholder="(auto-detected if visible)"
+                style={styles.input}
+              />
+              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                Tip: Can be “First L” or “First Last”.
+              </div>
+            </label>
             <div style={styles.responseTitleRow}>
               <div style={styles.cardTitle}>Response</div>
 
