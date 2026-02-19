@@ -1763,17 +1763,6 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
           <div style={styles.card}>
             <div style={styles.cardTitle}>Submit</div>
 
-            <div style={styles.note}>
-              <div>
-                <b>Endpoint:</b> {gradingUrl || "(not set)"}
-              </div>
-              {!backendBase && (
-                <div style={styles.warn}>
-                  Missing <code>NEXT_PUBLIC_BACKEND_URL</code> — set it in Vercel and redeploy.
-                </div>
-              )}
-            </div>
-
             <label style={{ ...styles.controlLabel, marginTop: 8 }}>
               Student name (optional)
               <input
@@ -1784,92 +1773,90 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
               />
             </label>
 
-            {/* Rubric override card */}
-              <div
+            {/* Rubric (collapsible) */}
+            <div style={styles.rubricCard}>
+              {/* Collapsed/expanded header bar */}
+              <button
+                type="button"
+                onClick={() => setShowRubric(v => !v)}
                 style={{
-                  ...styles.rubricCard,
-                  padding: showRubric ? 16 : 12,
+                  ...styles.rubricBar,
+                  ...(showRubric ? styles.rubricBarOpen : null),
                 }}
+                aria-expanded={showRubric}
               >
-              <div style={styles.rubricHeader}>
-                <div>
-                  <div style={{ fontWeight: 800 }}>Rubric (optional)</div>
-
-                  {showRubric ? (
-                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                      {(() => {
-                        const manual = (rubricOverride || "").trim();
-                        const sticky = (stickyRubricText || "").trim();
-
-                        if (manual.length) return "Using pasted rubric override (this submission).";
-                        if (sticky.length && stickyRubricSource === "captured") return "Using captured rubric (sticky for this session).";
-                        if (sticky.length && stickyRubricSource === "manual") return "Using saved rubric (sticky for this session).";
-                        return "Leave blank to use the default rubric.";
-                      })()}
-                    </div>
-                  ) : null}
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
+                  <div style={{ fontWeight: 900 }}>Rubric (optional)</div>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    {(() => {
+                      const manual = (rubricOverride || "").trim();
+                      const sticky = (stickyRubricText || "").trim();
+                      if (manual.length) return "Using pasted rubric override (this submission).";
+                      if (sticky.length && stickyRubricSource === "captured") return "Using captured rubric (sticky for this session).";
+                      if (sticky.length && stickyRubricSource === "manual") return "Using saved rubric (sticky for this session).";
+                      return "Tap to add / view rubric options.";
+                    })()}
+                  </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => setShowRubric((v) => !v)}
-                    style={styles.secondaryBtn}
-                    type="button"
-                  >
-                    {showRubric ? "Hide Rubric" : "Show Rubric"}
-                  </button>
+                <div style={styles.chev}>{showRubric ? "▴" : "▾"}</div>
+              </button>
 
-                  <button
-                    onClick={useDefaultRubric}
-                    disabled={disableUseDefault}
-                    style={{
-                      ...styles.secondaryBtn,
-                      opacity: disableUseDefault ? 0.5 : 1,
-                      cursor: disableUseDefault ? "not-allowed" : "pointer",
-                    }}
-                    type="button"
-                  >
-                    Use Default
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setStickyRubricText("");
-                      setStickyRubricSource("");
-                      setStickyRubricCapturedAt("");
-                    }}
-                    disabled={disableClearCaptured}
-                    style={{
-                      ...styles.secondaryBtn,
-                      opacity: disableClearCaptured ? 0.5 : 1,
-                      cursor: disableClearCaptured ? "not-allowed" : "pointer",
-                    }}
-                    type="button"
-                    title="Clear the captured rubric for this session"
-                  >
-                    Clear Captured
-                  </button>
-                </div>
-              </div>
-
+              {/* Expanded content */}
               {showRubric && (
-                <>
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      onClick={useDefaultRubric}
+                      disabled={disableUseDefault}
+                      style={{
+                        ...styles.secondaryBtn,
+                        opacity: disableUseDefault ? 0.5 : 1,
+                        cursor: disableUseDefault ? "not-allowed" : "pointer",
+                      }}
+                      type="button"
+                    >
+                      Use Default
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setStickyRubricText("");
+                        setStickyRubricSource("");
+                        setStickyRubricCapturedAt("");
+                      }}
+                      disabled={disableClearCaptured}
+                      style={{
+                        ...styles.secondaryBtn,
+                        opacity: disableClearCaptured ? 0.5 : 1,
+                        cursor: disableClearCaptured ? "not-allowed" : "pointer",
+                      }}
+                      type="button"
+                      title="Clear the captured rubric for this session"
+                    >
+                      Clear Captured
+                    </button>
+                  </div>
+
                   {!(rubricOverride || "").trim().length && (stickyRubricText || "").trim().length ? (
-                    <div style={{
-                      marginTop: 10,
-                      borderRadius: 12,
-                      border: "1px solid rgba(15,23,42,0.12)",
-                      padding: 10,
-                      background: "rgba(255,255,255,0.9)",
-                      fontSize: 12,
-                      whiteSpace: "pre-wrap",
-                      lineHeight: 1.35,
-                      opacity: 0.9
-                    }}>
+                    <div
+                      style={{
+                        marginTop: 10,
+                        borderRadius: 12,
+                        border: "1px solid rgba(15,23,42,0.12)",
+                        padding: 10,
+                        background: "rgba(255,255,255,0.9)",
+                        fontSize: 12,
+                        whiteSpace: "pre-wrap",
+                        lineHeight: 1.35,
+                        opacity: 0.9,
+                      }}
+                    >
                       <div style={{ fontWeight: 900, marginBottom: 6 }}>Captured rubric (sticky)</div>
                       {stickyRubricText}
                     </div>
                   ) : null}
+
                   <textarea
                     value={rubricOverride}
                     onChange={(e) => setRubricOverride(e.target.value)}
@@ -1877,14 +1864,21 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                     rows={9}
                     style={styles.rubricTextarea}
                   />
-                  <details style={styles.rubricDetails}>
-                    <summary style={styles.rubricSummary}>View default rubric</summary>
-                    <pre style={styles.rubricPre}>{DEFAULT_RUBRIC_INSTRUCTIONS}</pre>
-                  </details>
+
+                  <div style={styles.rubricSummaryBox}>
+                    <div style={{ fontWeight: 900, marginBottom: 6 }}>Default rubric (summary)</div>
+                    <ul style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.4, fontSize: 12, opacity: 0.9 }}>
+                      <li>Completeness</li>
+                      <li>Accuracy</li>
+                      <li>Clarity</li>
+                      <li>Effort</li>
+                      <li>Optional: up to −1 for missing basic formatting (if applicable)</li>
+                    </ul>
+                  </div>
                   <div style={styles.rubricTip}>
                     Tip: keep rubrics short (a few bullets). Long rubrics increase cost and latency.
                   </div>
-                </>
+                </div>
               )}
             </div>
 
@@ -2423,6 +2417,39 @@ const styles = {
     fontSize: 12,
     lineHeight: 1.45,
     opacity: 0.9,
+  },
+
+  rubricBar: {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "12px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "rgba(255,255,255,0.9)",
+    cursor: "pointer",
+  },
+
+  rubricBarOpen: {
+    background: "rgba(255,255,255,1)",
+  },
+
+  chev: {
+    fontSize: 16,
+    fontWeight: 900,
+    opacity: 0.75,
+    lineHeight: 1,
+    padding: "2px 6px",
+  },
+
+  rubricSummaryBox: {
+    marginTop: 10,
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.12)",
+    padding: 10,
+    background: "rgba(255,255,255,0.75)",
   },
 
   gradingCard: {
