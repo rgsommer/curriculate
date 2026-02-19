@@ -6119,37 +6119,62 @@ app.get("/grading/capture/:submissionId/:file", async (req, res) => {
   try {
     const { submissionId, file } = req.params;
 
+    // Validate file param early (right here)
+    if (!/^image-\d+\.jpg$/i.test(file)) {
+      return res
+        .status(200)
+        .set("Content-Type", "text/html")
+        .set("Cache-Control", "no-store")
+        .send(gradingExpiredHtml());
+    }
+
     const record = await GradingCapture.findOne({ submissionId }).lean();
     if (!record) {
       // expired or never existed
-      res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
-      return;
+      return res
+        .status(200)
+        .set("Content-Type", "text/html")
+        .set("Cache-Control", "no-store") // ✅ 2) no-store on expired html
+        .send(gradingExpiredHtml());
     }
 
     const s3 = getS3Client();
     if (!s3) {
       // If S3 isn't configured, treat as expired UX-wise
-      res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
-      return;
+      return res
+        .status(200)
+        .set("Content-Type", "text/html")
+        .set("Cache-Control", "no-store") // ✅
+        .send(gradingExpiredHtml());
     }
 
     const key = `grading/${submissionId}/${file}`;
 
-    // Basic containment check: only allow keys that were recorded for this submission
-    // (prevents guessing random keys)
+    // Only allow keys recorded for this submission
     if (!record.keys.includes(key)) {
-      res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
-      return;
+      return res
+        .status(200)
+        .set("Content-Type", "text/html")
+        .set("Cache-Control", "no-store") // ✅
+        .send(gradingExpiredHtml());
     }
 
     const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: key });
     const signedUrl = await getSignedUrl(s3, getCmd, { expiresIn: 300 }); // 5 minutes
 
-    // Redirect to signed URL
-    res.redirect(302, signedUrl);
+    // Redirect to signed URL (optional: prevent caching of redirect)
+    return res
+      .status(302)
+      .set("Cache-Control", "no-store")
+      .redirect(signedUrl);
+
   } catch (err) {
     console.error("grading capture error:", err);
-    res.status(200).set("Content-Type", "text/html").send(gradingExpiredHtml());
+    return res
+      .status(200)
+      .set("Content-Type", "text/html")
+      .set("Cache-Control", "no-store") // ✅
+      .send(gradingExpiredHtml());
   }
 });
 
