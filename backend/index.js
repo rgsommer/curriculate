@@ -6681,7 +6681,7 @@ VOICE: Student-friendly (simple wording)
   app.post("/grading", async (req, res) => {
     try {
       const startTime = Date.now();
-      const { images, rubricOverride, gradeBand } = req.body;
+      const { images, text, linkUrl, rubricOverride, gradeBand } = req.body || {};
       const ip =
         req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
         req.socket?.remoteAddress ||
@@ -6692,10 +6692,15 @@ VOICE: Student-friendly (simple wording)
       const sessionId = meta.sessionId || null;
       const refCode = meta.refCode || null;
 
-      if (!Array.isArray(images) || images.length === 0) {
-        return res.status(400).json({ error: "No images provided" });
-      }
+      const hasImages = Array.isArray(images) && images.length > 0;
+      const hasText = typeof text === "string" && text.trim().length > 0;
+      const hasLink = typeof linkUrl === "string" && linkUrl.trim().length > 0;
 
+      if (!hasImages && !hasText && !hasLink) {
+        return res.status(400).json({
+          error: "No images, text, or link provided"
+        });
+      }
       const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
       const submissionId = crypto.randomUUID();
 
@@ -6836,6 +6841,9 @@ VOICE: Student-friendly (simple wording)
       const feedbackVoice = req.body?.meta?.feedbackVoice || "warm";
       const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
 
+      const preferredNameRaw = String(req.body?.meta?.studentName || "").trim();
+      const preferredFirstName = preferredNameRaw ? preferredNameRaw.split(/\s+/)[0] : "";
+
       const instructions = buildRubricInstructions({
         gradeBand: band,
         rubricOverride,
@@ -6845,6 +6853,11 @@ VOICE: Student-friendly (simple wording)
 
       const instructionsWithInference = `
         ${instructions}
+
+        PERSONALIZATION:
+        - If a student name is provided, address the student using FIRST NAME ONLY: ${preferredFirstName || "(none provided)"}.
+        - Never use a last name.
+        - If no name is provided, do not invent one.
 
         INFERENCE (required):
         - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Other]
@@ -6885,13 +6898,18 @@ VOICE: Student-friendly (simple wording)
         - rubricDetected = false
         - rubricConfidence = 0
 
+        If no images are provided, set rubricDetected=false, rubricText=null, rubricConfidence=0.
+        
         Consistency rules:
         - If rubricDetected = false, rubricText must be null and rubricConfidence must be 0.
         - If rubricDetected = true, rubricText must be a non-empty string and rubricConfidence must be > 0.
 
       `.trim();
 
-      const s3 = getS3Client();
+      let imageRefs = [];
+
+      if (hasImages) {
+        const s3 = getS3Client();
         if (!s3) {
           return res.status(400).json({
             error: "S3 is not configured (missing S3_BUCKET). Cannot save grading captures.",
@@ -6901,53 +6919,43 @@ VOICE: Student-friendly (simple wording)
         const keys = [];
         for (let i = 0; i < images.length; i++) {
           const parsed = parseDataUrlImage(images[i]);
-          if (!parsed) {
-            return res.status(400).json({ error: `Image ${i + 1} is not a valid data URL.` });
-          }
+          if (!parsed) return res.status(400).json({ error: `Image ${i + 1} is not a valid data URL.` });
 
           const key = `grading/${submissionId}/image-${i + 1}.jpg`;
           keys.push(key);
 
-          await s3.send(
-            new PutObjectCommand({
-              Bucket: S3_BUCKET,
-              Key: key,
-              Body: parsed.buf,
-              ContentType: "image/jpeg",
-              CacheControl: "private, max-age=0, no-store",
-              Metadata: { submissionid: submissionId, kind: "grading-capture" },
-            })
-          );
+          await s3.send(new PutObjectCommand({
+            Bucket: S3_BUCKET,
+            Key: key,
+            Body: parsed.buf,
+            ContentType: "image/jpeg",
+            CacheControl: "private, max-age=0, no-store",
+            Metadata: { submissionid: submissionId, kind: "grading-capture" },
+          }));
         }
 
-        // Record in Mongo (TTL will expire doc in 30 days)
         await GradingCapture.create({ submissionId, keys, createdAt: new Date() });
 
-        // Links should be on www (via rewrite). If no rewrite, they still work on api.
-        const imageRefs = images.map((_, i) => ({
+        imageRefs = images.map((_, i) => ({
           index: i + 1,
           url: `https://www.curriculate.net/grading/capture/${submissionId}/image-${i + 1}.jpg`,
         }));
+      }
+
+      const userContent = [{ type: "input_text", text: instructionsWithInference }];
+
+      if (hasImages) {
+        userContent.push(...images.map((img) => ({ type: "input_image", image_url: img })));
+      } else {
+        // paste mode
+        if (hasText) userContent.push({ type: "input_text", text: `STUDENT WORK (PASTED TEXT):\n${text.trim()}` });
+        if (hasLink) userContent.push({ type: "input_text", text: `PUBLIC LINK (may contain student work): ${linkUrl.trim()}` });
+      }
 
       const response = await openai.responses.create({
         model: "gpt-5.2",
-        input: [
-          {
-            role: "user",
-            content: [
-              { type: "input_text", text: instructionsWithInference },
-              ...images.map((img) => ({ type: "input_image", image_url: img }))
-            ]
-          }
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: schema.name,       // "grade_result"
-            strict: true,
-            schema: schema.schema,   // <-- the actual JSON Schema object
-          },
-        },
+        input: [{ role: "user", content: userContent }],
+        text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
         max_output_tokens: 2500
       });
 
