@@ -6479,6 +6479,11 @@ VOICE: Student-friendly (simple wording)
     - Adjust warmth, directness, and sentence length accordingly.
     - Always remain kind, respectful, and classroom-appropriate.
     - No sarcasm, no shaming, no edgy humor.
+    If voice is "student_conference":
+    - Write brief jot points for a 1:1 teacher-student conference.
+    - No long paragraphs. Use short bullets.
+    - Include: Affirm (1–2), Clarify (1–2), Ask (2–4 questions), Coach (2–4 actions), Goal (1).
+    - Be specific to this work.
 
     Given the following graded submissions (each with strengths, improvements, teacher comment, etc.):
     Write ONLY 3–7 short sentences total in ONE single paragraph.

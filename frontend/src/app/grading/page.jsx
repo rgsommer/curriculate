@@ -58,6 +58,7 @@ const VOICE_OPTIONS = [
   { value: "witty_light", label: "Witty (light)" },
   { value: "standards", label: "Standards-based (rubric language)" },
   { value: "student_friendly", label: "Student-friendly (simple wording)" },
+  { value: "student_conference", label: "Student Conference (jot points)" },
 ];
 
 const VOICE_KEY = "curriculate_grading_voice_v1";
@@ -648,7 +649,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
       return loadSession();
     });
     const [copyEnabled, setCopyEnabled] = useState(false);
-
+   
     useEffect(() => {
       saveSession(sessionItems);
     }, [sessionItems]);
@@ -683,6 +684,17 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     const [showRubric, setShowRubric] = useState(false);
     const [rubricOverride, setRubricOverride] = useState("");
     const [gradeBand, setGradeBand] = useState("6-8");
+
+    // Input mode: photo vs paste
+    const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste"
+
+    // Paste inputs
+    const [pasteLink, setPasteLink] = useState("");
+    const [pasteText, setPasteText] = useState("");
+
+    // Student name (optional)
+    const [studentName, setStudentName] = useState("");
+
     // ✅ Sticky rubric captured from rubric photo (session-level)
     const [stickyRubricText, setStickyRubricText] = useState(() => {
       if (typeof window === "undefined") return "";
@@ -701,6 +713,16 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     useEffect(() => saveLS(RUBRIC_STICKY_TEXT_KEY, stickyRubricText || ""), [stickyRubricText]);
     useEffect(() => saveLS(RUBRIC_STICKY_SRC_KEY, stickyRubricSource || ""), [stickyRubricSource]);
     useEffect(() => saveLS(RUBRIC_STICKY_TS_KEY, stickyRubricCapturedAt || ""), [stickyRubricCapturedAt]);
+
+    useEffect(() => {
+      if (inputMode === "paste") {
+        stopCamera();
+        return;
+      }
+      startCamera({ front: usingFrontCamera });
+      return () => stopCamera();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inputMode, usingFrontCamera]);
 
     // Feedback Voice (tone/personality)
     const [voice, setVoice] = useState(() => {
@@ -845,12 +867,6 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
       }
     }
 
-    useEffect(() => {
-      startCamera({ front: false });
-      return () => stopCamera();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
     // for double-tap capture to capture and submit
     const lastCaptureTapRef = useRef(0);
     const captureTapTimerRef = useRef(null);
@@ -975,6 +991,9 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
       setServerText("");
       setCopied(false);
       setRefCode(""); // ✅ reset ref
+      setPasteLink("");
+      setPasteText("");
+      setStudentName("");
 
       // ✅ reset submission lock state
       setCopyEnabled(false);
@@ -994,9 +1013,21 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
 
       const photosToUse = Array.isArray(photosOverride) ? photosOverride : photos;
 
-      if (!photosToUse.length) {
-        setSubmitError("Capture at least one photo before submitting.");
-        return;
+      const isPhoto = inputMode === "photo";
+      const isPaste = inputMode === "paste";
+
+      if (isPhoto) {
+        if (!photosToUse.length) {
+          setSubmitError("Capture at least one photo before submitting.");
+          return;
+        }
+      } else {
+        const t = (pasteText || "").trim();
+        const u = (pasteLink || "").trim();
+        if (!t && !u) {
+          setSubmitError("Paste text or add a public link before submitting.");
+          return;
+        }
       }
 
       setSubmitting(true);
@@ -1006,28 +1037,41 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
 
         // Priority: manual override > sticky captured > null (default rubric)
         const effectiveRubric = manual.length ? manual : (sticky.length ? sticky : "");
-        const images = await Promise.all(
-          photosToUse.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
-        );
+        let images = null;
+
+        if (inputMode === "photo") {
+          images = await Promise.all(
+            photosToUse.map(async (p) => compressDataUrlToJpeg(p.dataUrl))
+          );
+        }
 
         const payload = {
-          images,
-          rubricOverride: effectiveRubric.length ? effectiveRubric : null,
+          // Photo mode
+          images: inputMode === "photo" ? images : undefined,
 
+          // Paste mode
+          text: inputMode === "paste" ? (pasteText || "").trim() : undefined,
+          linkUrl: inputMode === "paste" ? (pasteLink || "").trim() : undefined,
+
+          rubricOverride: effectiveRubric.length ? effectiveRubric : null,
           gradeBand,
+
           meta: {
             sessionId: getSessionId(),
             source: "web-grading-page",
-            capturedCount: photosToUse.length,
+            capturedCount: inputMode === "photo" ? photosToUse.length : 0,
             capturedAt: Date.now(),
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+
+            // Student (optional)
+            studentName: (studentName || "").trim() || null,
 
             // NEW: feedback voice controls
             feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
             feedbackVoice: voiceOverrideOn ? voiceOverride : voice,
             rubricMode: manual.length ? "manual" : (sticky.length ? "sticky" : "default"),
-            wantsRubricCapture: !manual.length && !sticky.length, // ✅ first submission can capture rubric
-
+            wantsRubricCapture: !manual.length && !sticky.length && inputMode === "photo",
+            inputMode,
           },
         };
 
@@ -1105,10 +1149,8 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
       }
     }
 
-    async function toggleCamera() {
-      const next = !usingFrontCamera; 
-      setUsingFrontCamera(next);
-      await startCamera({ front: next });
+    function toggleCamera() {
+      setUsingFrontCamera((v) => !v);
     }
 
     function useDefaultRubric() {
@@ -1550,90 +1592,171 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
           <div style={styles.card}>
             <div style={styles.cardTitleRow}>
               <div style={styles.cardTitle}>Camera</div>
-              <button
-                onClick={toggleCamera}
-                style={styles.secondaryBtn}
-                disabled={submitting}
-                title="Switch camera"
-              >
-                Switch
-              </button>
-            </div>
 
-            <div style={styles.cameraWrap}>
-              <video ref={videoRef} style={styles.video} muted playsInline autoPlay />
-              {flash && <div style={styles.flash} />}
-              {!cameraReady && (
-                <div style={styles.cameraOverlay}>
-                  {cameraError ? (
-                    <>
-                      <div style={styles.overlayTitle}>Camera Error</div>
-                      <div style={styles.overlayText}>{cameraError}</div>
-                      <button
-                        onClick={() => startCamera({ front: usingFrontCamera })}
-                        style={styles.primaryBtn}
-                      >
-                        Retry Camera
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div style={styles.overlayTitle}>Starting camera…</div>
-                      <div style={styles.overlayText}>Allow camera permissions.</div>
-                    </>
-                  )}
+              {inputMode === "photo" ? (
+                <button
+                  type="button"
+                  onClick={toggleCamera}
+                  style={styles.secondaryBtn}
+                  disabled={submitting}
+                  title="Switch camera"
+                >
+                  Switch
+                </button>
+              ) : null}
+
+              <div style={styles.modeRow}>
+                <button
+                  type="button"
+                  onClick={() => setInputMode("photo")}
+                  style={{
+                    ...styles.modeBtn,
+                    ...(inputMode === "photo" ? styles.modeBtnActive : null),
+                  }}
+                  disabled={submitting}
+                >
+                  Photo
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInputMode("paste")}
+                  style={{
+                    ...styles.modeBtn,
+                    ...(inputMode === "paste" ? styles.modeBtnActive : null),
+                  }}
+                  disabled={submitting}
+                >
+                  Paste
+                </button>
+              </div>
+            </div>
+            
+          {inputMode === "photo" ? (
+            <>
+              <div style={styles.cameraWrap}>
+                <video ref={videoRef} style={styles.video} muted playsInline autoPlay />
+                {flash && <div style={styles.flash} />}
+                {!cameraReady && (
+                  <div style={styles.cameraOverlay}>
+                    {cameraError ? (
+                      <>
+                        <div style={styles.overlayTitle}>Camera Error</div>
+                        <div style={styles.overlayText}>{cameraError}</div>
+                        <button
+                          onClick={() => startCamera({ front: usingFrontCamera })}
+                          style={styles.primaryBtn}
+                          type="button"
+                        >
+                          Retry Camera
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div style={styles.overlayTitle}>Starting camera…</div>
+                        <div style={styles.overlayText}>Allow camera permissions.</div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <canvas ref={canvasRef} style={{ display: "none" }} />
+
+              <div style={styles.btnRow}>
+                <button
+                  onClick={handleCaptureTap}
+                  style={styles.primaryBtn}
+                  disabled={!cameraReady || submitting || busyCapture}
+                  type="button"
+                >
+                  {busyCapture ? "Capturing…" : "Capture Photo"}
+                </button>
+
+                <button
+                  onClick={clearAll}
+                  style={styles.secondaryBtn}
+                  disabled={submitting || busyCapture || (!photos.length && !serverText)}
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div style={styles.photoMeta}>
+                <div>
+                  <b>Photos:</b> {photos.length}
+                </div>
+                <div style={{ opacity: 0.8 }}>
+                  Tip: Keep pages flat, fill the frame, avoid glare. Double tap for capture + submit.
+                </div>
+              </div>
+
+              {photos.length > 0 && (
+                <div style={styles.thumbGrid}>
+                  {photos.map((p, idx) => (
+                    <div key={p.id} style={styles.thumb}>
+                      <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
+                      <div style={styles.thumbBar}>
+                        <div style={styles.thumbLabel}>#{idx + 1}</div>
+                        <button
+                          onClick={() => removePhoto(p.id)}
+                          style={styles.thumbRemove}
+                          disabled={submitting}
+                          title="Remove"
+                          type="button"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
+            </>
+          ) : (
+            <>
+              {/* Paste mode */}
+              <label style={{ ...styles.controlLabel, marginTop: 10 }}>
+                Optional public link (anyone can view)
+                <input
+                  value={pasteLink}
+                  onChange={(e) => setPasteLink(e.target.value)}
+                  placeholder="https://…"
+                  style={styles.input}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </label>
 
-            <canvas ref={canvasRef} style={{ display: "none" }} />
+              <label style={{ ...styles.controlLabel, marginTop: 10 }}>
+                Paste student work
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="Paste the student’s writing / answers here…"
+                  rows={10}
+                  style={styles.textarea}
+                />
+              </label>
 
-            <div style={styles.btnRow}>
-              <button
-                onClick={handleCaptureTap}
-                style={styles.primaryBtn}
-                disabled={!cameraReady || submitting || busyCapture}
-              >
-                {busyCapture ? "Capturing…" : "Capture Photo"}
-              </button>
-              <button
-                onClick={clearAll}
-                style={styles.secondaryBtn}
-                disabled={submitting || busyCapture || (!photos.length && !serverText)}
-              >
-                Clear
-              </button>
-            </div>
-
-            <div style={styles.photoMeta}>
-              <div>
-                <b>Photos:</b> {photos.length}
+              <div style={styles.btnRow}>
+                <button
+                  onClick={clearAll}
+                  style={styles.secondaryBtn}
+                  disabled={submitting || (!serverText && !(pasteText || "").trim() && !(pasteLink || "").trim())}
+                  type="button"
+                >
+                  Clear
+                </button>
               </div>
-              <div style={{ opacity: 0.8 }}>
-                Tip: Keep pages flat, fill the frame, avoid glare. Double tap for capture + submit.
-              </div>
-            </div>
 
-            {photos.length > 0 && (
-              <div style={styles.thumbGrid}>
-                {photos.map((p, idx) => (
-                  <div key={p.id} style={styles.thumb}>
-                    <img src={p.dataUrl} alt={`Captured ${idx + 1}`} style={styles.thumbImg} />
-                    <div style={styles.thumbBar}>
-                      <div style={styles.thumbLabel}>#{idx + 1}</div>
-                      <button
-                        onClick={() => removePhoto(p.id)}
-                        style={styles.thumbRemove}
-                        disabled={submitting}
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8, lineHeight: 1.35 }}>
+                Tip: If a link is private, paste the text instead.
               </div>
-            )}
+            </>
+          )}
           </div>
 
           {/* SUBMIT + RESPONSE CARD */}
@@ -1651,22 +1774,40 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
               )}
             </div>
 
+            <label style={{ ...styles.controlLabel, marginTop: 8 }}>
+              Student name (optional)
+              <input
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+                placeholder="First Last"
+                style={styles.input}
+              />
+            </label>
+
             {/* Rubric override card */}
-            <div style={styles.rubricCard}>
+              <div
+                style={{
+                  ...styles.rubricCard,
+                  padding: showRubric ? 16 : 12,
+                }}
+              >
               <div style={styles.rubricHeader}>
                 <div>
                   <div style={{ fontWeight: 800 }}>Rubric (optional)</div>
-                  <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                    {(() => {
-                      const manual = (rubricOverride || "").trim();
-                      const sticky = (stickyRubricText || "").trim();
 
-                      if (manual.length) return "Using pasted rubric override (this submission).";
-                      if (sticky.length && stickyRubricSource === "captured") return "Using captured rubric (sticky for this session).";
-                      if (sticky.length && stickyRubricSource === "manual") return "Using saved rubric (sticky for this session).";
-                      return "Leave blank to use the default rubric.";
-                    })()}
-                  </div>
+                  {showRubric ? (
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                      {(() => {
+                        const manual = (rubricOverride || "").trim();
+                        const sticky = (stickyRubricText || "").trim();
+
+                        if (manual.length) return "Using pasted rubric override (this submission).";
+                        if (sticky.length && stickyRubricSource === "captured") return "Using captured rubric (sticky for this session).";
+                        if (sticky.length && stickyRubricSource === "manual") return "Using saved rubric (sticky for this session).";
+                        return "Leave blank to use the default rubric.";
+                      })()}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1675,8 +1816,9 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                     style={styles.secondaryBtn}
                     type="button"
                   >
-                    {showRubric ? "Hide" : "Show"}
+                    {showRubric ? "Hide Rubric" : "Show Rubric"}
                   </button>
+
                   <button
                     onClick={useDefaultRubric}
                     disabled={disableUseDefault}
@@ -1685,9 +1827,11 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                       opacity: disableUseDefault ? 0.5 : 1,
                       cursor: disableUseDefault ? "not-allowed" : "pointer",
                     }}
+                    type="button"
                   >
                     Use Default
                   </button>
+
                   <button
                     onClick={() => {
                       setStickyRubricText("");
@@ -1748,7 +1892,13 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
               <button
                 onClick={submitForGrading}
                 style={styles.primaryBtn}
-                disabled={submitting || !photos.length || !gradingUrl}
+                disabled={
+                  submitting ||
+                  !gradingUrl ||
+                  (inputMode === "photo"
+                    ? !photos.length
+                    : (!(pasteText || "").trim() && !(pasteLink || "").trim()))
+                }
               >
                 {submitting ? "Submitting…" : "Submit for Grading"}
               </button>
@@ -1791,14 +1941,6 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                     title={copyEnabled ? "Copy comment" : "Already copied for this result"}
                   >
                     {copied ? "Copied ✓" : "Copy Comment"}
-                  </button>
-                )}
-                {assessment && (
-                  <button
-                    onClick={() => navigator.clipboard?.writeText(JSON.stringify(assessment, null, 2))}
-                    style={styles.secondaryBtn}
-                  >
-                    Copy JSON
                   </button>
                 )}
               </div>
@@ -2050,6 +2192,51 @@ const styles = {
   },
   overlayTitle: { fontWeight: 800, fontSize: 18 },
   overlayText: { opacity: 0.9, maxWidth: 420 },
+
+  modeRow: {
+    display: "flex",
+    gap: 10,
+    marginTop: 10,
+  },
+
+  modeBtn: {
+    flex: 1,
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 800,
+    cursor: "pointer",
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "rgba(15,23,42,0.04)",
+  },
+
+  modeBtnActive: {
+    background: "#2563eb",
+    color: "white",
+    border: "1px solid rgba(37,99,235,0.35)",
+  },
+
+  input: {
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.18)",
+    background: "white",
+    fontSize: 14,
+    fontWeight: 700,
+    minWidth: 240,
+  },
+
+  textarea: {
+    width: "100%",
+    marginTop: 0,
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.12)",
+    padding: 10,
+    fontSize: 13,
+    lineHeight: 1.35,
+    outline: "none",
+    background: "white",
+    resize: "vertical",
+  },
 
   flash: {
     position: "absolute",
