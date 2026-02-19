@@ -821,6 +821,8 @@ export default function GradingPage() {
     // for double-tap capture to capture and submit
     const lastCaptureTapRef = useRef(0);
     const captureTapTimerRef = useRef(null);
+    const [detectedStudentName, setDetectedStudentName] = useState("");
+    const [studentNameEdited, setStudentNameEdited] = useState(false);
 
     useEffect(() => {
       return () => {
@@ -1477,9 +1479,6 @@ export default function GradingPage() {
       !(stickyRubricText || "").trim().length ||
       stickyRubricSource !== "captured";
 
-    const [detectedStudentName, setDetectedStudentName] = useState("");
-    const [studentNameEdited, setStudentNameEdited] = useState(false);
-      
     return (
       <div style={styles.page}>
         <div style={styles.header}>
