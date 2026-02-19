@@ -666,6 +666,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     const [cameraReady, setCameraReady] = useState(false);
     const [cameraError, setCameraError] = useState("");
     const [usingFrontCamera, setUsingFrontCamera] = useState(false);
+    const lastPhotoTapRef = useRef(0);
 
     const [flash, setFlash] = useState(false);
     const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
@@ -1591,29 +1592,32 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
           {/* CAMERA CARD */}
           <div style={styles.card}>
             <div style={styles.cardTitleRow}>
-              <div style={styles.cardTitle}>Camera</div>
+              <div style={styles.cardTitle}>Input mode</div>
 
-              {inputMode === "photo" ? (
+              <div style={{ display: "flex", gap: 10 }}>
                 <button
                   type="button"
-                  onClick={toggleCamera}
-                  style={styles.secondaryBtn}
-                  disabled={submitting}
-                  title="Switch camera"
-                >
-                  Switch
-                </button>
-              ) : null}
+                  // title="Double-tap to flip"
+                  onClick={() => {
+                    const now = Date.now();
+                    const delta = now - lastPhotoTapRef.current;
 
-              <div style={styles.modeRow}>
-                <button
-                  type="button"
-                  onClick={() => setInputMode("photo")}
+                    if (delta < 300) {
+                      // Double tap → flip camera
+                      toggleCamera();
+                    } else {
+                      // Single tap → switch to photo mode
+                      setInputMode("photo");
+                    }
+
+                    lastPhotoTapRef.current = now;
+                  }}
                   style={{
                     ...styles.modeBtn,
                     ...(inputMode === "photo" ? styles.modeBtnActive : null),
                   }}
                   disabled={submitting}
+                  title="Double-tap to flip camera"
                 >
                   Photo
                 </button>
@@ -1786,7 +1790,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                 aria-expanded={showRubric}
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
-                  <div style={{ fontWeight: 900 }}>Rubric (optional)</div>
+                  <div style={{ fontWeight: 900 }}>Rubric Options)</div>
                   <div style={{ fontSize: 12, opacity: 0.75 }}>
                     {(() => {
                       const manual = (rubricOverride || "").trim();
@@ -1794,7 +1798,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
                       if (manual.length) return "Using pasted rubric override (this submission).";
                       if (sticky.length && stickyRubricSource === "captured") return "Using captured rubric (sticky for this session).";
                       if (sticky.length && stickyRubricSource === "manual") return "Using saved rubric (sticky for this session).";
-                      return "Tap to add / view rubric options.";
+                      return;
                     })()}
                   </div>
                 </div>
@@ -2194,13 +2198,13 @@ const styles = {
   },
 
   modeBtn: {
-    flex: 1,
     borderRadius: 12,
     padding: "10px 14px",
     fontWeight: 800,
     cursor: "pointer",
     border: "1px solid rgba(15,23,42,0.12)",
     background: "rgba(15,23,42,0.04)",
+    whiteSpace: "nowrap",
   },
 
   modeBtnActive: {
