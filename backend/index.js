@@ -6529,6 +6529,7 @@ VOICE: Student-friendly (simple wording)
     - deductions (array of { reason, points })
     - ai_suspected_cheating (string or null)
     - copying_suspected (string or null)
+    - deduct for spelling errors if more than 1 in the assignment
     - strengths (array of 2–4 specific content-focused bullets)
     - improvements (array of 1–3 specific content-focused bullets)
     - teacher_comment (2–3 sentences; sentence 1 praise specific, sentence 2 one clear improvement, optional sentence 3 brief tip)
