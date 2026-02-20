@@ -6768,6 +6768,36 @@ VOICE: Student-friendly (simple wording)
       const trimmed = String(workInput || "").trim();
       const looksLikeUrl = /^https?:\/\/\S+$/i.test(trimmed); // strict: whole field is a URL
 
+      const assignmentLinks = [];
+      let submittedTextEvidence = null;
+
+      // Paste mode
+      if (!hasImages && hasWorkInput) {
+        if (looksLikeUrl) {
+          assignmentLinks.push({
+            kind: "source",
+            label: "Submitted link",
+            url: trimmed,
+          });
+        } else {
+          // Option A: just a friendly note link (no URL)
+          assignmentLinks.push({
+            kind: "note",
+            label: "No links (submitted as pasted text)",
+            url: null,
+          });
+
+          // Option B (recommended): include the pasted text as evidence (truncate)
+          submittedTextEvidence = trimmed.slice(0, 12000); // keep it reasonable
+          // If you do Option B, you can instead show:
+          assignmentLinks.push({
+            kind: "text",
+            label: `Submitted text (${Math.min(trimmed.length, 12000)} chars shown)`,
+            url: null,
+          });
+        }
+      }
+
       const hasImages = Array.isArray(images) && images.length > 0;
       const hasWorkInput = trimmed.length > 0;
 
@@ -7205,6 +7235,8 @@ VOICE: Student-friendly (simple wording)
       return res.json({
         ...enforced,
         assignment_images: imageRefs,
+        assignment_links: assignmentLinks,
+        submitted_text: submittedTextEvidence, // can be null
         meta: { submissionId, gradeBand: band }
       });
 

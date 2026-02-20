@@ -453,6 +453,24 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
 
   const lines = [];
   const g = getDisplayScore(assessment);
+  const links2 = getAssignmentLinksFromAssessment(assessment);
+
+  if (links2.length) {
+    lines.push("Links / evidence:");
+    links2.forEach((l, i) => {
+      const label = l?.label || `Item ${i + 1}`;
+      const url = l?.url;
+      lines.push(url ? `- ${label}: ${url}` : `- ${label}`);
+    });
+    lines.push("");
+  }
+
+  const submittedText = String(assessment?.submitted_text || "").trim();
+  if (submittedText) {
+    lines.push("Submitted text (evidence):");
+    lines.push(submittedText);
+    lines.push("");
+  }
 
   if (g.score !== "") {
     lines.push(`Grade: ${g.score} / ${g.outOf}${codeLocal ? `  Ref: ${codeLocal}` : ""}`);
@@ -539,6 +557,10 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     } catch {
       return [];
     }
+  }
+
+  function getAssignmentLinksFromAssessment(a) {
+    return Array.isArray(a?.assignment_links) ? a.assignment_links : [];
   }
 
   function saveSession(items) {
@@ -1379,6 +1401,30 @@ export default function GradingPage() {
       }
       
       const plainText = buildFullTeacherPayloadText(assessment, codeLocal);
+      const htmlAssignmentLinks = getAssignmentLinksFromAssessment(assessment);
+      const submittedText = String(assessment?.submitted_text || "").trim();
+
+      if (htmlAssignmentLinks.length || submittedText) {
+        htmlParts.push(`
+          <div style="margin-top:10px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+            <b>Links / evidence</b>
+            <ul style="margin:6px 0 0 18px; padding:0;">
+              ${htmlAssignmentLinks.map(l => `
+                <li>
+                  ${escapeHtml(l?.label || "Evidence")}${
+                    l?.url ? `: <a href="${escapeHtml(l.url)}" target="_blank" rel="noreferrer">${escapeHtml(l.url)}</a>` : ""
+                  }
+                </li>
+              `).join("")}
+            </ul>
+            ${submittedText ? `
+              <div style="margin-top:8px; font-size:12px; opacity:0.9; white-space:pre-wrap;">
+                ${escapeHtml(submittedText)}
+              </div>
+            ` : ""}
+          </div>
+        `);
+      }
 
       const htmlParts = [];
       htmlParts.push(
