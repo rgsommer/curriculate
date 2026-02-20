@@ -95,7 +95,9 @@ function parseTeacherBlock(payloadText) {
     strengths: [],
     nextSteps: [],
     overallComment: "",
-    sections: [], // { title, lines: [] }
+    sections: [],
+    evidenceLinks: [],     // ✅ NEW
+    evidenceText: "",      // ✅ NEW
     savedCaptures: [],
     raw: text,
   };
@@ -117,6 +119,8 @@ function parseTeacherBlock(payloadText) {
   }
 
   const headingSet = new Set([
+    "Links / evidence:",
+    "Submitted text (evidence):",
     "Deduction:",
     "Strengths:",
     "Next Steps:",
@@ -125,16 +129,18 @@ function parseTeacherBlock(payloadText) {
     "Saved captures (30-day links):",
   ]);
 
-  let current = null;
   const bucket = {
+    "Links / evidence:": "evidenceLinks",
+    "Submitted text (evidence):": "evidenceText",
     "Deduction:": "deduction",
     "Strengths:": "strengths",
     "Next Steps:": "nextSteps",
     "Overall Comment:": "overallComment",
     "Sections:": "sections",
-    "Saved captures (30-day links):": "savedCaptures",  // ✅ add
+    "Saved captures (30-day links):": "savedCaptures",
   };
 
+  let current = null;
   let overallLines = [];
   let currentSection = null;
 
@@ -143,12 +149,6 @@ function parseTeacherBlock(payloadText) {
 
     if (headingSet.has(ln.trim())) {
       const h = ln.trim();
-
-      // stop before links
-      if (h === "Saved captures (30-day links):") {
-        current = "Saved captures (30-day links):";
-        continue;
-      }
 
       // ✅ if we are leaving Overall Comment, save it now
       if (current === "Overall Comment:" && overallLines.length) {
@@ -172,6 +172,22 @@ function parseTeacherBlock(payloadText) {
     if (current === "Overall Comment:") {
       if (ln.trim() === "" && overallLines.length) continue;
       overallLines.push(ln);
+      continue;
+    }
+
+    // Submitted text (evidence) can be multi-line like Overall Comment
+    if (current === "Submitted text (evidence):") {
+      // keep blank lines, but avoid leading empties
+      if (!out.evidenceText && ln.trim() === "") continue;
+      out.evidenceText += (out.evidenceText ? "\n" : "") + ln;
+      continue;
+    }
+
+    // Links / evidence: and Saved captures: are list-ish
+    if (current === "Links / evidence:" || current === "Saved captures (30-day links):") {
+      const t = ln.trim();
+      if (!t) continue;
+      out[bucket[current]].push(t);
       continue;
     }
 
@@ -231,7 +247,10 @@ function parseTeacherBlock(payloadText) {
     out.strengths.length ||
     out.nextSteps.length ||
     out.overallComment ||
-    out.sections.length;
+    out.sections.length ||
+    out.evidenceLinks.length ||        // ✅ NEW
+    out.evidenceText.trim() ||         // ✅ NEW
+    out.savedCaptures.length;
 
   return hasAny ? out : null;
 }
@@ -586,6 +605,27 @@ export default function ResultsPage() {
                   </div>
                 </Card>
               ) : null}
+
+              {(parsed.evidenceLinks.length || parsed.evidenceText.trim()) ? (
+                <Card title="Evidence">
+                  {parsed.evidenceLinks.length ? (
+                    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
+                      {parsed.evidenceLinks.map((x, i) => (
+                        <li key={i}>{linkifyTextToReactNodes(x)}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div style={{ opacity: 0.85 }}>No links (submitted as text).</div>
+                  )}
+
+                  {parsed.evidenceText.trim() ? (
+                    <div style={{ marginTop: 10, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+                      {linkifyTextToReactNodes(parsed.evidenceText.trim())}
+                    </div>
+                  ) : null}
+                </Card>
+              ) : null}
+
               {parsed.savedCaptures.length ? (
                 <Card title="Saved captures (30-day links)">
                   <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.55 }}>
