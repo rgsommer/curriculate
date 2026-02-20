@@ -2074,6 +2074,45 @@ export default function GradingPage() {
                     </>
                   ) : null}
 
+                  {(getAssignmentLinksFromAssessment(assessment).length > 0 ||
+                    String(assessment?.submitted_text || "").trim()) ? (
+                    <>
+                      <div style={styles.gradingSectionTitle}>Evidence</div>
+
+                      {getAssignmentLinksFromAssessment(assessment).length > 0 ? (
+                        <ul style={styles.gradingUl}>
+                          {getAssignmentLinksFromAssessment(assessment).map((l, i) => (
+                            <li key={i}>
+                              {l?.label ? <b>{l.label}:</b> : <b>Link:</b>}{" "}
+                              {l?.url ? (
+                                <a
+                                  href={l.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {l.url}
+                                </a>
+                              ) : (
+                                <span style={{ opacity: 0.75 }}>(no url)</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div style={{ fontSize: 13, opacity: 0.85 }}>
+                          No links (submitted as text).
+                        </div>
+                      )}
+
+                      {String(assessment?.submitted_text || "").trim() ? (
+                        <pre style={{ ...styles.pre, marginTop: 8 }}>
+                          {String(assessment.submitted_text).trim()}
+                        </pre>
+                      ) : null}
+                    </>
+                  ) : null}
+
                   {getAssignmentImagesFromAssessment(assessment).length > 0 ? (
                     <>
                       <div style={styles.gradingSectionTitle}>Saved captures</div>
