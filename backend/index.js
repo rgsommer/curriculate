@@ -7231,6 +7231,29 @@ VOICE: Student-friendly (simple wording)
         }
       })();
 
+      // ------------------------------
+      // Evidence (link or pasted text)
+      // ------------------------------
+      const evidenceLinks = [];
+      let submittedText = null;
+
+      if (!hasImages && hasWorkInput) {
+        if (looksLikeUrl) {
+          evidenceLinks.push({ label: "Submitted link", url: trimmed });
+
+          // Optional: also include extracted text as evidence (recommended)
+          // If you already extracted it earlier, reuse it.
+          // If not, you can re-extract here (but avoid double fetch if possible).
+          // submittedText = extractedTextYouAlreadyFetched ?? null;
+        } else {
+          submittedText = trimmed; // pasted student text
+        }
+      }
+
+      // Attach to the grade object so frontend can render it
+      enforced.assignment_links = evidenceLinks;
+      enforced.submitted_text = submittedText;
+
       // ---- Response stays unchanged ----
       return res.json({
         ...enforced,
