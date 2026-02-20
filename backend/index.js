@@ -6427,7 +6427,7 @@ VOICE: Student-friendly (simple wording)
     - If an explicit denominator IS visible (test sections or rubric categories): the final grade MUST use that denominator instead of /10.
 
     STEP 3 — GRADE CONTENT (primary):
-    Grade for: completeness, accuracy/understanding, clarity, effort.
+    Grade for: completeness, accuracy/understanding, clarity, effort, thoroughness appropriate to the grade level.
     All feedback must cite visible evidence from the student work (e.g., “In question 2…”, “Your chart…”).
     Do NOT invent issues.
 
