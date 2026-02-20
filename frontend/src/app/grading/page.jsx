@@ -974,6 +974,8 @@ export default function GradingPage() {
       setCopied(false);
       setRefCode("");
       setWorkInput("");
+      setDetectedStudentName("");
+      setStudentNameEdited(false);
 
       // reset submission lock state
       setCopyEnabled(false);
@@ -1926,8 +1928,21 @@ export default function GradingPage() {
                   setDetectedStudentName(e.target.value);
                   setStudentNameEdited(true);
                 }}
+                onClick={() => {
+                  const now = Date.now();
+                  const delta = now - lastNameTapRef.current;
+
+                  if (delta < 300) {
+                    // Double tap → clear name
+                    setDetectedStudentName("");
+                    setStudentNameEdited(false);
+                  }
+
+                  lastNameTapRef.current = now;
+                }}
                 placeholder="(auto-detected if visible)"
                 style={styles.input}
+                title="Double-tap to clear"
               />
               <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
                 Tip: Can be “First L” or “First Last”.
