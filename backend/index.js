@@ -6583,6 +6583,59 @@ VOICE: Student-friendly (simple wording)
       return null;
     }
 
+    async function extractStudentWorkFromLink(url) {
+      try {
+        const u = new URL(url);
+
+        // ---- Google Docs: document ----
+        // Accepts:
+        //   https://docs.google.com/document/d/<ID>/edit?...
+        //   https://docs.google.com/document/d/<ID>/view?...
+        //   https://docs.google.com/document/d/<ID>/
+        if (u.hostname === "docs.google.com" || u.hostname === "www.docs.google.com") {
+          const m = u.pathname.match(/^\/document\/d\/([a-zA-Z0-9_-]+)/);
+          if (m) {
+            const docId = m[1];
+            const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+
+            const r = await fetch(exportUrl, {
+              redirect: "follow",
+              headers: {
+                // Helps avoid some weird responses
+                "User-Agent": "CurriculateGrader/1.0",
+                "Accept": "text/plain,text/*;q=0.9,*/*;q=0.1",
+              },
+            });
+
+            const body = await r.text();
+
+            // If the doc isn't public, Google often returns HTML for sign-in
+            const looksLikeHtml = /^\s*<!doctype html>|^\s*<html/i.test(body);
+            if (!r.ok || looksLikeHtml) {
+              return {
+                kind: "error",
+                error:
+                  "Could not access that Google Doc. Make sure it’s shared as “Anyone with the link can view” (no sign-in).",
+              };
+            }
+
+            const text = body.trim();
+            if (!text) {
+              return { kind: "error", error: "Google Doc export returned empty text." };
+            }
+
+            return { kind: "text", text };
+          }
+        }
+
+        // ---- Fallback: try fetch page and strip text (very basic) ----
+        // You can expand this later, but for now keep it conservative.
+        return { kind: "error", error: "Unsupported link type. Please paste the student work as text." };
+      } catch (e) {
+        return { kind: "error", error: "Invalid link URL." };
+      }
+    }
+
     function parseEscapedJsonString(raw) {
       if (typeof raw !== "string") return null;
 
@@ -6706,7 +6759,7 @@ VOICE: Student-friendly (simple wording)
   app.post("/grading", async (req, res) => {
     try {
       const startTime = Date.now();
-      const { images, text, linkUrl, rubricOverride, gradeBand } = req.body || {};
+      const { images, workInput, rubricOverride, gradeBand } = req.body || {};
       const ip =
         req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
         req.socket?.remoteAddress ||
@@ -6717,15 +6770,16 @@ VOICE: Student-friendly (simple wording)
       const sessionId = meta.sessionId || null;
       const refCode = meta.refCode || null;
 
-      const hasImages = Array.isArray(images) && images.length > 0;
-      const hasText = typeof text === "string" && text.trim().length > 0;
-      const hasLink = typeof linkUrl === "string" && linkUrl.trim().length > 0;
+      const trimmed = String(workInput || "").trim();
+      const looksLikeUrl = /^https?:\/\/\S+$/i.test(trimmed); // strict: whole field is a URL
 
-      if (!hasImages && !hasText && !hasLink) {
-        return res.status(400).json({
-          error: "No images, text, or link provided"
-        });
+      const hasImages = Array.isArray(images) && images.length > 0;
+      const hasWorkInput = trimmed.length > 0;
+
+      if (!hasImages && !hasWorkInput) {
+        return res.status(400).json({ error: "No images or student work provided" });
       }
+
       const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
       const submissionId = crypto.randomUUID();
 
@@ -6968,13 +7022,29 @@ VOICE: Student-friendly (simple wording)
       }
 
       const userContent = [{ type: "input_text", text: instructionsWithInference }];
-
       if (hasImages) {
         userContent.push(...images.map((img) => ({ type: "input_image", image_url: img })));
       } else {
-        // paste mode
-        if (hasText) userContent.push({ type: "input_text", text: `STUDENT WORK (PASTED TEXT):\n${text.trim()}` });
-        if (hasLink) userContent.push({ type: "input_text", text: `PUBLIC LINK (may contain student work): ${linkUrl.trim()}` });
+        if (looksLikeUrl) {
+          // ✅ Option B: fetch + extract from link
+          const extracted = await extractStudentWorkFromLink(trimmed);
+          if (extracted.kind === "text") {
+            userContent.push({
+              type: "input_text",
+              text: `STUDENT WORK (FROM LINK):\n${extracted.text.slice(0, 180000)}`,
+            });
+          } else if (extracted.kind === "images") {
+            userContent.push(...extracted.images.map((d) => ({ type: "input_image", image_url: d })));
+          } else {
+            return res.status(400).json({ error: extracted.error || "Could not extract student work from link." });
+          }
+        } else {
+          // ✅ treat as pasted student work
+          userContent.push({
+            type: "input_text",
+            text: `STUDENT WORK (PASTED TEXT):\n${trimmed}`,
+          });
+        }
       }
 
       const response = await openai.responses.create({

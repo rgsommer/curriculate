@@ -641,11 +641,7 @@ export default function GradingPage() {
 
     // Input mode: photo vs paste
     const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste"
-
-    // Paste inputs
-    const [pasteLink, setPasteLink] = useState("");
-    const [pasteText, setPasteText] = useState("");
-
+    
     // ✅ Sticky rubric captured from rubric photo (session-level)
     const [stickyRubricText, setStickyRubricText] = useState(() => {
       if (typeof window === "undefined") return "";
@@ -985,9 +981,9 @@ export default function GradingPage() {
           return;
         }
       } else {
-        const t = (pasteText || "").trim();
-        const u = (pasteLink || "").trim();
-        if (!t && !u) {
+        const w = (workInput || "").trim();
+        const looksLikeUrl = /^https?:\/\/\S+$/i.test(w);
+        if (!w) {
           setSubmitError("Paste text or add a public link before submitting.");
           return;
         }
@@ -1006,14 +1002,11 @@ export default function GradingPage() {
           images = photosToUse.map(p => p.dataUrl);
         }
 
+        const trimmedWork = (workInput || "").trim();
+
         const payload = {
-          // Photo mode
           images: inputMode === "photo" ? images : undefined,
-
-          // Paste mode
-          text: inputMode === "paste" ? (pasteText || "").trim() : undefined,
-          linkUrl: inputMode === "paste" ? (pasteLink || "").trim() : undefined,
-
+          workInput: inputMode === "paste" ? (workInput || "").trim() : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
           gradeBand,
 
@@ -1479,6 +1472,8 @@ export default function GradingPage() {
       !(stickyRubricText || "").trim().length ||
       stickyRubricSource !== "captured";
 
+    const [workInput, setWorkInput] = useState("");
+
     return (
       <div style={styles.page}>
         <div style={styles.header}>
@@ -1681,34 +1676,30 @@ export default function GradingPage() {
             <>
               {/* Paste mode */}
               <label style={{ ...styles.controlLabel, marginTop: 10 }}>
-                Optional public link (anyone can view)
-                <input
-                  value={pasteLink}
-                  onChange={(e) => setPasteLink(e.target.value)}
-                  placeholder="https://…"
-                  style={styles.input}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-              </label>
-
-              <label style={{ ...styles.controlLabel, marginTop: 10 }}>
-                Paste student work
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  placeholder="Paste the student’s writing / answers here…"
-                  rows={10}
-                  style={styles.textarea}
-                />
-              </label>
+                  Paste student work OR paste a link
+                  <textarea
+                    value={workInput}
+                    onChange={(e) => setWorkInput(e.target.value)}
+                    placeholder="Paste the student’s writing/answers here… OR paste a link starting with https://"
+                    rows={10}
+                    style={styles.textarea}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </label>
 
               <div style={styles.btnRow}>
                 <button
                   onClick={clearAll}
                   style={styles.secondaryBtn}
-                  disabled={submitting || (!serverText && !(pasteText || "").trim() && !(pasteLink || "").trim())}
+                  disabled={
+                    submitting ||
+                    (
+                      (!photos || photos.length === 0) &&
+                      !(workInput || "").trim()
+                    )
+                  }
                   type="button"
                 >
                   Clear
@@ -1841,10 +1832,10 @@ export default function GradingPage() {
                 style={styles.primaryBtn}
                 disabled={
                   submitting ||
-                  !gradingUrl ||
                   (inputMode === "photo"
                     ? !photos.length
-                    : (!(pasteText || "").trim() && !(pasteLink || "").trim()))
+                    : !(workInput || "").trim()
+                  )
                 }
               >
                 {submitting ? "Submitting…" : "Submit for Grading"}
