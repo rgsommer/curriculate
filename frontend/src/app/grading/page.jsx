@@ -1404,6 +1404,8 @@ export default function GradingPage() {
       const htmlAssignmentLinks = getAssignmentLinksFromAssessment(assessment);
       const submittedText = String(assessment?.submitted_text || "").trim();
 
+      const htmlParts = [];
+      
       if (htmlAssignmentLinks.length || submittedText) {
         htmlParts.push(`
           <div style="margin-top:10px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
@@ -1426,7 +1428,6 @@ export default function GradingPage() {
         `);
       }
 
-      const htmlParts = [];
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
           <div><b>Grade:</b> ${escapeHtml(getDisplayScore(assessment).score)} / ${escapeHtml(getDisplayScore(assessment).outOf)}${codeLocal ? ` <span style="opacity:0.8; margin-left:10px;"><b>Ref:</b> ${escapeHtml(codeLocal)}</span>` : ""}</div>
