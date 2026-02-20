@@ -6771,6 +6771,9 @@ VOICE: Student-friendly (simple wording)
       const assignmentLinks = [];
       let submittedTextEvidence = null;
 
+      const hasImages = Array.isArray(images) && images.length > 0;
+      const hasWorkInput = trimmed.length > 0;
+
       // Paste mode
       if (!hasImages && hasWorkInput) {
         if (looksLikeUrl) {
@@ -6797,9 +6800,6 @@ VOICE: Student-friendly (simple wording)
           });
         }
       }
-
-      const hasImages = Array.isArray(images) && images.length > 0;
-      const hasWorkInput = trimmed.length > 0;
 
       if (!hasImages && !hasWorkInput) {
         return res.status(400).json({ error: "No images or student work provided" });
