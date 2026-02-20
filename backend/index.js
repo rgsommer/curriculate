@@ -6116,13 +6116,53 @@ app.post("/api/tasksets", async (req, res) => {
   }
 });
 
-console.log("BODY DEBUG keys:", Object.keys(req.body || {}));
-console.log("BODY DEBUG:", req.body);
+async function extractStudentWorkFromLink(url) {
+  try {
+    const u = new URL(url);
+
+    if (u.hostname === "docs.google.com" || u.hostname === "www.docs.google.com") {
+      const m = u.pathname.match(/^\/document\/d\/([a-zA-Z0-9_-]+)/);
+      if (m) {
+        const docId = m[1];
+        const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 8000);
+
+        const r = await fetch(exportUrl, {
+          redirect: "follow",
+          headers: { "Accept": "text/plain,text/*;q=0.9,*/*;q=0.1" },
+          signal: ctrl.signal,
+        }).finally(() => clearTimeout(t));
+
+        const body = await r.text();
+
+        const looksLikeHtml = /^\s*<!doctype html>|^\s*<html/i.test(body);
+        if (!r.ok || looksLikeHtml) {
+          return {
+            kind: "error",
+            error:
+              "Could not access that Google Doc. Make sure it’s shared as “Anyone with the link can view” (no sign-in).",
+          };
+        }
+
+        const text = body.trim();
+        if (!text) return { kind: "error", error: "Google Doc export returned empty text." };
+
+        return { kind: "text", text };
+      }
+    }
+
+    return { kind: "error", error: "Unsupported link type. Please paste the student work as text." };
+  } catch {
+    return { kind: "error", error: "Invalid link URL." };
+  }
+}
 
 app.get("/grading/capture/:submissionId/:file", async (req, res) => {
   try {
     const { submissionId, file } = req.params;
-
+    
     // Validate file param early (right here)
     if (!/^image-\d+\.jpg$/i.test(file)) {
       return res
@@ -6587,59 +6627,6 @@ VOICE: Student-friendly (simple wording)
       return null;
     }
 
-    async function extractStudentWorkFromLink(url) {
-      try {
-        const u = new URL(url);
-
-        // ---- Google Docs: document ----
-        // Accepts:
-        //   https://docs.google.com/document/d/<ID>/edit?...
-        //   https://docs.google.com/document/d/<ID>/view?...
-        //   https://docs.google.com/document/d/<ID>/
-        if (u.hostname === "docs.google.com" || u.hostname === "www.docs.google.com") {
-          const m = u.pathname.match(/^\/document\/d\/([a-zA-Z0-9_-]+)/);
-          if (m) {
-            const docId = m[1];
-            const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
-
-            const r = await fetch(exportUrl, {
-              redirect: "follow",
-              headers: {
-                // Helps avoid some weird responses
-                "User-Agent": "CurriculateGrader/1.0",
-                "Accept": "text/plain,text/*;q=0.9,*/*;q=0.1",
-              },
-            });
-
-            const body = await r.text();
-
-            // If the doc isn't public, Google often returns HTML for sign-in
-            const looksLikeHtml = /^\s*<!doctype html>|^\s*<html/i.test(body);
-            if (!r.ok || looksLikeHtml) {
-              return {
-                kind: "error",
-                error:
-                  "Could not access that Google Doc. Make sure it’s shared as “Anyone with the link can view” (no sign-in).",
-              };
-            }
-
-            const text = body.trim();
-            if (!text) {
-              return { kind: "error", error: "Google Doc export returned empty text." };
-            }
-
-            return { kind: "text", text };
-          }
-        }
-
-        // ---- Fallback: try fetch page and strip text (very basic) ----
-        // You can expand this later, but for now keep it conservative.
-        return { kind: "error", error: "Unsupported link type. Please paste the student work as text." };
-      } catch (e) {
-        return { kind: "error", error: "Invalid link URL." };
-      }
-    }
-
     function parseEscapedJsonString(raw) {
       if (typeof raw !== "string") return null;
 
@@ -6761,6 +6748,10 @@ VOICE: Student-friendly (simple wording)
   );
 
   app.post("/grading", async (req, res) => {
+    console.log("GRADING BODY keys:", Object.keys(req.body || {}));
+    console.log("images?", Array.isArray(req.body?.images) ? req.body.images.length : 0);
+    console.log("workInput len:", String(req.body?.workInput || "").length);
+    
     try {
       const startTime = Date.now();
       const { images, workInput, rubricOverride, gradeBand } = req.body || {};
