@@ -6500,6 +6500,7 @@ VOICE: Student-friendly (simple wording)
     - ONLY if it is student hand-written or student-typed assignment:
       - date
       - page/question reference (ONLY if applicable)
+    - if the edges of the paper are torn or messy, this counts as a deduction for formatting regardless of handwriting quality.
     If any are missing, add exactly one deduction item:
     { "reason": "Formatting requirements missing", "points": 1 }
     Otherwise deductions is [].
