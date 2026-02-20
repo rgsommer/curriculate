@@ -347,7 +347,8 @@ app.use(bodyParser.json({ limit: "25mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "25mb" }));
 
 // (If you also use express.json elsewhere, don’t double-stack unnecessarily.)
-// app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 // 2) Auth + misc routes that don’t depend on tasksets
 app.use("/api/auth", authRoutes);
@@ -6114,6 +6115,9 @@ app.post("/api/tasksets", async (req, res) => {
     res.status(500).json({ error: "Failed to create task set" });
   }
 });
+
+console.log("BODY DEBUG keys:", Object.keys(req.body || {}));
+console.log("BODY DEBUG:", req.body);
 
 app.get("/grading/capture/:submissionId/:file", async (req, res) => {
   try {

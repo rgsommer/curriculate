@@ -950,11 +950,10 @@ export default function GradingPage() {
       setSubmitError("");
       setServerText("");
       setCopied(false);
-      setRefCode(""); // ✅ reset ref
-      setPasteLink("");
-      setPasteText("");
-      
-      // ✅ reset submission lock state
+      setRefCode("");
+      setWorkInput("");
+
+      // reset submission lock state
       setCopyEnabled(false);
     }
 
@@ -1028,6 +1027,13 @@ export default function GradingPage() {
             inputMode,
           },
         };
+
+        console.log("SUBMIT DEBUG", {
+          inputMode,
+          photosToUseLen: photosToUse.length,
+          workLen: (workInput || "").trim().length,
+          payloadPreview: payload,
+        });
 
         const res = await fetch(gradingUrl, {
           method: "POST",
