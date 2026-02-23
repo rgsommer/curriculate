@@ -6410,7 +6410,10 @@ VOICE: Student-friendly (simple wording)
     - For 11+: Use mature, concise, academically appropriate phrasing.
     - Strengths, improvements, and teacher_comment must match the selected grade level tone.
 
-    STUDENT NAME: If a student name is clearly visible anywhere on the page, return it in student_name exactly as written. If not clearly visible, set student_name to null. Do not guess.
+    STUDENT NAME:
+    - Always set student_name to null.
+    - Do NOT personalize feedback.
+    - Do NOT address the student by name in strengths, improvements, or teacher_comment.
 
     STEP 1 — DETECT RESPONSE FORMAT (required):
     Choose ONE:
@@ -6500,11 +6503,34 @@ VOICE: Student-friendly (simple wording)
     - ONLY if it is student hand-written or student-typed assignment:
       - date
       - page/question reference (ONLY if applicable)
-    - if the edges of the paper are torn or messy, this counts as a deduction for formatting regardless of handwriting quality.
-    If any are missing, add exactly one deduction item:
-    { "reason": "Formatting requirements missing", "points": 1 }
-    Otherwise deductions is [].
+    - if the edges of the paper are torn or messy, this counts as a formatting deduction regardless of handwriting quality.
+
+    If any formatting issues exist, add ONE deduction item:
+    { "reason": "Formatting requirements missing (missing title/date/page reference or paper is torn/messy)", "points": 1 }
+
     Do NOT mention formatting in strengths, improvements, or teacher_comment.
+
+    DEDUCTIONS (required, evidence-based):
+    - Do not “search for deductions.” Only deduct when there is a clear, visible issue.
+    - If you deduct points, you MUST enumerate the issues specifically (no vague phrases like “minor errors”).
+    - Every deduction reason must cite concrete evidence (e.g., “Q4…”, “In your paragraph about…”, “In the chart…”).
+    - Spelling/mechanics:
+      - If there is more than 1 spelling error in the assignment, include a spelling deduction.
+      - List up to 5 specific misspellings in the reason as: wrong → correct.
+      - Do NOT deduct for proper nouns unless clearly incorrect.
+      - Group spelling issues into ONE deduction item (not one-per-word).
+      - Typical max for spelling/mechanics is 1 point unless errors are frequent and clearly reduce clarity.
+      Grade-band sensitivity:
+      - For 3–5: Only deduct for spelling if errors clearly interfere with meaning.
+      - For 6–8: Deduct for repeated spelling errors that reflect lack of proofreading.
+      - For 9–10 and 11+: Expect stronger mechanics; repeated spelling errors usually warrant deduction.
+    - Grammar/usage:
+      - If grammar errors meaningfully reduce clarity, include ONE deduction item describing the pattern (e.g., “sentence fragments”, “run-ons”).
+    - Tests/quizzes:
+      - Wrong answers are reflected in section scores; do not also add “wrong answers” as separate deductions unless there is a separate rubric rule.
+
+    IMPORTANT:
+    - This formatting deduction is IN ADDITION TO other valid deductions (e.g., spelling), but formatting may still only contribute max –1 total.
 
     IMPROVEMENTS RULE (critical):
     Only suggest improvements that are demonstrably missing or weak in the student work shown.
@@ -6519,20 +6545,25 @@ VOICE: Student-friendly (simple wording)
 
     OUTPUT (JSON only; EXACT fields):
     - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
+    - student_name (null)   // must always be null
     - overall_score (number)
     - overall_out_of (number)
-    - sections (array of { name, score, out_of, teacher_comment } OR null)
+    - sections (array of { name, score, out_of, teacher_comment, incorrect_items } OR null)
 
     - score_out_of_10 (number or null; ONLY when overall_out_of is 10)
-    - final_score_out_of_10 (number or null; ONLY when overall_out_of is 10; if present must equal score_out_of_10 minus total deduction points)
+    - final_score_out_of_10 (number or null; ONLY when overall_out_of is 10; must equal score_out_of_10 minus total deduction points)
 
     - deductions (array of { reason, points })
     - ai_suspected_cheating (string or null)
     - copying_suspected (string or null)
-    - deduct for spelling errors if more than 1 in the assignment
+
     - strengths (array of 2–4 specific content-focused bullets)
     - improvements (array of 1–3 specific content-focused bullets)
     - teacher_comment (2–3 sentences; sentence 1 praise specific, sentence 2 one clear improvement, optional sentence 3 brief tip)
+
+    POINTS FIELD RULE:
+    - In deductions[], points MUST be a positive number (e.g., 1, 0.5).
+    - Total deductions are subtracted to compute final_score_out_of_10 (when overall_out_of is 10).
 
     FINAL CONSISTENCY RULES (required):
     - If overall_out_of !== 10: set score_out_of_10 = null and final_score_out_of_10 = null.
