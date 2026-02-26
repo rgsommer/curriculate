@@ -58,6 +58,7 @@ const VOICE_OPTIONS = [
   { value: "witty_light", label: "Witty (light)" },
   { value: "standards", label: "Standards-based (rubric language)" },
   { value: "student_friendly", label: "Student-friendly (simple wording)" },
+  { value: "iep_supportive", label: "IEP-supportive (extra encouraging, partial-credit friendly)" },
   { value: "student_conference", label: "Student Conference (jot points)" },
 ];
 
@@ -618,6 +619,42 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     return t.replace(/\s+/g, " ").slice(0, 120);
   }
 
+  function VoiceBadge({ feedbackVoice }) {
+    if (feedbackVoice !== "iep_supportive") return null;
+
+    return (
+      <span
+        title="IEP-supportive voice is active"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "4px 8px",
+          borderRadius: 999,
+          fontSize: 12,
+          lineHeight: "12px",
+          border: "1px solid rgba(0,0,0,.18)",
+          background: "rgba(0,0,0,.04)",
+          color: "rgba(0,0,0,.75)",
+          userSelect: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 999,
+            background: "rgba(0,0,0,.35)",
+            display: "inline-block",
+          }}
+        />
+        IEP voice
+      </span>
+    );
+  }
+
 export default function GradingPage() {
     const [sessionItems, setSessionItems] = useState(() => {
       if (typeof window === "undefined") return [];
@@ -979,6 +1016,7 @@ export default function GradingPage() {
 
       // reset submission lock state
       setCopyEnabled(false);
+      setVoice((prev) => (prev === "iep_supportive" ? "warm" : prev));
     }
 
     async function submitForGrading(photosOverride = null) {
@@ -1554,18 +1592,31 @@ export default function GradingPage() {
 
         <label style={styles.controlLabel}>
           Feedback Voice
-          <select
-            value={voice}
-            onChange={(e) => setVoice(e.target.value)}
-            style={styles.select}
-            title="Sets the default tone of feedback"
-          >
-            {VOICE_OPTIONS.map((v) => (
-              <option key={v.value} value={v.value}>
-                {v.label}
-              </option>
-            ))}
-          </select>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
+            <select
+              value={voice}
+              onChange={(e) => setVoice(e.target.value)}
+              style={{
+                ...styles.select,
+                border: voice === "iep_supportive"
+                  ? "1px solid rgba(0,0,0,.45)"
+                  : styles.select?.border || "1px solid rgba(0,0,0,.2)",
+                boxShadow: voice === "iep_supportive"
+                  ? "0 0 0 2px rgba(0,0,0,.05)"
+                  : styles.select?.boxShadow,
+              }}
+              title="Sets the default tone of feedback"
+            >
+              {VOICE_OPTIONS.map((v) => (
+                <option key={v.value} value={v.value}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+
+            <VoiceBadge feedbackVoice={voice} />
+          </div>
         </label>
 
         {/* <label style={{ ...styles.controlLabel, flexDirection: "row", alignItems: "center", gap: 10, marginTop: 18 }}>
@@ -1968,6 +2019,25 @@ export default function GradingPage() {
                 )}
               </div>
             </div>
+
+            {voice === "iep_supportive" && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  fontSize: 13,
+                  background: "rgba(0,0,0,.035)",
+                  border: "1px solid rgba(0,0,0,.14)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: "rgba(0,0,0,.35)" }} />
+                IEP-supportive voice is active. Marking is partial-credit friendly.
+              </div>
+            )}
 
             {/* FORMATTED RENDER (tap-to-copy) */}
             <div
@@ -2544,8 +2614,8 @@ const styles = {
   gradingSectionTitle: { fontWeight: 900, marginTop: 4 },
   gradingDeduction: { fontSize: 13 },
   gradingUl: { margin: "0 0 0 18px", padding: 0, lineHeight: 1.45 },
-  gradingComment: { fontSize: 13, lineHeight: 1.45 },
   gradingHint: { fontSize: 12, opacity: 0.7, marginTop: 4 },
+  gradingComment: { fontSize: 13, lineHeight: 1.45 },
 
   softWarn: {
     marginTop: 10,
