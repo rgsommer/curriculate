@@ -6601,35 +6601,73 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
 
     STEP 4 — FORMATTING DEDUCTION (quiet, max –1 total):
-    If any formatting issues exist, add EXACTLY ONE formatting deduction item (max 1 point total for formatting):
-    { "reason": "Formatting requirements missing (...)", "points": 1 }
-    Otherwise deductions includes no formatting item.
-    Do NOT mention formatting in strengths, improvements, or teacher_comment.
+    Formatting deduction rule:
+    - Formatting may contribute at most ONE deduction item worth 1 point total.
+    - Only deduct if a required formatting element is clearly missing.
+    - Do NOT mention formatting in strengths, improvements, or teacher_comment.
+
+    IEP formatting rule:
+    - If VOICE is "iep_supportive":
+      - Do NOT deduct for formatting unless the issue severely impacts readability (e.g., missing pages, unreadable layout).
+      - Minor formatting issues (missing date, small spacing inconsistencies) must NOT trigger deduction.
+
+    If a formatting deduction is applied:
+    { "reason": "Formatting requirements missing (specific issue cited)", "points": 1 }
+
+    Otherwise: no formatting deduction item.
+
+    ---
 
     DEDUCTIONS STRUCTURE RULE:
-    - deductions[] may include multiple items (e.g., formatting + spelling + grammar), but formatting is capped at ONE item worth 1 point max.
-    
+    - deductions[] may include multiple items (e.g., formatting + spelling + grammar).
+    - Formatting is capped at ONE item worth 1 point max.
+    - Spelling/mechanics must be grouped into ONE item (not one-per-word).
+
+    ---
+
     DEDUCTIONS (required, evidence-based):
+
     - Do not “search for deductions.” Only deduct when there is a clear, visible issue.
     - If you deduct points, you MUST enumerate the issues specifically (no vague phrases like “minor errors”).
-    - Every deduction reason must cite concrete evidence (e.g., “Q4…”, “In your paragraph about…”, “In the chart…”).
-    - Spelling/mechanics:
-      - If there is more than 1 spelling error in the assignment, include a spelling deduction.
-      - List up to 5 specific misspellings in the reason as: wrong → correct.
-      - Do NOT deduct for proper nouns unless clearly incorrect.
-      - Group spelling issues into ONE deduction item (not one-per-word).
-      - Typical max for spelling/mechanics is 1 point unless errors are frequent and clearly reduce clarity.
-      Grade-band sensitivity:
+    - Every deduction reason must cite concrete visible evidence (e.g., “Q4…”, “In your paragraph about…”, “In the chart…”).
+
+    Spelling/mechanics:
+
+    Spelling fairness rule (always):
+    - Do NOT deduct for US vs Commonwealth spelling differences (e.g., color/colour, center/centre, organize/organise, behavior/behaviour, defense/defence, traveled/travelled).
+    - These are considered correct variations.
+    - Only count an item as a spelling error if it is incorrect in BOTH major conventions.
+    - Do NOT deduct for proper nouns unless clearly incorrect.
+
+    If VOICE is "iep_supportive":
+    - Do NOT deduct for spelling, punctuation, capitalization, or minor grammar unless errors severely prevent understanding.
+    - Prioritize content understanding over surface errors.
+    - If errors severely prevent understanding, include at most ONE mechanics-related deduction item.
+
+    Otherwise (non-IEP voices):
+    - If there is more than 1 spelling error in the assignment, include ONE spelling/mechanics deduction item.
+    - List up to 5 examples as: wrong → correct.
+    - Typical max for spelling/mechanics is 1 point unless errors are frequent and clearly reduce clarity.
+    - Grade-band sensitivity:
       - For 3–5: Only deduct for spelling if errors clearly interfere with meaning.
       - For 6–8: Deduct for repeated spelling errors that reflect lack of proofreading.
       - For 9–10 and 11+: Expect stronger mechanics; repeated spelling errors usually warrant deduction.
-    - Grammar/usage:
-      - If grammar errors meaningfully reduce clarity, include ONE deduction item describing the pattern (e.g., “sentence fragments”, “run-ons”).
-    - Tests/quizzes:
-      - Wrong answers are reflected in section scores; do not also add “wrong answers” as separate deductions unless there is a separate rubric rule.
+
+    Grammar/usage:
+
+    If VOICE is "iep_supportive":
+    - Do NOT deduct for minor grammar issues unless they severely reduce clarity.
+
+    Otherwise:
+    - If grammar errors meaningfully reduce clarity, include ONE deduction item describing the pattern (e.g., “sentence fragments”, “run-ons”).
+
+    Tests/quizzes:
+    - Wrong answers are reflected in section scores.
+    - Do NOT also add “wrong answers” as separate deduction items unless there is a separate rubric rule.
 
     IMPORTANT:
-    - This formatting deduction is IN ADDITION TO other valid deductions (e.g., spelling), but formatting may still only contribute max –1 total.
+    - Formatting deduction is separate from spelling/mechanics.
+    - Total deductions must match the sum of deduction items.
 
     IMPROVEMENTS RULE (critical):
     Only suggest improvements that are demonstrably missing or weak in the student work shown.
