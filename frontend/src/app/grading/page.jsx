@@ -1920,6 +1920,7 @@ export default function GradingPage() {
               </div>
             )}
 
+            {/* removed Student Name field to simplify UI and because it was not being used in the assessment or copied text. Can be re-added if needed in the future.
             <label style={{ ...styles.controlLabel, marginBottom: 8 }}>
               Student Name (optional - for tracking and feedback)
               <input
@@ -1947,7 +1948,8 @@ export default function GradingPage() {
               <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
                 Tip: Can be “First L” or “First Last”.
               </div>
-            </label>
+            </label> */}
+
             <div style={styles.responseTitleRow}>
               <div style={styles.cardTitle}>Response</div>
 
