@@ -6423,16 +6423,58 @@ VOICE: Student-friendly (simple wording)
     - "test" (multiple sections like matching, MC, short answer)
     Set response_format_detected accordingly and calibrate expectations to that format.
 
+    TEACHER KEY / ANSWER KEY DETECTION (critical):
+    Some images may be a teacher-provided marking guide, not student work.
+
+    If any page contains cues such as:
+    - "Answer Key", "Answers", "Solutions", "Solution", "Teacher Key", "Marking Guide", "Key", "Sample Answer", "Exemplar"
+    - or it clearly shows correct answers written as a reference (not in student handwriting / not in a student response format)
+
+    Then that page is a TEACHER KEY.
+
+    Rules when a TEACHER KEY is present:
+    - Do NOT treat that page as the student’s submission.
+    - Use it as the authoritative basis for grading the student pages in this submission.
+    - For each question/item you grade, compare the student response to the TEACHER KEY’s correct answer.
+    - If the TEACHER KEY contradicts your general knowledge, the TEACHER KEY wins.
+    - Do NOT deduct the student for not matching formatting/layout of the key; only correctness.
+    - Never list TEACHER KEY text as “student evidence.” Evidence must come from the student page, while correctness comes from the key.
+    - If a Teacher Key is present, do NOT create a separate "Teacher Key" section; it is not a student section and must not appear in sections[].
+
     STEP 2 — DETERMINE THE GRADING SCALE (critical):
     Use /10 ONLY when no explicit denominator is visible.
     “Explicit denominator” includes any visible point totals like “/20”, “/40”, “out of 25”, section totals like “Matching /10”, or rubric category points.
     - If NO explicit denominator is visible: set overall_out_of = 10 and use /10 fields.
     - If an explicit denominator IS visible (test sections or rubric categories): the final grade MUST use that denominator instead of /10.
+    
+    DENOMINATOR SOURCE RULE (critical):
+    An "explicit denominator" may come from:
+    - the student pages (visible totals), OR
+    - a provided rubricOverride text, OR
+    - extracted rubricText (even if the rubric is not visible in the current student images).
+
+    If rubricOverride or rubricText specifies any total or section out_of values, you MUST use those denominators even if the current student images do not show them.
+    
+    DENOMINATOR PRIORITY (must follow):
+    1) If a rubricOverride or rubricText is being used AND it contains denominators, those denominators control overall_out_of/sections out_of.
+    2) Else if the student pages show denominators (total or section out_of), those control.
+    3) Else overall_out_of = 10.
 
     STEP 3 — GRADE CONTENT (primary):
     Grade for: completeness, accuracy/understanding, clarity, effort, thoroughness appropriate to the grade level.
     All feedback must cite visible evidence from the student work (e.g., “In question 2…”, “Your chart…”).
     Do NOT invent issues.
+    
+    QUESTION-DIRECTIONS MARKING (mandatory):
+    If a question includes marking directions (e.g., "1 mark for a closing sentence", "2 marks for evidence", "include 3 reasons", "label all parts", "show your work", "units required"),
+    you MUST grade exactly according to those directions.
+
+    Rules:
+    - Treat stated marks/criteria inside the question as the marking scheme for that question.
+    - If a required element is missing, reduce the score by the amount indicated (e.g., missing closing sentence = –1 mark).
+    - If the directions specify multiple components, allocate marks component-by-component.
+    - If the question gives a total but no explicit component breakdown, infer a fair split based on the directions (e.g., 3 required reasons = roughly 1 mark each).
+    - Do not “make up” extra requirements beyond what the directions ask.
 
     Score calibration (content-only base score out of 10) — ONLY used when overall_out_of is 10:
     - 9–10: excellent understanding, accurate, thoughtful connections, strong organization for the format (minor mechanics do not prevent a 9–10)
@@ -6441,8 +6483,9 @@ VOICE: Student-friendly (simple wording)
     - <7: incomplete, unclear, or inaccurate
     If the work shows strong understanding + accurate details + organized response for the format, the base score should not be below 8.
 
-    TEST/QUIZ RULE:
-    If the work clearly has multiple sections with point totals (matching/MC/short answer etc.), set response_format_detected = "test".
+    TEST/QUIZ RULE (mandatory):
+    If any page shows (a) named sections, (b) section score boxes, or (c) point totals for parts (e.g., ___/10, Matching /8, Part A /15),
+    then response_format_detected MUST be "test" and you MUST create sections[] for each named section with visible out_of totals.
     - Create sections[] for each visible section.
     - Each section must include: name, score, out_of, and a ONE-sentence teacher_comment.
     - Set overall_out_of to the sum of section out_of totals.
@@ -6450,6 +6493,7 @@ VOICE: Student-friendly (simple wording)
     For test-style sections … include incorrect_items listing only incorrect questions.
     - Keep prompts short. Include student_answer and correct_answer for each incorrect item.
     - If all items are correct, return incorrect_items: null.
+    If the test shows ANY section score boxes or named parts with out_of values, sections MUST be a non-empty array (not null).
     For math questions:
     - If numeric answer is correct but unit is missing when required, deduct 0.5 from that question.
     - Reflect this in the section score.
@@ -6471,6 +6515,15 @@ VOICE: Student-friendly (simple wording)
     When reporting incorrect_items:
     - Double-check that student_answer !== correct_answer before including it.
     - Never include items where they match.
+    SECTION REPORTING RULE (must follow):
+    - If the test provides named sections with out_of values (even if the teacher has not filled them in), you MUST:
+      1) create one sections[] entry per named section,
+      2) use the printed out_of for each section,
+      3) score that section based only on the questions belonging to that section,
+      4) set overall_out_of = sum of section out_of,
+      5) set overall_score = sum of section scores.
+    - If the test does NOT provide section totals, you may still create sections[] if the test is clearly divided (e.g., "Matching", "Multiple Choice"), but you must use only denominators that are explicitly visible.
+    DO NOT revert to /10 if any section out_of values are visible anywhere (including score boxes). Visible denominators always control overall_out_of.
 
     RUBRIC OVERRIDE RULE:
     If a rubric override is provided and it specifies categories and point values:
@@ -6481,6 +6534,12 @@ VOICE: Student-friendly (simple wording)
     - If the rubric conflicts with defaults, rubric wins.
     - For rubric-based sections, do NOT include incorrect_items; instead, cite specific evidence in teacher_comment for each section.
     - Never interpret unchecked boxes on a rubric sheet as missing work.
+    
+    RUBRIC DENOMINATOR REQUIREMENT:
+    If you are using rubricOverride or rubricText, you MUST identify the total possible points.
+    - If the rubric defines section totals, use them as section out_of and sum them.
+    - If the rubric states a single total (e.g., "/25"), use that as overall_out_of.
+    - If the rubric text does NOT contain any denominator at all, then and only then you may use /10.
 
     If a rubricOverride or extracted rubricText is provided:
     - You MUST grade strictly according to that rubric.
@@ -6488,6 +6547,12 @@ VOICE: Student-friendly (simple wording)
     - If the rubric specifies a total (e.g., /20, /40, /50), set overall_out_of to that number.
     - Do NOT default to /10 unless the rubric explicitly uses /10.
     - Do NOT invent a new denominator.
+
+    RUBRIC EXTRACTION REQUIREMENT (critical):
+    When you extract rubricText, you MUST include denominators:
+    - If you see a total like "/25" or "Total: 25", include a line: "Total: /25".
+    - If you see category points (e.g., Ideas 10, Organization 5), include each as "Ideas: /10" etc.
+    - If you cannot see any denominator, include: "Total: (not visible)" (do NOT invent one).
 
     SECTIONS REQUIREMENT (schema-critical):
     Every section object MUST include incorrect_items.
@@ -6498,18 +6563,14 @@ VOICE: Student-friendly (simple wording)
     Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
 
     STEP 4 — FORMATTING DEDUCTION (quiet, max –1 total):
-    Check ONLY if clearly missing in the photos:
-    - proper title (not just “check-in”; do not apply to art work or posters)
-    - ONLY if it is student hand-written or student-typed assignment:
-      - date
-      - page/question reference (ONLY if applicable)
-    - if the edges of the paper are torn or messy, this counts as a formatting deduction regardless of handwriting quality.
-
-    If any formatting issues exist, add ONE deduction item:
-    { "reason": "Formatting requirements missing (missing title/date/page reference or paper is torn/messy)", "points": 1 }
-
+    If any formatting issues exist, add EXACTLY ONE formatting deduction item (max 1 point total for formatting):
+    { "reason": "Formatting requirements missing (...)", "points": 1 }
+    Otherwise deductions includes no formatting item.
     Do NOT mention formatting in strengths, improvements, or teacher_comment.
 
+    DEDUCTIONS STRUCTURE RULE:
+    - deductions[] may include multiple items (e.g., formatting + spelling + grammar), but formatting is capped at ONE item worth 1 point max.
+    
     DEDUCTIONS (required, evidence-based):
     - Do not “search for deductions.” Only deduct when there is a clear, visible issue.
     - If you deduct points, you MUST enumerate the issues specifically (no vague phrases like “minor errors”).
