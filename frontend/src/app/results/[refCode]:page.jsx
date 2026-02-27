@@ -2,7 +2,7 @@
 
 "use client";
 
-import ResultsPage from "../page.jsx";
+import ResultsPage from "../page.js";
 
 function normalizeCode(s) {
   return String(s || "")
@@ -11,7 +11,7 @@ function normalizeCode(s) {
     .slice(0, 5);
 }
 
-export default function ResultsCodeRoute({ params }) {
-  const initialCode = normalizeCode(params?.code);
+export default function Page({ params }) {
+  const initialCode = normalizeCode(params?.refCode); // ✅ matches [refCode]
   return <ResultsPage initialCode={initialCode} autoLookup={true} />;
 }
