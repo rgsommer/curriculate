@@ -1504,19 +1504,17 @@ export default function GradingPage() {
       }
 
       const g = getDisplayScore(assessment);
-      const refUrl = codeLocal
-        ? `https://www.curriculate.net/results/${encodeURIComponent(codeLocal)}`
-        : "";
+      const refUrl = codeLocal ? `https://www.curriculate.net/results/${encodeURIComponent(codeLocal)}` : "";
 
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
           <div>
-            <b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}
+            <b>Grade:</b> ${escapeHtml(getDisplayScore(assessment).score)} / ${escapeHtml(getDisplayScore(assessment).outOf)}
             ${
               codeLocal
                 ? ` <span style="opacity:0.85; margin-left:10px;">
                       <b>Ref:</b>
-                      <a href="${escapeHtml(refUrl)}" target="_blank" rel="noreferrer" style="color:#2563eb; text-decoration:underline; font-weight:700;">
+                      <a href="${escapeHtml(refUrl)}" target="_blank" rel="noreferrer" style="text-decoration:underline;">
                         ${escapeHtml(codeLocal)}
                       </a>
                     </span>`

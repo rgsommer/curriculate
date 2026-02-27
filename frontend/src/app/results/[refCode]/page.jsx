@@ -1,8 +1,5 @@
 // app/results/[refCode]/page.jsx
-
-"use client";
-
-import ResultsPage from "../page.js";
+import ResultsPage from "../page.jsx";
 
 function normalizeCode(s) {
   return String(s || "")
@@ -12,6 +9,6 @@ function normalizeCode(s) {
 }
 
 export default function Page({ params }) {
-  const initialCode = normalizeCode(params?.refCode); // ✅ matches [refCode]
+  const initialCode = normalizeCode(params?.refCode);
   return <ResultsPage initialCode={initialCode} autoLookup={true} />;
 }

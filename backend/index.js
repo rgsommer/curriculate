@@ -6677,8 +6677,80 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     - If neat and legible: do not mention handwriting (unless praising notably neat/consistent presentation).
     - Only comment if readability is clearly impacted.
 
-    ACADEMIC INTEGRITY:
-    Only set ai_suspected_cheating or copying_suspected if there is a clear visible reason; otherwise null.
+    ACADEMIC INTEGRITY (strict, evidence-based, high threshold):
+      Default:
+      ai_suspected_cheating = null
+      copying_suspected = null
+
+      Do NOT assume AI use, copying, or plagiarism based on quality alone.
+      A suspicion field may ONLY be set if there is clear, visible evidence within the student submission.
+
+      PRIMARY FAIRNESS RULE:
+      Advanced vocabulary, strong organization, or above-grade-level writing is NOT sufficient to flag suspicion.
+      Students may legitimately write above grade level.
+      Quality, polish, or unusually strong performance alone are NOT evidence.
+      Only visible artifacts, structural inconsistencies, or clear copy markers justify suspicion.
+      If no clear visible trigger exists, both fields MUST remain null.
+
+      VISIBLE TRIGGERS (at least ONE required):
+      Direct AI Artifact Language
+      Phrases such as “As an AI language model…”
+      Statements about browsing, generating, or being an AI
+      Meta-output structure clearly not written for the assignment (e.g., “Here are 5 key points:” followed by generic structured output inconsistent with the prompt)
+      Web-Style or Source Formatting Not Requested
+      Hyperlinks
+      “Sources:” lists or bibliographies when not required
+      MLA/APA-style citations not requested
+      Clearly pasted definition blocks that exceed the task scope
+      Significant Internal Inconsistency (clearly observable)
+      A substantial shift in tone, vocabulary, or structural sophistication within the same submission
+      One section written far below grade level while another reads at advanced academic polish
+      Structural polish that sharply contradicts the demonstrated depth of understanding
+      Clear mismatch between handwriting maturity and sudden highly polished academic language
+
+      Important:
+      Minor variation is NOT sufficient.
+      High-level vocabulary alone is NOT sufficient.
+      There must be a clear and substantial contrast within the same submission.
+
+      Clear Copy Markers
+      Large blocks of generic textbook-style language
+      Repeated phrasing that appears pasted rather than composed
+      Definition-style wording that does not directly respond to the question
+      Structure inconsistent with how a student would normally answer that prompt
+      Plagiarism Indicators (visible within submission)
+      Insertion of formal academic phrasing inconsistent with the rest of the submission
+      Inclusion of specific quotations, statistics, or formal definitions without attribution when attribution would normally be expected
+      Multiple distinct voice shifts suggesting material pulled from different sources
+
+      FIELD SELECTION RULE:
+      ai_suspected_cheating
+      Use when AI-style artifacts, synthetic structure, or model-generated patterns are visible.
+
+      copying_suspected
+      Use when text appears copied from another human source (peer, notes, textbook, website), even if not clearly AI-generated.
+
+      Do NOT set both fields unless there are clearly separate visible reasons for each.
+
+      EVIDENCE REQUIREMENT (mandatory if flagging):
+      If either field is set:
+      You MUST quote or describe the exact visible phrase or structural pattern.
+      You MUST identify its location (e.g., “In paragraph 2…”, “In Question 4…”).
+      Use neutral phrasing:
+      “This may indicate…”
+      “This could suggest…”
+      Never claim certainty.
+      Never assign intent.
+      Never accuse.
+
+      Example:
+      "Possible AI-generated wording: In paragraph 2, the phrase 'As an AI language model...' appears."
+      "Possible copied text: In Question 3, the response includes a formal definition block that appears pasted rather than directly answering the prompt."
+
+      FINAL RULE:
+      If evidence does not meet this threshold:
+      ai_suspected_cheating = null
+      copying_suspected = null
 
     OUTPUT (JSON only; EXACT fields):
     - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
