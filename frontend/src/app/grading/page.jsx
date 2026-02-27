@@ -695,6 +695,7 @@ export default function GradingPage() {
       return loadSession();
     });
     const [copyEnabled, setCopyEnabled] = useState(false);
+    const [copiedRef, setCopiedRef] = useState(false);
    
     useEffect(() => {
       saveSession(sessionItems);
@@ -2121,53 +2122,42 @@ export default function GradingPage() {
                             Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
 
                             {refCode ? (
-                              <>
-                                <a
-                                  href={`https://www.curriculate.net/results/${encodeURIComponent(refCode)}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                  }}
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+
+                                  // Copy clickable link (HTML + plain) using your helper
+                                  const ok = await copyRefCodeLinkOnly(refCode);
+
+                                  if (ok) {
+                                    setCopiedRef(true);
+                                    window.setTimeout(() => setCopiedRef(false), 900);
+                                  }
+                                }}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onTouchStart={(e) => e.stopPropagation()}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  padding: 0,
+                                  marginLeft: 10,
+                                  cursor: "pointer",
+                                }}
+                                title="Tap to copy results link"
+                              >
+                                <span
                                   style={{
-                                    opacity: 0.85,
-                                    marginLeft: 10,
+                                    opacity: 0.9,
                                     color: "#2563eb",
                                     textDecoration: "underline",
-                                    fontWeight: 800,
+                                    fontWeight: 900,
                                   }}
-                                  title={`Open results for ${refCode}`}
                                 >
-                                  Ref: {refCode}
-                                </a>
-
-                                <button
-                                  type="button"
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    const ok = await copyRefCodeLinkOnly(refCode);
-                                    if (ok) {
-                                      setCopied(true);
-                                      window.setTimeout(() => setCopied(false), 900);
-                                    }
-                                  }}
-                                  onPointerDown={(e) => e.stopPropagation()}
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onTouchStart={(e) => e.stopPropagation()}
-                                  style={{
-                                    border: "none",
-                                    background: "transparent",
-                                    padding: 0,
-                                    marginLeft: 8,
-                                    cursor: "pointer",
-                                  }}
-                                  title="Copy clickable results link"
-                                >
-                                  <span style={styles.copyPillInline}>
-                                    {copied ? "Copied ✓" : "Copy link"}
-                                  </span>
-                                </button>
-                              </>
+                                  {copiedRef ? "Link copied ✓" : `Ref: ${refCode}`}
+                                </span>
+                              </button>
                             ) : null}
                           </>
                         );

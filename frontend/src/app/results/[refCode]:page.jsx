@@ -1,8 +1,17 @@
 // app/results/[refCode]/page.jsx
 
-import ResultsPage from "../page";
+"use client";
 
-export default function ResultsByCode({ params }) {
-  const initialCode = (params?.refCode || "").toUpperCase();
-  return <ResultsPage initialCode={initialCode} autoLookup />;
+import ResultsPage from "../page.jsx";
+
+function normalizeCode(s) {
+  return String(s || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 5);
+}
+
+export default function ResultsCodeRoute({ params }) {
+  const initialCode = normalizeCode(params?.code);
+  return <ResultsPage initialCode={initialCode} autoLookup={true} />;
 }
