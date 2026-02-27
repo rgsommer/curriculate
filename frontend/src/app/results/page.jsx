@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
@@ -311,14 +311,75 @@ function renderSectionTitle(title) {
   );
 }
 
-export default function ResultsPage() {
-  const [codeInput, setCodeInput] = useState("");
+async function copyCodeLink(refCode) {
+  const code = normalizeCode(refCode);
+  if (code.length !== 5) return false;
+
+  const url = `https://www.curriculate.net/results/${code}`;
+
+  // Plain text fallback
+  const plain = `View feedback: ${url}`;
+
+  // HTML version makes it clickable in Gmail/Docs/Word (when supported)
+  const html = `Ref: <a href="${url}">${code}</a>`;
+
+  try {
+    if (navigator.clipboard?.write && window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
+        }),
+      ]);
+    } else {
+      await navigator.clipboard.writeText(plain);
+    }
+    return true;
+  } catch {
+    try {
+      await navigator.clipboard.writeText(plain);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+export default function ResultsPage({ initialCode = "", autoLookup = false }) {
+  const [codeInput, setCodeInput] = useState(initialCode);
   const [status, setStatus] = useState("idle"); // idle | loading | error | ok
   const [data, setData] = useState(null);
   const [errMsg, setErrMsg] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copiedFeedback, setCopiedFeedback] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   const code = useMemo(() => normalizeCode(codeInput), [codeInput]);
+  useEffect(() => {
+    if (!autoLookup) return;
+    if (code.length !== 5) return;
+    if (status === "loading") return;
+    if (status === "ok") return; // prevent re-fetch loops
+
+    // trigger same logic as submit, but without needing an event
+    (async () => {
+      setStatus("loading");
+      setData(null);
+      setErrMsg("");
+
+      try {
+        const r = await fetch(`${API_BASE}/results/${code}`, { cache: "no-store" });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j?.error || "Code not found.");
+
+        setData(j);
+        setStatus("ok");
+      } catch (err) {
+        setStatus("error");
+        setErrMsg(err?.message || "Code not found.");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLookup, code]);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -446,8 +507,8 @@ export default function ResultsPage() {
                     : JSON.stringify(data.payload, null, 2);
 
                 navigator.clipboard?.writeText(text);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1200);
+                setCopiedFeedback(true);
+                setTimeout(() => setCopiedFeedback(false), 1200);
               }}
               style={{
                 padding: "8px 12px",
@@ -458,7 +519,7 @@ export default function ResultsPage() {
                 fontSize: 14,
               }}
             >
-              {copied ? "Copied ✓" : "Copy Feedback"}
+              {copiedFeedback ? "Copied ✓" : "Copy Feedback"}
             </button>
 
             <button
@@ -511,12 +572,42 @@ export default function ResultsPage() {
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Pill>Code: {code}</Pill>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await navigator.clipboard?.writeText(code);
+                    setCopiedCode(true);
+                    setTimeout(() => setCopiedCode(false), 1200);
+                  }}
+                  style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
+                  title="Copy code"
+                >
+                  <Pill>Code: {code}</Pill>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await copyCodeLink(code);
+                    if (ok) {
+                      setCopiedCode(true);
+                      setTimeout(() => setCopiedCode(false), 1200);
+                    }
+                  }}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    padding: 0,
+                    cursor: "pointer",
+                  }}
+                  title="Copies the ref code + a clickable link"
+                >
+                  <Pill>{copiedCode ? "Copied ✓" : "Copy code + link"}</Pill>
+                </button>
+
                 <Pill>
                   Expires:{" "}
-                  {data.expiresAt
-                    ? new Date(data.expiresAt).toLocaleString()
-                    : "—"}
+                  {data.expiresAt ? new Date(data.expiresAt).toLocaleString() : "—"}
                 </Pill>
               </div>
             </div>

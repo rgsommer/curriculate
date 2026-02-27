@@ -655,6 +655,40 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
     );
   }
 
+  async function copyRefCodeLinkOnly(refCode) {
+    const code = String(refCode || "").trim().toUpperCase();
+    if (!/^[A-Z0-9]{5}$/.test(code)) return false;
+
+    const url = `https://www.curriculate.net/results/${encodeURIComponent(code)}`;
+
+    // Plain text (what pastes into basic fields)
+    const plain = url;
+
+    // HTML (what makes it clickable in Gmail/Docs/Word when supported)
+    const html = `<a href="${url}">${code}</a>`;
+
+    try {
+      if (navigator.clipboard?.write && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([plain], { type: "text/plain" }),
+            "text/html": new Blob([html], { type: "text/html" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(plain);
+      }
+      return true;
+    } catch {
+      try {
+        await navigator.clipboard.writeText(plain);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
 export default function GradingPage() {
     const [sessionItems, setSessionItems] = useState(() => {
       if (typeof window === "undefined") return [];
@@ -1468,11 +1502,38 @@ export default function GradingPage() {
         `);
       }
 
+      const g = getDisplayScore(assessment);
+      const refUrl = codeLocal
+        ? `https://www.curriculate.net/results/${encodeURIComponent(codeLocal)}`
+        : "";
+
       htmlParts.push(
         `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
-          <div><b>Grade:</b> ${escapeHtml(getDisplayScore(assessment).score)} / ${escapeHtml(getDisplayScore(assessment).outOf)}${codeLocal ? ` <span style="opacity:0.8; margin-left:10px;"><b>Ref:</b> ${escapeHtml(codeLocal)}</span>` : ""}</div>
+          <div>
+            <b>Grade:</b> ${escapeHtml(g.score)} / ${escapeHtml(g.outOf)}
+            ${
+              codeLocal
+                ? ` <span style="opacity:0.85; margin-left:10px;">
+                      <b>Ref:</b>
+                      <a href="${escapeHtml(refUrl)}" target="_blank" rel="noreferrer" style="color:#2563eb; text-decoration:underline; font-weight:700;">
+                        ${escapeHtml(codeLocal)}
+                      </a>
+                    </span>`
+                : ""
+            }
+          </div>
         </div>`
       );
+
+      if (codeLocal) {
+        htmlParts.push(
+          `<div style="margin-top:6px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; opacity:0.9;">
+            View feedback online: <a href="${escapeHtml(refUrl)}" target="_blank" rel="noreferrer" style="color:#2563eb; text-decoration:underline;">
+              ${escapeHtml(refUrl)}
+            </a>
+          </div>`
+        );
+      }
 
       // Optional: include sections in HTML too (recommended)
       if (Array.isArray(assessment.sections) && assessment.sections.length) {
@@ -2058,7 +2119,56 @@ export default function GradingPage() {
                         return (
                           <>
                             Grade: {g.score !== "" ? g.score : "(not provided)"} / {g.outOf}
-                            {refCode ? <span style={{ opacity: 0.8, marginLeft: 10 }}>Ref: {refCode}</span> : null}
+
+                            {refCode ? (
+                              <>
+                                <a
+                                  href={`https://www.curriculate.net/results/${encodeURIComponent(refCode)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                  }}
+                                  style={{
+                                    opacity: 0.85,
+                                    marginLeft: 10,
+                                    color: "#2563eb",
+                                    textDecoration: "underline",
+                                    fontWeight: 800,
+                                  }}
+                                  title={`Open results for ${refCode}`}
+                                >
+                                  Ref: {refCode}
+                                </a>
+
+                                <button
+                                  type="button"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const ok = await copyRefCodeLinkOnly(refCode);
+                                    if (ok) {
+                                      setCopied(true);
+                                      window.setTimeout(() => setCopied(false), 900);
+                                    }
+                                  }}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onTouchStart={(e) => e.stopPropagation()}
+                                  style={{
+                                    border: "none",
+                                    background: "transparent",
+                                    padding: 0,
+                                    marginLeft: 8,
+                                    cursor: "pointer",
+                                  }}
+                                  title="Copy clickable results link"
+                                >
+                                  <span style={styles.copyPillInline}>
+                                    {copied ? "Copied ✓" : "Copy link"}
+                                  </span>
+                                </button>
+                              </>
+                            ) : null}
                           </>
                         );
                       })()}
