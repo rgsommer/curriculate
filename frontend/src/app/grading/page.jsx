@@ -68,6 +68,47 @@ const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
 const ANON_ID_KEY = "curriculate_anon_id_v1";
 
+// Feedback prompt (localStorage)
+const FEEDBACK_USES_KEY = "curriculate_feedback_uses_v1";
+const FEEDBACK_DISMISSED_UNTIL_KEY = "curriculate_feedback_dismissed_until_v1";
+const FEEDBACK_LAST_SHOWN_AT_KEY = "curriculate_feedback_last_shown_at_v1";
+const FEEDBACK_SUBMITTED_KEY = "curriculate_feedback_submitted_v1"; // "1" once submitted
+
+// Tuning
+const FEEDBACK_TRIGGER_1 = 10;  // first prompt at 10 uses
+const FEEDBACK_TRIGGER_2 = 30;  // optional: 2nd prompt at 30 uses (set null/0 to disable)
+const FEEDBACK_SNOOZE_DAYS = 14; // if dismissed, don't show again for 14 days
+const FEEDBACK_COOLDOWN_DAYS = 7; // even if eligible, don't show more than once per week
+
+const FEEDBACK_SUBMITTED_AT_KEY = "curriculate_feedback_submitted_at_v1";
+
+function hasSubmittedForTrigger(trigger) {
+  const n = Number(readStrLS(FEEDBACK_SUBMITTED_AT_KEY, "0")) || 0;
+  return n >= trigger;
+}
+
+function readIntLS(key, fallback = 0) {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return Number.isFinite(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writeIntLS(key, n) {
+  try { localStorage.setItem(key, String(Number(n) || 0)); } catch {}
+}
+function readStrLS(key, fallback = "") {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+function writeStrLS(key, v) {
+  try { localStorage.setItem(key, String(v ?? "")); } catch {}
+}
+function daysFromNow(d) {
+  const ms = Number(d) * 24 * 60 * 60 * 1000;
+  return String(Date.now() + ms);
+}
+
 function getAnonId() {
   try {
     let id = localStorage.getItem(ANON_ID_KEY);
@@ -416,6 +457,7 @@ function formatPoints(p) {
 
 function tightenCropToContent(canvas, { pad = 12, threshold = 245 } = {}) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return canvas;
   const { width: w, height: h } = canvas;
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
@@ -712,6 +754,11 @@ export default function GradingPage() {
     });
     const [copyEnabled, setCopyEnabled] = useState(false);
     const [copiedRef, setCopiedRef] = useState(false);
+
+    const [showFeedbackPrompt, setShowFeedbackPrompt] = useState(false);
+    const [feedbackText, setFeedbackText] = useState("");
+    const [feedbackSending, setFeedbackSending] = useState(false);
+    const [feedbackSent, setFeedbackSent] = useState(false);
    
     useEffect(() => {
       saveSession(sessionItems);
@@ -1014,6 +1061,86 @@ export default function GradingPage() {
       }
     }
 
+    async function sendUserFeedback() {
+      const msg = (feedbackText || "").trim();
+      if (!msg) return;
+
+      setFeedbackSending(true);
+      try {
+        if (!backendBase) throw new Error("Missing backend base URL");
+
+        const url = `${backendBase.replace(/\/$/, "")}/feedback`; // make this endpoint
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            anonId: getAnonId(),
+            sessionId: getSessionId(),
+            message: msg,
+            uses: readIntLS(FEEDBACK_USES_KEY, 0),
+            meta: {
+              source: "grading-feedback-prompt",
+              userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+              gradeBand,
+              inputMode,
+              voice,
+            },
+          }),
+        });
+
+        const text = await res.text().catch(() => "");
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ""}`);
+        }
+
+        // ✅ STAMP: record what "use count" this feedback submission corresponds to (e.g. 10 or 30)
+        // (use Math.max so you never accidentally move it backwards)
+        const usesNow = readIntLS(FEEDBACK_USES_KEY, 0);
+        const prev = Number(readStrLS(FEEDBACK_SUBMITTED_AT_KEY, "0")) || 0;
+        writeStrLS(FEEDBACK_SUBMITTED_AT_KEY, String(Math.max(prev, usesNow)));
+
+        writeStrLS(FEEDBACK_SUBMITTED_KEY, "1"); // simple mode: ask once ever
+        setFeedbackSent(true);
+        setShowFeedbackPrompt(false);
+        setFeedbackText("");
+      } catch (e) {
+        setSubmitError(`Feedback failed to send: ${e?.message || "Unknown error"}`);
+      } finally {
+        setFeedbackSending(false);
+      }
+    }
+
+    function dismissFeedbackPrompt() {
+      writeStrLS(FEEDBACK_DISMISSED_UNTIL_KEY, daysFromNow(FEEDBACK_SNOOZE_DAYS));
+      setShowFeedbackPrompt(false);
+      setFeedbackText("");
+    }
+
+    function shouldShowFeedbackPrompt(nextUses) {
+      if (nextUses === FEEDBACK_TRIGGER_1 && hasSubmittedForTrigger(FEEDBACK_TRIGGER_1)) return false;
+      
+      if (FEEDBACK_TRIGGER_2 && nextUses === FEEDBACK_TRIGGER_2 && hasSubmittedForTrigger(FEEDBACK_TRIGGER_2)) return false;
+
+      if (typeof window === "undefined") return false;
+
+      // if already submitted once, never show again (simple mode)
+      const submitted = readStrLS(FEEDBACK_SUBMITTED_KEY, "0") === "1";
+      if (submitted) return false;
+
+      const dismissedUntil = Number(readStrLS(FEEDBACK_DISMISSED_UNTIL_KEY, "0")) || 0;
+      if (dismissedUntil && Date.now() < dismissedUntil) return false;
+
+      const lastShownAt = Number(readStrLS(FEEDBACK_LAST_SHOWN_AT_KEY, "0")) || 0;
+      const cooldownMs = FEEDBACK_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+      if (lastShownAt && Date.now() - lastShownAt < cooldownMs) return false;
+
+      // triggers: 10 and optionally 30
+      const hit1 = nextUses === FEEDBACK_TRIGGER_1;
+      const hit2 = FEEDBACK_TRIGGER_2 ? nextUses === FEEDBACK_TRIGGER_2 : false;
+
+      return hit1 || hit2;
+    }
+
     function getAssignmentImagesFromAssessment(a) {
       return Array.isArray(a?.assignment_images) ? a.assignment_images : [];
     }
@@ -1200,8 +1327,18 @@ export default function GradingPage() {
         }
 
         if (norm.assessment) {
-          // Ref code is created when teacher taps Copy (publishes to /results)
           setCopyEnabled(true);
+
+          try {
+            const uses = readIntLS(FEEDBACK_USES_KEY, 0);
+            const nextUses = uses + 1;
+            writeIntLS(FEEDBACK_USES_KEY, nextUses);
+
+            if (shouldShowFeedbackPrompt(nextUses)) {
+              writeStrLS(FEEDBACK_LAST_SHOWN_AT_KEY, String(Date.now()));
+              setShowFeedbackPrompt(true);
+            }
+          } catch {}
         } else {
           setCopyEnabled(false);
         }
@@ -1419,7 +1556,7 @@ export default function GradingPage() {
         const msg =
           parsed?.details ||
           parsed?.error ||
-          `HTTP ${res.status} from grading/session-summary`
+          `HTTP ${res.status} from grading/session-summary`;
         throw new Error(msg);
       }
 
@@ -2399,6 +2536,54 @@ export default function GradingPage() {
             <div style={styles.footerHint}>Free to try until subscription plan is enforced.</div>
           </div>
         </div>
+        
+        {showFeedbackPrompt && (
+          <div style={feedbackStyles.overlay} role="dialog" aria-modal="true">
+            <div style={feedbackStyles.modal}>
+              <div style={feedbackStyles.title}>Quick question</div>
+              <div style={feedbackStyles.subtitle}>
+                What do you most like about Curriculate grading so far?
+              </div>
+
+              <textarea
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                rows={4}
+                placeholder="One sentence is great. (Example: The test mistakes list saves me so much time.)"
+                style={feedbackStyles.textarea}
+                autoFocus
+              />
+
+              <div style={feedbackStyles.row}>
+                <button
+                  type="button"
+                  onClick={dismissFeedbackPrompt}
+                  style={feedbackStyles.secondary}
+                  disabled={feedbackSending}
+                >
+                  Not now
+                </button>
+
+                <button
+                  type="button"
+                  onClick={sendUserFeedback}
+                  style={{
+                    ...feedbackStyles.primary,
+                    opacity: (feedbackText || "").trim() ? 1 : 0.5,
+                    cursor: (feedbackText || "").trim() ? "pointer" : "not-allowed",
+                  }}
+                  disabled={feedbackSending || !(feedbackText || "").trim()}
+                >
+                  {feedbackSending ? "Sending…" : "Send"}
+                </button>
+              </div>
+
+              <div style={feedbackStyles.finePrint}>
+                This takes 10 seconds and helps me improve the tool for teachers.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2766,4 +2951,57 @@ const styles = {
   },
 
   footerHint: { marginTop: 12, fontSize: 12, opacity: 0.7 },
+};
+
+const feedbackStyles = {
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(2,6,23,0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 9999,
+  },
+  modal: {
+    width: "100%",
+    maxWidth: 520,
+    borderRadius: 18,
+    background: "white",
+    border: "1px solid rgba(15,23,42,0.14)",
+    boxShadow: "0 18px 40px rgba(2,6,23,0.25)",
+    padding: 16,
+  },
+  title: { fontWeight: 900, fontSize: 18 },
+  subtitle: { marginTop: 6, opacity: 0.8, lineHeight: 1.35 },
+  textarea: {
+    width: "100%",
+    marginTop: 12,
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.14)",
+    padding: 10,
+    fontSize: 13,
+    lineHeight: 1.35,
+    outline: "none",
+    resize: "vertical",
+  },
+  row: { display: "flex", justifyContent: "space-between", gap: 10, marginTop: 12 },
+  primary: {
+    background: "#2563eb",
+    color: "white",
+    border: "none",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 900,
+  },
+  secondary: {
+    background: "rgba(15,23,42,0.06)",
+    color: "#0b1220",
+    border: "1px solid rgba(15,23,42,0.12)",
+    borderRadius: 12,
+    padding: "10px 14px",
+    fontWeight: 900,
+  },
+  finePrint: { marginTop: 10, fontSize: 12, opacity: 0.7, lineHeight: 1.35 },
 };
