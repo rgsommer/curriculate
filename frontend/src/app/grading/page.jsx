@@ -66,6 +66,22 @@ const VOICE_KEY = "curriculate_grading_voice_v1";
 const VOICE_OVERRIDE_KEY = "curriculate_grading_voice_override_v1";
 const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
+const ANON_ID_KEY = "curriculate_anon_id_v1";
+
+function getAnonId() {
+  try {
+    let id = localStorage.getItem(ANON_ID_KEY);
+    if (!id) {
+      id =
+        (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
+        "a_" + Date.now() + "_" + Math.random().toString(16).slice(2);
+      localStorage.setItem(ANON_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
 
 function getSessionId() {
   try {
@@ -768,9 +784,13 @@ export default function GradingPage() {
       if (typeof window === "undefined") return "warm";
       return loadLS(VOICE_OVERRIDE_VALUE_KEY, "warm");
     });
+    const prevVoiceBeforeIepRef = useRef(null);
 
     // Persist
-    useEffect(() => saveLS(VOICE_KEY, voice), [voice]);
+    useEffect(() => {
+      // Don't overwrite saved default with the temporary IEP voice
+      if (voice !== "iep_supportive") saveLS(VOICE_KEY, voice);
+    }, [voice]);
     useEffect(() => saveLS(VOICE_OVERRIDE_KEY, voiceOverrideOn ? "1" : "0"), [voiceOverrideOn]);
     useEffect(() => saveLS(VOICE_OVERRIDE_VALUE_KEY, voiceOverride), [voiceOverride]);
 
@@ -1049,9 +1069,14 @@ export default function GradingPage() {
       setDetectedStudentName("");
       setStudentNameEdited(false);
 
+      if (voice === "iep_supportive") {
+        const restore = prevVoiceBeforeIepRef.current || loadLS(VOICE_KEY, "warm");
+        setVoice(restore);
+        prevVoiceBeforeIepRef.current = null;
+      }
+
       // reset submission lock state
       setCopyEnabled(false);
-      setVoice((prev) => (prev === "iep_supportive" ? "warm" : prev));
     }
 
     async function submitForGrading(photosOverride = null) {
@@ -1099,8 +1124,10 @@ export default function GradingPage() {
         }
 
         const trimmedWork = (workInput || "").trim();
+        const anonId = getAnonId();
 
         const payload = {
+          anonId,
           images: inputMode === "photo" ? images : undefined,
           workInput: inputMode === "paste" ? (workInput || "").trim() : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
@@ -1374,17 +1401,25 @@ export default function GradingPage() {
         },
       };
 
+      const anonId = getAnonId();
+
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          anonId, // fine to include, but don’t count it as a “submission” server-side
+        }),
       });
 
       const text = await res.text();
 
       if (!res.ok) {
-        const parsed = safeJsonParse(text); // might be JSON error payload
-        const msg = parsed?.details || parsed?.error || `HTTP ${res.status} from session-summary`;
+        const parsed = safeJsonParse(text);
+        const msg =
+          parsed?.details ||
+          parsed?.error ||
+          `HTTP ${res.status} from grading/session-summary`
         throw new Error(msg);
       }
 
@@ -1439,7 +1474,7 @@ export default function GradingPage() {
         window.setTimeout(() => setCopiedFlash(false), 1200);
       } catch (e) {
         console.error("copy session failed", e);
-        setSubmitError("Copy session failed—your browser may block clipboard access.");
+        setSessionSummaryError("Copy session failed—your browser may block clipboard access.");
       } finally {
         setSummarizingSession(false);
       }
@@ -1656,7 +1691,16 @@ export default function GradingPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
             <select
               value={voice}
-              onChange={(e) => setVoice(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+
+                // If switching INTO IEP, remember what the user had selected before.
+                if (next === "iep_supportive" && voice !== "iep_supportive") {
+                  prevVoiceBeforeIepRef.current = voice;
+                }
+
+                setVoice(next);
+              }}
               style={{
                 ...styles.select,
                 border: voice === "iep_supportive"
