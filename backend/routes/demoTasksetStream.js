@@ -11,6 +11,12 @@ import { requireAdminJson } from "../middleware/requireAdminJson.js";
 
 const router = express.Router();
 
+// Public list used by www.curriculate.net/demo
+router.get("/task-types", (req, res) => {
+  // TODO: replace with your real registry source
+  res.json({ taskTypes: [] });
+});
+
 // Fetch the currently-saved demo taskset
 router.get("/taskset", authAny, requireAdminJson, getDemoTaskset);
 
