@@ -606,6 +606,15 @@ function StudentApp() {
   const lastScanKeyRef = useRef({ key: null, atMs: 0 });
   const stationScanInFlightRef = useRef(false);
 
+  const assignedColorRef = useRef(null);
+  useEffect(() => { assignedColorRef.current = assignedColor; }, [assignedColor]);
+
+  const assignedStationIdRef = useRef(null);
+  useEffect(() => { assignedStationIdRef.current = assignedStationId; }, [assignedStationId]);
+
+  const tasksStartedRef2 = useRef(false);
+  useEffect(() => { tasksStartedRef2.current = tasksStarted; }, [tasksStarted]);
+
   const [warmupDone, setWarmupDone] = useState(false);
   const [warmupStep, setWarmupStep] = useState("mood"); 
 
@@ -967,14 +976,14 @@ function StudentApp() {
       let assignedTaskWithMeta = assignedTask;
       if (assignedTask && assignedIsPhysicalMC) {
         const inferredColor =
-          assignedColor ||
-          normalizeStationId(assignedStationId)?.color ||
+          assignedColorRef.current ||
+          normalizeStationId(assignedStationIdRef.current)?.color ||
           null;
 
         assignedTaskWithMeta = {
           ...assignedTask,
           stationColor: assignedTask?.stationColor || assignedTask?.config?.stationColor || inferredColor,
-          stationId: assignedTask?.stationId || assignedStationId || null,
+          stationId: assignedTask?.stationId || assignedStationIdRef.current || null,
         };
       }
 
@@ -1286,18 +1295,19 @@ function StudentApp() {
       setTimeout(() => setShowPartnerReply(false), 4000);
     };
 
-    socket.on("room:state", handleRoomState);
-    socket.on("task:assigned", handleTaskAssigned);
-    socket.on("task:launch", handleTaskAssigned);
-    socket.on("new-task", (payload) =>
+    const handleNewTask = (payload) =>
       handleTaskAssigned({
         task: payload?.task || payload,
         index: payload?.taskIndex ?? payload?.index ?? 0,
         taskIndex: payload?.taskIndex ?? payload?.index ?? 0,
         totalTasks: payload?.totalTasks,
         timeLimitSeconds: payload?.timeLimitSeconds,
-      })
-    );
+      });
+
+    socket.on("room:state", handleRoomState);
+    socket.on("task:assigned", handleTaskAssigned);
+    socket.on("task:launch", handleTaskAssigned);
+    socket.on("new-task", handleNewTask);
     socket.on("task:scored", handleTaskScored);
     socket.on("task:advance", handleTaskAssigned);
     socket.on("noise:update", handleNoiseUpdate);
@@ -1311,7 +1321,7 @@ function StudentApp() {
       socket.off("room:state", handleRoomState);
       socket.off("task:assigned", handleTaskAssigned);
       socket.off("task:launch", handleTaskAssigned);
-      socket.off("new-task");
+      socket.off("new-task", handleNewTask);
       socket.off("task:scored", handleTaskScored);
       socket.off("task:advance", handleTaskAssigned);
       socket.off("noise:update", handleNoiseUpdate);
@@ -1319,14 +1329,8 @@ function StudentApp() {
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
-  }, [
-    teamId,
-    assignedColor,
-    assignedStationId,
-    reviewPauseSeconds,
-    taskLocked,
-    postSubmitSecondsLeft,
-  ]);
+  }, [socket, teamId]
+  );
 
   // ----------------------------------------------------
   // NoiseSensor special effects:

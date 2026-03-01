@@ -1794,7 +1794,7 @@ export default function TaskRunner({
       outgoing?.final === true;
 
     if (submitOk && isCompletion && mode !== "review") triggerTaskVictory();
-    };
+  };
 
   // Hangman expects socket.current; keep existing socket usage for other tasks.
   const socketRef = useRef(null);
