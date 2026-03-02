@@ -1,31 +1,31 @@
-// frontend/app/api/admin/feedback/route.js
 import { NextResponse } from "next/server";
 
 function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
 
-export async function GET(req) {
+function backendBase() {
+  return stripTrailingSlash(
+    process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL
+  );
+}
+
+export async function POST(req) {
   try {
-    const backendBase =
-      stripTrailingSlash(process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL);
+    const base = backendBase();
+    if (!base) return NextResponse.json({ error: "Missing BACKEND_URL" }, { status: 500 });
 
-    if (!backendBase) {
-      return NextResponse.json({ error: "Missing BACKEND_URL" }, { status: 500 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const limit = searchParams.get("limit") || "50";
-
-    const url = `${backendBase}/admin/feedback?limit=${encodeURIComponent(limit)}`;
+    const body = await req.json();
+    const url = `${base}/feedback`;
 
     const res = await fetch(url, {
-      method: "GET",
+      method: "POST",
       headers: {
-        // forward cookies so admin auth works (same pattern you likely use in usage-summary)
+        "content-type": "application/json",
         cookie: req.headers.get("cookie") || "",
         accept: "application/json",
       },
+      body: JSON.stringify(body),
       cache: "no-store",
     });
 
@@ -40,7 +40,7 @@ export async function GET(req) {
       );
     }
 
-    return NextResponse.json(j || { items: [] });
+    return NextResponse.json(j || { ok: true });
   } catch (e) {
     return NextResponse.json({ error: e?.message || "Proxy failed" }, { status: 500 });
   }
