@@ -30,6 +30,12 @@ export function requireAdminJson(req, res, next) {
   const accept = String(req.headers.accept || "");
   const wantsSse = accept.includes("text/event-stream");
 
+  // for frontend feedback call
+  const token = req.get("x-admin-token");
+  if (process.env.ADMIN_API_TOKEN && token === process.env.ADMIN_API_TOKEN) {
+    return next();
+  }
+
   if (wantsSse) {
     return writeSseError(res, 403, "Admin only.");
   }

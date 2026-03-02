@@ -1,35 +1,33 @@
-// frontend/app/api/feedback/route.js
-
 import { NextResponse } from "next/server";
 
 function stripTrailingSlash(s) {
   return (s || "").replace(/\/+$/, "");
 }
 
-function backendBase() {
-  return stripTrailingSlash(
-    process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL
-  );
-}
-
-export async function POST(req) {
+export async function GET(req) {
   try {
-    const base = backendBase();
-    if (!base) {
+    const backendBase = stripTrailingSlash(
+      process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL
+    );
+
+    if (!backendBase) {
       return NextResponse.json({ error: "Missing BACKEND_URL" }, { status: 500 });
     }
+    if (!process.env.ADMIN_API_TOKEN) {
+      return NextResponse.json({ error: "Missing ADMIN_API_TOKEN" }, { status: 500 });
+    }
 
-    const body = await req.json();
-    const url = `${base}/feedback`;
+    const { searchParams } = new URL(req.url);
+    const limit = searchParams.get("limit") || "80";
+
+    const url = `${backendBase}/admin/feedback?limit=${encodeURIComponent(limit)}`;
 
     const res = await fetch(url, {
-      method: "POST",
+      method: "GET",
       headers: {
-        "content-type": "application/json",
         accept: "application/json",
-        cookie: req.headers.get("cookie") || "",
+        "x-admin-token": process.env.ADMIN_API_TOKEN, // ✅ server-side secret
       },
-      body: JSON.stringify(body),
       cache: "no-store",
     });
 
@@ -44,7 +42,7 @@ export async function POST(req) {
       );
     }
 
-    return NextResponse.json(j || { ok: true });
+    return NextResponse.json(j || { items: [] });
   } catch (e) {
     return NextResponse.json({ error: e?.message || "Proxy failed" }, { status: 500 });
   }

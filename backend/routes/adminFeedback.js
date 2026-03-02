@@ -6,7 +6,7 @@ import { requireAdminJson } from "../middleware/requireAdminJson.js";
 
 const router = express.Router();
 
-// GET /admin/feedback?limit=50
+// Full URL becomes: GET /admin/feedback
 router.get("/feedback", authAny, requireAdminJson, listFeedback);
 
 export default router;
