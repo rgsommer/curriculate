@@ -7,6 +7,6 @@ import { requireAdminJson } from "../middleware/requireAdminJson.js";
 const router = express.Router();
 
 // GET /admin/feedback?limit=50
-router.get("/", authAny, requireAdminJson, listFeedback);
+router.get("/feedback", authAny, requireAdminJson, listFeedback);
 
 export default router;

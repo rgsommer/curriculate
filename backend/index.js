@@ -374,12 +374,13 @@ app.use("/api/shared", sharedRoutes);
 app.use(express.json({ limit: "25mb" }));
 import adminUsageSummaryRouter from "./routes/adminUsageSummary.js";
 app.use("/admin", adminUsageSummaryRouter);
+app.use("/admin", adminFeedbackRouter);
+
 // Results sharing routes
 app.use(express.json({ limit: "2mb" })); // bump if your payload is bigger
 app.use("/results", resultsRoutes);
 
 app.use("/feedback", feedbackRouter);
-app.use("/admin/feedback", adminFeedbackRouter);
 
 // Admin gate (server-side)
 const adminRequired = [

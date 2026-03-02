@@ -45,7 +45,7 @@ export default function AdminUsageDashboard() {
     setFeedbackLoading(true);
     setFeedbackErr("");
     try {
-      const res = await fetch("../api/admin/feedback?limit=80", { cache: "no-store" });
+      const res = await fetch("/api/admin/feedback?limit=80", { cache: "no-store" });
       const raw = await res.text();
       let j = null;
       try { j = JSON.parse(raw); } catch {}
