@@ -37,6 +37,30 @@ export default function AdminUsageDashboard() {
   const [loading, setLoading] = useState(true);
   const [force, setForce] = useState(false);
 
+  const [feedback, setFeedback] = useState([]);
+  const [feedbackErr, setFeedbackErr] = useState("");
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+
+  async function loadFeedback() {
+    setFeedbackLoading(true);
+    setFeedbackErr("");
+    try {
+      const res = await fetch("/api/admin/feedback?limit=80", { cache: "no-store" });
+      const raw = await res.text();
+      let j = null;
+      try { j = JSON.parse(raw); } catch {}
+
+      if (!res.ok) {
+        throw new Error((j && (j.error || j.details)) || `HTTP ${res.status}: ${raw.slice(0, 160)}`);
+      }
+
+      setFeedback(Array.isArray(j?.items) ? j.items : []);
+    } catch (e) {
+      setFeedbackErr(e?.message || "Failed to load feedback");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }
   async function load(force = false) {
     setLoading(true);
     setErr("");
@@ -71,7 +95,11 @@ export default function AdminUsageDashboard() {
     }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [force]);
+  useEffect(() => {
+    load(force);
+    loadFeedback();
+    // eslint-disable-next-line
+  }, [force]);
 
   const totals = data?.totals || {};
   const activity = data?.activity || {};
@@ -110,7 +138,7 @@ export default function AdminUsageDashboard() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => load()}
+              onClick={() => { load(force); loadFeedback(); }}
               className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
               disabled={loading}
             >
@@ -264,6 +292,60 @@ export default function AdminUsageDashboard() {
               <pre>{loading ? "Loading..." : JSON.stringify(data, null, 2)}</pre>
             </div>
           </Card>*/}
+        </div>
+
+        <div className="mt-6">
+          <Card title="Teacher feedback (most recent)">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-white/60">
+                {feedbackLoading ? "Loading…" : `${feedback.length} message(s)`}
+              </div>
+              <button
+                onClick={loadFeedback}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+                disabled={feedbackLoading}
+              >
+                Refresh feedback
+              </button>
+            </div>
+
+            {feedbackErr ? (
+              <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
+                {feedbackErr}
+              </div>
+            ) : null}
+
+            <div className="mt-3 max-h-[420px] overflow-auto rounded-xl border border-white/10 bg-black/20">
+              {feedback.length ? (
+                <ul className="divide-y divide-white/10">
+                  {feedback.map((f) => (
+                    <li key={f.id} className="p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs text-white/60">
+                          {f.createdAt ? new Date(f.createdAt).toLocaleString() : "—"}
+                          {typeof f.uses === "number" ? ` · uses: ${f.uses}` : ""}
+                          {f.meta?.gradeBand ? ` · band: ${f.meta.gradeBand}` : ""}
+                          {f.meta?.inputMode ? ` · mode: ${f.meta.inputMode}` : ""}
+                          {f.meta?.voice ? ` · voice: ${f.meta.voice}` : ""}
+                        </div>
+                        <div className="text-[11px] text-white/50">
+                          {f.anonId ? `anon: ${String(f.anonId).slice(0, 10)}…` : ""}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 whitespace-pre-wrap text-sm text-white/90">
+                        {f.message}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="p-3 text-sm text-white/60">
+                  No feedback yet.
+                </div>
+              )}
+            </div>
+          </Card>
         </div>
       </div>
     </div>

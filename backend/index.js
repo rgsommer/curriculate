@@ -59,7 +59,7 @@ import tasksetsRouter from "./routes/tasksets.js";
 import sharedRoutes from "./routes/shared.js";
 import { hashShareToken } from "./models/SharedTasksetLink.js"; // adjust path if needed
 import resultsRoutes from "./routes/resultsRoutes.js";
-
+import adminFeedbackRouter from "./routes/adminFeedback.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
@@ -377,6 +377,9 @@ app.use("/admin", adminUsageSummaryRouter);
 // Results sharing routes
 app.use(express.json({ limit: "2mb" })); // bump if your payload is bigger
 app.use("/results", resultsRoutes);
+
+app.use("/feedback", feedbackRouter);
+app.use("/admin/feedback", adminFeedbackRouter);
 
 // Admin gate (server-side)
 const adminRequired = [
