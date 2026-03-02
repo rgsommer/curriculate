@@ -60,6 +60,7 @@ import sharedRoutes from "./routes/shared.js";
 import { hashShareToken } from "./models/SharedTasksetLink.js"; // adjust path if needed
 import resultsRoutes from "./routes/resultsRoutes.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
+import feedbackRouter from "./routes/feedback.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
