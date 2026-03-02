@@ -1135,9 +1135,16 @@ export default function GradingPage() {
       if (lastShownAt && Date.now() - lastShownAt < cooldownMs) return false;
 
       // triggers: 10 and optionally 30
-      const hit1 = nextUses === FEEDBACK_TRIGGER_1;
-      const hit2 = FEEDBACK_TRIGGER_2 ? nextUses === FEEDBACK_TRIGGER_2 : false;
+      const hit1 =
+        nextUses >= FEEDBACK_TRIGGER_1 &&
+        !hasSubmittedForTrigger(FEEDBACK_TRIGGER_1);
 
+      const hit2 =
+        FEEDBACK_TRIGGER_2
+          ? nextUses >= FEEDBACK_TRIGGER_2 &&
+            !hasSubmittedForTrigger(FEEDBACK_TRIGGER_2)
+          : false;
+          
       return hit1 || hit2;
     }
 
