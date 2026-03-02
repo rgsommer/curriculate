@@ -45,22 +45,29 @@ export default function AdminUsageDashboard() {
     setFeedbackLoading(true);
     setFeedbackErr("");
     try {
-      const res = fetch("/api/admin/feedback?limit=80", { cache: "no-store" })
+      const res = await fetch("/api/admin/feedback?limit=80", {
+        cache: "no-store",
+        // credentials only matters if you rely on cookies; safe to keep:
+        credentials: "include",
+      });
+
       const raw = await res.text();
       let j = null;
       try { j = JSON.parse(raw); } catch {}
 
       if (!res.ok) {
-        throw new Error((j && (j.error || j.details)) || `HTTP ${res.status}: ${raw.slice(0, 160)}`);
+        const msg = (j && (j.error || j.details)) || raw.slice(0, 160) || `HTTP ${res.status}`;
+        throw new Error(msg);
       }
 
       setFeedback(Array.isArray(j?.items) ? j.items : []);
     } catch (e) {
-      setFeedbackErr(e?.message || "Failed to load feedback");
+      setFeedbackErr(e?.message || String(e) || "Failed to load feedback");
     } finally {
       setFeedbackLoading(false);
     }
   }
+
   async function load(force = false) {
     setLoading(true);
     setErr("");
