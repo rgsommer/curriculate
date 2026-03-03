@@ -401,7 +401,7 @@ app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-31b" });
 });
 
-router.get("/feedback", requireAdminJson, listFeedback);
+app.get("/feedback", requireAdminJson, listFeedback);
 
 // Simple UUID generator
 function generateUUID() {
