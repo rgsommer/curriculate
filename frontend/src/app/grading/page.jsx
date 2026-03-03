@@ -1069,7 +1069,7 @@ export default function GradingPage() {
       try {
         if (!backendBase) throw new Error("Missing backend base URL");
 
-        const url = `${backendBase.replace(/\/$/, "")}/feedback`; // make this endpoint
+        const url = "/api/feedback";
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1080,11 +1080,13 @@ export default function GradingPage() {
             uses: readIntLS(FEEDBACK_USES_KEY, 0),
             meta: {
               source: "grading-feedback-prompt",
-              userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
               gradeBand,
               inputMode,
               voice,
-            },
+              name: nameOptional || "",
+              city: cityOptional || "",
+              okToQuote: !!okToQuote,
+            }
           }),
         });
 
