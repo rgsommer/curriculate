@@ -61,8 +61,8 @@ import { hashShareToken } from "./models/SharedTasksetLink.js"; // adjust path i
 import resultsRoutes from "./routes/resultsRoutes.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
 import feedbackRouter from "./routes/feedback.js";
-import { listFeedback } from "../controllers/adminFeedbackController.js";
-import { requireAdminJson } from "../middleware/requireAdminJson.js";
+import { listFeedback } from "./controllers/adminFeedbackController.js";
+import { requireAdminJson } from "./middleware/requireAdminJson.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
