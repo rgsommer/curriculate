@@ -1,3 +1,4 @@
+// frontend/src/app/api/admin/feedback/route.js
 import { NextResponse } from "next/server";
 
 function stripTrailingSlash(s) {
@@ -13,12 +14,12 @@ export async function GET(req) {
     if (!backendBase) {
       return NextResponse.json({ error: "Missing BACKEND_URL" }, { status: 500 });
     }
-    if (!process.env.ADMIN_API_TOKEN) {
-      return NextResponse.json({ error: "Missing ADMIN_API_TOKEN" }, { status: 500 });
-    }
 
     const { searchParams } = new URL(req.url);
     const limit = searchParams.get("limit") || "80";
+
+    // Forward admin token from browser -> Next -> backend
+    const adminToken = req.headers.get("x-admin-token") || "";
 
     const url = `${backendBase}/admin/feedback?limit=${encodeURIComponent(limit)}`;
 
@@ -26,7 +27,7 @@ export async function GET(req) {
       method: "GET",
       headers: {
         accept: "application/json",
-        "x-admin-token": process.env.ADMIN_API_TOKEN, // ✅ server-side secret
+        "x-admin-token": adminToken,
       },
       cache: "no-store",
     });

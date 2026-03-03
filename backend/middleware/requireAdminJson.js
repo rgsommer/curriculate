@@ -32,7 +32,7 @@ export function requireAdminJson(req, res, next) {
 
   // for frontend feedback call
   const token = req.get("x-admin-token");
-  if (process.env.ADMIN_API_TOKEN && token === process.env.ADMIN_API_TOKEN) {
+  if (token && process.env.ADMIN_API_TOKEN && token === process.env.ADMIN_API_TOKEN) {
     return next();
   }
 

@@ -61,6 +61,8 @@ import { hashShareToken } from "./models/SharedTasksetLink.js"; // adjust path i
 import resultsRoutes from "./routes/resultsRoutes.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
 import feedbackRouter from "./routes/feedback.js";
+import { listFeedback } from "../controllers/adminFeedbackController.js";
+import { requireAdminJson } from "../middleware/requireAdminJson.js";
 
 // --------------------------------------------------------------------
 // Reports are immutable snapshots (do NOT overload Session with reports)
@@ -398,6 +400,8 @@ const adminRequired = [
 app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-31b" });
 });
+
+router.get("/feedback", requireAdminJson, listFeedback);
 
 // Simple UUID generator
 function generateUUID() {

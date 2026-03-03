@@ -32,6 +32,8 @@ function pctFmt(v) {
 }
 
 export default function AdminUsageDashboard() {
+  const [adminToken, setAdminToken] = useState("");
+
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
@@ -47,8 +49,9 @@ export default function AdminUsageDashboard() {
     try {
       const res = await fetch("/api/admin/feedback?limit=80", {
         cache: "no-store",
-        // credentials only matters if you rely on cookies; safe to keep:
-        credentials: "include",
+        headers: {
+          "x-admin-token": adminToken,
+        },
       });
 
       const raw = await res.text();
@@ -101,6 +104,13 @@ export default function AdminUsageDashboard() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem("ADMIN_API_TOKEN") || "";
+      setAdminToken(t);
+    } catch {}
+  }, []);
 
   useEffect(() => {
     load(force);
@@ -170,6 +180,22 @@ export default function AdminUsageDashboard() {
             {err}
           </div>
         ) : null}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            value={adminToken}
+            onChange={(e) => {
+              const v = e.target.value;
+              setAdminToken(v);
+              try { localStorage.setItem("ADMIN_API_TOKEN", v); } catch {}
+            }}
+            placeholder="Admin API token"
+            className="w-[320px] rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+          />
+          <div className="text-xs text-white/50">
+            Stored locally in this browser
+          </div>
+        </div>
 
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-4">
           <Card title="Total submissions">
