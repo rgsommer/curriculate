@@ -1,12 +1,11 @@
 // backend/routes/adminFeedback.js
 import express from "express";
 import { listFeedback } from "../controllers/adminFeedbackController.js";
-import { authAny } from "../middleware/authAny.js";
-import { requireAdminJson } from "../middleware/requireAdminJson.js";
+import { requireAdminToken } from "../middleware/requireAdminToken.js";
 
 const router = express.Router();
 
-// Full URL becomes: GET /admin/feedback
-router.get("/feedback", authAny, requireAdminJson, listFeedback);
+// mounted at /admin, so this becomes GET /admin/feedback
+router.get("/feedback", requireAdminToken, listFeedback);
 
 export default router;
