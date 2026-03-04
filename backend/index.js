@@ -6635,11 +6635,14 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     Overall denominator rule:
     - overall_out_of MUST equal the sum of implied section out_of values.
 
+    COUNTING METHOD:
+    - Determine question count by the visible numbering range (e.g., Q1–75 => 75 questions), not by guessing.
+
     Example:
     - Side 1 has Q1–75 → section out_of = 75
     - Side 2 has Q76–95 (20 questions) → section out_of = 20
     - overall_out_of = 95
-
+    
     SCORING RULE:
     - Each question is worth 1 point unless the worksheet explicitly assigns different point values.
     - Section score = (# correct on that side/page)
@@ -6822,20 +6825,13 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
       - and the location (question/paragraph)
       If you cannot quote an artifact, ai_suspected_cheating MUST be null.
 
-    OPTIONAL TEACHER FOLLOW-UP (non-accusatory):
-    Add a field: conference_check (string or null)
-    - Set to null by default.
-    - You MAY set conference_check if the writing is unusually polished for the detected grade band AND there are no errors AND the task is reflective/opinion-based.
-    - Use gentle phrasing like: "Worth a quick 60-second verbal check-in: ask the student to summarize their main point and define 2 vocabulary words they used."
-    - This is NOT an accusation; it is a routine classroom verification.
-
-      OUTPUT (JSON only; EXACT fields):
+    OUTPUT (JSON only; EXACT fields):
     - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
     - student_name (null)   // must always be null
     - overall_score (number)
     - overall_out_of (number)
     - sections (array of { name, score, out_of, teacher_comment, incorrect_items } OR null)
-
+    
     - score_out_of_10 (number or null; ONLY when overall_out_of is 10)
     - final_score_out_of_10 (number or null; ONLY when overall_out_of is 10; must equal score_out_of_10 minus total deduction points)
 
@@ -6895,6 +6891,64 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
       `.trim();
     }
   
+  // ===== grading helpers =====
+
+  function normalizeAnswer(v) {
+    if (v == null) return "";
+    const s = String(v).trim().toLowerCase();
+
+    const noCommas = s.replace(/,/g, "");
+    const compact = noCommas.replace(/\s+/g, " ");
+
+    if (/^[+-]?\d+(\.\d+)?$/.test(compact)) {
+      const n = Number(compact);
+      return Object.is(n, -0) ? "0" : String(n);
+    }
+
+    return compact;
+  }
+
+  function scrubIncorrectItems(result) {
+    if (!result?.sections || !Array.isArray(result.sections)) return result;
+
+    for (const sec of result.sections) {
+      if (!sec || !Array.isArray(sec.incorrect_items)) continue;
+
+      sec.incorrect_items = sec.incorrect_items.filter((it) => {
+        const a = normalizeAnswer(it?.student_answer);
+        const b = normalizeAnswer(it?.correct_answer);
+        return a !== b;
+      });
+
+      if (sec.incorrect_items.length === 0) sec.incorrect_items = null;
+    }
+
+    return result;
+  }
+
+  function recomputeOverallFromSections(g) {
+    if (!g || typeof g !== "object") return g;
+    if (!Array.isArray(g.sections) || g.sections.length === 0) return g;
+
+    const sumOutOf = g.sections.reduce((acc, s) => {
+      const o = Number(s?.out_of);
+      return acc + (Number.isFinite(o) ? o : 0);
+    }, 0);
+
+    const sumScore = g.sections.reduce((acc, s) => {
+      const sc = Number(s?.score);
+      return acc + (Number.isFinite(sc) ? sc : 0);
+    }, 0);
+
+    // Only apply if it yields a sane denominator
+    if (sumOutOf > 0) {
+      g.overall_out_of = sumOutOf;
+      g.overall_score = Math.max(0, Math.min(sumOutOf, sumScore));
+    }
+
+    return g;
+  }
+
   function safeJsonParse(text) {
     if (text == null) return null;
 
@@ -7499,6 +7553,10 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
         return g;
       }
 
+      // Remove bogus incorrect_items where student_answer == correct_answer (after normalization)
+      scrubIncorrectItems(grade);
+      recomputeOverallFromSections(grade);
+
       const enforced = enforceDenominatorRules(grade);
 
       // ---- Fire-and-forget analytics logging (never blocks grading) ----
@@ -7569,11 +7627,6 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
         }
       }
 
-      // Attach to the grade object so frontend can render it
-      enforced.assignment_links = evidenceLinks;
-      enforced.submitted_text = submittedText;
-
-      // ---- Response stays unchanged ----
       return res.json({
         ...enforced,
         assignment_images: imageRefs,
