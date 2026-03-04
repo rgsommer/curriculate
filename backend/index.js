@@ -6562,6 +6562,15 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     When reporting incorrect_items:
     - Double-check that student_answer !== correct_answer before including it.
     - Never include items where they match.
+    INCORRECT ITEM GUARDRAIL (hard rule):
+    - Before adding an item to incorrect_items, normalize both answers and compare again.
+    - Normalization includes:
+      - trim spaces
+      - case-insensitive compare
+      - treat equivalent numeric forms as equal (e.g., "-8" == "-8.0", "8/1" == "8")
+      - ignore thousands separators and extra spaces (e.g., "1,000" == "1000")
+    - If normalized answers match, the item MUST NOT appear in incorrect_items.
+    - If the only difference is formatting, do NOT mark incorrect.
     SECTION REPORTING RULE (must follow):
     - If the test provides named sections with out_of values (even if the teacher has not filled them in), you MUST:
       1) create one sections[] entry per named section,
@@ -6761,7 +6770,26 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
       ai_suspected_cheating = null
       copying_suspected = null
 
-    OUTPUT (JSON only; EXACT fields):
+      TWO-TRIGGER REQUIREMENT (mandatory):
+      - To set ai_suspected_cheating OR copying_suspected, you must have at least TWO independent visible triggers.
+      - At least ONE trigger must be a concrete artifact (e.g., “As an AI…”, links, “Sources:”, citation block, pasted definition block, clear template structure).
+      - “Tone/vocab shift” alone is never sufficient.
+      - If you do not have 2 triggers including 1 concrete artifact, both fields MUST be null.
+
+      EVIDENCE FORMAT (required):
+      If ai_suspected_cheating is set, it MUST include:
+      - a short direct quote (5–20 words) copied from the student page that shows the artifact
+      - and the location (question/paragraph)
+      If you cannot quote an artifact, ai_suspected_cheating MUST be null.
+
+    OPTIONAL TEACHER FOLLOW-UP (non-accusatory):
+    Add a field: conference_check (string or null)
+    - Set to null by default.
+    - You MAY set conference_check if the writing is unusually polished for the detected grade band AND there are no errors AND the task is reflective/opinion-based.
+    - Use gentle phrasing like: "Worth a quick 60-second verbal check-in: ask the student to summarize their main point and define 2 vocabulary words they used."
+    - This is NOT an accusation; it is a routine classroom verification.
+
+      OUTPUT (JSON only; EXACT fields):
     - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")
     - student_name (null)   // must always be null
     - overall_score (number)
