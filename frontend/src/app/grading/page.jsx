@@ -857,6 +857,11 @@ export default function GradingPage() {
       []
     );
 
+    // user feedback
+    const [feedbackName, setFeedbackName] = useState("");
+    const [feedbackCity, setFeedbackCity] = useState("");
+    const [okToQuote, setOkToQuote] = useState(false);
+       
     const gradingUrl = useMemo(() => {
       if (!backendBase) return "";
       return `${backendBase.replace(/\/$/, "")}/grading`;
@@ -935,7 +940,10 @@ export default function GradingPage() {
         return;
       }
       startCamera({ front: usingFrontCamera });
-      return () => stopCamera();
+
+      return () => {
+        stopCamera(); // don't return the promise
+      };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [inputMode, usingFrontCamera]);
 
@@ -1063,13 +1071,12 @@ export default function GradingPage() {
 
     async function sendUserFeedback() {
       const msg = (feedbackText || "").trim();
+      
       if (!msg) return;
 
       setFeedbackSending(true);
       try {
-        if (!backendBase) throw new Error("Missing backend base URL");
-
-        const url = "/api/feedback";
+        const url = "/api/feedback"; // or `${backendBase}/api/feedback` if needed
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1083,30 +1090,27 @@ export default function GradingPage() {
               gradeBand,
               inputMode,
               voice,
-              name: nameOptional || "",
-              city: cityOptional || "",
+              name: (feedbackName || "").trim(),
+              city: (feedbackCity || "").trim(),
               okToQuote: !!okToQuote,
-            }
+            },
           }),
         });
 
-        const text = await res.text().catch(() => "");
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status}${text ? `: ${text}` : ""}`);
+          const t = await res.text().catch(() => "");
+          throw new Error(t || `HTTP ${res.status}`);
         }
 
-        // ✅ STAMP: record what "use count" this feedback submission corresponds to (e.g. 10 or 30)
-        // (use Math.max so you never accidentally move it backwards)
-        const usesNow = readIntLS(FEEDBACK_USES_KEY, 0);
-        const prev = Number(readStrLS(FEEDBACK_SUBMITTED_AT_KEY, "0")) || 0;
-        writeStrLS(FEEDBACK_SUBMITTED_AT_KEY, String(Math.max(prev, usesNow)));
-
-        writeStrLS(FEEDBACK_SUBMITTED_KEY, "1"); // simple mode: ask once ever
-        setFeedbackSent(true);
+        // success UX:
         setShowFeedbackPrompt(false);
         setFeedbackText("");
+        writeStrLS(FEEDBACK_SUBMITTED_KEY, "1");
+        writeIntLS(FEEDBACK_SUBMITTED_AT_KEY, readIntLS(FEEDBACK_USES_KEY, 0));
+        setFeedbackSent(true);
       } catch (e) {
-        setSubmitError(`Feedback failed to send: ${e?.message || "Unknown error"}`);
+        console.error("Feedback failed:", e);
+        // show toast / inline error if you have it
       } finally {
         setFeedbackSending(false);
       }
@@ -1116,6 +1120,15 @@ export default function GradingPage() {
       writeStrLS(FEEDBACK_DISMISSED_UNTIL_KEY, daysFromNow(FEEDBACK_SNOOZE_DAYS));
       setShowFeedbackPrompt(false);
       setFeedbackText("");
+    }
+
+    function openFeedbackPrompt() {
+      setFeedbackText("");
+      setFeedbackName("");
+      setFeedbackCity("");
+      setOkToQuote(false);
+      setFeedbackSent(false);
+      setShowFeedbackPrompt(true);
     }
 
     function shouldShowFeedbackPrompt(nextUses) {
@@ -1345,7 +1358,7 @@ export default function GradingPage() {
 
             if (shouldShowFeedbackPrompt(nextUses)) {
               writeStrLS(FEEDBACK_LAST_SHOWN_AT_KEY, String(Date.now()));
-              setShowFeedbackPrompt(true);
+              openFeedbackPrompt();
             }
           } catch {}
         } else {
@@ -2563,6 +2576,34 @@ export default function GradingPage() {
                 autoFocus
               />
 
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                <input
+                  value={feedbackName}
+                  onChange={(e) => setFeedbackName(e.target.value)}
+                  placeholder="Name (optional)"
+                  style={feedbackStyles.input}
+                  autoComplete="name"
+                />
+                <input
+                  value={feedbackCity}
+                  onChange={(e) => setFeedbackCity(e.target.value)}
+                  placeholder="City (optional)"
+                  style={feedbackStyles.input}
+                  autoComplete="address-level2"
+                />
+              </div>
+
+              <label style={feedbackStyles.checkboxRow}>
+                <input
+                  type="checkbox"
+                  checked={okToQuote}
+                  onChange={(e) => setOkToQuote(e.target.checked)}
+                  style={feedbackStyles.checkbox}
+                />
+                <span style={feedbackStyles.checkboxText}>
+                  OK to quote this feedback publicly (without my name)
+                </span>
+              </label>
               <div style={feedbackStyles.row}>
                 <button
                   type="button"
@@ -3012,5 +3053,27 @@ const feedbackStyles = {
     padding: "10px 14px",
     fontWeight: 900,
   },
+  input: {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.14)",
+    background: "white",
+    color: "#0b1220",
+    outline: "none",
+    fontSize: 14,
+  },
+  checkboxRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 10,
+    userSelect: "none",
+    color: "#0b1220",
+    fontSize: 13,
+    opacity: 0.85,
+  },
+  checkbox: { width: 16, height: 16 },
+  checkboxText: { lineHeight: 1.3 },
   finePrint: { marginTop: 10, fontSize: 12, opacity: 0.7, lineHeight: 1.35 },
 };
