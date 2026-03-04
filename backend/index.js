@@ -6658,6 +6658,11 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     INCORRECT_ITEMS:
     - Use incorrect_items normally for test-style sections, but NEVER include an item where student_answer equals correct_answer.
 
+    INCORRECT_ITEMS FIELD HYGIENE (mandatory):
+    - student_answer and correct_answer must be short, clean answer strings only.
+    - Do NOT include “or …”, parentheses alternatives, or commentary like “unclear …” inside correct_answer.
+    - Put uncertainty/explanations in teacher_comment, not inside correct_answer.
+    
     Important fairness rule:
     Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
 
@@ -6908,6 +6913,51 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     return compact;
   }
 
+  function canonicalizeAnswer(raw, { isCorrectAnswer = false } = {}) {
+    if (raw == null) return "";
+    let s = String(raw).trim().toLowerCase();
+
+    // 1) If correct_answer contains commentary like "— unclear ...", drop it
+    if (isCorrectAnswer) {
+      s = s.split("—")[0].trim();        // em dash
+      s = s.split("--")[0].trim();       // double hyphen
+    }
+
+    // 2) If correct_answer contains alternatives, keep only the first
+    if (isCorrectAnswer) {
+      // Handles: "x (or y)" OR "x or y"
+      s = s.split(/\(\s*or\s+/i)[0].trim();
+      s = s.split(/\s+or\s+/i)[0].trim();
+    }
+
+    // 3) Remove commas in numbers (1,000 -> 1000)
+    s = s.replace(/,/g, "");
+
+    // 4) Remove outer parentheses repeatedly: "(16d+20)" -> "16d+20"
+    while (s.startsWith("(") && s.endsWith(")")) {
+      s = s.slice(1, -1).trim();
+    }
+
+    // 5) If it looks mathy, normalize aggressively
+    const looksMathy = /[a-z0-9]/i.test(s) && /[+\-*/^=()]/.test(s);
+    if (looksMathy) {
+      s = s.replace(/\s+/g, "");     // remove all spaces
+      s = s.replace(/\+\-/g, "-");   // "+-" -> "-"
+      s = s.replace(/\-\-/g, "+");   // "--" -> "+"
+    } else {
+      // otherwise just collapse whitespace
+      s = s.replace(/\s+/g, " ");
+    }
+
+    // 6) Pure numeric normalization (still keep your nice -0 handling)
+    if (/^[+-]?\d+(\.\d+)?$/.test(s)) {
+      const n = Number(s);
+      return Object.is(n, -0) ? "0" : String(n);
+    }
+
+    return s;
+  }
+
   function scrubIncorrectItems(result) {
     if (!result?.sections || !Array.isArray(result.sections)) return result;
 
@@ -6915,8 +6965,8 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
       if (!sec || !Array.isArray(sec.incorrect_items)) continue;
 
       sec.incorrect_items = sec.incorrect_items.filter((it) => {
-        const a = normalizeAnswer(it?.student_answer);
-        const b = normalizeAnswer(it?.correct_answer);
+        const a = canonicalizeAnswer(it?.student_answer, { isCorrectAnswer: false });
+        const b = canonicalizeAnswer(it?.correct_answer, { isCorrectAnswer: true });
         return a !== b;
       });
 
