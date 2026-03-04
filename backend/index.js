@@ -6581,6 +6581,10 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     - If the test does NOT provide section totals, you may still create sections[] if the test is clearly divided (e.g., "Matching", "Multiple Choice"), but you must use only denominators that are explicitly visible.
     DO NOT revert to /10 if any section out_of values are visible anywhere (including score boxes). Visible denominators always control overall_out_of.
 
+    IMPORTANT:
+    If IMPLIED section denominators are determined (e.g., 75 questions + 20 questions), you MUST NOT set overall_out_of to 10.
+    Implied denominators count as explicit denominators for grading scale purposes.
+
     RUBRIC OVERRIDE RULE:
     If a rubric override is provided and it specifies categories and point values:
     - Create sections[] that match the rubric categories and totals.
@@ -6614,6 +6618,42 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     Every section object MUST include incorrect_items.
     - If the section is NOT a test-style section (rubric category, writing, etc.): incorrect_items MUST be null.
     - If the section IS test-style: incorrect_items is either an array of incorrect question objects OR null (if none wrong).
+
+    IMPLICIT SECTION RULE (worksheet style, mandatory when applicable):
+    Some worksheets do not label sections or provide section score boxes, but are clearly split by page/side.
+
+    If ALL of the following are true:
+    1) response_format_detected is "test" OR the work is clearly numbered questions (not a paragraph assignment),
+    2) there are NO printed section names or section out_of totals anywhere,
+    3) the submission clearly contains two distinct sides/pages where each side has its own question numbering block,
+
+    Then you MUST treat each side/page as a section using IMPLIED denominators:
+
+    - Section A (Side/Page 1): out_of = number of questions on that side/page
+    - Section B (Side/Page 2): out_of = number of questions on that side/page
+
+    Overall denominator rule:
+    - overall_out_of MUST equal the sum of implied section out_of values.
+
+    Example:
+    - Side 1 has Q1–75 → section out_of = 75
+    - Side 2 has Q76–95 (20 questions) → section out_of = 20
+    - overall_out_of = 95
+
+    SCORING RULE:
+    - Each question is worth 1 point unless the worksheet explicitly assigns different point values.
+    - Section score = (# correct on that side/page)
+    - overall_score = sum of section scores
+
+    SECTION NAMING:
+    - If no printed names exist, name sections exactly:
+      - "Side 1" and "Side 2" (or "Page 1" and "Page 2" if it is clearly separate pages)
+
+    If there are more than 2 pages/sides, you MAY create one section per page ONLY if each page is clearly its own block of numbered questions.
+    Otherwise, group into the smallest number of obvious blocks.
+
+    INCORRECT_ITEMS:
+    - Use incorrect_items normally for test-style sections, but NEVER include an item where student_answer equals correct_answer.
 
     Important fairness rule:
     Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
