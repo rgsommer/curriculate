@@ -6384,7 +6384,7 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
   return `${baseGuardrails}\n\n${chosen}`.trim();
 }
 
-  function buildRubricInstructions({
+function buildRubricInstructions({
     gradeBand = "6-8",
     rubricOverride = "",
     feedbackVoice = "warm",
@@ -6639,6 +6639,17 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
 
     COUNTING METHOD:
     - Determine question count by the visible numbering range (e.g., Q1–75 => 75 questions), not by guessing.
+    You are counting marks for grading scale.
+
+    First classify the submission type:
+    - "written_response" = a few longer answers (sentences/paragraphs), even if numbered (e.g., 1–4).
+    - "worksheet" = many short items, usually one per line (math drill, matching, T/F, etc.).
+
+    Rules:
+    - If type = written_response: recommended_out_of = 10 (even if only 4 questions).
+    - If type = worksheet: recommended_out_of = total number of questions (1 mark each), using visible numbering ranges only.
+    - If unsure: recommended_out_of = null and confidence <= 0.5.
+    Return JSON only.
 
     Example:
     - Side 1 has Q1–75 → section out_of = 75
@@ -6706,6 +6717,14 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
     - These are considered correct variations.
     - Only count an item as a spelling error if it is incorrect in BOTH major conventions.
     - Do NOT deduct for proper nouns unless clearly incorrect.
+
+    IMAGE-BASED SPELLING RULE (hard):
+    - ONLY deduct for spelling/mechanics if you can clearly READ the exact wrong word on the student page.
+    - You MUST include:
+      1) the exact wrong → correct pair copied from the student work, AND
+      2) the location (e.g., “in Q3 sentence 2”).
+    - If you are not sure you read the word correctly (handwriting / blur / angle), do NOT deduct and do NOT list examples.
+    - Do not guess at intended words.
 
     If VOICE is "iep_supportive":
     - Do NOT deduct for spelling, punctuation, capitalization, or minor grammar unless errors severely prevent understanding.
@@ -7430,7 +7449,20 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
         type: "object",
         additionalProperties: false,
         properties: {
+          // Backward compatible: keep as "raw question count" (worksheet-style)
           total_out_of: { type: ["number", "null"] },
+
+          // NEW: classification so you can decide /10 vs question-count
+          kind: {
+            type: "string",
+            enum: ["written_response", "worksheet", "unknown"],
+          },
+
+          // NEW: what the server should actually use as fixedOutOf when confidence is high
+          // - written_response => 10
+          // - worksheet => total_out_of (question count)
+          recommended_out_of: { type: ["number", "null"] },
+
           per_page: {
             type: "array",
             items: {
@@ -7439,14 +7471,15 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
               properties: {
                 page_index: { type: "number" },
                 out_of: { type: ["number", "null"] },
-                evidence: { type: "string" }, // e.g. "saw Q1–75"
+                evidence: { type: "string" }, // e.g. "saw Q1–75" or "4 long paragraph prompts"
               },
               required: ["page_index", "out_of", "evidence"],
             },
           },
+
           confidence: { type: "number", minimum: 0, maximum: 1 },
         },
-        required: ["total_out_of", "per_page", "confidence"],
+        required: ["total_out_of", "per_page", "confidence", "kind", "recommended_out_of"],
       };
 
       let fixedOutOf = null;
@@ -7477,13 +7510,28 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
 
       function buildCountingInstructions() {
         return `
-      You are counting the total number of questions/marks on a worksheet/test from photos.
+      You are counting the total marks/questions on a submission from photos.
+
+      First classify the submission:
+      - kind = "written_response" if it has only a few longer answers (sentences/paragraphs), even if numbered (e.g., 1–4).
+      - kind = "worksheet" if it has many short items (math drill, matching, T/F, lots of one-line answers).
+      - kind = "unknown" if you can't tell.
 
       Rules:
-      - Count using visible numbering ranges ONLY (e.g., 1–75 => 75).
-      - If multiple pages, return per_page counts.
-      - If you cannot confidently determine a count, return total_out_of=null and confidence <= 0.5.
-      - Do NOT guess.
+      - If kind = "written_response":
+        - recommended_out_of = 10
+        - total_out_of = number of prompts you can see (optional; may be null if unclear)
+      - If kind = "worksheet":
+        - total_out_of = count using visible numbering ranges ONLY (e.g., 1–75 => 75). Do NOT guess.
+        - recommended_out_of = total_out_of
+      - If you cannot confidently determine a count or kind:
+        - kind = "unknown"
+        - total_out_of = null
+        - recommended_out_of = null
+        - confidence <= 0.5
+
+      If multiple pages, return per_page out_of counts (or null if unclear) and brief evidence for each.
+
       Return JSON only.
       `.trim();
       }
