@@ -6125,6 +6125,8 @@ app.post("/api/tasksets", async (req, res) => {
   }
 });
 
+// Grading start
+
 async function extractStudentWorkFromLink(url) {
   try {
     const u = new URL(url);
@@ -7206,16 +7208,7 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
             url: trimmed,
           });
         } else {
-          // Option A: just a friendly note link (no URL)
-          assignmentLinks.push({
-            kind: "note",
-            label: "No links (submitted as pasted text)",
-            url: null,
-          });
-
-          // Option B (recommended): include the pasted text as evidence (truncate)
-          submittedTextEvidence = trimmed.slice(0, 12000); // keep it reasonable
-          // If you do Option B, you can instead show:
+          submittedTextEvidence = trimmed.slice(0, 12000); 
           assignmentLinks.push({
             kind: "text",
             label: `Submitted text (${Math.min(trimmed.length, 12000)} chars shown)`,
@@ -7433,6 +7426,74 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
 
       `.trim();
 
+      let fixedOutOf = null;
+      let fixedOutOfConfidence = 0;
+
+      if (hasImages) {
+        const countingContent = [
+          { type: "input_text", text: buildCountingInstructions() },
+          ...images.map((img) => ({ type: "input_image", image_url: img })),
+        ];
+
+        const countResp = await openai.responses.create({
+          model: "gpt-5.2",
+          input: [{ role: "user", content: countingContent }],
+          text: { format: { type: "json_schema", name: "count_result", strict: true, schema: countSchema } },
+          max_output_tokens: 350,
+        });
+
+        const countResult = safeJsonParse(countResp.output_text);
+
+        if (countResult && Number.isFinite(countResult.confidence)) {
+          fixedOutOfConfidence = countResult.confidence;
+          if (Number.isFinite(countResult.total_out_of) && countResult.total_out_of > 0 && fixedOutOfConfidence >= 0.75) {
+            fixedOutOf = countResult.total_out_of;
+          }
+        }
+      }
+
+      function buildCountingInstructions() {
+        return `
+      You are counting the total number of questions/marks on a worksheet/test from photos.
+
+      Rules:
+      - Count using visible numbering ranges ONLY (e.g., 1–75 => 75).
+      - If multiple pages, return per_page counts.
+      - If you cannot confidently determine a count, return total_out_of=null and confidence <= 0.5.
+      - Do NOT guess.
+      Return JSON only.
+      `.trim();
+      }
+
+      const fixedDenomBlock = fixedOutOf
+      ? `\n\nFIXED DENOMINATOR (server computed):\n- fixedOutOf = ${fixedOutOf}\nHARD RULE: overall_out_of MUST equal ${fixedOutOf}. Do not change it.\n`
+      : "";
+      
+      const instructionsWithInferenceFinal = `${instructionsWithInference}${fixedDenomBlock}`;
+
+      const countSchema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          total_out_of: { type: ["number", "null"] },
+          per_page: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                page_index: { type: "number" },
+                out_of: { type: ["number", "null"] },
+                evidence: { type: "string" }, // e.g. "saw Q1–75"
+              },
+              required: ["page_index", "out_of", "evidence"],
+            },
+          },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["total_out_of", "per_page", "confidence"],
+      };
+
       let imageRefs = [];
 
       if (hasImages) {
@@ -7469,7 +7530,7 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
         }));
       }
 
-      const userContent = [{ type: "input_text", text: instructionsWithInference }];
+      const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal }];
       if (hasImages) {
         userContent.push(...images.map((img) => ({ type: "input_image", image_url: img })));
       } else {
@@ -7607,7 +7668,15 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
       scrubIncorrectItems(grade);
       recomputeOverallFromSections(grade);
 
-      const enforced = enforceDenominatorRules(grade);
+      let enforced = enforceDenominatorRules(grade);
+
+      if (fixedOutOf) {
+        enforced.overall_out_of = fixedOutOf;
+        enforced.sections = null; // optional but consistent with your intent
+        enforced.overall_score = clampNum(enforced.overall_score, 0, fixedOutOf) ?? 0;
+        enforced.score_out_of_10 = null;
+        enforced.final_score_out_of_10 = null;
+      }
 
       // ---- Fire-and-forget analytics logging (never blocks grading) ----
       const responseTimeMs = Date.now() - startTime;
@@ -7675,6 +7744,30 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
         } else {
           submittedText = trimmed; // pasted student text
         }
+      }
+
+      if (fixedOutOf) {
+        // Force the denom
+        grade.overall_out_of = fixedOutOf;
+
+        // If they returned sections, make them add up correctly
+        // (optional but recommended)
+        if (Array.isArray(grade.sections) && grade.sections.length > 0) {
+          // If sum differs, you can either:
+          // 1) recompute overall from sections (but then denom changes again), OR
+          // 2) leave sections but keep overall fixed, OR
+          // 3) force sections to null and keep overall fixed (cleanest if sections are unreliable)
+          //
+          // I recommend option (3) when the worksheet isn't truly sectioned:
+          grade.sections = null;
+        }
+
+        // Clamp score into the fixed denom
+        grade.overall_score = clampNum(grade.overall_score, 0, fixedOutOf) ?? 0;
+
+        // Ensure /10 fields are null
+        grade.score_out_of_10 = null;
+        grade.final_score_out_of_10 = null;
       }
 
       return res.json({
@@ -7772,6 +7865,8 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
       });
     }
   });
+
+  // Grading end 
 
 // Verify TeacherApp entry code (auth required)
 app.post("/api/teacher/verify-entry-code", authRequired, async (req, res) => {
