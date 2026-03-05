@@ -7426,6 +7426,29 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
 
       `.trim();
 
+      const countSchema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          total_out_of: { type: ["number", "null"] },
+          per_page: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                page_index: { type: "number" },
+                out_of: { type: ["number", "null"] },
+                evidence: { type: "string" }, // e.g. "saw Q1–75"
+              },
+              required: ["page_index", "out_of", "evidence"],
+            },
+          },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["total_out_of", "per_page", "confidence"],
+      };
+
       let fixedOutOf = null;
       let fixedOutOfConfidence = 0;
 
@@ -7470,29 +7493,6 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
       : "";
       
       const instructionsWithInferenceFinal = `${instructionsWithInference}${fixedDenomBlock}`;
-
-      const countSchema = {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          total_out_of: { type: ["number", "null"] },
-          per_page: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                page_index: { type: "number" },
-                out_of: { type: ["number", "null"] },
-                evidence: { type: "string" }, // e.g. "saw Q1–75"
-              },
-              required: ["page_index", "out_of", "evidence"],
-            },
-          },
-          confidence: { type: "number", minimum: 0, maximum: 1 },
-        },
-        required: ["total_out_of", "per_page", "confidence"],
-      };
 
       let imageRefs = [];
 
