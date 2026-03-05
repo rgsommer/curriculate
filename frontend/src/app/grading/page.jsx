@@ -65,6 +65,9 @@ const VOICE_OVERRIDE_VALUE_KEY = "curriculate_grading_voice_override_value_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
 const ANON_ID_KEY = "curriculate_anon_id_v1";
 
+const DEFAULT_MAX_W = 1800;
+const DEFAULT_QUALITY = 0.85;
+
 // Feedback prompt (localStorage)
 const FEEDBACK_USES_KEY = "curriculate_feedback_uses_v1";
 const FEEDBACK_DISMISSED_UNTIL_KEY = "curriculate_feedback_dismissed_until_v1";
