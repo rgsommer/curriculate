@@ -19,9 +19,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  *   4) { error: "...", raw: "" }  (rare)
  */
 
-const DEFAULT_MAX_W = 1800;
-const DEFAULT_QUALITY = 0.85;
-
 const DEFAULT_RUBRIC_INSTRUCTIONS = `
 You are a teacher grading student assignments from photos.
 Grade for: completeness, accuracy, clarity, and effort.
@@ -82,9 +79,16 @@ const FEEDBACK_COOLDOWN_DAYS = 7; // even if eligible, don't show more than once
 
 const FEEDBACK_SUBMITTED_AT_KEY = "curriculate_feedback_submitted_at_v1";
 
-function hasSubmittedForTrigger(trigger) {
-  const n = Number(readStrLS(FEEDBACK_SUBMITTED_AT_KEY, "0")) || 0;
-  return n >= trigger;
+function submittedKeyForTrigger(t) {
+  return `curriculate_feedback_submitted_for_${t}_v1`;
+}
+
+function hasSubmittedForTrigger(t) {
+  return readStrLS(submittedKeyForTrigger(t), "0") === "1";
+}
+
+function markSubmittedForTrigger(t) {
+  writeStrLS(submittedKeyForTrigger(t), "1");
 }
 
 function readIntLS(key, fallback = 0) {
@@ -175,6 +179,7 @@ async function compressDataUrlToJpeg(dataUrl, maxW = DEFAULT_MAX_W, quality = DE
   canvas.height = h;
 
   const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) throw new Error("Canvas 2D context unavailable.");
   ctx.drawImage(img, 0, 0, w, h);
 
   return canvas.toDataURL("image/jpeg", quality);
@@ -603,10 +608,10 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "") {
   return lines.join("\n").trim();
 }
 
-  const SESSION_KEY = "curriculate_grading_session_v1";
-  const RUBRIC_STICKY_TEXT_KEY = "curriculate_grading_rubric_sticky_text_v1";
-  const RUBRIC_STICKY_SRC_KEY = "curriculate_grading_rubric_sticky_src_v1"; // "captured" | "manual"
-  const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
+const SESSION_KEY = "curriculate_grading_session_v1";
+const RUBRIC_STICKY_TEXT_KEY = "curriculate_grading_rubric_sticky_text_v1";
+const RUBRIC_STICKY_SRC_KEY = "curriculate_grading_rubric_sticky_src_v1"; // "captured" | "manual"
+const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
 
   function loadSession() {
     try {
@@ -759,6 +764,10 @@ export default function GradingPage() {
     const [feedbackText, setFeedbackText] = useState("");
     const [feedbackSending, setFeedbackSending] = useState(false);
     const [feedbackSent, setFeedbackSent] = useState(false);
+    const lastSubmitKeyRef = useRef("");
+    const [submissionAttempt, setSubmissionAttempt] = useState(0);
+    const [retryNotice, setRetryNotice] = useState(""); // UX text
+    const [feedbackTrigger, setFeedbackTrigger] = useState(null);
    
     useEffect(() => {
       saveSession(sessionItems);
@@ -777,6 +786,7 @@ export default function GradingPage() {
     const [cameraError, setCameraError] = useState("");
     const [usingFrontCamera, setUsingFrontCamera] = useState(false);
     const lastPhotoTapRef = useRef(0);
+    const [lastUsedCompression, setLastUsedCompression] = useState(null);
 
     const [flash, setFlash] = useState(false);
     const [photos, setPhotos] = useState([]); // { id, dataUrl, createdAt }
@@ -799,6 +809,13 @@ export default function GradingPage() {
     // Input mode: photo vs paste
     const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste"
     
+    const [workInput, setWorkInput] = useState("");
+    useEffect(() => {
+          lastSubmitKeyRef.current = "";
+          setSubmissionAttempt(0);
+          setRetryNotice("");
+        }, [inputMode, workInput, photos.length]);
+
     // ✅ Sticky rubric captured from rubric photo (session-level)
     const [stickyRubricText, setStickyRubricText] = useState(() => {
       if (typeof window === "undefined") return "";
@@ -1006,6 +1023,17 @@ export default function GradingPage() {
       }
     }, [assessment?.student_name, studentNameEdited]);
 
+    async function compressPhotosForSubmission(photosToUse, profile) {
+      const { maxWidth, quality } = profile;
+
+      return Promise.all(
+        photosToUse.map((p) => {
+          const src = p.rawDataUrl || p.dataUrl; // ✅ prefer original
+          return compressDataUrlToJpeg(src, maxWidth, quality);
+        })
+      );
+    }
+
     async function capturePhoto() {
       if (!cameraReady || !videoRef.current || !canvasRef.current) return null;
       if (busyCapture) return null;
@@ -1045,17 +1073,18 @@ export default function GradingPage() {
 
         triggerFlash();
 
-        const compressed = await compressDataUrlToJpeg(
-          rawDataUrl,
-          DEFAULT_MAX_W,
-          DEFAULT_QUALITY
-        );
+        const compressed = await compressDataUrlToJpeg(rawDataUrl, DEFAULT_MAX_W, DEFAULT_QUALITY);
 
         const id =
-          (globalThis.crypto && crypto.randomUUID && crypto.randomUUID()) ||
+          (globalThis.crypto?.randomUUID && crypto.randomUUID()) ||
           String(Date.now()) + "_" + Math.random().toString(16).slice(2);
 
-        const photoObj = { id, dataUrl: compressed, createdAt: Date.now() };
+        const photoObj = {
+          id,
+          rawDataUrl,
+          dataUrl: compressed,
+          createdAt: Date.now(),
+        };
 
         setPhotos((prev) => [...prev, photoObj]);
 
@@ -1096,7 +1125,7 @@ export default function GradingPage() {
             },
           }),
         });
-
+        
         if (!res.ok) {
           const t = await res.text().catch(() => "");
           throw new Error(t || `HTTP ${res.status}`);
@@ -1105,6 +1134,8 @@ export default function GradingPage() {
         // success UX:
         setShowFeedbackPrompt(false);
         setFeedbackText("");
+        if (feedbackTrigger) markSubmittedForTrigger(feedbackTrigger);
+
         writeStrLS(FEEDBACK_SUBMITTED_KEY, "1");
         writeIntLS(FEEDBACK_SUBMITTED_AT_KEY, readIntLS(FEEDBACK_USES_KEY, 0));
         setFeedbackSent(true);
@@ -1122,7 +1153,8 @@ export default function GradingPage() {
       setFeedbackText("");
     }
 
-    function openFeedbackPrompt() {
+    function openFeedbackPrompt(trigger) {
+      setFeedbackTrigger(trigger || null);
       setFeedbackText("");
       setFeedbackName("");
       setFeedbackCity("");
@@ -1132,35 +1164,37 @@ export default function GradingPage() {
     }
 
     function shouldShowFeedbackPrompt(nextUses) {
-      if (nextUses === FEEDBACK_TRIGGER_1 && hasSubmittedForTrigger(FEEDBACK_TRIGGER_1)) return false;
-      
-      if (FEEDBACK_TRIGGER_2 && nextUses === FEEDBACK_TRIGGER_2 && hasSubmittedForTrigger(FEEDBACK_TRIGGER_2)) return false;
-
       if (typeof window === "undefined") return false;
 
-      // if already submitted once, never show again (simple mode)
-      const submitted = readStrLS(FEEDBACK_SUBMITTED_KEY, "0") === "1";
-      if (submitted) return false;
+      const n = Number(nextUses) || 0;
+      if (n <= 0) return false;
 
+      // Triggers we care about (e.g., 10 and 30)
+      const triggers = [FEEDBACK_TRIGGER_1, FEEDBACK_TRIGGER_2]
+        .filter((t) => Number.isFinite(Number(t)) && Number(t) > 0)
+        .map((t) => Number(t))
+        .sort((a, b) => a - b);
+
+      if (!triggers.length) return false;
+
+      // Respect snooze ("Not now")
       const dismissedUntil = Number(readStrLS(FEEDBACK_DISMISSED_UNTIL_KEY, "0")) || 0;
       if (dismissedUntil && Date.now() < dismissedUntil) return false;
 
+      // Respect cooldown (don’t show more than once per week)
       const lastShownAt = Number(readStrLS(FEEDBACK_LAST_SHOWN_AT_KEY, "0")) || 0;
-      const cooldownMs = FEEDBACK_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+      const cooldownDays = Number(FEEDBACK_COOLDOWN_DAYS) || 7;
+      const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
       if (lastShownAt && Date.now() - lastShownAt < cooldownMs) return false;
 
-      // triggers: 10 and optionally 30
-      const hit1 =
-        nextUses >= FEEDBACK_TRIGGER_1 &&
-        !hasSubmittedForTrigger(FEEDBACK_TRIGGER_1);
+      // Find the earliest trigger that has been reached but not yet "submitted for"
+      const pendingTrigger = triggers.find((t) => n >= t && !hasSubmittedForTrigger(t));
+      if (!pendingTrigger) return false;
 
-      const hit2 =
-        FEEDBACK_TRIGGER_2
-          ? nextUses >= FEEDBACK_TRIGGER_2 &&
-            !hasSubmittedForTrigger(FEEDBACK_TRIGGER_2)
-          : false;
-          
-      return hit1 || hit2;
+      // Persistent mode:
+      // Once they’ve crossed the pending trigger, keep prompting occasionally
+      // (cooldown + snooze already prevent annoyance).
+      return true;
     }
 
     function getAssignmentImagesFromAssessment(a) {
@@ -1228,13 +1262,19 @@ export default function GradingPage() {
       setCopyEnabled(false);
     }
 
+    function getCompressionProfile(attempt) {
+      if (attempt <= 1) return { maxWidth: 1800, quality: 0.85, label: "Standard" };
+      if (attempt === 2) return { maxWidth: 2200, quality: 0.92, label: "Higher" };
+      return { maxWidth: 2600, quality: 0.97, label: "Max" };
+    }
+
     async function submitForGrading(photosOverride = null) {
       setSubmitError("");
       setServerText("");
       setCopied(false);
       setCopyEnabled(false); // lock during submission
-      setRefCode(""); // ✅ new submission => new ref (generated when assessment arrives)
-
+      setRefCode(""); // new submission => new ref
+      
       if (!gradingUrl) {
         setSubmitError("Missing NEXT_PUBLIC_BACKEND_URL. Set it in Vercel and redeploy.");
         return;
@@ -1242,43 +1282,70 @@ export default function GradingPage() {
 
       const photosToUse = Array.isArray(photosOverride) ? photosOverride : photos;
 
-      const isPhoto = inputMode === "photo";
-      const isPaste = inputMode === "paste";
-
-      if (isPhoto) {
+      // Validate input first
+      if (inputMode === "photo") {
         if (!photosToUse.length) {
           setSubmitError("Capture at least one photo before submitting.");
           return;
         }
       } else {
         const w = (workInput || "").trim();
-        const looksLikeUrl = /^https?:\/\/\S+$/i.test(w);
         if (!w) {
           setSubmitError("Paste text or add a public link before submitting.");
           return;
         }
       }
 
-      setSubmitting(true);
-      try {
-        const manual = (rubricOverride || "").trim();
-        const sticky = (stickyRubricText || "").trim();
+      // Compute rubric lengths early (needed for submitKey)
+      const manualRubric = (rubricOverride || "").trim();
+      const stickyRubric = (stickyRubricText || "").trim();
+      const trimmedWork = (workInput || "").trim();
 
-        // Priority: manual override > sticky captured > null (default rubric)
-        const effectiveRubric = manual.length ? manual : (sticky.length ? sticky : "");
+      // ✅ 1) Build submitKey BEFORE using it
+      const submitKey =
+        inputMode === "photo"
+          ? `photo:${photosToUse.map((p) => p.id).join(",")}|gb:${gradeBand}|m:${manualRubric.length}|s:${stickyRubric.length}|v:${voiceOverrideOn ? voiceOverride : voice}`
+          : `paste:${trimmedWork.slice(0, 200)}|len:${trimmedWork.length}|gb:${gradeBand}|m:${manualRubric.length}|s:${stickyRubric.length}|v:${voiceOverrideOn ? voiceOverride : voice}`;
+
+      // ✅ 2) Compute the attempt + compression profile LOCALLY (don’t rely on state timing)
+      const isRetry = submitKey === lastSubmitKeyRef.current;
+      const nextAttempt = isRetry ? Math.min(3, (submissionAttempt || 1) + 1) : 1;
+      const profileToUse = getCompressionProfile(nextAttempt);
+      setLastUsedCompression(profileToUse);
+
+      // Update UX state
+      if (isRetry) {
+        setSubmissionAttempt(nextAttempt);
+        setRetryNotice(
+          `Retry detected — using ${profileToUse.label} image quality for better accuracy.`
+        );
+      } else {
+        lastSubmitKeyRef.current = submitKey;
+        setSubmissionAttempt(1);
+        setRetryNotice("");
+      }
+
+      setSubmitting(true);
+
+      try {
+        // Priority: manual override > sticky captured > default
+        const effectiveRubric = manualRubric.length
+          ? manualRubric
+          : (stickyRubric.length ? stickyRubric : "");
+
         let images = null;
 
         if (inputMode === "photo") {
-          images = photosToUse.map(p => p.dataUrl);
+          // ✅ Use the locally computed profile immediately
+          images = await compressPhotosForSubmission(photosToUse, profileToUse);
         }
 
-        const trimmedWork = (workInput || "").trim();
         const anonId = getAnonId();
 
         const payload = {
           anonId,
           images: inputMode === "photo" ? images : undefined,
-          workInput: inputMode === "paste" ? (workInput || "").trim() : undefined,
+          workInput: inputMode === "paste" ? trimmedWork : undefined,
           rubricOverride: effectiveRubric.length ? effectiveRubric : null,
           gradeBand,
 
@@ -1289,14 +1356,12 @@ export default function GradingPage() {
             capturedAt: Date.now(),
             userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
 
-            // Student (optional)
             studentName: (detectedStudentName || "").trim() || null,
 
-            // NEW: feedback voice controls
             feedbackVoiceMode: voiceOverrideOn ? "override" : "default",
             feedbackVoice: voiceOverrideOn ? voiceOverride : voice,
-            rubricMode: manual.length ? "manual" : (sticky.length ? "sticky" : "default"),
-            wantsRubricCapture: !manual.length && !sticky.length && inputMode === "photo",
+            rubricMode: manualRubric.length ? "manual" : (stickyRubric.length ? "sticky" : "default"),
+            wantsRubricCapture: !manualRubric.length && !stickyRubric.length && inputMode === "photo",
             inputMode,
           },
         };
@@ -1304,8 +1369,11 @@ export default function GradingPage() {
         console.log("SUBMIT DEBUG", {
           inputMode,
           photosToUseLen: photosToUse.length,
-          workLen: (workInput || "").trim().length,
-          payloadPreview: payload,
+          workLen: trimmedWork.length,
+          compression: profileToUse,
+          submitKey,
+          isRetry,
+          nextAttempt,
         });
 
         const res = await fetch(gradingUrl, {
@@ -1320,22 +1388,14 @@ export default function GradingPage() {
 
         const parsed = safeJsonParse(text);
         const norm = parsed ? normalizeFromAny(parsed) : normalizeFromAny(text);
-        
-        // ✅ If no manual override is active, allow backend-detected rubric to become sticky
+
+        // Sticky rubric capture (only if no manual/sticky already)
         try {
-          const found =
-            extractDetectedRubric(parsed) ||
-            extractDetectedRubric(norm?.assessment);
+          const found = extractDetectedRubric(parsed) || extractDetectedRubric(norm?.assessment);
 
-          const manual = (rubricOverride || "").trim();
-          const sticky = (stickyRubricText || "").trim();
-
-          if (!manual.length && !sticky.length) {
-
-            if (found?.text && (found.detected !== false)) {
+          if (!manualRubric.length && !stickyRubric.length) {
+            if (found?.text && found.detected !== false) {
               const conf = Number(found.confidence || 0);
-
-              // Auto-stick if confidence high, otherwise still stick (you can later add a confirm UI)
               const THRESH = 0.75;
               if (conf >= THRESH || conf === 0) {
                 setStickyRubricText(found.text);
@@ -1356,16 +1416,23 @@ export default function GradingPage() {
             const nextUses = uses + 1;
             writeIntLS(FEEDBACK_USES_KEY, nextUses);
 
-            if (shouldShowFeedbackPrompt(nextUses)) {
+            if (!showFeedbackPrompt && shouldShowFeedbackPrompt(nextUses)) {
+              const triggers = [FEEDBACK_TRIGGER_1, FEEDBACK_TRIGGER_2]
+                .map((t) => Number(t))
+                .filter((t) => Number.isFinite(t) && t > 0)
+                .sort((a, b) => a - b);
+
+              const pendingTrigger = triggers.find((t) => nextUses >= t && !hasSubmittedForTrigger(t));
+
               writeStrLS(FEEDBACK_LAST_SHOWN_AT_KEY, String(Date.now()));
-              openFeedbackPrompt();
+              openFeedbackPrompt(pendingTrigger);
             }
           } catch {}
         } else {
           setCopyEnabled(false);
         }
 
-        // Optional: treat override as one-time
+        // one-time override
         if (voiceOverrideOn) setVoiceOverrideOn(false);
 
         if (!res.ok) {
@@ -1373,16 +1440,10 @@ export default function GradingPage() {
             setSubmitError("");
             return;
           }
-
-          const msg =
-            parsed?.details ||
-            parsed?.error ||
-            `HTTP ${res.status} from grading endpoint`;
+          const msg = parsed?.details || parsed?.error || `HTTP ${res.status} from grading endpoint`;
           throw new Error(msg);
         }
-
-      } 
-        catch (err) {
+      } catch (err) {
         setCopyEnabled(false);
         console.error("Submit error:", err);
         setSubmitError(err?.message || "Network error submitting for grading.");
@@ -1819,8 +1880,6 @@ export default function GradingPage() {
       !(stickyRubricText || "").trim().length ||
       stickyRubricSource !== "captured";
 
-    const [workInput, setWorkInput] = useState("");
-
     return (
       <div style={styles.page}>
         <div style={styles.header}>
@@ -2227,6 +2286,44 @@ export default function GradingPage() {
               </button> 
 
             </div>
+
+            {retryNotice ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  background: "rgba(37,99,235,0.08)",
+                  border: "1px solid rgba(37,99,235,0.18)",
+                  color: "rgba(15,23,42,0.92)",
+                  fontSize: 13,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <b>Retry detected.</b> Using higher image quality to improve accuracy.
+                  <span style={{ opacity: 0.75 }}> {lastUsedCompression ? `(${lastUsedCompression.maxWidth}px, q=${lastUsedCompression.quality})` : null}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRetryNotice("")}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    fontWeight: 900,
+                    opacity: 0.7,
+                  }}
+                  aria-label="Dismiss retry notice"
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : null}
 
             {submitError && (
               <div style={styles.errorBox}>
