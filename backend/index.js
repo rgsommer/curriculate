@@ -6474,24 +6474,47 @@ function buildRubricInstructions({
     - Never list TEACHER KEY text as “student evidence.” Evidence must come from the student page, while correctness comes from the key.
     - If a Teacher Key is present, do NOT create a separate "Teacher Key" section; it is not a student section and must not appear in sections[].
 
-    STEP 2 — DETERMINE THE GRADING SCALE (critical):
-    Use /10 ONLY when no explicit denominator is visible.
-    “Explicit denominator” includes any visible point totals like “/20”, “/40”, “out of 25”, section totals like “Matching /10”, or rubric category points.
-    - If NO explicit denominator is visible: set overall_out_of = 10 and use /10 fields.
-    - If an explicit denominator IS visible (test sections or rubric categories): the final grade MUST use that denominator instead of /10.
-    
-    DENOMINATOR SOURCE RULE (critical):
-    An "explicit denominator" may come from:
-    - the student pages (visible totals), OR
-    - a provided rubricOverride text, OR
-    - extracted rubricText (even if the rubric is not visible in the current student images).
+    STEP 2 — DENOMINATOR POLICY (hard)
+    The server may provide a counting analysis called countResult.
+    countResult may contain:
+    - kind: "itemized" | "written_response" | "unknown"
+    - total_out_of: number | null
+    - confidence: 0–1
 
-    If rubricOverride or rubricText specifies any total or section out_of values, you MUST use those denominators even if the current student images do not show them.
-    
-    DENOMINATOR PRIORITY (must follow):
-    1) If a rubricOverride or rubricText is being used AND it contains denominators, those denominators control overall_out_of/sections out_of.
-    2) Else if the student pages show denominators (total or section out_of), those control.
-    3) Else overall_out_of = 10.
+    Follow this priority order exactly.
+
+    PRIORITY 1 — EXPLICIT DENOMINATOR (highest priority)
+    If an explicit denominator is visible anywhere in the student pages or rubric (e.g., "/20", "out of 25", section totals, rubric point values), you MUST use that denominator.
+
+    PRIORITY 2 — COUNTING RESULT (if available)
+    If countResult.kind = "itemized" AND countResult.total_out_of is a number AND countResult.confidence ≥ 0.6:
+
+    - overall_out_of MUST equal countResult.total_out_of.
+    - Treat each scorable item as worth 1 point unless the worksheet explicitly assigns different values.
+    - Subparts (a/b/c), T/F lines, blanks, and matching items each count as separate items.
+
+    Important:
+    - Do NOT recompute the count yourself.
+    - Use the countResult provided.
+
+    PRIORITY 3 — WRITTEN RESPONSE
+    If countResult.kind = "written_response":
+
+    - overall_out_of MUST be 10.
+    - Grade holistically using the /10 scale.
+
+    PRIORITY 4 — UNCERTAIN COUNT
+    If countResult.kind = "unknown"
+    OR countResult.total_out_of is null
+    OR countResult.confidence < 0.6:
+
+    - overall_out_of MUST be 10.
+    - Use holistic /10 scoring.
+
+    IMPORTANT GUARDRAILS
+    - Topic headings (e.g., “Volcanoes”, “Earthquakes”) are NOT denominators.
+    - Only discrete scorable items determine counts.
+    - If a reliable count is not available, always default to /10.
 
     STEP 3 — GRADE CONTENT (primary):
     Grade for: completeness, accuracy/understanding, clarity, effort, thoroughness appropriate to the grade level.
@@ -6636,30 +6659,6 @@ function buildRubricInstructions({
 
     Overall denominator rule:
     - overall_out_of MUST equal the sum of implied section out_of values.
-
-    COUNTING METHOD:
-    - Determine question count by the visible numbering range (e.g., Q1–75 => 75 questions), not by guessing.
-    You are counting marks for grading scale.
-
-    First classify the submission type:
-    - "written_response" = a few longer answers (sentences/paragraphs), even if numbered (e.g., 1–4).
-    - "worksheet" = many short items, usually one per line (math drill, matching, T/F, etc.).
-
-    Rules:
-    - If type = written_response: recommended_out_of = 10 (even if only 4 questions).
-    - If type = worksheet: recommended_out_of = total number of questions (1 mark each), using visible numbering ranges only.
-    - If unsure: recommended_out_of = null and confidence <= 0.5.
-    Return JSON only.
-
-    Example:
-    - Side 1 has Q1–75 → section out_of = 75
-    - Side 2 has Q76–95 (20 questions) → section out_of = 20
-    - overall_out_of = 95
-    
-    SCORING RULE:
-    - Each question is worth 1 point unless the worksheet explicitly assigns different point values.
-    - Section score = (# correct on that side/page)
-    - overall_score = sum of section scores
 
     SECTION NAMING:
     - If no printed names exist, name sections exactly:
@@ -7510,30 +7509,46 @@ function buildRubricInstructions({
 
       function buildCountingInstructions() {
         return `
-      You are counting the total marks/questions on a submission from photos.
+      You are analyzing photos to HELP the grader determine a denominator when none is printed.
+      Your job is NOT to choose the final denominator; your job is to return:
+      1) kind classification,
+      2) scorable-item counts (if itemized),
+      3) confidence and brief evidence.
 
-      First classify the submission:
-      - kind = "written_response" if it has only a few longer answers (sentences/paragraphs), even if numbered (e.g., 1–4).
-      - kind = "worksheet" if it has many short items (math drill, matching, T/F, lots of one-line answers).
-      - kind = "unknown" if you can't tell.
+      STEP 1 — CLASSIFY KIND (required):
+      Choose ONE:
+      - kind = "itemized" if the work has many short scorable items (T/F lines, blanks, matching, one-line answers), often with a/b/c subparts.
+      - kind = "written_response" if the work is a few longer answers (sentences/paragraphs), even if numbered (e.g., 1–4).
+      - kind = "unknown" if you cannot tell.
 
+      STEP 2 — COUNT SCORABLE ITEMS (ONLY if kind="itemized"):
+      Count scorable items, not headings.
       Rules:
-      - If kind = "written_response":
-        - recommended_out_of = 10
-        - total_out_of = number of prompts you can see (optional; may be null if unclear)
-      - If kind = "worksheet":
-        - total_out_of = count using visible numbering ranges ONLY (e.g., 1–75 => 75). Do NOT guess.
-        - recommended_out_of = total_out_of
-      - If you cannot confidently determine a count or kind:
-        - kind = "unknown"
-        - total_out_of = null
-        - recommended_out_of = null
-        - confidence <= 0.5
+      - Do NOT guess.
+      - Count each numbered question as 1 item.
+      - Count each subpart (a/b/c) as 1 item each unless the sheet assigns different point values.
+      - Count each distinct blank as 1 item.
+      - Count each T/F line as 1 item.
+      - Matching: count the prompts being matched as items.
+      - If a page is cut off or unclear, set that page out_of = null.
 
-      If multiple pages, return per_page out_of counts (or null if unclear) and brief evidence for each.
+      MULTI-PAGE:
+      Return per_page entries with:
+      - page_index (0-based)
+      - out_of (number or null)
+      - evidence (very short, e.g., "saw Q1–20 plus Q21a–c" or "counted 12 T/F lines")
+
+      TOTALS:
+      - If kind="itemized": total_out_of = sum of per_page out_of where visible; if any major page is unclear, you may set total_out_of=null.
+      - If kind!="itemized": total_out_of must be null.
+
+      CONFIDENCE (required):
+      - 0.85–1.0 only if the count is very clear across all needed pages.
+      - 0.6–0.8 if mostly clear but minor uncertainty.
+      - <=0.5 if any meaningful guessing would be required.
 
       Return JSON only.
-      `.trim();
+        `.trim();
       }
 
       const fixedDenomBlock = fixedOutOf
