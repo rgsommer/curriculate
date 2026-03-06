@@ -6493,6 +6493,10 @@ function buildRubricInstructions({
     - Treat each scorable item as worth 1 point unless the worksheet explicitly assigns different values.
     - Subparts (a/b/c), T/F lines, blanks, and matching items each count as separate items.
 
+    If rubricDetected=true and no numeric totals exist, then:
+    - overall_out_of must follow the assignment policy (your /10 written_response vs itemized counting), but
+    - grading must explicitly align strengths/improvements/teacher_comment to the rubric criteria.
+
     Important:
     - Do NOT recompute the count yourself.
     - Use the countResult provided.
@@ -6533,11 +6537,18 @@ function buildRubricInstructions({
     - Do not “make up” extra requirements beyond what the directions ask.
 
     Score calibration (content-only base score out of 10) — ONLY used when overall_out_of is 10:
-    - 9–10: excellent understanding, accurate, thoughtful connections, strong organization for the format (minor mechanics do not prevent a 9–10)
-    - 8–8.5: very good with minor clarity/mechanics gaps
-    - 7–7.5: adequate with noticeable gaps or weak explanations
-    - <7: incomplete, unclear, or inaccurate
+    9–10: excellent understanding, accurate, thoughtful connections, strong organization for the format (minor mechanics do not prevent a 9–10)
+    A 9.5–10 is allowed even if there are minor issues, as long as understanding is clearly strong and the work meets/exceeds expectations.
+    8–8.5: very good with minor clarity/mechanics gaps
+    7–7.5: adequate with noticeable gaps or weak explanations
+    <7: incomplete, unclear, or inaccurate
     If the work shows strong understanding + accurate details + organized response for the format, the base score should not be below 8.
+
+    For written_response graded out of 10:
+    10: exceeds expectations; thorough + accurate; minor wording issues ok
+    9–9.5: very strong; one small inaccuracy or minor clarity issue
+    8–8.5: solid; some gaps, missing depth, or a couple notable inaccuracies
+    ≤7.5: thin, unclear, or several inaccuracies
 
     COMPONENT-BASED QUESTION TOTAL (critical):
     If a single question specifies component marks (e.g., "1 mark for introduction, 4 marks for support, 1 mark for closing"),
@@ -6619,6 +6630,7 @@ function buildRubricInstructions({
     - If the rubric conflicts with defaults, rubric wins.
     - For rubric-based sections, do NOT include incorrect_items; instead, cite specific evidence in teacher_comment for each section.
     - Never interpret unchecked boxes on a rubric sheet as missing work.
+    - If rubricDetected=true, you MUST align feedback to rubricText criteria, even if rubricText has no numbers.
     
     RUBRIC DENOMINATOR REQUIREMENT:
     If you are using rubricOverride or rubricText, you MUST identify the total possible points.
@@ -6676,7 +6688,13 @@ function buildRubricInstructions({
     - Put uncertainty/explanations in teacher_comment, not inside correct_answer.
     
     Important fairness rule:
-    Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
+    - Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
+
+    THOROUGHNESS FAIRNESS RULE (hard):
+    - If a student provides more depth than required (extra relevant details, explanations, examples) and is mostly accurate, that must raise the score, not lower it.
+    - Minor inaccuracies inside an otherwise strong, thorough answer should reduce at most a small amount.
+    - A short answer that is “technically correct” but thin should not tie a thorough, insightful answer.
+    - If the response is strong and thorough: cap small factual slips at -0.5 total, unless the errors change the main conclusion.
 
     STEP 4 — FORMATTING DEDUCTION (quiet, max –1 total):
     Formatting deduction rule:
