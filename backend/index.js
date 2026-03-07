@@ -7554,7 +7554,7 @@ function buildRubricInstructions({
         ];
 
         const countResp = await openai.responses.create({
-          model: "gpt-5.2",
+          model: "gpt-5.4",
           input: [{ role: "user", content: countingContent }],
           text: { format: { type: "json_schema", name: "count_result", strict: true, schema: countSchema } },
           max_output_tokens: 350,
@@ -7704,7 +7704,7 @@ function buildRubricInstructions({
       }
 
       const response = await openai.responses.create({
-        model: "gpt-5.2",
+        model: "gpt-5.4",
         input: [{ role: "user", content: userContent }],
         text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
         max_output_tokens: 2500
@@ -7976,7 +7976,7 @@ function buildRubricInstructions({
         `.trim();
 
       const response = await openai.responses.create({
-        model: "gpt-5.2",
+        model: "gpt-5.4",
         input: [
           {
             role: "user",
