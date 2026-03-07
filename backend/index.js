@@ -1772,13 +1772,6 @@ function advanceTaskNow({ io, session, roomCode, reason = "manual", baseTaskInde
 // - The client can still run locally if these events are never used, but when used, the
 //   server becomes the source of truth for who buzzed first, scoring, and advancing cards.
 
-function _fcNormalizeAnswer(s) {
-  return String(s ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
 function _fcCardMatchesAnswer(card, answerText) {
   const a = _fcNormalizeAnswer(answerText);
   if (!a) return false;
@@ -6247,6 +6240,65 @@ function parseDataUrlImage(dataUrl) {
   return { contentType, buf };
 }
 
+function parseRubricOrOverrides(input) {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return {
+      fixedOutOf: null,
+      pageOutOfMap: null,
+      rubricOverrideText: "",
+    };
+  }
+
+  const s = raw.toLowerCase();
+
+  // 1) page/side overrides
+  const pageMatches = [...s.matchAll(/\b(?:page|p|side)\s*(\d+)\s*[:\-]?\s*\/?\s*(\d+)\b/gi)];
+  if (pageMatches.length) {
+    const pageOutOfMap = {};
+    for (const m of pageMatches) {
+      const pageNum = Number(m[1]);
+      const outOf = Number(m[2]);
+      if (Number.isFinite(pageNum) && pageNum > 0 && Number.isFinite(outOf) && outOf > 0) {
+        pageOutOfMap[pageNum] = outOf;
+      }
+    }
+
+    const keys = Object.keys(pageOutOfMap);
+    if (keys.length) {
+      return {
+        fixedOutOf: keys.reduce((sum, k) => sum + pageOutOfMap[k], 0),
+        pageOutOfMap,
+        rubricOverrideText: "",
+      };
+    }
+  }
+
+  // 2) single total override
+  const single =
+    raw.match(/^\/?\s*(\d{1,4})\s*$/) ||
+    raw.match(/^out of\s+(\d{1,4})$/i) ||
+    raw.match(/^mark(?:ed)?\s+out\s+of\s+(\d{1,4})$/i);
+
+  if (single) {
+    const n = Number(single[1]);
+    if (Number.isFinite(n) && n > 0) {
+      return {
+        fixedOutOf: n,
+        pageOutOfMap: null,
+        rubricOverrideText: "",
+      };
+    }
+  }
+
+  // 3) otherwise treat as rubric text
+  return {
+    fixedOutOf: null,
+    pageOutOfMap: null,
+    rubricOverrideText: raw,
+  };
+}
+
 function gradingExpiredHtml({ brand = "Curriculate" } = {}) {
   return `<!doctype html>
     <html>
@@ -6429,6 +6481,13 @@ function buildRubricInstructions({
 
     ${voiceStyleSpec(feedbackVoice)}
 
+    ${rubricOverride ? `
+      TEACHER-PROVIDED RUBRIC OVERRIDE:
+      ${rubricOverride}
+
+      If this rubric override includes categories, criteria, or denominators, it takes priority over default grading assumptions.
+      ` : ""}
+
     VOICE APPLICATION (required):
     - Apply the selected VOICE to: strengths, improvements, teacher_comment, and every sections[].teacher_comment.
     - Keep structure the same; only change phrasing and tone.
@@ -6475,50 +6534,49 @@ function buildRubricInstructions({
     - If a Teacher Key is present, do NOT create a separate "Teacher Key" section; it is not a student section and must not appear in sections[].
 
     STEP 2 — DENOMINATOR POLICY (hard)
-    The server may provide a counting analysis called countResult.
-    countResult may contain:
-    - kind: "itemized" | "written_response" | "unknown"
-    - total_out_of: number | null
-    - confidence: 0–1
-
-    Follow this priority order exactly.
+    Use this priority order exactly.
 
     PRIORITY 1 — EXPLICIT DENOMINATOR (highest priority)
-    If an explicit denominator is visible anywhere in the student pages or rubric (e.g., "/20", "out of 25", section totals, rubric point values), you MUST use that denominator.
+    If an explicit denominator is visible anywhere in the student pages, teacher key, rubricOverride, rubricText, or teacher-provided override block, you MUST use it.
+    Examples:
+    - /20
+    - out of 25
+    - section boxes like Matching /10
+    - rubric category totals
+    - FIXED DENOMINATOR OVERRIDE supplied by the server
 
-    PRIORITY 2 — COUNTING RESULT (if available)
-    If countResult.kind = "itemized" AND countResult.total_out_of is a number AND countResult.confidence ≥ 0.6:
+    PRIORITY 2 — COUNTING RESULT
+    The server may provide a counting result with:
+    - countResult.kind = "itemized" | "written_response" | "unknown"
+    - countResult.recommended_out_of = number | null
+    - countResult.confidence = 0–1
 
-    - overall_out_of MUST equal countResult.total_out_of.
-    - Treat each scorable item as worth 1 point unless the worksheet explicitly assigns different values.
-    - Subparts (a/b/c), T/F lines, blanks, and matching items each count as separate items.
+    If ALL of the following are true:
+    - there is NO explicit denominator,
+    - countResult.kind = "itemized",
+    - countResult.recommended_out_of is a number,
+    - countResult.confidence >= 0.75,
 
-    If rubricDetected=true and no numeric totals exist, then:
-    - overall_out_of must follow the assignment policy (your /10 written_response vs itemized counting), but
-    - grading must explicitly align strengths/improvements/teacher_comment to the rubric criteria.
+    then:
+    - overall_out_of MUST equal countResult.recommended_out_of.
+    - Treat each scorable item as worth 1 point unless the assignment explicitly assigns different values.
+    - Count subparts (a/b/c), T/F lines, blanks, and matching prompts as separate scorable items.
 
-    Important:
-    - Do NOT recompute the count yourself.
-    - Use the countResult provided.
+    PRIORITY 3 — WRITTEN RESPONSE OR UNCERTAIN COUNT
+    If there is NO explicit denominator, and either:
+    - countResult.kind = "written_response", or
+    - countResult.kind = "unknown", or
+    - countResult.recommended_out_of is null, or
+    - countResult.confidence < 0.75,
 
-    PRIORITY 3 — WRITTEN RESPONSE
-    If countResult.kind = "written_response":
-
+    then:
     - overall_out_of MUST be 10.
-    - Grade holistically using the /10 scale.
-
-    PRIORITY 4 — UNCERTAIN COUNT
-    If countResult.kind = "unknown"
-    OR countResult.total_out_of is null
-    OR countResult.confidence < 0.6:
-
-    - overall_out_of MUST be 10.
-    - Use holistic /10 scoring.
+    - Grade holistically using /10.
 
     IMPORTANT GUARDRAILS
-    - Topic headings (e.g., “Volcanoes”, “Earthquakes”) are NOT denominators.
-    - Only discrete scorable items determine counts.
-    - If a reliable count is not available, always default to /10.
+    - Topic headings are never denominators.
+    - Do not invent denominators.
+    - If a reliable item count is not available, default to /10.
 
     STEP 3 — GRADE CONTENT (primary):
     Grade for: completeness, accuracy/understanding, clarity, effort, thoroughness appropriate to the grade level.
@@ -6936,21 +6994,6 @@ function buildRubricInstructions({
   
   // ===== grading helpers =====
 
-  function normalizeAnswer(v) {
-    if (v == null) return "";
-    const s = String(v).trim().toLowerCase();
-
-    const noCommas = s.replace(/,/g, "");
-    const compact = noCommas.replace(/\s+/g, " ");
-
-    if (/^[+-]?\d+(\.\d+)?$/.test(compact)) {
-      const n = Number(compact);
-      return Object.is(n, -0) ? "0" : String(n);
-    }
-
-    return compact;
-  }
-
   function canonicalizeAnswer(raw, { isCorrectAnswer = false } = {}) {
     if (raw == null) return "";
     let s = String(raw).trim().toLowerCase();
@@ -7088,26 +7131,6 @@ function buildRubricInstructions({
       return null;
     }
 
-    function parseEscapedJsonString(raw) {
-      if (typeof raw !== "string") return null;
-
-      // raw is like: "{\"a\":1,\"b\":\"x\"}"
-      // Step 1: try to parse it as JSON string -> returns inner string
-      try {
-        const inner = JSON.parse(`"${raw.replaceAll('"', '\\"')}"`);
-        // That trick is unreliable across all cases; better do manual unescape:
-      } catch {}
-
-      const unescaped = raw
-        .replace(/\\\\/g, "\\")
-        .replace(/\\"/g, '"')
-        .replace(/\\n/g, "\n")
-        .replace(/\\r/g, "\r")
-        .replace(/\\t/g, "\t");
-
-      return bestEffortParseJsonObject(unescaped);
-    }
-
     const extractObjectBlock = (str) => {
       const start = str.indexOf("{");
       const end = str.lastIndexOf("}");
@@ -7198,7 +7221,7 @@ function buildRubricInstructions({
         gradeLevel: String, // store band like "6-8" (or model inference)
 
         imageCount: Number,
-        rubricOverrideUsed: Boolean,
+        overrideInputUsed: Boolean,
         responseTimeMs: Number,
 
         refCode: String,
@@ -7215,19 +7238,37 @@ function buildRubricInstructions({
     
     try {
       const startTime = Date.now();
+
       const { images, workInput, rubricOverride, gradeBand } = req.body || {};
+
+      // ------------------------------------------------
+      // Parse teacher-provided rubric / denominator overrides
+      // ------------------------------------------------
+      const parsedOverride = parseRubricOrOverrides(rubricOverride);
+
+      const overrideFixedOutOf = parsedOverride.fixedOutOf;   // teacher override like "/35"
+      const pageOutOfMap = parsedOverride.pageOutOfMap;       // optional page overrides
+      const effectiveRubricOverride = parsedOverride.rubricOverrideText;
+
+      // ------------------------------------------------
+      // Request metadata
+      // ------------------------------------------------
       const ip =
         req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
         req.socket?.remoteAddress ||
         null;
 
       const userAgent = req.headers["user-agent"] || null;
+
       const meta = req.body?.meta || {};
       const sessionId = meta.sessionId || null;
       const refCode = meta.refCode || null;
 
+      // ------------------------------------------------
+      // Input normalization
+      // ------------------------------------------------
       const trimmed = String(workInput || "").trim();
-      const looksLikeUrl = /^https?:\/\/\S+$/i.test(trimmed); // strict: whole field is a URL
+      const looksLikeUrl = /^https?:\/\/\S+$/i.test(trimmed);
 
       const assignmentLinks = [];
       let submittedTextEvidence = null;
@@ -7235,7 +7276,9 @@ function buildRubricInstructions({
       const hasImages = Array.isArray(images) && images.length > 0;
       const hasWorkInput = trimmed.length > 0;
 
-      // Paste mode
+      // ------------------------------------------------
+      // Paste mode handling
+      // ------------------------------------------------
       if (!hasImages && hasWorkInput) {
         if (looksLikeUrl) {
           assignmentLinks.push({
@@ -7244,7 +7287,8 @@ function buildRubricInstructions({
             url: trimmed,
           });
         } else {
-          submittedTextEvidence = trimmed.slice(0, 12000); 
+          submittedTextEvidence = trimmed.slice(0, 12000);
+
           assignmentLinks.push({
             kind: "text",
             label: `Submitted text (${Math.min(trimmed.length, 12000)} chars shown)`,
@@ -7257,10 +7301,46 @@ function buildRubricInstructions({
         return res.status(400).json({ error: "No images or student work provided" });
       }
 
-      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+      // ------------------------------------------------
+      // Grade band normalization
+      // ------------------------------------------------
+      const band =
+        ["3-5", "6-8", "9-10", "11+"].includes(gradeBand)
+          ? gradeBand
+          : "6-8";
+
       const submissionId = crypto.randomUUID();
 
-      // 1) The actual JSON Schema object (this is what OpenAI needs)
+      // ------------------------------------------------
+      // Denominator override blocks (used in prompt)
+      // NOTE: these blocks only describe the override.
+      // Actual enforcement happens later.
+      // ------------------------------------------------
+      const fixedDenomBlock = overrideFixedOutOf
+        ? `
+    FIXED DENOMINATOR OVERRIDE (teacher provided):
+    - overall_out_of MUST equal ${overrideFixedOutOf}.
+    - Do not invent a different denominator.
+    ${pageOutOfMap
+      ? "- If page totals are provided below and the pages align clearly, use them as section/page denominators."
+      : ""}
+    `.trim()
+        : "";
+
+      const pageDenomBlock = pageOutOfMap
+        ? `
+    PAGE DENOMINATOR OVERRIDE (teacher provided):
+    ${Object.entries(pageOutOfMap)
+      .map(([page, outOf]) => `- Page ${page}: /${outOf}`)
+      .join("\n")}
+
+    Use these page totals exactly if the submission pages align clearly.
+    `.trim()
+        : "";
+
+      // ------------------------------------------------
+      // JSON schema for grading model output
+      // ------------------------------------------------
       const gradeResultSchema = {
         type: "object",
         additionalProperties: false,
@@ -7270,28 +7350,31 @@ function buildRubricInstructions({
             type: "string",
             enum: ["short-answer", "paragraph", "mixed", "test"],
           },
+
           inferred_subject: {
             type: "string",
             enum: ["Math", "English", "History", "Geography", "Science", "Bible", "Other"],
           },
+
           inferred_assessment_type: {
             type: "string",
             enum: ["Essay", "Test", "Quiz", "Homework", "Project", "Poster", "Worksheet", "Other"],
           },
+
           inferred_grade_level: {
             type: "string",
             enum: ["3-5", "6-8", "9-10", "11+", "Unknown"],
           },
 
-          // --- Primary grading scale (always authoritative) ---
+          // --- Main score ---
           overall_score: { type: "number", minimum: 0 },
           overall_out_of: { type: "number", minimum: 1 },
 
-          // --- /10 compatibility (backend enforces when overall_out_of === 10) ---
+          // --- /10 compatibility ---
           score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
           final_score_out_of_10: { type: ["number", "null"], minimum: 0, maximum: 10 },
 
-          // --- Formatting deductions (max –1 total, enforced upstream) ---
+          // --- deductions ---
           deductions: {
             type: "array",
             items: {
@@ -7305,7 +7388,7 @@ function buildRubricInstructions({
             },
           },
 
-          // --- Test sections or rubric categories (backend enforces test=>array, else=>null) ---
+          // --- sections ---
           sections: {
             type: ["array", "null"],
             items: {
@@ -7335,10 +7418,10 @@ function buildRubricInstructions({
             },
           },
 
-          // --- Student name extracted from the photo (never guessed) ---
+          // --- student name detection ---
           student_name: { type: ["string", "null"] },
 
-          // --- Integrity flags (conservative use) ---
+          // --- integrity flags ---
           ai_suspected_cheating: { type: ["string", "null"] },
           copying_suspected: { type: ["string", "null"] },
 
@@ -7346,29 +7429,29 @@ function buildRubricInstructions({
           rubricDetected: { type: "boolean" },
           rubricConfidence: { type: "number", minimum: 0, maximum: 1 },
 
-          // --- Feedback ---
+          // --- feedback ---
           strengths: {
             type: "array",
             minItems: 2,
             maxItems: 4,
             items: { type: "string" },
           },
+
           improvements: {
             type: "array",
             minItems: 1,
             maxItems: 3,
             items: { type: "string" },
           },
+
           teacher_comment: { type: "string", minLength: 1 },
         },
 
         required: [
           "response_format_detected",
-
           "inferred_subject",
           "inferred_assessment_type",
           "inferred_grade_level",
-
           "overall_score",
           "overall_out_of",
           "score_out_of_10",
@@ -7386,7 +7469,6 @@ function buildRubricInstructions({
           "teacher_comment",
         ],
       };
-
       // 2) Optional wrapper if you like keeping it around locally
       const schema = {
         name: "grade_result",
@@ -7397,23 +7479,15 @@ function buildRubricInstructions({
       const feedbackVoice = req.body?.meta?.feedbackVoice || "warm";
       const feedbackVoiceMode = req.body?.meta?.feedbackVoiceMode || "default";
 
-      const preferredNameRaw = String(req.body?.meta?.studentName || "").trim();
-      const preferredFirstName = preferredNameRaw ? preferredNameRaw.split(/\s+/)[0] : "";
-
       const instructions = buildRubricInstructions({
         gradeBand: band,
-        rubricOverride,
+        rubricOverride: effectiveRubricOverride,
         feedbackVoice,
         feedbackVoiceMode,
       });
 
       const instructionsWithInference = `
         ${instructions}
-
-        PERSONALIZATION:
-        - If a student name is provided, address the student using FIRST NAME ONLY: ${preferredFirstName || "(none provided)"}.
-        - Never use a last name.
-        - If no name is provided, do not invent one.
 
         INFERENCE (required):
         - inferred_subject: one of [Math, English, History, Geography, Science, Bible, Other]
@@ -7423,23 +7497,9 @@ function buildRubricInstructions({
         Rules:
         - Do NOT guess wildly. If unsure, use Other / Unknown.
         - inferred_grade_level should usually match the provided grade band (${band}) unless the work clearly indicates otherwise.
-        
+
         RUBRIC DETECTION (very important):
-
         You must determine whether any image contains a TEACHER GRADING RUBRIC TEMPLATE.
-
-        A rubric template typically includes:
-        - A grid or table of criteria with levels (e.g., Level 1–4, Excellent/Good/Satisfactory)
-        - Point values or scoring bands
-        - Checkboxes or empty scoring boxes
-        - Criteria headings such as "Content", "Organization", "Mechanics", "Creativity", etc.
-        - Descriptions of performance levels (not student answers)
-
-        A rubric is NOT:
-        - A completed student test
-        - A worksheet with student answers
-        - A checklist filled out by the student
-        - A grading summary already written by the teacher
 
         If a teacher rubric template is clearly present:
         - Extract only the rubric criteria and scoring structure.
@@ -7447,39 +7507,24 @@ function buildRubricInstructions({
         - Summarize it as concise bullet points (max 12 lines).
         - Preserve point values and levels if visible.
         - Set rubricDetected = true.
-        - Set rubricConfidence between 0 and 1 (0.75+ if clearly a rubric).
+        - Set rubricConfidence between 0 and 1.
 
         If no teacher rubric template is present:
         - rubricText = null
         - rubricDetected = false
         - rubricConfidence = 0
-
-        If no images are provided, set rubricDetected=false, rubricText=null, rubricConfidence=0.
-        
-        Consistency rules:
-        - If rubricDetected = false, rubricText must be null and rubricConfidence must be 0.
-        - If rubricDetected = true, rubricText must be a non-empty string and rubricConfidence must be > 0.
-
-      `.trim();
+        `.trim();
 
       const countSchema = {
         type: "object",
         additionalProperties: false,
         properties: {
-          // Backward compatible: keep as "raw question count" (worksheet-style)
           total_out_of: { type: ["number", "null"] },
-
-          // NEW: classification so you can decide /10 vs question-count
           kind: {
             type: "string",
-            enum: ["written_response", "worksheet", "unknown"],
+            enum: ["itemized", "written_response", "unknown"],
           },
-
-          // NEW: what the server should actually use as fixedOutOf when confidence is high
-          // - written_response => 10
-          // - worksheet => total_out_of (question count)
           recommended_out_of: { type: ["number", "null"] },
-
           per_page: {
             type: "array",
             items: {
@@ -7488,19 +7533,19 @@ function buildRubricInstructions({
               properties: {
                 page_index: { type: "number" },
                 out_of: { type: ["number", "null"] },
-                evidence: { type: "string" }, // e.g. "saw Q1–75" or "4 long paragraph prompts"
+                evidence: { type: "string" },
               },
               required: ["page_index", "out_of", "evidence"],
             },
           },
-
           confidence: { type: "number", minimum: 0, maximum: 1 },
         },
-        required: ["total_out_of", "per_page", "confidence", "kind", "recommended_out_of"],
+        required: ["total_out_of", "kind", "recommended_out_of", "per_page", "confidence"],
       };
 
-      let fixedOutOf = null;
-      let fixedOutOfConfidence = 0;
+      let countedOutOf = null;
+      let countedOutOfConfidence = 0;
+      let countResult = null;
 
       if (hasImages) {
         const countingContent = [
@@ -7515,15 +7560,32 @@ function buildRubricInstructions({
           max_output_tokens: 350,
         });
 
-        const countResult = safeJsonParse(countResp.output_text);
+        countResult = safeJsonParse(countResp.output_text);
 
         if (countResult && Number.isFinite(countResult.confidence)) {
-          fixedOutOfConfidence = countResult.confidence;
-          if (Number.isFinite(countResult.total_out_of) && countResult.total_out_of > 0 && fixedOutOfConfidence >= 0.75) {
-            fixedOutOf = countResult.total_out_of;
+          countedOutOfConfidence = countResult.confidence;
+
+          if (
+            Number.isFinite(countResult.recommended_out_of) &&
+            countResult.recommended_out_of > 0 &&
+            countedOutOfConfidence >= 0.75
+          ) {
+            countedOutOf = countResult.recommended_out_of;
+          }
           }
         }
-      }
+
+      const countResultBlock = countResult
+          ? `
+        COUNT RESULT (server computed):
+        - kind: ${countResult.kind}
+        - recommended_out_of: ${countResult.recommended_out_of ?? "null"}
+        - confidence: ${countResult.confidence ?? 0}
+
+        You MUST follow STEP 2 exactly using this countResult.
+        Do not recalculate or override these values unless an explicit denominator is visible.
+        `.trim()
+          : "";
 
       function buildCountingInstructions() {
         return `
@@ -7569,11 +7631,15 @@ function buildRubricInstructions({
         `.trim();
       }
 
-      const fixedDenomBlock = fixedOutOf
-      ? `\n\nFIXED DENOMINATOR (server computed):\n- fixedOutOf = ${fixedOutOf}\nHARD RULE: overall_out_of MUST equal ${fixedOutOf}. Do not change it.\n`
-      : "";
-      
-      const instructionsWithInferenceFinal = `${instructionsWithInference}${fixedDenomBlock}`;
+      const denomOverrideBlock = [fixedDenomBlock, pageDenomBlock]
+  .filter(Boolean)
+  .join("\n\n");
+
+      const instructionsWithInferenceFinal = `
+        ${instructionsWithInference}
+        ${denomOverrideBlock ? `\n\n${denomOverrideBlock}` : ""}
+        ${countResultBlock ? `\n\n${countResultBlock}` : ""}
+        `.trim();
 
       let imageRefs = [];
 
@@ -7659,7 +7725,7 @@ function buildRubricInstructions({
               assessmentType: "Other",
               gradeLevel: band,
               imageCount: Array.isArray(images) ? images.length : 0,
-              rubricOverrideUsed: Boolean(rubricOverride),
+              overrideInputUsed: Boolean(String(rubricOverride || "").trim()),
               responseTimeMs,
               refCode,
               userAgent,
@@ -7751,12 +7817,61 @@ function buildRubricInstructions({
 
       let enforced = enforceDenominatorRules(grade);
 
-      if (fixedOutOf) {
-        enforced.overall_out_of = fixedOutOf;
-        enforced.sections = null; // optional but consistent with your intent
-        enforced.overall_score = clampNum(enforced.overall_score, 0, fixedOutOf) ?? 0;
+      const hasTeacherOverride =
+        Number.isFinite(overrideFixedOutOf) && overrideFixedOutOf > 0;
+
+      const hasTrustedCountedOutOf =
+        Number.isFinite(countedOutOf) && countedOutOf > 0;
+
+      const finalFixedOutOf = hasTeacherOverride
+        ? overrideFixedOutOf
+        : (hasTrustedCountedOutOf ? countedOutOf : null);
+
+      if (finalFixedOutOf) {
+        enforced.overall_out_of = finalFixedOutOf;
+        enforced.overall_score = clampNum(enforced.overall_score, 0, finalFixedOutOf) ?? 0;
         enforced.score_out_of_10 = null;
         enforced.final_score_out_of_10 = null;
+
+        if (Array.isArray(enforced.sections) && enforced.sections.length) {
+          enforced.sections = null;
+        }
+      } else {
+        // No teacher override and no trusted counted denominator.
+        // Keep explicit denominators returned by the model if they appear legitimate.
+        const outOf = Number(enforced.overall_out_of);
+
+        if (!Number.isFinite(outOf) || outOf <= 0) {
+          const ded = totalDeductionPoints(enforced.deductions);
+          const base10 = Number.isFinite(Number(enforced.score_out_of_10))
+            ? Math.max(0, Math.min(10, Number(enforced.score_out_of_10)))
+            : Math.max(0, Math.min(10, Number(enforced.overall_score) || 0));
+          const final10 = Math.max(0, Math.min(10, base10 - ded));
+
+          enforced.overall_out_of = 10;
+          enforced.score_out_of_10 = base10;
+          enforced.final_score_out_of_10 = final10;
+          enforced.overall_score = final10;
+
+          if (!Array.isArray(enforced.sections) || enforced.sections.length === 0) {
+            enforced.sections = null;
+          }
+        } else if (outOf === 10) {
+          const ded = totalDeductionPoints(enforced.deductions);
+          const base10 = Number.isFinite(Number(enforced.score_out_of_10))
+            ? Math.max(0, Math.min(10, Number(enforced.score_out_of_10)))
+            : Math.max(0, Math.min(10, Number(enforced.overall_score) || 0));
+          const final10 = Math.max(0, Math.min(10, base10 - ded));
+
+          enforced.score_out_of_10 = base10;
+          enforced.final_score_out_of_10 = final10;
+          enforced.overall_score = final10;
+        } else {
+          // Keep non-10 denominator because it may be an explicit visible denominator.
+          enforced.score_out_of_10 = null;
+          enforced.final_score_out_of_10 = null;
+          enforced.overall_score = clampNum(enforced.overall_score, 0, outOf) ?? 0;
+        }
       }
 
       // ---- Fire-and-forget analytics logging (never blocks grading) ----
@@ -7797,7 +7912,7 @@ function buildRubricInstructions({
             gradeLevel: inferredGradeLevel,
 
             imageCount: Array.isArray(images) ? images.length : 0,
-            rubricOverrideUsed: Boolean(rubricOverride),
+            overrideInputUsed: Boolean(String(rubricOverride || "").trim()),
             responseTimeMs,
 
             refCode,
@@ -7807,49 +7922,6 @@ function buildRubricInstructions({
           console.error("GradingUsage log failed:", e?.message || e);
         }
       })();
-
-      // ------------------------------
-      // Evidence (link or pasted text)
-      // ------------------------------
-      const evidenceLinks = [];
-      let submittedText = null;
-
-      if (!hasImages && hasWorkInput) {
-        if (looksLikeUrl) {
-          evidenceLinks.push({ label: "Submitted link", url: trimmed });
-
-          // Optional: also include extracted text as evidence (recommended)
-          // If you already extracted it earlier, reuse it.
-          // If not, you can re-extract here (but avoid double fetch if possible).
-          // submittedText = extractedTextYouAlreadyFetched ?? null;
-        } else {
-          submittedText = trimmed; // pasted student text
-        }
-      }
-
-      if (fixedOutOf) {
-        // Force the denom
-        grade.overall_out_of = fixedOutOf;
-
-        // If they returned sections, make them add up correctly
-        // (optional but recommended)
-        if (Array.isArray(grade.sections) && grade.sections.length > 0) {
-          // If sum differs, you can either:
-          // 1) recompute overall from sections (but then denom changes again), OR
-          // 2) leave sections but keep overall fixed, OR
-          // 3) force sections to null and keep overall fixed (cleanest if sections are unreliable)
-          //
-          // I recommend option (3) when the worksheet isn't truly sectioned:
-          grade.sections = null;
-        }
-
-        // Clamp score into the fixed denom
-        grade.overall_score = clampNum(grade.overall_score, 0, fixedOutOf) ?? 0;
-
-        // Ensure /10 fields are null
-        grade.score_out_of_10 = null;
-        grade.final_score_out_of_10 = null;
-      }
 
       return res.json({
         ...enforced,
@@ -7886,29 +7958,15 @@ function buildRubricInstructions({
       const feedbackVoice = String(meta?.feedbackVoice || "warm");
       const feedbackVoiceMode = String(meta?.feedbackVoiceMode || "default");
 
-      const voiceMap = {
-        professional: "professional, measured, neutral",
-        warm: "warm, encouraging, positive",
-        direct: "direct, concise, minimal fluff",
-        coach: "supportive, instructional, coaching tone",
-        gentle_firm: "gentle but firm, clear expectations, respectful",
-        witty_light: "light and friendly, subtle kind humor at most once",
-        standards: "objective, criteria-aligned academic tone",
-        student_friendly: "simple, student-friendly language",
-      };
-      const voiceDesc = voiceMap[feedbackVoice] || voiceMap.warm;
+      const summaryBase = buildSessionSummaryInstructions({ feedbackVoice });
 
       const instructions = `
-        ${session_summary_instructions}
+        ${summaryBase}
 
         GRADE BAND: ${band}
 
-        VOICE (apply to the paragraph):
-        - feedbackVoice: ${voiceDesc}
+        VOICE MODE:
         - feedbackVoiceMode: ${feedbackVoiceMode}
-        - Match tone to the selected voice, but keep it professional and kind.
-        - No sarcasm, no insults, no edgy humor.
-        - Return exactly ONE paragraph (no line breaks).
 
         rubricOverride (optional context only):
         ${(rubricOverride || "").trim() || "(none)"}
