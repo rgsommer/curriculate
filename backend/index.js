@@ -7892,9 +7892,6 @@ function buildRubricInstructions({
         enforced.score_out_of_10 = null;
         enforced.final_score_out_of_10 = null;
 
-        if (Array.isArray(enforced.sections) && enforced.sections.length) {
-          enforced.sections = null;
-        }
       } else {
         // No teacher override and no trusted counted denominator.
         // Keep explicit denominators returned by the model if they appear legitimate.
