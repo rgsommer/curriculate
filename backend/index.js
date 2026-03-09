@@ -6346,6 +6346,12 @@ VOICE GUARDRAILS (always):
 SCORING INTEGRITY (always):
 - Voice affects tone AND leniency on borderline cases, but it does NOT allow ignoring clearly incorrect answers.
 - Do not inflate marks beyond what the visible work supports; instead, emphasize progress, partial credit, and achievable next steps.
+- Grade fairly and proportionally.
+- Strong, thorough, mostly accurate work should score better than brief minimal work that happens to avoid mistakes.
+- Do not punish a student merely for giving more detail.
+- Minor inaccuracies in an otherwise strong answer should reduce marks only modestly.
+- Do not “search for deductions”; only deduct for clear, visible issues.
+- When marks are lost, explain them clearly and specifically.
 `.trim();
 
   const specs = {
@@ -6502,6 +6508,14 @@ function buildRubricInstructions({
     - For 11+: Use mature, concise, academically appropriate phrasing.
     - Strengths, improvements, and teacher_comment must match the selected grade level tone.
 
+    FAIRNESS AND CONSISTENCY RULES (hard):
+    - Grade similar quality work similarly.
+    - A short answer that is only minimally correct should not automatically tie a fuller, clearer, better-supported answer.
+    - If a response is thorough, relevant, and mostly accurate, that should raise the score, not lower it.
+    - Minor mistakes inside a strong answer should reduce marks only modestly unless they change the main meaning or result.
+    - Do not over-penalize students who attempt more depth.
+    - Do not “hunt for faults.” Deduct only for clear, visible, instruction-relevant issues.
+
     STUDENT NAME:
     - Always set student_name to null.
     - Do NOT personalize feedback.
@@ -6624,38 +6638,58 @@ function buildRubricInstructions({
     - or ignore a stated component breakdown.
 
     TEST/QUIZ RULE (mandatory):
-    If any page shows (a) named sections, (b) section score boxes, or (c) point totals for parts (e.g., ___/10, Matching /8, Part A /15),
-    then response_format_detected MUST be "test" and you MUST create sections[] for each named section with visible out_of totals.
-    - Create sections[] for each visible section.
-    - Each section must include: name, score, out_of, and a ONE-sentence teacher_comment.
-    - Set overall_out_of to the sum of section out_of totals.
-    - Section out_of must reflect the true total of all question denominators within that section, including any component-based question totals.
-    - Set overall_score to the sum of section scores.
-    For test-style sections … include incorrect_items listing only incorrect questions.
-    - Keep prompts short. Include student_answer and correct_answer for each incorrect item.
+    If the submission is clearly a test or quiz, especially if it shows:
+    - named parts/sections,
+    - printed section totals,
+    - score boxes,
+    - or numbered questions grouped into visible parts,
+
+    then response_format_detected MUST be "test".
+
+    For test/quiz submissions:
+    - You MUST return results by section, not only broad holistic feedback.
+    - sections[] MUST be non-empty when visible sections or visible part totals exist.
+    - Create one sections[] entry for each visible section or part.
+    - Each section must include:
+      - name
+      - score
+      - out_of
+      - teacher_comment
+      - incorrect_items (array or null)
+    - Section out_of must match the printed section total, or the true visible total of the questions in that section if the section total is clearly implied by the questions.
+    - overall_out_of MUST equal the sum of section out_of values.
+    - overall_score MUST equal the sum of section scores.
+    - Do NOT collapse a clearly sectioned test into one generic overall comment.
+
+    SECTION COMMENT RULE:
+    - Each section teacher_comment must briefly explain:
+      1) what was done well in that section, and
+      2) what cost marks in that section.
+    - If full marks were earned, say what was done well and set incorrect_items to null.
+    - If marks were lost, the section comment must make that understandable in plain language.
+
+    INCORRECT_ITEMS RULE:
+    - Use incorrect_items wherever individual missed items can reasonably be identified.
+    - Keep prompts short.
+    - Include student_answer and correct_answer for each incorrect item.
     - If all items are correct, return incorrect_items: null.
-    If the test shows ANY section score boxes or named parts with out_of values, sections MUST be a non-empty array (not null).
-    For math questions:
-    - If numeric answer is correct but unit is missing when required, deduct 0.5 from that question.
-    - Reflect this in the section score.
-    - Do NOT treat this as a formatting deduction.
-    True/False extraction rule: True/False questions appear as a question number followed by the letters T and F (e.g., 12. T F). The student indicates their choice by circling exactly one letter.
-    - Your job is to read exactly which letter is circled and record it as "T" or "F".
-    - Do not infer from context. Do not “correct” the student.
-    - If you cannot clearly see which letter is circled, return "unclear" for that item.
-    - The circled letter will have a pencil/pen circle around it; the other letter will not.
-    - Ignore the non-circled letter completely.
-    - Never swap T and F. Only report what is circled, even if it seems “wrong.”
-    - Only count a letter as chosen if it is circled; do not treat darker ink, proximity, or smudges as a choice.
+    - Never include an item where student_answer and correct_answer are equivalent after normalization.
+
     For multiple choice and true/false:
     - Read the student mark carefully.
     - If the mark is ambiguous, say it is unclear.
     - Do NOT assume a choice.
-    - Only report an answer as incorrect if the student’s selected letter clearly differs from the correct answer.
+    - Only report an answer as incorrect if the student’s selected answer clearly differs from the correct answer.
     - If student answer equals correct answer, do NOT list it as incorrect.
-    When reporting incorrect_items:
-    - Double-check that student_answer !== correct_answer before including it.
-    - Never include items where they match.
+
+    TRUE/FALSE EXTRACTION RULE:
+    - True/False questions appear as a question number followed by T and F.
+    - Record exactly which letter is circled: "T" or "F".
+    - Do not infer from context.
+    - If you cannot clearly see which letter is circled, return "unclear" for that item.
+    - Never swap T and F.
+    - Only count a letter as chosen if it is clearly circled.
+
     INCORRECT ITEM GUARDRAIL (hard rule):
     - Before adding an item to incorrect_items, normalize both answers and compare again.
     - Normalization includes:
@@ -6665,19 +6699,28 @@ function buildRubricInstructions({
       - ignore thousands separators and extra spaces (e.g., "1,000" == "1000")
     - If normalized answers match, the item MUST NOT appear in incorrect_items.
     - If the only difference is formatting, do NOT mark incorrect.
-    SECTION REPORTING RULE (must follow):
-    - If the test provides named sections with out_of values (even if the teacher has not filled them in), you MUST:
+    - Do not use deductions to re-penalize wrong answers already reflected in section scores.
+
+    MATH RULE:
+    - If a numeric answer is correct but a required unit is missing, deduct 0.5 from that question.
+    - Reflect this in the section score.
+    - Do NOT treat this as a formatting deduction.
+
+    SECTION REPORTING RULE:
+    - If the test provides named sections with out_of values, you MUST:
       1) create one sections[] entry per named section,
       2) use the printed out_of for each section,
       3) score that section based only on the questions belonging to that section,
       4) set overall_out_of = sum of section out_of,
       5) set overall_score = sum of section scores.
-    - If the test does NOT provide section totals, you may still create sections[] if the test is clearly divided (e.g., "Matching", "Multiple Choice"), but you must use only denominators that are explicitly visible.
-    DO NOT revert to /10 if any section out_of values are visible anywhere (including score boxes). Visible denominators always control overall_out_of.
+    - If the test does NOT provide printed section totals, you must still create sections[] if the test is clearly divided, but only use denominators that are explicitly visible or clearly implied by the grouped questions.
+    - Do NOT revert to /10 if section out_of values are visible anywhere.
+    - Do NOT repeat the same generic comment across multiple sections.
+    - Each section comment must reference that section’s actual content.
 
     IMPORTANT:
-    If IMPLIED section denominators are determined (e.g., 75 questions + 20 questions), you MUST NOT set overall_out_of to 10.
-    Implied denominators count as explicit denominators for grading scale purposes.
+    - If implied section denominators are determined from clearly grouped numbered questions, you MUST NOT set overall_out_of to 10.
+    - Visible or clearly implied test denominators override holistic /10 grading.
 
     RUBRIC OVERRIDE RULE:
     If a rubric override is provided and it specifies categories and point values:
@@ -6749,10 +6792,11 @@ function buildRubricInstructions({
     - Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
 
     THOROUGHNESS FAIRNESS RULE (hard):
-    - If a student provides more depth than required (extra relevant details, explanations, examples) and is mostly accurate, that must raise the score, not lower it.
-    - Minor inaccuracies inside an otherwise strong, thorough answer should reduce at most a small amount.
-    - A short answer that is “technically correct” but thin should not tie a thorough, insightful answer.
-    - If the response is strong and thorough: cap small factual slips at -0.5 total, unless the errors change the main conclusion.
+    - If a student provides more depth than required (extra relevant details, explanations, examples) and is mostly accurate, that must help the score, not hurt it.
+    - A short answer that is technically correct but thin should not automatically receive the same mark as a richer and more thoughtful answer.
+    - Minor inaccuracies inside an otherwise strong, thorough answer should reduce marks only slightly unless they change the main conclusion, method, or meaning.
+    - Do not treat "more writing" as "more chances to lose marks."
+    - Reward genuine understanding, completeness, and strong effort.
 
     STEP 4 — FORMATTING DEDUCTION (quiet, max –1 total):
     Formatting deduction rule:
@@ -6784,6 +6828,16 @@ function buildRubricInstructions({
     - Do not “search for deductions.” Only deduct when there is a clear, visible issue.
     - If you deduct points, you MUST enumerate the issues specifically (no vague phrases like “minor errors”).
     - Every deduction reason must cite concrete visible evidence (e.g., “Q4…”, “In your paragraph about…”, “In the chart…”).
+        
+    DEDUCTION CLARITY RULE:
+    - Every deduction must be understandable to a student reading the feedback.
+    - Avoid vague phrases such as "minor errors", "some mistakes", or "lost clarity" unless immediately explained.
+    - Whenever possible, tie a deduction to:
+      1) a question number,
+      2) a visible section,
+      3) a specific missing required element,
+      or 4) a rubric criterion.
+    - If an answer is partially correct, say what was correct before stating what was missing or incorrect.
 
     Spelling/mechanics:
 
@@ -6943,6 +6997,11 @@ function buildRubricInstructions({
     - strengths (array of 2–4 specific content-focused bullets)
     - improvements (array of 1–3 specific content-focused bullets)
     - teacher_comment (2–3 sentences; sentence 1 praise specific, sentence 2 one clear improvement, optional sentence 3 brief tip)
+
+    TEST OUTPUT CLARITY REQUIREMENT:
+    - For a visible test/quiz, the response must make the score understandable by section.
+    - If marks are lost, the combination of sections[].teacher_comment, incorrect_items, and deductions must make clear why.
+    - Do not return only generalized strengths/improvements for a clearly sectioned test.
 
     POINTS FIELD RULE:
     - In deductions[], points MUST be a positive number (e.g., 1, 0.5).
