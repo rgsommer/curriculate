@@ -126,6 +126,21 @@ function renderEmailTemplate(str, vars) {
   return out;
 }
 
+// ------------------------------
+// Grading Captures (30-day TTL)
+// ------------------------------
+const GradingCapture = mongoose.models.GradingCapture || mongoose.model(
+  "GradingCapture",
+  new mongoose.Schema(
+    {
+      submissionId: { type: String, unique: true, index: true, required: true },
+      keys: { type: [String], default: [] }, // S3 object keys
+      createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 }, // 30 days TTL
+    },
+    { timestamps: false }
+  )
+);
+
 function computeAuthorDisplay(ownerName) {
   const s = String(ownerName || "").trim();
   if (!s) return "";
@@ -374,7 +389,6 @@ app.use("/api/tasksets", tasksetsRouter);
 app.use("/api/shared", sharedRoutes);
 
 // 6) Grading (and other large payload) file limit
-app.use(express.json({ limit: "25mb" }));
 import adminUsageSummaryRouter from "./routes/adminUsageSummary.js";
 app.use("/admin", adminUsageSummaryRouter);
 app.use("/admin", adminFeedbackRouter);
@@ -412,7 +426,7 @@ function generateUUID() {
   });
 }
 
-//const raceWinner = {};
+const raceWinner = {};
 const teamClues = new Map(); // ← global store for mystery clues
 
 // helper functions
@@ -608,7 +622,6 @@ function getRandomTeam(roomCode) {
 // ====================================================================
 //  EXPRESS MIDDLEWARE
 // ====================================================================
-app.use(bodyParser.json({ limit: "3mb" }));
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/auth", authRoutes);
 app.use("/api/auth", authRoutes);
@@ -2087,6 +2100,117 @@ io.on("connection", (socket) => {
     socket.handshake.headers.referer
   );
 
+  socket.on("task:testRequestByIndex", (payload = {}, ack) => {
+    try {
+      const roomCode = String(payload.roomCode || socket.data?.roomCode || "").trim().toUpperCase();
+      const teamId = String(payload.teamId || socket.data?.teamId || "").trim();
+      const rawTaskIndex = Number(payload.taskIndex);
+      const bypassScan = payload.bypassScan !== false;
+      const localOnly = payload.localOnly !== false;
+
+      const room = rooms[roomCode];
+      if (!room) {
+        ack && ack({ ok: false, error: "Room not found." });
+        return;
+      }
+
+      if (!teamId || !room.teams?.[teamId]) {
+        ack && ack({ ok: false, error: "Team not found." });
+        return;
+      }
+
+      if (!room.taskset || !Array.isArray(room.taskset.tasks) || room.taskset.tasks.length === 0) {
+        ack && ack({ ok: false, error: "No taskset loaded for this room." });
+        return;
+      }
+
+      if (!Number.isInteger(rawTaskIndex) || rawTaskIndex < 0 || rawTaskIndex >= room.taskset.tasks.length) {
+        ack && ack({
+          ok: false,
+          error: `Task index must be between 0 and ${room.taskset.tasks.length - 1}.`,
+        });
+        return;
+      }
+
+      const team = room.teams[teamId];
+      const task = room.taskset.tasks[rawTaskIndex];
+
+      team.testMode = true;
+      team.testTaskIndex = rawTaskIndex;
+      team.testBypassScan = !!bypassScan;
+      team.testLocalOnly = !!localOnly;
+
+      team.taskIndex = rawTaskIndex;
+      delete team.nextTaskIndex;
+
+      if (bypassScan) {
+        team.lastScannedStationId =
+          team.currentStationId || team.stationId || team.station || null;
+      }
+
+      const timeLimitSeconds =
+        typeof task.timeLimitSeconds === "number"
+          ? task.timeLimitSeconds
+          : typeof task.time_limit === "number"
+          ? task.time_limit
+          : null;
+
+      const out = {
+        taskIndex: rawTaskIndex,
+        index: rawTaskIndex,
+        task,
+        timeLimitSeconds,
+        totalTasks: room.taskset.tasks.length,
+        testMode: true,
+        localOnly: !!localOnly,
+        bypassScan: !!bypassScan,
+      };
+
+      io.to(teamId).emit("task:launch", out);
+      io.to(teamId).emit("task:assigned", out);
+
+      const state = buildRoomState(room);
+      io.to(roomCode).emit("room:state", state);
+      io.to(roomCode).emit("roomState", state);
+
+      ack && ack({
+        ok: true,
+        taskIndex: rawTaskIndex,
+        totalTasks: room.taskset.tasks.length,
+        testMode: true,
+        localOnly: !!localOnly,
+        bypassScan: !!bypassScan,
+      });
+    } catch (err) {
+      console.error("task:testRequestByIndex error:", err);
+      ack && ack({ ok: false, error: "Server error." });
+    }
+  });
+
+  socket.on("task:testClear", (payload = {}, ack) => {
+    try {
+      const roomCode = String(payload.roomCode || socket.data?.roomCode || "").trim().toUpperCase();
+      const teamId = String(payload.teamId || socket.data?.teamId || "").trim();
+
+      const room = rooms[roomCode];
+      if (!room || !teamId || !room.teams?.[teamId]) {
+        ack && ack({ ok: false, error: "Room/team not found." });
+        return;
+      }
+
+      const team = room.teams[teamId];
+      delete team.testMode;
+      delete team.testTaskIndex;
+      delete team.testBypassScan;
+      delete team.testLocalOnly;
+
+      ack && ack({ ok: true });
+    } catch (err) {
+      console.error("task:testClear error:", err);
+      ack && ack({ ok: false, error: "Server error." });
+    }
+  });
+
 socket.on("submit:answer", (payload, ack) => {
   handleStudentSubmit(payload, ack);
 });
@@ -2752,6 +2876,8 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
         socket.data.role = "teacher";
         socket.data.roomCode = code;
+        room.teacherInstanceId = instId;
+        socket.data.teacherInstanceId = instId;
 
       if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
         return;
@@ -2975,23 +3101,27 @@ socket.on("task:force-advance", ({ roomCode }) => {
         reassignStationForTeam(room, teamId);
       }
 
-      // If taskset running, DO NOT push task immediately.
-      // Instead, queue it so the NEXT SCAN delivers it.
-      // ✅ Only send a task if the session has STARTED
+      // If taskset is active, do NOT auto-push a task on join.
+      // Keep scan as the gate. We only prepare the team state so the
+      // next accepted station scan can unlock/re-send the correct task.
       if (
         room.isActive === true &&
         room.taskset &&
         Array.isArray(room.taskset.tasks) &&
         room.taskset.tasks.length > 0
       ) {
-        const idx =
-          typeof room.taskIndex === "number" && room.taskIndex >= 0
-            ? room.taskIndex
-            : typeof room.teams?.[teamId]?.taskIndex === "number" && room.teams[teamId].taskIndex >= 0
+        const currentOrNextIdx =
+          typeof room.teams?.[teamId]?.nextTaskIndex === "number" &&
+          room.teams[teamId].nextTaskIndex >= 0
+            ? room.teams[teamId].nextTaskIndex
+            : typeof room.teams?.[teamId]?.taskIndex === "number" &&
+              room.teams[teamId].taskIndex >= 0
             ? room.teams[teamId].taskIndex
             : 0;
 
-        sendTaskToTeam(room, teamId, idx); //revisit this: re-join scan should not cause next task
+        // Do not emit sendTaskToTeam here.
+        // Just make sure there is something available for task:requestNext after scan.
+        room.teams[teamId].nextTaskIndex = currentOrNextIdx;
       }
 
       socket.data.roomCode = code;
@@ -3034,6 +3164,41 @@ socket.on("task:force-advance", ({ roomCode }) => {
   socket.on("student:join-room", handleStudentJoinRoom);
   socket.on("student-join-room", handleStudentJoinRoom);
 
+  socket.on("room:request-state", ({ roomCode, teamId } = {}, ack) => {
+    try {
+      const code = String(roomCode || socket.data?.roomCode || "").trim().toUpperCase();
+      const effectiveTeamId = String(teamId || socket.data?.teamId || "").trim();
+
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") {
+          ack({ ok: false, error: "Room not found." });
+        }
+        return;
+      }
+
+      const state = buildRoomState(room);
+
+      // reply directly to requester
+      socket.emit("room:state", state);
+      socket.emit("roomState", state);
+
+      // optional ack
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          roomCode: code,
+          teamId: effectiveTeamId || null,
+          roomState: state,
+        });
+      }
+    } catch (err) {
+      console.error("room:request-state error:", err);
+      if (typeof ack === "function") {
+        ack({ ok: false, error: "Server error." });
+      }
+    }
+  });
 
   // ----------------------------------------------------
   // Student auto-resume (resume-team-session)
@@ -3094,16 +3259,19 @@ socket.on("task:force-advance", ({ roomCode }) => {
       // Re-join socket rooms + tag socket
       socket.join(code);
       socket.join(teamId);
-      // ✅ If a taskset is already running, send the current task to this (re)joining team
+      // If a taskset is already running, do NOT auto-push the task on resume.
+      // Preserve scan-gated flow: resume -> restore station/team -> scan -> requestNext.
       if (room.taskset && Array.isArray(room.taskset.tasks) && room.taskset.tasks.length > 0) {
-        const idx =
-          typeof room.taskIndex === "number" && room.taskIndex >= 0
-            ? room.taskIndex
-            : typeof room.teams?.[teamId]?.taskIndex === "number"
+        const currentOrNextIdx =
+          typeof room.teams?.[teamId]?.nextTaskIndex === "number" &&
+          room.teams[teamId].nextTaskIndex >= 0
+            ? room.teams[teamId].nextTaskIndex
+            : typeof room.teams?.[teamId]?.taskIndex === "number" &&
+              room.teams[teamId].taskIndex >= 0
             ? room.teams[teamId].taskIndex
             : 0;
 
-        sendTaskToTeam(room, teamId, idx);
+        room.teams[teamId].nextTaskIndex = currentOrNextIdx;
       }
 
       socket.data.roomCode = code;
@@ -3907,14 +4075,19 @@ const code = (roomCode || "").toUpperCase();
     const effectiveTeamId = teamId || socket.data.teamId;
     const team = room.teams[effectiveTeamId] || {};
 
+    const isTestMode = team.testMode === true;
+    const isLocalOnlyTest = isTestMode && team.testLocalOnly === true;
+
     // Use explicit taskIndex if provided, otherwise this team's current index
     const idx =
-      typeof taskIndex === "number" && taskIndex >= 0
+      isTestMode && typeof team.testTaskIndex === "number" && team.testTaskIndex >= 0
+        ? team.testTaskIndex
+        : typeof taskIndex === "number" && taskIndex >= 0
         ? taskIndex
         : typeof team.taskIndex === "number" && team.taskIndex >= 0
         ? team.taskIndex
         : room.taskIndex;
-
+        
     const task = room.taskset.tasks[idx];
     if (!task) {
       if (typeof ack === "function") {
@@ -4334,6 +4507,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
   };
 
   correct = !!isCorrect;
+  pointsEarned = numericScore;
 
   // Let the client update its UI (guess count, timer start, etc.)
   io.to(effectiveTeamId).emit("guess-who:state", {
@@ -4449,8 +4623,9 @@ if (!isMultiPack && task.taskType === "guess-who") {
     }
 
     // If we’re in the multi-pack path, we still need a timestamp
-    const submittedAt = isMultiPack ? Date.now() : submittedAtNonMulti;
-
+    const submittedAt =
+      typeof submittedAtNonMulti === "number" ? submittedAtNonMulti : Date.now();
+      
     // ==== Diff Detective race mechanics (first correct team wins bonus) ====
     if (
       task.taskType === "diff-detective" &&
@@ -4518,6 +4693,27 @@ if (!isMultiPack && task.taskType === "guess-who") {
         (Array.isArray(answer?.data?.photos) ? answer.data.photos[0] : null) ||
         null;
 
+    const review = buildReviewPayload({ task, answer, correct, aiScore });
+
+    if (isTestMode) {
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          testMode: true,
+          localOnly: !!team.testLocalOnly,
+          roomCode: code,
+          teamId: effectiveTeamId,
+          taskIndex: idx,
+          correct,
+          points: pointsEarned,
+          maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 10,
+          aiScore,
+          review,
+        });
+      }
+      return;
+    }
+
     room.submissions.push({
       roomCode: code,
       teamId: effectiveTeamId,
@@ -4560,12 +4756,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
 
     // Per-team progression
     if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const currentIndex =
-        typeof taskIndex === "number" && taskIndex >= 0
-          ? taskIndex
-          : typeof team.taskIndex === "number" && team.taskIndex >= 0
-          ? team.taskIndex
-          : idx;
+      const currentIndex = idx;
 
       const nextIndex = currentIndex + 1;
 
@@ -4582,8 +4773,6 @@ if (!isMultiPack && task.taskType === "guess-who") {
       }
     }
 
-    const review = buildReviewPayload({ task, answer, correct, aiScore });
-
     const submissionSummary = {
       roomCode: code,
       teamId: effectiveTeamId,
@@ -4599,17 +4788,6 @@ if (!isMultiPack && task.taskType === "guess-who") {
     io.to(code).emit("taskSubmission", { ...submissionSummary, review });
 
     socket.emit("task:received");
-    if (typeof ack === "function") {
-      ack({
-        ok: true,
-        taskIndex: idx,
-        points: pointsEarned,
-        correct,
-        review,
-        aiScore,
-      });
-    }
-
     // ✅ Always acknowledge submissions so StudentApp can show overlays immediately
     if (typeof ack === "function") {
       ack({
@@ -4642,6 +4820,18 @@ if (!isMultiPack && task.taskType === "guess-who") {
     const team = room.teams[teamId];
     if (!team) {
       if (typeof ack === "function") ack({ ok: false, error: "Team not found" });
+      return;
+    }
+
+    if (team.testMode === true && team.testLocalOnly === true) {
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          testMode: true,
+          localOnly: true,
+          taskIndex: typeof team.testTaskIndex === "number" ? team.testTaskIndex : team.taskIndex ?? 0,
+        });
+      }
       return;
     }
 
@@ -4966,11 +5156,6 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
     io.to(code).emit("roomState", state);
   }
 
-  // Legacy entry point used by older clients
-  socket.on("launchTaskset", ({ roomCode }) => {
-    startTasksetForRoom(roomCode);
-  });
-
   // Used by the new LiveSession green "Launch from taskset" button
   socket.on("teacher:launchNextTask", ({ roomCode }) => {
     startTasksetForRoom(roomCode);
@@ -5163,24 +5348,8 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
     }
   });
 
-  // Store per-team clues during session (global teamClues already declared)
-  // Quick launch socket for generic tasks
-  socket.on("start-task", ({ roomCode, taskId, taskType, taskData }) => {
-    const session = getSessionByRoomCode(roomCode);
-    if (!session) return;
-
-    // Broadcast to all students in room
-    io.to(roomCode).emit("new-task", {
-      taskId,
-      taskType,
-      ...taskData,
-    });
-
-    console.log(`Task launched in ${roomCode}:`, taskType);
-  });
-
-  // Teacher ends session + email reports
-  // Teacher ends session + generate immutable report snapshot + email teacher
+// Teacher ends session + email reports
+// Teacher ends session + generate immutable report snapshot + email teacher
 // (Reports are stored in SessionReport; Session stays lightweight)
 socket.on(
   "teacher:endSessionAndEmail",
@@ -7157,39 +7326,6 @@ function buildRubricInstructions({
       }
     };
 
-    function bestEffortParseJsonObject(s) {
-      if (typeof s !== "string") return null;
-      const str = s.trim();
-      if (!str) return null;
-
-      const tryParse = (x) => {
-        try { return JSON.parse(x); } catch { return null; }
-      };
-
-      // First attempt
-      const direct = tryParse(str);
-      if (direct) return direct;
-
-      // If truncated, trim to last complete } and try again
-      const lastBrace = str.lastIndexOf("}");
-      if (lastBrace > 0) {
-        const trimmed = str.slice(0, lastBrace + 1);
-        const parsed2 = tryParse(trimmed);
-        if (parsed2) return parsed2;
-      }
-
-      // As a final rescue: take biggest {...} block
-      const start = str.indexOf("{");
-      const end = str.lastIndexOf("}");
-      if (start >= 0 && end > start) {
-        const block = str.slice(start, end + 1);
-        const parsed3 = tryParse(block);
-        if (parsed3) return parsed3;
-      }
-
-      return null;
-    }
-
     const extractObjectBlock = (str) => {
       const start = str.indexOf("{");
       const end = str.lastIndexOf("}");
@@ -8169,6 +8305,9 @@ app.get("/api/tasksets", async (req, res) => {
     res.json(sets);
   } catch (err) {
     console.error("GET /api/tasksets error:", err);
+    res.status(500).json({ error: "Failed to load task sets" });
+  }
+});
 
 // ------------------------------
 // Media: Presigned S3 Upload URLs
@@ -8242,9 +8381,6 @@ app.post("/api/media/signed-get", async (req, res) => {
   } catch (err) {
     console.error("/api/media/signed-get error:", err);
     return res.status(500).json({ ok: false, error: "Server error" });
-  }
-});
-    res.status(500).json({ error: "Failed to load task sets" });
   }
 });
 
@@ -8595,21 +8731,6 @@ const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
 })
-
-// ------------------------------
-// Grading Captures (30-day TTL)
-// ------------------------------
-const GradingCapture = mongoose.models.GradingCapture || mongoose.model(
-  "GradingCapture",
-  new mongoose.Schema(
-    {
-      submissionId: { type: String, unique: true, index: true, required: true },
-      keys: { type: [String], default: [] }, // S3 object keys
-      createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 }, // 30 days TTL
-    },
-    { timestamps: false }
-  )
-);
 
 // --------------------------------------------------------------------
 // Admin: Access Codes (create + list)

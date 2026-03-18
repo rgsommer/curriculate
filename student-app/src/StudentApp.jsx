@@ -697,6 +697,7 @@ function StudentApp() {
   const sndSketch = useRef(null);
   const sndVenn = useRef(null);
   const sndHunt = useRef(null);
+  const requestedRoomStateRef = useRef(false);
 
   // EchoChain micro-theme pulse (purely visual)
   const [echoPulse, setEchoPulse] = useState(false);
@@ -726,6 +727,33 @@ function StudentApp() {
     } catch {}
     return false;
   })();
+
+  const testMode = (() => {
+    try {
+      const qp = new URLSearchParams(window.location.search);
+      if (qp.get("testMode") === "1") return true;
+      if (localStorage.getItem("curriculate.testMode") === "1") return true;
+    } catch {}
+    return false;
+  })();
+
+  const [testTaskInput, setTestTaskInput] = useState("");
+  const [testLocalOnly, setTestLocalOnly] = useState(true);
+  const [testBypassScan, setTestBypassScan] = useState(true);
+  const [activeTestTaskIndex, setActiveTestTaskIndex] = useState(null);
+
+  const totalTaskCount =
+    Number.isFinite(tasksetTotalTasks) && tasksetTotalTasks > 0
+      ? tasksetTotalTasks
+      : null;
+
+  const testTaskOptions =
+    Number.isFinite(tasksetTotalTasks) && tasksetTotalTasks > 0
+      ? Array.from({ length: tasksetTotalTasks }, (_, index) => ({
+          index,
+          label: `Task ${index + 1}`,
+        }))
+      : [];
 
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
@@ -909,7 +937,9 @@ function StudentApp() {
       roomLocationFromStateRef.current = loc;
 
       setRoomIsActive(!!state.isActive);
-      setWaitingForLaunch(!state?.isActive);
+      if (!state?.isActive && !currentTaskRef.current) {
+        setWaitingForLaunch(true);
+      }
 
       const noiseCfg = state.noiseConfig || {};
       setNoiseState((prev) => ({
@@ -954,10 +984,28 @@ function StudentApp() {
       setPostPhase("tasks");
       setWaitingForLaunch(false);
 
+      const payloadIsTestMode = payload?.testMode === true;
+
+      if (payloadIsTestMode && payload?.bypassScan) {
+        setScannerActive(false);
+        setScannedStationId(
+          assignedStationId ||
+          normalizeStationId(assignedStationIdRef.current)?.id ||
+          null
+        );
+      }
+
       const assignedTask = payload.task || payload || null;
       const assignedType = String(assignedTask?.taskType || assignedTask?.type || "");
 
-      
+      if (payloadIsTestMode) {
+        setActiveTestTaskIndex(
+          typeof payload?.taskIndex === "number" ? payload.taskIndex : null
+        );
+      } else {
+        setActiveTestTaskIndex(null);
+      }
+        
       const assignedIsPhysicalMC = assignedType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
       const assignedIsMadDash =
         assignedType === TASK_TYPES.MAD_DASH ||
@@ -988,7 +1036,10 @@ function StudentApp() {
       }
 
       // Physical MC needs the global scanner panel. MadDash uses the embedded task scanner.
-      const assignedNeedsScanner = assignedIsPhysicalMC || assignedIsMadDash;
+      const assignedNeedsScanner =
+        payloadIsTestMode && payload?.bypassScan
+          ? false
+          : (assignedIsPhysicalMC || assignedIsMadDash);
       setScannerActive(assignedNeedsScanner);
 
       if (assignedIsMadDash) {
@@ -1152,8 +1203,6 @@ function StudentApp() {
       setPostPhase("tasks");
       setTaskRenderError(null);
 
-      // ✅ Clear waiting overlay when a task arrives
-      setWaitingForLaunch(false);
     };
 
     // AI scoring + feedback
@@ -1172,6 +1221,10 @@ function StudentApp() {
         shortAnswerReveal: reveal,
         method,
       } = payload;
+
+      if (reveal) {
+        setShortAnswerReveal(reveal || null);
+      }
 
       if (!teamId || scoredTeamId !== teamId) return;
 
@@ -1307,29 +1360,28 @@ function StudentApp() {
     socket.on("room:state", handleRoomState);
     socket.on("task:assigned", handleTaskAssigned);
     socket.on("task:launch", handleTaskAssigned);
-    socket.on("new-task", handleNewTask);
     socket.on("task:scored", handleTaskScored);
-    socket.on("task:advance", handleTaskAssigned);
     socket.on("noise:update", handleNoiseUpdate);
     socket.on("treat:event", handleTreat);
     socket.on("collab:partner-answer", handleCollabPartner);
     socket.on("collab:reply", handleCollabReply);
 
-    socket.emit("room:request-state", { teamId });
+    socket.emit("room:request-state", {
+      roomCode: roomCode.trim().toUpperCase(),
+      teamId,
+    });
 
     return () => {
       socket.off("room:state", handleRoomState);
       socket.off("task:assigned", handleTaskAssigned);
       socket.off("task:launch", handleTaskAssigned);
-      socket.off("new-task", handleNewTask);
       socket.off("task:scored", handleTaskScored);
-      socket.off("task:advance", handleTaskAssigned);
       socket.off("noise:update", handleNoiseUpdate);
       socket.off("treat:event", handleTreat);
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
     };
-  }, [socket, teamId]
+  }, [teamId, roomCode]
   );
 
   // ----------------------------------------------------
@@ -1405,8 +1457,13 @@ function StudentApp() {
     !!currentTask?.lockToStationId ||
     !!currentTask?.config?.lockToStationId;
     
+    const testModeBypassesScan =
+    testMode && activeTestTaskIndex != null && testBypassScan;
+
   const mustScan =
-    taskLocked
+    testModeBypassesScan
+      ? false
+      : taskLocked
       ? false
       : assignedStationId
         ? (scannedStationId !== assignedStationId)
@@ -1444,8 +1501,20 @@ function StudentApp() {
     }
 
     // Ensure assignment info is fetched so colour can display
-    const inferredColor = assignedColor || normalizeStationId(assignedStationId)?.color;
-  if (!inferredColor && teamId) socket.emit("room:request-state", { teamId });
+    const inferredColor =
+      assignedColorRef.current || normalizeStationId(assignedStationIdRef.current)?.color;
+
+    if (!inferredColor && teamId && roomCode && !requestedRoomStateRef.current) {
+      requestedRoomStateRef.current = true;
+      socket.emit("room:request-state", {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+      });
+    }
+
+    if (inferredColor) {
+      requestedRoomStateRef.current = false;
+    }
     }, [
       joined,
       mustScan,
@@ -1454,16 +1523,17 @@ function StudentApp() {
       assignedColor,
       assignedStationId,
       teamId,
+      roomCode,
       taskLocked,
       postSubmitSecondsLeft,
       scannerActive,
     ]);
 
-    useEffect(() => {
-      if (currentTask && postPhase !== "tasks") {
-        setPostPhase("tasks");
-      }
-    }, [currentTask, postPhase]);
+  useEffect(() => {
+    if (currentTask && postPhase !== "tasks") {
+      setPostPhase("tasks");
+    }
+  }, [currentTask, postPhase]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -1592,6 +1662,7 @@ function StudentApp() {
     }
   }, []);
 
+  // Handlers
   function tryPlayAlertSound() {
     try {
       sndAlert.current && sndAlert.current.play();
@@ -1658,8 +1729,6 @@ function StudentApp() {
     }
   }
 
-
-
   function tryPlayRolePlaySound() {
     try {
       sndRolePlay.current && sndRolePlay.current.play();
@@ -1723,6 +1792,126 @@ function StudentApp() {
     } catch {
       // ignore
     }
+  }
+
+  function requestTestTaskByIndex(index) {
+    const safeIndex = Number(index);
+    if (!joined || !roomCode || !teamId) {
+      setStatusMessage("Join a room first.");
+      return;
+    }
+    if (!Number.isInteger(safeIndex) || safeIndex < 0) {
+      setStatusMessage("Enter a valid task number.");
+      return;
+    }
+
+    setStatusMessage("Loading test task…");
+
+    socket.emit(
+      "task:testRequestByIndex",
+      {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+        taskIndex: safeIndex,
+        bypassScan: testBypassScan,
+        localOnly: testLocalOnly,
+      },
+      (resp) => {
+        if (!resp?.ok) {
+          setStatusMessage(resp?.error || "Could not load test task.");
+          return;
+        }
+
+        setActiveTestTaskIndex(safeIndex);
+        setTestTaskInput(String(safeIndex + 1));
+        setWaitingForLaunch(false);
+        setTaskLocked(false);
+        setPostSubmitSecondsLeft(null);
+        setReviewState(null);
+        setScanError(null);
+        setScanStatus("ok");
+
+        if (testBypassScan) {
+          setScannedStationId(
+            assignedStationId ||
+            normalizeStationId(assignedStationIdRef.current)?.id ||
+            null
+          );
+          setScannerActive(false);
+        }
+
+        setStatusMessage(`Test task ${safeIndex + 1} loaded.`);
+      }
+    );
+  }
+
+    function goToPrevTestTask() {
+    const current =
+      typeof activeTestTaskIndex === "number"
+        ? activeTestTaskIndex
+        : (() => {
+            const oneBased = Number(testTaskInput);
+            return Number.isInteger(oneBased) && oneBased > 0 ? oneBased - 1 : 0;
+          })();
+
+    const nextIndex = Math.max(0, current - 1);
+    setTestTaskInput(String(nextIndex + 1));
+    requestTestTaskByIndex(nextIndex);
+  }
+
+  function goToNextTestTask() {
+    const current =
+      typeof activeTestTaskIndex === "number"
+        ? activeTestTaskIndex
+        : (() => {
+            const oneBased = Number(testTaskInput);
+            return Number.isInteger(oneBased) && oneBased > 0 ? oneBased - 1 : 0;
+          })();
+
+    const nextIndex =
+      typeof totalTaskCount === "number"
+        ? Math.min(totalTaskCount - 1, current + 1)
+        : current + 1;
+
+    setTestTaskInput(String(nextIndex + 1));
+    requestTestTaskByIndex(nextIndex);
+  }
+
+  function clearTestTaskMode() {
+    if (!roomCode || !teamId) {
+      setActiveTestTaskIndex(null);
+      return;
+    }
+
+    socket.emit(
+      "task:testClear",
+      {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+      },
+      () => {
+        setActiveTestTaskIndex(null);
+        setTestTaskInput("");
+        setTaskLocked(false);
+        setPostSubmitSecondsLeft(null);
+        setReviewState(null);
+        setStatusMessage("Returned to live task flow.");
+      }
+    );
+  }
+
+  function handleTestTaskSelect(e) {
+    const value = e.target.value;
+    if (value === "") {
+      setTestTaskInput("");
+      return;
+    }
+
+    const idx = Number(value);
+    if (!Number.isInteger(idx) || idx < 0) return;
+
+    setTestTaskInput(String(idx + 1));
+    requestTestTaskByIndex(idx);
   }
 
   // ─────────────────────────────────────────────
@@ -2111,6 +2300,14 @@ function StudentApp() {
         }
 
         setStatusMessage("");
+        if (response?.testMode) {
+          setStatusMessage(
+            response?.localOnly
+              ? "Test submission scored locally."
+              : "Test submission completed."
+          );
+        }
+
         const isPhysical =
           !!currentTask?.isPhysical ||
           !!currentTask?.config?.isPhysical ||
@@ -2422,19 +2619,26 @@ function StudentApp() {
       setScannedStationId(norm.id);
       setScannerActive(true);
 
-      const isInitial = !!resp?.initialAssignment;
-      const waiting = !!resp?.waitingForLaunch; // trust server
-      // setWaitingForLaunch(waiting);
+      const waiting = !!resp?.waitingForLaunch;
 
-      // If the taskset has started, scanning means: request the next task NOW.
-      if (roomIsActive || tasksStartedRef.current || tasksStarted) {
-        setPostPhase("tasks");
-        socket.emit("task:requestNext", { roomCode: code, teamId });
+      if (resp?.task) {
+        handleTaskAssigned({
+          task: resp.task,
+          taskIndex: resp.taskIndex,
+          totalTasks: resp.totalTasks,
+          timeLimitSeconds: resp.timeLimitSeconds,
+          testMode: resp.testMode,
+          bypassScan: resp.bypassScan,
+        });
+        setWaitingForLaunch(false);
+      } else {
+        setWaitingForLaunch(waiting || roomIsActive || tasksStartedRef.current || tasksStarted);
+
+        if (!(roomIsActive || tasksStartedRef.current || tasksStarted)) {
+          if (warmupStep === "done") setPostPhase("treasure");
+          else setPostPhase("mood");
+        }
       }
-
-      // Otherwise use warm-up pipeline (pre-taskset only)
-      if (warmupStep === "done") setPostPhase("treasure");
-      else setPostPhase("mood");
     });
 
     return false;
@@ -2727,13 +2931,17 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
   const totalTasks =
     typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0 ? tasksetTotalTasks : null;
 
-  const progressLabel =
-    currentTaskNumber && totalTasks
-      ? `Task ${currentTaskNumber} of ${totalTasks}`
-      : currentTaskNumber
-      ? `Task ${currentTaskNumber}`
-      : null;
+  const effectiveTaskNumber =
+    typeof activeTestTaskIndex === "number"
+      ? activeTestTaskIndex + 1
+      : currentTaskNumber;
 
+  const progressLabel =
+    effectiveTaskNumber && totalTasks
+      ? `Task ${effectiveTaskNumber} of ${totalTasks}`
+      : effectiveTaskNumber
+      ? `Task ${effectiveTaskNumber}`
+      : null;
   // ─────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────
@@ -3761,12 +3969,12 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
           {progressLabel && (
             <div style={{ textAlign: "right", fontSize: "0.8rem" }}>
               <div style={{ color: "#e5e7eb", fontWeight: 600 }}>{progressLabel}</div>
-              {currentTaskNumber && totalTasks && (
+              {effectiveTaskNumber && totalTasks && (
                 <div className="progress-line">
                   <div
                     className="progress-line-inner"
                     style={{
-                      width: `${Math.round((currentTaskNumber / totalTasks) * 100)}%`,
+                      width: `${Math.round((effectiveTaskNumber / totalTasks) * 100)}%`,
                     }}
                   />
                 </div>
@@ -3797,6 +4005,192 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
         />
       </section>
     )}  
+
+      {joined && testMode && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: 16,
+            background: "rgba(15,23,42,0.88)",
+            border: "1px solid rgba(251,191,36,0.55)",
+            color: "#f8fafc",
+            boxShadow: "0 10px 25px rgba(15,23,42,0.22)",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>
+            🧪 Test Mode
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <input
+              type="number"
+              min="1"
+              placeholder="Task #"
+              value={testTaskInput}
+              onChange={(e) => setTestTaskInput(e.target.value)}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.22)",
+                background: "rgba(255,255,255,0.08)",
+                color: "#fff",
+                width: 90,
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() => {
+                const oneBased = Number(testTaskInput);
+                if (!Number.isInteger(oneBased) || oneBased <= 0) {
+                  setStatusMessage("Enter a valid task number.");
+                  return;
+                }
+                requestTestTaskByIndex(oneBased - 1);
+              }}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "none",
+                background: "#f59e0b",
+                color: "#111827",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              Load test task
+            </button>
+
+            <select
+              value={
+                typeof activeTestTaskIndex === "number"
+                  ? String(activeTestTaskIndex)
+                  : ""
+              }
+              onChange={handleTestTaskSelect}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.22)",
+                background: "rgba(255,255,255,0.08)",
+                color: "#fff",
+                minWidth: 220,
+              }}
+            >
+              <option value="">Select task…</option>
+              {testTaskOptions.map((opt) => (
+                <option key={opt.index} value={String(opt.index)}>
+                  {opt.index + 1}. {opt.label}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={goToPrevTestTask}
+              disabled={
+                typeof activeTestTaskIndex === "number"
+                  ? activeTestTaskIndex <= 0
+                  : Number(testTaskInput || 1) <= 1
+              }
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "transparent",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: "pointer",
+                opacity:
+                  typeof activeTestTaskIndex === "number"
+                    ? activeTestTaskIndex <= 0
+                      ? 0.5
+                      : 1
+                    : Number(testTaskInput || 1) <= 1
+                    ? 0.5
+                    : 1,
+              }}
+            >
+              ← Prev
+            </button>
+
+            <button
+              type="button"
+              onClick={goToNextTestTask}
+              disabled={
+                typeof totalTaskCount === "number" &&
+                typeof activeTestTaskIndex === "number" &&
+                activeTestTaskIndex >= totalTaskCount - 1
+              }
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "transparent",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: "pointer",
+                opacity:
+                  typeof totalTaskCount === "number" &&
+                  typeof activeTestTaskIndex === "number" &&
+                  activeTestTaskIndex >= totalTaskCount - 1
+                    ? 0.5
+                    : 1,
+              }}
+            >
+              Next →
+            </button>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem" }}>
+              <input
+                type="checkbox"
+                checked={testBypassScan}
+                onChange={(e) => setTestBypassScan(e.target.checked)}
+              />
+              Bypass scan
+            </label>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.9rem" }}>
+              <input
+                type="checkbox"
+                checked={testLocalOnly}
+                onChange={(e) => setTestLocalOnly(e.target.checked)}
+              />
+              Local-only submit
+            </label>
+
+            <button
+              type="button"
+              onClick={clearTestTaskMode}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.2)",
+                background: "transparent",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Return to live flow
+            </button>
+          </div>
+
+          {activeTestTaskIndex != null && (
+            <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#fde68a" }}>
+              Testing task {activeTestTaskIndex + 1}
+            </div>
+          )}
+        </div>
+      )}
 
     {joined && postPhase === "treasure" && (warmupStep === "treasure" || warmupStep === "done") && !currentTask && (
       <section

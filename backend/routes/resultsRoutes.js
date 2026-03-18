@@ -12,11 +12,11 @@ const router = express.Router();
  * - generic message
  */
 const lookupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 10,
+  windowMs: 15 * 60 * 1000,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Code not found." },
+  message: { error: "Too many lookup attempts. Please wait a few minutes and try again." },
 });
 
 // Optional: slightly higher limit for create endpoint (teacher side)
