@@ -606,15 +606,6 @@ function StudentApp() {
   const lastScanKeyRef = useRef({ key: null, atMs: 0 });
   const stationScanInFlightRef = useRef(false);
 
-  const assignedColorRef = useRef(null);
-  useEffect(() => { assignedColorRef.current = assignedColor; }, [assignedColor]);
-
-  const assignedStationIdRef = useRef(null);
-  useEffect(() => { assignedStationIdRef.current = assignedStationId; }, [assignedStationId]);
-
-  const tasksStartedRef2 = useRef(false);
-  useEffect(() => { tasksStartedRef2.current = tasksStarted; }, [tasksStarted]);
-
   const [warmupDone, setWarmupDone] = useState(false);
   const [warmupStep, setWarmupStep] = useState("mood"); 
 
@@ -624,10 +615,21 @@ function StudentApp() {
   const [scannedStationId, setScannedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
-  const [scanStatus, setScanStatus] = useState(null); // null | "ok" | "error"
+  const [scanStatus, setScanStatus] = useState(null);
   const [waitingForLaunch, setWaitingForLaunch] = useState(false);
   const tasksStartedRef = useRef(false);
   const [tasksStarted, setTasksStarted] = useState(false);
+
+  // refs that mirror state
+  const assignedColorRef = useRef(null);
+  useEffect(() => {
+    assignedColorRef.current = assignedColor;
+  }, [assignedColor]);
+
+  const assignedStationIdRef = useRef(null);
+  useEffect(() => {
+    assignedStationIdRef.current = assignedStationId;
+  }, [assignedStationId]);
 
   // Task + timer state
   const [currentTask, setCurrentTask] = useState(null);
