@@ -2494,7 +2494,21 @@ function StudentApp() {
     // If it consumes the scan, do NOT run station gating logic or set scanStatus.
     try {
       if (window.__curriculateTaskWantsScan && typeof window.__curriculateTaskScanHandler === "function") {
-        const consumed = window.__curriculateTaskScanHandler(data);
+        let taskScanValue = data;
+
+        // For scanner-driven color tasks, normalize the QR into a station color first
+        if (
+          liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+          liveType === TASK_TYPES.MAD_DASH ||
+          liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
+          liveType === "mad-dash" ||
+          liveType === "mad-dash-sequence"
+        ) {
+          const norm = normalizeStationId(data);
+          taskScanValue = norm?.color || data;
+        }
+
+        const consumed = window.__curriculateTaskScanHandler(taskScanValue);
         if (consumed === true) {
           setScanError(null);
           return false;
