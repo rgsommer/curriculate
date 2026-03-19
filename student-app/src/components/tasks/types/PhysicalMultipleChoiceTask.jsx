@@ -23,6 +23,7 @@ export default function PhysicalMultipleChoiceTask({
   mode = "play",
   excludedColor = null,
   excludedColors = null,
+  onIncorrectScan = null,
 }) {
   const isReview = mode === "review";
 
@@ -79,25 +80,27 @@ export default function PhysicalMultipleChoiceTask({
   const normalizeColor = (c) =>
     typeof c === "string" ? c.trim().toLowerCase() : "";
 
-  useEffect(() => {
-    // reset on new task
-    setQIndex(0);
-    setSelectedLetterByQ({});
-    selectedLetterByQRef.current = {};
-    setShowScannerPrompt(true);
-    setShowingFeedback(false);
-    setFeedbackMessage("");
-    setScanError("");
-    lastValidScanColorRef.current = null;
-    submittedOnceRef.current = false;
-    clearAdvanceTimer();
-    clearErrorTimer();
-    return () => {
+    useEffect(() => {
+      // reset on new task
+      setQIndex(0);
+      setSelectedLetterByQ({});
+      selectedLetterByQRef.current = {};
+      setShowScannerPrompt(true);
+      setShowingFeedback(false);
+      setFeedbackMessage("");
+      setScanError("");
+      lastValidScanColorRef.current = null;
+      submittedOnceRef.current = false;
       clearAdvanceTimer();
       clearErrorTimer();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?._id]);
+      resetGlobalScanDedupe();
+
+      return () => {
+        clearAdvanceTimer();
+        clearErrorTimer();
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [task?._id]);
 
   const effectiveExclusions = useMemo(() => {
     const set = new Set();
@@ -170,7 +173,7 @@ export default function PhysicalMultipleChoiceTask({
   // Keep the global scanner alive throughout the task.
   // We gate acceptance inside acceptColorScan() so scans during feedback
   // or when we intentionally pause will be ignored.
-  const wantsScan = !disabled && !isReview;
+  const wantsScan = !disabled && !isReview && showScannerPrompt && !showingFeedback;
 
   // Claim scans globally while waiting
   useEffect(() => {
@@ -193,17 +196,23 @@ export default function PhysicalMultipleChoiceTask({
     } catch {}
   };
 
+  const resetGlobalScanDedupe = () => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("curriculate:resetScanDedupe")
+      );
+    } catch {}
+  };
+  
   const acceptColorScan = (rawColorLike) => {
     if (disabled || isReview || !showScannerPrompt || showingFeedback) return false;
 
     let scanned = rawColorLike;
 
-    // If StudentApp provided an object, accept .color/.stationColor
     if (scanned && typeof scanned === "object") {
       scanned = scanned.color || scanned.stationColor || scanned.stationId || "";
     }
 
-    // Normalize if URL-like
     if (typeof scanned === "string" && scanned.includes("play.curriculate.net/room/")) {
       const parts = scanned.split("/");
       scanned = parts[parts.length - 1];
@@ -216,14 +225,51 @@ export default function PhysicalMultipleChoiceTask({
       Object.entries(currentMap).find(([, color]) => normalizeColor(color) === scannedNorm)?.[0] ||
       null;
 
+    // scanned something that is NOT one of the shown answer colors
     if (!matchingLetter) {
       setScanError("Wrong color! Scan one of the options shown.");
       clearErrorTimer();
       errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
+
+      if (typeof onIncorrectScan === "function") onIncorrectScan();
       emitAnswerResult(false, false, false);
-      return false;
+      return true;
     }
 
+    const isCorrect = matchingLetter === correctAnswer;
+
+    // scanned one of the answer colors, but it is the WRONG answer
+    if (!isCorrect) {
+      setSelectedLetterByQ((prev) => ({
+        ...prev,
+        [qIndex]: matchingLetter,
+      }));
+
+      setShowScannerPrompt(false);
+      setShowingFeedback(true);
+      setFeedbackMessage("Incorrect — try again");
+
+      if (typeof onIncorrectScan === "function") onIncorrectScan();
+
+      clearAdvanceTimer();
+      advanceTimerRef.current = setTimeout(() => {
+        setShowingFeedback(false);
+        setFeedbackMessage("");
+        setSelectedLetterByQ((prev) => ({
+          ...prev,
+          [qIndex]: null,
+        }));
+
+        resetGlobalScanDedupe();
+        setShowScannerPrompt(true);
+
+        emitAnswerResult(true, false, false);
+      }, Number(task?.config?.feedbackDelay ?? 1200) || 1200);
+
+      return true;
+    }
+
+    // correct answer
     lastValidScanColorRef.current = scannedNorm;
 
     const nextSelected = {
@@ -235,11 +281,9 @@ export default function PhysicalMultipleChoiceTask({
 
     setShowScannerPrompt(false);
     setShowingFeedback(true);
+    setFeedbackMessage("Correct!");
 
-    const isCorrect = matchingLetter === correctAnswer;
-    setFeedbackMessage(isCorrect ? "Correct!" : "Incorrect");
-
-    const delay = Number(task?.config?.feedbackDelay ?? 1500) || 1500;
+    const delay = Number(task?.config?.feedbackDelay ?? 1200) || 1200;
 
     clearAdvanceTimer();
     advanceTimerRef.current = setTimeout(() => {
@@ -249,9 +293,10 @@ export default function PhysicalMultipleChoiceTask({
       const nextIndex = qIndex + 1;
       const done = nextIndex >= items.length;
 
-      emitAnswerResult(true, isCorrect, done);
+      emitAnswerResult(true, true, done);
 
       if (!done) {
+        resetGlobalScanDedupe();
         setQIndex(nextIndex);
         setShowScannerPrompt(true);
         return;

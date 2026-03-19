@@ -2139,6 +2139,12 @@ export default function TaskRunner({
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
           excludedColor={tp?.stationColor || tp?.config?.stationColor || null}
+          onIncorrectScan={() => {
+            try {
+              const fn = window.__curriculatePlayWrongSound;
+              if (typeof fn === "function") fn();
+            } catch {}
+          }}
         />
       );
       break;

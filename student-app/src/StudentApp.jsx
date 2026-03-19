@@ -941,11 +941,9 @@ function StudentApp() {
       setRoomIsActive(!!state.isActive);
 
       if (!currentTaskRef.current) {
+        setWaitingForLaunch(true);
         if (state?.isActive || tasksStartedRef.current || tasksStarted) {
-          setWaitingForLaunch(false);
           setPostPhase("tasks");
-        } else {
-          setWaitingForLaunch(true);
         }
       }
       
@@ -1266,14 +1264,13 @@ function StudentApp() {
       const liveType = liveTask?.taskType || liveTask?.type;
       const isPhysicalLive =
         !!(liveTask?.isPhysical ||
-           liveTask?.config?.isPhysical ||
-           liveTask?.movement ||
-           liveTask?.config?.movement ||
-           liveType === TASK_TYPES.BODY_BREAK ||
-           liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
-            liveType === TASK_TYPES.MAD_DASH);
-
-      
+          liveTask?.config?.isPhysical ||
+          liveTask?.movement ||
+          liveTask?.config?.movement ||
+          liveType === TASK_TYPES.BODY_BREAK ||
+          liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
+          liveType === TASK_TYPES.MAD_DASH ||
+          liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE);
 
       // ------------------------------------------------------------
       // Rich student feedback (toast + SFX + confetti)
@@ -1736,6 +1733,27 @@ function StudentApp() {
       // ignore
     }
   }
+
+  useEffect(() => {
+    window.__curriculatePlayWrongSound = () => {
+      tryPlayWrongSound();
+    };
+
+    return () => {
+      delete window.__curriculatePlayWrongSound;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      lastScanKeyRef.current = { key: null, atMs: 0 };
+    };
+
+    window.addEventListener("curriculate:resetScanDedupe", handler);
+    return () => {
+      window.removeEventListener("curriculate:resetScanDedupe", handler);
+    };
+  }, []);
 
   function tryPlayNarrationSound() {
     try {
@@ -2332,11 +2350,16 @@ function StudentApp() {
           );
         }
 
+        const currentType = currentTask?.taskType || currentTask?.type;
+
         const isPhysical =
           !!currentTask?.isPhysical ||
           !!currentTask?.config?.isPhysical ||
-          currentTask?.category === "PHYSICAL";
-
+          currentTask?.category === "PHYSICAL" ||
+          currentType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+          currentType === TASK_TYPES.MAD_DASH ||
+          currentType === TASK_TYPES.MAD_DASH_SEQUENCE;
+          
         const shouldReview = !isPhysical;
 
         if (shouldReview) {
@@ -2506,8 +2529,12 @@ function StudentApp() {
       return false;
     }
 
-    // Physical MC scan path: translate QR to a station color and forward.
-    if (liveTask && liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
+    // Physical MC scan path: fallback ONLY if task handler didn't consume it
+    if (
+      liveTask &&
+      liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE &&
+      typeof window.__curriculateTaskScanHandler !== "function"
+    ) {
       const norm = normalizeStationId(data);
       if (!norm?.color) {
         setScanError("Unrecognized station QR code for this task.");
@@ -2827,7 +2854,7 @@ function StudentApp() {
 
   
   const isPhysicalMultipleChoice = currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
-const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
+  const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
