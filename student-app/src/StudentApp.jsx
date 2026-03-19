@@ -1504,11 +1504,7 @@ function StudentApp() {
     })();
 
     const liveType = currentTask?.taskType || currentTask?.type;
-    const taskNeedsGlobalScanner =
-      liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
-      liveType === TASK_TYPES.MAD_DASH ||
-      liveType === TASK_TYPES.MAD_DASH_SEQUENCE;
-
+    
     if (taskLocked && !taskWantsScan) {
       setScannerActive(false);
       return;
@@ -2856,6 +2852,11 @@ function StudentApp() {
   const isPhysicalMultipleChoice = currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
   const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
+  const taskNeedsGlobalScanner =
+    currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+    currentTask?.taskType === TASK_TYPES.MAD_DASH ||
+    currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE;
+    
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
         animation: "mc-header-pulse 1.4s ease-in-out infinite",
@@ -4476,7 +4477,7 @@ function StudentApp() {
 )}
 
 {/* TASK CARD (only when not gated) */}
-{joined && postPhase === "tasks" && !currentTask && (!mustScan || taskLocked) && !tasksetComplete && waitingForLaunch && (
+{joined && postPhase === "tasks" && !currentTask && (!mustScan || taskLocked || taskNeedsGlobalScanner) && !tasksetComplete && waitingForLaunch && (
   <section
     style={{
       marginTop: 10,
@@ -4496,7 +4497,7 @@ function StudentApp() {
   </section>
 )}
 
-{joined && postPhase === "tasks" && !!currentTask && (!mustScan || taskLocked) && !tasksetComplete && (
+{joined && postPhase === "tasks" && !!currentTask && (!mustScan || taskLocked || taskNeedsGlobalScanner) && !tasksetComplete && (
   <section
     className="task-card"
     style={{
