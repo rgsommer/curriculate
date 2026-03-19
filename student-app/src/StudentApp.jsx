@@ -2470,10 +2470,6 @@ function StudentApp() {
         const consumed = window.__curriculateTaskScanHandler(data);
         if (consumed === true) {
           setScanError(null);
-          // IMPORTANT: do NOT setScanStatus("ok") here.
-          // Optional: clear prior banner if it was set earlier.
-          // setScanStatus(null);
-          tryPlayAlertSound();
           return false;
         }
       }
@@ -2512,14 +2508,14 @@ function StudentApp() {
       }
 
       setScanError(null);
-      
+
       try {
         window.dispatchEvent(
           new CustomEvent("curriculate:stationScan", {
             detail: {
               color: norm.color,
               stationColor: norm.color,
-              stationId: norm.id || null, // optional
+              stationId: norm.id || null,
             },
           })
         );
@@ -2527,10 +2523,9 @@ function StudentApp() {
         // ignore
       }
 
-      // Do NOT toggle the global scanner panel here; the task owns its own pop-up scanner UI.
-      tryPlayAlertSound();
       return false;
     }
+
     // Mad Dash scan path: translate QR to a station color and forward to MadDash via window event.
     if (
       liveTask &&
@@ -2560,7 +2555,6 @@ function StudentApp() {
       }
 
       // Do NOT toggle the global scanner panel here; the task owns its own pop-up scanner UI.
-      tryPlayAlertSound();
       return false;
     }
 
@@ -2614,26 +2608,22 @@ function StudentApp() {
 
       setScanError(null);
 
-      // ✅ define expectedId locally (was missing)
-      const expectedId = resp?.stationId
-        ? normalizeStationId(resp.stationId).id
-        : assignedStationId;
-
-      const accepted = norm.id === expectedId;
-
-      if (!accepted) {
-        setScanStatus("error");
-        setWaitingForLaunch(false);
-        setScannedStationId(null);
-        setScanError("Wrong station. Scan your assigned station QR.");
-        setScannerActive(true);
-        return;
+      // Server already accepted the scan, so trust it.
+      // Also refresh local assigned station if the server sends one back.
+      if (resp?.stationId) {
+        const serverStation = normalizeStationId(resp.stationId);
+        if (serverStation?.id) {
+          setAssignedStationId(serverStation.id);
+          setAssignedColor(serverStation.color || null);
+          lastStationIdRef.current = serverStation.id;
+        }
       }
 
       setScanStatus("ok");
       setScanError(null);
-      setScannedStationId(norm.id);
+      setScannedStationId(resp?.stationId ? normalizeStationId(resp.stationId).id : norm.id);
       setScannerActive(true);
+      tryPlayAlertSound();
 
       const waiting = !!resp?.waitingForLaunch;
 
