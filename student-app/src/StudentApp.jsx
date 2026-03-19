@@ -942,7 +942,7 @@ function StudentApp() {
 
       if (!currentTaskRef.current) {
         if (state?.isActive || tasksStartedRef.current || tasksStarted) {
-          setWaitingForLaunch(true);
+          setWaitingForLaunch(false);
           setPostPhase("tasks");
         } else {
           setWaitingForLaunch(true);
@@ -1069,12 +1069,12 @@ function StudentApp() {
       setScannerActive(assignedNeedsScanner);
 
       if (assignedIsMadDash) {
-        tryPlayAlertSound();
+        // tryPlayAlertSound();
         setTreatMessage("🏁 Mad Dash — watch the sequence, then scan the colors IN ORDER as fast as you can!");
         window.setTimeout(() => setTreatMessage(null), 4200);
       }
       if (assignedIsPhysicalMC) {
-        tryPlayAlertSound();
+        // tryPlayAlertSound();
         setTreatMessage("🚶‍♂️ Physical Multiple Choice — pick A/B/C/D, then scan the matching color station!");
         window.setTimeout(() => setTreatMessage(null), 4200);
       }
@@ -1506,27 +1506,35 @@ function StudentApp() {
       try { return !!window.__curriculateTaskWantsScan; } catch { return false; }
     })();
 
+    const liveType = currentTask?.taskType || currentTask?.type;
+    const taskNeedsGlobalScanner =
+      liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+      liveType === TASK_TYPES.MAD_DASH ||
+      liveType === TASK_TYPES.MAD_DASH_SEQUENCE;
+
     if (taskLocked && !taskWantsScan) {
       setScannerActive(false);
       return;
     }
 
-    // If we’re supposed to scan (because of gating), open camera.
+    // If we’re supposed to scan because of station-gating, open camera.
     if (mustScan && !scannerActive) {
       setScannerActive(true);
       return;
     }
 
-    // If scanning is NOT currently required (and no task is consuming scans),
-    // shut the camera down. This prevents:
-    // 1) a "second" scanner running behind the task UI, and
-    // 2) black/failed camera re-opens on the next task (camera stream stuck).
-    if (!mustScan && !taskWantsScan && scannerActive) {
+    // Keep scanner open for tasks that actively use it
+    if (taskNeedsGlobalScanner && !scannerActive) {
+      setScannerActive(true);
+      return;
+    }
+
+    // Only shut scanner down when nobody needs it
+    if (!mustScan && !taskWantsScan && !taskNeedsGlobalScanner && scannerActive) {
       setScannerActive(false);
       return;
     }
 
-    // Ensure assignment info is fetched so colour can display
     const inferredColor =
       assignedColorRef.current || normalizeStationId(assignedStationIdRef.current)?.color;
 
@@ -1541,19 +1549,19 @@ function StudentApp() {
     if (inferredColor) {
       requestedRoomStateRef.current = false;
     }
-    }, [
-      joined,
-      mustScan,
-      currentTask,
-      waitingForLaunch,
-      assignedColor,
-      assignedStationId,
-      teamId,
-      roomCode,
-      taskLocked,
-      postSubmitSecondsLeft,
-      scannerActive,
-    ]);
+  }, [
+    joined,
+    mustScan,
+    currentTask,
+    waitingForLaunch,
+    assignedColor,
+    assignedStationId,
+    teamId,
+    roomCode,
+    taskLocked,
+    postSubmitSecondsLeft,
+    scannerActive,
+  ]);
 
   useEffect(() => {
     if (currentTask && postPhase !== "tasks") {
@@ -4312,42 +4320,67 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 )}
 
 {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-{scannerActive && mustScan && !tasksetComplete && postSubmitSecondsLeft == null && !taskLocked && (
-<section
-  style={{
-    marginTop: 6,
-    padding: 16,
-    borderRadius: 18,
-    background: (assignedColor || stationInfo?.color || "black"),
-    color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
-    border: "2px solid rgba(255,255,255,0.55)",
-    textAlign: "center",
-    boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
-  }}
->
-  <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
-    {(() => {
-      if (taskLocked) return; //revisit
-      const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
-      const locationUpper = String(roomLocation || "").toUpperCase();
+{scannerActive &&
+  !tasksetComplete &&
+  postSubmitSecondsLeft == null &&
+  !taskLocked &&
+  (
+    mustScan ||
+    currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+    currentTask?.taskType === TASK_TYPES.MAD_DASH ||
+    currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE
+  ) && (
+      <section
+        style={{
+          marginTop: 6,
+          padding: 16,
+          borderRadius: 18,
+          background: (assignedColor || stationInfo?.color || "black"),
+          color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
+          border: "2px solid rgba(255,255,255,0.55)",
+          textAlign: "center",
+          boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+        }}
+      >
+      <div style={{ fontSize: "1.35rem", fontWeight: 900, letterSpacing: 0.4 }}>
+      {(() => {
+        if (taskLocked) return null;
 
-      if (!colorUpper) return "Scan station QR code";
+        const taskType = currentTask?.taskType;
 
-      // Multi-room only: show location + colour
-      if (isMultiRoom && enforceLocation && locationUpper) {
-        if (isMultiRoom && enforceLocation) {
-          return destinationText ? `Scan QR Code at ${destinationText}` : "Scan station QR code";
+        if (taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
+          return "Scan the color for your answer";
         }
-        return colorUpper ? `Scan QR Code at ${colorUpper}` : "Scan station QR code";
-      }
 
-      // Single-room: colour only
-      return `Scan QR Code at ${colorUpper}`;
-    })()}
-  </div>
+        if (
+          taskType === TASK_TYPES.MAD_DASH ||
+          taskType === TASK_TYPES.MAD_DASH_SEQUENCE
+        ) {
+          return "Scan the next color in the sequence";
+        }
 
-  <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
-    Get ready to Curriculate!
+        const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
+        const locationUpper = String(roomLocation || "").toUpperCase();
+
+        if (!colorUpper) return "Scan station QR code";
+
+        if (isMultiRoom && enforceLocation && locationUpper) {
+          return destinationText
+            ? `Scan QR Code at ${destinationText}`
+            : "Scan station QR code";
+        }
+
+        return `Scan QR Code at ${colorUpper}`;
+      })()}
+    </div>
+
+    <div style={{ fontSize: 14, opacity: 0.95, marginTop: 4 }}>
+    {currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE
+      ? "Choose A / B / C / D by scanning that option's station color."
+      : currentTask?.taskType === TASK_TYPES.MAD_DASH ||
+        currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE
+      ? "Scan only the next correct color."
+      : "Get ready to Curriculate!"}
   </div>
 
   <div
