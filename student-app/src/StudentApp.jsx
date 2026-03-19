@@ -1039,9 +1039,26 @@ function StudentApp() {
 
         assignedTaskWithMeta = {
           ...assignedTask,
-          stationColor: assignedTask?.stationColor || assignedTask?.config?.stationColor || inferredColor,
-          stationId: assignedTask?.stationId || assignedStationIdRef.current || null,
+          stationColor:
+            assignedTask?.stationColor ||
+            assignedTask?.config?.stationColor ||
+            inferredColor,
+          stationId:
+            assignedTask?.stationId ||
+            assignedStationIdRef.current ||
+            null,
         };
+
+        // ✅ PMC has already been unlocked by the entry scan.
+        // From here on, scans should be treated as PMC answer scans,
+        // not as "scan your assigned station to begin".
+        setScannedStationId(
+          assignedStationIdRef.current ||
+          assignedStationId ||
+          null
+        );
+        setScanStatus(null);
+        setScanError(null);
       }
 
       // Physical MC needs the global scanner panel. MadDash uses the embedded task scanner.
@@ -2604,13 +2621,16 @@ function StudentApp() {
 
       setScanStatus("ok");
       setScanError(null);
-      setScannedStationId(resp?.stationId ? normalizeStationId(resp.stationId).id : norm.id);
+      setScannedStationId(
+        resp?.stationId ? normalizeStationId(resp.stationId).id : norm.id
+      );
       setScannerActive(true);
-      tryPlayAlertSound();
 
       const waiting = !!resp?.waitingForLaunch;
 
       if (resp?.task) {
+        // ✅ Task is launching right now, so do not fire the global
+        // station-entry celebration sound here.
         handleTaskAssigned({
           task: resp.task,
           taskIndex: resp.taskIndex,
@@ -2621,7 +2641,11 @@ function StudentApp() {
         });
         setWaitingForLaunch(false);
       } else {
-        setWaitingForLaunch(waiting || roomIsActive || tasksStartedRef.current || tasksStarted);
+        tryPlayAlertSound();
+
+        setWaitingForLaunch(
+          waiting || roomIsActive || tasksStartedRef.current || tasksStarted
+        );
 
         if (!(roomIsActive || tasksStartedRef.current || tasksStarted)) {
           if (warmupStep === "done") setPostPhase("treasure");
