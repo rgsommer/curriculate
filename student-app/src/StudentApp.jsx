@@ -2504,6 +2504,25 @@ function StudentApp() {
       console.warn("Task scan handler error:", e);
     }
 
+    // PMC / MadDash is on screen, but the task is temporarily not accepting scans
+    // (for example, while showing feedback). Swallow the scan so it does NOT
+    // fall through to normal station:scan server handling.
+    if (
+      liveTask &&
+      (
+        liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+        liveType === TASK_TYPES.MAD_DASH ||
+        liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
+        liveType === "mad-dash" ||
+        liveType === "mad-dash-sequence"
+      ) &&
+      !window.__curriculateTaskWantsScan
+    ) {
+      setScanError(null);
+      setScannerActive(true);
+      return false;
+    }
+    
     // If a task is on screen:
     // - Physical MC: allow scans and forward to the task via window event
     // - Everything else: ignore scans (prevents accidental station gate scans mid-task)
