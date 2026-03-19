@@ -2490,25 +2490,32 @@ function StudentApp() {
       return false;
     }
 
-    // If a task wants scan input, give it first right of refusal.
-    // If it consumes the scan, do NOT run station gating logic or set scanStatus.
-    try {
-      if (window.__curriculateTaskWantsScan && typeof window.__curriculateTaskScanHandler === "function") {
-        let taskScanValue = data;
+    const isTaskScannerType =
+      liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+      liveType === TASK_TYPES.MAD_DASH ||
+      liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
+      liveType === "mad-dash" ||
+      liveType === "mad-dash-sequence";
 
-        // For scanner-driven color tasks, normalize the QR into a station color first
-        if (
-          liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
-          liveType === TASK_TYPES.MAD_DASH ||
-          liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
-          liveType === "mad-dash" ||
-          liveType === "mad-dash-sequence"
-        ) {
-          const norm = normalizeStationId(data);
-          taskScanValue = norm?.color || data;
+    // If a task wants scanner input, give it first.
+    // For PMC / MadDash, NEVER let scans fall through to server station:scan.
+    try {
+      if (isTaskScannerType) {
+        let taskScanValue = data;
+        const norm = normalizeStationId(data);
+        taskScanValue = norm?.color || data;
+
+        if (typeof window.__curriculateTaskScanHandler === "function") {
+          window.__curriculateTaskScanHandler(taskScanValue);
         }
 
-        const consumed = window.__curriculateTaskScanHandler(taskScanValue);
+        setScanError(null);
+        setScannerActive(true);
+        return false;
+      }
+
+      if (window.__curriculateTaskWantsScan && typeof window.__curriculateTaskScanHandler === "function") {
+        const consumed = window.__curriculateTaskScanHandler(data);
         if (consumed === true) {
           setScanError(null);
           return false;
@@ -2516,25 +2523,10 @@ function StudentApp() {
       }
     } catch (e) {
       console.warn("Task scan handler error:", e);
-    }
-
-    // PMC / MadDash is on screen, but the task is temporarily not accepting scans
-    // (for example, while showing feedback). Swallow the scan so it does NOT
-    // fall through to normal station:scan server handling.
-    if (
-      liveTask &&
-      (
-        liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
-        liveType === TASK_TYPES.MAD_DASH ||
-        liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
-        liveType === "mad-dash" ||
-        liveType === "mad-dash-sequence"
-      ) &&
-      !window.__curriculateTaskWantsScan
-    ) {
-      setScanError(null);
-      setScannerActive(true);
-      return false;
+      if (isTaskScannerType) {
+        setScannerActive(true);
+        return false;
+      }
     }
     
     // If a task is on screen:
@@ -2883,13 +2875,15 @@ function StudentApp() {
 
   
   const isPhysicalMultipleChoice = currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE;
+  
+  const currentLiveType = currentTask?.taskType || currentTask?.type;
+  const taskNeedsGlobalScanner =
+    currentLiveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+    currentLiveType === TASK_TYPES.MAD_DASH ||
+    currentLiveType === TASK_TYPES.MAD_DASH_SEQUENCE;
+    
   const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 
-  const taskNeedsGlobalScanner =
-    currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
-    currentTask?.taskType === TASK_TYPES.MAD_DASH ||
-    currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE;
-    
   const musicalChairsHeaderStyle = isMusicalChairs
     ? {
         animation: "mc-header-pulse 1.4s ease-in-out infinite",
