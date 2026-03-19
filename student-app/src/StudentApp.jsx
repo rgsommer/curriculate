@@ -959,6 +959,7 @@ function StudentApp() {
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
       const limit = payload.timeLimitSeconds || null;
+      lastScanKeyRef.current = { key: null, atMs: 0 };
       setTimeLimitSeconds(limit);
 
       console.log("[StudentApp] task:assigned", payload?.task || payload);
@@ -2136,6 +2137,10 @@ function StudentApp() {
       // stop lock + countdown
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
+      setReviewState(null);
+
+      // clear scan dedupe so the next state is fresh
+      lastScanKeyRef.current = { key: null, atMs: 0 };
 
       const isLastTask =
         typeof currentTaskIndex === "number" &&
@@ -2149,7 +2154,6 @@ function StudentApp() {
         setPostPhase("feedback");
         setTasksetComplete(false);
         setScannerActive(false);
-        setReviewState(null);
 
         // Refresh room state one last time so scores/leaderboard are up to date
         socket.emit("room:request-state", { teamId });
@@ -2161,29 +2165,34 @@ function StudentApp() {
         return;
       }
 
-      // hide task UI so scanner is visible
+      // hide completed task UI
       setCurrentTask(null);
       setCurrentTaskIndex(null);
       setShortAnswerReveal(null);
 
-      // keep scannedStationId so we can auto-advance without forcing a re-scan
+      // clear transient scan UI
       setScanStatus(null);
       setScanError(null);
 
-      setPostPhase("scan");
-
-      // refresh assignment + show scanner
-      socket.emit("room:request-state", { teamId });
-      setScannerActive(true);
-
-      // Auto-advance: immediately request the next task once we leave review
-      // (Do NOT require re-scanning the station each time.)
-      try {
+      // If already at the assigned station, do NOT force another scan.
+      // Just request the next task.
+      if (scannedStationId && assignedStationId && scannedStationId === assignedStationId) {
+        setPostPhase("tasks");
+        setScannerActive(false);
         setWaitingForLaunch(true);
-        socket.emit("task:requestNext", { roomCode, teamId });
-      } catch {}
 
-      setReviewState(null);
+        socket.emit("room:request-state", { teamId });
+        socket.emit("task:requestNext", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+        });
+        return;
+      }
+
+      // Fallback only if station is unknown / not satisfied
+      setPostPhase("scan");
+      setScannerActive(true);
+      socket.emit("room:request-state", { teamId });
     };
 
     const debugForceEndTaskNow = () => {
@@ -4306,7 +4315,7 @@ const isMusicalChairs = currentTask?.taskType === TASK_TYPES.MUSICAL_CHAIRS;
 )}
 
 {/* SCANNER PANEL (shows whenever scannerActive is true) */}
-{scannerActive && !tasksetComplete && postSubmitSecondsLeft == null && !taskLocked && ( //revisit
+{scannerActive && mustScan && !tasksetComplete && postSubmitSecondsLeft == null && !taskLocked && (
 <section
   style={{
     marginTop: 6,
