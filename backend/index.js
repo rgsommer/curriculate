@@ -2849,66 +2849,52 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
   // Teacher creates room
   socket.on("teacher:createRoom", async ({ roomCode, teacherInstanceId }, callback) => {
-    const code = roomCode?.toUpperCase();
-    if (!code) return;
+    const code = roomCode?.toUpperCase()?.trim();
+    if (!code) {
+      if (typeof callback === "function") {
+        callback({ ok: false, error: "Missing room code." });
+      }
+      return;
+    }
 
     const instId = normalizeTeacherInstanceId(teacherInstanceId, socket.id);
 
-    // ✅ Ensure this LiveSession instance only owns ONE room at a time
+    // Ensure this LiveSession instance only owns ONE room at a time
     pruneTeacherRoomsByInstance(instId, code);
 
-    if (rooms[code]) {
-      rooms[code].teacherSocketId = socket.id;
-      socket.join(code);
+    // Reuse existing room or create it once
+    let room = rooms[code];
+    if (!room) {
+      room = await createRoom(code, socket.id);
+      rooms[code] = room;
+      console.log(`Teacher created room ${code}`);
+    }
 
-      const state = buildRoomState(rooms[code]);
+    // Stamp ownership / keepalive
+    room.teacherSocketId = socket.id;
+    room.teacherInstanceId = instId;
+    room.lastTeacherSeenAt = Date.now();
+    room.expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour
 
-      // Emit both event names for compatibility
-      socket.emit("room:state", state);
-      socket.emit("roomState", state);
-      io.to(code).emit("room:state", state);
-      io.to(code).emit("roomState", state);
-
-      // Keep-alive pulse
-      rooms[code].teacherSocketId = socket.id;
-        rooms[code].lastTeacherSeenAt = Date.now();
-        rooms[code].expiresAt = Date.now() + 1000 * 60 * 60;
-
-        socket.data.role = "teacher";
-        socket.data.roomCode = code;
-        room.teacherInstanceId = instId;
-        socket.data.teacherInstanceId = instId;
-
-      if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
-        return;
-      }
-
-    console.log(`Teacher created room ${code}`);
-    const room = await createRoom(code, socket.id);
-    rooms[code] = room;
-    rooms[code].teacherInstanceId = instId;
+    socket.data.role = "teacher";
+    socket.data.roomCode = code;
     socket.data.teacherInstanceId = instId;
 
-    console.log(`Room ${code} is now READY for students`);
     socket.join(code);
 
-    // Broadcast initial empty state so LiveSession renders correctly
     const state = buildRoomState(room);
+
+    // Emit both event names for compatibility
+    socket.emit("room:state", state);
+    socket.emit("roomState", state);
     io.to(code).emit("room:state", state);
     io.to(code).emit("roomState", state);
 
-    // When the teacher creates/claims a room, stamp a heartbeat
-    rooms[code].teacherSocketId = socket.id;
-    rooms[code].teacherInstanceId = instId;
-    socket.data.teacherInstanceId = instId;
+    console.log(`Room ${code} is now READY for students`);
 
-    rooms[code].lastTeacherSeenAt = Date.now();
-    rooms[code].expiresAt = Date.now() + 1000 * 60 * 60; // 1 hour
-    socket.data.role = "teacher";
-    socket.data.roomCode = code;
-  
-    if (typeof callback === "function") callback({ ok: true, roomCode: code, room: state });
-
+    if (typeof callback === "function") {
+      callback({ ok: true, roomCode: code, room: state });
+    }
   });
 
   // teacher keepalive event
