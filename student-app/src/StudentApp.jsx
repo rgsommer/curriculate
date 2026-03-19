@@ -941,8 +941,9 @@ function StudentApp() {
       setRoomIsActive(!!state.isActive);
 
       if (!currentTaskRef.current) {
-        if (state?.isActive) {
-          setWaitingForLaunch(false);
+        if (state?.isActive || tasksStartedRef.current || tasksStarted) {
+          setWaitingForLaunch(true);
+          setPostPhase("tasks");
         } else {
           setWaitingForLaunch(true);
         }
@@ -2149,22 +2150,6 @@ function StudentApp() {
         tasksetTotalTasks > 0 &&
         currentTaskIndex === tasksetTotalTasks - 1;
 
-      // If this was the last task in the taskset, go to post-task feedback first
-      if (isLastTask) {
-        setPostPhase("feedback");
-        setTasksetComplete(false);
-        setScannerActive(false);
-
-        // Refresh room state one last time so scores/leaderboard are up to date
-        socket.emit("room:request-state", { teamId });
-
-        // hide task UI
-        setCurrentTask(null);
-        setCurrentTaskIndex(null);
-        setShortAnswerReveal(null);
-        return;
-      }
-
       // hide completed task UI
       setCurrentTask(null);
       setCurrentTaskIndex(null);
@@ -2173,25 +2158,23 @@ function StudentApp() {
       // clear transient scan UI
       setScanStatus(null);
       setScanError(null);
+      setScannedStationId(null);
 
-      // If already at the assigned station, do NOT force another scan.
-      // Just request the next task.
-      if (scannedStationId && assignedStationId && scannedStationId === assignedStationId) {
-        setPostPhase("tasks");
+      if (isLastTask) {
+        setPostPhase("feedback");
+        setTasksetComplete(false);
         setScannerActive(false);
-        setWaitingForLaunch(true);
+        setWaitingForLaunch(false);
 
         socket.emit("room:request-state", { teamId });
-        socket.emit("task:requestNext", {
-          roomCode: roomCode.trim().toUpperCase(),
-          teamId,
-        });
         return;
       }
 
-      // Fallback only if station is unknown / not satisfied
+      // Always require a fresh scan for the next station
       setPostPhase("scan");
       setScannerActive(true);
+      setWaitingForLaunch(false);
+
       socket.emit("room:request-state", { teamId });
     };
 

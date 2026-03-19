@@ -3631,12 +3631,23 @@ socket.on("task:force-advance", ({ roomCode }) => {
         return;
       }
 
+      console.log("[station:scan check]", {
+        teamId,
+        expectedStationRaw: expectedStation,
+        expected,
+        scannedRaw: stationId,
+        scanned,
+        currentStationId: team.currentStationId,
+        nextTaskIndex: team.nextTaskIndex,
+        taskIndex: team.taskIndex,
+      });
+
       const stationMatches =
         (expected.id && scanned.id && expected.id === scanned.id) ||
         (expected.color && scanned.color && expected.color === scanned.color);
 
       
-if (!stationMatches) {
+      if (!stationMatches) {
         console.error("Wrong station:", {
           expectedStation,
           expected,
@@ -3658,6 +3669,15 @@ if (!stationMatches) {
           team.locationSlug || room.locationCode || "Classroom";
         const expectedColorName = expected?.color || expectedLabel || "YOUR STATION";
         const goTo = formatGoTo(room, expectedLocationSlugOrLabel, expectedColorName);
+
+        console.log("[station:scan success]", {
+          teamId,
+          expectedStationRaw: expectedStation,
+          deliveredTask,
+          nextTaskIndex: team.nextTaskIndex,
+          taskIndex: team.taskIndex,
+          waitingForLaunch,
+        });
 
         if (typeof ack === "function") {
           ack({
@@ -3722,6 +3742,11 @@ if (!stationMatches) {
             : -1;
 
         if (queuedIndex >= 0) {
+          console.log("[station:scan deliver queued task]", {
+            teamId,
+            queuedIndex,
+            currentTaskIndex: team.taskIndex,
+          });
           sendTaskToTeam(room, teamId, queuedIndex);
           delete team.nextTaskIndex;
           deliveredTask = true;
