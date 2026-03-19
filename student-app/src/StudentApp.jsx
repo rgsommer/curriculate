@@ -937,10 +937,15 @@ function StudentApp() {
       roomLocationFromStateRef.current = loc;
 
       setRoomIsActive(!!state.isActive);
-      if (!state?.isActive && !currentTaskRef.current) {
-        setWaitingForLaunch(true);
-      }
 
+      if (!currentTaskRef.current) {
+        if (state?.isActive) {
+          setWaitingForLaunch(false);
+        } else {
+          setWaitingForLaunch(true);
+        }
+      }
+      
       const noiseCfg = state.noiseConfig || {};
       setNoiseState((prev) => ({
         ...prev,
