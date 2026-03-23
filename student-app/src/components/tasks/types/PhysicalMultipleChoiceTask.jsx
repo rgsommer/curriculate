@@ -77,6 +77,12 @@ export default function PhysicalMultipleChoiceTask({
     errorTimerRef.current = null;
   };
 
+  const [flashColor, setFlashColor] = useState(null);
+
+  const [streak, setStreak] = useState(0);
+  const [streakBanner, setStreakBanner] = useState("");
+  const streakTimerRef = useRef(null);
+
   const normalizeColor = (c) =>
     typeof c === "string" ? c.trim().toLowerCase() : "";
 
@@ -94,6 +100,9 @@ export default function PhysicalMultipleChoiceTask({
       clearAdvanceTimer();
       clearErrorTimer();
       resetGlobalScanDedupe();
+      setStreak(0);
+      setStreakBanner("");
+      clearStreakTimer();
 
       return () => {
         clearAdvanceTimer();
@@ -168,7 +177,7 @@ export default function PhysicalMultipleChoiceTask({
 
   const currentQuestion = items[qIndex] || {};
   const options = Array.isArray(currentQuestion.options) ? currentQuestion.options : [];
-  const rawCorrectAnswer = currentQuestion.correctAnswer;
+  const rawCorrectAnswer = currentQuestion?.correctAnswer;
 
   const correctLetter = useMemo(() => {
     if (typeof rawCorrectAnswer === "number") {
@@ -180,10 +189,14 @@ export default function PhysicalMultipleChoiceTask({
     if (letters.includes(s)) return s;
 
     if (/^\d+$/.test(s)) {
-      const idx = Number(s);
-      return letters[idx] ?? null;
+      const n = Number(s);
+
+      // support both 0-based and 1-based inputs
+      if (n >= 0 && n < letters.length) return letters[n];
+      if (n >= 1 && n <= letters.length) return letters[n - 1];
     }
 
+    console.warn("[PMC] Could not resolve correctLetter from:", rawCorrectAnswer);
     return null;
   }, [rawCorrectAnswer]);
 
@@ -222,7 +235,9 @@ export default function PhysicalMultipleChoiceTask({
   };
   
   const acceptColorScan = (rawColorLike) => {
-    if (disabled || isReview || !showScannerPrompt || showingFeedback) return false;
+    if (disabled || isReview || !showScannerPrompt || showingFeedback) {
+      return false;
+    }
 
     let scanned = rawColorLike;
 
@@ -236,11 +251,14 @@ export default function PhysicalMultipleChoiceTask({
     }
 
     const scannedNorm = normalizeColor(scanned);
-    if (!scannedNorm) return false;
+    if (!scannedNorm) {
+      return { status: "invalid" };
+    }
 
     const matchingLetter =
-      Object.entries(currentMap).find(([, color]) => normalizeColor(color) === scannedNorm)?.[0] ||
-      null;
+      Object.entries(currentMap).find(
+        ([, color]) => normalizeColor(color) === scannedNorm
+      )?.[0] || null;
 
     // scanned something that is NOT one of the shown answer colors
     if (!matchingLetter) {
@@ -248,14 +266,11 @@ export default function PhysicalMultipleChoiceTask({
       clearErrorTimer();
       errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
 
-      if (!matchingLetter) {
-        setScanError("Choose one of the option colors.");
-        clearErrorTimer();
-        errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
+      emitAnswerResult(true, false, false);
 
-        emitAnswerResult(true, false, false);
-        return true;
-      }
+      triggerFeedbackFx("yellow");
+      
+      return true;
     }
 
     const isCorrect = matchingLetter === correctLetter;
@@ -288,6 +303,9 @@ export default function PhysicalMultipleChoiceTask({
         emitAnswerResult(true, false, false);
       }, Number(task?.config?.feedbackDelay ?? 1200) || 1200);
 
+      setStreak(0);
+      triggerFeedbackFx("red");
+  
       return true;
     }
 
@@ -350,6 +368,17 @@ export default function PhysicalMultipleChoiceTask({
       });
     }, delay);
 
+    const nextStreak = streak + 1;
+    setStreak(nextStreak);
+
+    if (nextStreak >= 2) {
+      if (nextStreak === 2) showStreakBanner("🔥 2 in a row!");
+      else if (nextStreak === 3) showStreakBanner("🔥🔥 3 in a row!");
+      else showStreakBanner(`⚡ ${nextStreak} correct in a row!`);
+    }
+
+    triggerFeedbackFx("green");
+
     return true;
   };
 
@@ -371,6 +400,33 @@ export default function PhysicalMultipleChoiceTask({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled, isReview, showScannerPrompt, showingFeedback, qIndex, currentMap]);
 
+  const flashTimerRef = useRef(null);
+
+  const triggerFeedbackFx = (kind) => {
+    // flash
+    setFlashColor(kind);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlashColor(null), 300);
+
+    // sound
+    try {
+      if (kind === "green") {
+        window.__curriculatePlayCorrectSound?.();
+      } else {
+        window.__curriculatePlayWrongSound?.();
+      }
+    } catch {}
+
+    // vibration
+    try {
+      if (navigator?.vibrate) {
+        if (kind === "green") navigator.vibrate(80);
+        else if (kind === "red") navigator.vibrate([70, 40, 70]);
+        else navigator.vibrate(40); // yellow / invalid
+      }
+    } catch {}
+  };
+
   // Listen to StudentApp’s normalized station scan event (Option 1)
   useEffect(() => {
     const onStationScan = (ev) => {
@@ -381,6 +437,16 @@ export default function PhysicalMultipleChoiceTask({
     return () => window.removeEventListener("curriculate:stationScan", onStationScan);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled, isReview, showScannerPrompt, showingFeedback, qIndex, currentMap]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      clearAdvanceTimer();
+      clearErrorTimer();
+      clearStreakTimer();
+    };
+  }, []);
 
   // UI helpers
   function getColorCss(color) {
@@ -396,6 +462,19 @@ export default function PhysicalMultipleChoiceTask({
     };
     return map[color] || "#6b7280";
   }
+
+  const clearStreakTimer = () => {
+    if (streakTimerRef.current) clearTimeout(streakTimerRef.current);
+    streakTimerRef.current = null;
+  };
+
+  const showStreakBanner = (text) => {
+    setStreakBanner(text);
+    clearStreakTimer();
+    streakTimerRef.current = setTimeout(() => {
+      setStreakBanner("");
+    }, 1200);
+  };
 
   function getOptionStyle(chosen, isCorrect, isWrong, stationColor) {
     const base = {
@@ -475,6 +554,24 @@ export default function PhysicalMultipleChoiceTask({
             {feedbackMessage}
           </div>
         </div>
+      )}
+
+      {flashColor && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background:
+              flashColor === "green"
+                ? "rgba(0,255,0,0.25)"
+                : flashColor === "red"
+                ? "rgba(255,0,0,0.25)"
+                : "rgba(255,200,0,0.25)",
+            pointerEvents: "none",
+            zIndex: 9999,
+            transition: "opacity 0.2s ease",
+          }}
+        />
       )}
 
       <div className="max-w-3xl mx-auto pt-6">

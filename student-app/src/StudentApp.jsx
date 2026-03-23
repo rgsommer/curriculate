@@ -1735,8 +1735,13 @@ function StudentApp() {
       tryPlayWrongSound();
     };
 
+    window.__curriculatePlayCorrectSound = () => {
+      tryPlayCorrectSound();
+    };
+
     return () => {
       delete window.__curriculatePlayWrongSound;
+      delete window.__curriculatePlayCorrectSound;
     };
   }, []);
 
@@ -2481,8 +2486,14 @@ function StudentApp() {
     // Ignore scans only if a NON-physical-MC task is currently on screen (or we're in locked review).
     // We MUST allow scans during PhysicalMultipleChoiceTask so it can receive station colors.
     const liveTask = currentTaskRef.current;
-    const liveType = liveTask?.taskType || liveTask?.type;
+    const rawType = liveTask?.taskType || liveTask?.type || "";
+    const liveTypeNorm = String(rawType).toLowerCase().replace(/_/g, "-");
 
+    const isPMC = liveTypeNorm === "physical-multiple-choice";
+    const isMadDash =
+      liveTypeNorm === "mad-dash" ||
+      liveTypeNorm === "mad-dash-sequence";
+      
     // Block scans while locked review, but keep the camera alive.
     if (taskLocked) {
       setScanError(null);
@@ -2491,11 +2502,9 @@ function StudentApp() {
     }
 
     const isTaskScannerType =
-      liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
-      liveType === TASK_TYPES.MAD_DASH ||
-      liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
-      liveType === "mad-dash" ||
-      liveType === "mad-dash-sequence";
+      liveTypeNorm === "physical-multiple-choice" ||
+      liveTypeNorm === "mad-dash" ||
+      liveTypeNorm === "mad-dash-sequence";
 
     // If a task wants scanner input, give it first.
     // For PMC / MadDash, NEVER let scans fall through to server station:scan.
@@ -2509,7 +2518,7 @@ function StudentApp() {
           result = window.__curriculateTaskScanHandler(taskScanValue);
         }
 
-        if (liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
+        if (liveTypeNorm === "physical-multiple-choice") {
           if (!norm?.color) {
             setScanStatus(null);
             setScanError("Not a valid station color.");
@@ -2577,78 +2586,11 @@ function StudentApp() {
     if (
       liveTask &&
       !mustScan &&
-      liveType !== TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE &&
-      liveType !== TASK_TYPES.MAD_DASH &&
-      liveType !== TASK_TYPES.MAD_DASH_SEQUENCE &&
-      liveType !== "mad-dash" &&
-      liveType !== "mad-dash-sequence"
+      !isPMC &&
+      !isMadDash
     ) {
       setScanError(null);
       setScannerActive(true);
-      return false;
-    }
-
-    // Physical MC scan path: fallback ONLY if task handler didn't consume it
-    if (
-      liveTask &&
-      liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE &&
-      typeof window.__curriculateTaskScanHandler !== "function"
-    ) {
-      const norm = normalizeStationId(data);
-      if (!norm?.color) {
-        setScanError("Unrecognized station QR code for this task.");
-        setScannerActive(true);
-        return false;
-      }
-
-      setScanError(null);
-
-      try {
-        window.dispatchEvent(
-          new CustomEvent("curriculate:stationScan", {
-            detail: {
-              color: norm.color,
-              stationColor: norm.color,
-              stationId: norm.id || null,
-            },
-          })
-        );
-      } catch {
-        // ignore
-      }
-
-      return false;
-    }
-
-    // Mad Dash scan path: translate QR to a station color and forward to MadDash via window event.
-    if (
-      liveTask &&
-      (liveType === TASK_TYPES.MAD_DASH ||
-        liveType === TASK_TYPES.MAD_DASH_SEQUENCE ||
-        liveType === "mad-dash" ||
-        liveType === "mad-dash-sequence")
-    ) {
-      const norm = normalizeStationId(data);
-      if (!norm?.id || !norm?.color) {
-        setScanError("Unrecognized station QR code for this task.");
-        setScannerActive(true);
-        return false;
-      }
-
-      setScanError(null);
-      
-      try {
-        // MadDash only needs color (and stationId is still helpful for logs/debug)
-        window.dispatchEvent(
-          new CustomEvent("curriculate:madDashScan", {
-            detail: { color: norm.color, stationColor: norm.color, stationId: norm.id },
-          })
-        );
-      } catch {
-        // ignore
-      }
-
-      // Do NOT toggle the global scanner panel here; the task owns its own pop-up scanner UI.
       return false;
     }
 
