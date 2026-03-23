@@ -2501,12 +2501,50 @@ function StudentApp() {
     // For PMC / MadDash, NEVER let scans fall through to server station:scan.
     try {
       if (isTaskScannerType) {
-        let taskScanValue = data;
         const norm = normalizeStationId(data);
-        taskScanValue = norm?.color || data;
+        const taskScanValue = norm?.color || data;
 
+        let result = null;
         if (typeof window.__curriculateTaskScanHandler === "function") {
-          window.__curriculateTaskScanHandler(taskScanValue);
+          result = window.__curriculateTaskScanHandler(taskScanValue);
+        }
+
+        if (liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
+          if (!norm?.color) {
+            setScanStatus(null);
+            setScanError("Not a valid station color.");
+            setScannerActive(true);
+            return false;
+          }
+
+          if (result?.status === "invalid") {
+            setScanStatus(null);
+            setScanError("Choose one of the option colors.");
+            setScannerActive(true);
+            return false;
+          }
+
+          if (result?.status === "incorrect") {
+            setScanStatus("error");
+            setScanError("Try again.");
+            tryPlayWrongSound();
+            setScannerActive(true);
+            return false;
+          }
+
+          if (result?.status === "correct") {
+            setScanStatus("ok");
+            setScanError(null);
+            tryPlayCorrectSound();
+            setScannerActive(true);
+            return false;
+          }
+
+          // fallback if task returned nothing
+          setScanStatus(null);
+          setScanError(null);
+          setScannerActive(true);
+          return false;
         }
 
         setScanError(null);

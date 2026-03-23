@@ -168,7 +168,24 @@ export default function PhysicalMultipleChoiceTask({
 
   const currentQuestion = items[qIndex] || {};
   const options = Array.isArray(currentQuestion.options) ? currentQuestion.options : [];
-  const correctAnswer = currentQuestion.correctAnswer;
+  const rawCorrectAnswer = currentQuestion.correctAnswer;
+
+  const correctLetter = useMemo(() => {
+    if (typeof rawCorrectAnswer === "number") {
+      return letters[rawCorrectAnswer] ?? null;
+    }
+
+    const s = String(rawCorrectAnswer ?? "").trim().toUpperCase();
+
+    if (letters.includes(s)) return s;
+
+    if (/^\d+$/.test(s)) {
+      const idx = Number(s);
+      return letters[idx] ?? null;
+    }
+
+    return null;
+  }, [rawCorrectAnswer]);
 
   // Keep the global scanner alive throughout the task.
   // We gate acceptance inside acceptColorScan() so scans during feedback
@@ -213,7 +230,7 @@ export default function PhysicalMultipleChoiceTask({
       scanned = scanned.color || scanned.stationColor || scanned.stationId || "";
     }
 
-    if (typeof scanned === "string" && scanned.includes("play.curriculate.net/room/")) {
+    if (typeof scanned === "string" && scanned.includes("play.curriculate.net/")) {
       const parts = scanned.split("/");
       scanned = parts[parts.length - 1];
     }
@@ -227,16 +244,21 @@ export default function PhysicalMultipleChoiceTask({
 
     // scanned something that is NOT one of the shown answer colors
     if (!matchingLetter) {
-      setScanError("Wrong color! Scan one of the options shown.");
+      setScanError("Choose one of the option colors.");
       clearErrorTimer();
       errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
 
-      if (typeof onIncorrectScan === "function") onIncorrectScan();
-      emitAnswerResult(false, false, false);
-      return true;
+      if (!matchingLetter) {
+        setScanError("Choose one of the option colors.");
+        clearErrorTimer();
+        errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
+
+        emitAnswerResult(true, false, false);
+        return true;
+      }
     }
 
-    const isCorrect = matchingLetter === correctAnswer;
+    const isCorrect = matchingLetter === correctLetter;
 
     // scanned one of the answer colors, but it is the WRONG answer
     if (!isCorrect) {
@@ -310,7 +332,11 @@ export default function PhysicalMultipleChoiceTask({
         return {
           letter,
           correct: item.correctAnswer,
-          isCorrect: letter === item.correctAnswer,
+          isCorrect: letter === (
+            typeof item.correctAnswer === "number"
+              ? letters[item.correctAnswer] ?? null
+              : String(item.correctAnswer ?? "").trim().toUpperCase()
+          ),
         };
       });
 
@@ -385,7 +411,7 @@ export default function PhysicalMultipleChoiceTask({
   }
 
   const selectedLetter = selectedLetterByQ[qIndex] ?? null;
-  const correctIndex = letters.indexOf(correctAnswer);
+  const correctIndex = letters.indexOf(correctLetter);
 
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-indigo-950 to-purple-950 text-white p-4 pb-20">
