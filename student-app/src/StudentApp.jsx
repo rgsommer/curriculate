@@ -14,7 +14,8 @@ import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 
 // Build marker so you can confirm the deployed bundle
-console.log("STUDENT BUILD MARKER v2026-02-20a, API_BASE_URL:", API_BASE_URL);
+const BUILD_MARKER = `v${process.env.NEXT_PUBLIC_BUILD_ID || "dev"}`
+console.log("🚀 StudentApp Build:", BUILD_MARKER);
 
 // ---------------------------------------------------------------------
 // Station colour helpers – numeric ids (station-1, station-2…)
@@ -960,6 +961,7 @@ function StudentApp() {
       const limit = payload.timeLimitSeconds || null;
       lastScanKeyRef.current = { key: null, atMs: 0 };
       setTimeLimitSeconds(limit);
+      setSubmitting(false);
 
       console.log("[StudentApp] task:assigned", payload?.task || payload);
 
@@ -2342,6 +2344,7 @@ function StudentApp() {
           return;
         }
 
+        setSubmitting(false);
         setStatusMessage("");
         if (response?.testMode) {
           setStatusMessage(
@@ -5110,6 +5113,18 @@ function StudentApp() {
     )}
 
     {/* FOOTER STRIP */}
+    <div style={{
+      position: "fixed",
+      bottom: 4,
+      right: 8,
+      fontSize: 10,
+      opacity: 0.6,
+      color: "#fff",
+      textShadow: "0 0 3px rgba(0,0,0,0.8)",
+      zIndex: 9999,
+    }}>
+      {BUILD_MARKER || "dev"}
+    </div>
     <div
       style={{
         marginTop: 16,
