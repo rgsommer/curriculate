@@ -14,7 +14,7 @@ import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 
 // Build marker so you can confirm the deployed bundle
-const BUILD_MARKER = `v${process.env.NEXT_PUBLIC_BUILD_ID || "dev"}`
+const BUILD_MARKER = process.env.NEXT_PUBLIC_BUILD_ID;
 console.log("🚀 StudentApp Build:", BUILD_MARKER);
 
 // ---------------------------------------------------------------------
@@ -5123,7 +5123,7 @@ function StudentApp() {
       textShadow: "0 0 3px rgba(0,0,0,0.8)",
       zIndex: 9999,
     }}>
-      {BUILD_MARKER || "dev"}
+      v{BUILD_MARKER}
     </div>
     <div
       style={{

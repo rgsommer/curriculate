@@ -166,7 +166,7 @@ export default function PhysicalMultipleChoiceTask({
       }
     })();
 
-    const seedStr = `${teamSalt}-${task?._id || "task"}-${qIndex}`;
+    const seedStr = `${teamSalt}-${task?.title || ""}-${qIndex}`;
     const seed = hashStringToSeed(seedStr);
 
     const available = stationPalette.filter((c) => !effectiveExclusions.has(normalizeColor(c)));
@@ -557,8 +557,6 @@ export default function PhysicalMultipleChoiceTask({
             <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-black" />
             <div className="absolute inset-0 flex items-center justify-center px-8 text-center">
               <div>
-                <div className="text-2xl font-black">Scan now</div>
-                <div className="mt-2 text-sm opacity-80">Use the camera scanner already on-screen.</div>
               </div>
             </div>
 
@@ -626,7 +624,6 @@ export default function PhysicalMultipleChoiceTask({
 
       <div className="max-w-3xl mx-auto pt-6">
         <h2 className="text-2xl md:text-3xl font-bold mb-4">
-          {task?.title && <span className="opacity-70 mr-3">{task.title}</span>}
           Question {qIndex + 1} of {items.length}
         </h2>
 
