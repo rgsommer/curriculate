@@ -2524,6 +2524,11 @@ function StudentApp() {
         let consumed = false;
         if (typeof window.__curriculateTaskScanHandler === "function") {
           consumed = window.__curriculateTaskScanHandler(taskScanValue) === true;
+          console.log("[SCAN PMC result]", {
+            taskScanValue,
+            consumed,
+            wantsScan: window.__curriculateTaskWantsScan,
+          });
         }
 
         if (liveTypeNorm === "physical-multiple-choice") {

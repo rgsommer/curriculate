@@ -244,6 +244,14 @@ export default function PhysicalMultipleChoiceTask({
   };
   
   const acceptColorScan = (rawColorLike) => {
+    console.log("[PMC entry gate]", {
+      rawColorLike,
+      disabled,
+      isReview,
+      showScannerPrompt,
+      showingFeedback,
+    });
+    
     if (disabled || isReview || !showScannerPrompt || showingFeedback) return false;
 
     let scanned = rawColorLike;
@@ -259,6 +267,16 @@ export default function PhysicalMultipleChoiceTask({
 
     const scannedNorm = normalizeColor(scanned);
     if (!scannedNorm) return false;
+
+    console.log("[PMC match check]", {
+      scannedNorm,
+      currentMap,
+      correctLetter,
+      showScannerPrompt,
+      showingFeedback,
+      disabled,
+      isReview,
+    });
 
     const matchingLetter =
       Object.entries(currentMap).find(
