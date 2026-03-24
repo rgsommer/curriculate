@@ -2513,6 +2513,14 @@ function StudentApp() {
         const norm = normalizeStationId(data);
         const taskScanValue = norm?.color || data;
 
+        console.log("[SCAN task handler check]", {
+          liveTypeNorm,
+          hasHandler: typeof window.__curriculateTaskScanHandler === "function",
+          taskWantsScan: window.__curriculateTaskWantsScan,
+          currentTaskType: currentTaskRef.current?.taskType || currentTaskRef.current?.type || null,
+          taskScanValue,
+        });
+        
         let consumed = false;
         if (typeof window.__curriculateTaskScanHandler === "function") {
           consumed = window.__curriculateTaskScanHandler(taskScanValue) === true;
