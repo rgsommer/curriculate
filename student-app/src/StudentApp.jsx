@@ -2513,9 +2513,9 @@ function StudentApp() {
         const norm = normalizeStationId(data);
         const taskScanValue = norm?.color || data;
 
-        let result = null;
+        let consumed = false;
         if (typeof window.__curriculateTaskScanHandler === "function") {
-          result = window.__curriculateTaskScanHandler(taskScanValue);
+          consumed = window.__curriculateTaskScanHandler(taskScanValue) === true;
         }
 
         if (liveTypeNorm === "physical-multiple-choice") {
@@ -2526,30 +2526,13 @@ function StudentApp() {
             return false;
           }
 
-          if (result?.status === "invalid") {
-            setScanStatus(null);
-            setScanError("Choose one of the option colors.");
-            setScannerActive(true);
-            return false;
-          }
-
-          if (result?.status === "incorrect") {
-            setScanStatus("error");
-            setScanError("Try again.");
-            tryPlayWrongSound();
-            setScannerActive(true);
-            return false;
-          }
-
-          if (result?.status === "correct") {
-            setScanStatus("ok");
+          if (consumed) {
             setScanError(null);
-            tryPlayCorrectSound();
             setScannerActive(true);
             return false;
           }
 
-          // fallback if task returned nothing
+          // not consumed by PMC
           setScanStatus(null);
           setScanError(null);
           setScannerActive(true);
@@ -2705,9 +2688,7 @@ function StudentApp() {
       if (!d?.accepted) return;
 
       setScanError(null);
-      setScanStatus("ok");
-
-      // Keep scanner active (prevents black-screen flicker)
+      setScanStatus(d.correct ? "ok" : "error");
       setScannerActive(true);
     };
 
