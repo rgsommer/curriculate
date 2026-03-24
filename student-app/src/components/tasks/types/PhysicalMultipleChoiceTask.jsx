@@ -66,6 +66,8 @@ export default function PhysicalMultipleChoiceTask({
   const lastValidScanColorRef = useRef(null);
   const advanceTimerRef = useRef(null);
   const errorTimerRef = useRef(null);
+  const flashTimerRef = useRef(null);
+
   const submittedOnceRef = useRef(false);
 
   const clearAdvanceTimer = () => {
@@ -179,26 +181,33 @@ export default function PhysicalMultipleChoiceTask({
   const options = Array.isArray(currentQuestion.options) ? currentQuestion.options : [];
   const rawCorrectAnswer = currentQuestion?.correctAnswer;
 
-  const correctLetter = useMemo(() => {
-    if (typeof rawCorrectAnswer === "number") {
-      return letters[rawCorrectAnswer] ?? null;
+  const resolveCorrectLetter = (value) => {
+    if (typeof value === "number") {
+      if (value >= 0 && value < letters.length) return letters[value];
+      if (value >= 1 && value <= letters.length) return letters[value - 1];
+      return null;
     }
 
-    const s = String(rawCorrectAnswer ?? "").trim().toUpperCase();
+    const s = String(value ?? "").trim().toUpperCase();
 
     if (letters.includes(s)) return s;
 
     if (/^\d+$/.test(s)) {
       const n = Number(s);
-
-      // support both 0-based and 1-based inputs
       if (n >= 0 && n < letters.length) return letters[n];
       if (n >= 1 && n <= letters.length) return letters[n - 1];
     }
 
-    console.warn("[PMC] Could not resolve correctLetter from:", rawCorrectAnswer);
     return null;
-  }, [rawCorrectAnswer]);
+  };
+
+  const correctLetter = useMemo(() => {
+    const resolved = resolveCorrectLetter(rawCorrectAnswer);
+    if (!resolved) {
+      console.warn("[PMC] Could not resolve correctLetter from:", rawCorrectAnswer);
+    }
+    return resolved;
+  }, [rawCorrectAnswer, resolveCorrectLetter]);
 
   // Keep the global scanner alive throughout the task.
   // We gate acceptance inside acceptColorScan() so scans during feedback
@@ -235,9 +244,7 @@ export default function PhysicalMultipleChoiceTask({
   };
   
   const acceptColorScan = (rawColorLike) => {
-    if (disabled || isReview || !showScannerPrompt || showingFeedback) {
-      return false;
-    }
+    if (disabled || isReview || !showScannerPrompt || showingFeedback) return false;
 
     let scanned = rawColorLike;
 
@@ -251,31 +258,51 @@ export default function PhysicalMultipleChoiceTask({
     }
 
     const scannedNorm = normalizeColor(scanned);
-    if (!scannedNorm) {
-      return { status: "invalid" };
-    }
+    if (!scannedNorm) return false;
 
     const matchingLetter =
       Object.entries(currentMap).find(
         ([, color]) => normalizeColor(color) === scannedNorm
       )?.[0] || null;
 
-    // scanned something that is NOT one of the shown answer colors
     if (!matchingLetter) {
       setScanError("Choose one of the option colors.");
       clearErrorTimer();
       errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
 
-      emitAnswerResult(true, false, false);
+      setFlashColor("yellow");
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setFlashColor(null), 300);
 
-      triggerFeedbackFx("yellow");
-      
+      try { window.__curriculatePlayWrongSound?.(); } catch {}
+      try { navigator.vibrate?.(120); } catch {}
+
+      emitAnswerResult(false, false, false);
+      return false;
+    }
+
+    // 🚨 Guard: if correct answer couldn't be resolved
+    if (!correctLetter) {
+      console.error("[PMC] No valid correctLetter:", rawCorrectAnswer);
+      emitAnswerResult(true, false, false);
       return true;
     }
 
     const isCorrect = matchingLetter === correctLetter;
 
-    // scanned one of the answer colors, but it is the WRONG answer
+    console.log("[PMC DEBUG]", {
+      scannedNorm,
+      currentMap,
+      matchingLetter,
+      correctLetter,
+      rawCorrectAnswer,
+    });
+
+    console.log("[PMC] scanned:", scannedNorm);
+    console.log("[PMC] map:", currentMap);
+    console.log("[PMC] matched:", matchingLetter);
+    console.log("[PMC] correctLetter:", correctLetter);
+
     if (!isCorrect) {
       setSelectedLetterByQ((prev) => ({
         ...prev,
@@ -286,7 +313,13 @@ export default function PhysicalMultipleChoiceTask({
       setShowingFeedback(true);
       setFeedbackMessage("Incorrect — try again");
 
-      if (typeof onIncorrectScan === "function") onIncorrectScan();
+      setFlashColor("red");
+      setStreak(0);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = setTimeout(() => setFlashColor(null), 300);
+
+      try { window.__curriculatePlayWrongSound?.(); } catch {}
+      try { navigator.vibrate?.([100, 60, 100]); } catch {}
 
       clearAdvanceTimer();
       advanceTimerRef.current = setTimeout(() => {
@@ -296,20 +329,15 @@ export default function PhysicalMultipleChoiceTask({
           ...prev,
           [qIndex]: null,
         }));
-
         resetGlobalScanDedupe();
         setShowScannerPrompt(true);
 
         emitAnswerResult(true, false, false);
       }, Number(task?.config?.feedbackDelay ?? 1200) || 1200);
 
-      setStreak(0);
-      triggerFeedbackFx("red");
-  
       return true;
     }
 
-    // correct answer
     lastValidScanColorRef.current = scannedNorm;
 
     const nextSelected = {
@@ -322,6 +350,20 @@ export default function PhysicalMultipleChoiceTask({
     setShowScannerPrompt(false);
     setShowingFeedback(true);
     setFeedbackMessage("Correct!");
+
+    setFlashColor("green");
+
+    setStreak((s) => {
+      const next = s + 1;
+      if (next >= 2) showStreakBanner(`${next} in a row 🔥`);
+      return next;
+    });
+
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlashColor(null), 300);
+
+    try { window.__curriculatePlayCorrectSound?.(); } catch {}
+    try { navigator.vibrate?.(60); } catch {}
 
     const delay = Number(task?.config?.feedbackDelay ?? 1200) || 1200;
 
@@ -346,15 +388,13 @@ export default function PhysicalMultipleChoiceTask({
       submittedOnceRef.current = true;
 
       const answers = items.map((item, idx) => {
+        const itemCorrect = resolveCorrectLetter(item.correctAnswer);
+
         const letter = nextSelected[idx] ?? null;
         return {
           letter,
           correct: item.correctAnswer,
-          isCorrect: letter === (
-            typeof item.correctAnswer === "number"
-              ? letters[item.correctAnswer] ?? null
-              : String(item.correctAnswer ?? "").trim().toUpperCase()
-          ),
+          isCorrect: letter === itemCorrect,
         };
       });
 
@@ -367,17 +407,6 @@ export default function PhysicalMultipleChoiceTask({
         total: items.length,
       });
     }, delay);
-
-    const nextStreak = streak + 1;
-    setStreak(nextStreak);
-
-    if (nextStreak >= 2) {
-      if (nextStreak === 2) showStreakBanner("🔥 2 in a row!");
-      else if (nextStreak === 3) showStreakBanner("🔥🔥 3 in a row!");
-      else showStreakBanner(`⚡ ${nextStreak} correct in a row!`);
-    }
-
-    triggerFeedbackFx("green");
 
     return true;
   };
@@ -399,8 +428,6 @@ export default function PhysicalMultipleChoiceTask({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled, isReview, showScannerPrompt, showingFeedback, qIndex, currentMap]);
-
-  const flashTimerRef = useRef(null);
 
   const triggerFeedbackFx = (kind) => {
     // flash
@@ -501,6 +528,11 @@ export default function PhysicalMultipleChoiceTask({
       )}
 
       {/* “Use global scanner” overlay (NO QrScanner here) */}
+      {streakBanner && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-orange-500/90 px-6 py-3 rounded-xl shadow-xl text-white font-bold">
+          {streakBanner}
+        </div>
+      )}
       {wantsScan && (
         <div className="fixed inset-0 z-40 bg-black/75 flex flex-col items-center justify-center">
           <div className="relative w-[min(90vw,380px)] aspect-square rounded-3xl overflow-hidden border-4 border-cyan-400/60 shadow-2xl shadow-cyan-900/40">
