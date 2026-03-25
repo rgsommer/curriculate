@@ -80,6 +80,7 @@ export default function PhysicalMultipleChoiceTask({
   };
 
   const [flashColor, setFlashColor] = useState(null);
+  const [wrongLettersByQ, setWrongLettersByQ] = useState({});
 
   const [streak, setStreak] = useState(0);
   const [streakBanner, setStreakBanner] = useState("");
@@ -95,6 +96,7 @@ export default function PhysicalMultipleChoiceTask({
       selectedLetterByQRef.current = {};
       setShowScannerPrompt(true);
       setShowingFeedback(false);
+      setWrongLettersByQ({});
       setFeedbackMessage("");
       setScanError("");
       lastValidScanColorRef.current = null;
@@ -175,7 +177,7 @@ export default function PhysicalMultipleChoiceTask({
     const selected = shuffled.slice(0, 4);
 
     return Object.fromEntries(letters.map((l, i) => [l, selected[i]]));
-  }, [qIndex, task?._id, stationPalette, effectiveExclusions]);
+  }, [qIndex, task?.title, stationPalette, effectiveExclusions]);
 
   const currentQuestion = items[qIndex] || {};
   const options = Array.isArray(currentQuestion.options) ? currentQuestion.options : [];
@@ -284,7 +286,7 @@ export default function PhysicalMultipleChoiceTask({
       )?.[0] || null;
 
     if (!matchingLetter) {
-      setScanError("Choose one of the option colors.");
+      setScanError("The last color scanned was not an option.");
       clearErrorTimer();
       errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
 
@@ -326,6 +328,15 @@ export default function PhysicalMultipleChoiceTask({
         ...prev,
         [qIndex]: matchingLetter,
       }));
+
+      setWrongLettersByQ((prev) => {
+        const existing = prev[qIndex] || [];
+        if (existing.includes(matchingLetter)) return prev;
+        return {
+          ...prev,
+          [qIndex]: [...existing, matchingLetter],
+        };
+      });
 
       setShowScannerPrompt(false);
       setShowingFeedback(true);
@@ -556,8 +567,6 @@ export default function PhysicalMultipleChoiceTask({
           <div className="relative w-[min(90vw,380px)] aspect-square rounded-3xl overflow-hidden border-4 border-cyan-400/60 shadow-2xl shadow-cyan-900/40">
             <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-black" />
             <div className="absolute inset-0 flex items-center justify-center px-8 text-center">
-              <div>
-              </div>
             </div>
 
             <div
@@ -636,6 +645,8 @@ export default function PhysicalMultipleChoiceTask({
             {letters.map((letter, idx) => {
               const text = options[idx] ?? `Option ${letter}`;
               const chosen = selectedLetter === letter;
+              const wrongLetters = wrongLettersByQ[qIndex] || [];
+              const showX = wrongLetters.includes(letter);
               const isCorrect = showingFeedback && idx === correctIndex;
               const isWrong = showingFeedback && chosen && idx !== correctIndex;
               const stationColor = currentMap[letter];
@@ -656,8 +667,13 @@ export default function PhysicalMultipleChoiceTask({
                     </div>
                     <div className="text-lg md:text-xl font-semibold">{text}</div>
                   </div>
-                  <div className="text-base font-medium opacity-90 shrink-0 ml-4">
-                    {stationColor}
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    {showX && (
+                      <span className="text-2xl font-black text-red-200">✕</span>
+                    )}
+                    <div className="text-base font-medium opacity-90">
+                      {stationColor}
+                    </div>
                   </div>
                 </div>
               );
