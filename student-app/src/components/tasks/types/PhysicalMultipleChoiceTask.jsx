@@ -398,15 +398,14 @@ export default function PhysicalMultipleChoiceTask({
 
     clearAdvanceTimer();
     advanceTimerRef.current = setTimeout(() => {
-      setShowingFeedback(false);
-      setFeedbackMessage("");
-
       const nextIndex = qIndex + 1;
       const done = nextIndex >= items.length;
 
       emitAnswerResult(true, true, done);
 
       if (!done) {
+        setShowingFeedback(false);
+        setFeedbackMessage("");
         resetGlobalScanDedupe();
         setQIndex(nextIndex);
         setShowScannerPrompt(true);
