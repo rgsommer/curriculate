@@ -4381,7 +4381,7 @@ function StudentApp() {
         const taskType = currentTask?.taskType;
 
         if (taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE) {
-          return "Scan the color for your answer";
+          return "Scan the color of your answer";
         }
 
         if (

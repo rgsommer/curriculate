@@ -28,6 +28,42 @@ export default function ReadingCompTask({
 }) {
   const isTeamVariation = !!task?.isTeamVariation;
 
+  function isCompleteSentence(text, gradeLevel) {
+    const t = String(text || "").trim();
+    if (!t) return false;
+
+    if ((gradeLevel || 0) < 5) return true;
+
+    const words = t.split(/\s+/).filter(Boolean);
+    if (words.length < 4) return false;
+
+    const hasEnding = /[.!?]$/.test(t);
+    const hasVerbishWord =
+      /\b(is|are|was|were|be|being|been|has|have|had|do|does|did|can|could|will|would|should|may|might|must|shows?|means?|helps?|changes?|protects?|needs?|uses?|relies?|affects?|hurts?|keeps?|makes?)\b/i.test(t);
+    return hasEnding && hasVerbishWord;
+  }
+
+  async function checkReadingComprehension({ paragraph, answer, gradeLevel }) {
+    const base =
+      process.env.NEXT_PUBLIC_BACKEND_URL || "";
+
+    const res = await fetch(`${base}/api/tasks/reading-comp/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paragraph,
+        answer,
+        gradeLevel,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to check comprehension.");
+    }
+
+    return res.json();
+  }
+
   // paragraph
   // Paragraph: in demo/testing we sometimes receive a placeholder task with no paragraph yet.
   // Never show a scary "Loading paragraph…" string to students.
@@ -132,21 +168,93 @@ export default function ReadingCompTask({
   // SOLO MODE
   // -----------------------------
   const [soloAnswer, setSoloAnswer] = useState(() => String(answerDraft || ""));
-  useEffect(() => {
-    if (!isTeamVariation) setSoloAnswer(String(answerDraft || ""));
-  }, [answerDraft, isTeamVariation]);
+  const [soloStage, setSoloStage] = useState("answer"); // "answer" | "followup"
+  const [soloFollowUpQuestion, setSoloFollowUpQuestion] = useState("");
+  const [soloFollowUpAnswer, setSoloFollowUpAnswer] = useState("");
+  const [soloChecking, setSoloChecking] = useState(false);
+  const [soloError, setSoloError] = useState("");
+  
+  const gradeLevel =
+    typeof task?.gradeLevel === "number"
+      ? task.gradeLevel
+      : typeof task?.config?.gradeLevel === "number"
+      ? task.config.gradeLevel
+      : null;
 
-  const submitSolo = () => {
-    if (disabled) return;
-    const ans = String(soloAnswer || "").trim();
-    if (!ans) return;
-    onSubmit?.({
-      answer: ans,
-      paragraph,
-      mode: "solo",
-      teamId,
-      roomCode,
-    });
+  const submitSolo = async () => {
+    if (disabled || soloChecking) return;
+
+    setSoloError("");
+
+    if (soloStage === "answer") {
+      const ans = String(soloAnswer || "").trim();
+      if (!ans) return;
+
+      if (!isCompleteSentence(ans, gradeLevel)) {
+        setSoloError("Type your response as a complete sentence.");
+        return;
+      }
+
+      setSoloChecking(true);
+      try {
+        const result = await checkReadingComprehension({
+          paragraph,
+          answer: ans,
+          gradeLevel,
+        });
+
+        if (result?.decision === "followup" && result?.followUpQuestion) {
+          setSoloFollowUpQuestion(result.followUpQuestion);
+          setSoloStage("followup");
+          setSoloChecking(false);
+          return;
+        }
+
+        onSubmit?.({
+          answer: ans,
+          paragraph,
+          mode: "solo",
+          teamId,
+          roomCode,
+          comprehensionCheck: {
+            decision: result?.decision || "accept",
+            reason: result?.reason || null,
+          },
+        });
+      } catch (err) {
+        setSoloError("Could not check the answer. Please try again.");
+      } finally {
+        setSoloChecking(false);
+      }
+
+      return;
+    }
+
+    if (soloStage === "followup") {
+      const followAns = String(soloFollowUpAnswer || "").trim();
+      if (!followAns) {
+        setSoloError("Please answer the follow-up question.");
+        return;
+      }
+
+      if (!isCompleteSentence(followAns, gradeLevel)) {
+        setSoloError("Type your response as a complete sentence.");
+        return;
+      }
+
+      onSubmit?.({
+        answer: String(soloAnswer || "").trim(),
+        paragraph,
+        mode: "solo",
+        teamId,
+        roomCode,
+        comprehensionCheck: {
+          decision: "followup_answered",
+          followUpQuestion: soloFollowUpQuestion,
+          followUpAnswer: followAns,
+        },
+      });
+    }
   };
 
   // -----------------------------
@@ -181,6 +289,18 @@ export default function ReadingCompTask({
     setVoteIdx(null);
     setFinalSent(false);
   }, [isTeamVariation, task?.id, task?._id, paragraph, players]);
+
+  // Reset follow-up when needed
+  useEffect(() => {
+    if (!isTeamVariation) {
+      setSoloAnswer(String(answerDraft || ""));
+      setSoloStage("answer");
+      setSoloFollowUpQuestion("");
+      setSoloFollowUpAnswer("");
+      setSoloChecking(false);
+      setSoloError("");
+    }
+  }, [answerDraft, isTeamVariation]);
 
   // pass countdown tick
   useEffect(() => {
@@ -221,14 +341,21 @@ export default function ReadingCompTask({
 
   const lockCurrentTurn = () => {
     if (disabled) return;
+
     const ans = String(turnText || "").trim();
     if (!ans) return;
+
+    if (!isCompleteSentence(ans, gradeLevel)) {
+      alert("Please write a complete sentence.");
+      return;
+    }
 
     setResponses((prev) => {
       const copy = [...prev];
       copy[turnIdx] = ans;
       return copy;
     });
+
     setLocked((prev) => {
       const copy = [...prev];
       copy[turnIdx] = true;
@@ -352,17 +479,28 @@ export default function ReadingCompTask({
           ...paperBoxStyle,
           padding: 14,
           marginBottom: 12,
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          MozUserSelect: "none",
+          msUserSelect: "none",
         }}
+        onCopy={(e) => e.preventDefault()}
+        onCut={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
       >
         <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 8 }}>Read:</div>
-        <div style={{ lineHeight: 1.5, fontSize: 15 }}>{paragraph}</div>
+        <div style={{ lineHeight: 1.5, fontSize: 15 }}>
+          {paragraph}
+        </div>
       </div>
 
       {/* SOLO */}
       {!isTeamVariation ? (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-            <div style={{ fontSize: 13, opacity: 0.8 }}>Your one‑sentence response:</div>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>
+              {soloStage === "answer" ? "Your one-sentence response:" : "Your follow-up answer:"}
+            </div>
             {canUseSpeech ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <Pill tone={listening ? "green" : "slate"}>{listening ? "Listening…" : "Dictate"}</Pill>
@@ -374,11 +512,16 @@ export default function ReadingCompTask({
                   <GhostButton
                     onClick={() =>
                       startDictation((t) => {
-                        setSoloAnswer((prev) => {
-                          const next = prev ? `${prev} ${t}` : t;
-                          onAnswerChange?.(next);
-                          return next;
-                        });
+                        if (soloStage === "answer") {
+                          setSoloAnswer((prev) => {
+                            const next = prev ? `${prev} ${t}` : t;
+                            onAnswerChange?.(next);
+                            return next;
+                          });
+                        } else {
+                          setSoloFollowUpAnswer((prev) => (prev ? `${prev} ${t}` : t));
+                          if (soloError) setSoloError("");
+                        }
                       })
                     }
                     disabled={disabled}
@@ -391,21 +534,64 @@ export default function ReadingCompTask({
           </div>
 
           <div style={{ ...paperBoxStyle, marginTop: 10, padding: 12 }}>
-            <TextArea
-              value={soloAnswer}
-              disabled={disabled}
-              placeholder="One sentence…"
-              onChange={(e) => {
-                setSoloAnswer(e.target.value);
-                onAnswerChange?.(e.target.value);
-              }}
-              rows={3}
-            />
+            {soloStage === "answer" ? (
+              <TextArea
+                value={soloAnswer}
+                disabled={disabled || soloChecking}
+                placeholder="One sentence…"
+                onChange={(e) => {
+                  setSoloAnswer(e.target.value);
+                  onAnswerChange?.(e.target.value);
+                  if (soloError) setSoloError("");
+                }}
+                onPaste={(e) => e.preventDefault()}
+                rows={3}
+              />
+            ) : (
+              <>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+                  Follow-up question:
+                </div>
+                <div style={{ marginBottom: 10, lineHeight: 1.5 }}>
+                  {soloFollowUpQuestion}
+                </div>
+                <TextArea
+                  value={soloFollowUpAnswer}
+                  disabled={disabled || soloChecking}
+                  placeholder="Answer in one complete sentence…"
+                  onChange={(e) => {
+                    setSoloFollowUpAnswer(e.target.value);
+                    if (soloError) setSoloError("");
+                  }}
+                  onPaste={(e) => e.preventDefault()}
+                  rows={3}
+                />
+              </>
+            )}
           </div>
 
+          {soloError ? (
+            <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 13, fontWeight: 700 }}>
+              {soloError}
+            </div>
+          ) : null}
+
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
-            <PrimaryButton onClick={submitSolo} disabled={disabled || !String(soloAnswer || "").trim()}>
-              Submit
+            <PrimaryButton
+              onClick={submitSolo}
+              disabled={
+                disabled ||
+                soloChecking ||
+                (soloStage === "answer"
+                  ? !String(soloAnswer || "").trim()
+                  : !String(soloFollowUpAnswer || "").trim())
+              }
+            >
+              {soloChecking
+                ? "Checking..."
+                : soloStage === "answer"
+                ? "Submit"
+                : "Finish"}
             </PrimaryButton>
           </div>
         </div>
@@ -456,6 +642,7 @@ export default function ReadingCompTask({
               disabled={disabled}
               placeholder="ONE sentence… (keep it private)"
               onChange={(e) => setTurnText(e.target.value)}
+              onPaste={(e) => e.preventDefault()}
               rows={3}
             />
           </div>

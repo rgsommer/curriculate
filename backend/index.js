@@ -6185,6 +6185,92 @@ function normalizeTaskset(payload) {
   );
 }
 
+// Reading comp ai prompt
+async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
+  const prompt = `
+    You are checking a student's reading-comprehension response.
+
+    Grade level: ${gradeLevel ?? "unknown"}
+
+    Paragraph:
+    """${paragraph}"""
+
+    Student answer:
+    """${answer}"""
+
+    Return JSON only in this exact shape:
+    {
+      "decision": "accept" | "followup",
+      "reason": "clear" | "too_vague" | "partial" | "unclear" | "likely_copied",
+      "followUpQuestion": string | null
+    }
+
+    Rules:
+    - Accept if the answer clearly shows understanding of the paragraph.
+    - Use followup only if the answer is vague, generic, copied, or does not clearly show understanding.
+    - Ask only ONE short follow-up question.
+    - The question must be answerable from the paragraph alone.
+    - Keep the question suitable for a student.
+    - Do not explain your reasoning.
+    `.trim();
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          decision: {
+            type: "string",
+            enum: ["accept", "followup"],
+          },
+          reason: {
+            type: "string",
+            enum: ["clear", "too_vague", "partial", "unclear", "likely_copied"],
+          },
+          followUpQuestion: {
+            type: ["string", "null"],
+          },
+        },
+        required: ["decision", "reason", "followUpQuestion"],
+      };
+
+      const response = await openai.responses.create({
+        model: "gpt-5.4",
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: prompt }],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "reading_comp_check",
+            strict: true,
+            schema,
+          },
+        },
+        max_output_tokens: 200,
+      });
+
+      const parsed = safeJsonParse(response.output_text) || {};
+
+      const decision = parsed?.decision === "followup" ? "followup" : "accept";
+      const reason =
+        typeof parsed?.reason === "string" ? parsed.reason : "clear";
+
+      const followUpQuestion =
+        decision === "followup"
+          ? String(parsed?.followUpQuestion || "").trim() ||
+            "What detail from the paragraph supports your answer?"
+          : null;
+
+      return {
+        decision,
+        reason,
+        followUpQuestion,
+      };
+    }
+
 // --------------------------------------------------------------------
 // Per-user Teacher Profile (auth required)
 // --------------------------------------------------------------------
@@ -6295,6 +6381,30 @@ app.post("/api/tasksets", async (req, res) => {
   } catch (err) {
     console.error("POST /api/tasksets error:", err);
     res.status(500).json({ error: "Failed to create task set" });
+  }
+});
+
+// Reading comp understanding check for follow-up
+app.post("/api/tasks/reading-comp/check", async (req, res) => {
+  try {
+    const paragraph = String(req.body?.paragraph || "").trim().slice(0, 8000);
+    const answer = String(req.body?.answer || "").trim().slice(0, 1000);
+    const gradeLevel = req.body?.gradeLevel;
+
+    if (!paragraph || !answer) {
+      return res.status(400).json({ error: "Missing paragraph or answer." });
+    }
+
+    const result = await runReadingCompCheck({
+      paragraph,
+      answer,
+      gradeLevel,
+    });
+
+    return res.json(result);
+  } catch (err) {
+    console.error("POST /api/tasks/reading-comp/check error:", err);
+    return res.status(500).json({ error: "Failed to check comprehension." });
   }
 });
 
