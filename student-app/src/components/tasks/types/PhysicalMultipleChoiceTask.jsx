@@ -286,7 +286,7 @@ export default function PhysicalMultipleChoiceTask({
       )?.[0] || null;
 
     if (!matchingLetter) {
-      setScanError("The last color scanned was not an option.");
+      setScanError("The last color scanned was not an option. Try again!");
       clearErrorTimer();
       errorTimerRef.current = setTimeout(() => setScanError(""), 1600);
 
@@ -551,7 +551,17 @@ export default function PhysicalMultipleChoiceTask({
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-indigo-950 to-purple-950 text-white p-4 pb-20">
       {scanError && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-700/90 px-6 py-3 rounded-xl shadow-xl">
+        <div
+          style={{
+            color: "#fff",
+            background: "rgba(0,0,0,0.75)",
+            padding: "10px 14px",
+            borderRadius: 8,
+            fontWeight: 600,
+            textAlign: "center",
+            marginTop: 10,
+          }}
+        >
           {scanError}
         </div>
       )}

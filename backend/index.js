@@ -3620,6 +3620,10 @@ socket.on("task:force-advance", ({ roomCode }) => {
         team.currentStationId || team.stationId || team.station || null;
       const expected = normalizeStationId(expectedStation);
       const scanned = normalizeStationId(stationId);
+      const scannedCanonicalId = scanned?.id || stationId || null;
+      if (scannedCanonicalId) {
+        team.lastScannedStationId = scannedCanonicalId;
+      }
 
       // If the team has no expected station yet, accept the scan as the initial assignment
       if (!expectedStation) {
@@ -3742,10 +3746,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
           return;
         }
       }
-
-
-      // ✅ Mark scan accepted
-      team.lastScannedStationId = expectedStation || stationId || null;
 
       // If this team has a queued task, deliver it now
       let deliveredTask = false;
