@@ -1604,8 +1604,6 @@ export default function TaskRunner({
   // -------------------------------------------------------------------
   const [presenterOverlay, setPresenterOverlay] = useState(null); // { kind:'countdown', title, seconds, subtext, key }
 
-  const shortAnswerReveal = buildShortAnswerReveal(review);
-
   const [tasksetVictoryKey, setTasksetVictoryKey] = useState(null);
   const [victoryCanPlayAt, setVictoryCanPlayAt] = useState(null);
   // Random victory videos (per-task celebration)
