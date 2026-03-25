@@ -865,6 +865,7 @@ function reassignStationForTeam(room, teamId) {
   if (!team) return;
 
   const current = team.currentStationId || null;
+  const lastScanned = team.lastScannedStationId || null;
 
   // Stations occupied by OTHER teams
   const occupiedByOthers = new Set(
@@ -873,18 +874,33 @@ function reassignStationForTeam(room, teamId) {
       .map(([id]) => id)
   );
 
-  // Prefer stations that are:
-  //  - not the current one
-  //  - not occupied by other teams
-  const candidates = stationIds.filter(
-    (id) => id !== current && !occupiedByOthers.has(id)
+  // Best candidates:
+  // - not current
+  // - not last scanned
+  // - not occupied by others
+  let candidates = stationIds.filter(
+    (id) =>
+      id !== current &&
+      id !== lastScanned &&
+      !occupiedByOthers.has(id)
   );
 
-  // Fallbacks if all stations are technically “occupied”
-  const nextStationId =
-    candidates[0] ||
-    stationIds.find((id) => id !== current) ||
-    stationIds[0];
+  // Fallback 1: allow lastScanned if needed, but still not current
+  if (candidates.length === 0) {
+    candidates = stationIds.filter(
+      (id) =>
+        id !== current &&
+        !occupiedByOthers.has(id)
+    );
+  }
+
+  // Fallback 2: anything except current
+  if (candidates.length === 0) {
+    candidates = stationIds.filter((id) => id !== current);
+  }
+
+  // Final fallback
+  const nextStationId = candidates[0] || stationIds[0];
 
   // Clear old station assignment (for this team)
   if (
@@ -896,14 +912,14 @@ function reassignStationForTeam(room, teamId) {
   }
 
   // Set new station
+  team.previousStationId = current;
   team.currentStationId = nextStationId;
-  team.lastScannedStationId = null; // force new scan
+  team.lastScannedStationId = null; // clear only after using it as an exclusion
 
   if (!room.stations[nextStationId]) {
     room.stations[nextStationId] = { id: nextStationId, assignedTeamId: null };
   }
 
-  // 🔹 Reserve this station for this team
   room.stations[nextStationId].assignedTeamId = teamId;
 }
 
@@ -4428,7 +4444,6 @@ const code = (roomCode || "").toUpperCase();
         }
       }
     }
-
 
 // Guess Who (yes/no deduction) – custom scoring: points scale by time + guess count
 if (!isMultiPack && task.taskType === "guess-who") {
