@@ -4088,218 +4088,290 @@ socket.on("station:scan", handleStationScan);
       }
     }
 
-const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room || !room.taskset) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Room or taskset not found" });
+  const code = (roomCode || "").toUpperCase();
+  const room = rooms[code];
+  if (!room || !room.taskset) {
+    if (typeof ack === "function") {
+      ack({ ok: false, error: "Room or taskset not found" });
+    }
+    return;
+  }
+
+  const effectiveTeamId = teamId || socket.data.teamId;
+  const team = room.teams[effectiveTeamId] || {};
+
+  const isTestMode = team.testMode === true;
+  const isLocalOnlyTest = isTestMode && team.testLocalOnly === true;
+
+  // Use explicit taskIndex if provided, otherwise this team's current index
+  const idx =
+    isTestMode && typeof team.testTaskIndex === "number" && team.testTaskIndex >= 0
+      ? team.testTaskIndex
+      : typeof taskIndex === "number" && taskIndex >= 0
+      ? taskIndex
+      : typeof team.taskIndex === "number" && team.taskIndex >= 0
+      ? team.taskIndex
+      : room.taskIndex;
+      
+  const task = room.taskset.tasks[idx];
+  if (!task) {
+    if (typeof ack === "function") {
+      ack({ ok: false, error: "Task not found" });
+    }
+    return;
+  }
+
+  const teamName =
+    team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
+
+  const meta = TASK_TYPE_META?.[task.taskType] || {};
+  const isObjective = meta.objectiveScoring === true;
+  const basePoints = task.points ?? 10;
+
+  // Detect multi-question pack answers from TaskRunner
+  const isMultiPack =
+    answer &&
+    typeof answer === "object" &&
+    Array.isArray(answer.answers) &&
+    answer.answers.length > 0 &&
+    (answer.type === "multi-choice" ||
+      answer.type === "multi-short" ||
+      answer.type === "multi-true-false" ||
+      answer.kind === "multi-short-answer" ||
+      answer.kind === "multi-true-false");
+
+  // Build answerText for transcripts/logging
+  const answerText = (() => {
+    if (isMultiPack) {
+      try {
+        return answer.answers
+          .map((a, i) => {
+            const label = a?.prompt || `Q${i + 1}`;
+            const val =
+              a?.value != null ? String(a.value).trim() : "(no answer)";
+            return `${i + 1}) ${label}: ${val}`;
+          })
+          .join(" | ");
+      } catch {
+        return JSON.stringify(answer);
       }
-      return;
     }
 
-    const effectiveTeamId = teamId || socket.data.teamId;
-    const team = room.teams[effectiveTeamId] || {};
+    if (typeof answer === "string") return answer;
 
-    const isTestMode = team.testMode === true;
-    const isLocalOnlyTest = isTestMode && team.testLocalOnly === true;
+    if (answer && typeof answer === "object") {
+      const textLike =
+        answer.explanation ??
+        answer.caption ??
+        answer.text ??
+        answer.response ??
+        answer.answerText ??
+        answer.notes ??
+        null;
 
-    // Use explicit taskIndex if provided, otherwise this team's current index
-    const idx =
-      isTestMode && typeof team.testTaskIndex === "number" && team.testTaskIndex >= 0
-        ? team.testTaskIndex
-        : typeof taskIndex === "number" && taskIndex >= 0
-        ? taskIndex
-        : typeof team.taskIndex === "number" && team.taskIndex >= 0
-        ? team.taskIndex
-        : room.taskIndex;
-        
-    const task = room.taskset.tasks[idx];
-    if (!task) {
-      if (typeof ack === "function") {
-        ack({ ok: false, error: "Task not found" });
+      if (typeof textLike === "string" && textLike.trim().length > 0) {
+        return textLike;
       }
-      return;
+
+      try {
+        return JSON.stringify(answer);
+      } catch {
+        return "[object]";
+      }
     }
 
-    const teamName =
-      team.teamName || `Team-${String(effectiveTeamId).slice(-4)}`;
+    if (answer != null) return String(answer);
+    return "";
+  })();
 
-    const meta = TASK_TYPE_META?.[task.taskType] || {};
-    const isObjective = meta.objectiveScoring === true;
-    const basePoints = task.points ?? 10;
+  // Submission object passed into aiScoring (for non-multi cases)
+  const submissionForScoring = {
+    answer,
+    answerText,
+  };
 
-    // Detect multi-question pack answers from TaskRunner
-    const isMultiPack =
-      answer &&
-      typeof answer === "object" &&
-      Array.isArray(answer.answers) &&
-      answer.answers.length > 0 &&
-      (answer.type === "multi-choice" ||
-        answer.type === "multi-short" ||
-        answer.type === "multi-true-false" ||
-        answer.kind === "multi-short-answer" ||
-        answer.kind === "multi-true-false");
+  let aiScore = null;
+  let correct = null;
+  let pointsEarned = 0;
 
-    // Build answerText for transcripts/logging
-    const answerText = (() => {
-      if (isMultiPack) {
-        try {
-          return answer.answers
-            .map((a, i) => {
-              const label = a?.prompt || `Q${i + 1}`;
-              const val =
-                a?.value != null ? String(a.value).trim() : "(no answer)";
-              return `${i + 1}) ${label}: ${val}`;
-            })
-            .join(" | ");
-        } catch {
-          return JSON.stringify(answer);
-        }
+  // ----------------------------
+  // 1) Multi-question packs
+  // ----------------------------
+  if (isMultiPack && Array.isArray(task.items) && task.items.length > 0) {
+    const items = task.items;
+    const byId = new Map();
+    items.forEach((it, i) => {
+      const key = it.id != null ? String(it.id) : String(i);
+      byId.set(key, { item: it, index: i });
+    });
+
+    let correctCount = 0;
+    let evaluatedCount = 0;
+
+    for (const entry of answer.answers) {
+      if (!entry) continue;
+      const rawId = entry.itemId != null ? String(entry.itemId) : null;
+      const mapKey = rawId ?? String(evaluatedCount);
+      const target = byId.get(mapKey);
+      if (!target) {
+        evaluatedCount += 1;
+        continue;
       }
 
-      if (typeof answer === "string") return answer;
+      const { item } = target;
+      const givenValue = entry.value;
+      const givenBaseIndex =
+        typeof entry.baseIndex === "number" ? entry.baseIndex : null;
 
-      if (answer && typeof answer === "object") {
-        const textLike =
-          answer.explanation ??
-          answer.caption ??
-          answer.text ??
-          answer.response ??
-          answer.answerText ??
-          answer.notes ??
-          null;
+      let isCorrectItem = null;
 
-        if (typeof textLike === "string" && textLike.trim().length > 0) {
-          return textLike;
-        }
+      // Multi-choice items: compare index (preferred) or text
+      if (answer.type === "multi-choice") {
+        const itemCorrect = item.correctAnswer;
+        const baseOptions = Array.isArray(item.options)
+          ? item.options
+          : Array.isArray(item.choices)
+          ? item.choices
+          : task.taskType === "true-false"
+          ? ["True", "False"]
+          : [];
 
-        try {
-          return JSON.stringify(answer);
-        } catch {
-          return "[object]";
+        if (typeof itemCorrect === "number" && baseOptions.length > 0) {
+          // compare indices
+          if (
+            givenBaseIndex != null &&
+            givenBaseIndex >= 0 &&
+            givenBaseIndex < baseOptions.length
+          ) {
+            isCorrectItem = givenBaseIndex === itemCorrect;
+          } else if (givenValue != null) {
+            const idxBase = baseOptions.findIndex(
+              (opt) => String(opt).trim() === String(givenValue).trim()
+            );
+            isCorrectItem = idxBase === itemCorrect;
+          }
+        } else if (typeof itemCorrect === "string" && givenValue != null) {
+          isCorrectItem =
+            String(givenValue).trim().toLowerCase() ===
+            itemCorrect.trim().toLowerCase();
         }
       }
+      // Short-answer items: AI evaluation per item
+      else if (answer.type === "multi-short") {
+        const itemCorrect =
+          typeof item.correctAnswer === "string"
+            ? item.correctAnswer.trim()
+            : "";
 
-      if (answer != null) return String(answer);
-      return "";
-    })();
-
-    // Submission object passed into aiScoring (for non-multi cases)
-    const submissionForScoring = {
-      answer,
-      answerText,
-    };
-
-    let aiScore = null;
-    let correct = null;
-    let pointsEarned = 0;
-
-    // ----------------------------
-    // 1) Multi-question packs
-    // ----------------------------
-    if (isMultiPack && Array.isArray(task.items) && task.items.length > 0) {
-      const items = task.items;
-      const byId = new Map();
-      items.forEach((it, i) => {
-        const key = it.id != null ? String(it.id) : String(i);
-        byId.set(key, { item: it, index: i });
-      });
-
-      let correctCount = 0;
-      let evaluatedCount = 0;
-
-      for (const entry of answer.answers) {
-        if (!entry) continue;
-        const rawId = entry.itemId != null ? String(entry.itemId) : null;
-        const mapKey = rawId ?? String(evaluatedCount);
-        const target = byId.get(mapKey);
-        if (!target) {
-          evaluatedCount += 1;
-          continue;
-        }
-
-        const { item } = target;
-        const givenValue = entry.value;
-        const givenBaseIndex =
-          typeof entry.baseIndex === "number" ? entry.baseIndex : null;
-
-        let isCorrectItem = null;
-
-        // Multi-choice items: compare index (preferred) or text
-        if (answer.type === "multi-choice") {
-          const itemCorrect = item.correctAnswer;
-          const baseOptions = Array.isArray(item.options)
-            ? item.options
-            : Array.isArray(item.choices)
-            ? item.choices
-            : task.taskType === "true-false"
-            ? ["True", "False"]
+        const acceptableAnswers =
+          Array.isArray(item.acceptableAnswers)
+            ? item.acceptableAnswers
+            : Array.isArray(item?.payload?.acceptableAnswers)
+            ? item.payload.acceptableAnswers
             : [];
 
-          if (typeof itemCorrect === "number" && baseOptions.length > 0) {
-            // compare indices
-            if (
-              givenBaseIndex != null &&
-              givenBaseIndex >= 0 &&
-              givenBaseIndex < baseOptions.length
-            ) {
-              isCorrectItem = givenBaseIndex === itemCorrect;
-            } else if (givenValue != null) {
-              const idxBase = baseOptions.findIndex(
-                (opt) => String(opt).trim() === String(givenValue).trim()
-              );
-              isCorrectItem = idxBase === itemCorrect;
-            }
-          } else if (typeof itemCorrect === "string" && givenValue != null) {
-            isCorrectItem =
-              String(givenValue).trim().toLowerCase() ===
-              itemCorrect.trim().toLowerCase();
-          }
-        }
-        // Short-answer items: compare string to reference
-        else if (answer.type === "multi-short") {
-          const itemCorrect =
-            typeof item.correctAnswer === "string"
-              ? item.correctAnswer.trim()
-              : null;
-          if (itemCorrect && givenValue != null) {
-            isCorrectItem =
-              String(givenValue).trim().toLowerCase() ===
-              itemCorrect.toLowerCase();
-          }
+        const itemMaxPoints =
+          typeof item.points === "number" && item.points > 0 ? item.points : 1;
+
+        const itemPrompt =
+          item.prompt ||
+          item.question ||
+          item.label ||
+          item.text ||
+          `Question ${target.index + 1}`;
+
+        const evalResult = await evaluateMultiShortItem({
+          prompt: itemPrompt,
+          studentAnswer: givenValue,
+          correctAnswer: itemCorrect,
+          acceptableAnswers,
+          gradeLevel: task.gradeLevel || task?.config?.gradeLevel || "6-8",
+          maxPoints: itemMaxPoints,
+        });
+
+        isCorrectItem = evalResult.correct === true;
+
+        if (!aiScore || typeof aiScore !== "object") {
+          aiScore = {
+            strategy: "ai-multi-short",
+            maxPoints: basePoints,
+            totalScore: 0,
+            itemResults: [],
+          };
         }
 
-        if (isCorrectItem === true) {
-          correctCount += 1;
+        if (!Array.isArray(aiScore.itemResults)) {
+          aiScore.itemResults = [];
         }
-        evaluatedCount += 1;
+
+        aiScore.itemResults.push({
+          itemId: rawId ?? String(target.index),
+          prompt: itemPrompt,
+          studentAnswer: String(givenValue ?? "").trim(),
+          correctAnswer: itemCorrect,
+          score: evalResult.score,
+          maxPoints: itemMaxPoints,
+          correct: evalResult.correct,
+          feedback: evalResult.feedback,
+        });
+      }
+
+      if (isCorrectItem === true) {
+        correctCount += 1;
+      }
+      evaluatedCount += 1;
       }
 
       const totalItems = items.length;
       const usedItems = evaluatedCount || totalItems;
-      const fraction =
-        usedItems > 0 ? Math.max(0, Math.min(1, correctCount / usedItems)) : 0;
 
-      pointsEarned = Math.round(basePoints * fraction);
+      if (answer.type === "multi-short" && aiScore?.strategy === "ai-multi-short") {
+        const itemResults = Array.isArray(aiScore.itemResults) ? aiScore.itemResults : [];
+        const earned = itemResults.reduce((sum, r) => sum + (Number(r.score) || 0), 0);
+        const possible =
+          itemResults.reduce((sum, r) => sum + (Number(r.maxPoints) || 0), 0) || usedItems;
 
-      // correct flag: only "true" if perfect, "false" if all wrong, null for partial
-      if (fraction === 1) {
-        correct = true;
-      } else if (fraction === 0) {
-        correct = false;
+        const fraction =
+          possible > 0 ? Math.max(0, Math.min(1, earned / possible)) : 0;
+
+        pointsEarned = Math.round(basePoints * fraction);
+        aiScore.totalScore = pointsEarned;
+        aiScore.correctCount = itemResults.filter((r) => r.correct).length;
+        aiScore.totalItems = totalItems;
+        aiScore.evaluatedItems = usedItems;
+        aiScore.fractionCorrect = fraction;
+
+        if (fraction === 1) {
+          correct = true;
+        } else if (fraction === 0) {
+          correct = false;
+        } else {
+          correct = null;
+        }
       } else {
-        correct = null;
-      }
+        const fraction =
+          usedItems > 0 ? Math.max(0, Math.min(1, correctCount / usedItems)) : 0;
 
-      aiScore = {
-        totalScore: pointsEarned,
-        maxPoints: basePoints,
-        correctCount,
-        totalItems,
-        evaluatedItems: usedItems,
-        fractionCorrect: fraction,
-        strategy: "rule-based-multi-item",
-      };
+        pointsEarned = Math.round(basePoints * fraction);
+
+        if (fraction === 1) {
+          correct = true;
+        } else if (fraction === 0) {
+          correct = false;
+        } else {
+          correct = null;
+        }
+
+        aiScore = {
+          totalScore: pointsEarned,
+          maxPoints: basePoints,
+          correctCount,
+          totalItems,
+          evaluatedItems: usedItems,
+          fractionCorrect: fraction,
+          strategy: "rule-based-multi-item",
+        };
+      }
     }
 
     // ----------------------------
@@ -6310,6 +6382,109 @@ async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
         decision,
         reason,
         followUpQuestion,
+      };
+    }
+
+async function evaluateMultiShortItem({
+  prompt,
+  studentAnswer,
+  correctAnswer,
+  acceptableAnswers = [],
+  gradeLevel = "6-8",
+  maxPoints = 1,
+}) {
+  const cleanPrompt = String(prompt || "").trim().slice(0, 1000);
+  const cleanStudent = String(studentAnswer || "").trim().slice(0, 1000);
+  const cleanCorrect = String(correctAnswer || "").trim().slice(0, 1000);
+  const cleanAcceptable = Array.isArray(acceptableAnswers)
+    ? acceptableAnswers.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 8)
+    : [];
+
+  if (!cleanStudent) {
+    return {
+      score: 0,
+      maxPoints,
+      correct: false,
+      feedback: "No answer given.",
+    };
+  }
+
+  const promptText = `
+    You are grading one short-answer item from a student assignment.
+
+    Grade level: ${gradeLevel}
+
+    Question:
+    ${cleanPrompt}
+
+    Student answer:
+    ${cleanStudent}
+
+    Correct answer:
+    ${cleanCorrect}
+
+    Other acceptable answers:
+    ${cleanAcceptable.length ? cleanAcceptable.join(" | ") : "(none)"}
+
+    Return JSON only in this exact shape:
+    {
+      "score": number,
+      "maxPoints": number,
+      "correct": boolean,
+      "feedback": string
+    }
+
+    Rules:
+    - score must be between 0 and ${maxPoints}
+    - Use full credit if the student clearly shows the correct idea, even if wording differs.
+    - Use 0.5 style partial credit only if maxPoints allows it.
+    - Be lenient but accurate.
+    - feedback must be one short sentence.
+    - If the answer is clearly wrong or too vague, score 0.
+    `.trim();
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          score: { type: "number" },
+          maxPoints: { type: "number" },
+          correct: { type: "boolean" },
+          feedback: { type: "string" },
+        },
+        required: ["score", "maxPoints", "correct", "feedback"],
+      };
+
+      const response = await openai.responses.create({
+        model: "gpt-5.4",
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: promptText }],
+          },
+        ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "multi_short_item_eval",
+            strict: true,
+            schema,
+          },
+        },
+        max_output_tokens: 180,
+      });
+
+      const parsed = safeJsonParse(response.output_text) || {};
+      const rawScore = Number(parsed?.score);
+      const boundedScore = Number.isFinite(rawScore)
+        ? Math.max(0, Math.min(maxPoints, rawScore))
+        : 0;
+
+      return {
+        score: boundedScore,
+        maxPoints,
+        correct: parsed?.correct === true || boundedScore >= maxPoints,
+        feedback: String(parsed?.feedback || "").trim() || "Answer needs improvement.",
       };
     }
 

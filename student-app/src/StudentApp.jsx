@@ -5081,9 +5081,39 @@ function StudentApp() {
                   marginBottom: 10,
                 }}
               >
-                {typeof reviewState?.studentAnswer === "string"
-                  ? reviewState.studentAnswer
-                  : JSON.stringify(reviewState?.studentAnswer ?? "")}
+                {(() => {
+                  const sa = reviewState?.studentAnswer;
+
+                  if (typeof sa === "string") return sa;
+
+                  if (
+                    sa &&
+                    typeof sa === "object" &&
+                    Array.isArray(sa.answers)
+                  ) {
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {sa.answers.map((a, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              padding: 8,
+                              borderRadius: 8,
+                              background: "rgba(255,255,255,0.06)",
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                              {a?.prompt || `Question ${i + 1}`}
+                            </div>
+                            <div>{a?.value || "—"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
+
+                  return "—";
+                })()}
               </div>
 
               {typeof reviewState?.correct === "boolean" && (
