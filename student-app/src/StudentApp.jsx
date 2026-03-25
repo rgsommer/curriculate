@@ -5055,6 +5055,65 @@ function StudentApp() {
 
             return null;
           })()} */}
+
+          {(currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
+            currentTask?.taskType === TASK_TYPES.READING_COMP) && (
+            <div
+              style={{
+                marginTop: 12,
+                width: "100%",
+                background: "rgba(255,255,255,0.14)",
+                border: "1px solid rgba(255,255,255,0.25)",
+                borderRadius: 12,
+                padding: 12,
+                textAlign: "left",
+              }}
+            >
+              <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                Your answer
+              </div>
+
+              <div
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  background: "rgba(0,0,0,0.12)",
+                  marginBottom: 10,
+                }}
+              >
+                {typeof reviewState?.studentAnswer === "string"
+                  ? reviewState.studentAnswer
+                  : JSON.stringify(reviewState?.studentAnswer ?? "")}
+              </div>
+
+              {typeof reviewState?.correct === "boolean" && (
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                  {reviewState.correct ? "✅ Correct" : "❌ Not correct"}
+                </div>
+              )}
+
+              {!reviewState?.correct && (
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 10,
+                    background: "rgba(239,68,68,0.16)",
+                    border: "1px solid rgba(239,68,68,0.35)",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>
+                    What to improve
+                  </div>
+                  <div>
+                    {reviewState?.review?.feedback ||
+                      reviewState?.review?.comment ||
+                      reviewState?.correctAnswer ||
+                      "Try including the key idea more clearly."}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           </div>
         )}
         </section>

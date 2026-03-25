@@ -902,6 +902,13 @@ function reassignStationForTeam(room, teamId) {
   // Final fallback
   const nextStationId = candidates[0] || stationIds[0];
 
+  console.log("[reassignStationForTeam result]", {
+    teamId,
+    current,
+    lastScanned,
+    nextStationId,
+  });
+
   // Clear old station assignment (for this team)
   if (
     current &&
@@ -3690,15 +3697,6 @@ socket.on("task:force-advance", ({ roomCode }) => {
         const expectedColorName = expected?.color || expectedLabel || "YOUR STATION";
         const goTo = formatGoTo(room, expectedLocationSlugOrLabel, expectedColorName);
 
-        console.log("[station:scan success]", {
-          teamId,
-          expectedStationRaw: expectedStation,
-          deliveredTask,
-          nextTaskIndex: team.nextTaskIndex,
-          taskIndex: team.taskIndex,
-          waitingForLaunch,
-        });
-
         if (typeof ack === "function") {
           ack({
             ok: false,
@@ -4387,59 +4385,82 @@ const code = (roomCode || "").toUpperCase();
       }
     }
 
-    // Non-multi SHORT_ANSWER (objective with AI assist when mismatch)
+    // Non-multi SHORT_ANSWER
     if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && correct === null) {
-      const given = normalizeText(answerText ?? answer);
-      const expected = task.correctAnswer ?? (task.payload && task.payload.correctAnswer);
-      const acceptable =
-        Array.isArray(task.acceptableAnswers)
-          ? task.acceptableAnswers
-          : task.payload && Array.isArray(task.payload.acceptableAnswers)
-          ? task.payload.acceptableAnswers
-          : null;
+      const question =
+        String(
+          task.prompt ||
+          task.question ||
+          task.title ||
+          task.text ||
+          ""
+        ).trim();
 
-      const candidates = [];
-      if (typeof expected === "string" && expected.trim()) candidates.push(expected);
-      if (Array.isArray(expected)) expected.forEach((x) => candidates.push(x));
-      if (Array.isArray(acceptable)) acceptable.forEach((x) => candidates.push(x));
+      const studentAnswer = String(answerText ?? answer ?? "").trim();
 
-      const match = candidates
-        .map((c) => normalizeText(c))
-        .filter(Boolean)
-        .some((c) => c === given);
-
-      if (match) {
-        awardObjective(true);
-      } else if (given.length > 0) {
-        // AI assist: allow partial credit for close answers / reject nonsense.
+      if (!studentAnswer) {
+        awardObjective(false);
+      } else if (studentAnswer.split(/\s+/).length < 4) {
+        correct = false;
+        pointsEarned = 0;
+        aiScore = {
+          strategy: "short-answer-eval",
+          maxPoints: basePoints,
+          totalScore: 0,
+          correct: false,
+          feedback: "Please write a complete sentence.",
+        };
+      } else {
         try {
-          aiScore = await generateAIScore({
-            task: {
-              ...task,
-              objectiveHint: candidates.filter(Boolean).slice(0, 8),
-            },
-            rubric: task.aiRubric || null,
-            submission: {
-              ...submissionForScoring,
-              objectiveHint: candidates.filter(Boolean).slice(0, 8),
-            },
+          const prompt = `
+    You are a teacher evaluating a student's short answer.
+
+    Grade level: ${task.gradeLevel || task?.config?.gradeLevel || "6-8"}
+
+    Question:
+    ${question}
+
+    Student answer:
+    ${studentAnswer}
+
+    Rules:
+    - Decide if the answer shows understanding of the question.
+    - Be lenient but accurate.
+    - Answer must be a complete sentence.
+    - Return JSON ONLY:
+
+    {
+      "correct": true,
+      "feedback": "one short sentence explaining what was good or what is missing"
+    }
+    `.trim();
+
+          const response = await openai.chat.completions.create({
+            model: "gpt-5.4-mini",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.2,
           });
 
-          const aiNumericScore =
-            aiScore && typeof aiScore.score === "number"
-              ? aiScore.score
-              : aiScore && typeof aiScore.totalScore === "number"
-              ? aiScore.totalScore
-              : null;
+          const text = response.choices?.[0]?.message?.content || "{}";
 
-          if (typeof aiNumericScore === "number") {
-            pointsEarned = Math.max(0, Math.min(basePoints, aiNumericScore));
-            correct = pointsEarned === basePoints ? true : pointsEarned === 0 ? false : null;
-            if (aiScore && aiScore.maxPoints == null) aiScore.maxPoints = basePoints;
-            if (aiScore && aiScore.totalScore == null) aiScore.totalScore = pointsEarned;
+          let parsed;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = { correct: false, feedback: "Could not evaluate answer." };
           }
+
+          correct = parsed.correct === true;
+          pointsEarned = correct ? basePoints : 0;
+          aiScore = {
+            strategy: "short-answer-eval",
+            maxPoints: basePoints,
+            totalScore: pointsEarned,
+            correct,
+            feedback: parsed.feedback || "",
+          };
         } catch (e) {
-          // If AI scoring fails, just mark incorrect.
+          console.error("Short answer eval failed:", e);
           awardObjective(false);
         }
       }
@@ -4753,6 +4774,12 @@ if (!isMultiPack && task.taskType === "guess-who") {
       aiScore,
       timeMs: timeMs ?? null,
       submittedAt,
+    });
+
+    console.log("[before reassignStationForTeam]", {
+      teamId: effectiveTeamId,
+      currentStationId: room.teams?.[effectiveTeamId]?.currentStationId,
+      lastScannedStationId: room.teams?.[effectiveTeamId]?.lastScannedStationId,
     });
 
     // After every graded submission, advance THIS team to the next station so they must rescan.
@@ -6420,6 +6447,64 @@ app.post("/api/tasks/reading-comp/check", async (req, res) => {
   } catch (err) {
     console.error("POST /api/tasks/reading-comp/check error:", err);
     return res.status(500).json({ error: "Failed to check comprehension." });
+  }
+});
+
+app.post("/api/evaluate/short-answer", authRequired, async (req, res) => {
+  try {
+    const { question, studentAnswer, gradeLevel } = req.body;
+
+    if (!question || !studentAnswer) {
+      return res.status(400).json({ error: "Missing data" });
+    }
+
+    const prompt = `
+You are a teacher evaluating a student's short answer.
+
+Grade level: ${gradeLevel || "6-8"}
+
+Question:
+${question}
+
+Student answer:
+${studentAnswer}
+
+Rules:
+- Decide if the answer shows understanding of the question.
+- Be lenient but accurate.
+- Answer must be a complete sentence.
+- Return JSON ONLY (no explanation outside JSON):
+
+{
+  "correct": true or false,
+  "feedback": "one short sentence explaining what was good or what is missing"
+}
+`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-5.4-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+    });
+
+    const text = response.choices[0]?.message?.content || "{}";
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { correct: false, feedback: "Could not evaluate answer." };
+    }
+
+    res.json({
+      type: "SHORT_ANSWER",
+      studentAnswer,
+      correct: parsed.correct === true,
+      feedback: parsed.feedback || "",
+    });
+  } catch (err) {
+    console.error("Short answer eval error:", err);
+    res.status(500).json({ error: "Evaluation failed" });
   }
 });
 
