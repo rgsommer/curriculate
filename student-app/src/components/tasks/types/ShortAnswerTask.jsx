@@ -1,16 +1,5 @@
-// student-app/src/components/tasks/types/ShortAnswerTask.jsx
 import React from "react";
 
-/**
- * Short answer task (multi-question aware, per-team randomization).
- *
- * Modes:
- *  - Single question: one textarea.
- *  - Multi-question: task.items as an array of { prompt }.
- *
- * We randomize item order per team and submit canonical-ordered answers
- * as a JSON string payload.
- */
 export default function ShortAnswerTask({
   task,
   onSubmit,
@@ -23,14 +12,15 @@ export default function ShortAnswerTask({
 
   const [presentedItems, setPresentedItems] = React.useState([]);
   const [multiAnswersByDisplayIdx, setMultiAnswersByDisplayIdx] = React.useState([]);
-
   const [singleAnswer, setSingleAnswer] = React.useState("");
 
-  // Completion rules (keeps this task classroom-proof):
-  // - Single question: student must type at least 3 non-space characters.
-  // - Multi-question: every answer box must have at least 1 non-space character.
+  const [checking, setChecking] = React.useState(false);
+  const [review, setReview] = React.useState(null);
+  const [attemptCount, setAttemptCount] = React.useState(0);
+
   const singleReady =
     typeof singleAnswer === "string" && singleAnswer.trim().length >= 3;
+
   const multiReady =
     Array.isArray(multiAnswersByDisplayIdx) &&
     multiAnswersByDisplayIdx.length > 0 &&
@@ -39,9 +29,11 @@ export default function ShortAnswerTask({
   React.useEffect(() => {
     if (!task) return;
 
+    setChecking(false);
+    setReview(null);
+    setAttemptCount(0);
+
     if (hasItems) {
-      // Restore a multi-answer draft if one exists.
-      // This is best-effort and never blocks the task if parsing fails.
       let restoredByDisplayIdx = null;
       try {
         if (typeof answerDraft === "string" && answerDraft.trim().startsWith("{")) {
@@ -54,9 +46,7 @@ export default function ShortAnswerTask({
             restoredByDisplayIdx = parsed.answersByDisplayIdx;
           }
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
 
       const canonicalItems = Array.isArray(task.items) ? task.items : [];
       const count = canonicalItems.length;
@@ -72,12 +62,13 @@ export default function ShortAnswerTask({
       });
 
       setPresentedItems(built);
-      // If we restored a draft and it matches the current displayed count, use it.
+
       if (Array.isArray(restoredByDisplayIdx) && restoredByDisplayIdx.length === built.length) {
         setMultiAnswersByDisplayIdx(restoredByDisplayIdx.map((v) => String(v ?? "")));
       } else {
         setMultiAnswersByDisplayIdx(new Array(built.length).fill(""));
       }
+
       setSingleAnswer("");
     } else {
       const initial =
@@ -95,55 +86,147 @@ export default function ShortAnswerTask({
     }
   }
 
-  const handleSubmitClick = () => {
-    if (disabled) return;
-    if (!task) return;
+  async function evaluateShortAnswer(payload) {
+    const base = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
-    // Block empty submissions (students sometimes click too fast).
+    const res = await fetch(`${base}/api/evaluate/short-answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to evaluate short answer");
+    }
+
+    return res.json();
+  }
+
+  const handleSubmitClick = async () => {
+    if (disabled || checking || !task) return;
+
     if (hasItems) {
       if (!multiReady) return;
     } else {
       if (!singleReady) return;
     }
 
-    if (hasItems && presentedItems.length > 0) {
-      const canonicalCount = task.items.length;
-      const canonicalAnswers = new Array(canonicalCount).fill("");
+    setChecking(true);
+    setReview(null);
 
-      presentedItems.forEach((pItem, displayIdx) => {
-        const val = multiAnswersByDisplayIdx[displayIdx] || "";
-        canonicalAnswers[pItem.canonicalIndex] = val;
+    try {
+      if (hasItems && presentedItems.length > 0) {
+        const canonicalCount = task.items.length;
+        const canonicalAnswers = new Array(canonicalCount).fill("");
+
+        presentedItems.forEach((pItem, displayIdx) => {
+          const val = multiAnswersByDisplayIdx[displayIdx] || "";
+          canonicalAnswers[pItem.canonicalIndex] = val;
+        });
+
+        const perItemResults = [];
+
+        for (let canonicalIndex = 0; canonicalIndex < canonicalCount; canonicalIndex += 1) {
+          const item = task.items[canonicalIndex] || {};
+          const studentAnswer = canonicalAnswers[canonicalIndex] || "";
+
+          const result = await evaluateShortAnswer({
+            question: item.prompt || task.prompt || `Question ${canonicalIndex + 1}`,
+            studentAnswer,
+            gradeLevel: task.gradeLevel || task?.config?.gradeLevel || "6-8",
+            correctAnswer: item.correctAnswer || "",
+            acceptableAnswers: item.acceptableAnswers || [],
+          });
+
+          perItemResults.push({
+            canonicalIndex,
+            prompt: item.prompt || `Question ${canonicalIndex + 1}`,
+            studentAnswer,
+            correct: result.correct === true,
+            feedback: result.feedback || "",
+            hint: result.hint || "",
+          });
+        }
+
+        const allCorrect =
+          perItemResults.length > 0 && perItemResults.every((r) => r.correct === true);
+
+        const reviewPayload = {
+          type: "multi-short",
+          itemResults: perItemResults,
+          allCorrect,
+        };
+
+        setReview(reviewPayload);
+        setAttemptCount((n) => n + 1);
+
+        if (allCorrect) {
+          const payload = {
+            kind: "multi-short-answer",
+            answers: canonicalAnswers,
+            review: reviewPayload,
+          };
+
+          const payloadString = JSON.stringify(payload);
+          if (onAnswerChange) onAnswerChange(payloadString);
+          onSubmit(payloadString);
+        }
+      } else {
+        const result = await evaluateShortAnswer({
+          question: task.prompt || task.title || "Short answer",
+          studentAnswer: singleAnswer,
+          gradeLevel: task.gradeLevel || task?.config?.gradeLevel || "6-8",
+          correctAnswer: task.correctAnswer || "",
+          acceptableAnswers: task.acceptableAnswers || [],
+        });
+
+        const reviewPayload = {
+          type: "single-short",
+          studentAnswer: singleAnswer,
+          correct: result.correct === true,
+          feedback: result.feedback || "",
+          hint: result.hint || "",
+        };
+
+        setReview(reviewPayload);
+        setAttemptCount((n) => n + 1);
+
+        if (result.correct === true) {
+          if (onAnswerChange) onAnswerChange(singleAnswer);
+          onSubmit(singleAnswer);
+        }
+      }
+    } catch (err) {
+      setReview({
+        type: hasItems ? "multi-short" : "single-short",
+        correct: false,
+        feedback: "Could not evaluate your answer. Please try again.",
+        hint: "",
+        itemResults: hasItems ? [] : undefined,
       });
-
-      const payload = {
-        kind: "multi-short-answer",
-        answers: canonicalAnswers,
-      };
-
-      const payloadString = JSON.stringify(payload);
-      if (onAnswerChange) onAnswerChange(payloadString);
-      onSubmit(payloadString);
-    } else {
-      if (onAnswerChange) onAnswerChange(singleAnswer);
-      onSubmit(singleAnswer);
+    } finally {
+      setChecking(false);
     }
   };
 
   const handleSingleChange = (e) => {
     const value = e.target.value;
     setSingleAnswer(value);
+    if (review) setReview(null);
     if (onAnswerChange) onAnswerChange(value);
   };
 
   const handleMultiChange = (displayIdx, e) => {
     const value = e.target.value;
+
     setMultiAnswersByDisplayIdx((prev) => {
       const next = Array.isArray(prev) ? prev.slice() : [];
       next[displayIdx] = value;
       return next;
     });
 
-    // Keep a draft for autosave / resume.
+    if (review) setReview(null);
+
     try {
       const nextDraft = Array.isArray(multiAnswersByDisplayIdx)
         ? multiAnswersByDisplayIdx.slice()
@@ -154,12 +237,142 @@ export default function ShortAnswerTask({
         answersByDisplayIdx: nextDraft,
       });
       if (onAnswerChange) onAnswerChange(draftPayload);
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   const { cardBg, cardHeaderBg, cardHeaderText } = getThemeColors(theme);
+
+  const reviewCardStyle = {
+    marginTop: 12,
+    background: "rgba(15,23,42,0.92)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    borderRadius: 14,
+    padding: 16,
+    color: "#fff",
+    boxShadow: "0 14px 32px rgba(0,0,0,0.30)",
+  };
+
+  const waitingCard = checking ? (
+    <div style={reviewCardStyle}>
+      <div style={{ fontWeight: 800, textAlign: "center" }}>Checking your answer...</div>
+    </div>
+  ) : null;
+
+  const singleReviewCard =
+    !hasItems && review ? (
+      <div style={reviewCardStyle}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Your answer</div>
+        <div
+          style={{
+            padding: 10,
+            borderRadius: 10,
+            background: "rgba(255,255,255,0.08)",
+            marginBottom: 10,
+          }}
+        >
+          {review.studentAnswer || "—"}
+        </div>
+
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>
+          {review.correct ? "✅ Correct" : "❌ Not correct yet"}
+        </div>
+
+        <div
+          style={{
+            padding: 10,
+            borderRadius: 10,
+            background: review.correct
+              ? "rgba(22,163,74,0.22)"
+              : "rgba(127,29,29,0.92)",
+            border: review.correct
+              ? "1px solid rgba(74,222,128,0.45)"
+              : "1px solid rgba(248,113,113,0.85)",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>
+            {review.correct ? "Feedback" : "Hint"}
+          </div>
+          <div>{review.hint || review.feedback || "Try again."}</div>
+        </div>
+
+        {!review.correct ? (
+          <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              className="border rounded-full px-4 py-2"
+              style={{
+                background: "#0ea5e9",
+                color: "#fff",
+                fontWeight: 700,
+              }}
+              onClick={() => setReview(null)}
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+      </div>
+    ) : null;
+
+  const multiReviewCard =
+    hasItems && review ? (
+      <div style={reviewCardStyle}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>
+          {review.allCorrect ? "✅ Nice work" : "Review your answers"}
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          {(review.itemResults || []).map((item, i) => (
+            <div
+              key={i}
+              style={{
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.06)",
+                padding: 12,
+                border: "1px solid rgba(255,255,255,0.10)",
+              }}
+            >
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>{item.prompt}</div>
+              <div style={{ marginBottom: 8, opacity: 0.95 }}>
+                <strong>Your answer:</strong> {item.studentAnswer || "—"}
+              </div>
+              <div style={{ marginBottom: 6 }}>
+                {item.correct ? "✅ Correct" : "❌ Not correct yet"}
+              </div>
+              {!item.correct ? (
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 10,
+                    background: "rgba(127,29,29,0.92)",
+                    border: "1px solid rgba(248,113,113,0.85)",
+                  }}
+                >
+                  {item.hint || item.feedback || "Try adding the key idea more clearly."}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+
+        {!review.allCorrect ? (
+          <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              className="border rounded-full px-4 py-2"
+              style={{
+                background: "#0ea5e9",
+                color: "#fff",
+                fontWeight: 700,
+              }}
+              onClick={() => setReview(null)}
+            >
+              Revise and try again
+            </button>
+          </div>
+        ) : null}
+      </div>
+    ) : null;
 
   const instructionBlock = (
     <div
@@ -179,7 +392,6 @@ export default function ShortAnswerTask({
     </div>
   );
 
-  // Multi-question mode
   if (hasItems && presentedItems.length > 0) {
     return (
       <div className="flex flex-col h-full p-3 gap-3">
@@ -249,7 +461,7 @@ export default function ShortAnswerTask({
                   rows={3}
                   value={multiAnswersByDisplayIdx[displayIdx] || ""}
                   onChange={(e) => handleMultiChange(displayIdx, e)}
-                  disabled={disabled}
+                  disabled={disabled || checking}
                   placeholder="Type your answer here…"
                   style={{ borderColor: "rgba(148,163,184,0.8)" }}
                 />
@@ -257,10 +469,13 @@ export default function ShortAnswerTask({
             ))}
           </div>
 
+          {waitingCard}
+          {multiReviewCard}
+
           <button
             type="button"
             onClick={handleSubmitClick}
-            disabled={disabled || !multiReady}
+            disabled={disabled || checking || !multiReady}
             className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
             style={{
               background: disabled ? "#9ca3af" : "#0ea5e9",
@@ -269,14 +484,17 @@ export default function ShortAnswerTask({
               paddingInline: 20,
             }}
           >
-            {multiReady ? "Submit all answers" : "Answer every question"}
+            {checking
+              ? "Checking..."
+              : multiReady
+              ? "Submit all answers"
+              : "Answer every question"}
           </button>
         </div>
       </div>
     );
   }
 
-  // Single-question mode
   return (
     <div className="flex flex-col h-full p-3 gap-3">
       <div
@@ -315,16 +533,19 @@ export default function ShortAnswerTask({
             className="border rounded-lg p-2 flex-1 resize-none text-sm"
             value={singleAnswer}
             onChange={handleSingleChange}
-            disabled={disabled}
+            disabled={disabled || checking}
             placeholder="Type your answer here…"
             style={{ borderColor: "rgba(148,163,184,0.8)" }}
           />
         </div>
 
+        {waitingCard}
+        {singleReviewCard}
+
         <button
           type="button"
           onClick={handleSubmitClick}
-          disabled={disabled || !singleReady}
+          disabled={disabled || checking || !singleReady}
           className="mt-3 border rounded-full px-4 py-2 disabled:opacity-50 self-end"
           style={{
             background: disabled ? "#9ca3af" : "#0ea5e9",
@@ -333,7 +554,7 @@ export default function ShortAnswerTask({
             paddingInline: 20,
           }}
         >
-          {singleReady ? "Submit" : "Type your answer"}
+          {checking ? "Checking..." : singleReady ? "Submit" : "Type your answer"}
         </button>
       </div>
     </div>

@@ -4854,6 +4854,17 @@ if (!isMultiPack && task.taskType === "guess-who") {
       lastScannedStationId: room.teams?.[effectiveTeamId]?.lastScannedStationId,
     });
 
+    if (task.taskType === "physical-multiple-choice") {
+      const pmcLast = answer?.lastScannedColor || null;
+
+      if (pmcLast && room.teams?.[effectiveTeamId]) {
+        const normalized = normalizeStationId(pmcLast);
+        if (normalized?.id) {
+          room.teams[effectiveTeamId].lastScannedStationId = normalized.id;
+        }
+      }
+    }
+
     // After every graded submission, advance THIS team to the next station so they must rescan.
     reassignStationForTeam(room, effectiveTeamId);
 
@@ -6437,10 +6448,12 @@ async function evaluateMultiShortItem({
     Rules:
     - score must be between 0 and ${maxPoints}
     - Use full credit if the student clearly shows the correct idea, even if wording differs.
-    - Use 0.5 style partial credit only if maxPoints allows it.
     - Be lenient but accurate.
-    - feedback must be one short sentence.
-    - If the answer is clearly wrong or too vague, score 0.
+    - feedback must be one short helpful sentence.
+    - If the answer is incomplete or wrong, the feedback must strongly hint at the correct idea.
+    - The hint should guide the student toward the right answer, not just say "be clearer."
+    - Mention the missing key fact or concept in student-friendly language.
+    - Do not be vague.
     `.trim();
 
       const schema = {
@@ -6625,63 +6638,93 @@ app.post("/api/tasks/reading-comp/check", async (req, res) => {
   }
 });
 
-app.post("/api/evaluate/short-answer", authRequired, async (req, res) => {
+app.post("/api/evaluate/short-answer", async (req, res) => {
   try {
-    const { question, studentAnswer, gradeLevel } = req.body;
+    const question = String(req.body?.question || "").trim().slice(0, 4000);
+    const studentAnswer = String(req.body?.studentAnswer || "").trim().slice(0, 1000);
+    const gradeLevel = req.body?.gradeLevel;
+    const correctAnswer = String(req.body?.correctAnswer || "").trim().slice(0, 1000);
+    const acceptableAnswers = Array.isArray(req.body?.acceptableAnswers)
+      ? req.body.acceptableAnswers.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 8)
+      : [];
 
     if (!question || !studentAnswer) {
       return res.status(400).json({ error: "Missing data" });
     }
 
-    const prompt = `
-You are a teacher evaluating a student's short answer.
-
-Grade level: ${gradeLevel || "6-8"}
-
-Question:
-${question}
-
-Student answer:
-${studentAnswer}
-
-Rules:
-- Decide if the answer shows understanding of the question.
-- Be lenient but accurate.
-- Answer must be a complete sentence.
-- Return JSON ONLY (no explanation outside JSON):
-
-{
-  "correct": true or false,
-  "feedback": "one short sentence explaining what was good or what is missing"
-}
-`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-5.4-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-    });
-
-    const text = response.choices[0]?.message?.content || "{}";
-
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = { correct: false, feedback: "Could not evaluate answer." };
+    if (studentAnswer.split(/\s+/).length < 3) {
+      return res.json({
+        type: "SHORT_ANSWER",
+        studentAnswer,
+        correct: false,
+        feedback: "Please write a fuller answer.",
+        hint: "Use a complete thought and include the main idea.",
+      });
     }
 
-    res.json({
-      type: "SHORT_ANSWER",
-      studentAnswer,
-      correct: parsed.correct === true,
-      feedback: parsed.feedback || "",
-    });
-  } catch (err) {
-    console.error("Short answer eval error:", err);
-    res.status(500).json({ error: "Evaluation failed" });
-  }
-});
+    const prompt = `
+      You are a teacher evaluating a student's short answer.
+
+      Grade level: ${gradeLevel || "6-8"}
+
+      Question:
+      ${question}
+
+      Student answer:
+      ${studentAnswer}
+
+      Correct answer:
+      ${correctAnswer || "(not provided)"}
+
+      Other acceptable answers:
+      ${acceptableAnswers.length ? acceptableAnswers.join(" | ") : "(none)"}
+
+      Return JSON ONLY in this exact shape:
+      {
+        "correct": true,
+        "feedback": "one short sentence",
+        "hint": "one short sentence that strongly hints at the correct idea without copying the full answer"
+      }
+
+      Rules:
+      - Decide if the answer shows understanding of the question.
+      - Be lenient but accurate.
+      - If the answer is incomplete or wrong, the hint must strongly steer the student toward the missing idea.
+      - Do not be vague.
+      - Keep both feedback and hint student-friendly.
+      `.trim();
+
+          const response = await openai.chat.completions.create({
+            model: "gpt-5.4-mini",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.2,
+          });
+
+          const text = response.choices?.[0]?.message?.content || "{}";
+
+          let parsed;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = {
+              correct: false,
+              feedback: "Could not evaluate answer.",
+              hint: "Try again and include the main idea.",
+            };
+          }
+
+          return res.json({
+            type: "SHORT_ANSWER",
+            studentAnswer,
+            correct: parsed.correct === true,
+            feedback: parsed.feedback || "",
+            hint: parsed.hint || "",
+          });
+        } catch (err) {
+          console.error("Short answer eval error:", err);
+          return res.status(500).json({ error: "Evaluation failed" });
+        }
+      });
 
 // Grading start
 

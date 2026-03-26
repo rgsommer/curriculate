@@ -433,6 +433,7 @@ export default function PhysicalMultipleChoiceTask({
         answers,
         score: answers.filter((a) => a.isCorrect).length,
         total: items.length,
+        lastScannedColor: lastValidScanColorRef.current || null,
       });
     }, delay);
 

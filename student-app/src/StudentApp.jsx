@@ -4795,6 +4795,25 @@ function StudentApp() {
       </TaskErrorBoundary>
     </div>
 
+    {submitting &&
+      (currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
+        currentTask?.taskType === TASK_TYPES.READING_COMP) && (
+        <div
+          style={{
+            marginTop: 12,
+            width: "100%",
+            background: "rgba(255,255,255,0.14)",
+            border: "1px solid rgba(255,255,255,0.25)",
+            borderRadius: 12,
+            padding: 16,
+            textAlign: "center",
+            fontWeight: 800,
+          }}
+        >
+          Wait for it...
+        </div>
+    )}
+
     {taskLocked && !isPhysicalTask && (
       <div className="task-locked-overlay">
         <style>{`
