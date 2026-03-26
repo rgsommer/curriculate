@@ -145,11 +145,13 @@ export default function ShortAnswerTask({
             correct: result.correct === true,
             feedback: result.feedback || "",
             hint: result.hint || "",
+            modelAnswer: result.modelAnswer || "",
           });
         }
 
         const allCorrect =
-          perItemResults.length > 0 && perItemResults.every((r) => r.correct === true);
+          perItemResults.length > 0 &&
+          perItemResults.every((r) => r.correct === true || r.score >= 0.75);
 
         const reviewPayload = {
           type: "multi-short",
@@ -186,12 +188,13 @@ export default function ShortAnswerTask({
           correct: result.correct === true,
           feedback: result.feedback || "",
           hint: result.hint || "",
+          modelAnswer: result.modelAnswer || "",
         };
 
         setReview(reviewPayload);
         setAttemptCount((n) => n + 1);
 
-        if (result.correct === true) {
+        if (result.correct === true || result.score >= 0.75) {
           if (onAnswerChange) onAnswerChange(singleAnswer);
           onSubmit(singleAnswer);
         }
@@ -292,7 +295,19 @@ export default function ShortAnswerTask({
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
             {review.correct ? "Feedback" : "Hint"}
           </div>
-          <div>{review.hint || review.feedback || "Try again."}</div>
+          <div style={{ display: "grid", gap: 6 }}>
+            {review.feedback ? (
+              <div><strong>What you did:</strong> {review.feedback}</div>
+            ) : null}
+
+            {review.hint ? (
+              <div><strong>Next step:</strong> {review.hint}</div>
+            ) : null}
+
+            {review.modelAnswer ? (
+              <div><strong>Example answer:</strong> {review.modelAnswer}</div>
+            ) : null}
+          </div>
         </div>
 
         {!review.correct ? (
@@ -344,11 +359,26 @@ export default function ShortAnswerTask({
                   style={{
                     padding: 10,
                     borderRadius: 10,
-                    background: "rgba(127,29,29,0.92)",
-                    border: "1px solid rgba(248,113,113,0.85)",
+                    background: "#7f1d1d",
+                    border: "2px solid #f87171",
+                    color: "#ffffff",
+                    lineHeight: 1.4,
+                    fontSize: "0.95rem"
                   }}
                 >
-                  {item.hint || item.feedback || "Try adding the key idea more clearly."}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {item.feedback ? (
+                      <div><strong>What you did:</strong> {item.feedback}</div>
+                    ) : null}
+
+                    {item.hint ? (
+                      <div><strong>Next step:</strong> {item.hint}</div>
+                    ) : null}
+
+                    {item.modelAnswer ? (
+                      <div><strong>Example:</strong> {item.modelAnswer}</div>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>

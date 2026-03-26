@@ -736,14 +736,28 @@ setInterval(() => {
   io.emit("rooms:available", available);
 }, 20000);
 
+function shuffle(array) {
+  const a = [...array];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
   const stations = {};
   const NUM_STATIONS = 8;
-  for (let i = 1; i <= NUM_STATIONS; i++) {
-    const id = `station-${i}`;
-    stations[id] = { id, assignedTeamId: null, color: COLORS[i - 1] || null };
-  }
-
+  const shuffledColors = shuffle(COLORS);
+    for (let i = 1; i <= NUM_STATIONS; i++) {
+      const id = `station-${i}`;
+      stations[id] = {
+        id,
+        assignedTeamId: null,
+        color: shuffledColors[i - 1] || null,
+      };
+    }
+  
   const room = {
     code: roomCode,
     teacherSocketId,
@@ -900,7 +914,10 @@ function reassignStationForTeam(room, teamId) {
   }
 
   // Final fallback
-  const nextStationId = candidates[0] || stationIds[0];
+  const nextStationId =
+    candidates.length > 0
+      ? candidates[Math.floor(Math.random() * candidates.length)]
+      : stationIds[0];
 
   console.log("[reassignStationForTeam result]", {
     teamId,
@@ -3323,29 +3340,43 @@ socket.on("task:force-advance", ({ roomCode }) => {
       .toLowerCase()
       .replace(/\s+/g, "-");
 
-  function normalizeStationId(input) {
+  function normalizeStationId(input, room = null) {
     const raw = (input || "").toString().trim();
     const lower = raw.toLowerCase();
 
-    // 1) station-<number> anywhere in the string
+    // 1) explicit station-<n>
     const m = lower.match(/station-(\d+)/);
     if (m) {
       const n = parseInt(m[1], 10);
-      const color = Number.isFinite(n) && n >= 1 ? COLORS[n - 1] || null : null;
-      return { id: `station-${n}`, number: n, color };
+      const id = `station-${n}`;
+      const color = room?.stations?.[id]?.color || null;
+      return { id, number: n, color };
     }
 
-    // 2) color anywhere in the string (including URLs like .../red or .../202/red)
-    // Match whole word colors separated by /, ?, #, &, =, or end of string
-    const colorRegex = new RegExp(`(?:^|[\\/\\?#&=])(${COLORS.join("|")})(?:$|[\\/\\?#&=])`, "i");
+    // 2) color embedded in string / URL
+    const colorRegex = new RegExp(
+      `(?:^|[\\/\\?#&=])(${COLORS.join("|")})(?:$|[\\/\\?#&=])`,
+      "i"
+    );
     const cm = lower.match(colorRegex);
-    if (cm) {
-      return { id: null, number: null, color: cm[1].toLowerCase() };
-    }
+    const foundColor = cm?.[1]?.toLowerCase() || (COLORS.includes(lower) ? lower : null);
 
-    // 3) plain color string (fallback)
-    if (COLORS.includes(lower)) {
-      return { id: null, number: null, color: lower };
+    if (foundColor) {
+      if (room?.stations) {
+        const match = Object.values(room.stations).find(
+          (s) => String(s?.color || "").toLowerCase() === foundColor
+        );
+        if (match) {
+          const numMatch = String(match.id).match(/station-(\d+)/);
+          return {
+            id: match.id,
+            number: numMatch ? parseInt(numMatch[1], 10) : null,
+            color: foundColor,
+          };
+        }
+      }
+
+      return { id: null, number: null, color: foundColor };
     }
 
     return { id: null, number: null, color: null };
@@ -3625,8 +3656,8 @@ socket.on("task:force-advance", ({ roomCode }) => {
       // 2) Station correctness
       const expectedStation =
         team.currentStationId || team.stationId || team.station || null;
-      const expected = normalizeStationId(expectedStation);
-      const scanned = normalizeStationId(stationId);
+      const expected = normalizeStationId(expectedStation, room);
+      const scanned = normalizeStationId(stationId, room);
       const scannedCanonicalId = scanned?.id || stationId || null;
       if (scannedCanonicalId) {
         team.lastScannedStationId = scannedCanonicalId;
@@ -4458,85 +4489,152 @@ socket.on("station:scan", handleStationScan);
     }
 
     // Non-multi SHORT_ANSWER
-    if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && correct === null) {
-      const question =
-        String(
-          task.prompt ||
-          task.question ||
-          task.title ||
-          task.text ||
-          ""
-        ).trim();
+if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && correct === null) {
+  const question = String(
+    task.prompt ||
+    task.question ||
+    task.title ||
+    task.text ||
+    ""
+  ).trim();
 
-      const studentAnswer = String(answerText ?? answer ?? "").trim();
+  const studentAnswer = String(answerText ?? answer ?? "").trim();
+  const correctAnswer = String(task.correctAnswer || "").trim();
+  const acceptableAnswers = Array.isArray(task.acceptableAnswers)
+    ? task.acceptableAnswers.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 8)
+    : Array.isArray(task?.config?.acceptableAnswers)
+    ? task.config.acceptableAnswers.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 8)
+    : [];
 
-      if (!studentAnswer) {
-        awardObjective(false);
-      } else if (studentAnswer.split(/\s+/).length < 4) {
-        correct = false;
-        pointsEarned = 0;
-        aiScore = {
-          strategy: "short-answer-eval",
-          maxPoints: basePoints,
-          totalScore: 0,
-          correct: false,
-          feedback: "Please write a complete sentence.",
-        };
-      } else {
-        try {
-          const prompt = `
-    You are a teacher evaluating a student's short answer.
+  if (!studentAnswer) {
+    correct = false;
+    pointsEarned = 0;
+    aiScore = {
+      strategy: "short-answer-eval",
+      maxPoints: basePoints,
+      totalScore: 0,
+      correct: false,
+      feedback: "No answer given.",
+      hint: "Include the main idea in your answer.",
+    };
+  } else if (studentAnswer.split(/\s+/).length < 3) {
+    correct = false;
+    pointsEarned = 0;
+    aiScore = {
+      strategy: "short-answer-eval",
+      maxPoints: basePoints,
+      totalScore: 0,
+      correct: false,
+      feedback: "Please write a fuller answer.",
+      hint: "Use a complete thought and include the key idea.",
+    };
+  } else {
+    try {
+      const prompt = `
+        You are a teacher evaluating one student short answer.
 
-    Grade level: ${task.gradeLevel || task?.config?.gradeLevel || "6-8"}
+        Grade level: ${task.gradeLevel || task?.config?.gradeLevel || "6-8"}
 
-    Question:
-    ${question}
+        Question:
+        ${question}
 
-    Student answer:
-    ${studentAnswer}
+        Student answer:
+        ${studentAnswer}
 
-    Rules:
-    - Decide if the answer shows understanding of the question.
-    - Be lenient but accurate.
-    - Answer must be a complete sentence.
-    - Return JSON ONLY:
+        Correct answer:
+        ${correctAnswer || "(not provided)"}
 
-    {
-      "correct": true,
-      "feedback": "one short sentence explaining what was good or what is missing"
-    }
-    `.trim();
+        Other acceptable answers:
+        ${acceptableAnswers.length ? acceptableAnswers.join(" | ") : "(none)"}
 
-          const response = await openai.chat.completions.create({
-            model: "gpt-5.4-mini",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.2,
-          });
-
-          const text = response.choices?.[0]?.message?.content || "{}";
-
-          let parsed;
-          try {
-            parsed = JSON.parse(text);
-          } catch {
-            parsed = { correct: false, feedback: "Could not evaluate answer." };
-          }
-
-          correct = parsed.correct === true;
-          pointsEarned = correct ? basePoints : 0;
-          aiScore = {
-            strategy: "short-answer-eval",
-            maxPoints: basePoints,
-            totalScore: pointsEarned,
-            correct,
-            feedback: parsed.feedback || "",
-          };
-        } catch (e) {
-          console.error("Short answer eval failed:", e);
-          awardObjective(false);
+        Return JSON ONLY in this exact shape:
+        {
+          "score": number,
+          "maxPoints": number,
+          "correct": boolean,
+          "feedback": "one sentence saying what the student got right or what is missing",
+          "hint": "one sentence that strongly points to the missing key idea without copying the full answer",
+          "modelAnswer": "one short model answer"
         }
-      }
-    }
+
+        Rules:
+        - score must be between 0 and ${basePoints}
+        - Use full credit if the student clearly shows the right idea, even if the wording differs.
+        - Be lenient with paraphrases.
+        - Do NOT require exact keywords if the concept is clearly there.
+        - A mostly correct answer should usually earn full credit on a short-answer task unless an essential idea is missing.
+        - If the answer is partially correct, score generously but not fully.
+        - feedback must be specific to THIS question and THIS answer.
+        - Never say vague things like "be clearer" or "include more detail" by themselves.
+        - Name the missing concept directly in student-friendly language.
+        - hint must strongly guide the student toward the missing idea.
+        - modelAnswer must be short, direct, and student-friendly.
+        `.trim();
+
+              const response = await openai.responses.create({
+                model: "gpt-5.4",
+                input: [
+                  {
+                    role: "user",
+                    content: [{ type: "input_text", text: prompt }],
+                  },
+                ],
+                text: {
+                  format: {
+                    type: "json_schema",
+                    name: "short_answer_eval",
+                    strict: true,
+                    schema: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        score: { type: "number" },
+                        maxPoints: { type: "number" },
+                        correct: { type: "boolean" },
+                        feedback: { type: "string" },
+                        hint: { type: "string" },
+                        modelAnswer: { type: "string" },
+                      },
+                      required: ["score", "maxPoints", "correct", "feedback", "hint", "modelAnswer"],
+                    },
+                  },
+                },
+                max_output_tokens: 220,
+              });
+
+              const parsed = safeJsonParse(response.output_text) || {};
+              const rawScore = Number(parsed?.score);
+              const boundedScore = Number.isFinite(rawScore)
+                ? Math.max(0, Math.min(basePoints, rawScore))
+                : 0;
+
+              pointsEarned = boundedScore;
+              correct = parsed?.correct === true || boundedScore >= basePoints;
+
+              aiScore = {
+                strategy: "short-answer-eval",
+                maxPoints: basePoints,
+                totalScore: pointsEarned,
+                correct,
+                feedback: String(parsed?.feedback || "").trim() || "Answer needs improvement.",
+                hint: String(parsed?.hint || "").trim() || "Include the key idea more directly.",
+                modelAnswer: String(parsed?.modelAnswer || "").trim() || "",
+              };
+            } catch (e) {
+              console.error("Short answer eval failed:", e);
+              correct = false;
+              pointsEarned = 0;
+              aiScore = {
+                strategy: "short-answer-eval",
+                maxPoints: basePoints,
+                totalScore: 0,
+                correct: false,
+                feedback: "Could not evaluate answer.",
+                hint: "Try again and include the main idea.",
+              };
+            }
+          }
+        }
 
 // Guess Who (yes/no deduction) – custom scoring: points scale by time + guess count
 if (!isMultiPack && task.taskType === "guess-who") {
@@ -4858,7 +4956,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
       const pmcLast = answer?.lastScannedColor || null;
 
       if (pmcLast && room.teams?.[effectiveTeamId]) {
-        const normalized = normalizeStationId(pmcLast);
+        const normalized = normalizeStationId(pmcLast, room);
         if (normalized?.id) {
           room.teams[effectiveTeamId].lastScannedStationId = normalized.id;
         }
@@ -6327,15 +6425,35 @@ async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
     {
       "decision": "accept" | "followup",
       "reason": "clear" | "too_vague" | "partial" | "unclear" | "likely_copied",
+      "feedback": string,
       "followUpQuestion": string | null
     }
 
     Rules:
-    - Accept if the answer clearly shows understanding of the paragraph.
-    - Use followup only if the answer is vague, generic, copied, or does not clearly show understanding.
-    - Ask only ONE short follow-up question.
-    - The question must be answerable from the paragraph alone.
-    - Keep the question suitable for a student.
+    - Accept if the student shows a reasonable understanding of the paragraph, even if the wording is imperfect.
+    - Accept paraphrases and partial explanations if the main idea is correct.
+    - Do NOT require exact wording or multiple details for acceptance.
+    - Only use followup if:
+      - the answer is very vague
+      - OR clearly incomplete and missing the main idea
+      - OR unclear/confusing
+      - OR appears copied without showing understanding
+    - If the student includes the main idea, ACCEPT.
+
+    Feedback rules:
+    - feedback must be exactly one short sentence.
+    - feedback must be specific to the student's answer.
+    - If the answer is accepted, say briefly what the student understood.
+    - If the answer is not accepted, name the missing idea directly in student-friendly language.
+    - Do not say vague things like "be clearer" or "add more detail" by themselves.
+
+    Follow-up rules:
+    - Ask exactly ONE short question.
+    - Only include a followUpQuestion when decision is "followup".
+    - The question must target the missing idea directly.
+    - Do NOT ask generic questions like "Can you explain more?"
+    - The question must be answerable from the paragraph.
+    - Keep it student-friendly.
     - Do not explain your reasoning.
     `.trim();
 
@@ -6351,11 +6469,14 @@ async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
             type: "string",
             enum: ["clear", "too_vague", "partial", "unclear", "likely_copied"],
           },
+          feedback: {
+            type: "string",
+          },
           followUpQuestion: {
             type: ["string", "null"],
           },
         },
-        required: ["decision", "reason", "followUpQuestion"],
+        required: ["decision", "reason", "feedback", "followUpQuestion"],
       };
 
       const response = await openai.responses.create({
@@ -6374,7 +6495,7 @@ async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
             schema,
           },
         },
-        max_output_tokens: 200,
+        max_output_tokens: 220,
       });
 
       const parsed = safeJsonParse(response.output_text) || {};
@@ -6383,15 +6504,22 @@ async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
       const reason =
         typeof parsed?.reason === "string" ? parsed.reason : "clear";
 
+      const feedback =
+        String(parsed?.feedback || "").trim() ||
+        (decision === "accept"
+          ? "You showed the main idea clearly."
+          : "Your answer is missing the main idea from the paragraph.");
+
       const followUpQuestion =
         decision === "followup"
           ? String(parsed?.followUpQuestion || "").trim() ||
-            "What detail from the paragraph supports your answer?"
+            "What is the main idea the paragraph is trying to explain?"
           : null;
 
       return {
         decision,
         reason,
+        feedback,
         followUpQuestion,
       };
     }
@@ -6417,6 +6545,8 @@ async function evaluateMultiShortItem({
       maxPoints,
       correct: false,
       feedback: "No answer given.",
+      hint: "Include the main idea from the question.",
+      modelAnswer: "",
     };
   }
 
@@ -6432,7 +6562,7 @@ async function evaluateMultiShortItem({
     ${cleanStudent}
 
     Correct answer:
-    ${cleanCorrect}
+    ${cleanCorrect || "(not provided)"}
 
     Other acceptable answers:
     ${cleanAcceptable.length ? cleanAcceptable.join(" | ") : "(none)"}
@@ -6442,18 +6572,21 @@ async function evaluateMultiShortItem({
       "score": number,
       "maxPoints": number,
       "correct": boolean,
-      "feedback": string
+      "feedback": string,
+      "hint": string,
+      "modelAnswer": string
     }
 
     Rules:
     - score must be between 0 and ${maxPoints}
     - Use full credit if the student clearly shows the correct idea, even if wording differs.
     - Be lenient but accurate.
-    - feedback must be one short helpful sentence.
-    - If the answer is incomplete or wrong, the feedback must strongly hint at the correct idea.
-    - The hint should guide the student toward the right answer, not just say "be clearer."
-    - Mention the missing key fact or concept in student-friendly language.
-    - Do not be vague.
+    - Do NOT require exact keywords if the meaning is clearly correct.
+    - feedback must be specific to this student's answer and this question.
+    - If the answer is incomplete or wrong, name the missing key fact or concept directly.
+    - Do not say vague things like "be clearer" or "add more detail" by themselves.
+    - hint must strongly guide the student toward the correct idea without copying the full answer.
+    - modelAnswer must be one short, student-friendly model answer.
     `.trim();
 
       const schema = {
@@ -6464,8 +6597,10 @@ async function evaluateMultiShortItem({
           maxPoints: { type: "number" },
           correct: { type: "boolean" },
           feedback: { type: "string" },
+          hint: { type: "string" },
+          modelAnswer: { type: "string" },
         },
-        required: ["score", "maxPoints", "correct", "feedback"],
+        required: ["score", "maxPoints", "correct", "feedback", "hint", "modelAnswer"],
       };
 
       const response = await openai.responses.create({
@@ -6484,7 +6619,7 @@ async function evaluateMultiShortItem({
             schema,
           },
         },
-        max_output_tokens: 180,
+        max_output_tokens: 220,
       });
 
       const parsed = safeJsonParse(response.output_text) || {};
@@ -6498,6 +6633,8 @@ async function evaluateMultiShortItem({
         maxPoints,
         correct: parsed?.correct === true || boundedScore >= maxPoints,
         feedback: String(parsed?.feedback || "").trim() || "Answer needs improvement.",
+        hint: String(parsed?.hint || "").trim() || "Include the key idea more directly.",
+        modelAnswer: String(parsed?.modelAnswer || "").trim() || "",
       };
     }
 

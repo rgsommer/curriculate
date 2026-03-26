@@ -173,6 +173,7 @@ export default function ReadingCompTask({
   const [soloFollowUpAnswer, setSoloFollowUpAnswer] = useState("");
   const [soloChecking, setSoloChecking] = useState(false);
   const [soloError, setSoloError] = useState("");
+  const [soloFeedback, setSoloFeedback] = useState("");
   
   const gradeLevel =
     typeof task?.gradeLevel === "number"
@@ -185,6 +186,7 @@ export default function ReadingCompTask({
     if (disabled || soloChecking) return;
 
     setSoloError("");
+    setSoloFeedback("");
 
     if (soloStage === "answer") {
       const ans = String(soloAnswer || "").trim();
@@ -203,6 +205,8 @@ export default function ReadingCompTask({
           gradeLevel,
         });
 
+        setSoloFeedback(String(result?.feedback || "").trim());
+
         if (result?.decision === "followup" && result?.followUpQuestion) {
           setSoloFollowUpQuestion(result.followUpQuestion);
           setSoloStage("followup");
@@ -219,6 +223,7 @@ export default function ReadingCompTask({
           comprehensionCheck: {
             decision: result?.decision || "accept",
             reason: result?.reason || null,
+            feedback: result?.feedback || "",
           },
         });
       } catch (err) {
@@ -252,6 +257,7 @@ export default function ReadingCompTask({
           decision: "followup_answered",
           followUpQuestion: soloFollowUpQuestion,
           followUpAnswer: followAns,
+          feedback: soloFeedback || "",
         },
       });
     }
@@ -299,6 +305,7 @@ export default function ReadingCompTask({
       setSoloFollowUpAnswer("");
       setSoloChecking(false);
       setSoloError("");
+      setSoloFeedback("");
     }
   }, [answerDraft, isTeamVariation]);
 
@@ -543,6 +550,7 @@ export default function ReadingCompTask({
                   setSoloAnswer(e.target.value);
                   onAnswerChange?.(e.target.value);
                   if (soloError) setSoloError("");
+                  if (soloFeedback) setSoloFeedback("");
                 }}
                 onPaste={(e) => e.preventDefault()}
                 rows={3}
@@ -569,6 +577,27 @@ export default function ReadingCompTask({
               </>
             )}
           </div>
+
+          {soloFeedback ? (
+            <div
+              style={{
+                marginTop: 10,
+                padding: 12,
+                borderRadius: 14,
+                background: "#0f172a",
+                color: "#ffffff",
+                border: "1px solid rgba(255,255,255,0.16)",
+                boxShadow: "0 10px 24px rgba(2,6,23,0.18)",
+                lineHeight: 1.4,
+                fontSize: 14,
+              }}
+            >
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>
+                {soloStage === "followup" ? "Feedback" : "What we noticed"}
+              </div>
+              <div>{soloFeedback}</div>
+            </div>
+          ) : null}
 
           {soloError ? (
             <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 13, fontWeight: 700 }}>
