@@ -2308,11 +2308,6 @@ case "multi_player_feedback":
 
     case TASK_TYPES.DRAW:
     case TASK_TYPES.MIME:
-      content = (
-        <DrawMimeTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
-      );
-      break;
-
     case TASK_TYPES.DRAW_MIME:
       content = (
         <DrawMimeTask
@@ -2321,6 +2316,30 @@ case "multi_player_feedback":
           disabled={effectiveDisabled}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+          memberNames={memberNames}
+          startGoSequence={presenter?.showCountdown ? async ({ seconds = 3, label = "1-2-3 GO!" } = {}) => {
+            await presenter.showCountdown({
+              title: "Get ready",
+              seconds,
+              subtext: label,
+            });
+          } : undefined}
+          emitTaskEvent={(name, payload) => {
+            try {
+              socket?.emit?.(name, payload);
+            } catch {}
+          }}
+          playSfx={(name) => {
+            try {
+              if (name === "yourTurn") {
+                const a = new Audio("/sounds/your-turn.mp3");
+                a.play().catch(() => {});
+              } else if (name === "go") {
+                const a = new Audio("/sounds/go.mp3");
+                a.play().catch(() => {});
+              }
+            } catch {}
+          }}
         />
       );
       break;

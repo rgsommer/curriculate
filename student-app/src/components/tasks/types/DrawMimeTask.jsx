@@ -9,16 +9,9 @@ export default function DrawMimeTask({
   onAnswerChange,
   answerDraft,
   presenter,
+  memberNames,
   stagingPhase,
   canStartTask,
-  /**
-   * Optional (preferred): TaskRunner can pass these so DrawMime uses the exact same
-   * "1‑2‑3 GO" flow as BodyBreak (shared countdown animation + GO sound + start event).
-   *
-   * startGoSequence: async ({ seconds, label }) => void
-   * emitTaskEvent: (name, payload) => void   // e.g., "task:started", "task:ended"
-   * playSfx: (name) => void                 // e.g., "go", "yourTurn"
-   */
   startGoSequence,
   emitTaskEvent,
   playSfx,
@@ -60,6 +53,7 @@ export default function DrawMimeTask({
   const [color, setColor] = useState("#000000");
   const [lineWidth, setLineWidth] = useState(8);
   const [tool, setTool] = useState("pen"); // "pen" | "eraser"
+  const [awaitingOutcome, setAwaitingOutcome] = useState(false);
 
   // Simple round timer (used for Draw OR Mime).
   // Keeps demo/gameplay clear without changing the drawing engine.
@@ -86,22 +80,39 @@ export default function DrawMimeTask({
       (Array.isArray(task?.players) && task.players) ||
       [];
 
+    const fromMembers = Array.isArray(memberNames)
+      ? memberNames
+          .map((name, idx) => ({
+            id: `m${idx + 1}`,
+            name: String(name || "").trim(),
+          }))
+          .filter((p) => p.name)
+      : [];
+
+    const base =
+      fromConfig.length > 0
+        ? fromConfig.map((p, idx) => ({
+            id: p?.id || `p${idx + 1}`,
+            name: String(p?.name || `Player ${idx + 1}`),
+          }))
+        : fromMembers;
+
     const count =
       (Number.isInteger(task?.config?.playerCount) && task.config.playerCount) ||
       (Number.isInteger(task?.playerCount) && task.playerCount) ||
-      (fromConfig.length || 4);
+      (base.length || 4);
 
-    const normalized = fromConfig
-      .slice(0, count)
-      .map((p, idx) => ({
-        id: p?.id || `p${idx + 1}`,
-        name: String(p?.name || `Player ${idx + 1}`),
-      }));
+    const normalized = base.slice(0, count);
+
     while (normalized.length < count) {
-      normalized.push({ id: `p${normalized.length + 1}`, name: `Player ${normalized.length + 1}` });
+      normalized.push({
+        id: `p${normalized.length + 1}`,
+        name: `Player ${normalized.length + 1}`,
+      });
     }
+
     return normalized;
-  }, [task]);
+  }, [task, memberNames]);
 
   const playerCount = players.length;
 
@@ -245,6 +256,7 @@ export default function DrawMimeTask({
     if (roundActive) return;
 
     // Reset the round state.
+    setAwaitingOutcome(false);
     setHasDrawn(false);
     setStarted(false);
     setCountdown(null);
@@ -385,8 +397,10 @@ export default function DrawMimeTask({
     if (!roundActive) return;
     if (disabled) return;
     if (timeLeft !== 0) return;
-    endRound({ guessedBy: null, guessedBySide: null, reason: "time" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setRoundActive(false);
+    setStarted(false);
+    setCountdown(null);
+    setAwaitingOutcome(true);
   }, [timeLeft, roundActive, disabled]);
 
   const pushToHistory = () => {
@@ -522,7 +536,11 @@ export default function DrawMimeTask({
             DRAW OR MIME IT!
           </h2>
           <p className="text-3xl md:text-4xl font-bold drop-shadow-lg px-4">
-            {prompt}
+            {roundActive
+              ? prompt
+              : performer
+                ? `${mode === "draw" ? "Drawer" : "Actor"}: ${performer.name} — tap GO to reveal the clue`
+                : "Tap GO to reveal the clue"}
           </p>
 
           <div className="mt-5 max-w-5xl mx-auto">
@@ -533,7 +551,7 @@ export default function DrawMimeTask({
                 </div>
                 <button
                   onClick={startRound}
-                  disabled={disabled || !canStart || roundActive || countdown != null}
+                  disabled={disabled || !canStart || roundActive || countdown != null || awaitingOutcome}
                   className="px-8 py-4 rounded-2xl text-3xl font-black bg-white text-black hover:scale-105 transition disabled:opacity-40"
                 >
                   {!canStart
@@ -555,11 +573,15 @@ export default function DrawMimeTask({
               {/* Turnkeeper (Grade 7 reading level) */}
               <div className="mt-2 mb-4">
                 <div className="text-2xl md:text-2xl font-black text-center mb-3">
-                  Performer: <span className="underline">{performer?.name || "Player"}</span>
-                  <span className="opacity-90"> · Guessing team: {guessingSide === "left" ? "Left" : "Right"}</span>
-                  <span className="opacity-75"> · Style: {turnStyle === "intra" ? "Intra‑team" : "Inter‑team"}</span>
+                  {mode === "draw" ? "Drawer" : "Actor"}:{" "}
+                  <span className="underline">{performer?.name || "Player"}</span>
+                  <span className="opacity-90">
+                    {" "}· Guessing team: {guessingSide === "left" ? "Left" : "Right"}
+                  </span>
+                  <span className="opacity-75">
+                    {" "}· Style: {turnStyle === "intra" ? "Intra-team" : "Inter-team"}
+                  </span>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Left Team */}
                   <div
@@ -808,11 +830,47 @@ export default function DrawMimeTask({
             </button>
           </div>
 
+            {awaitingOutcome && (
+              <div className="mb-6 flex flex-col items-center gap-4">
+                <div className="text-3xl font-black text-center">
+                  Time’s up — did the team guess it?
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-4">
+                  {guessers.map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => {
+                        setAwaitingOutcome(false);
+                        endRound({ guessedBy: g.name, guessedBySide: g.side, reason: "guessed-after-time" });
+                      }}
+                      className="px-6 py-4 rounded-2xl text-2xl font-black bg-white text-black hover:scale-105 transition"
+                    >
+                      ✅ {g.name} guessed it
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAwaitingOutcome(false);
+                      endRound({ guessedBy: null, guessedBySide: null, reason: "time" });
+                    }}
+                    className="px-6 py-4 rounded-2xl text-2xl font-black bg-red-600 text-white hover:bg-red-700 transition"
+                  >
+                    ❌ No guess
+                  </button>
+                </div>
+              </div>
+            )}
+
           {/* Submit */}
           <button
             onClick={handleSubmit}
             disabled={
               disabled ||
+              awaitingOutcome ||
               !roundActive ||
               (mode === "draw" ? !hasDrawn : false)
             }
