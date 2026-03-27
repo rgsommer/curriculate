@@ -2226,8 +2226,8 @@ function StudentApp() {
       setScanStatus(null);
       setScanError(null);
       setScannedStationId(null);
-      setDisplayAssignedStationId(assignedStationId);
-      setDisplayAssignedColor(assignedColor);
+      setDisplayAssignedStationId(assignedStationIdRef.current || null);
+      setDisplayAssignedColor(assignedColorRef.current || null);
 
       if (isLastTask) {
         setPostPhase("feedback");
@@ -2235,7 +2235,10 @@ function StudentApp() {
         setScannerActive(false);
         setWaitingForLaunch(false);
 
-        socket.emit("room:request-state", { teamId });
+        socket.emit("room:request-state", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+        });
         return;
       }
 
@@ -2244,7 +2247,10 @@ function StudentApp() {
       setScannerActive(true);
       setWaitingForLaunch(false);
 
-      socket.emit("room:request-state", { teamId });
+      socket.emit("room:request-state", {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+      });
     };
 
     const debugForceEndTaskNow = () => {
@@ -2682,7 +2688,7 @@ function StudentApp() {
         if (serverStation?.id) {
           setAssignedStationId(serverStation.id);
           setAssignedColor(serverStation.color || null);
-          if (!taskLocked && postSubmitSecondsLeft == null) {
+          if (!taskLockedRef.current && postSubmitSecondsLeftRef.current == null) {
             setDisplayAssignedStationId(serverStation.id);
             setDisplayAssignedColor(serverStation.color || null);
           }
@@ -2819,7 +2825,7 @@ function StudentApp() {
         ...currentTask,
         locationSlug: normalizeLocationSlug(roomLocation),
         stationId: stationInfo?.id || null,
-        stationColor: stationInfo?.color || assignedColor || null,
+        stationColor: displayAssignedColor || stationInfo?.color || null,
         stationIndex, // <-- Hangman uses this to select wordsByStation[stationIndex]
       }
     : null;
@@ -4330,7 +4336,10 @@ function StudentApp() {
         setPostPhase("trophy");
         setTasksetComplete(true);
         // refresh scores for final trophy
-        socket.emit("room:request-state", { teamId });
+        socket.emit("room:request-state", {
+          roomCode: roomCode.trim().toUpperCase(),
+          teamId,
+        });
       }}
     />
   </section>
@@ -4369,7 +4378,12 @@ function StudentApp() {
     <div style={{ marginTop: 14, display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
       <button
         type="button"
-        onClick={() => socket.emit("room:request-state", { teamId })}
+        onClick={() =>
+          socket.emit("room:request-state", {
+            roomCode: roomCode.trim().toUpperCase(),
+            teamId,
+          })
+        }
         className="border rounded-full px-4 py-2"
         style={{ background: "#0ea5e9", color: "#fff", fontWeight: 700 }}
       >
@@ -4462,7 +4476,7 @@ function StudentApp() {
   >
     <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
       <div style={{
-        backgroundColor: displayAssignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
+        backgroundColor: displayAssignedColor || "#e5e7eb",
         borderRadius: 16,
         padding: 16,
         display: "inline-block",
