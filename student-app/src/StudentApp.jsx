@@ -943,10 +943,6 @@ function StudentApp() {
         const stationInfo = normalizeStationId(newStationId);
         setAssignedStationId(stationInfo.id);
         setAssignedColor(stationInfo.color || null);
-        if (!taskLockedRef.current && postSubmitSecondsLeftRef.current == null) {
-          setDisplayAssignedStationId(stationInfo.id);
-          setDisplayAssignedColor(stationInfo.color || null);
-        }
       }
 
       const loc =
@@ -2226,8 +2222,8 @@ function StudentApp() {
       setScanStatus(null);
       setScanError(null);
       setScannedStationId(null);
-      setDisplayAssignedStationId(assignedStationIdRef.current || null);
-      setDisplayAssignedColor(assignedColorRef.current || null);
+      setDisplayAssignedStationId(assignedStationIdRef.current || assignedStationId);
+      setDisplayAssignedColor(assignedColorRef.current || assignedColor);
 
       if (isLastTask) {
         setPostPhase("feedback");
@@ -2449,6 +2445,10 @@ function StudentApp() {
           setReviewState({
             ...(response?.review && typeof response.review === "object" ? response.review : null),
             correct: typeof response?.correct === "boolean" ? response.correct : undefined,
+            accepted:
+              typeof response?.accepted === "boolean"
+                ? response.accepted
+                : (typeof response?.correct === "boolean" ? response.correct : undefined),
             points: typeof response?.points === "number" ? response.points : undefined,
             studentAnswer: normalizedAnswer,
             taskId: payload.taskId,
@@ -2688,10 +2688,6 @@ function StudentApp() {
         if (serverStation?.id) {
           setAssignedStationId(serverStation.id);
           setAssignedColor(serverStation.color || null);
-          if (!taskLockedRef.current && postSubmitSecondsLeftRef.current == null) {
-            setDisplayAssignedStationId(serverStation.id);
-            setDisplayAssignedColor(serverStation.color || null);
-          }
           lastStationIdRef.current = serverStation.id;
         }
       }
