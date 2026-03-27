@@ -278,15 +278,15 @@ export default function ShortAnswerTask({
           style={{
             padding: 10,
             borderRadius: 10,
-            background: review.correct ? "#14532d" : "#7f1d1d",
-            border: review.correct ? "2px solid #4ade80" : "2px solid #f87171",
+            background: review.accepted ? "#14532d" : "#7f1d1d",
+            border: review.accepted ? "2px solid #4ade80" : "2px solid #f87171",
             color: "#ffffff",
             lineHeight: 1.4,
             fontSize: "0.95rem",
           }}
         >
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
-            "Feedback"
+            Feedback
           </div>
           <div style={{ display: "grid", gap: 6 }}>
             {review.feedback ? (
@@ -303,7 +303,7 @@ export default function ShortAnswerTask({
           </div>
         </div>
 
-        {!review.correct ? (
+        {!review.accepted ? (
           <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
             <button
               type="button"

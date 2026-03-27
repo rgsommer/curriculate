@@ -45,7 +45,7 @@ export default function ReadingCompTask({
 
   async function checkReadingComprehension({ paragraph, answer, gradeLevel }) {
     const base =
-      process.env.NEXT_PUBLIC_BACKEND_URL || "";
+      process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
 
     const res = await fetch(`${base}/api/tasks/reading-comp/check`, {
       method: "POST",
