@@ -614,6 +614,8 @@ function StudentApp() {
   const [assignedStationId, setAssignedStationId] = useState(null);
   const [assignedColor, setAssignedColor] = useState(null);
   const [scannedStationId, setScannedStationId] = useState(null);
+  const [displayAssignedColor, setDisplayAssignedColor] = useState(null);
+  const [displayAssignedStationId, setDisplayAssignedStationId] = useState(null);
   const [scannerActive, setScannerActive] = useState(false);
   const [scanError, setScanError] = useState(null);
   const [scanStatus, setScanStatus] = useState(null);
@@ -841,6 +843,8 @@ function StudentApp() {
             const stationInfo = normalizeStationId(stationId);
             setAssignedStationId(stationInfo.id);
             setAssignedColor(stationInfo.color || null);
+            setDisplayAssignedStationId(stationInfo.id);
+            setDisplayAssignedColor(stationInfo.color || null);
             lastStationIdRef.current = stationInfo.id;
           }
 
@@ -929,6 +933,10 @@ function StudentApp() {
         const stationInfo = normalizeStationId(newStationId);
         setAssignedStationId(stationInfo.id);
         setAssignedColor(stationInfo.color || null);
+        if (!taskLocked && postSubmitSecondsLeft == null) {
+          setDisplayAssignedStationId(stationInfo.id);
+          setDisplayAssignedColor(stationInfo.color || null);
+        }
       }
 
       const loc =
@@ -2044,9 +2052,12 @@ function StudentApp() {
         const stationInfo = normalizeStationId(joinStationId);
         setAssignedStationId(stationInfo.id);
         setAssignedColor(stationInfo.color || response?.assignedColor || null);
+        setDisplayAssignedStationId(stationInfo.id);
+        setDisplayAssignedColor(stationInfo.color || response?.assignedColor || null);
         lastStationIdRef.current = stationInfo.id;
       } else if (response?.assignedColor) {
         setAssignedColor(String(response.assignedColor).toLowerCase());
+        setDisplayAssignedColor(String(response.assignedColor).toLowerCase());
       }
 
       // location
@@ -2205,6 +2216,8 @@ function StudentApp() {
       setScanStatus(null);
       setScanError(null);
       setScannedStationId(null);
+      setDisplayAssignedStationId(assignedStationId);
+      setDisplayAssignedColor(assignedColor);
 
       if (isLastTask) {
         setPostPhase("feedback");
@@ -2659,6 +2672,10 @@ function StudentApp() {
         if (serverStation?.id) {
           setAssignedStationId(serverStation.id);
           setAssignedColor(serverStation.color || null);
+          if (!taskLocked && postSubmitSecondsLeft == null) {
+            setDisplayAssignedStationId(serverStation.id);
+            setDisplayAssignedColor(serverStation.color || null);
+          }
           lastStationIdRef.current = serverStation.id;
         }
       }
@@ -5097,89 +5114,60 @@ function StudentApp() {
                 textAlign: "left",
               }}
             >
-              <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                Your answer
-              </div>
-
-              <div
-                style={{
-                  padding: 10,
-                  borderRadius: 10,
-                  background: "rgba(0,0,0,0.12)",
-                  marginBottom: 10,
-                }}
-              >
-                {(() => {
-                  const sa = reviewState?.studentAnswer;
-
-                  if (typeof sa === "string") return sa;
-
-                  if (
-                    sa &&
-                    typeof sa === "object" &&
-                    Array.isArray(sa.answers)
-                  ) {
-                    return (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        {sa.answers.map((a, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              padding: 8,
-                              borderRadius: 8,
-                              background: "rgba(255,255,255,0.06)",
-                            }}
-                          >
-                            <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                              {a?.prompt || `Question ${i + 1}`}
-                            </div>
-                            <div>{a?.value || "—"}</div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  }
-
-                  return "—";
-                })()}
-              </div>
-
               {typeof reviewState?.correct === "boolean" && (
                 <div style={{ fontWeight: 800, marginBottom: 8 }}>
                   {reviewState.correct ? "✅ Correct" : "❌ Not correct"}
                 </div>
               )}
 
-              {!reviewState?.accepted && (
-                <div
-                  style={{
-                    background: "#7f1d1d",
-                    border: "2px solid #f87171",
-                    color: "#fff",
-                    lineHeight: 1.4,
-                    padding: 12,
-                    borderRadius: 12,
-                    marginTop: 10,
-                  }}
-                >
-                  <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                    Feedback
-                  </div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    {reviewState?.review?.feedback ? (
-                      <div><strong>What you did:</strong> {reviewState.review.feedback}</div>
-                    ) : null}
+              {!reviewState?.accepted &&
+                (reviewState?.feedback ||
+                  reviewState?.hint ||
+                  reviewState?.modelAnswer ||
+                  reviewState?.comment) && (
+                  <div
+                    style={{
+                      background: "#111827",
+                      border: "2px solid #ef4444",
+                      color: "#ffffff",
+                      lineHeight: 1.4,
+                      padding: 12,
+                      borderRadius: 12,
+                      marginTop: 10,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 6 }}>
+                      Feedback
+                    </div>
 
-                    {reviewState?.review?.hint ? (
-                      <div><strong>Next step:</strong> {reviewState.review.hint}</div>
-                    ) : null}
+                    <div style={{ display: "grid", gap: 6 }}>
+                      {reviewState?.feedback && (
+                        <div>
+                          <strong>What you did:</strong> {reviewState.feedback}
+                        </div>
+                      )}
 
-                    {reviewState?.review?.modelAnswer ? (
-                      <div><strong>Example answer:</strong> {reviewState.review.modelAnswer}</div>
-                    ) : null}
+                      {reviewState?.hint && (
+                        <div>
+                          <strong>Next step:</strong> {reviewState.hint}
+                        </div>
+                      )}
+
+                      {reviewState?.modelAnswer && (
+                        <div>
+                          <strong>Example answer:</strong> {reviewState.modelAnswer}
+                        </div>
+                      )}
+
+                      {!reviewState?.feedback &&
+                      !reviewState?.hint &&
+                      !reviewState?.modelAnswer &&
+                      reviewState?.comment && (
+                        <div>{reviewState.comment}</div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
           )}
           </div>
