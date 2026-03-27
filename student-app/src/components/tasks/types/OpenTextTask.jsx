@@ -128,52 +128,51 @@ export default function OpenTextTask({
   };
 
   const startListening = () => {
-    setErrorMsg("");
-    if (isDisabled) return;
-    if (typeof window === "undefined") return;
-
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
     if (!SpeechRecognition) {
-      setErrorMsg("Speech-to-text is not supported in this browser. Please type your answer.");
+      setError("Voice input is not supported on this browser. Try Chrome or Safari.");
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = task?.settings?.language || "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = false;
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "en-US";
+      recognition.interimResults = true;
 
-    recognition.onresult = (event) => {
-      let spoken = "";
-      for (let i = 0; i < event.results.length; i += 1) {
-        spoken += event.results[i][0].transcript + " ";
-      }
-      const text = spoken.trim();
-      if (!text) return;
+      recognition.onresult = (event) => {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        setValue(transcript);
+      };
 
-      const current = value || "";
-      const newText = (current ? current + " " : "") + text;
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
 
-      setValue(newText);
-      emitDraft(newText);
-    };
+        if (event.error === "not-allowed") {
+          setError("Microphone access was denied. Please allow mic access and try again.");
+        } else if (event.error === "no-speech") {
+          setError("No speech detected. Try speaking more clearly.");
+        } else {
+          setError("Voice input isn’t working right now. You can still type your answer.");
+        }
 
-    recognition.onend = () => {
-      setIsListening(false);
-      recognitionRef.current = null;
-    };
+        setListening(false);
+      };
 
-    recognition.onerror = () => {
-      setErrorMsg("Speech-to-text had a problem. Please type your answer.");
-      setIsListening(false);
-      recognitionRef.current = null;
-    };
+      recognition.onend = () => {
+        setListening(false);
+      };
 
-    recognitionRef.current = recognition;
-    setIsListening(true);
-    recognition.start();
+      recognition.start();
+      recognitionRef.current = recognition;
+      setListening(true);
+      setError("");
+    } catch (err) {
+      console.error("Speech recognition start failed:", err);
+      setError("Voice input is not available. Please type your response.");
+      setListening(false);
+    }
   };
 
   const stopListening = () => {
@@ -373,6 +372,7 @@ export default function OpenTextTask({
         <textarea
           value={value}
           onChange={handleChange}
+          onPaste={(e) => e.preventDefault()}
           placeholder={
             isDisabled
               ? "Submitted. Waiting for next task…"
@@ -385,6 +385,9 @@ export default function OpenTextTask({
             background: isDisabled ? "#f1f5f9" : "#ffffff",
             minHeight: 160,
             lineHeight: 1.35,
+            width: "100%",
+            display: "block",
+            boxSizing: "border-box",
           }}
         />
 

@@ -207,6 +207,10 @@ export default function ReadingCompTask({
 
         setSoloFeedback(String(result?.feedback || "").trim());
 
+        setTimeout(() => {
+          onSubmit(payload);
+        }, 1800);
+
         if (result?.decision === "followup" && result?.followUpQuestion) {
           setSoloFollowUpQuestion(result.followUpQuestion);
           setSoloStage("followup");
@@ -301,6 +305,7 @@ export default function ReadingCompTask({
     if (!isTeamVariation) {
       setSoloAnswer(String(answerDraft || ""));
       setSoloStage("answer");
+      setReview(null);
       setSoloFollowUpQuestion("");
       setSoloFollowUpAnswer("");
       setSoloChecking(false);

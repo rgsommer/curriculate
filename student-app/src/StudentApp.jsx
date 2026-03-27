@@ -2335,6 +2335,15 @@ function StudentApp() {
         answer: normalizedAnswer,
       };
 
+      console.log("[task:submit payload]", {
+        roomCode: roomCode.trim().toUpperCase(),
+        teamId,
+        taskId: currentTask?._id || currentTask?.id,
+        taskIndex: currentTaskIndex,
+        currentTaskType: currentTask?.taskType || currentTask?.type,
+        normalizedAnswer,
+      });
+
       setSubmitting(true);
       socket.emit("task:submit", payload, (response) => {
         if (!response || response.error) {
@@ -5141,23 +5150,33 @@ function StudentApp() {
                 </div>
               )}
 
-              {!reviewState?.correct && (
+              {!reviewState?.accepted && (
                 <div
                   style={{
-                    padding: 10,
-                    borderRadius: 10,
-                    background: "rgba(239,68,68,0.16)",
-                    border: "1px solid rgba(239,68,68,0.35)",
+                    background: "#7f1d1d",
+                    border: "2px solid #f87171",
+                    color: "#fff",
+                    lineHeight: 1.4,
+                    padding: 12,
+                    borderRadius: 12,
+                    marginTop: 10,
                   }}
                 >
                   <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                    What to improve
+                    Feedback
                   </div>
-                  <div>
-                    {reviewState?.review?.feedback ||
-                      reviewState?.review?.comment ||
-                      reviewState?.correctAnswer ||
-                      "Try including the key idea more clearly."}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {reviewState?.review?.feedback ? (
+                      <div><strong>What you did:</strong> {reviewState.review.feedback}</div>
+                    ) : null}
+
+                    {reviewState?.review?.hint ? (
+                      <div><strong>Next step:</strong> {reviewState.review.hint}</div>
+                    ) : null}
+
+                    {reviewState?.review?.modelAnswer ? (
+                      <div><strong>Example answer:</strong> {reviewState.review.modelAnswer}</div>
+                    ) : null}
                   </div>
                 </div>
               )}

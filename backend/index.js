@@ -4119,9 +4119,28 @@ socket.on("station:scan", handleStationScan);
       }
     }
 
+  console.log("[handleStudentSubmit pre-room-check]", {
+    roomCode,
+    code: (roomCode || "").toUpperCase(),
+    hasRoom: !!rooms[(roomCode || "").toUpperCase()],
+    hasTaskset: !!rooms[(roomCode || "").toUpperCase()]?.taskset,
+    knownRooms: Object.keys(rooms || {}),
+    teamId,
+    taskIndex,
+    answer,
+    answerType: typeof answer,
+  });
+
   const code = (roomCode || "").toUpperCase();
   const room = rooms[code];
   if (!room || !room.taskset) {
+    console.warn("[handleStudentSubmit missing room/taskset]", {
+      roomCode,
+      code,
+      hasRoom: !!room,
+      hasTaskset: !!room?.taskset,
+      knownRooms: Object.keys(rooms || {}),
+    });
     if (typeof ack === "function") {
       ack({ ok: false, error: "Room or taskset not found" });
     }
