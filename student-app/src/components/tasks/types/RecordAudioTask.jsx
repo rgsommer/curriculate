@@ -14,6 +14,7 @@ export default function RecordAudioTask({
   const [duration, setDuration] = useState(0);
   const [hasRecording, setHasRecording] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [isPreparingSubmit, setIsPreparingSubmit] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -72,6 +73,7 @@ export default function RecordAudioTask({
   // Clear any old error when task changes
   useEffect(() => {
     setErrorMsg(null);
+    setIsPreparingSubmit(false);
   }, [task?.id, task?.taskType, task?.prompt]);
 
   const cleanupStream = () => {
@@ -201,13 +203,20 @@ export default function RecordAudioTask({
   }, [audioUrl]);
 
   const handleSubmit = async () => {
-    if (!hasRecording || disabled || !audioUrl) return;
+    if (!hasRecording || disabled || !audioUrl || isPreparingSubmit) return;
     setErrorMsg(null);
+
+    if (isPlaying && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setIsPlaying(false);
+    }
+
+    setIsPreparingSubmit(true);
 
     try {
       const blob = await fetch(audioUrl).then((r) => r.blob());
 
-      // Prefer S3 upload so we don't push base64 through the backend.
       let s3 = null;
       try {
         s3 = await presignAndUploadToS3({
@@ -230,7 +239,6 @@ export default function RecordAudioTask({
         return;
       }
 
-      // Fallback: base64 (legacy)
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = String(reader.result || "").split(",")[1] || "";
@@ -245,6 +253,7 @@ export default function RecordAudioTask({
     } catch (err) {
       console.error("Error preparing recorded audio for submit", err);
       setErrorMsg("There was a problem preparing your recording. Please try again.");
+      setIsPreparingSubmit(false);
     }
   };
 
@@ -273,7 +282,7 @@ export default function RecordAudioTask({
           <div className="text-2xl font-extrabold mb-3">How to do this task</div>
           <ol className="text-lg leading-relaxed list-decimal pl-6 opacity-95">
             <li>Tap <strong>START</strong> to begin recording.</li>
-            <li>Speak clearly. Tap <strong>STOP</strong> when you are finished.</li>
+            <li>EVERY team member must add to the recording. Speak clearly. Tap <strong>STOP</strong> when you are finished.</li>
             <li>Tap <strong>Play</strong> to listen. If needed, tap <strong>Re-record</strong>.</li>
             <li>When you are happy with it, tap <strong>Submit Recording</strong>.</li>
           </ol>
@@ -342,7 +351,8 @@ export default function RecordAudioTask({
             <span className="text-3xl">Recording ready ({duration}s)</span>
             <button
               onClick={togglePlayback}
-              className="px-8 py-4 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 transition"
+              disabled={disabled || isPreparingSubmit}
+              className="px-8 py-4 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isPlaying ? "Pause" : "Play"}
             </button>
@@ -357,17 +367,18 @@ export default function RecordAudioTask({
           <div className="mt-6 flex gap-4">
             <button
               onClick={resetRecording}
-              className="px-6 py-3 bg-red-600 rounded-xl text-xl font-bold hover:bg-red-700 transition"
+              disabled={disabled || isPreparingSubmit}
+              className="px-6 py-3 bg-red-600 rounded-xl text-xl font-bold hover:bg-red-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
               Re-record
             </button>
 
             <button
               onClick={handleSubmit}
-              disabled={disabled}
+              disabled={disabled || isPreparingSubmit || isPlaying}
               className="px-10 py-5 bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl text-4xl font-bold hover:scale-105 transition shadow-2xl disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Submit Recording
+              {isPreparingSubmit ? "Submitting..." : "Submit Recording"}
             </button>
           </div>
         </div>

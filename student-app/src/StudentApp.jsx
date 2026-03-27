@@ -2435,6 +2435,29 @@ function StudentApp() {
             return;
           }
 
+          const reviewObj =
+            response?.review && typeof response.review === "object"
+              ? response.review
+              : null;
+
+          const hasMeaningfulFeedback = !!(
+            reviewObj?.feedback ||
+            reviewObj?.hint ||
+            reviewObj?.modelAnswer ||
+            reviewObj?.comment
+          );
+
+          const accepted =
+            typeof response?.accepted === "boolean"
+              ? response.accepted
+              : (typeof response?.correct === "boolean" ? response.correct : false);
+
+          const shouldShowReview =
+            !isPhysical &&
+            (
+              !accepted || hasMeaningfulFeedback
+            );
+
           setTaskLocked(true);
 
           const fallbackSeconds =
