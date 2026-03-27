@@ -87,7 +87,7 @@ export default function ShortAnswerTask({
   }
 
   async function evaluateShortAnswer(payload) {
-    const base = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+    const base = process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
 
     const res = await fetch(`${base}/api/evaluate/short-answer`, {
       method: "POST",
@@ -143,9 +143,11 @@ export default function ShortAnswerTask({
             prompt: item.prompt || `Question ${canonicalIndex + 1}`,
             studentAnswer,
             correct: result.correct === true,
+            accepted: result.correct === true || (result.score ?? 0) >= 0.75,
             feedback: result.feedback || "",
             hint: result.hint || "",
             modelAnswer: result.modelAnswer || "",
+            score: result.score ?? 0,
           });
         }
 
@@ -182,10 +184,14 @@ export default function ShortAnswerTask({
           acceptableAnswers: task.acceptableAnswers || [],
         });
 
+        const accepted = result.correct === true || result.score >= 0.75;
+
         const reviewPayload = {
           type: "single-short",
           studentAnswer: singleAnswer,
           correct: result.correct === true,
+          accepted,
+          score: result.score ?? 0,
           feedback: result.feedback || "",
           hint: result.hint || "",
           modelAnswer: result.modelAnswer || "",
@@ -264,36 +270,23 @@ export default function ShortAnswerTask({
   const singleReviewCard =
     !hasItems && review ? (
       <div style={reviewCardStyle}>
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>Your answer</div>
-        <div
-          style={{
-            padding: 10,
-            borderRadius: 10,
-            background: "rgba(255,255,255,0.08)",
-            marginBottom: 10,
-          }}
-        >
-          {review.studentAnswer || "—"}
-        </div>
-
         <div style={{ fontWeight: 800, marginBottom: 8 }}>
-          {review.correct ? "✅ Correct" : "❌ Not correct yet"}
+          {review.accepted ? "✅ Correct" : "❌ Not correct yet"}
         </div>
 
         <div
           style={{
             padding: 10,
             borderRadius: 10,
-            background: review.correct
-              ? "rgba(22,163,74,0.22)"
-              : "rgba(127,29,29,0.92)",
-            border: review.correct
-              ? "1px solid rgba(74,222,128,0.45)"
-              : "1px solid rgba(248,113,113,0.85)",
+            background: review.correct ? "#14532d" : "#7f1d1d",
+            border: review.correct ? "2px solid #4ade80" : "2px solid #f87171",
+            color: "#ffffff",
+            lineHeight: 1.4,
+            fontSize: "0.95rem",
           }}
         >
           <div style={{ fontWeight: 800, marginBottom: 6 }}>
-            {review.correct ? "Feedback" : "Hint"}
+            "Feedback"
           </div>
           <div style={{ display: "grid", gap: 6 }}>
             {review.feedback ? (
@@ -347,14 +340,10 @@ export default function ShortAnswerTask({
                 border: "1px solid rgba(255,255,255,0.10)",
               }}
             >
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>{item.prompt}</div>
-              <div style={{ marginBottom: 8, opacity: 0.95 }}>
-                <strong>Your answer:</strong> {item.studentAnswer || "—"}
-              </div>
               <div style={{ marginBottom: 6 }}>
-                {item.correct ? "✅ Correct" : "❌ Not correct yet"}
+                {item.accepted ? "✅ Correct" : "❌ Not correct yet"}
               </div>
-              {!item.correct ? (
+              {!item.accepted ? (
                 <div
                   style={{
                     padding: 10,
