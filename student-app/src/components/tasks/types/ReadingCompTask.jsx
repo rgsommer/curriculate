@@ -305,7 +305,6 @@ export default function ReadingCompTask({
     if (!isTeamVariation) {
       setSoloAnswer(String(answerDraft || ""));
       setSoloStage("answer");
-      setReview(null);
       setSoloFollowUpQuestion("");
       setSoloFollowUpAnswer("");
       setSoloChecking(false);

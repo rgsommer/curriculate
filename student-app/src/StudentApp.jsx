@@ -5130,15 +5130,14 @@ function StudentApp() {
                 </div>
               )}
 
-              {!reviewState?.accepted &&
-                (reviewState?.feedback ||
-                  reviewState?.hint ||
-                  reviewState?.modelAnswer ||
-                  reviewState?.comment) && (
+              {(reviewState?.feedback ||
+                reviewState?.hint ||
+                reviewState?.modelAnswer ||
+                reviewState?.comment) && (
                   <div
                     style={{
-                      background: "#111827",
-                      border: "2px solid #ef4444",
+                      background: reviewState?.accepted ? "#14532d" : "#111827",
+                      border: reviewState?.accepted ? "2px solid #4ade80" : "2px solid #ef4444",
                       color: "#ffffff",
                       lineHeight: 1.4,
                       padding: 12,
@@ -5256,8 +5255,8 @@ function StudentApp() {
         height: "50vh",
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
-        backgroundColor: assignedColor
-          ? assignedColor
+        backgroundColor: displayAssignedColor
+          ? displayAssignedColor
           : stationInfo?.color
           ? stationInfo.color
           : "#e5e7eb",
