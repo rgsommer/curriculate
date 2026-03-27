@@ -646,6 +646,8 @@ function StudentApp() {
   const lastSubmissionRef = useRef(null); // used for richer feedback (e.g., MadDash times)
   const pmcRescanTimerRef = useRef(null);
     useEffect(() => { currentTaskRef.current = currentTask; }, [currentTask]);
+  const taskLockedRef = useRef(false);
+  const postSubmitSecondsLeftRef = useRef(null);
   
   const postPhaseRef = useRef(postPhase);
     useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
@@ -895,6 +897,14 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   useEffect(() => {
+    taskLockedRef.current = taskLocked;
+  }, [taskLocked]);
+
+  useEffect(() => {
+    postSubmitSecondsLeftRef.current = postSubmitSecondsLeft;
+  }, [postSubmitSecondsLeft]);
+
+  useEffect(() => {
     if (!teamId) return;
 
     // Room / station state updates
@@ -933,7 +943,7 @@ function StudentApp() {
         const stationInfo = normalizeStationId(newStationId);
         setAssignedStationId(stationInfo.id);
         setAssignedColor(stationInfo.color || null);
-        if (!taskLocked && postSubmitSecondsLeft == null) {
+        if (!taskLockedRef.current && postSubmitSecondsLeftRef.current == null) {
           setDisplayAssignedStationId(stationInfo.id);
           setDisplayAssignedColor(stationInfo.color || null);
         }
@@ -2779,7 +2789,7 @@ function StudentApp() {
   // ─────────────────────────────────────────────
   // Derived values for UI
   // ─────────────────────────────────────────────
-  const stationInfo = normalizeStationId(assignedStationId); // ok, but redundant
+  const stationInfo = normalizeStationId(displayAssignedStationId || assignedStationId);
 
   const stationIndex = (() => {
     const m = /^station-(\d+)$/.exec(String(stationInfo?.id || ""));
@@ -2797,7 +2807,7 @@ function StudentApp() {
     "Classroom";
 
   const expectedRoom = displayRoomFromSlugOrLabel(expectedLoc, selectedRooms);
-  const expectedColor = (assignedColor || stationInfo?.color || "").toUpperCase();
+  const expectedColor = (displayAssignedColor || stationInfo?.color || "").toUpperCase();
 
   const destinationText =
     enforceLocation && Array.isArray(selectedRooms) && selectedRooms.length > 1
@@ -4393,8 +4403,8 @@ function StudentApp() {
           marginTop: 6,
           padding: 16,
           borderRadius: 18,
-          background: (assignedColor || stationInfo?.color || "black"),
-          color: ((assignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
+          background: (displayAssignedColor || stationInfo?.color || "black"),
+          color: ((displayAssignedColor || stationInfo?.color) === "yellow") ? "#0f172a" : "#fff",
           border: "2px solid rgba(255,255,255,0.55)",
           textAlign: "center",
           boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
@@ -4417,7 +4427,7 @@ function StudentApp() {
           return "Scan the next color in the sequence";
         }
 
-        const colorUpper = String(assignedColor || stationInfo?.color || "").toUpperCase();
+        const colorUpper = String(displayAssignedColor || stationInfo?.color || "").toUpperCase();
         const locationUpper = String(roomLocation || "").toUpperCase();
 
         if (!colorUpper) return "Scan station QR code";
@@ -4452,7 +4462,7 @@ function StudentApp() {
   >
     <section className="scanner-shell" style={{ textAlign: "center", margin: "24px 0" }}>
       <div style={{
-        backgroundColor: assignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
+        backgroundColor: displayAssignedColor ? `var(--${assignedColor}-500, #e5e7eb)` : "#e5e7eb",
         borderRadius: 16,
         padding: 16,
         display: "inline-block",
