@@ -2398,9 +2398,7 @@ function StudentApp() {
           currentType === TASK_TYPES.MAD_DASH ||
           currentType === TASK_TYPES.MAD_DASH_SEQUENCE;
           
-        const shouldReview = !isPhysical;
-
-        if (shouldReview) {
+        if (!isPhysical) {
           // If there is no scoring overlay to show, do NOT pause for "review".
           // (Example: objectiveScoring=false AND aiScoring=false)
           // (Example: objectiveScoring=false AND aiScoring=false)
@@ -2437,26 +2435,92 @@ function StudentApp() {
 
           const reviewObj =
             response?.review && typeof response.review === "object"
-              ? response.review
-              : null;
-
-          const hasMeaningfulFeedback = !!(
-            reviewObj?.feedback ||
-            reviewObj?.hint ||
-            reviewObj?.modelAnswer ||
-            reviewObj?.comment
-          );
+              ? { ...response.review }
+              : {
+                  feedback: response?.feedback,
+                  hint: response?.hint,
+                  modelAnswer: response?.modelAnswer,
+                  comment: response?.comment,
+                };
 
           const accepted =
             typeof response?.accepted === "boolean"
               ? response.accepted
               : (typeof response?.correct === "boolean" ? response.correct : false);
 
+          const studentText =
+            typeof normalizedAnswer === "string"
+              ? normalizedAnswer.trim()
+              : "";
+
+          // Record Audio: always give at least a success acknowledgement
+          if (currentType === TASK_TYPES.RECORD_AUDIO || currentType === "record-audio") {
+            if (
+              !reviewObj.feedback &&
+              !reviewObj.hint &&
+              !reviewObj.modelAnswer &&
+              !reviewObj.comment
+            ) {
+              reviewObj.feedback = "Your recording was submitted successfully.";
+            }
+          }
+
+          // Open Text: always give at least a response
+          if (currentType === TASK_TYPES.OPEN_TEXT || currentType === "open-text") {
+            if (
+              !reviewObj.feedback &&
+              !reviewObj.hint &&
+              !reviewObj.modelAnswer &&
+              !reviewObj.comment
+            ) {
+              reviewObj.feedback = "Thanks — your response was submitted.";
+            }
+          }
+
+          // Short Answer / Reading Comp: if we pause, we must show feedback
+          if (
+            (currentType === TASK_TYPES.SHORT_ANSWER ||
+              currentType === TASK_TYPES.READING_COMP) &&
+            !reviewObj.feedback &&
+            !reviewObj.hint &&
+            !reviewObj.modelAnswer &&
+            !reviewObj.comment
+          ) {
+            if (accepted) {
+              reviewObj.feedback = studentText
+                ? `Good job — you said: "${studentText}".`
+                : "Good job — your answer was accepted.";
+            } else {
+              reviewObj.feedback = studentText
+                ? `You said: "${studentText}".`
+                : "Thanks for your answer.";
+              reviewObj.hint = "Try adding the main idea more clearly.";
+            }
+          }
+
+          // Only decide review AFTER all fallback feedback has been added
+          const hasMeaningfulFeedback = !!(
+            reviewObj.feedback ||
+            reviewObj.hint ||
+            reviewObj.modelAnswer ||
+            reviewObj.comment
+          );
+
           const shouldShowReview =
             !isPhysical &&
-            (
-              !accepted || hasMeaningfulFeedback
-            );
+            (!accepted || hasMeaningfulFeedback);
+
+          if (!shouldShowReview) {
+            setReviewState(null);
+            setPostSubmitSecondsLeft(null);
+            setTaskLocked(false);
+            if (postSubmitTimerRef.current) {
+              clearInterval(postSubmitTimerRef.current);
+              postSubmitTimerRef.current = null;
+            }
+            endReviewAndReturnToScan();
+            return;
+          }
 
           setTaskLocked(true);
 
@@ -2466,7 +2530,7 @@ function StudentApp() {
               : DEFAULT_POST_SUBMIT_SECONDS;
 
           setReviewState({
-            ...(response?.review && typeof response.review === "object" ? response.review : null),
+            ...reviewObj,
             correct: typeof response?.correct === "boolean" ? response.correct : undefined,
             accepted:
               typeof response?.accepted === "boolean"
@@ -2494,6 +2558,7 @@ function StudentApp() {
           }, 1000);
 
           postSubmitTimerRef.current = timer;
+
         } else {
           // ✅ PHYSICAL TASK: no overlay, go straight to scan
           setTaskLocked(false);
@@ -5159,7 +5224,7 @@ function StudentApp() {
             >
               {typeof reviewState?.correct === "boolean" && (
                 <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                  {reviewState.correct ? "✅ Correct" : "❌ Not correct"}
+                  {reviewState?.accepted ? "✅ Accepted" : "❌ Not correct"}
                 </div>
               )}
 
