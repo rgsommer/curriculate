@@ -1234,6 +1234,7 @@ function StudentApp() {
       setCurrentAnswerDraft("");
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
+      setReviewState(null);
       setLastTaskResult(null);
       setPointToast(null);
       setShortAnswerReveal(null);
@@ -1587,6 +1588,7 @@ function StudentApp() {
       setReviewState(null);
       setTaskLocked(false);
       setPostSubmitSecondsLeft(null);
+      setReviewState(null);
       setShortAnswerReveal(null);
       if (postSubmitTimerRef.current) {
         clearInterval(postSubmitTimerRef.current);
@@ -2181,6 +2183,7 @@ function StudentApp() {
       setLastTaskResult(null);
       setPointToast(null);
       setShortAnswerReveal(null);
+      setReviewState(null);
       setTasksetComplete(false);
       setTaskRenderError(null);
 

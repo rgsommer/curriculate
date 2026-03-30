@@ -552,7 +552,11 @@ export default function DrawMimeTask({
                 <button
                   onClick={startRound}
                   disabled={disabled || !canStart || roundActive || countdown != null || awaitingOutcome}
-                  className="px-8 py-4 rounded-2xl text-3xl font-black bg-white text-black hover:scale-105 transition disabled:opacity-40"
+                  className={`px-8 py-4 rounded-2xl text-3xl font-black transition ${
+                    roundActive
+                      ? "bg-green-600 text-white"
+                      : "bg-green-500 text-white border-2 border-green-200 hover:scale-105"
+                  } disabled:opacity-40`}
                 >
                   {!canStart
                     ? "Intro…"
@@ -560,7 +564,7 @@ export default function DrawMimeTask({
                       ? "GO!"
                       : countdown
                         ? String(countdown)
-                        : "1‑2‑3 GO!"}
+                        : "1-2-3 GO!"}
                 </button>
               </div>
 
@@ -693,177 +697,221 @@ export default function DrawMimeTask({
 
               <div className="flex flex-wrap items-center justify-center gap-3 mb-4">
                 <button
+                  type="button"
                   onClick={() => setMode("draw")}
-                  disabled={disabled || roundActive || countdown != null}
                   className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
-                    mode === "draw" ? "bg-white text-black" : "bg-white/15 text-white hover:bg-white/25"
+                    mode === "draw"
+                      ? "bg-blue-600 text-white ring-4 ring-blue-200 scale-105"
+                      : "bg-white/85 text-black"
                   }`}
                 >
                   🎨 Drawing
                 </button>
+
                 <button
+                  type="button"
                   onClick={() => setMode("mime")}
-                  disabled={disabled || roundActive || countdown != null}
                   className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
-                    mode === "mime" ? "bg-white text-black" : "bg-white/15 text-white hover:bg-white/25"
+                    mode === "mime"
+                      ? "bg-purple-600 text-white ring-4 ring-purple-200 scale-105"
+                      : "bg-white/85 text-black"
                   }`}
                 >
                   🤫 Miming
                 </button>
               </div>
-
-              <div className="text-left text-2xl md:text-2xl font-bold leading-snug">
-                <div className="mb-2">How to play (no talking while acting/drawing):</div>
-                <div>• Choose ONE: <span className="font-black">Draw</span> on the screen OR <span className="font-black">Mime</span> (act it out).</div>
-                <div>• Your team guesses the word/idea before time runs out.</div>
-                <div>• If you are miming, set the device down and act in front of your team.</div>
-                <div className="opacity-90">Tip: Use simple shapes and big clues. No letters or spelling!</div>
+                <div className="text-xl leading-relaxed">
+                  {mode === "draw" ? (
+                    <>
+                      <div>How to play:</div>
+                      <div>• Draw the clue on the screen.</div>
+                      <div>• Do not use letters or words.</div>
+                      <div>• Your team taps “Guessed it” as soon as they know it.</div>
+                    </>
+                  ) : (
+                    <>
+                      <div>How to play:</div>
+                      <div>• Act out the clue without speaking.</div>
+                      <div>• Put the device down and mime it.</div>
+                      <div>• Your team taps “Guessed it” as soon as they know it.</div>
+                    </>
+                  )}
               </div>
             </div>
           </div>
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 relative mx-4 mb-4 bg-white rounded-3xl shadow-2xl overflow-hidden">
-          <canvas
-            ref={canvasRef}
-            className="w-full h-full touch-none"
-            onPointerDown={startDrawing}
-            style={{ touchAction: "none" }} // Critical for pressure on iPad
-          />
+        {mode === "draw" ? (
+          <div className="flex-1 relative mx-4 mb-4 bg-white rounded-3xl shadow-2xl overflow-hidden">
+            <canvas
+              ref={canvasRef}
+              className="w-full h-full touch-none"
+              onPointerDown={startDrawing}
+              style={{ touchAction: "none" }}
+            />
 
-          {!hasDrawn && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <p className="text-6xl font-black text-gray-300 opacity-50">
-                Press hard for thick lines!
-              </p>
-            </div>
-          )}
-
-          {countdown != null && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <div className="text-8xl md:text-9xl font-black text-white drop-shadow-2xl">
-                {String(countdown)}
+            {!hasDrawn && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <p className="text-6xl font-black text-gray-300 opacity-50">
+                  Press hard for thick lines!
+                </p>
               </div>
-            </div>
-          )}
-        </div>
+            )}
 
-        {/* Controls */}
-        <div className="p-6 bg-black/40 backdrop-blur-lg">
-          <div className="flex flex-wrap items-center justify-center gap-6 mb-6">
-            {/* Tool Switcher */}
-            <div className="flex bg-white/20 rounded-2xl p-2">
-              <button
-                onClick={() => setTool("pen")}
-                disabled={disabled}
-                className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
-                  tool === "pen" ? "bg-white text-black" : "text-white"
-                }`}
-              >
-                Pen
-              </button>
-              <button
-                onClick={() => setTool("eraser")}
-                disabled={disabled}
-                className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
-                  tool === "eraser" ? "bg-white text-black" : "text-white"
-                }`}
-              >
-                Eraser
-              </button>
-            </div>
-
-            {/* Undo / Redo */}
-            <div className="flex gap-4">
-              <button
-                onClick={undo}
-                disabled={!canUndo || disabled}
-                className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
-              >
-                Undo
-              </button>
-              <button
-                onClick={redo}
-                disabled={!canRedo || disabled}
-                className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
-              >
-                Redo
-              </button>
-            </div>
-
-            {/* Color Palette */}
-            {["#000000", "#ef4444", "#3b82f6", "#22c55e", "#eab308", "#a855f7"].map((c) => (
-              <button
-                key={c}
-                onClick={() => { setColor(c); setTool("pen"); }}
-                disabled={disabled}
-                className={`w-16 h-16 rounded-full shadow-xl transition transform hover:scale-110 ${
-                  color === c && tool === "pen" ? "ring-8 ring-white scale-125" : ""
-                }`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-
-            {/* Brush Size */}
-            <div className="flex items-center gap-4 bg-white/20 rounded-2xl px-6 py-3">
-              <span className="text-2xl">Brush</span>
-              {[4, 8, 12, 20].map((w) => (
-                <button
-                  key={w}
-                  onClick={() => setLineWidth(w)}
-                  disabled={disabled}
-                  className={`w-${w === 4 ? "10" : w === 8 ? "12" : w === 12 ? "14" : "16"} h-${w === 4 ? "10" : w === 8 ? "12" : w === 12 ? "14" : "16"} rounded-full transition hover:scale-125 ${
-                    lineWidth === w ? "bg-white scale-125" : "bg-gray-400"
-                  }`}
-                />
-              ))}
-            </div>
-
-            {/* Clear */}
-            <button
-              onClick={clearCanvas}
-              disabled={disabled}
-              className="px-8 py-4 bg-red-600 text-white text-2xl font-bold rounded-2xl hover:bg-red-700 transition shadow-xl"
-            >
-              Clear All
-            </button>
-          </div>
-
-            {awaitingOutcome && (
-              <div className="mb-6 flex flex-col items-center gap-4">
-                <div className="text-3xl font-black text-center">
-                  Time’s up — did the team guess it?
-                </div>
-
-                <div className="flex flex-wrap justify-center gap-4">
-                  {guessers.map((g) => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      onClick={() => {
-                        setAwaitingOutcome(false);
-                        endRound({ guessedBy: g.name, guessedBySide: g.side, reason: "guessed-after-time" });
-                      }}
-                      className="px-6 py-4 rounded-2xl text-2xl font-black bg-white text-black hover:scale-105 transition"
-                    >
-                      ✅ {g.name} guessed it
-                    </button>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAwaitingOutcome(false);
-                      endRound({ guessedBy: null, guessedBySide: null, reason: "time" });
-                    }}
-                    className="px-6 py-4 rounded-2xl text-2xl font-black bg-red-600 text-white hover:bg-red-700 transition"
-                  >
-                    ❌ No guess
-                  </button>
+            {countdown != null && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="text-8xl md:text-9xl font-black text-white drop-shadow-2xl">
+                  {String(countdown)}
                 </div>
               </div>
             )}
+          </div>
+        ) : (
+          <div className="flex-1 relative mx-4 mb-4 rounded-3xl shadow-2xl overflow-hidden bg-black/25 border border-white/15 flex items-center justify-center">
+            <div className="text-center px-8">
+              <div className="text-6xl mb-4">🤫</div>
+              <div className="text-4xl font-black">Mime Mode</div>
+              <div className="text-2xl mt-3 opacity-90">
+                Put the device down and act it out for your team.
+              </div>
+              {countdown != null && (
+                <div className="mt-8 text-8xl md:text-9xl font-black text-white drop-shadow-2xl">
+                  {String(countdown)}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Bottom controls / actions */}
+        <div className="p-6 bg-black/40 backdrop-blur-lg">
+          {mode === "draw" && (
+            <div className="flex flex-wrap items-center justify-center gap-6 mb-6">
+              {/* Tool Switcher */}
+              <div className="flex bg-white/20 rounded-2xl p-2">
+                <button
+                  onClick={() => setTool("pen")}
+                  disabled={disabled}
+                  className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
+                    tool === "pen" ? "bg-white text-black" : "text-white"
+                  }`}
+                >
+                  Pen
+                </button>
+                <button
+                  onClick={() => setTool("eraser")}
+                  disabled={disabled}
+                  className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
+                    tool === "eraser" ? "bg-white text-black" : "text-white"
+                  }`}
+                >
+                  Eraser
+                </button>
+              </div>
+
+              {/* Undo / Redo */}
+              <div className="flex gap-4">
+                <button
+                  onClick={undo}
+                  disabled={!canUndo || disabled}
+                  className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
+                >
+                  Undo
+                </button>
+                <button
+                  onClick={redo}
+                  disabled={!canRedo || disabled}
+                  className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
+                >
+                  Redo
+                </button>
+              </div>
+
+              {/* Color Palette */}
+              {["#000000", "#ef4444", "#3b82f6", "#22c55e", "#eab308", "#a855f7"].map((c) => (
+                <button
+                  key={c}
+                  onClick={() => {
+                    setColor(c);
+                    setTool("pen");
+                  }}
+                  disabled={disabled}
+                  className={`w-16 h-16 rounded-full shadow-xl transition transform hover:scale-110 ${
+                    color === c && tool === "pen" ? "ring-8 ring-white scale-125" : ""
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+
+              {/* Brush Size */}
+              <div className="flex items-center gap-4 bg-white/20 rounded-2xl px-6 py-3">
+                <span className="text-2xl">Brush</span>
+                {[4, 8, 12, 20].map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setLineWidth(w)}
+                    disabled={disabled}
+                    className={`rounded-full transition hover:scale-125 ${
+                      lineWidth === w ? "bg-white scale-125" : "bg-gray-400"
+                    }`}
+                    style={{
+                      width: w === 4 ? 40 : w === 8 ? 48 : w === 12 ? 56 : 64,
+                      height: w === 4 ? 40 : w === 8 ? 48 : w === 12 ? 56 : 64,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Clear */}
+              <button
+                onClick={clearCanvas}
+                disabled={disabled}
+                className="px-8 py-4 bg-red-600 text-white text-2xl font-bold rounded-2xl hover:bg-red-700 transition shadow-xl"
+              >
+                Clear All
+              </button>
+            </div>
+          )}
+
+          {awaitingOutcome && (
+            <div className="mb-6 flex flex-col items-center gap-4">
+              <div className="text-3xl font-black text-center">
+                Time’s up — did the team guess it?
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-4">
+                {guessers.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => {
+                      setAwaitingOutcome(false);
+                      endRound({
+                        guessedBy: g.name,
+                        guessedBySide: g.side,
+                        reason: "guessed-after-time",
+                      });
+                    }}
+                    className="px-6 py-4 rounded-2xl text-2xl font-black bg-white text-black hover:scale-105 transition"
+                  >
+                    ✅ {g.name} guessed it
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAwaitingOutcome(false);
+                    endRound({ guessedBy: null, guessedBySide: null, reason: "time" });
+                  }}
+                  className="px-6 py-4 rounded-2xl text-2xl font-black bg-red-600 text-white hover:bg-red-700 transition"
+                >
+                  ❌ No guess
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Submit */}
           <button
@@ -877,11 +925,12 @@ export default function DrawMimeTask({
             className="w-full py-8 text-6xl font-black bg-gradient-to-r from-green-500 to-emerald-600 rounded-3xl shadow-2xl hover:scale-105 transition disabled:opacity-50"
           >
             {roundActive
-              ? (mode === "draw"
-                  ? (hasDrawn ? "END ROUND (SUBMIT DRAWING)" : "DRAW FIRST!"
-                    )
-                  : "END ROUND")
-              : "START WITH 1‑2‑3 GO"}
+              ? mode === "draw"
+                ? hasDrawn
+                  ? "END ROUND (SUBMIT DRAWING)"
+                  : "DRAW FIRST!"
+                : "END ROUND"
+              : "START WITH 1-2-3 GO"}
           </button>
         </div>
       </div>
