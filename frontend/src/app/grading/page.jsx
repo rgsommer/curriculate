@@ -52,6 +52,7 @@ const VOICE_OPTIONS = [
   { value: "direct", label: "Direct & concise" },
   { value: "coach", label: "Detailed coach" },
   { value: "gentle_firm", label: "Gentle but firm" },
+  { value: "journal_response", label: "Journal Response (reflective, teacher voice)" },
   { value: "witty_light", label: "Witty (light)" },
   { value: "standards", label: "Standards-based (rubric language)" },
   { value: "student_friendly", label: "Student-friendly (simple wording)" },

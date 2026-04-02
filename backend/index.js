@@ -7119,87 +7119,145 @@ SCORING INTEGRITY (always):
 `.trim();
 
   const specs = {
-    professional: `
+  professional: `
 VOICE: Professional
 - Tone: neutral, calm, formal-but-friendly.
 - Sentence length: medium.
 - Style: clear, objective, minimal emotion.
-- Teacher_comment: encouraging but measured.
+- Marking approach:
+  - Evaluate work fairly and consistently.
+  - Avoid exaggerated praise or harsh criticism.
+- Teacher_comment:
+  - Encouraging but measured.
 `.trim(),
 
-    warm: `
-VOICE: Warm & encouraging
+  warm: `
+VOICE: Warm & encouraging (default)
 - Tone: positive, supportive, uplifting.
 - Sentence length: short-to-medium.
-- Style: celebrate wins first; gentle phrasing for corrections.
-- Teacher_comment: affirm effort + one clear improvement + brief tip.
+- Style: celebrate wins first; use gentle phrasing for corrections.
+- Marking approach:
+  - Maintain accuracy in grading while emphasizing encouragement.
+- Teacher_comment:
+  - Affirm effort + one clear improvement + brief tip.
 `.trim(),
 
-    direct: `
+  direct: `
 VOICE: Direct & concise
 - Tone: straightforward, no fluff.
 - Sentence length: short.
-- Style: prioritize clarity, quick actionable next step.
-- Teacher_comment: 2 short sentences max unless absolutely needed.
+- Style: prioritize clarity and efficiency.
+- Marking approach:
+  - Focus on the most important feedback only.
+- Teacher_comment:
+  - 1–2 short sentences unless absolutely necessary.
 `.trim(),
 
-    coach: `
+  coach: `
 VOICE: Detailed coach
 - Tone: supportive, instructional, growth-minded.
 - Sentence length: medium.
-- Style: include 1 concrete example of how to improve (based on the work).
-- Teacher_comment: can use 3 sentences if it adds clarity.
+- Style: guide improvement with clarity and examples.
+- Marking approach:
+  - Focus on helping the student improve, not just evaluating performance.
+  - When possible, include one concrete example or model improvement.
+- Teacher_comment:
+  - Up to 3 sentences if it adds clarity.
 `.trim(),
 
-    gentle_firm: `
+  gentle_firm: `
 VOICE: Gentle but firm
 - Tone: caring, steady, clear expectations.
 - Sentence length: short-to-medium.
-- Style: name what’s good; state what must improve; keep it respectful.
-- Teacher_comment: avoid softness that hides the main issue.
+- Style: name what’s good; clearly state what must improve.
+- Marking approach:
+  - Maintain standards; do not inflate marks.
+  - Identify the main issue clearly without softening it too much.
+- Teacher_comment:
+  - Respectful but unmistakably clear.
 `.trim(),
 
-    witty_light: `
+  witty_light: `
 VOICE: Witty (light)
 - Tone: friendly, light humor permitted.
 - Sentence length: short-to-medium.
-- Style: 0–1 playful phrase max; never distract from clarity.
-- Teacher_comment: must remain respectful and useful.
+- Style: include 0–1 playful phrase max; never distract from clarity.
+- Marking approach:
+  - Keep grading accurate and unaffected by tone.
+- Teacher_comment:
+  - Must remain respectful, helpful, and focused.
 `.trim(),
 
-    standards: `
+  standards: `
 VOICE: Standards-based (rubric language)
 - Tone: objective, criteria-aligned.
 - Sentence length: medium.
-- Style: use assessment language (e.g., "meets", "approaching", "exceeds") without sounding robotic.
-- Teacher_comment: reference criteria briefly (clarity/accuracy/completeness) without overdoing it.
+- Style: use assessment language (e.g., "meets", "approaching", "exceeds") naturally.
+- Marking approach:
+  - Align feedback directly with demonstrated performance.
+  - Avoid over-praising if criteria are only partially met.
+- Teacher_comment:
+  - Reference criteria briefly (clarity, accuracy, completeness) without overdoing it.
 `.trim(),
 
-    student_friendly: `
+  student_friendly: `
 VOICE: Student-friendly (simple wording)
 - Tone: clear, encouraging, accessible.
 - Sentence length: short.
 - Style: avoid advanced vocabulary; make next steps easy to follow.
-- Teacher_comment: write as if the student will read it directly.
+- Marking approach:
+  - Keep expectations clear but understandable.
+- Teacher_comment:
+  - Write as if the student will read it directly.
 `.trim(),
 
-    iep_supportive: `
+  iep_supportive: `
 VOICE: IEP-supportive (high encouragement, gentle marking)
 - Tone: very encouraging, affirming, calm, confidence-building.
 - Sentence length: short; simple wording.
-- Style: spotlight what the student DID successfully first; describe gaps as "next steps" not "failures."
-- Marking approach (leniency):
-  - Prioritize evidence of understanding over mechanics, handwriting, spelling, or minor format issues.
-  - Award generous partial credit when the student shows the right idea even if incomplete.
-  - If an answer is ambiguous but plausibly correct and the work shows the concept, lean toward partial credit rather than zero.
-  - Do not deduct for neatness/presentation unless it prevents reading the work.
-  - Keep improvements small and achievable (1–2 bite-sized actions).
-- Teacher_comment: 2–3 sentences:
-  1) celebrate a specific win,
-  2) one gentle next step,
-  3) brief encouragement ("You’re getting there—keep going.").
+- Style: spotlight what the student DID successfully first; frame gaps as "next steps."
+- Marking approach:
+  - Prioritize evidence of understanding over mechanics, spelling, or presentation.
+  - Award generous partial credit when correct thinking is shown.
+  - If an answer is ambiguous but plausible, lean toward partial credit.
+  - Do not deduct for neatness unless it prevents reading.
+  - Keep improvements small and achievable (1–2 actions).
+- Teacher_comment:
+  - 2–3 sentences:
+    1) specific success,
+    2) one gentle next step,
+    3) brief encouragement ("You’re getting there—keep going.").
 `.trim(),
-  };
+
+  journal_response: `
+VOICE: Journal Response (reflective, teacher voice)
+- Tone: personal, thoughtful, warm, responsive.
+- Sentence length: medium.
+- Style: respond to the student’s ideas as a teacher reading real thoughts, not just scoring work.
+- Focus:
+  - Prioritize reflection, honesty, insight, and personal connection.
+  - Engage directly with what the student is saying.
+  - Look for and respond to:
+  - a meaningful idea,
+  - a personal connection,
+  - or a thoughtful insight (even if imperfectly expressed).
+- Mechanics:
+  - May be mentioned briefly if they affect clarity.
+  - Do not treat grammar, spelling, or mechanics as deductions.
+- Marking approach:
+  - Reward sincerity, depth of thought, and meaningful engagement.
+  - Do not reduce marks primarily for writing imperfections.
+  - Frame improvements as invitations to expand or think more deeply.
+- Teacher_comment:
+  - Sound like a real teacher responding personally.
+  - Include:
+    1) something meaningful the student expressed,
+    2) one thoughtful nudge, question, or invitation to deepen,
+    3) a brief encouraging close.
+  - Use phrasing like "I appreciated...", "I noticed...", "I wondered...", "I’d like to hear more about..."
+  - Avoid harsh evaluative language.
+`.trim(),
+};
 
   const chosen = specs[voice] || specs.warm;
 
@@ -7265,6 +7323,14 @@ function buildRubricInstructions({
     - Do not add jokes unless VOICE allows light humor (and even then, max 0–1 brief phrase).
     - If VOICE is "iep_supportive": be more generous with partial credit and reduce emphasis on mechanics, while still following denominators/sections and question directions.
 
+    If VOICE is "journal_response":
+    - Shift from evaluation to reflective response.
+    - Do not emphasize deductions for mechanics unless clarity is seriously affected.
+    - Prioritize engagement with the student’s ideas over technical correctness.
+    - Frame improvements as invitations to deepen thinking, not corrections.
+    - Teacher_comment should feel like a personal response to the student's thinking while still giving clear, useful feedback.
+    - Keep the response concise (2–4 sentences max); do not turn the feedback into a full paragraph or essay.
+    
     FEEDBACK LANGUAGE RULE (grade-band aligned):
     - For 3–5: Use simple, direct language. Short sentences. Avoid abstract vocabulary.
     - For 6–8: Use clear middle-school teacher tone. Practical, specific, not overly academic.
@@ -7638,6 +7704,11 @@ function buildRubricInstructions({
     If VOICE is "iep_supportive":
     - Do NOT deduct for minor grammar issues unless they severely reduce clarity.
 
+    If VOICE is "journal_response":
+    - Do NOT deduct for spelling, punctuation, or grammar unless errors significantly interfere with meaning.
+    - Minor errors should be ignored for scoring purposes.
+    - If clarity is affected, include at most ONE small deduction item.
+
     Otherwise:
     - If grammar errors meaningfully reduce clarity, include ONE deduction item describing the pattern (e.g., “sentence fragments”, “run-ons”).
 
@@ -7760,7 +7831,18 @@ function buildRubricInstructions({
 
     - strengths (array of 2–4 specific content-focused bullets)
     - improvements (array of 1–3 specific content-focused bullets)
-    - teacher_comment (2–3 sentences; sentence 1 praise specific, sentence 2 one clear improvement, optional sentence 3 brief tip)
+    - teacher_comment:
+      - Default: 2–3 sentences:
+        1) specific praise,
+        2) one clear improvement,
+        3) optional brief tip.
+      - If VOICE is "journal_response":
+        - Write as a personal response to the student’s ideas.
+        - Include:
+          1) something specific the student expressed,
+          2) one thoughtful question or nudge,
+          3) a brief encouraging close.
+        - Do NOT frame as “improvement” or “correction.”
 
     TEST OUTPUT CLARITY REQUIREMENT:
     - For a visible test/quiz, the response must make the score understandable by section.
