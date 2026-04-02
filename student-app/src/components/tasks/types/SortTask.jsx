@@ -183,24 +183,37 @@ export default function SortTask({
   // -------------------------------
   const config = task?.config || {};
 
-  const rawBuckets = Array.isArray(config.buckets)
-    ? config.buckets
-    : Array.isArray(task?.buckets)
-    ? task.buckets
-    : [];
-
-  // Defensive fallback: always provide at least two buckets so the task is playable.
-  const safeRawBuckets = rawBuckets.length > 0 ? rawBuckets : ["Group A", "Group B"];
-
   // A special pool for items not yet placed
   const UNSORTED_BUCKET_ID = "unsorted";
+
+  const rawBuckets =
+    Array.isArray(config.buckets) && config.buckets.length > 0
+      ? config.buckets
+      : Array.isArray(config.categories) && config.categories.length > 0
+      ? config.categories
+      : Array.isArray(config.groups) && config.groups.length > 0
+      ? config.groups
+      : Array.isArray(task?.buckets) && task.buckets.length > 0
+      ? task.buckets
+      : Array.isArray(task?.categories) && task.categories.length > 0
+      ? task.categories
+      : Array.isArray(task?.groups) && task.groups.length > 0
+      ? task.groups
+      : [];
+
+  const safeRawBuckets =
+    rawBuckets.length > 0 ? rawBuckets : ["Group A", "Group B"];
 
   const buckets = safeRawBuckets.map((b, i) => ({
     id: `bucket-${i}`,
     title:
       typeof b === "string"
         ? b
-        : b.label || b.name || `Bucket ${i + 1}`,
+        : b.label ||
+          b.name ||
+          b.title ||
+          b.category ||
+          `Bucket ${i + 1}`,
   }));
 
   // Try several possible locations for the items, depending on how the task was saved
