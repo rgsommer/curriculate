@@ -217,6 +217,8 @@ export default function RecordAudioTask({
     try {
       const blob = await fetch(audioUrl).then((r) => r.blob());
 
+      let payload = null;
+
       let s3 = null;
       try {
         s3 = await presignAndUploadToS3({
@@ -229,27 +231,39 @@ export default function RecordAudioTask({
       }
 
       if (s3?.s3Key) {
-        onSubmit?.({
+        payload = {
           type: "record-audio",
           s3Key: s3.s3Key,
           signedGetUrl: s3.signedGetUrl,
           duration,
           mimeType: blob.type || "audio/webm",
+        };
+      } else {
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            try {
+              resolve(String(reader.result || "").split(",")[1] || "");
+            } catch (err) {
+              reject(err);
+            }
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
         });
-        return;
-      }
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = String(reader.result || "").split(",")[1] || "";
-        onSubmit?.({
+        payload = {
           type: "record-audio",
           base64,
           duration,
           mimeType: blob.type || "audio/webm",
-        });
-      };
-      reader.readAsDataURL(blob);
+        };
+      }
+
+      await Promise.resolve(onSubmit?.(payload));
+
+      // If parent does not immediately advance, at least don't stay stuck forever.
+      setIsPreparingSubmit(false);
     } catch (err) {
       console.error("Error preparing recorded audio for submit", err);
       setErrorMsg("There was a problem preparing your recording. Please try again.");

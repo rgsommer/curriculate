@@ -2480,10 +2480,9 @@ function StudentApp() {
             }
           }
 
-          // Short Answer / Reading Comp: if we pause, we must show feedback
+          // Short Answer: if we pause, we must show feedback
           if (
-            (currentType === TASK_TYPES.SHORT_ANSWER ||
-              currentType === TASK_TYPES.READING_COMP) &&
+            currentType === TASK_TYPES.SHORT_ANSWER &&
             !reviewObj.feedback &&
             !reviewObj.hint &&
             !reviewObj.modelAnswer &&
