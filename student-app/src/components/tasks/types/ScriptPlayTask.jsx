@@ -86,10 +86,10 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false }) {
           "Pass the device to the next speaker after each line. Read expressively, using the tone and direction cues.",
         contextAfter: "",
         turns: [
-          { speakerIndex: 0, line: "Alright team — let’s start the scene!", tone: "confident", direction: "" },
-          { speakerIndex: 1, line: "I’m ready. What’s the plan?", tone: "curious", direction: "" },
-          { speakerIndex: 0, line: "We’ll take turns and make it expressive.", tone: "encouraging", direction: "" },
-          { speakerIndex: 1, line: "Deal. Let’s make it memorable!", tone: "excited", direction: "" },
+          { speakerIndex: 0, line: "Alright team — let's start the scene!", tone: "confident", direction: "" },
+          { speakerIndex: 1, line: "I'm ready. What's the plan?", tone: "curious", direction: "" },
+          { speakerIndex: 0, line: "We'll take turns and make it expressive.", tone: "encouraging", direction: "" },
+          { speakerIndex: 1, line: "Deal. Let's make it memorable!", tone: "excited", direction: "" },
         ],
       },
     ];

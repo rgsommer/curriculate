@@ -333,7 +333,7 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled }) {
               >
                 Ready (reveal order)
               </button>
-              <div className="text-slate-500 self-center">You’ll see the correct scan order briefly.</div>
+              <div className="text-slate-500 self-center">You'll see the correct scan order briefly.</div>
             </div>
           </div>
         )}

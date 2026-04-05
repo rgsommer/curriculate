@@ -685,7 +685,7 @@ function playNarrationChime() {
 }
 
 // -------------------------
-// Safe fetch helper (prevents “Unexpected token '<'”)
+// Safe fetch helper (prevents "Unexpected token '<'")
 // -------------------------
 async function fetchJsonSafe(url, options = {}) {
   const res = await fetch(url, options);
@@ -738,14 +738,14 @@ function ViewportCard({ children, padded = true }) {
 
 export default function DemoPage() {
 
-  const INTRO_PLAYED_KEY = “curriculate.demoIntroPlayed.v1”;
+  const INTRO_PLAYED_KEY = "curriculate.demoIntroPlayed.v1";
 
-  // Pick one of the two intro variants once per page load (stable; prevents mid-play “flash”)
+  // Pick one of the two intro variants once per page load (stable; prevents mid-play "flash")
   const demoIntroSrc = useMemo(() => {
     const pickAlt = Math.random() >= 0.5;
       return DEMO_INTRO_SOURCES[pickAlt ? 1 : 0] || DEMO_INTRO_SOURCES[0];
     }, []);
-    const [phase, setPhase] = useState(“runner”); // runner | task
+    const [phase, setPhase] = useState("runner"); // runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
   const [showInstructions, setShowInstructions] = useState(false);
 
@@ -834,7 +834,7 @@ function triggerBodyBreakPuff() {
   window.setTimeout(() => setBodyBreakPuff(false), 900);
 }
 
-  // “Generate all types” streaming UI (ProgressFillButton)
+  // "Generate all types" streaming UI (ProgressFillButton)
   const [generating, setGenerating] = useState(false);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(1);

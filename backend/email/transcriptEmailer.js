@@ -31,7 +31,7 @@ function resolveFromAddress() {
 }
 
 function resolveReplyTo() {
-  // If you truly don’t want replies hitting your inbox, set EMAIL_REPLY_TO to a sink/support inbox
+  // If you truly don't want replies hitting your inbox, set EMAIL_REPLY_TO to a sink/support inbox
   // or leave it blank to omit Reply-To entirely.
   const replyTo = process.env.EMAIL_REPLY_TO;
   if (replyTo == null) return undefined; // omit

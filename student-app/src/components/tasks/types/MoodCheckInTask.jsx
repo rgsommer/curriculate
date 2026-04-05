@@ -172,7 +172,7 @@ export default function MoodCheckInTask({
             opacity: 0.92,
           }}
         >
-          Tap an emoji for each player — then let’s start strong.
+          Tap an emoji for each player — then let's start strong.
         </div>
 
         {Array.from({ length: playerCount }, (_, i) => (
@@ -299,7 +299,7 @@ export default function MoodCheckInTask({
               letterSpacing: "0.3px",
             }}
           >
-            Let’s Curriculate!
+            Let's Curriculate!
           </button>
 
           {!allSelected && (

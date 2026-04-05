@@ -3556,7 +3556,7 @@ if (
                           fontWeight: 600,
                         }}
                       >
-                        Flashcards (one per line, “term — definition”):
+                        Flashcards (one per line, "term — definition"):
                       </label>
 
                       <textarea

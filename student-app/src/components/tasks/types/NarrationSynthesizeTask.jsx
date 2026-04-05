@@ -444,7 +444,7 @@ export default function NarrationSynthesizeTask({
               All turns complete ✅
             </div>
             <div style={{ marginTop: 6, fontSize: 13, color: "#14532d" }}>
-              Tap submit to send your team’s ratings.
+              Tap submit to send your team's ratings.
             </div>
 
             <div style={{ marginTop: 12 }}>

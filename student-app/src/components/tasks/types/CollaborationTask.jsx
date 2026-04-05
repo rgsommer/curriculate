@@ -43,7 +43,7 @@ export default function CollaborationTask({
       theme="light"
       badge="🤝 Collaboration"
       title="Write • Then Reply for Bonus"
-      subtitle={showPartnerReply ? "Step 2: Read the other team’s answer and reply." : "Step 1: Write your team’s best answer."}
+      subtitle={showPartnerReply ? "Step 2: Read the other team's answer and reply." : "Step 1: Write your team's best answer."}
       right={right}
     >
       <div style={{ fontSize: 18, fontWeight: 950, color: "rgba(15,23,42,0.90)" }}>
@@ -67,12 +67,12 @@ export default function CollaborationTask({
             <div style={{ fontWeight: 950, marginBottom: 6 }}>Do this now</div>
             <div>• Write <b>2–5 bullets</b> (or 2–4 sentences).</div>
             <div>• Use a reason + evidence/example.</div>
-            <div>• Make it your team’s best answer (it may be compared for bonus points).</div>
+            <div>• Make it your team's best answer (it may be compared for bonus points).</div>
           </>
         ) : (
           <>
             <div style={{ fontWeight: 950, marginBottom: 6 }}>Bonus reply</div>
-            <div>• Start with <b>I agree / I disagree</b> (or “I see it differently…”).</div>
+            <div>• Start with <b>I agree / I disagree</b> (or "I see it differently…").</div>
             <div>• Add <b>one new idea</b> or evidence.</div>
             <div>• Ask <b>one good question</b> that helps the other team think deeper.</div>
           </>

@@ -483,7 +483,7 @@ export default function PhysicalMultipleChoiceTask({
     } catch {}
   };
 
-  // Listen to StudentApp’s normalized station scan event (Option 1)
+  // Listen to StudentApp's normalized station scan event (Option 1)
   useEffect(() => {
     const onStationScan = (ev) => {
       const d = ev?.detail || {};
@@ -566,7 +566,7 @@ export default function PhysicalMultipleChoiceTask({
         </div>
       )}
 
-      {/* “Use global scanner” overlay (NO QrScanner here) */}
+      {/* "Use global scanner" overlay (NO QrScanner here) */}
       {streakBanner && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-orange-500/90 px-6 py-3 rounded-xl shadow-xl text-white font-bold">
           {streakBanner}

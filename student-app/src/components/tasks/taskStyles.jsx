@@ -69,7 +69,7 @@ export function TaskCardFrame({
   const t = UI.theme[theme] || UI.theme.light;
 
   if (fullBleed) {
-    // For “full screen” tasks (e.g., Draw/Mime). Still “uses TaskCardFrame” but doesn't constrain width.
+    // For "full screen" tasks (e.g., Draw/Mime). Still "uses TaskCardFrame" but doesn't constrain width.
     return (
       <div
         style={{
@@ -151,7 +151,7 @@ export function TaskCardFrame({
 }
 
 /**
- * Lightweight “building blocks” some tasks import directly.
+ * Lightweight "building blocks" some tasks import directly.
  * TaskChrome is the preferred wrapper, but exporting these keeps older
  * task implementations compatible.
  */

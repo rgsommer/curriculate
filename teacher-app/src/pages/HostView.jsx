@@ -320,7 +320,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
 
         {/* Header: Room Code + play.curriculate.net */}
         <div className="text-center mb-8 select-none">
-          {/* Title glow “halo” */}
+          {/* Title glow "halo" */}
           <motion.div
             aria-hidden="true"
             className="mx-auto mb-3 h-10 w-[520px] max-w-[90vw] rounded-full blur-2xl opacity-40 bg-white"

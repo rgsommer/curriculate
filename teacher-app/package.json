@@ -10,6 +10,7 @@
     "check": "echo teacher-app build"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^4.6.0",
     "axios": "^1.13.2",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.554.0",
@@ -17,12 +18,11 @@
     "react-confetti": "^6.4.0",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
-    "socket.io-client": "^4.7.5"
+    "socket.io-client": "^4.7.5",
+    "vite": "^7.2.4"
   },
   "devDependencies": {
     "@types/webidl-conversions": "^7.0.3",
-    "@types/whatwg-url": "^13.0.0",
-    "@vitejs/plugin-react": "^4.6.0",
-    "vite": "^7.2.4"
+    "@types/whatwg-url": "^13.0.0"
   }
 }

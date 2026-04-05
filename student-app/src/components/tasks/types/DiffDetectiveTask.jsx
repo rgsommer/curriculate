@@ -203,7 +203,7 @@ export default function DiffDetectiveTask({
       </div>
 
       <div style={{ marginBottom: 8, fontWeight: 850, color: "rgba(15,23,42,0.80)" }}>
-        Write the changes in words (example: “206 changed to 208”, “jumps changed to jumped”).
+        Write the changes in words (example: "206 changed to 208", "jumps changed to jumped").
       </div>
 
       <TextArea
@@ -212,7 +212,7 @@ export default function DiffDetectiveTask({
         onChange={(e) => setAnswer(e.target.value)}
         disabled={disabled || isSubmitted}
         rows={6}
-        placeholder='Speak or type: “jumps was changed to jumped”, “206 to 208”…'
+        placeholder='Speak or type: "jumps was changed to jumped", "206 to 208"…'
       />
 
       {/* Hint */}

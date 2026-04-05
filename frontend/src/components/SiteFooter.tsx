@@ -39,6 +39,7 @@ export default function SiteFooter() {
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
             <FooterCol title="Product">
               <Link href="/how-it-works">How it Works</Link>
+              <Link href="/ai-grading">AI Grading</Link>
               <Link href="/preview">Preview</Link>
               <Link href="/reports">Reports</Link>
               <Link href="/compare">Compare</Link>

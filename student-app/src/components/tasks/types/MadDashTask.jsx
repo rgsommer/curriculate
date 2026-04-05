@@ -217,7 +217,7 @@ export default function MadDashTask({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, disabled, scanIdx, route, palette]);
 
-  // Listen to StudentApp’s normalized mad dash event
+  // Listen to StudentApp's normalized mad dash event
   useEffect(() => {
     const onMadDashScan = (ev) => {
       const d = ev?.detail || {};

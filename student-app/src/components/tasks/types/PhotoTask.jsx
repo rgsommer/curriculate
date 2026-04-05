@@ -156,7 +156,7 @@ export default function PhotoTask({ task, onSubmit, disabled }) {
         <div style={{ fontWeight: 900, marginBottom: 6 }}>How to do this task</div>
         <ol style={{ margin: "0 0 0 18px", padding: 0, lineHeight: 1.35 }}>
           <li>Press <b>Open Camera / Take Photo</b>.</li>
-          <li>Take a clear photo that matches your teacher’s instructions.</li>
+          <li>Take a clear photo that matches your teacher's instructions.</li>
           <li>If you want, add a short note.</li>
           <li>Press <b>Submit</b>.</li>
         </ol>

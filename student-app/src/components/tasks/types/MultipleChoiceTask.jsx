@@ -137,7 +137,7 @@ export default function MultipleChoiceTask({ task, onComplete }) {
       primaryActionLabel={qIndex === total - 1 ? "Submit" : "Submit & Next"}
       onPrimaryAction={handleSubmit}
       primaryActionDisabled={!canSubmit}
-      // Keep user’s selection stable across chrome transitions.
+      // Keep user's selection stable across chrome transitions.
     >
       <div style={{ maxWidth: 920, margin: "0 auto", padding: 16 }}>
         {/* Header */}

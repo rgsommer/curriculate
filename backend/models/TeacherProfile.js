@@ -63,7 +63,7 @@ const TeacherProfileSchema = new Schema(
     gradesTaught: { type: [String], default: [] },
     subjectsTaught: { type: [String], default: [] },
 
-    // Worldview / pedagogical “perspectives” multi-select
+    // Worldview / pedagogical "perspectives" multi-select
     perspectives: { type: [String], default: [] },
 
     // Whether AI / email reports should include per-student breakdowns

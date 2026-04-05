@@ -40,7 +40,7 @@ export function recordNoiseSample(room, sample = {}, opts = {}) {
   const thresholdRaw = sample.threshold ?? room?.noiseControl?.threshold ?? room?.noise?.threshold;
   const threshold = normalizeNoiseLevel(thresholdRaw);
 
-  // Always track enabled/threshold for reporting even if disabled (helps explain “why no data”).
+  // Always track enabled/threshold for reporting even if disabled (helps explain "why no data").
   room.noiseControl = room.noiseControl || {};
   room.noiseControl.enabled = enabled;
   if (Number.isFinite(Number(thresholdRaw))) room.noiseControl.threshold = thresholdRaw;

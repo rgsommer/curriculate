@@ -293,6 +293,7 @@ function MobileNav() {
   const links = [
     { href: "/how-it-works", label: "How it works" },
     { href: "/features", label: "Features" },
+    { href: "/ai-grading", label: "AI Grading" },
     { href: "/pricing", label: "Pricing" },
     { href: "/compare", label: "Compare" },
     { href: "/reports", label: "Reports" },

@@ -62,7 +62,7 @@ function clamp(num, min, max) {
   return Math.min(max, Math.max(min, num));
 }
 
-// Normalize a student’s answer that might be a primitive or a MultiPartTask object
+// Normalize a student's answer that might be a primitive or a MultiPartTask object
 // { value, baseIndex, answer } → best primitive we can use.
 function normalizeStudentAnswerPrimitive(raw) {
   if (raw == null) return null;
@@ -1368,7 +1368,7 @@ async function scoreOpenText({ task, submission, rubric }) {
 
   const wordCount = countWords(answerText);
 
-  // Basic “min words” gate (discourages one-word answers) — but allow vocab paragraph to be shorter if it’s actually coherent.
+  // Basic "min words" gate (discourages one-word answers) — but allow vocab paragraph to be shorter if it's actually coherent.
   const tooShort = minWords > 0 && wordCount < minWords;
 
   // AI score (rubric-based)
@@ -1995,7 +1995,7 @@ function scoreScriptPlay({ task, submission }) {
   let reason = "";
   if (!completed) {
     reason =
-      "Not finished yet — tap “Finish Performance” after the final line. Pass the device speaker-to-speaker and complete the scene.";
+      "Not finished yet — tap 'Finish Performance' after the final line. Pass the device speaker-to-speaker and complete the scene.";
   } else if (hasBonus && rating != null) {
     const vibe =
       rating >= 5
@@ -2094,7 +2094,7 @@ async function scoreReadingComp({ task, submission, rubric, teacherProfile }) {
             Array.isArray(rubric.criteria) && rubric.criteria.length
               ? rubric.criteria
               : [
-                  { name: "Comprehension", weight: 0.45, desc: "Shows you understood the paragraph’s main idea." },
+                  { name: "Comprehension", weight: 0.45, desc: "Shows you understood the paragraph's main idea." },
                   { name: "Accuracy", weight: 0.25, desc: "Does not add wrong facts; stays faithful to the text." },
                   { name: "Clarity & One Sentence", weight: 0.20, desc: "Clear, one sentence, not a run-on." },
                   { name: "Specificity", weight: 0.10, desc: "Includes at least one key detail that supports the main idea." },
@@ -2103,7 +2103,7 @@ async function scoreReadingComp({ task, submission, rubric, teacherProfile }) {
       : {
           totalPoints,
           criteria: [
-            { name: "Comprehension", weight: 0.45, desc: "Shows you understood the paragraph’s main idea." },
+            { name: "Comprehension", weight: 0.45, desc: "Shows you understood the paragraph's main idea." },
             { name: "Accuracy", weight: 0.25, desc: "Does not add wrong facts; stays faithful to the text." },
             { name: "Clarity & One Sentence", weight: 0.20, desc: "Clear, one sentence, not a run-on." },
             { name: "Specificity", weight: 0.10, desc: "Includes at least one key detail that supports the main idea." },
@@ -2206,7 +2206,7 @@ Return JSON:
 
   const aiFeedback =
     mode === "team"
-      ? `AI’s top pick: ${players[bestIndexFromAI] || `Player ${bestIndexFromAI + 1}`}. ${bestReason}`
+      ? `AI's top pick: ${players[bestIndexFromAI] || `Player ${bestIndexFromAI + 1}`}. ${bestReason}`
       : perResponse[0]?.feedback || "Good effort.";
 
   return {

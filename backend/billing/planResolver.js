@@ -53,7 +53,7 @@ export const PLAN = {
   },
   SCHOOL_PLUS: {
     tier: "SCHOOL_PLUS",
-    seats: 200, // “school” defaults; adjust to your model
+    seats: 200, // "school" defaults; adjust to your model
     aiMonthly: 20000,
     studentDetail: true,
     exportsPdf: true,

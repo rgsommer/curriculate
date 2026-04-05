@@ -154,7 +154,7 @@ export default function OpenTextTask({
         } else if (event.error === "no-speech") {
           setError("No speech detected. Try speaking more clearly.");
         } else {
-          setError("Voice input isn’t working right now. You can still type your answer.");
+          setError("Voice input isn't working right now. You can still type your answer.");
         }
 
         setListening(false);

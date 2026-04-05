@@ -7,7 +7,7 @@ import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextArea } from "../ta
  * - Solo: write a 1‑sentence reading‑comprehension response to a generated paragraph.
  * - Intra‑team variation (task.isTeamVariation === true):
  *    Each player writes a private 1‑sentence response, taps Submit (locks),
- *    then a brief “pass the device” screen appears.
+ *    then a brief "pass the device" screen appears.
  *    After the final player submits, all responses are revealed and the team votes on the best.
  *
  * Notes:

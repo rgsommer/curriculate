@@ -374,7 +374,7 @@ export function normalizeTaskByType(taskType, rawTask) {
       }
 
       // NOTE: leave strictness policy to controllers; normalization should not invent junk.
-      // We’ll pad only if needed for demo-safety but not with placeholder markers.
+      // We'll pad only if needed for demo-safety but not with placeholder markers.
       while (clues.length < 5) clues.push(`Clue ${clues.length + 1}`);
 
       cfg.clues = clues;

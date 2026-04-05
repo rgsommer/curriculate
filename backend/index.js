@@ -44,7 +44,7 @@ import { sendSystemEmail } from "./email/shareInviteEmailer.js";
 import OpenAI from "openai";
 
 // 8) Controllers
-import { getMeController } from "./controllers/meController.js"; // you’ll create this
+import { getMeController } from "./controllers/meController.js"; // you'll create this
 import { listSessions, getSessionDetails } from "./controllers/analyticsController.js";
 
 // 9) Middleware
@@ -208,7 +208,7 @@ async function ensureDefaultEmailTemplates() {
       html: `
 <div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#111827;line-height:1.5;">
   <h2 style="margin:0 0 8px 0;">Final reminder</h2>
-  <p style="margin:0 0 10px 0;">If you still need it, the shared task set link is below (if it hasn’t expired).</p>
+  <p style="margin:0 0 10px 0;">If you still need it, the shared task set link is below (if it hasn't expired).</p>
   <div style="margin-top:10px;">
     <a href="{{SHARE_URL}}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 14px;border-radius:10px;font-weight:700;">
       Open in Curriculate
@@ -231,7 +231,7 @@ async function ensureDefaultEmailTemplates() {
 
   <div style="background:#ecfeff;border:1px solid #a5f3fc;border-radius:12px;padding:12px 14px;margin:12px 0;">
     <div style="font-weight:800;">Reward unlocked</div>
-    <div style="margin-top:6px;">You’ve hit the referral goal of <b>{{THRESHOLD}}</b> successful shares. We’ve queued <b>{{REWARD_MONTHS}}</b> free month(s) on your account.</div>
+    <div style="margin-top:6px;">You've hit the referral goal of <b>{{THRESHOLD}}</b> successful shares. We've queued <b>{{REWARD_MONTHS}}</b> free month(s) on your account.</div>
   </div>
 
   <p style="margin:0;color:#475569;font-size:13px;">If you have any questions, just reply to this email and our team will help.</p>
@@ -350,7 +350,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// 2) Auth + misc routes that don’t depend on tasksets
+// 2) Auth + misc routes that don't depend on tasksets
 app.use("/api/auth", authLimiter, authRoutes);
 
 stripeRoutes.use(cors(corsOptions));
@@ -3489,7 +3489,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
     }
 
     if (!isMultiPack && !isObjective && !aiScore) {
-      // “Evidence tasks” are ones that don’t expect text and don’t have options,
+      // "Evidence tasks" are ones that don't expect text and don't have options,
       // e.g. photo, make-and-snap, body-break, etc.
       const isEvidenceTask =
         !!meta && meta.expectsText === false && meta.hasOptions === false;
@@ -3575,7 +3575,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
       }
     }
 
-    // If we’re in the multi-pack path, we still need a timestamp
+    // If we're in the multi-pack path, we still need a timestamp
     const submittedAt =
       typeof submittedAtNonMulti === "number" ? submittedAtNonMulti : Date.now();
       
@@ -4647,7 +4647,7 @@ socket.on(
           t.lastSeenAt = new Date();
           t.stale = true; // optional flag for UI/teacher
 
-          // Optional: free station so the room doesn’t get “blocked” by offline teams
+          // Optional: free station so the room doesn't get "blocked" by offline teams
           const stationId = t.currentStationId;
           if (stationId && r.stations?.[stationId]?.assignedTeamId === teamId) {
             r.stations[stationId].assignedTeamId = null;
@@ -5202,7 +5202,7 @@ async function extractStudentWorkFromLink(url) {
           return {
             kind: "error",
             error:
-              "Could not access that Google Doc. Make sure it’s shared as “Anyone with the link can view” (no sign-in).",
+              "Could not access that Google Doc. Make sure it's shared as 'Anyone with the link can view' (no sign-in).",
           };
         }
 
@@ -5386,7 +5386,7 @@ function gradingExpiredHtml({ brand = "Curriculate" } = {}) {
           <h1>Thanks for supporting learning.</h1>
           <p>This link was created to share a temporary snapshot of student work and automatically expires after a period of time.</p>
           <p><b>Parents:</b> Want faster feedback, clearer progress, and more engaging learning at school?</p>
-          <p>Ask your child’s teacher: <b>“Are we using Curriculate yet?”</b></p>
+          <p>Ask your child's teacher: <b>"Are we using Curriculate yet?"</b></p>
           <a class="cta" href="https://www.curriculate.net">Learn about Curriculate</a>
           <div class="muted">Curriculate helps classrooms run interactive learning stations with meaningful assessment and reporting.</div>
         </div>
@@ -5411,7 +5411,7 @@ SCORING INTEGRITY (always):
 - Strong, thorough, mostly accurate work should score better than brief minimal work that happens to avoid mistakes.
 - Do not punish a student merely for giving more detail.
 - Minor inaccuracies in an otherwise strong answer should reduce marks only modestly.
-- Do not “search for deductions”; only deduct for clear, visible issues.
+- Do not "search for deductions"; only deduct for clear, visible issues.
 - When marks are lost, explain them clearly and specifically.
 `.trim();
 
@@ -5466,7 +5466,7 @@ VOICE: Detailed coach
 VOICE: Gentle but firm
 - Tone: caring, steady, clear expectations.
 - Sentence length: short-to-medium.
-- Style: name what’s good; clearly state what must improve.
+- Style: name what's good; clearly state what must improve.
 - Marking approach:
   - Maintain standards; do not inflate marks.
   - Identify the main issue clearly without softening it too much.
@@ -5523,14 +5523,14 @@ VOICE: IEP-supportive (high encouragement, gentle marking)
   - 2–3 sentences:
     1) specific success,
     2) one gentle next step,
-    3) brief encouragement ("You’re getting there—keep going.").
+    3) brief encouragement ("You're getting there—keep going.").
 `.trim(),
 
   journal_response: `
 VOICE: Journal Response (reflective, teacher voice)
 - Tone: personal, thoughtful, warm, responsive.
 - Sentence length: medium.
-- Style: respond to the student’s ideas as a teacher reading real thoughts, not just scoring work.
+- Style: respond to the student's ideas as a teacher reading real thoughts, not just scoring work.
 - Focus:
   - Prioritize reflection, honesty, insight, and personal connection.
   - Engage directly with what the student is saying.
@@ -5551,7 +5551,7 @@ VOICE: Journal Response (reflective, teacher voice)
     1) something meaningful the student expressed,
     2) one thoughtful nudge, question, or invitation to deepen,
     3) a brief encouraging close.
-  - Use phrasing like "I appreciated...", "I noticed...", "I wondered...", "I’d like to hear more about..."
+  - Use phrasing like "I appreciated...", "I noticed...", "I wondered...", "I'd like to hear more about..."
   - Avoid harsh evaluative language.
 `.trim(),
 };
@@ -5623,7 +5623,7 @@ function buildRubricInstructions({
     If VOICE is "journal_response":
     - Shift from evaluation to reflective response.
     - Do not emphasize deductions for mechanics unless clarity is seriously affected.
-    - Prioritize engagement with the student’s ideas over technical correctness.
+    - Prioritize engagement with the student's ideas over technical correctness.
     - Frame improvements as invitations to deepen thinking, not corrections.
     - Teacher_comment should feel like a personal response to the student's thinking while still giving clear, useful feedback.
     - Keep the response concise (2–4 sentences max); do not turn the feedback into a full paragraph or essay.
@@ -5641,7 +5641,7 @@ function buildRubricInstructions({
     - If a response is thorough, relevant, and mostly accurate, that should raise the score, not lower it.
     - Minor mistakes inside a strong answer should reduce marks only modestly unless they change the main meaning or result.
     - Do not over-penalize students who attempt more depth.
-    - Do not “hunt for faults.” Deduct only for clear, visible, instruction-relevant issues.
+    - Do not "hunt for faults." Deduct only for clear, visible, instruction-relevant issues.
 
     STUDENT NAME:
     - Always set student_name to null.
@@ -5666,12 +5666,12 @@ function buildRubricInstructions({
     Then that page is a TEACHER KEY.
 
     Rules when a TEACHER KEY is present:
-    - Do NOT treat that page as the student’s submission.
+    - Do NOT treat that page as the student's submission.
     - Use it as the authoritative basis for grading the student pages in this submission.
-    - For each question/item you grade, compare the student response to the TEACHER KEY’s correct answer.
+    - For each question/item you grade, compare the student response to the TEACHER KEY's correct answer.
     - If the TEACHER KEY contradicts your general knowledge, the TEACHER KEY wins.
     - Do NOT deduct the student for not matching formatting/layout of the key; only correctness.
-    - Never list TEACHER KEY text as “student evidence.” Evidence must come from the student page, while correctness comes from the key.
+    - Never list TEACHER KEY text as "student evidence." Evidence must come from the student page, while correctness comes from the key.
     - If a Teacher Key is present, do NOT create a separate "Teacher Key" section; it is not a student section and must not appear in sections[].
 
     STEP 2 — DENOMINATOR POLICY (hard)
@@ -5721,7 +5721,7 @@ function buildRubricInstructions({
 
     STEP 3 — GRADE CONTENT (primary):
     Grade for: completeness, accuracy/understanding, clarity, effort, thoroughness appropriate to the grade level.
-    All feedback must cite visible evidence from the student work (e.g., “In question 2…”, “Your chart…”).
+    All feedback must cite visible evidence from the student work (e.g., "In question 2…", "Your chart…").
     Do NOT invent issues.
     
     QUESTION-DIRECTIONS MARKING (mandatory):
@@ -5733,7 +5733,7 @@ function buildRubricInstructions({
     - If a required element is missing, reduce the score by the amount indicated (e.g., missing closing sentence = –1 mark).
     - If the directions specify multiple components, allocate marks component-by-component.
     - If the question gives a total but no explicit component breakdown, infer a fair split based on the directions (e.g., 3 required reasons = roughly 1 mark each).
-    - Do not “make up” extra requirements beyond what the directions ask.
+    - Do not "make up" extra requirements beyond what the directions ask.
 
     Score calibration (content-only base score out of 10) — ONLY used when overall_out_of is 10:
     9–10: excellent understanding, accurate, thoughtful connections, strong organization for the format (minor mechanics do not prevent a 9–10)
@@ -5755,7 +5755,7 @@ function buildRubricInstructions({
 
     1) Sum those components to determine the total for that question (e.g., 1+4+1 = 6).
     2) Allocate marks strictly by component (intro, support, closing, etc.).
-    3) If any component is missing, deduct exactly that component’s value.
+    3) If any component is missing, deduct exactly that component's value.
     4) Treat that summed total as the denominator for that question.
     5) Ensure section totals include the full component-based total for that question.
 
@@ -5806,7 +5806,7 @@ function buildRubricInstructions({
     - Read the student mark carefully.
     - If the mark is ambiguous, say it is unclear.
     - Do NOT assume a choice.
-    - Only report an answer as incorrect if the student’s selected answer clearly differs from the correct answer.
+    - Only report an answer as incorrect if the student's selected answer clearly differs from the correct answer.
     - If student answer equals correct answer, do NOT list it as incorrect.
 
     TRUE/FALSE EXTRACTION RULE:
@@ -5843,7 +5843,7 @@ function buildRubricInstructions({
     - If the test does NOT provide printed section totals, you must still create sections[] if the test is clearly divided, but only use denominators that are explicitly visible or clearly implied by the grouped questions.
     - Do NOT revert to /10 if section out_of values are visible anywhere.
     - Do NOT repeat the same generic comment across multiple sections.
-    - Each section comment must reference that section’s actual content.
+    - Each section comment must reference that section's actual content.
 
     IMPORTANT:
     - If implied section denominators are determined from clearly grouped numbered questions, you MUST NOT set overall_out_of to 10.
@@ -5852,7 +5852,7 @@ function buildRubricInstructions({
     RUBRIC OVERRIDE RULE:
     If a rubric override is provided and it specifies categories and point values:
     - Create sections[] that match the rubric categories and totals.
-    - Use the rubric’s totals for out_of values.
+    - Use the rubric's totals for out_of values.
     - Set overall_out_of to the rubric total (sum of section out_of, or stated total).
     - Set overall_score to the sum of section scores.
     - If the rubric conflicts with defaults, rubric wins.
@@ -5912,11 +5912,11 @@ function buildRubricInstructions({
 
     INCORRECT_ITEMS FIELD HYGIENE (mandatory):
     - student_answer and correct_answer must be short, clean answer strings only.
-    - Do NOT include “or …”, parentheses alternatives, or commentary like “unclear …” inside correct_answer.
+    - Do NOT include "or …", parentheses alternatives, or commentary like "unclear …" inside correct_answer.
     - Put uncertainty/explanations in teacher_comment, not inside correct_answer.
     
     Important fairness rule:
-    - Do not “search for deductions.” If the work is strong/excellent, the score must reflect that even if minor issues exist.
+    - Do not "search for deductions." If the work is strong/excellent, the score must reflect that even if minor issues exist.
 
     THOROUGHNESS FAIRNESS RULE (hard):
     - If a student provides more depth than required (extra relevant details, explanations, examples) and is mostly accurate, that must help the score, not hurt it.
@@ -5952,9 +5952,9 @@ function buildRubricInstructions({
 
     DEDUCTIONS (required, evidence-based):
 
-    - Do not “search for deductions.” Only deduct when there is a clear, visible issue.
-    - If you deduct points, you MUST enumerate the issues specifically (no vague phrases like “minor errors”).
-    - Every deduction reason must cite concrete visible evidence (e.g., “Q4…”, “In your paragraph about…”, “In the chart…”).
+    - Do not "search for deductions." Only deduct when there is a clear, visible issue.
+    - If you deduct points, you MUST enumerate the issues specifically (no vague phrases like "minor errors").
+    - Every deduction reason must cite concrete visible evidence (e.g., "Q4…", "In your paragraph about…", "In the chart…").
         
     DEDUCTION CLARITY RULE:
     - Every deduction must be understandable to a student reading the feedback.
@@ -5978,7 +5978,7 @@ function buildRubricInstructions({
     - ONLY deduct for spelling/mechanics if you can clearly READ the exact wrong word on the student page.
     - You MUST include:
       1) the exact wrong → correct pair copied from the student work, AND
-      2) the location (e.g., “in Q3 sentence 2”).
+      2) the location (e.g., "in Q3 sentence 2").
     - If you are not sure you read the word correctly (handwriting / blur / angle), do NOT deduct and do NOT list examples.
     - Do not guess at intended words.
 
@@ -6007,11 +6007,11 @@ function buildRubricInstructions({
     - If clarity is affected, include at most ONE small deduction item.
 
     Otherwise:
-    - If grammar errors meaningfully reduce clarity, include ONE deduction item describing the pattern (e.g., “sentence fragments”, “run-ons”).
+    - If grammar errors meaningfully reduce clarity, include ONE deduction item describing the pattern (e.g., "sentence fragments", "run-ons").
 
     Tests/quizzes:
     - Wrong answers are reflected in section scores.
-    - Do NOT also add “wrong answers” as separate deduction items unless there is a separate rubric rule.
+    - Do NOT also add "wrong answers" as separate deduction items unless there is a separate rubric rule.
 
     IMPORTANT:
     - Formatting deduction is separate from spelling/mechanics.
@@ -6042,12 +6042,12 @@ function buildRubricInstructions({
 
       VISIBLE TRIGGERS (at least ONE required):
       Direct AI Artifact Language
-      Phrases such as “As an AI language model…”
+      Phrases such as "As an AI language model…"
       Statements about browsing, generating, or being an AI
-      Meta-output structure clearly not written for the assignment (e.g., “Here are 5 key points:” followed by generic structured output inconsistent with the prompt)
+      Meta-output structure clearly not written for the assignment (e.g., "Here are 5 key points:" followed by generic structured output inconsistent with the prompt)
       Web-Style or Source Formatting Not Requested
       Hyperlinks
-      “Sources:” lists or bibliographies when not required
+      "Sources:" lists or bibliographies when not required
       MLA/APA-style citations not requested
       Clearly pasted definition blocks that exceed the task scope
       Significant Internal Inconsistency (clearly observable)
@@ -6083,10 +6083,10 @@ function buildRubricInstructions({
       EVIDENCE REQUIREMENT (mandatory if flagging):
       If either field is set:
       You MUST quote or describe the exact visible phrase or structural pattern.
-      You MUST identify its location (e.g., “In paragraph 2…”, “In Question 4…”).
+      You MUST identify its location (e.g., "In paragraph 2…", "In Question 4…").
       Use neutral phrasing:
-      “This may indicate…”
-      “This could suggest…”
+      "This may indicate…"
+      "This could suggest…"
       Never claim certainty.
       Never assign intent.
       Never accuse.
@@ -6102,8 +6102,8 @@ function buildRubricInstructions({
 
       TWO-TRIGGER REQUIREMENT (mandatory):
       - To set ai_suspected_cheating OR copying_suspected, you must have at least TWO independent visible triggers.
-      - At least ONE trigger must be a concrete artifact (e.g., “As an AI…”, links, “Sources:”, citation block, pasted definition block, clear template structure).
-      - “Tone/vocab shift” alone is never sufficient.
+      - At least ONE trigger must be a concrete artifact (e.g., "As an AI…", links, "Sources:", citation block, pasted definition block, clear template structure).
+      - "Tone/vocab shift" alone is never sufficient.
       - If you do not have 2 triggers including 1 concrete artifact, both fields MUST be null.
 
       EVIDENCE FORMAT (required):
@@ -6134,12 +6134,12 @@ function buildRubricInstructions({
         2) one clear improvement,
         3) optional brief tip.
       - If VOICE is "journal_response":
-        - Write as a personal response to the student’s ideas.
+        - Write as a personal response to the student's ideas.
         - Include:
           1) something specific the student expressed,
           2) one thoughtful question or nudge,
           3) a brief encouraging close.
-        - Do NOT frame as “improvement” or “correction.”
+        - Do NOT frame as "improvement" or "correction."
 
     TEST OUTPUT CLARITY REQUIREMENT:
     - For a visible test/quiz, the response must make the score understandable by section.
@@ -6186,7 +6186,7 @@ function buildRubricInstructions({
     - Write conversationally — like quick notes a teacher would paste into a report, email to parents, or say during class review.
     - Keep it encouraging and professional even when pointing out weaknesses.
     - If no strong patterns exist, write something balanced and brief.
-    - Do NOT mention the words “evidence”, “JSON”, or “schema”.
+    - Do NOT mention the words "evidence", "JSON", or "schema".
     - Do NOT quote student answers; summarize patterns only.
     - Return exactly ONE paragraph with no extra commentary.
 
@@ -6285,7 +6285,7 @@ function buildRubricInstructions({
   function safeJsonParse(text) {
     if (text == null) return null;
 
-    // If it’s already an object, return it
+    // If it's already an object, return it
     if (typeof text === "object") return text;
 
     if (typeof text !== "string") return null;
@@ -6311,7 +6311,7 @@ function buildRubricInstructions({
     const direct = tryParse(s);
     if (direct) return direct;
 
-    // 2) if it’s a quoted JSON string (double-encoded), decode once then parse again
+    // 2) if it's a quoted JSON string (double-encoded), decode once then parse again
     // Example: "\"{ \\\"a\\\": 1 }\""
     if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
       const unquoted = tryParse(s);
@@ -6350,7 +6350,7 @@ function buildRubricInstructions({
       if (parsedTrim) return parsedTrim;
     }
 
-    // Try “largest {...} block”
+    // Try "largest {...} block"
     const rescued2 = extractObjectBlock(unescaped);
     if (rescued2) {
       const parsed3 = tryParse(rescued2);

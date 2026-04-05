@@ -68,7 +68,7 @@ function removeHallucinations(text) {
 
   // Remove AI disclaimers
   out = out.replace(/as an ai (language )?model[, ]?/gi, "");
-  out = out.replace(/i (cannot|can’t) (access|browse) the internet[, ]?/gi, "");
+  out = out.replace(/i (cannot|can't) (access|browse) the internet[, ]?/gi, "");
 
   // Remove double spaces created by removals
   out = out.replace(/\s{2,}/g, " ").trim();

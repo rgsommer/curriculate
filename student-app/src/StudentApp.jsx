@@ -43,10 +43,10 @@ import { useSoundEffects } from "./hooks/useSoundEffects.js";
 
 // Build marker so you can confirm the deployed bundle
 const BUILD_MARKER = import.meta.env.VITE_BUILD_ID;
-console.log(“🚀 StudentApp Build:”, BUILD_MARKER);
+console.log("StudentApp Build:", BUILD_MARKER);
 
-// For now, LiveSession-launched tasks are assumed to use “Classroom”
-const DEFAULT_LOCATION = “Classroom”;
+// For now, LiveSession-launched tasks are assumed to use "Classroom"
+const DEFAULT_LOCATION = "Classroom";
 
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
@@ -667,7 +667,7 @@ function StudentApp() {
         window.setTimeout(() => setTreatMessage(null), 4200);
       }
 
-      // VennSort: quick “sorting” cue
+      // VennSort: quick "sorting" cue
       if (assignedType === TASK_TYPES.VENNSORT || assignedType === "vennsort" || assignedType === "venn-sort") {
         tryPlayVennSound();
         setVennGlow(true);
@@ -676,7 +676,7 @@ function StudentApp() {
         window.setTimeout(() => setTreatMessage(null), 3600);
       }
 
-      // ReadingComp: calm “page turn” cue
+      // ReadingComp: calm "page turn" cue
       if (
         assignedType === TASK_TYPES.READING_COMP ||
         assignedType === "reading-comp" ||
@@ -1073,7 +1073,7 @@ function StudentApp() {
       return;
     }
 
-    // If we’re supposed to scan because of station-gating, open camera.
+    // If we're supposed to scan because of station-gating, open camera.
     if (mustScan && !scannerActive) {
       setScannerActive(true);
       return;
@@ -2193,7 +2193,7 @@ function StudentApp() {
     lastRequestNextAtRef.current = now;
 
     setPostPhase("tasks");
-    setWaitingForLaunch(true); // shows “Getting your first activity ready…” while we fetch
+    setWaitingForLaunch(true); // shows "Getting your first activity ready…" while we fetch
     socket.emit("task:requestNext", {
       roomCode: roomCode.trim().toUpperCase(),
       teamId,
@@ -3746,7 +3746,7 @@ function StudentApp() {
       teamName={teamName}
       socket={socket}
       onSubmit={(payload) => {
-        // send to server if it’s listening
+        // send to server if it's listening
         try {
           socket.emit("feedback:submit", payload);
         } catch {}
@@ -4485,7 +4485,7 @@ function StudentApp() {
 
                           {!r.isAnswered && (
                             <div style={{ marginTop: 4, opacity: 0.85 }}>
-                              You didn’t match this one.
+                              You didn't match this one.
                             </div>
                           )}
                         </div>
@@ -4729,7 +4729,7 @@ function StudentApp() {
           🚪 Scan the correct station first
         </div>
         <p style={{ marginTop: 6, fontSize: "0.9rem", marginBottom: 0 }}>
-          Your teacher has locked this task to a specific station. Scan the station’s
+          Your teacher has locked this task to a specific station. Scan the station's
           QR code to unlock it.
         </p>
       </section>

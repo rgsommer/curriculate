@@ -726,14 +726,14 @@ export default function DrawMimeTask({
                       <div>How to play:</div>
                       <div>• Draw the clue on the screen.</div>
                       <div>• Do not use letters or words.</div>
-                      <div>• Your team taps “Guessed it” as soon as they know it.</div>
+                      <div>• Your team taps "Guessed it" as soon as they know it.</div>
                     </>
                   ) : (
                     <>
                       <div>How to play:</div>
                       <div>• Act out the clue without speaking.</div>
                       <div>• Put the device down and mime it.</div>
-                      <div>• Your team taps “Guessed it” as soon as they know it.</div>
+                      <div>• Your team taps "Guessed it" as soon as they know it.</div>
                     </>
                   )}
               </div>
@@ -877,7 +877,7 @@ export default function DrawMimeTask({
           {awaitingOutcome && (
             <div className="mb-6 flex flex-col items-center gap-4">
               <div className="text-3xl font-black text-center">
-                Time’s up — did the team guess it?
+                Time's up — did the team guess it?
               </div>
 
               <div className="flex flex-wrap justify-center gap-4">

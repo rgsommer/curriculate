@@ -372,7 +372,7 @@ export default function MindMapperTask({ task, onSubmit, disabled }) {
       );
       if (correct) {
         try {
-          // Non-blocking; ignore if audio can’t play
+          // Non-blocking; ignore if audio can't play
           new Audio("/sounds/victory.mp3").play();
         } catch (e) {
           // eslint-disable-next-line no-console
@@ -437,7 +437,7 @@ export default function MindMapperTask({ task, onSubmit, disabled }) {
           <div style={{ fontWeight: 1000, color: "#0f172a" }}>What to do</div>
           <ol style={{ margin: "8px 0 0 18px", color: "#334155", fontWeight: 700, lineHeight: 1.4 }}>
             <li>Copy the organizer template into your notes.</li>
-            <li>Fill the blanks with the ideas (and add your own if it’s Hard).</li>
+            <li>Fill the blanks with the ideas (and add your own if it's Hard).</li>
             <li>If your teacher asked for a photo, snap it and submit.</li>
           </ol>
         </div>

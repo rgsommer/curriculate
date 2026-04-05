@@ -262,7 +262,7 @@ export default function PronunciationTask({ task, onSubmit, disabled }) {
           boxShadow: "0 10px 30px rgba(2,6,23,0.05)",
         }}
       >
-        “{referenceText}”
+        "{referenceText}"
       </div>
 
       {safeTask.phonetic && (

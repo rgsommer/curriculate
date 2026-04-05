@@ -357,7 +357,7 @@ export default function AiTasksetGenerator() {
           setGenerating(false);
           return;
         }
-        // If limiting, don’t generate more tasks than unique types
+        // If limiting, don't generate more tasks than unique types
         const uniqueTypes = Array.from(new Set(selectedTaskTypes));
         estimatedTaskCount = Math.min(estimatedTaskCount, uniqueTypes.length);
         requiredTaskTypes = uniqueTypes;
@@ -1048,7 +1048,7 @@ export default function AiTasksetGenerator() {
               }}
             />
             <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
-              These words define the topic. After generation, you’ll see which concepts were covered vs missing.
+              These words define the topic. After generation, you'll see which concepts were covered vs missing.
             </p>
           </div>
         </div>

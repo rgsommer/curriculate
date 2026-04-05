@@ -30,7 +30,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   const [micSupported, setMicSupported] = useState(true);
   const [micError, setMicError] = useState(null);
 
-  // “Get ready…” staging
+  // "Get ready…" staging
   const [countdown, setCountdown] = useState(null); // null | 3..0
 
   // Live guess feed (render exactly as received)
@@ -432,7 +432,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
   if (!clues.length) {
     return (
-      <TaskCardFrame theme="light" badge="⚡ Brain Blitz" title="No clues provided" subtitle="This round didn’t include any clues.">
+      <TaskCardFrame theme="light" badge="⚡ Brain Blitz" title="No clues provided" subtitle="This round didn't include any clues.">
         <div style={{ color: "rgba(15,23,42,0.74)", fontWeight: 850 }}>
           Check the task JSON and ensure it includes <b>clues</b>.
         </div>

@@ -72,7 +72,7 @@ export default function MyPlanPage() {
     >
       <h1 style={{ marginTop: 0, marginBottom: 4 }}>My Plan</h1>
       <p style={{ fontSize: "0.85rem", color: "#555", marginTop: 0 }}>
-        See what’s included in your current plan and what unlocks at the next
+        See what's included in your current plan and what unlocks at the next
         levels.
       </p>
 
@@ -164,7 +164,7 @@ export default function MyPlanPage() {
             </p>
           ) : (
             <p style={{ fontSize: "0.8rem", color: "#4b5563", marginTop: 4 }}>
-              You’ve generated <strong>{used}</strong> AI task set
+              You've generated <strong>{used}</strong> AI task set
               {used === 1 ? "" : "s"} this month.
               {maxAi != null && (
                 <>

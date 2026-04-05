@@ -278,7 +278,7 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
           <div style={{ fontSize: 38, fontWeight: 1000, letterSpacing: 0.2 }}>Mystery Clues</div>
           <div style={{ marginTop: 6, opacity: 0.95, fontSize: 16, lineHeight: 1.35, maxWidth: 720 }}>
             {!isFinal ? (
-              <>Memorize these cards — they’ll disappear soon.</>
+              <>Memorize these cards — they'll disappear soon.</>
             ) : (
               <>Final challenge: select <b>exactly</b> the cards you saw earlier — no extras.</>
             )}
@@ -324,7 +324,7 @@ export default function MysteryCluesTask({ task, onSubmit, disabled }) {
         </div>
       )}
 
-      {/* If a non-final task has no clues, don’t block the flow. */}
+      {/* If a non-final task has no clues, don't block the flow. */}
       {!isFinal && phase === "noop" && (
         <div style={{ marginTop: 26, opacity: 0.95, maxWidth: 720 }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>No clues on this card.</div>

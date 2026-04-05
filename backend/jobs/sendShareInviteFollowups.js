@@ -62,7 +62,7 @@ const DEFAULT_FOLLOWUP_7_HTML = `
 const DEFAULT_FOLLOWUP_30_HTML = `
 <div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#111827;line-height:1.5;">
   <h2 style="margin:0 0 8px 0;">Final reminder</h2>
-  <p style="margin:0 0 10px 0;">If you still need it, the shared task set link is below (if it hasn’t expired).</p>
+  <p style="margin:0 0 10px 0;">If you still need it, the shared task set link is below (if it hasn't expired).</p>
 
   <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin:12px 0;">
     <div style="font-weight:700;">Open and run the task set</div>

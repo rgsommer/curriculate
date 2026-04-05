@@ -720,7 +720,7 @@ function formatDate(d) {
       );
   }
 
-  // Footer on each page: easiest is to add at end by iterating pages (PDFKit can’t easily go back).
+  // Footer on each page: easiest is to add at end by iterating pages (PDFKit can't easily go back).
   // Instead, we write footer right before doc ends for the last page, and for previous pages we rely on header only.
   // If you want footers on every page, we can switch to a page-buffering approach later.
 

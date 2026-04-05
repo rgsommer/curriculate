@@ -34,7 +34,7 @@ function cloneJson(x) {
 }
 
 // Deterministic, schema-correct demo tasks for types that are unnecessarily flaky to
-// generate via LLM (or where “correct shape” matters more than “novel content”).
+// generate via LLM (or where "correct shape" matters more than "novel content").
 // These are NOT placeholders; they are canonical examples designed to exercise the
 // frontend with reliable, valid data.
 const STATIC_DEMO_TASKS = {

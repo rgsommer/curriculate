@@ -277,7 +277,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
 
           {noMotionSupport && !done && (
             <div className="mt-3 text-lg md:text-xl font-bold opacity-90">
-              Motion sensor not available — that’s okay. Just copy the motion and tap DONE.
+              Motion sensor not available — that's okay. Just copy the motion and tap DONE.
             </div>
           )}
         </div>

@@ -321,8 +321,8 @@ function hangmanIsValid(task) {
 function finalizeTask(expectedType, rawTask) {
   const forced = { ...(rawTask || {}), taskType: expectedType };
 
-  // Flatten AI-rich objects into the editor’s expected simple shapes
-  // so the editor doesn’t render [object Object].
+  // Flatten AI-rich objects into the editor's expected simple shapes
+  // so the editor doesn't render [object Object].
   if (expectedType === TASK_TYPES.SORT) {
     Object.assign(forced, flattenSortConfig(forced));
   }
@@ -340,7 +340,7 @@ function finalizeTask(expectedType, rawTask) {
   // Validate by type (strict)
   assertValidAiTask(expectedType, normalized);
 
-  // Additional “sanity” checks for a few types that frequently poison
+  // Additional "sanity" checks for a few types that frequently poison
   if (expectedType === TASK_TYPES.SORT) {
     if (!sortConfigIsValid(normalized?.config) || !sortHasAtLeastOnePerBucket(normalized?.config)) {
       throw new Error("SORT failed extra sanity checks (buckets/items distribution).");
@@ -722,7 +722,7 @@ function buildVocabularyLinesFromConcepts(concepts) {
  * - Decide which concepts each task is responsible for.
  * - Keep prompts tight: only pass that subset when generating that task.
  *
- * “Objective-ish” types get more terms; messy/creative types get fewer.
+ * "Objective-ish" types get more terms; messy/creative types get fewer.
  */
 const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.MULTIPLE_CHOICE]: 3,
@@ -787,7 +787,7 @@ function planConceptAllocation(aiWordBank, pool, safeCount) {
   }
 
   // If there is still room, we can cycle again to reinforce (optional).
-  // But keep it modest: only add a second pass if there’s room.
+  // But keep it modest: only add a second pass if there's room.
   let safety = 0;
   while (p < concepts.length && safety++ < safeCount * 3) {
     const i = p % safeCount;
@@ -863,7 +863,7 @@ function taskMustIncludeTermsOrThrow(task, terms) {
   }
 }
 
-// “Objective-ish” types that are most likely to cleanly include specific vocabulary terms.
+// "Objective-ish" types that are most likely to cleanly include specific vocabulary terms.
 const COVERAGE_FIX_PREFERRED_TYPES = new Set([
   TASK_TYPES.MULTIPLE_CHOICE,
   TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE,
@@ -1011,7 +1011,7 @@ export async function createAiTaskset(req, res) {
       return res.status(400).json({ ok: false, error: "No eligible task types provided." });
     }
 
-    // ✅ Profile-driven “lens” injection (NOT Christian-only; teacher profile determines lens)
+    // ✅ Profile-driven "lens" injection (NOT Christian-only; teacher profile determines lens)
     let mergedSpecialConsiderations = String(specialConsiderations || "").trim();
     try {
       const teacherProfile = await loadTeacherProfileForRequest(req);
@@ -1031,7 +1031,7 @@ export async function createAiTaskset(req, res) {
     // IMPORTANT:
     // To reduce prompt complexity (especially for finicky schema tasks),
     // the initial batch prompt should NOT include the full word bank.
-    // We’ll enforce coverage per-task during the finalize/regenerate loop.
+    // We'll enforce coverage per-task during the finalize/regenerate loop.
     const initialVocabularyLines = requestedConcepts.length
       ? buildVocabularyLinesFromConcepts(requestedConcepts.slice(0, 10))
       : "";
@@ -1173,7 +1173,7 @@ export async function createAiTaskset(req, res) {
         generation: {
           report: generationReport,
         },
-        // nice for teacher-facing “what was planned”
+        // nice for teacher-facing "what was planned"
         conceptAllocation: {
           requestedConcepts,
           perTask: conceptPlan.map((terms, idx) => ({

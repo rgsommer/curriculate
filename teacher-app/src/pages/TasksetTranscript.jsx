@@ -1081,7 +1081,7 @@ function extractAnswerText(sub, task) {
     null;
 
   if (Array.isArray(multi) && multi.length) {
-    // Show a compact “Q1: …” list (first 6)
+    // Show a compact "Q1: …" list (first 6)
     const lines = multi
       .slice(0, 6)
       .map((a, i) => {
@@ -1290,7 +1290,7 @@ export default function TasksetTranscript({ transcript }) {
                       <div style={{ fontWeight: 800, marginBottom: 2 }}>Flashcards Race (live inter-team)</div>
                       <div style={{ color: "#6b7280", fontSize: "0.85rem" }}>
                         This task is typically driven by live socket events (buzz/answer/advance). If your backend is
-                        configured to persist the race outcome, you’ll see a scoreboard submission here.
+                        configured to persist the race outcome, you'll see a scoreboard submission here.
                       </div>
                     </div>
                   );

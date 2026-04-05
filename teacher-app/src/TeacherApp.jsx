@@ -853,7 +853,7 @@ function PlanDetails({ plan, fallbackTier }) {
         <div style={{ marginBottom: 8 }}>{plan.description}</div>
       ) : (
         <div style={{ marginBottom: 8 }}>
-          You’re on the <b>{tier}</b> tier. You can change or upgrade later in{" "}
+          You're on the <b>{tier}</b> tier. You can change or upgrade later in{" "}
           <b>My Plan</b>.
         </div>
       )}
@@ -960,7 +960,7 @@ function AdminPage({ isAdmin = false }) {
       progTimerRef.current = null;
     }
     setDemoProgress(finalValue);
-    // reset back to 0 after a moment so it’s ready for next click
+    // reset back to 0 after a moment so it's ready for next click
     window.setTimeout(() => setDemoProgress(0), 900);
   }
 
@@ -1077,7 +1077,7 @@ const runOneStress = () =>
 if (st?.ok && st.exists) {
             // Optional: surface taskCount in UI somewhere if you want
             // If generation finished, taskCount should match eligibleTypes length
-            // You can stop polling once it’s non-zero and updatedAt is present
+            // You can stop polling once it's non-zero and updatedAt is present
             if ((st.taskCount || 0) > 0 && st.updatedAt) {
               // You could stop polling here, OR just let SSE "done" stop it
               return true;
@@ -2126,7 +2126,7 @@ if (st?.ok && st.exists) {
             <div style={{ fontWeight: 900, fontSize: 16 }}>Referral rewards</div>
             <div style={{ opacity: 0.8, fontSize: 13, marginTop: 4 }}>
               Incentivize presenters to share Curriculate with other teachers. When a shared invite is <b>used</b> {" "}
-              (recipient runs the task set), it counts toward the sender’s goal.
+              (recipient runs the task set), it counts toward the sender's goal.
             </div>
           </div>
         </div>

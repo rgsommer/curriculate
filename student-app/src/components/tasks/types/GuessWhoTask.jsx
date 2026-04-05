@@ -5,7 +5,7 @@ import useSound from "use-sound";
 const DEFAULT_MAX_GUESSES = 10;
 const DEFAULT_TIMER_SECONDS = 60;
 
-// Local “Curriculate-ish” neutrals (kept self-contained)
+// Local "Curriculate-ish" neutrals (kept self-contained)
 const CONTRAST_TEXT_DARK = "#0f172a";
 const CONTRAST_BG_LIGHT = "#f9fafb";
 const CONTRAST_BORDER = "#d1d5db";
@@ -42,7 +42,7 @@ export default function GuessWhoTask({ task, onSubmit }) {
         ? [String(cfg.secretAnswer).trim()]
         : ["Mystery"];
 
-    // Ensure we have at least playerCount entries if you want “one per answerer/round”
+    // Ensure we have at least playerCount entries if you want "one per answerer/round"
     // (If you only provide one, it just repeats.)
     const out = [];
     for (let i = 0; i < Math.max(1, playerCount); i++) out.push(raw[i] ?? raw[0]);
@@ -56,7 +56,7 @@ export default function GuessWhoTask({ task, onSubmit }) {
   // Player identity (intra-team only)
   const myPlayerNumber = clampInt(task?.myPlayerNumber ?? cfg.myPlayerNumber, 1, 99, 1);
 
-  // Rounds (default: rotate answerer through playerCount; “round” is per answerer)
+  // Rounds (default: rotate answerer through playerCount; "round" is per answerer)
   const [currentRound, setCurrentRound] = useState(0);
 
   const currentAnswerer = useMemo(() => (currentRound % playerCount) + 1, [currentRound, playerCount]);
@@ -201,7 +201,7 @@ export default function GuessWhoTask({ task, onSubmit }) {
           clearCountdown();
           playBuzzer();
           endRoundWithOverlay({
-            message: `Time’s up! The answer was: ${secretAnswer}`,
+            message: `Time's up! The answer was: ${secretAnswer}`,
             positive: false,
             correct: false,
           });
@@ -315,7 +315,7 @@ export default function GuessWhoTask({ task, onSubmit }) {
         correct: true,
       });
 
-      // Fire a useful “round result” payload immediately (optional; safe)
+      // Fire a useful "round result" payload immediately (optional; safe)
       onSubmit?.({
         type: task?.taskType || "guess-who",
         roundComplete: true,
@@ -471,7 +471,7 @@ export default function GuessWhoTask({ task, onSubmit }) {
             </button>
 
             <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#475569" }}>
-              Tip: Keep your finger down so teammates can’t peek.
+              Tip: Keep your finger down so teammates can't peek.
             </div>
 
 

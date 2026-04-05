@@ -57,7 +57,7 @@ export default function AnalyticsOverview() {
         if (!cancelled) {
           setError(
             err.response?.data?.error ||
-              "We couldn’t load your reports right now."
+              "We couldn't load your reports right now."
           );
         }
       } finally {
@@ -142,7 +142,7 @@ export default function AnalyticsOverview() {
           {error}
           <div className="text-[11px] sm:text-xs text-gray-600 mt-1">
             You can keep using Curriculate; reports will appear here once
-            they’ve been generated for your live sessions.
+            they've been generated for your live sessions.
           </div>
         </div>
       )}

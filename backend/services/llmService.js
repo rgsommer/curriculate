@@ -8,7 +8,7 @@ async function callLLM(prompt) {
   }
 
   // PSEUDO-CODE: adapt to your real client
-  // Using fetch as a simple example; replace with official SDK if you’re using it.
+  // Using fetch as a simple example; replace with official SDK if you're using it.
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {

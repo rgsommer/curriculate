@@ -148,7 +148,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false }) => 
       .filter((x) => x.statement);
 
     // Last-resort fallback: if we can at least show ONE round, do so.
-    // (This prevents the UI from hard-failing with “No rounds provided” when the task payload is slightly off.)
+    // (This prevents the UI from hard-failing with "No rounds provided" when the task payload is slightly off.)
     if (built.length > 0) return built;
 
     const fallbackStatement = normStr(task?.prompt ?? task?.title ?? "");
@@ -180,7 +180,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false }) => 
   const [votes, setVotes] = useState(Array(playerCount).fill(null)); // null or 0..3
   const [revealed, setRevealed] = useState(false);
 
-  // overlay countdown between rounds (keeps the “big reveal” moment consistent with Curriculate style)
+  // overlay countdown between rounds (keeps the "big reveal" moment consistent with Curriculate style)
   const [overlaySeconds, setOverlaySeconds] = useState(0);
   const overlayRef = useRef(null);
 
@@ -408,7 +408,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false }) => 
           {round.statement}
         </div>
         <div style={{ marginTop: 8, color: "#475569", fontSize: 14 }}>
-          Team listens and discusses briefly. Reader taps each player’s vote under the option they chose.
+          Team listens and discusses briefly. Reader taps each player's vote under the option they chose.
         </div>
       </div>
 

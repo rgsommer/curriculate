@@ -120,7 +120,7 @@ export default function SpeedDrawTask({ task, onSubmit, disabled, socket, presen
 
           {timeUp && (
             <div className="mb-8 px-8 py-6 rounded-3xl bg-black/30 border border-white/20 shadow-2xl text-3xl font-extrabold">
-              ⏰ Time’s up! Take a photo of your drawing.
+              ⏰ Time's up! Take a photo of your drawing.
             </div>
           )}
 

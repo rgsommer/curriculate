@@ -278,7 +278,7 @@ export default function RolePlayDeckTask({
               Choose a mode: <strong>Mystery</strong> (hidden roles) or <strong>Classic</strong> (open roles).
             </li>
             <li>
-              Each player draws one role card. Follow the “Pass the device” screens.
+              Each player draws one role card. Follow the "Pass the device" screens.
             </li>
             <li>
               Read the <strong>Scenario</strong> and role-play it as a team.
@@ -361,7 +361,7 @@ export default function RolePlayDeckTask({
               <div style={{ fontWeight: 800, marginBottom: 6 }}>How it works</div>
               <ul style={{ margin: 0, paddingLeft: 18, color: "#334155", lineHeight: 1.35 }}>
                 <li>
-                  Player <strong>{currentTurn}</strong> taps “Draw role card”.
+                  Player <strong>{currentTurn}</strong> taps "Draw role card".
                 </li>
                 <li>In Mystery mode, only that player should view the card.</li>
                 <li>Repeat until everyone has a role.</li>
@@ -626,7 +626,7 @@ export default function RolePlayDeckTask({
 
             <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <div style={{ color: "#64748b", fontWeight: 800 }}>
-                When you’re ready, tap <strong>Hide</strong> and pass the device to the next player.
+                When you're ready, tap <strong>Hide</strong> and pass the device to the next player.
               </div>
 
               <div style={{ display: "flex", gap: 10 }}>

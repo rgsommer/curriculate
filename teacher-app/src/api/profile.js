@@ -13,7 +13,7 @@ function safeGet(key) {
 }
 
 function getToken() {
-  // Prefer the “real” key, but support dev/staging keys too.
+  // Prefer the "real" key, but support dev/staging keys too.
   const candidates = [
     "token",
     "curriculate_token",
@@ -43,7 +43,7 @@ async function parseJsonOrThrow(res, defaultMessage) {
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    // If server didn’t return JSON, surface a helpful error
+    // If server didn't return JSON, surface a helpful error
     const hint = text ? ` Server said: ${text.slice(0, 200)}` : "";
     throw new Error(defaultMessage + hint);
   }
@@ -69,7 +69,7 @@ export async function fetchMyProfile() {
     credentials: "include",
   });
 
-  // If you want the old behavior (just “Failed to load profile”), keep it.
+  // If you want the old behavior (just "Failed to load profile"), keep it.
   // This gives you a more explicit message when token is missing.
   if (res.status === 401) {
     const token = getToken();

@@ -4,7 +4,7 @@ import SmoothCountdownBar from "./SmoothCountdownBar";
 
 /**
  * CountdownPresenter
- * Standard “1-2-3 GO!” presenter used across tasks.
+ * Standard "1-2-3 GO!" presenter used across tasks.
  *
  * Supports a video-based presenter (preferred) with graceful fallback to numeric countdown.
  *

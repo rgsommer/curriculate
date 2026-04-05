@@ -189,7 +189,7 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
 
       if (isLast) {
         // End of questions; keep UI alive (winnerTeam may still come from server)
-        // Reset so they can’t keep scanning
+        // Reset so they can't keep scanning
         setLocked(true);
         setScannedThisRound(true);
         return;

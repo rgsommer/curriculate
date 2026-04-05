@@ -1163,7 +1163,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
           <button
             type="button"
             onClick={() => {
-              // Lightweight “I said that” checkpoint — backend can award points if desired.
+              // Lightweight "I said that" checkpoint — backend can award points if desired.
               onSubmit?.({
                 type: TASK_TYPES.ECHO_CHAIN,
                 checkpoint: true,
@@ -1206,7 +1206,7 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
             </div>
           )}
           <div style={{ marginTop: 6, color: "#64748b", fontSize: "0.85rem" }}>
-            Tip: keep the chain hidden on screen during play to reduce “read-off” cheating.
+            Tip: keep the chain hidden on screen during play to reduce "read-off" cheating.
           </div>
         </div>
       )}
@@ -1736,7 +1736,7 @@ export default function TaskRunner({
   //
   // It will:
   //  1) dispatch a window event that tasks can listen for
-  //  2) also forward to TaskRunner’s active scan handler (if installed)
+  //  2) also forward to TaskRunner's active scan handler (if installed)
   // -------------------------------------------------------------------
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1922,7 +1922,7 @@ export default function TaskRunner({
   const categoryVideoSrc = useMemo(() => {
     return pickCategoryVideoSrc(type, tp);
   }, [
-    taskKey, // easiest “new task” signal (already stable)
+    taskKey, // easiest "new task" signal (already stable)
     type,
     tp?.ui?.categoryVideo,
     tp?.config?.ui?.categoryVideo,

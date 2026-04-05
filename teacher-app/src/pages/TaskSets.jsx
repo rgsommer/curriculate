@@ -784,7 +784,7 @@ export default function TaskSets() {
                         color: "#1d4ed8",
                       }}
                     >
-                      Bloom’s: {reportData.blooms}
+                      Bloom's: {reportData.blooms}
                     </span>
                   ) : null}
 
@@ -957,7 +957,7 @@ export default function TaskSets() {
       ) : sortedSets.length === 0 ? (
         <div style={{ marginTop: 16, ...card }}>
           <div style={{ fontWeight: 900, marginBottom: 6 }}>No task sets found.</div>
-          <div style={{ color: "#6b7280" }}>Click “Create AI task set” to make one.</div>
+          <div style={{ color: "#6b7280" }}>Click "Create AI task set" to make one.</div>
         </div>
       ) : (
         <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
@@ -978,7 +978,7 @@ export default function TaskSets() {
               subject && subject,
               grade && `Grade ${grade}`,
               `${count} task${count === 1 ? "" : "s"}`,
-              blooms ? `Bloom’s ${blooms}` : "",
+              blooms ? `Bloom's ${blooms}` : "",
               `Plays ${times}`,
               last ? `Last played ${last}` : "",
             ].filter(Boolean);

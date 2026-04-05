@@ -269,7 +269,7 @@ export default function Login() {
                 )}
 
                 <div style={{ opacity: 0.75, marginTop: 10, fontSize: "0.9rem" }}>
-                  You’ll set your email, name, and password on the next screen.
+                  You'll set your email, name, and password on the next screen.
                 </div>
               </div>
             )}
@@ -285,7 +285,7 @@ export default function Login() {
                 }}
               >
                 <div style={{ opacity: 0.82, fontSize: 13, marginBottom: 10 }}>
-                  We’ll send a reset link to your email.
+                  We'll send a reset link to your email.
                   <br />
                   <span style={{ opacity: 0.85 }}>
                     Dev: if backend returns token/link, it will appear below with Copy

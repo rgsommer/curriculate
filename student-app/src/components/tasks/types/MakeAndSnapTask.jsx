@@ -18,7 +18,7 @@ export default function MakeAndSnapTask({
   // This task should NEVER show that. If we detect it, we replace it with a real prompt + clear instructions.
   const isPoolPlaceholder =
     typeof task?.prompt === "string" &&
-    /demo task\s+isn[’']t\s+in\s+the\s+pool\s+yet/i.test(task.prompt);
+    /demo task\s+isn['']t\s+in\s+the\s+pool\s+yet/i.test(task.prompt);
 
   const inferredTopic =
     String(
@@ -47,7 +47,7 @@ export default function MakeAndSnapTask({
     makePrompt ||
     (inferredTopic
       ? `Make something that shows this idea: ${inferredTopic}`
-      : "Make something that shows the main idea from today’s lesson.");
+      : "Make something that shows the main idea from today's lesson.");
 
   const instructionsText =
     String(

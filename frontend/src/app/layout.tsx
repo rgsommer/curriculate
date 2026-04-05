@@ -57,6 +57,24 @@ export default function RootLayout({
       </head>
 
       <body className="min-h-screen bg-white text-gray-900 antialiased">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              name: "Curriculate",
+              url: "https://curriculate.net",
+              description:
+                "AI-powered station-based learning platform with time-fit lesson planning, interactive team stations, and evidence-rich reporting.",
+              potentialAction: {
+                "@type": "SearchAction",
+                target: "https://curriculate.net/search?q={search_term_string}",
+                "query-input": "required name=search_term_string",
+              },
+            }),
+          }}
+        />
         <SiteHeader />
         <div className="min-h-[70vh]">{children}</div>
         <SiteFooter />

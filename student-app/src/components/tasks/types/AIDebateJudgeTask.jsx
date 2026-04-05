@@ -63,12 +63,12 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
           onClick={() => setShowFullFeedback(true)}
           className="px-16 py-8 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-4xl rounded-full shadow-2xl hover:shadow-3xl transition"
         >
-          Read Full Judge’s Feedback
+          Read Full Judge's Feedback
         </button>
 
         {showFullFeedback && (
           <div className="mt-16 bg-white p-12 rounded-3xl shadow-2xl text-left text-2xl leading-relaxed">
-            <h2 className="text-4xl font-bold mb-8 text-center">Judge’s Written Decision</h2>
+            <h2 className="text-4xl font-bold mb-8 text-center">Judge's Written Decision</h2>
             <div className="whitespace-pre-wrap">{verdict.feedback}</div>
           </div>
         )}
@@ -122,7 +122,7 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
             fontSize: 20,
           }}
         >
-          Not connected to a room — the AI Judge can’t be summoned yet.
+          Not connected to a room — the AI Judge can't be summoned yet.
         </div>
       )}
 
