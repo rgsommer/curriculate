@@ -1,13 +1,13 @@
 // teacher-app/src/pages/HostView.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { socket } from "../socket";
 import { motion, AnimatePresence } from "framer-motion";
 import Confetti from "react-confetti";
-import { Trophy, Camera, Users, Sparkles, Volume2, VolumeX } from "lucide-react";
+import { Trophy, Camera, Users, Sparkles, Volume2, VolumeX, Zap } from "lucide-react";
 
+// ── Constants ────────────────────────────────────────────────
 const trophyEmojis = ["🥇", "🥈", "🥉"];
-const podiumHeights = ["h-40", "h-56", "h-32"];
 const podiumColors = [
   "bg-gradient-to-b from-cyan-400 to-blue-600 shadow-cyan-500/50",
   "bg-gradient-to-b from-yellow-300 to-amber-500 shadow-yellow-400/50",
@@ -15,21 +15,21 @@ const podiumColors = [
 ];
 
 const PHOTO_TASK_TYPES = new Set([
-  "photo-task",
-  "phototask",
-  "photo",
-  "photojournal",
-  "photo-journal",
-  "photoJournal",
-  "PhotoTask",
-  "PhotoJournal",
+  "photo-task", "phototask", "photo", "photojournal",
+  "photo-journal", "photoJournal", "PhotoTask", "PhotoJournal",
 ]);
 
-/* ------------------------------------------------------------
-   Option A: Vibrant HostView visuals (no new dependencies)
-   - Soft animated glow blobs
-   - Subtle grain / rays overlay
------------------------------------------------------------- */
+// ── Sounds (local files — instant load) ──────────────────────
+const SFX = {
+  teamJoin:  "/sounds/yay.mp3",
+  correct:   "/sounds/correct.mp3",
+  wrong:     "/sounds/wrong.mp3",
+  cheer:     "/sounds/victory.mp3",
+  ding:      "/sounds/ding.mp3",
+  powerUp:   "/sounds/power-up.mp3",
+};
+
+// ── Aurora backdrop ──────────────────────────────────────────
 const AURORA_OVERLAY_STYLE = {
   backgroundImage: `
     radial-gradient(900px circle at 15% 20%, rgba(255,255,255,0.14), transparent 60%),
@@ -43,7 +43,6 @@ const AURORA_OVERLAY_STYLE = {
 function AuroraBackdrop() {
   return (
     <>
-      {/* Soft glow blobs */}
       <motion.div
         aria-hidden="true"
         className="pointer-events-none absolute -top-36 -left-36 w-[520px] h-[520px] rounded-full blur-3xl opacity-35 bg-pink-400"
@@ -62,8 +61,6 @@ function AuroraBackdrop() {
         animate={{ x: [0, 16, 0], y: [0, 14, 0] }}
         transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
       />
-
-      {/* Grain + rays overlay */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 opacity-35 mix-blend-overlay"
@@ -73,16 +70,100 @@ function AuroraBackdrop() {
   );
 }
 
+// ── Animated score counter ───────────────────────────────────
+function AnimatedPts({ value = 0, className = "" }) {
+  const [display, setDisplay] = useState(value);
+  const prevRef = useRef(value);
+  const frameRef = useRef(null);
+  const [pulse, setPulse] = useState(false);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    const to = value;
+    prevRef.current = value;
+    if (from === to) return;
+
+    setPulse(true);
+    const pulseTimer = setTimeout(() => setPulse(false), 500);
+    const startTime = performance.now();
+    const diff = to - from;
+    const duration = Math.min(800, Math.max(300, Math.abs(diff) * 4));
+
+    const animate = (now) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(from + diff * eased));
+      if (progress < 1) frameRef.current = requestAnimationFrame(animate);
+    };
+    frameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      clearTimeout(pulseTimer);
+    };
+  }, [value]);
+
+  return (
+    <span
+      className={className}
+      style={{
+        display: "inline-block",
+        transition: "transform 0.2s cubic-bezier(.34,1.56,.64,1)",
+        transform: pulse ? "scale(1.3)" : "scale(1)",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {display}
+    </span>
+  );
+}
+
+// ── Live score pop-up notification ───────────────────────────
+function ScorePopup({ teamName, points, speedBonus, correct, id }) {
+  const isPositive = points > 0;
+  return (
+    <motion.div
+      key={id}
+      initial={{ opacity: 0, y: 40, scale: 0.7 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -60, scale: 0.5 }}
+      transition={{ type: "spring", stiffness: 200, damping: 20 }}
+      className="pointer-events-none"
+      style={{
+        padding: "12px 24px",
+        borderRadius: 18,
+        fontWeight: 900,
+        fontSize: points >= 80 ? "1.6rem" : "1.3rem",
+        color: "#fff",
+        background: isPositive
+          ? "linear-gradient(135deg, #10b981, #059669)"
+          : "linear-gradient(135deg, #ef4444, #dc2626)",
+        boxShadow: isPositive
+          ? "0 6px 30px rgba(16,185,129,0.5)"
+          : "0 6px 30px rgba(239,68,68,0.5)",
+        textAlign: "center",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ marginRight: 8 }}>{teamName}</span>
+      <span style={{ fontSize: "1.8em", verticalAlign: "middle" }}>
+        {isPositive ? "+" : ""}{points}
+      </span>
+      {speedBonus > 0 && (
+        <span style={{ fontSize: "0.75em", marginLeft: 8, opacity: 0.9 }}>
+          (+{speedBonus} speed)
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────
 function pickPhotoUrl(sub) {
   return (
-    sub?.photoUrl ||
-    sub?.imageUrl ||
-    sub?.fileUrl ||
-    sub?.mediaUrl ||
-    sub?.data?.photoUrl ||
-    sub?.data?.imageUrl ||
-    sub?.data?.fileUrl ||
-    sub?.data?.mediaUrl ||
+    sub?.photoUrl || sub?.imageUrl || sub?.fileUrl || sub?.mediaUrl ||
+    sub?.data?.photoUrl || sub?.data?.imageUrl || sub?.data?.fileUrl || sub?.data?.mediaUrl ||
     (Array.isArray(sub?.photos) ? sub.photos[0] : null) ||
     (Array.isArray(sub?.data?.photos) ? sub.data.photos[0] : null) ||
     null
@@ -94,10 +175,8 @@ function buildLatestPhotoByTeam(submissions = []) {
   for (const s of submissions) {
     const tt = (s?.taskType || s?.task?.taskType || "").toString();
     if (!PHOTO_TASK_TYPES.has(tt)) continue;
-
     const url = pickPhotoUrl(s);
     if (!url) continue;
-
     const at = new Date(s?.submittedAt || s?.createdAt || 0).getTime();
     if (!out[s.teamId] || at > out[s.teamId].at) {
       out[s.teamId] = { url, at };
@@ -106,38 +185,42 @@ function buildLatestPhotoByTeam(submissions = []) {
   return out;
 }
 
+// ══════════════════════════════════════════════════════════════
+// HostView — the projected game-show screen students see
+// ══════════════════════════════════════════════════════════════
 export default function HostView({ roomCode: roomCodeProp }) {
-
   const location = useLocation();
   const qs = new URLSearchParams(location.search || "");
   const roomFromQuery = (qs.get("room") || "").trim().toUpperCase();
   const sharedToken = (qs.get("sharedToken") || qs.get("token") || "").trim();
   const reportOwnerName = (qs.get("reportOwnerName") || qs.get("from") || "").trim();
-  const reportOwnerEmail = (qs.get("reportOwnerEmail") || "").trim();
 
   const roomCode = roomFromQuery || (roomCodeProp || "").trim().toUpperCase();
+
   const [roomState, setRoomState] = useState({
     teams: {},
     scores: {},
     submissions: [],
     taskIndex: -1,
+    totalTasks: 0,
+    tasksetName: "",
     locationCode: "Classroom",
+    isActive: false,
   });
 
   const [activeTab, setActiveTab] = useState("leaderboard");
   const [showConfetti, setShowConfetti] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [scorePopups, setScorePopups] = useState([]);
+  const popupIdRef = useRef(0);
 
   // Delete team modal
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTeamId, setDeleteTeamId] = useState(null);
 
-  // Sound refs (kept from your working HostView)
-  const joinSoundRef = useRef(null);
-  const correctSoundRef = useRef(null);
-  const wrongSoundRef = useRef(null);
-  const cheerSoundRef = useRef(null);
+  // Sound refs
+  const soundRefs = useRef({});
 
   const openDeleteTeamModal = (teamId) => {
     if (!teamId) return;
@@ -156,42 +239,46 @@ export default function HostView({ roomCode: roomCodeProp }) {
     closeDeleteTeamModal();
   };
 
+  // ── Sound system ─────────────────────────────────────────
   useEffect(() => {
-    // Prepare sounds (safe: if missing, play() just fails silently)
-    const load = (ref, src) => {
+    for (const [key, src] of Object.entries(SFX)) {
       try {
-        ref.current = new Audio(src);
-        ref.current.preload = "auto";
-        ref.current.volume = 0.7;
+        const audio = new Audio(src);
+        audio.preload = "auto";
+        audio.volume = key === "cheer" ? 0.5 : 0.6;
+        soundRefs.current[key] = audio;
       } catch {
-        ref.current = null;
+        soundRefs.current[key] = null;
       }
-    };
-
-    load(joinSoundRef, "/sounds/team-join.mp3");
-    load(correctSoundRef, "/sounds/correct-ding.mp3");
-    load(wrongSoundRef, "/sounds/wrong-buzzer.mp3");
-    load(cheerSoundRef, "/sounds/applause-cheer.mp3");
+    }
 
     const handleResize = () =>
       setDimensions({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", handleResize);
     handleResize();
-
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const playSound = (ref) => {
-    if (!soundEnabled || !ref?.current) return;
+  const playSound = useCallback((key) => {
+    if (!soundEnabled) return;
     try {
-      ref.current.currentTime = 0;
-      ref.current.play().catch(() => {});
-    } catch {
-      // ignore
-    }
-  };
+      const audio = soundRefs.current[key];
+      if (!audio) return;
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
+    } catch {}
+  }, [soundEnabled]);
 
-  // Socket: keep the same working events (roomState / room:state / team:joined)
+  // ── Add a score popup ────────────────────────────────────
+  const addScorePopup = useCallback((teamName, points, speedBonus = 0, correct = null) => {
+    const id = ++popupIdRef.current;
+    setScorePopups((prev) => [...prev.slice(-4), { id, teamName, points, speedBonus, correct }]);
+    setTimeout(() => {
+      setScorePopups((prev) => prev.filter((p) => p.id !== id));
+    }, 3000);
+  }, []);
+
+  // ── Socket events ────────────────────────────────────────
   useEffect(() => {
     if (!roomCode) return;
     const code = String(roomCode).toUpperCase().trim();
@@ -204,40 +291,52 @@ export default function HostView({ roomCode: roomCodeProp }) {
         ...prev,
         teams: safe.teams || {},
         scores: safe.scores || {},
-        submissions: Array.isArray(safe.submissions)
-          ? safe.submissions
-          : prev.submissions || [],
+        submissions: Array.isArray(safe.submissions) ? safe.submissions : prev.submissions || [],
         taskIndex: typeof safe.taskIndex === "number" ? safe.taskIndex : prev.taskIndex,
+        totalTasks: typeof safe.totalTasks === "number" ? safe.totalTasks : prev.totalTasks,
+        tasksetName: safe.tasksetName || safe.taskset?.name || prev.tasksetName || "",
         locationCode: safe.locationCode || prev.locationCode || "Classroom",
+        isActive: safe.isActive ?? prev.isActive,
       }));
     };
 
-    const handleTeamJoined = () => {
-      playSound(joinSoundRef);
+    const handleTeamJoined = (data) => {
+      playSound("teamJoin");
       setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 2000);
+      setTimeout(() => setShowConfetti(false), 2500);
     };
 
-    const handleScoreUpdate = () => {
-      playSound(correctSoundRef);
-    };
+    // Listen to individual task submissions for live pop-ups
+    const handleTaskSubmission = (data) => {
+      if (!data) return;
+      const teamName = data.teamName || "Team";
+      const pts = typeof data.points === "number" ? data.points : 0;
+      const speedBonus = typeof data.speedBonus === "number" ? data.speedBonus : 0;
+      const correct = data.correct;
 
-    const handleWrong = () => {
-      playSound(wrongSoundRef);
+      if (pts > 0) {
+        playSound(pts >= 80 ? "powerUp" : "correct");
+        addScorePopup(teamName, pts, speedBonus, correct);
+        if (pts >= 100) {
+          setShowConfetti(true);
+          setTimeout(() => setShowConfetti(false), 1800);
+        }
+      } else if (correct === false) {
+        playSound("wrong");
+      }
     };
 
     const handleEnded = () => {
-      playSound(cheerSoundRef);
+      playSound("cheer");
       setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 7000);
+      setTimeout(() => setShowConfetti(false), 8000);
     };
 
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
     socket.on("teamJoined", handleTeamJoined);
     socket.on("team:joined", handleTeamJoined);
-    socket.on("score:updated", handleScoreUpdate);
-    socket.on("score:wrong", handleWrong);
+    socket.on("taskSubmission", handleTaskSubmission);
     socket.on("session-ended", handleEnded);
 
     socket.emit("room:request-state", { roomCode: code });
@@ -247,11 +346,10 @@ export default function HostView({ roomCode: roomCodeProp }) {
       socket.off("room:state", handleRoom);
       socket.off("teamJoined", handleTeamJoined);
       socket.off("team:joined", handleTeamJoined);
-      socket.off("score:updated", handleScoreUpdate);
-      socket.off("score:wrong", handleWrong);
+      socket.off("taskSubmission", handleTaskSubmission);
       socket.off("session-ended", handleEnded);
     };
-  }, [roomCode, soundEnabled]);
+  }, [roomCode, playSound, addScorePopup]);
 
   const codeUpper = useMemo(
     () => String(roomCode || "").toUpperCase().trim(),
@@ -266,8 +364,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
   const leaderboard = useMemo(() => {
     const teamsObj = roomState.teams || {};
     const scoresObj = roomState.scores || {};
-
-    const rows = Object.values(teamsObj)
+    return Object.values(teamsObj)
       .map((t) => ({
         teamId: t.id || t.teamId || t._id,
         name: t.teamName || t.name || "Team",
@@ -276,18 +373,19 @@ export default function HostView({ roomCode: roomCodeProp }) {
       }))
       .filter((r) => !!r.teamId)
       .sort((a, b) => b.pts - a.pts);
-
-    return rows;
   }, [roomState.teams, roomState.scores, latestPhotos]);
 
   const topThree = useMemo(() => leaderboard.slice(0, 3), [leaderboard]);
+  const displayOrder = [1, 0, 2]; // 2nd, 1st, 3rd for podium
 
-  // Display order: [2nd, 1st, 3rd] for podium vibe
-  const displayOrder = [1, 0, 2];
+  // Task progress
+  const taskIndex = roomState.taskIndex;
+  const totalTasks = roomState.totalTasks || 0;
+  const hasProgress = totalTasks > 0 && taskIndex >= 0;
+  const progressPct = hasProgress ? Math.min(100, ((taskIndex + 1) / totalTasks) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-600 via-purple-700 to-cyan-600 text-white relative overflow-hidden">
-      {/* Vibrant backdrop (Option A) */}
       <AuroraBackdrop />
 
       {/* Confetti */}
@@ -296,10 +394,37 @@ export default function HostView({ roomCode: roomCodeProp }) {
           width={dimensions.width || window.innerWidth}
           height={dimensions.height || window.innerHeight}
           recycle={false}
-          numberOfPieces={320}
-          gravity={0.14}
+          numberOfPieces={400}
+          gravity={0.12}
         />
       )}
+
+      {/* Live score pop-ups — top right */}
+      <div
+        style={{
+          position: "fixed",
+          top: 80,
+          right: 24,
+          zIndex: 100,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          alignItems: "flex-end",
+        }}
+      >
+        <AnimatePresence>
+          {scorePopups.map((p) => (
+            <ScorePopup
+              key={p.id}
+              id={p.id}
+              teamName={p.teamName}
+              points={p.points}
+              speedBonus={p.speedBonus}
+              correct={p.correct}
+            />
+          ))}
+        </AnimatePresence>
+      </div>
 
       <div className="max-w-7xl mx-auto p-8 relative z-10">
         {/* Sound toggle */}
@@ -319,8 +444,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
         </div>
 
         {/* Header: Room Code + play.curriculate.net */}
-        <div className="text-center mb-8 select-none">
-          {/* Title glow "halo" */}
+        <div className="text-center mb-6 select-none">
           <motion.div
             aria-hidden="true"
             className="mx-auto mb-3 h-10 w-[520px] max-w-[90vw] rounded-full blur-2xl opacity-40 bg-white"
@@ -338,13 +462,35 @@ export default function HostView({ roomCode: roomCodeProp }) {
             className="font-black leading-none mb-2"
             style={{ fontSize: "clamp(3.5rem, 8vw, 6.6rem)" }}
           >
-            {codeUpper || "—"}
+            {codeUpper || "\u2014"}
           </div>
 
           <div className="text-xl md:text-2xl font-bold opacity-95 tracking-wide">
             play.curriculate.net
           </div>
 
+          {/* Task progress bar */}
+          {hasProgress && (
+            <div className="mt-4 max-w-xl mx-auto">
+              <div className="flex items-center justify-between text-sm font-bold opacity-90 mb-1">
+                <span className="flex items-center gap-1">
+                  <Zap className="w-4 h-4" />
+                  Task {taskIndex + 1} of {totalTasks}
+                </span>
+                <span>{Math.round(progressPct)}%</span>
+              </div>
+              <div className="w-full h-3 bg-black/30 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-green-400 via-emerald-400 to-cyan-400 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPct}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Tab buttons */}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button
               onClick={() => setActiveTab("leaderboard")}
@@ -378,7 +524,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
         {topThree.length > 0 && (
           <div className="flex items-end justify-center pb-8 gap-10 md:gap-16 mb-10">
             {displayOrder.map((idx, pos) => {
-              const row = topThree[idx] || { name: "—", pts: 0, teamId: `x${idx}` };
+              const row = topThree[idx] || { name: "\u2014", pts: 0, teamId: `x${idx}` };
               return (
                 <motion.div
                   key={row.teamId || idx}
@@ -392,7 +538,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
                   }}
                   className="flex flex-col items-center"
                 >
-                  <div className="text-7xl md:text-8xl mb-5">{trophyEmojis[idx] || "🏅"}</div>
+                  <div className="text-7xl md:text-8xl mb-5">{trophyEmojis[idx] || "\uD83C\uDFC5"}</div>
 
                   <div
                     className={`relative overflow-hidden w-72 md:w-80 rounded-t-3xl px-8 py-10 text-center text-white font-black shadow-2xl ring-1 ring-white/20 ${podiumColors[idx]}`}
@@ -413,7 +559,6 @@ export default function HostView({ roomCode: roomCodeProp }) {
                     <div className="text-4xl md:text-5xl mb-3">{idx + 1}</div>
 
                     <div className="text-2xl md:text-3xl truncate px-2 underline decoration-white/40">
-                      {/* NAME ONLY clickable for delete */}
                       <span
                         style={{ cursor: "pointer" }}
                         title="Delete/kick this team"
@@ -423,7 +568,9 @@ export default function HostView({ roomCode: roomCodeProp }) {
                       </span>
                     </div>
 
-                    <div className="text-5xl md:text-6xl mt-6">{row.pts} pts</div>
+                    <div className="text-5xl md:text-6xl mt-6">
+                      <AnimatedPts value={row.pts} /> pts
+                    </div>
                   </div>
 
                   <div
@@ -446,7 +593,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
 
               {leaderboard.length === 0 ? (
                 <div className="text-center text-2xl opacity-90 py-10">
-                  No scores yet.
+                  No scores yet. Waiting for teams to join...
                 </div>
               ) : (
                 <ol className="space-y-4 text-xl md:text-2xl">
@@ -460,9 +607,9 @@ export default function HostView({ roomCode: roomCodeProp }) {
                         exit={{ opacity: 0, x: -60 }}
                         transition={{ duration: 0.25 }}
                         className="group relative overflow-hidden bg-white/10 border border-white/20 rounded-2xl px-5 py-4 flex items-center shadow-lg hover:bg-white/15 hover:shadow-2xl hover:-translate-y-0.5 transition"
-                        style={{ cursor: "default" }} // safe for scroll
+                        style={{ cursor: "default" }}
                       >
-                        {/* Hover glow + subtle shimmer */}
+                        {/* Hover glow + shimmer */}
                         <div
                           aria-hidden="true"
                           className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-300"
@@ -487,7 +634,6 @@ export default function HostView({ roomCode: roomCodeProp }) {
                           {i + 1}.
                         </span>
 
-                        {/* Photo thumb if available */}
                         {row.thumb ? (
                           <img
                             src={row.thumb}
@@ -508,7 +654,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
                         </span>
 
                         <span className="font-black text-2xl md:text-3xl ml-4 relative">
-                          {row.pts} pts
+                          <AnimatedPts value={row.pts} /> pts
                         </span>
                       </motion.li>
                     ))}
@@ -559,10 +705,11 @@ export default function HostView({ roomCode: roomCodeProp }) {
                           >
                             {name}
                           </div>
-                          <div className="opacity-90">ID: {id}</div>
                         </div>
 
-                        <div className="font-black text-2xl">{pts} pts</div>
+                        <div className="font-black text-2xl">
+                          <AnimatedPts value={pts} /> pts
+                        </div>
                       </div>
                     );
                   })}
@@ -580,7 +727,6 @@ export default function HostView({ roomCode: roomCodeProp }) {
               <div className="opacity-90 mb-6">
                 This will remove the team from the room. (They can re-join if they scan again.)
               </div>
-
               <div className="flex items-center justify-end gap-3">
                 <button
                   onClick={closeDeleteTeamModal}

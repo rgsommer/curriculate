@@ -1,263 +1,134 @@
 // student-app/src/hooks/useSoundEffects.js
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useCallback } from "react";
+
+// ─────────────────────────────────────────────────────────────
+// All sounds are local (public/sounds/) — instant load, no
+// network dependency, and way more fun than generic Google SFX.
+// ─────────────────────────────────────────────────────────────
+const SFX = {
+  scanBeep:      "/sounds/scan-beep.mp3",    // QR scan accepted
+  taskArrival:   "/sounds/task-arrival.mp3",  // new task lands on screen
+  correct:       "/sounds/correct.mp3",       // got it right
+  wrong:         "/sounds/wrong.mp3",         // got it wrong
+  yay:           "/sounds/yay.mp3",           // celebration / treat / victory moment
+  treatChime:    "/sounds/treat-chime.mp3",   // random treat awarded
+  ding:          "/sounds/ding.mp3",          // subtle positive cue (echo, narration, reading, venn)
+  powerUp:       "/sounds/power-up.mp3",      // task-type launch cues (roleplay, fakeout, hunt, debate)
+  scanAlert:     "/sounds/scan-alert.mp3",    // scan waiting / alert
+  timerWarning:  "/sounds/timer-warning.mp3", // countdown warning beep
+};
 
 /**
- * Hook for managing sound effects throughout the app
- * Returns an object with all the tryPlay* functions
+ * Hook for managing sound effects throughout the app.
+ * Returns an object with all the tryPlay* functions.
  */
 export function useSoundEffects() {
-  // Audio refs
-  const sndAlert = useRef(null);
-  const sndTreat = useRef(null);
-  const sndEcho = useRef(null);
-  const sndNarration = useRef(null);
-  const sndScriptPlay = useRef(null);
-  const sndRolePlay = useRef(null);
-  const sndFakeOut = useRef(null);
-  const sndWordWeaver = useRef(null);
-  const sndDebate = useRef(null);
-  const sndCorrect = useRef(null);
-  const sndWrong = useRef(null);
-  const sndPhoto = useRef(null);
-  const sndSketch = useRef(null);
-  const sndVenn = useRef(null);
-  const sndHunt = useRef(null);
+  // One ref per logical sound so overlapping plays work correctly
+  const refs = useRef({});
 
-  // Audio setup
+  // Preload all local sound files on mount
   useEffect(() => {
     try {
-      const alertAudio = new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg");
-      alertAudio.volume = 0.15;
-      sndAlert.current = alertAudio;
-
-      const treatAudio = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
-      treatAudio.volume = 0.2;
-      sndTreat.current = treatAudio;
-
-      // EchoChain: subtle "chain" chime (non-blocking; safe to fail)
-      const echoAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
-      );
-      echoAudio.volume = 0.18;
-      sndEcho.current = echoAudio;
-
-      const narrationAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg"
-      );
-      narrationAudio.volume = 0.16;
-      sndNarration.current = narrationAudio;
-
-      // ScriptPlay: page-turn / stage cue (safe to fail)
-      const scriptAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/page_turn.ogg"
-      );
-      scriptAudio.volume = 0.16;
-      sndScriptPlay.current = scriptAudio;
-
-      // RolePlayDeck: "card draw" / gentle reveal cue (safe to fail)
-      const rolePlayAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/card_shuffle.ogg"
-      );
-      rolePlayAudio.volume = 0.16;
-      sndRolePlay.current = rolePlayAudio;
-
-      // Universal feedback (correct / incorrect)
-      const correctAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
-      correctAudio.volume = 0.16;
-      sndCorrect.current = correctAudio;
-
-      const wrongAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/boing.ogg"
-      );
-      wrongAudio.volume = 0.14;
-      sndWrong.current = wrongAudio;
-
-      // Photo / PhotoJournal / HideNSeek: camera shutter cue (safe to fail)
-      const photoAudio = new Audio(
-        "https://actions.google.com/sounds/v1/camera/camera_shutter_click_01.ogg"
-      );
-      photoAudio.volume = 0.18;
-      sndPhoto.current = photoAudio;
-
-      // SpeedDraw / DrawMime: marker cue (safe to fail)
-      const sketchAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/marker_write.ogg"
-      );
-      sketchAudio.volume = 0.14;
-      sndSketch.current = sketchAudio;
-
-      // VennSort: soft "drop" cue (safe to fail)
-      const vennAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      vennAudio.volume = 0.12;
-      sndVenn.current = vennAudio;
-
-      // HideNSeek: little "whoosh" cue (safe to fail)
-      const huntAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum_hit.ogg"
-      );
-      huntAudio.volume = 0.12;
-      sndHunt.current = huntAudio;
+      for (const [key, src] of Object.entries(SFX)) {
+        const audio = new Audio(src);
+        audio.preload = "auto";
+        // Keep volumes moderate — classroom setting
+        audio.volume = key === "yay" ? 0.25 : key === "wrong" ? 0.15 : 0.2;
+        refs.current[key] = audio;
+      }
     } catch (err) {
       console.warn("Could not preload audio:", err);
     }
+  }, []);
 
-    // FakeOut: playful "gotcha" cue (separate try so one failure doesn't block others)
+  // Helper: safely play a sound, restarting if already playing
+  const play = useCallback((key) => {
     try {
-      const fakeOutAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
-      fakeOutAudio.volume = 0.14;
-      sndFakeOut.current = fakeOutAudio;
-
-      // WordWeaver: subtle "tile tap" cue
-      const wordWeaverAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      wordWeaverAudio.volume = 0.14;
-      sndWordWeaver.current = wordWeaverAudio;
-
-      // AI Debate Judge: gavel cue
-      const debateAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      debateAudio.volume = 0.18;
-      sndDebate.current = debateAudio;
+      const audio = refs.current[key];
+      if (!audio) return;
+      // If the same sound is already playing, rewind so it fires again instantly
+      if (!audio.paused) {
+        audio.currentTime = 0;
+      }
+      audio.play().catch(() => {});
     } catch {
-      // ignore
+      // autoplay may be blocked on first interaction — safe to ignore
     }
   }, []);
 
-  // Helper function to safely play a sound
-  const tryPlaySound = (ref, soundName) => {
-    try {
-      ref.current && ref.current.play();
-    } catch (err) {
-      console.warn(`${soundName} sound play blocked:`, err);
-    }
-  };
+  // ── Play functions (stable references via useCallback) ─────
 
-  // Play functions
-  const tryPlayAlertSound = () => {
-    tryPlaySound(sndAlert, "Alert");
-  };
+  // Station scan accepted (was: alarm_clock.ogg — the culprit behind 5 beeps!)
+  const tryPlayAlertSound = useCallback(() => play("scanBeep"), [play]);
 
-  const tryPlayTreatSound = () => {
-    tryPlaySound(sndTreat, "Treat");
-  };
+  // Treat awarded
+  const tryPlayTreatSound = useCallback(() => play("treatChime"), [play]);
 
-  const tryPlayEchoSound = () => {
-    tryPlaySound(sndEcho, "EchoChain");
-  };
+  // EchoChain launch
+  const tryPlayEchoSound = useCallback(() => play("ding"), [play]);
 
-  const tryPlayCorrectSound = () => {
-    try {
-      sndCorrect.current && sndCorrect.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // Correct answer
+  const tryPlayCorrectSound = useCallback(() => play("correct"), [play]);
 
-  const tryPlayWrongSound = () => {
-    try {
-      sndWrong.current && sndWrong.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // Wrong answer
+  const tryPlayWrongSound = useCallback(() => play("wrong"), [play]);
 
-  const tryPlayNarrationSound = () => {
-    tryPlaySound(sndNarration, "Narration");
-  };
+  // Narration / StoryBuilder launch
+  const tryPlayNarrationSound = useCallback(() => play("ding"), [play]);
 
-  const tryPlayScriptPlaySound = () => {
-    tryPlaySound(sndScriptPlay, "ScriptPlay");
-  };
+  // ScriptPlay launch
+  const tryPlayScriptPlaySound = useCallback(() => play("ding"), [play]);
 
-  // ReadingComp: page-turn cue (reuse ScriptPlay chime)
-  const tryPlayReadingSound = () => {
-    try {
-      // Prefer dedicated reading sound if later added; for now reuse ScriptPlay
-      sndScriptPlay.current && sndScriptPlay.current.play();
-    } catch (err) {
-      // autoplay may be blocked
-    }
-  };
+  // ReadingComp launch
+  const tryPlayReadingSound = useCallback(() => play("ding"), [play]);
 
-  const tryPlayRolePlaySound = () => {
-    tryPlaySound(sndRolePlay, "RolePlay");
-  };
+  // RolePlayDeck launch
+  const tryPlayRolePlaySound = useCallback(() => play("powerUp"), [play]);
 
-  const tryPlayFakeOutSound = () => {
-    tryPlaySound(sndFakeOut, "FakeOut");
-  };
+  // FakeOut launch
+  const tryPlayFakeOutSound = useCallback(() => play("powerUp"), [play]);
 
-  const tryPlayWordWeaverSound = () => {
-    try {
-      sndWordWeaver.current && sndWordWeaver.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // WordWeaver launch
+  const tryPlayWordWeaverSound = useCallback(() => play("ding"), [play]);
 
-  const tryPlayDebateSound = () => {
-    try {
-      sndDebate.current && sndDebate.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // AI Debate Judge launch
+  const tryPlayDebateSound = useCallback(() => play("powerUp"), [play]);
 
-  const tryPlayPhotoSound = () => {
-    try {
-      sndPhoto.current && sndPhoto.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // Photo / PhotoJournal launch
+  const tryPlayPhotoSound = useCallback(() => play("ding"), [play]);
 
-  const tryPlaySketchSound = () => {
-    try {
-      sndSketch.current && sndSketch.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // SpeedDraw / DrawMime launch
+  const tryPlaySketchSound = useCallback(() => play("ding"), [play]);
 
-  const tryPlayVennSound = () => {
-    try {
-      sndVenn.current && sndVenn.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // VennSort launch
+  const tryPlayVennSound = useCallback(() => play("ding"), [play]);
 
-  const tryPlayHuntSound = () => {
-    try {
-      sndHunt.current && sndHunt.current.play();
-    } catch {
-      // ignore
-    }
-  };
+  // HideNSeek launch
+  const tryPlayHuntSound = useCallback(() => play("powerUp"), [play]);
+
+  // ── Bonus: new sounds not in original hook ──
+
+  // Big celebration (task complete, victory)
+  const tryPlayYaySound = useCallback(() => play("yay"), [play]);
+
+  // Task arrival
+  const tryPlayTaskArrivalSound = useCallback(() => play("taskArrival"), [play]);
+
+  // Timer warning
+  const tryPlayTimerWarningSound = useCallback(() => play("timerWarning"), [play]);
 
   // Setup global window functions for external access
   useEffect(() => {
-    window.__curriculatePlayWrongSound = () => {
-      tryPlayWrongSound();
-    };
-
-    window.__curriculatePlayCorrectSound = () => {
-      tryPlayCorrectSound();
-    };
+    window.__curriculatePlayWrongSound = () => play("wrong");
+    window.__curriculatePlayCorrectSound = () => play("correct");
+    window.__curriculatePlayYaySound = () => play("yay");
 
     return () => {
       delete window.__curriculatePlayWrongSound;
       delete window.__curriculatePlayCorrectSound;
+      delete window.__curriculatePlayYaySound;
     };
-  }, []);
+  }, [play]);
 
   return {
     tryPlayAlertSound,
@@ -276,5 +147,9 @@ export function useSoundEffects() {
     tryPlaySketchSound,
     tryPlayVennSound,
     tryPlayHuntSound,
+    // New sounds
+    tryPlayYaySound,
+    tryPlayTaskArrivalSound,
+    tryPlayTimerWarningSound,
   };
 }

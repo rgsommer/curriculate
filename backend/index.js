@@ -2907,7 +2907,7 @@ socket.on("station:scan", handleStationScan);
 
   const meta = TASK_TYPE_META?.[task.taskType] || {};
   const isObjective = meta.objectiveScoring === true;
-  const basePoints = task.points ?? 10;
+  const basePoints = task.points ?? 100;
 
   // Detect multi-question pack answers from TaskRunner
   const isMultiPack =
@@ -3596,7 +3596,28 @@ if (!isMultiPack && task.taskType === "guess-who") {
     // If we're in the multi-pack path, we still need a timestamp
     const submittedAt =
       typeof submittedAtNonMulti === "number" ? submittedAtNonMulti : Date.now();
-      
+
+    // ── SPEED BONUS ──────────────────────────────────────────────────
+    // Reward fast answers: up to +50% of basePoints for answering quickly.
+    // Full bonus if answered in ≤ 5 s, scales to zero at 60 s, nothing after.
+    // Only applies when the answer earned points (correct or partial credit).
+    let speedBonus = 0;
+    const elapsedMs = typeof timeMs === "number" && timeMs > 0 ? timeMs : null;
+    if (pointsEarned > 0 && elapsedMs != null) {
+      const elapsedSec = elapsedMs / 1000;
+      const FAST_THRESHOLD  = 5;   // seconds — full bonus at or below
+      const SLOW_THRESHOLD  = 60;  // seconds — no bonus at or above
+      const MAX_SPEED_BONUS = Math.round(basePoints * 0.5); // up to +50%
+
+      if (elapsedSec <= FAST_THRESHOLD) {
+        speedBonus = MAX_SPEED_BONUS;
+      } else if (elapsedSec < SLOW_THRESHOLD) {
+        const fraction = 1 - (elapsedSec - FAST_THRESHOLD) / (SLOW_THRESHOLD - FAST_THRESHOLD);
+        speedBonus = Math.round(MAX_SPEED_BONUS * fraction);
+      }
+      pointsEarned += speedBonus;
+    }
+
     // ==== Diff Detective race mechanics (first correct team wins bonus) ====
     if (
       task.taskType === "diff-detective" &&
@@ -3677,7 +3698,8 @@ if (!isMultiPack && task.taskType === "guess-who") {
           taskIndex: idx,
           correct,
           points: pointsEarned,
-          maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 10,
+          maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 100,
+          speedBonus: speedBonus || 0,
           aiScore,
           review,
         });
@@ -3794,6 +3816,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
       answerText,
       correct,
       points: pointsEarned,
+      speedBonus: speedBonus || 0,
       timeMs: timeMs ?? null,
       submittedAt,
       aiScore, // <-- carries multi-pack or AI info, including PhotoJournal feedback
@@ -3814,7 +3837,8 @@ if (!isMultiPack && task.taskType === "guess-who") {
         taskIndex: idx,
         correct,
         points: pointsEarned,
-        maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 10,
+        speedBonus: speedBonus || 0,
+        maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 100,
         aiScore,
         review,
         nextStationId: nextStationNorm?.id || nextStation,

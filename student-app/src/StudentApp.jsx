@@ -12,6 +12,7 @@ import MultiPlayerFeedbackTask from "./components/tasks/types/MultiPlayerFeedbac
 import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
+import AnimatedScore from "./components/ui/AnimatedScore.jsx";
 
 // Utilities
 import {
@@ -243,6 +244,9 @@ function StudentApp() {
     tryPlaySketchSound,
     tryPlayVennSound,
     tryPlayHuntSound,
+    tryPlayYaySound,
+    tryPlayTaskArrivalSound,
+    tryPlayTimerWarningSound,
   } = useSoundEffects();
 
   const [audioContext, setAudioContext] = useState(null);
@@ -603,6 +607,9 @@ function StudentApp() {
           : (assignedIsPhysicalMC || assignedIsMadDash);
       setScannerActive(assignedNeedsScanner);
 
+      // Play task arrival sound for every new task
+      tryPlayTaskArrivalSound();
+
       if (assignedIsMadDash) {
         // tryPlayAlertSound();
         setTreatMessage("🏁 Mad Dash — watch the sequence, then scan the colors IN ORDER as fast as you can!");
@@ -845,6 +852,15 @@ function StudentApp() {
         if (gotBonus || delta >= (typeof maxPoints === "number" ? maxPoints : basePoints)) {
           setShowConfetti(true);
           setTimeout(() => setShowConfetti(false), 1400);
+        }
+      } else if (typeof scoreDelta === "number" && delta > 0) {
+        toastMsg = `+${delta} pts`;
+        if (aiFeedback) toastMsg += ` — ${aiFeedback}`;
+        toastPositive = true;
+        // Big score celebration
+        if (delta >= 80) {
+          setShowConfetti(true);
+          setTimeout(() => setShowConfetti(false), 2000);
         }
       } else if (aiFeedback) {
         toastMsg = aiFeedback;
@@ -1875,6 +1891,9 @@ function StudentApp() {
               ? Number(response.postSubmitSeconds)
               : DEFAULT_POST_SUBMIT_SECONDS);
 
+          const earnedPts = typeof response?.points === "number" ? response.points : 0;
+          const spdBonus = typeof response?.speedBonus === "number" ? response.speedBonus : 0;
+
           setReviewState({
             ...reviewObj,
             correct: typeof response?.correct === "boolean" ? response.correct : undefined,
@@ -1882,13 +1901,27 @@ function StudentApp() {
               typeof response?.accepted === "boolean"
                 ? response.accepted
                 : (typeof response?.correct === "boolean" ? response.correct : undefined),
-            points: typeof response?.points === "number" ? response.points : undefined,
+            points: earnedPts,
+            speedBonus: spdBonus,
             studentAnswer: normalizedAnswer,
             taskId: payload.taskId,
             taskIndex: payload.taskIndex,
             secondsLeft: fallbackSeconds,
             isCatchingUp: isCatchingUp,
           });
+
+          // Celebration: confetti + yay sound for big scores
+          if (earnedPts >= 80) {
+            tryPlayYaySound();
+            setShowConfetti(true);
+            setTimeout(() => setShowConfetti(false), 2000);
+          } else if (accepted) {
+            tryPlayCorrectSound();
+          } else if (earnedPts > 0) {
+            tryPlayCorrectSound();
+          } else {
+            tryPlayWrongSound();
+          }
 
           setPostSubmitSecondsLeft(fallbackSeconds);
 
@@ -3244,7 +3277,7 @@ function StudentApp() {
               <span role="img" aria-label="sparkles">
                 ✨
               </span>
-              <span>{scoreTotal} pts</span>
+              <AnimatedScore value={scoreTotal} />
             </span>
           </div>
         </div>
@@ -3810,7 +3843,7 @@ function StudentApp() {
     </div>
 
     <div style={{ fontSize: "1.15rem", fontWeight: 800, marginBottom: 14 }}>
-      Your Team: {teamName || "Team"} — {typeof scoreTotal === "number" ? scoreTotal : 0} pts
+      Your Team: {teamName || "Team"} — <AnimatedScore value={typeof scoreTotal === "number" ? scoreTotal : 0} />
     </div>
 
     <AnimatedLeaderboard
@@ -4769,7 +4802,30 @@ function StudentApp() {
 
     {/* POINT TOAST */}
     {pointToast && (
-      <div className={`toast ${pointToast.positive ? "" : "negative"}`}>
+      <div
+        className={`toast ${pointToast.positive ? "" : "negative"}`}
+        style={{
+          position: "fixed",
+          top: 24,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9999,
+          padding: "10px 22px",
+          borderRadius: 14,
+          fontWeight: 800,
+          fontSize: pointToast.positive ? "1.3rem" : "1rem",
+          color: "#fff",
+          background: pointToast.positive
+            ? "linear-gradient(135deg, #10b981, #059669)"
+            : "linear-gradient(135deg, #ef4444, #dc2626)",
+          boxShadow: pointToast.positive
+            ? "0 4px 20px rgba(16,185,129,0.4)"
+            : "0 4px 20px rgba(239,68,68,0.4)",
+          animation: "toastSlideIn 0.3s ease-out",
+          textAlign: "center",
+          minWidth: 120,
+        }}
+      >
         {pointToast.message}
       </div>
     )}
