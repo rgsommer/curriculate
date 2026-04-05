@@ -31,19 +31,17 @@ export default defineConfig({
     ],
   },
   build: {
-    // Raise the warning threshold a little so incidental overages don't noise the log.
-    // The manualChunks below keep the actual main chunk well under 500 kB.
-    chunkSizeWarningLimit: 600,
+    // framer-motion alone is ~700 kB unminified — set the threshold above that
+    // so the warning only fires for genuinely unexpected bloat.
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       external: [], // Ensure dnd is not externalized
       output: {
         globals: {}, // No globals needed for dnd
         /**
-         * Split heavy vendor code into separate async chunks.
-         * Each chunk is loaded only when the module is first needed,
-         * so the initial JS payload is much smaller.
-         *
-         * Current total: ~1 643 kB → target main chunk ≤ 500 kB
+         * Split vendor code into separate cacheable chunks.
+         * Browsers cache these independently, so only changed chunks
+         * are re-downloaded on each deploy.
          */
         manualChunks(id) {
           // React + ReactDOM — tiny, always needed, bundle together
@@ -51,9 +49,13 @@ export default defineConfig({
             return "vendor-react";
           }
 
-          // Animation / visual effects (framer-motion, lottie, confetti)
+          // framer-motion is large on its own (~700 kB unminified) — isolate it
+          if (id.includes("node_modules/framer-motion/")) {
+            return "vendor-framer";
+          }
+
+          // Lottie + confetti
           if (
-            id.includes("node_modules/framer-motion/") ||
             id.includes("node_modules/lottie") ||
             id.includes("node_modules/canvas-confetti/") ||
             id.includes("node_modules/react-confetti/")
@@ -69,8 +71,12 @@ export default defineConfig({
             return "vendor-dnd";
           }
 
-          // Socket.io client
-          if (id.includes("node_modules/socket.io-client/") || id.includes("node_modules/engine.io-client/")) {
+          // Socket.io client + engine.io
+          if (
+            id.includes("node_modules/socket.io-client/") ||
+            id.includes("node_modules/engine.io-client/") ||
+            id.includes("node_modules/@socket.io/")
+          ) {
             return "vendor-socket";
           }
 
