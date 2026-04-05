@@ -590,9 +590,14 @@ useEffect(() => {
 
   const ensureRoom = () => {
     try {
+      const sharedFromTeacherId = localStorage.getItem("curriculateSharedFromTeacherId");
+      const sharedFromTeacherEmail = localStorage.getItem("curriculateSharedFromTeacherEmail");
+
       socket.emit("teacher:createRoom", {
         roomCode: code,
         teacherInstanceId: teacherInstanceIdRef.current,
+        ...(sharedFromTeacherId && { sharedFromTeacherId }),
+        ...(sharedFromTeacherEmail && { sharedFromTeacherEmail }),
       });
       setStatus("Connected.");
     } catch (err) {

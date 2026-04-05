@@ -4,6 +4,7 @@ import Stripe from "stripe";
 import mongoose from "mongoose";
 import User from "../models/User.js"; // ← adjust path if needed
 import { authAny } from "../middleware/authAny.js";
+import { getPriceIdForTier, validatePriceId } from "../config/stripePrices.js";
 
 const router = express.Router();
 let _stripe = null;
@@ -27,12 +28,39 @@ const isHex24 = (s) => typeof s === "string" && /^[a-fA-F0-9]{24}$/.test(s);
 
 router.post("/create-checkout-session", async (req, res) => {
   try {
-    const { priceId, plan, email: rawEmail } = req.body || {};
+    const { priceId: clientPriceId, plan, email: rawEmail } = req.body || {};
 
-    if (!priceId) return res.status(400).json({ error: "Missing priceId" });
+    // Bug 5: Accept plan tier and resolve price ID server-side
+    // Support both legacy priceId (for backwards compat) and plan tier name
+    let priceId = clientPriceId;
+    let resolvedPlan = plan;
+
+    if (!priceId && plan && !plan.endsWith("_TRIAL")) {
+      // If no priceId but plan tier provided, resolve it server-side
+      priceId = getPriceIdForTier(plan);
+      if (!priceId) {
+        return res.status(400).json({ error: `Invalid plan tier: ${plan}` });
+      }
+    } else if (!priceId && plan && plan.endsWith("_TRIAL")) {
+      // Trial plan: extract base tier and resolve
+      const baseTier = plan.replace("_TRIAL", "");
+      priceId = getPriceIdForTier(baseTier);
+      if (!priceId) {
+        return res.status(400).json({ error: `Invalid plan tier: ${baseTier}` });
+      }
+    }
+
+    if (!priceId) {
+      return res.status(400).json({ error: "Missing priceId or valid plan tier" });
+    }
+
+    // Validate price ID exists in our config
+    if (!validatePriceId(priceId)) {
+      return res.status(400).json({ error: "Invalid or unknown Stripe price ID" });
+    }
 
     // Optional: trial support via plan token (e.g., "TEACHER_PRO_TRIAL")
-    const isTrial = typeof plan === "string" && plan.endsWith("_TRIAL");
+    const isTrial = typeof resolvedPlan === "string" && resolvedPlan.endsWith("_TRIAL");
     const trialDays = Number(process.env.TRIAL_DAYS || 30);
 
     const email = (rawEmail || "").trim().toLowerCase();
@@ -40,30 +68,30 @@ router.post("/create-checkout-session", async (req, res) => {
     // 1) Resolve user (logged-in OR email fallback)
     let user = req.user || null;
 
-    const db = await getMongo();
-    const users = db.collection("users");
-
     if (!user) {
       if (!email) return res.status(401).json({ error: "Not authenticated" });
 
-      const up = await users.findOneAndUpdate(
+      user = await User.findOneAndUpdate(
         { email },
         {
           $setOnInsert: {
             email,
             createdAt: new Date(),
-            plan: "FREE",
+            subscriptionTier: "FREE",
             hasUsedTrial: false,
           },
           $set: { updatedAt: new Date() },
         },
-        { upsert: true, returnDocument: "after" }
+        { upsert: true, new: true }
       );
-
-      user = up.value || null;
     }
 
     if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+    // 1.5) Check trial eligibility (Bug 1: enforce hasUsedTrial before checkout)
+    if (isTrial && user.hasUsedTrial) {
+      return res.status(409).json({ error: "Free trial already used" });
+    }
 
     // 2) Ensure Stripe customer exists
     let stripeCustomerId = user.stripeCustomerId;
@@ -76,11 +104,8 @@ router.post("/create-checkout-session", async (req, res) => {
 
       stripeCustomerId = customer.id;
 
-      // Persist to DB (handle ObjectId vs string _id)
-      const id = user._id;
-      const q = isHex24(String(id)) ? { _id: new ObjectId(String(id)) } : { _id: id };
-
-      await users.updateOne(q, { $set: { stripeCustomerId, updatedAt: new Date() } });
+      // Persist to DB
+      await User.updateOne({ _id: user._id }, { $set: { stripeCustomerId, updatedAt: new Date() } });
 
       // keep local copy consistent
       user.stripeCustomerId = stripeCustomerId;
@@ -106,10 +131,32 @@ router.post("/create-checkout-session", async (req, res) => {
       },
     });
 
+    // 4) After successful checkout creation, mark trial as used (Bug 1: set hasUsedTrial)
+    if (isTrial) {
+      await User.updateOne({ _id: user._id }, { $set: { hasUsedTrial: true, updatedAt: new Date() } });
+    }
+
     return res.json({ url: session.url });
   } catch (e) {
     console.error("[stripe] create-checkout-session error:", e);
     return res.status(500).json({ error: e?.message || "Failed to create checkout session" });
+  }
+});
+
+// Bug 5: New endpoint for frontend to fetch current price IDs
+// Prevents hardcoding prices on frontend
+router.get("/prices", (req, res) => {
+  try {
+    const prices = {
+      TEACHER_PLUS_MONTHLY: process.env.STRIPE_PRICE_TEACHER_PLUS_MONTHLY || "price_1SjgbNLduAaZuYj5Y8h138iq",
+      TEACHER_PRO_MONTHLY: process.env.STRIPE_PRICE_TEACHER_PRO_MONTHLY || "price_1SjganLduAaZuYj5e0YozeDy",
+      SCHOOL_PLUS_YEARLY: process.env.STRIPE_PRICE_SCHOOL_PLUS_YEARLY || "price_1SjgbuLduAaZuYj5qy8o6OSR",
+      SCHOOL_PRO_YEARLY: process.env.STRIPE_PRICE_SCHOOL_PRO_YEARLY || "price_1SjgcTLduAaZuYj5LlaHf5M9",
+    };
+    res.json(prices);
+  } catch (e) {
+    console.error("[stripe] /prices error:", e);
+    res.status(500).json({ error: "Failed to fetch prices" });
   }
 });
 

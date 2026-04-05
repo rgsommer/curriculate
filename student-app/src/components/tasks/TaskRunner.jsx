@@ -53,7 +53,15 @@ import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";
 
 import ScriptPlayTask from "./types/ScriptPlayTask";
 import RolePlayDeckTask from "./types/RolePlayDeckTask";
+import PaperModeCamera from "./PaperModeCamera.jsx";
 
+
+// Task types eligible for paper mode (text-heavy tasks that can be done on paper)
+const PAPER_MODE_ELIGIBLE = new Set([
+  "short-answer",
+  "open-text",
+  "reading-comp",
+]);
 
 // Task-level error boundary: prevents a single task crash from blanking the entire screen
 class TaskErrorBoundary extends React.Component {
@@ -1997,6 +2005,16 @@ export default function TaskRunner({
   }
 
   let content = null;
+
+  // Paper mode: if teacher has minimizeOnScreen enabled, replace text-heavy tasks with camera
+  const paperModeEnabled = !!task?.minimizeOnScreen || !!task?.config?.minimizeOnScreen;
+  if (paperModeEnabled && PAPER_MODE_ELIGIBLE.has(task?.taskType)) {
+    return (
+      <TaskErrorBoundary title="Paper mode crashed">
+        <PaperModeCamera task={task} onSubmit={onSubmit} disabled={disabled} />
+      </TaskErrorBoundary>
+    );
+  }
 
   switch (type) {
     case TASK_TYPES.MOOD_CHECKIN:

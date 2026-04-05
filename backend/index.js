@@ -74,6 +74,11 @@ import speechRouter from "./routes/speech.js";
 import teacherProfileRouter from "./routes/teacherProfileRoutes.js";
 import voiceRouter from "./routes/voice.js";
 
+// 11) Extracted modules for room engine, game handlers, and routes
+import { createRoomEngine } from "./socket/roomEngine.js";
+import { registerGameHandlers } from "./socket/gameHandlers.js";
+import profileInlineRouter from "./routes/profileInline.js";
+import adminCrudRouter from "./routes/adminCrud.js";
 
 function renderEmailTemplate(str, vars) {
   let out = String(str || "");
@@ -388,18 +393,6 @@ app.use("/results", resultsRoutes);
 
 app.use("/feedback", feedbackRouter);
 
-// Admin gate (server-side)
-const adminRequired = [
-  authRequired,
-  (req, res, next) => {
-    const u = req.user || {};
-    const roles = Array.isArray(u.roles) ? u.roles : [];
-    const ok = u.isAdmin === true || u.role === "admin" || u.userType === "admin" || roles.includes("admin");
-    if (!ok) return res.status(403).json({ ok: false, error: "Admin only." });
-    next();
-  },
-];
-
 app.get("/api/version", (req, res) => {
   res.json({ ok: true, version: "ACCESS-CODE-BUILD-2025-12-31b" });
 });
@@ -508,8 +501,6 @@ async function maybeSendReferralReward({ senderUserId, senderEmail, senderName }
 function getSessionByRoomCode(code) {
   return rooms[code.toUpperCase()];
 }
-
-const POST_SUBMIT_SECONDS = Number(process.env.POST_SUBMIT_SECONDS || 10);
 
 // ------------------------------
 // S3 Media Upload (Presigned URLs)
@@ -685,1459 +676,114 @@ mongoose
   });
 
 // ====================================================================
-//  ROOM ENGINE (In-Memory)
+//  ROOM ENGINE (imported from socket/roomEngine.js)
 // ====================================================================
-const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
+const engine = createRoomEngine(io);
+const {
+  rooms,
+  normalizeTeacherInstanceId,
+  pruneTeacherRoomsByInstance,
+  shuffle,
+  createRoom,
+  reassignStations,
+  reassignStationForTeam,
+  buildTranscript,
+  computePerParticipantStats,
+  buildRoomState,
+  sendTaskToTeam,
+  scheduleNextTask,
+  cancelScheduledNextTask,
+  advanceTaskNow,
+  ensureTreatsConfig,
+  isMultiRoomRoom,
+  normalizeSlug,
+  displayRoomLabel,
+  formatGoTo,
+  maybeAwardTreat,
+  ensureNoiseControl,
+  updateNoiseDerivedState,
+  arraysDeepEqual,
+  scoreMatchingTask,
+  scoreVennSortTask,
+  _fcNormalizeAnswer,
+  _fcCardMatchesAnswer,
+  _fcGetDeckFromTask,
+  _fcGetSecondsPerCardFromTask,
+  _fcGetPointsFromTask,
+  _fcRecordWinSubmission,
+  _fcRecordSummarySubmission,
+  _fcFinalizeRace,
+  _fcClearTimer,
+  _fcBroadcastState,
+  _fcAdvanceCard,
+  _fcEnsureRaceState,
+  OFFLINE_TIMEOUT_MS,
+  NEXT_TASK_DELAY_MS,
+  POST_SUBMIT_SECONDS,
+  keepAliveInterval,
+} = engine;
 
-// Teacher instance pruning: ensures each LiveSession instance owns only ONE room.
-// Uses a stable teacherInstanceId (sent by LiveSession), so refresh/reconnect doesn't leak rooms.
-function normalizeTeacherInstanceId(raw, socketIdFallback) {
-  const v = typeof raw === "string" ? raw.trim() : "";
-  return v ? v : `socket:${socketIdFallback}`;
-}
 
-function pruneTeacherRoomsByInstance(teacherInstanceId, keepCode = null) {
-  const keep = keepCode ? String(keepCode).toUpperCase() : null;
-
-  for (const [code, room] of Object.entries(rooms)) {
-    if (!room) continue;
-    if (room.teacherInstanceId !== teacherInstanceId) continue;
-    if (keep && code === keep) continue;
-
-    // notify and boot everyone, then delete
-    try {
-      io.to(code).emit("room:closed", { roomCode: code });
-    } catch {}
-    try {
-      io.in(code).socketsLeave(code);
-    } catch {}
-    delete rooms[code];
-
-    console.log(`[ROOM] pruned old room ${code} for teacherInstanceId=${teacherInstanceId}`);
-  }
-}
-
-const OFFLINE_TIMEOUT_MS = 1000 * 60 * 30; // 30 minutes
-
-// Keep-alive server interval that broadcasts available rooms every ~5–10 seconds
-setInterval(() => {
-  const now = Date.now();
-  const available = Object.values(rooms)
-    // A room is "available" if the teacher heartbeat is still fresh.
-    // We also keep ACTIVE rooms visible for late joiners even after launch.
-    .filter((r) => {
-      if (!r) return false;
-      const alive = r.expiresAt == null || r.expiresAt > now;
-      if (!alive) return false;
-      return !!(r.teacherSocketId || r.isActive || r.taskset);
-    })
-    .map((r) => ({
-      roomCode: r.code,
-      locationCode: r.locationCode || "Classroom",
-      isActive: !!r.isActive,
-      startedAt: r.startedAt || null,
-      teamCount: Object.keys(r.teams || {}).length,
-      lastTeacherSeenAt: r.lastTeacherSeenAt || null,
-    }));
-
-  io.emit("rooms:available", available);
-}, 20000);
-
-function shuffle(array) {
-  const a = [...array];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-async function createRoom(roomCode, teacherSocketId, locationCode = "Classroom") {
-  const stations = {};
-  const NUM_STATIONS = 8;
-  const shuffledColors = shuffle(COLORS);
-    for (let i = 1; i <= NUM_STATIONS; i++) {
-      const id = `station-${i}`;
-      stations[id] = {
-        id,
-        assignedTeamId: null,
-        color: shuffledColors[i - 1] || null,
-      };
-    }
-  
-  const room = {
-    code: roomCode,
-    teacherSocketId,
-    createdAt: Date.now(),
-    // Heartbeat/availability
-    lastTeacherSeenAt: Date.now(),
-    expiresAt: Date.now() + 1000 * 60 * 60, // 1 hour rolling expiry
-    teams: {},
-    stations,
-    taskset: null,
-    taskIndex: -1,
-    submissions: [],
-    startedAt: null,
-    isActive: false,
-    locationCode, // e.g. "Classroom"
-
-    // Random-treats state
-    treatsConfig: {
-      enabled: true,
-      total: 4,
-      given: 0,
-    },
-    pendingTreats: {}, // teamId -> true
-
-    // Noise-control state
-    noiseControl: {
-      enabled: false,
-      threshold: 0, // 0–100; 0 ⇒ off
-    },
-    noiseLevel: 0, // smoothed noise measure (0–100)
-    noiseBrightness: 1, // 1 = full bright, ~0.3 = dim
-    tasks: [], // legacy quick-task array (kept for future use)
-    currentTaskIndex: -1, // legacy
-    selectedRooms: null, // prevents crash in join-room
-
-    // ==== BRAINSTORM BATTLE STATE ====
-    // We keep a per-room object keyed by a "task key" so multiple
-    // brainstorm tasks in a set don't overwrite each other.
-    brainstormBattles: {
-      // [taskKey]: {
-      //   taskKey,
-      //   startedAt,
-      //   ideasByTeam: { [teamId]: string[] }
-      // }
-    },
-
-    // ==== MAD DASH SEQUENCE STATE ====
-    // Filled only when a mad-dash game is running
-    madDashSequence: null,
-    diffDetectiveRace: null,
-    flashcardsRace: null,
-    hangmanDuel: null, // Hangman Duel per-team sync state
-
-    // ==== GUESS WHO (YES/NO DEDUCTION) STATE ====
-    // Per-taskKey state; each team has its own timer/guess count.
-    // { [taskKey]: { taskKey, timeLimitSeconds, maxGuesses, startedAtByTeam: { [teamId]: ms }, guessesByTeam: { [teamId]: number }, revealedByTeam: { [teamId]: boolean } } }
-    guessWhoGames: {},
-  };
-
-  // Load existing teams from DB
-  const existingTeams = await TeamSession.find({ roomCode });
-  for (const t of existingTeams) {
-    const teamId = t._id.toString();
-    room.teams[teamId] = {
-      teamId,
-      teamName: t.teamName,
-      members: Array.isArray(t.members) ? t.members : [],
-      score: 0,
-      stationColor: null,
-      currentStationId: null,
-      taskIndex: -1,
-      status: t.status,
-      lastSeenAt: t.lastSeenAt,
-    };
-  }
-
-  return room;
-}
-
-// All-team rotation (kept for possible future use)
-function reassignStations(room) {
-  const stationIds = Object.keys(room.stations || {});
-  const teamIds = Object.keys(room.teams || {});
-  if (stationIds.length === 0 || teamIds.length === 0) return;
-
-  if (typeof room._stationRound !== "number") {
-    room._stationRound = 0;
-  }
-  room._stationRound += 1;
-
-  stationIds.forEach((id) => {
-    room.stations[id].assignedTeamId = null;
-  });
-
-  const sortedTeams = [...teamIds].sort();
-
-  sortedTeams.forEach((teamId, index) => {
-    const stationIdx = (index + room._stationRound) % stationIds.length;
-    const stationId = stationIds[stationIdx];
-
-    const team = room.teams[teamId];
-    if (!team) return;
-
-    team.currentStationId = stationId;
-    team.lastScannedStationId = null;
-    if (!room.stations[stationId]) {
-      room.stations[stationId] = { id: stationId, assignedTeamId: null };
-    }
-    room.stations[stationId].assignedTeamId = teamId;
-  });
-}
-
-// Reassign only a single team's station, ensuring uniqueness
-function reassignStationForTeam(room, teamId) {
-  const stationIds = Object.keys(room.stations || {});
-  if (stationIds.length === 0) return;
-
-  const team = room.teams?.[teamId];
-  if (!team) return;
-
-  const current = team.currentStationId || null;
-  const lastScanned = team.lastScannedStationId || null;
-
-  // Stations occupied by OTHER teams
-  const occupiedByOthers = new Set(
-    Object.entries(room.stations || {})
-      .filter(([id, s]) => s.assignedTeamId && s.assignedTeamId !== teamId)
-      .map(([id]) => id)
-  );
-
-  // Best candidates:
-  // - not current
-  // - not last scanned
-  // - not occupied by others
-  let candidates = stationIds.filter(
-    (id) =>
-      id !== current &&
-      id !== lastScanned &&
-      !occupiedByOthers.has(id)
-  );
-
-  // Fallback 1: allow lastScanned if needed, but still not current
-  if (candidates.length === 0) {
-    candidates = stationIds.filter(
-      (id) =>
-        id !== current &&
-        !occupiedByOthers.has(id)
-    );
-  }
-
-  // Fallback 2: anything except current
-  if (candidates.length === 0) {
-    candidates = stationIds.filter((id) => id !== current);
-  }
-
-  // Final fallback
-  const nextStationId =
-    candidates.length > 0
-      ? candidates[Math.floor(Math.random() * candidates.length)]
-      : stationIds[0];
-
-  console.log("[reassignStationForTeam result]", {
-    teamId,
-    current,
-    lastScanned,
-    nextStationId,
-  });
-
-  // Clear old station assignment (for this team)
-  if (
-    current &&
-    room.stations[current] &&
-    room.stations[current].assignedTeamId === teamId
-  ) {
-    room.stations[current].assignedTeamId = null;
-  }
-
-  // Set new station
-  team.previousStationId = current;
-  team.currentStationId = nextStationId;
-  team.lastScannedStationId = null; // clear only after using it as an exclusion
-
-  if (!room.stations[nextStationId]) {
-    room.stations[nextStationId] = { id: nextStationId, assignedTeamId: null };
-  }
-
-  room.stations[nextStationId].assignedTeamId = teamId;
-}
-
-function buildTranscript(room) {
-  const taskset = room.taskset;
-  const tasks = taskset?.tasks || [];
-
-  const taskRecords = tasks.map((t, i) => ({
-    index: i,
-    title: t.title || t.taskType,
-    taskType: t.taskType,
-    prompt: t.prompt,
-    points: t.points ?? 10,
-  }));
-
-  const teamScores = {};
-  for (const sub of room.submissions) {
-    if (!teamScores[sub.teamId]) {
-      teamScores[sub.teamId] = {
-        teamId: sub.teamId,
-        teamName: sub.teamName,
-        totalPoints: 0,
-        attempts: 0,
-      };
-    }
-    teamScores[sub.teamId].totalPoints += sub.points ?? 0;
-    teamScores[sub.teamId].attempts += 1;
-  }
-
-  return {
-    roomCode: room.code,
-    taskSetName: room?.taskset?.name || room?.taskset?.title || "",
-    sharedToken: room.sharedToken || "",
-    sharedFromTeacherId: room.reportOwnerId || "",
-    sharedFromTeacherName: room.reportOwnerName || "",
-    sharedFromTeacherEmail: room.reportOwnerEmail || "",
-    runByPresenterId: room.runByPresenterId || "",
-    runByPresenterName: room.runByPresenterName || "",
-    runByPresenterEmail: room.runByPresenterEmail || "",
-    startedAt: room.startedAt,
-    completedAt: Date.now(),
-    tasks: taskRecords,
-    scores: teamScores,
-    submissions: room.submissions,
-  };
-}
-
-function computePerParticipantStats(room, transcript) {
-  const tasks = transcript.tasks || [];
-  const tasksByIndex = {};
-  tasks.forEach((t) => (tasksByIndex[t.index] = t));
-
-  const participants = {};
-
-  for (const sub of room.submissions) {
-    const key = `${sub.teamId}::${sub.playerId}`;
-    if (!participants[key]) {
-      participants[key] = {
-        teamId: sub.teamId,
-        teamName: sub.teamName,
-        studentName: sub.playerId,
-        attempts: 0,
-        correctCount: 0,
-        pointsEarned: 0,
-        pointsPossible: 0,
-      };
-    }
-
-    const entry = participants[key];
-    entry.attempts += 1;
-    if (sub.correct) entry.correctCount += 1;
-    entry.pointsEarned += sub.points ?? 0;
-
-    const taskMeta = tasksByIndex[sub.taskIndex];
-    if (taskMeta) {
-      entry.pointsPossible += taskMeta.points ?? 10;
-    }
-  }
-
-  const totalTasks = tasks.length;
-
-  return Object.values(participants).map((p) => ({
-    ...p,
-    engagementPercent:
-      totalTasks > 0 ? Math.round((p.attempts / totalTasks) * 100) : 0,
-    finalPercent:
-      p.pointsPossible > 0
-        ? Math.round((p.pointsEarned / p.pointsPossible) * 100)
-        : 0,
-  }));
-}
-
-function buildRoomState(room) {
-  if (!room) {
-    return {
-      code: null,
-      locationCode: "Classroom",
-      reportOwnerId: "",
-      reportOwnerName: "",
-      reportOwnerEmail: "",
-      runByPresenterId: "",
-      runByPresenterName: "",
-      runByPresenterEmail: "",
-      sharedToken: "",
-      teams: {},
-      stations: [],
-      scores: {},
-      taskIndex: -1,
-      startedAt: null,
-      isActive: false,
-
-      treatsConfig: {
-        enabled: true,
-        total: 4,
-        given: 0,
-      },
-      pendingTreatTeams: [],
-
-      noise: {
-        enabled: false,
-        threshold: 0,
-        level: 0,
-        brightness: 1,
-      },
-
-      // Backward/forward compatibility: StudentApp reads noiseConfig
-      noiseConfig: {
-        enabled: false,
-        threshold: 0,
-      },
-
-      brainstorm: null,
-      moodCheckins: {},
-      selectedRooms: [],
-    };
-  }
-
-  const stationsArray = Object.values(room.stations || {});
-
-  // Build scores from submissions, not team.score
-  const scores = {};
-  for (const sub of room.submissions || []) {
-    if (!scores[sub.teamId]) scores[sub.teamId] = 0;
-    scores[sub.teamId] += sub.points ?? 0;
-  }
-
-  // Detect a one-off Quick Task "taskset" so it doesn’t turn on the
-  // full task-flow UI in LiveSession
-  const isQuickTaskset =
-    !!room.taskset &&
-    room.taskset.name === "Quick task" &&
-    Array.isArray(room.taskset.tasks) &&
-    room.taskset.tasks.length === 1;
-
-  // Derive an "overall" taskIndex for display...
-  let overallTaskIndex = -1;
-
-  if (!isQuickTaskset) {
-    overallTaskIndex =
-      typeof room.taskIndex === "number" ? room.taskIndex : -1;
-
-    const perTeamIndices = Object.values(room.teams || {}).map((t) =>
-      typeof t.taskIndex === "number" ? t.taskIndex : -1
-    );
-
-    if (perTeamIndices.length > 0) {
-      const maxTeamIndex = Math.max(...perTeamIndices);
-      if (maxTeamIndex > overallTaskIndex) {
-        overallTaskIndex = maxTeamIndex;
-      }
-    }
-  }
-
-  const treatsConfig = room.treatsConfig || {
-    enabled: true,
-    total: 4,
-    given: 0,
-  };
-
-  const noiseControl = room.noiseControl || { enabled: false, threshold: 0 };
-
-  // ==== BRAINSTORM STATE SUMMARY FOR LIVESession / UI ====
-  let brainstormSummary = null;
-  if (room.brainstormBattles && typeof room.brainstormBattles === "object") {
-    // Take the most recent active battle (if any)
-    const entries = Object.values(room.brainstormBattles);
-    if (entries.length > 0) {
-      const latest = entries.reduce((a, b) =>
-        (a.startedAt || 0) > (b.startedAt || 0) ? a : b
-      );
-      const teams = {};
-      Object.entries(latest.ideasByTeam || {}).forEach(([teamId, ideas]) => {
-        const team = (room.teams || {})[teamId];
-        const label = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-        teams[teamId] = {
-          teamId,
-          teamName: label,
-          ideaCount: ideas.length,
-        };
-      });
-      brainstormSummary = {
-        taskKey: latest.taskKey,
-        startedAt: latest.startedAt,
-        teams,
-      };
-    }
-  }
-
-  return {
-    code: room.code,
-    locationCode: room.locationCode || "Classroom",
-    reportOwnerId: room.reportOwnerId || "",
-    reportOwnerName: room.reportOwnerName || "",
-    reportOwnerEmail: room.reportOwnerEmail || "",
-    runByPresenterId: room.runByPresenterId || "",
-    runByPresenterName: room.runByPresenterName || "",
-    runByPresenterEmail: room.runByPresenterEmail || "",
-    sharedToken: room.sharedToken || "",
-    teams: (() => {
-      const out = {};
-      for (const [teamId, t] of Object.entries(room.teams || {})) {
-        if (!t || typeof t !== "object") continue;
-
-        out[teamId] = {
-          id: t.id || teamId,
-          teamName: t.teamName || t.name || null,
-          members: Array.isArray(t.members) ? t.members : [],
-          // station assignment
-          station: t.station || null,
-          currentStationId: t.currentStationId || null,
-          lastScannedStationId: t.lastScannedStationId || null,
-          locationSlug: t.locationSlug || null,
-
-          // task progression
-          taskIndex: typeof t.taskIndex === "number" ? t.taskIndex : -1,
-          nextTaskIndex: typeof t.nextTaskIndex === "number" ? t.nextTaskIndex : null,
-
-          // connectivity + misc
-          connected: !!t.connected,
-          joinedAt: t.joinedAt || null,
-          status: t.status || null,
-          stale: !!t.stale,
-          lastSeenAt: t.lastSeenAt || null,
-        };
-      }
-      return out;
-    })(),
-
-    stations: stationsArray,
-    scores,
-    taskIndex: overallTaskIndex,
-    startedAt: room.startedAt || null,
-    isActive: !!room.isActive,
-    selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],
-    moodCheckins: room.moodCheckins && typeof room.moodCheckins === "object" ? room.moodCheckins : {},
-    submissions: Array.isArray(room.submissions) ? room.submissions : [],
-    
-    // Random treats (for LiveSession UI)
-    treatsConfig: {
-      enabled: !!treatsConfig.enabled,
-      total:
-        typeof treatsConfig.total === "number" &&
-        !Number.isNaN(treatsConfig.total)
-          ? treatsConfig.total
-          : 2,
-      given:
-        typeof treatsConfig.given === "number" &&
-        !Number.isNaN(treatsConfig.given)
-          ? treatsConfig.given
-          : 0,
-    },
-    pendingTreatTeams: Object.keys(room.pendingTreats || {}),
-
-    // Noise-control state (for LiveSession + StudentApp)
-    noise: {
-      enabled: !!noiseControl.enabled && (noiseControl.threshold || 0) > 0,
-      threshold:
-        typeof noiseControl.threshold === "number" &&
-        !Number.isNaN(noiseControl.threshold)
-          ? noiseControl.threshold
-          : 0,
-      level:
-        typeof room.noiseLevel === "number" && !Number.isNaN(room.noiseLevel)
-          ? room.noiseLevel
-          : 0,
-      brightness:
-        typeof room.noiseBrightness === "number" &&
-        !Number.isNaN(room.noiseBrightness)
-          ? room.noiseBrightness
-          : 1,
-    },
-
-    // Backward/forward compatibility: StudentApp reads noiseConfig
-    noiseConfig: {
-      enabled: !!noiseControl.enabled && (noiseControl.threshold || 0) > 0,
-      threshold:
-        typeof noiseControl.threshold === "number" &&
-        !Number.isNaN(noiseControl.threshold)
-          ? noiseControl.threshold
-          : 0,
-    },
-
-    // Brainstorm battle – light summary so LiveSession can show counts
-    brainstorm: brainstormSummary,
-  };
-}
-
-function sendTaskToTeam(room, teamId, index) {
-  index = Number.isFinite(index) ? index : 0;
-  index = Math.max(0, Math.floor(index));
-
-  if (!room?.taskset) return;
-  if (!room?.teams?.[teamId]) return;
-
-  const tasks = Array.isArray(room.taskset.tasks) ? room.taskset.tasks : [];
-  if (tasks.length === 0) return;
-
-  // If they've finished all tasks, mark complete for this team only
-  if (index >= tasks.length) {
-    room.teams[teamId].taskIndex = tasks.length;
-    io.to(teamId).emit("session:complete");
-    return;
-  }
-
-  const task = tasks[index];
-  if (!task) return;
-
-  // If this is a Diff Detective task, initialise / reset race state
-  // the first time any team is sent this particular index.
-  if (task.taskType === "diff-detective") {
-    if (
-      !room.diffDetectiveRace ||
-      room.diffDetectiveRace.taskIndex !== index
-    ) {
-      room.diffDetectiveRace = {
-        active: true,
-        taskIndex: index,
-        startedAt: Date.now(),
-        completedTeams: new Set(),
-        winnerTeamId: null,
-      };
-
-      // Let all clients know a Diff Detective race has started.
-      io.to(room.code).emit("diff-detective-race-start", {
-        roomCode: room.code,
-        taskIndex: index,
-        startedAt: room.diffDetectiveRace.startedAt,
-      });
-    }
-  }
-
-  // If this is a Flashcards Race task, initialise race state the first time
-  // any team is sent this particular index.
-  if (task.taskType === "flashcards-race") {
-    _fcEnsureRaceState(io, room, task, index);
-
-    const r = room.flashcardsRace || {};
-    const deck = Array.isArray(r.deck) ? r.deck : [];
-
-    // Broadcast initial "start" event so FlashcardsRaceTask can show card 0 + shared leaderboard
-    io.to(room.code).emit("flashcards-race:start", {
-      taskIndex: index,
-      card: deck[0] || null,
-      cardIndex: 0,
-      totalCards: deck.length,
-      secondsPerCard: r.secondsPerCard || 20,
-      startedAt: r.cardStartedAt || r.startedAt || Date.now(),
-      scores: r.scores || {},
-      interTeam: true,
-      intraTeam: false,
-    });
-  }
-
-// If this is a Guess Who (yes/no deduction) task, initialise per-team state
-if (task.taskType === "guess-who") {
-  const taskKey = `${room.code}:guess-who:${index}`;
-  if (!room.guessWhoGames) room.guessWhoGames = {};
-  if (!room.guessWhoGames[taskKey]) {
-    room.guessWhoGames[taskKey] = {
-      taskKey,
-      taskIndex: index,
-      timeLimitSeconds:
-        Number(task.timeLimitSeconds) > 0 ? Number(task.timeLimitSeconds) : 60,
-      maxGuesses: Number(task.maxGuesses) > 0 ? Number(task.maxGuesses) : 10,
-      startedAtByTeam: {},
-      guessesByTeam: {},
-      revealedByTeam: {},
-    };
-  }
-  // Ensure team counters exist
-  const game = room.guessWhoGames[taskKey];
-  if (game && teamId) {
-    if (typeof game.guessesByTeam?.[teamId] !== "number") {
-      game.guessesByTeam[teamId] = 0;
-    }
-    if (typeof game.revealedByTeam?.[teamId] !== "boolean") {
-      game.revealedByTeam[teamId] = false;
-    }
-  }
-}
-
-  room.teams[teamId].taskIndex = index;
-
-  const timeLimitSeconds =
-    typeof task.timeLimitSeconds === "number"
-      ? task.timeLimitSeconds
-      : typeof task.time_limit === "number"
-      ? task.time_limit
-      : null;
-
-  const payload = {
-    taskIndex: index, // preferred
-    index,            // legacy
-    task,
-    timeLimitSeconds,
-    totalTasks: tasks.length,
-  };
-
-  io.to(teamId).emit("task:launch", payload);
-  io.to(teamId).emit("task:assigned", payload);
-}
-
-// ------------------------------
-// Helpers: treats + noise
-// ------------------------------
-function ensureTreatsConfig(room) {
-  if (!room.treatsConfig) {
-    room.treatsConfig = {
-      enabled: true,
-      total: 4,
-      given: 0,
-    };
-  }
-  if (!room.pendingTreats) {
-    room.pendingTreats = {};
-  }
-}
-
-function isMultiRoomRoom(room) {
-  return Array.isArray(room?.selectedRooms) && room.selectedRooms.length > 1;
-}
-
-function normalizeSlug(s) {
-  return String(s || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-function displayRoomLabel(room, slugOrLabel) {
-  const fallback = String(room?.locationCode || "Classroom").trim();
-  const slug = normalizeSlug(slugOrLabel);
-  const selected = Array.isArray(room?.selectedRooms) ? room.selectedRooms : [];
-
-  for (const label of selected) {
-    if (normalizeSlug(label) === slug) return String(label).trim();
-  }
-  // If they scanned something not in selectedRooms, treat as classroom (your rule)
-  return fallback;
-}
-
-function formatGoTo(room, locationSlugOrLabel, colorName) {
-  const color = String(colorName || "").toUpperCase();
-  if (isMultiRoomRoom(room)) {
-    const locLabel = displayRoomLabel(room, locationSlugOrLabel).toUpperCase();
-    return `${locLabel} ${color}`;
-  }
-  return color;
-}
-
-function maybeAwardTreat(code, room, teamId) {
-  ensureTreatsConfig(room);
-  const cfg = room.treatsConfig;
-  if (!cfg.enabled) return;
-  if (cfg.total <= 0) return;
-  if (cfg.given >= cfg.total) return;
-
-  // Simple probability model:
-  const remaining = cfg.total - cfg.given;
-  const base = Math.min(0.15 * remaining, 0.6); // 0.15, 0.3, 0.45, 0.6...
-  const alreadyPending = room.pendingTreats && room.pendingTreats[teamId];
-  const chance = alreadyPending ? base * 0.25 : base;
-
-  if (Math.random() > chance) return;
-
-  cfg.given += 1;
-  room.pendingTreats[teamId] = true;
-
-  const team = room.teams?.[teamId];
-  const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-
-  // Notify teacher app (LiveSession) and student device.
-  io.to(code).emit("teacher:treatAssigned", {
-    roomCode: code,
-    teamId,
-    teamName,
-  });
-  io.to(teamId).emit("student:treatAssigned", {
-    roomCode: code,
-    teamId,
-    message: "See your teacher for a treat!",
-  });
-}
-
-function ensureNoiseControl(room) {
-  if (!room.noiseControl) {
-    room.noiseControl = {
-      enabled: false,
-      threshold: 0,
-    };
-  }
-  if (typeof room.noiseLevel !== "number") {
-    room.noiseLevel = 0;
-  }
-  if (typeof room.noiseBrightness !== "number") {
-    room.noiseBrightness = 1;
-  }
-}
-
-// Simple deep equal for arrays (for mystery card task)
-function arraysDeepEqual(a, b) {
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch (e) {
-    return false;
-  }
-}
-
-function scoreMatchingTask(task, answer, basePoints) {
-  // Accept shapes:
-  // task.config.correctMatches OR task.correctMatches
-  // answer.matches OR answer.correctMatches OR answer.pairs
-  const cfg = (task && typeof task === "object" ? (task.config || task) : {}) || {};
-
-  const correctMatches =
-    (cfg && typeof cfg.correctMatches === "object" && cfg.correctMatches) ||
-    (task && typeof task.correctMatches === "object" && task.correctMatches) ||
-    null;
-
-  if (!correctMatches || typeof correctMatches !== "object") {
-    return {
-      ok: false,
-      error: "Task has no correctMatches.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "matching", error: "missing-correctMatches" },
-    };
-  }
-
-  const submitted =
-    (answer && typeof answer.matches === "object" && answer.matches) ||
-    (answer && typeof answer.correctMatches === "object" && answer.correctMatches) ||
-    (answer && typeof answer.pairs === "object" && answer.pairs) ||
-    null;
-
-  if (!submitted || typeof submitted !== "object") {
-    return {
-      ok: false,
-      error: "Answer has no matches map.",
-      correct: false,
-      pointsEarned: 0,
-      aiScore: { strategy: "matching", error: "missing-submitted-matches" },
-    };
-  }
-
-  const leftIds = Object.keys(correctMatches);
-  if (leftIds.length === 0) {
-    return {
-      ok: false,
-      error: "No pairs in correctMatches.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "matching", error: "empty-correctMatches" },
-    };
-  }
-
-  let correctCount = 0;
-  let evaluated = 0;
-
-  for (const leftId of leftIds) {
-    const expectedRight = String(correctMatches[leftId] ?? "");
-    const gotRight = submitted[leftId] != null ? String(submitted[leftId]) : "";
-    evaluated += 1;
-    if (expectedRight && gotRight && expectedRight === gotRight) correctCount += 1;
-  }
-
-  const fraction = evaluated > 0 ? Math.max(0, Math.min(1, correctCount / evaluated)) : 0;
-  const pointsEarned = Math.round((Number(basePoints) || 0) * fraction);
-
-  const correct =
-    fraction === 1 ? true :
-    fraction === 0 ? false :
-    null;
-
-  return {
-    ok: true,
-    correct,
-    pointsEarned,
-    aiScore: {
-      strategy: "matching",
-      correctCount,
-      totalPairs: evaluated,
-      fractionCorrect: fraction,
-      maxPoints: Number(basePoints) || 0,
-      totalScore: pointsEarned,
-    },
-  };
-}
-
-function scoreVennSortTask(task, answer, basePoints) {
-  // Accept shapes:
-  // - correctAnswer at task.correctAnswer OR task.config.correctAnswer
-  // - submitted placements at answer.placements OR answer (if already shaped)
-  const cfg = (task && typeof task === "object" ? (task.config || task) : {}) || {};
-
-  const correctAnswer =
-    (task && typeof task.correctAnswer === "object" && task.correctAnswer) ||
-    (cfg && typeof cfg.correctAnswer === "object" && cfg.correctAnswer) ||
-    null;
-
-  if (!correctAnswer || typeof correctAnswer !== "object") {
-    return {
-      ok: false,
-      error: "Task has no correctAnswer map.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "vennsort", error: "missing-correctAnswer" },
-    };
-  }
-
-  const submitted =
-    (answer && typeof answer === "object" && typeof answer.placements === "object" && answer.placements) ||
-    (answer && typeof answer === "object" ? answer : null);
-
-  if (!submitted || typeof submitted !== "object") {
-    return {
-      ok: false,
-      error: "Answer has no placements map.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "vennsort", error: "missing-submitted-placements" },
-    };
-  }
-
-  const correctKeys = Object.keys(correctAnswer);
-  if (correctKeys.length === 0) {
-    return {
-      ok: false,
-      error: "No items in correctAnswer.",
-      correct: null,
-      pointsEarned: 0,
-      aiScore: { strategy: "vennsort", error: "empty-correctAnswer" },
-    };
-  }
-
-  const normCats = (arr) =>
-    Array.isArray(arr)
-      ? arr
-          .map((x) => String(x || "").trim())
-          .filter(Boolean)
-          .sort()
-      : [];
-
-  let correctCount = 0;
-  let evaluated = 0;
-
-  for (const itemId of correctKeys) {
-    const expected = normCats(correctAnswer[itemId]);
-    const got = normCats(submitted[itemId]);
-
-    evaluated += 1;
-
-    // Exact match (including "belongs nowhere" => [])
-    if (JSON.stringify(expected) === JSON.stringify(got)) {
-      correctCount += 1;
-    }
-  }
-
-  const fraction = evaluated > 0 ? Math.max(0, Math.min(1, correctCount / evaluated)) : 0;
-  const pointsEarned = Math.round((Number(basePoints) || 0) * fraction);
-
-  const correct =
-    fraction === 1 ? true :
-    fraction === 0 ? false :
-    null;
-
-  return {
-    ok: true,
-    correct,
-    pointsEarned,
-    aiScore: {
-      strategy: "vennsort",
-      correctCount,
-      totalItems: evaluated,
-      fractionCorrect: fraction,
-      maxPoints: Number(basePoints) || 0,
-      totalScore: pointsEarned,
-    },
-  };
-}
-
-function updateNoiseDerivedState(code, room) {
-  ensureNoiseControl(room);
-  const control = room.noiseControl;
-
-  const enabled = !!control.enabled && (control.threshold || 0) > 0;
-  const threshold =
-    typeof control.threshold === "number" &&
-    !Number.isNaN(control.threshold)
-      ? control.threshold
-      : 0;
-  const level =
-    typeof room.noiseLevel === "number" && !Number.isNaN(room.noiseLevel)
-      ? room.noiseLevel
-      : 0;
-
-  let brightness = 1;
-  if (enabled) {
-    const center = threshold;
-    const band = 15; // +/- range around center
-    if (level <= center - band) {
-      brightness = 1;
-    } else if (level >= center + band) {
-      brightness = 0.3;
-    } else {
-      const t = (level - (center - band)) / (2 * band); // 0 → 1
-      brightness = 1 - t * 0.7; // 1 → 0.3
-    }
-  }
-
-  room.noiseBrightness = brightness;
-
-  // Emit direct noise status (for live meters / dimming)
-  io.to(code).emit("session:noiseLevel", {
-    roomCode: code,
-    level,
-    brightness,
-    enabled,
-    threshold,
-  });
-
-  // StudentApp listens to this for dimming + live meter.
-  // Record a class-level noise sample for reporting (capped; no-op if disabled)
-  try {
-    recordNoiseSample(room, { level, brightness, enabled, threshold });
-  } catch (e) { /* telemetry must never break session */ }
-  io.to(code).emit("noise:update", {
-    roomCode: code,
-    level,
-    brightness,
-    enabled,
-    threshold,
-  });
-
-  // Also refresh room:state so LiveSession sees latest
-  const state = buildRoomState(room);
-  io.to(code).emit("room:state", state);
-  io.to(code).emit("roomState", state);
-}
-
-// ================================
-// Task advancement (server-authoritative)
-// ================================
-
-const NEXT_TASK_DELAY_MS = 15000;
-
-/**
- * Ensures only ONE pending next-task timer exists per session.
- * Stores timer handles on the session object (in-memory).
- */
-function scheduleNextTask({
-    io,
-    session,
-    roomCode,
-    delayMs = NEXT_TASK_DELAY_MS,
-    reason = "auto",
-    baseTaskIndex = null,
-  }) {
-    if (!session) return;
-
-    // If already scheduled, do nothing (prevents duplicates from multiple submissions)
-    if (session._nextTaskTimeout) return;
-
-    const startAt = Date.now();
-    session._nextTaskDueAt = startAt + delayMs;
-
-    io.to(roomCode).emit("task:advance-scheduled", {
-      dueAt: session._nextTaskDueAt,
-      delayMs,
-      reason,
-    });
-
-    session._nextTaskTimeout = setTimeout(() => {
-      session._nextTaskTimeout = null;
-      session._nextTaskDueAt = null;
-
-      advanceTaskNow({
-        io,
-        session,
-        roomCode,
-        reason: reason === "auto" ? "auto-delay" : reason,
-        baseTaskIndex,
-      });
-    }, delayMs);
-  }
-
-function cancelScheduledNextTask(session) {
-  if (!session) return;
-  if (session._nextTaskTimeout) {
-    clearTimeout(session._nextTaskTimeout);
-    session._nextTaskTimeout = null;
-  }
-  session._nextTaskDueAt = null;
-}
-
-/**
- * Scan-gated "advance": unlock the next task for ALL teams by setting nextTaskIndex.
- * Does NOT push the task directly (students still must scan).
- */
-function advanceTaskNow({ io, session, roomCode, reason = "manual", baseTaskIndex = null }) {
-  if (!session) return;
-
-  const tasks = session.taskset?.tasks || session.tasks || session.roomState?.tasks;
-  if (!Array.isArray(tasks) || tasks.length === 0) {
-    io.to(roomCode).emit("task:advance-error", { reason: "No tasks found on session." });
-    return;
-  }
-
-  const teams = session.teams || {};
-  const teamIds = Object.keys(teams);
-
-  // Determine which task we're advancing FROM.
-  // If caller provides baseTaskIndex, trust it (best for "all teams submitted idx").
-  // Otherwise infer from max team.taskIndex.
-  const inferredCurrent =
-    teamIds.length > 0
-      ? Math.max(
-          ...teamIds.map((id) =>
-            typeof teams[id]?.taskIndex === "number" ? teams[id].taskIndex : -1
-          )
-        )
-      : -1;
-
-  const currentIndex =
-    typeof baseTaskIndex === "number" && baseTaskIndex >= 0 ? baseTaskIndex : inferredCurrent;
-
-  const nextIndex = currentIndex + 1;
-
-  if (nextIndex >= tasks.length) {
-    // End of taskset
-    io.to(roomCode).emit("taskset:ended", { reason });
-    io.to(roomCode).emit("session:complete"); // backward compat with older flows
-    return;
-  }
-
-  // Unlock next task for every team
-  for (const id of teamIds) {
-    if (!teams[id]) continue;
-    teams[id].nextTaskIndex = nextIndex;
-  }
-
-  // Broadcast state so TeacherApp + StudentApp see that next is unlocked
-  const state = buildRoomState(session);
-  io.to(roomCode).emit("room:state", state);
-  io.to(roomCode).emit("roomState", state);
-
-  // Optional UI event for teacher dashboards
-  io.to(roomCode).emit("task:advance", { taskIndex: nextIndex, reason });
-}
-
-
-// ====================================================================
-//  FLASHCARDS RACE – SERVER-SIDE INTER-TEAM COORDINATION
-// ====================================================================
-// Notes:
-// - This is intentionally lightweight: it coordinates buzz + answer + shared leaderboard
-//   across teams in the same room (inter-team enabled).
-// - The client can still run locally if these events are never used, but when used, the
-//   server becomes the source of truth for who buzzed first, scoring, and advancing cards.
-
-function _fcCardMatchesAnswer(card, answerText) {
-  const a = _fcNormalizeAnswer(answerText);
-  if (!a) return false;
-
-  const correct = _fcNormalizeAnswer(card?.answer ?? card?.a ?? "");
-  if (correct && a === correct) return true;
-
-  const alts = card?.acceptableAnswers || card?.acceptable || card?.altAnswers;
-  if (Array.isArray(alts) && alts.some((x) => _fcNormalizeAnswer(x) === a)) return true;
-
-  return false;
-}
-
-function _fcGetDeckFromTask(task) {
-  const cfg = task && typeof task === "object" ? (task.config || {}) : {};
-  const deck =
-    (Array.isArray(cfg.items) && cfg.items.length > 0
-      ? cfg.items
-      : Array.isArray(task.cards) && task.cards.length > 0
-      ? task.cards
-      : Array.isArray(task.items) && task.items.length > 0
-      ? task.items
-      : []) || [];
-  return deck;
-}
-
-function _fcGetSecondsPerCardFromTask(task) {
-  const cfg = task && typeof task === "object" ? (task.config || {}) : {};
-  const raw = cfg.secondsPerCard ?? task.secondsPerCard ?? 20;
-  const n = Number(raw);
-  return n > 0 ? n : 20;
-}
-
-function _fcGetPointsFromTask(task) {
-  const cfg = task && typeof task === "object" ? (task.config || {}) : {};
-  const pts = cfg.points && typeof cfg.points === "object" ? cfg.points : {};
-  const correct = Number(pts.correct ?? cfg.pointsCorrect ?? task.pointsCorrect ?? 10);
-  const firstBuzzBonus = Number(
-    pts.firstBuzzBonus ?? cfg.pointsFirstBuzzBonus ?? task.pointsFirstBuzzBonus ?? 5
-  );
-  return {
-    correct: Number.isFinite(correct) ? correct : 10,
-    firstBuzzBonus: Number.isFinite(firstBuzzBonus) ? firstBuzzBonus : 5,
-  };
-}
-
-// Record a Flashcards Race win as a normal submission so reports/analytics/transcripts pick it up.
-function _fcRecordWinSubmission(room, teamId, taskIndex, cardIndex, answerText, award, card) {
-  try {
-    if (!room || !room.teams || !room.teams[teamId]) return false;
-
-    const pts = Number(award) || 0;
-    if (!Number.isFinite(pts) || pts < 0) return false;
-
-    // Legacy per-team score field (some older UIs still read this)
-    updateTeamScore(room, teamId, pts);
-
-    const team = room.teams[teamId];
-    const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-
-    if (!Array.isArray(room.submissions)) room.submissions = [];
-
-    const q = card && typeof card === "object" ? String(card.question ?? card.prompt ?? "") : "";
-    const expected = card && typeof card === "object" ? (card.answer ?? card.correctAnswer ?? "") : "";
-    const acceptable = card && typeof card === "object" ? (card.acceptableAnswers ?? card.acceptable ?? null) : null;
-
-    room.submissions.push({
-      roomCode: room.code,
-      teamId,
-      teamName,
-      playerId: null,
-      taskIndex: typeof taskIndex === "number" ? taskIndex : -1,
-      answer: {
-        type: "flashcards-race",
-        kind: "card-win",
-        cardIndex: typeof cardIndex === "number" ? cardIndex : null,
-        question: q,
-        answer: String(answerText ?? ""),
-        expected,
-        acceptableAnswers: acceptable,
-      },
-      photoUrl: null,
-      correct: true,
-      points: pts,
-      aiScore: {
-        strategy: "objective-flashcards-race",
-        totalScore: pts,
-        maxPoints: pts,
-        correct: true,
-      },
-      timeMs: null,
-      submittedAt: Date.now(),
-    });
-
-    return true;
-  } catch (e) {
-    console.error("[flashcards-race] record win submission error:", e);
-    return false;
-  }
-}
-
-// Record a per-team summary submission (0 pts) when the race ends so transcripts show the outcome.
-function _fcRecordSummarySubmission(room, teamId, taskIndex, summary) {
-  try {
-    if (!room || !room.teams || !room.teams[teamId]) return false;
-
-    const team = room.teams[teamId];
-    const teamName = team?.teamName || `Team-${String(teamId).slice(-4)}`;
-
-    if (!Array.isArray(room.submissions)) room.submissions = [];
-
-    room.submissions.push({
-      roomCode: room.code,
-      teamId,
-      teamName,
-      playerId: null,
-      taskIndex: typeof taskIndex === "number" ? taskIndex : -1,
-      answer: {
-        type: "flashcards-race",
-        kind: "race-summary",
-        summary: summary && typeof summary === "object" ? summary : {},
-      },
-      photoUrl: null,
-      correct: null,
-      points: 0,
-      aiScore: {
-        strategy: "flashcards-race-summary",
-        totalScore: 0,
-        maxPoints: 0,
-      },
-      timeMs: null,
-      submittedAt: Date.now(),
-    });
-
-    return true;
-  } catch (e) {
-    console.error("[flashcards-race] record summary submission error:", e);
-    return false;
-  }
-}
-
-function _fcFinalizeRace(io, room, reason = "end") {
-  try {
-    const r = room.flashcardsRace;
-    if (!r) return;
-
-    const scores = r.scores && typeof r.scores === "object" ? r.scores : {};
-    const teamIds = Object.keys(room.teams || {});
-    const winnerTeamId =
-      teamIds.length > 0
-        ? teamIds.reduce((best, id) => {
-            const s = Number(scores[id] || 0);
-            const b = Number(scores[best] || 0);
-            return s > b ? id : best;
-          }, teamIds[0])
-        : null;
-
-    const summary = {
-      reason: String(reason || "end"),
-      taskIndex: r.taskIndex,
-      totalCards: Array.isArray(r.deck) ? r.deck.length : null,
-      finalScores: scores,
-      winnerTeamId,
-      secondsPerCard: r.secondsPerCard ?? null,
-      points: r.points ?? null,
-    };
-
-    // Persist one summary per team (0 pts) so transcripts show a coherent outcome even for teams with 0 wins.
-    for (const id of teamIds) {
-      _fcRecordSummarySubmission(room, id, r.taskIndex, summary);
-    }
-
-    // Unlock the next task for ALL teams (scan-gated), consistent with other race-style tasks.
-    advanceTaskNow({
-      io,
-      session: room,
-      roomCode: room.code,
-      reason: `flashcards-race:${summary.reason}`,
-      baseTaskIndex: r.taskIndex,
-    });
-
-    // Broadcast the updated room state so teacher + students see updated scores/submissions-derived totals.
-    const state = buildRoomState(room);
-    io.to(room.code).emit("room:state", state);
-    io.to(room.code).emit("roomState", state);
-  } catch (e) {
-    console.error("[flashcards-race] finalize error:", e);
-  }
-}
-
-
-
-function _fcClearTimer(room) {
-  if (room?.flashcardsRace?.timer) {
-    try {
-      clearTimeout(room.flashcardsRace.timer);
-    } catch {}
-  }
-  if (room?.flashcardsRace) room.flashcardsRace.timer = null;
-}
-
-function _fcBroadcastState(io, room, eventName, extra = {}) {
-  const r = room?.flashcardsRace;
-  const deck = r?.deck || [];
-  const safeCard = deck[r?.cardIndex ?? 0] || null;
-
-  io.to(room.code).emit(eventName, {
-    taskIndex: r?.taskIndex ?? null,
-    card: safeCard ? { question: safeCard.question ?? safeCard.q ?? "", answer: safeCard.answer ?? safeCard.a ?? "" } : null,
-    cardIndex: r?.cardIndex ?? 0,
-    totalCards: deck.length,
-    secondsPerCard: r?.secondsPerCard ?? 20,
-    startedAt: r?.cardStartedAt ?? r?.startedAt ?? Date.now(),
-    scores: r?.scores || {},
-    buzz: r?.currentBuzz || null,
-    ...extra,
-  });
-}
-
-function _fcAdvanceCard(io, room, reason = "next") {
-  const r = room.flashcardsRace;
-  const deck = r.deck || [];
-
-  _fcClearTimer(room);
-
-  r.currentBuzz = null;
-  r.buzzedOutTeams = {};
-  r.firstBuzzTeamId = null;
-
-  r.cardIndex = (r.cardIndex ?? 0) + 1;
-
-  if (r.cardIndex >= deck.length) {
-    r.active = false;
-    _fcBroadcastState(io, room, "flashcards-race:end", { reason, done: true });
-    _fcFinalizeRace(io, room, reason);
-    return;
-  }
-
-  r.cardStartedAt = Date.now();
-  _fcBroadcastState(io, room, "flashcards-race:next", { reason, done: false });
-
-  // Schedule server-side timeout to advance the card if nobody wins it in time.
-  const ms = Math.max(3, Number(r.secondsPerCard || 20)) * 1000;
-  r.timer = setTimeout(() => {
-    const roomNow = rooms[room.code];
-    if (!roomNow?.flashcardsRace) return;
-    const rr = roomNow.flashcardsRace;
-    if (!rr.active) return;
-    if (rr.taskIndex !== r.taskIndex) return;
-
-    // Advance due to timeout
-    _fcBroadcastState(io, roomNow, "flashcards-race:timeout", { reason: "timeout" });
-    _fcAdvanceCard(io, roomNow, "timeout");
-  }, ms);
-}
-
-function _fcEnsureRaceState(io, room, task, taskIndex) {
-  const deck = _fcGetDeckFromTask(task);
-  const secondsPerCard = _fcGetSecondsPerCardFromTask(task);
-
-  if (!room.flashcardsRace || room.flashcardsRace.taskIndex !== taskIndex) {
-    room.flashcardsRace = {
-      active: deck.length > 0,
-      taskIndex,
-      deck,
-      secondsPerCard,
-      startedAt: Date.now(),
-      cardStartedAt: Date.now(),
-      cardIndex: 0,
-      scores: {},
-      points: _fcGetPointsFromTask(task),
-      currentBuzz: null,
-      buzzedOutTeams: {},
-      firstBuzzTeamId: null,
-      timer: null,
-    };
-  } else {
-    // Keep scores between re-sends, but update deck/settings.
-    room.flashcardsRace.deck = deck;
-    room.flashcardsRace.secondsPerCard = secondsPerCard;
-    room.flashcardsRace.points = _fcGetPointsFromTask(task);
-    if (typeof room.flashcardsRace.cardIndex !== "number") room.flashcardsRace.cardIndex = 0;
-    if (!room.flashcardsRace.scores) room.flashcardsRace.scores = {};
-  }
-
-  // Start / restart timer
-  room.flashcardsRace.cardStartedAt = Date.now();
-  _fcClearTimer(room);
-
-  const ms = Math.max(3, Number(secondsPerCard || 20)) * 1000;
-  room.flashcardsRace.timer = setTimeout(() => {
-    const roomNow = rooms[room.code];
-    if (!roomNow?.flashcardsRace) return;
-    const rr = roomNow.flashcardsRace;
-    if (!rr.active) return;
-    if (rr.taskIndex !== taskIndex) return;
-
-    _fcBroadcastState(io, roomNow, "flashcards-race:timeout", { reason: "timeout" });
-    _fcAdvanceCard(io, roomNow, "timeout");
-  }, ms);
-}
 
 // ====================================================================
 //  SOCKET.IO – EVENT HANDLERS
 // ====================================================================
+// ── Socket payload validation helpers ──────────────────────────────────────
+const MAX_STRING_BYTES = 64 * 1024;        // 64 KB max for any single string field
+const MAX_PAYLOAD_BYTES = 256 * 1024;      // 256 KB max total serialized payload
+
+/**
+ * Recursively walk a socket payload and reject if any string exceeds the limit
+ * or the total serialized size exceeds the payload cap.
+ */
+function validateSocketPayload(payload, socketId) {
+  try {
+    const serialized = JSON.stringify(payload);
+    if (serialized.length > MAX_PAYLOAD_BYTES) {
+      console.warn(`[SOCKET] Oversized payload rejected (${serialized.length} bytes) from ${socketId}`);
+      return false;
+    }
+  } catch {
+    return false; // non-serializable
+  }
+
+  function walkStrings(obj, depth = 0) {
+    if (depth > 10) return true; // stop at depth 10
+    if (typeof obj === "string") {
+      if (Buffer.byteLength(obj, "utf8") > MAX_STRING_BYTES) return false;
+    } else if (Array.isArray(obj)) {
+      for (const v of obj) { if (!walkStrings(v, depth + 1)) return false; }
+    } else if (obj && typeof obj === "object") {
+      for (const v of Object.values(obj)) { if (!walkStrings(v, depth + 1)) return false; }
+    }
+    return true;
+  }
+
+  if (!walkStrings(payload)) {
+    console.warn(`[SOCKET] String field too large in payload from ${socketId}`);
+    return false;
+  }
+  return true;
+}
+
 io.on("connection", (socket) => {
+  // Wrap socket.on so every event is validated before its handler runs
+  const _origOn = socket.on.bind(socket);
+  socket.on = (event, handler) => {
+    if (typeof handler !== "function") return _origOn(event, handler);
+    _origOn(event, (payload, ack) => {
+      // Skip internal socket.io events
+      if (event === "disconnect" || event === "error" || event === "connect") {
+        return handler(payload, ack);
+      }
+      if (payload !== undefined && !validateSocketPayload(payload, socket.id)) {
+        if (typeof ack === "function") ack({ ok: false, error: "Payload too large." });
+        return; // drop silently
+      }
+      handler(payload, ack);
+    });
+  };
+
   console.log(
     "[SOCKET] New connection",
     socket.id,
@@ -2895,7 +1541,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
   });
 
   // Teacher creates room
-  socket.on("teacher:createRoom", async ({ roomCode, teacherInstanceId }, callback) => {
+  socket.on("teacher:createRoom", async ({ roomCode, teacherInstanceId, sharedFromTeacherId, sharedFromTeacherEmail }, callback) => {
     const code = roomCode?.toUpperCase()?.trim();
     if (!code) {
       if (typeof callback === "function") {
@@ -2915,6 +1561,26 @@ socket.on("task:force-advance", ({ roomCode }) => {
       room = await createRoom(code, socket.id);
       rooms[code] = room;
       console.log(`Teacher created room ${code}`);
+    }
+
+    // Store shared teacher info if this is a shared run
+    if (sharedFromTeacherId) {
+      room.reportOwnerId = String(sharedFromTeacherId);
+      room.reportOwnerEmail = String(sharedFromTeacherEmail || "");
+      console.log(`[shared] Room ${code} is a shared run from teacher ${sharedFromTeacherId}`);
+    }
+
+    // Load teacher preferences for session config
+    try {
+      const userId = socket.data?.userId || socket.data?.user?._id || null;
+      if (userId) {
+        const tp = await TeacherProfile.findOne({ ownerId: String(userId) }).lean();
+        if (tp) {
+          room.minimizeOnScreen = !!tp.minimizeOnScreen;
+        }
+      }
+    } catch (e) {
+      console.warn("[teacher:createRoom] Could not load teacher profile:", e.message);
     }
 
     // Cancel any pending grace-period prune from a previous disconnect
@@ -3168,6 +1834,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
         // Do not emit sendTaskToTeam here.
         // Just make sure there is something available for task:requestNext after scan.
         room.teams[teamId].nextTaskIndex = currentOrNextIdx;
+
+        // Late-joiner catch-up flag: if the room has already progressed and this team is starting from 0
+        const progress = getRoomTaskProgress(room);
+        if (progress.maxJoinedTaskIndex > 0 && currentOrNextIdx === 0) {
+          room.teams[teamId].catchingUp = true;
+        }
       }
 
       socket.data.roomCode = code;
@@ -4056,6 +2728,31 @@ socket.on("station:scan", handleStationScan);
       if (typeof ack === "function") ack({ ok: false, error: "Server error" });
     }
   });
+
+  // Helper: Check for teams with pacingHold and release if conditions allow
+  function checkAndReleasePacingHolds(room, code) {
+    if (!room || !room.teams || typeof code !== "string") return;
+
+    const progress = getRoomTaskProgress(room);
+    const heldTeams = Object.entries(room.teams).filter(
+      ([, team]) => team && team.pacingHold === true
+    );
+
+    for (const [teamId, team] of heldTeams) {
+      const nextIdx = team.nextTaskIndex;
+      if (typeof nextIdx !== "number") continue;
+
+      // Can release if the slowest joined team has now caught up
+      if (nextIdx <= progress.minJoinedTaskIndex + 1) {
+        delete team.pacingHold;
+        io.to(teamId).emit("team:pacing-released", {
+          roomCode: code,
+          teamId,
+        });
+      }
+    }
+  }
+
   const handleStudentSubmit = async (payload, ack) => {
     const { roomCode, teamId, taskIndex, timeMs } = payload || {};
     let { answer } = payload || {};
@@ -5042,9 +3739,34 @@ if (!isMultiPack && task.taskType === "guess-who") {
         if (!room.teams[effectiveTeamId]) {
           room.teams[effectiveTeamId] = {};
         }
-        room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
+
+        // Pacing gate: prevent teams from going more than 1 task ahead of the slowest joined team
+        // UNLESS the team is currently in catch-up mode (taskIndex < maxJoinedTaskIndex)
+        const progress = getRoomTaskProgress(room);
+        const isCatchingUp = currentIndex < progress.maxJoinedTaskIndex;
+        const wouldExceedPace = nextIndex > progress.minJoinedTaskIndex + 1;
+
+        if (wouldExceedPace && !isCatchingUp) {
+          // Hold this team: set nextTaskIndex but flag with pacingHold
+          room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
+          room.teams[effectiveTeamId].pacingHold = true;
+          io.to(effectiveTeamId).emit("team:pacing-hold", {
+            roomCode: code,
+            teamId: effectiveTeamId,
+            message: "Waiting for other teams to catch up...",
+          });
+        } else {
+          // Allow progression
+          room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
+          if (room.teams[effectiveTeamId].pacingHold) {
+            delete room.teams[effectiveTeamId].pacingHold;
+          }
+        }
       }
     }
+
+    // Check if any held teams can now be released due to pace progression
+    checkAndReleasePacingHolds(room, code);
 
     const submissionSummary = {
       roomCode: code,
@@ -5313,7 +4035,7 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
     handleTeacherLoadTaskset(payload || {});
   });
 
-  socket.on("teacher:startSession", (payload = {}) => {
+  socket.on("teacher:startSession", async (payload = {}) => {
     const { roomCode, selectedRooms: selectedRoomsRaw } = payload || {};
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -5330,7 +4052,20 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
     room.enforceLocation = selectedRooms.length > 1;
 
     room.selectedRooms = selectedRooms;
-    
+
+    // Refresh teacher preference for paper mode
+    try {
+      const userId = socket.data?.userId || socket.data?.user?._id || null;
+      if (userId) {
+        const tp = await TeacherProfile.findOne({ ownerId: String(userId) }).lean();
+        if (tp) {
+          room.minimizeOnScreen = !!tp.minimizeOnScreen;
+        }
+      }
+    } catch (e) {
+      console.warn("[teacher:startSession] Could not load teacher profile:", e.message);
+    }
+
     io.to(code).emit("session:started");
   });
 
@@ -5605,21 +4340,8 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
     updateNoiseDerivedState(code, room);
   });
 
-  // Speed-draw race game
-  socket.on("start-speed-draw", ({ roomCode, task }) => {
-    raceWinner[roomCode] = null;
-    io.to(roomCode).emit("speed-draw-question", task);
-  });
-
-  socket.on("speed-draw-answer", ({ roomCode, index, correct }) => {
-    if (correct && !raceWinner[roomCode]) {
-      raceWinner[roomCode] = socket.data.teamName;
-      io.to(roomCode).emit("speed-draw-winner", {
-        winner: socket.data.teamName,
-      });
-      updateTeamScore(roomCode, socket.data.teamId, 25);
-    }
-  });
+  // Game handlers (imported from socket/gameHandlers.js)
+  registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAIScore, buildRoomState });
 
 // Teacher ends session + email reports
 // Teacher ends session + generate immutable report snapshot + email teacher
@@ -5784,6 +4506,34 @@ socket.on(
         planTierUsed,
       });
 
+      // 8) If this was a shared run, also email the original teacher
+      const sharedFromTeacherId = reportDoc?.sharedFromTeacherId || room.reportOwnerId;
+      const sharedFromTeacherEmail = reportDoc?.sharedFromTeacherEmail || room.reportOwnerEmail;
+
+      if (sharedFromTeacherId && sharedFromTeacherEmail && String(sharedFromTeacherId) !== String(safeOwnerId)) {
+        try {
+          // Send a copy of the report to the original teacher
+          await sendTranscriptEmail({
+            to: sharedFromTeacherEmail,
+            roomCode: code,
+            schoolName,
+            summary,
+            transcript,
+            perParticipant,
+            assessmentCategories,
+            includeIndividualReports,
+            parentNote,
+            mediaSubmissions,
+            reportId: reportDoc?._id ? String(reportDoc._id) : null,
+            planTierUsed,
+            isSharedRunCopy: true, // Optional flag for the emailer to customize the email
+          });
+          console.log(`[shared] Sent report email to original teacher: ${sharedFromTeacherEmail}`);
+        } catch (e) {
+          console.warn(`[shared] Failed to email original teacher (${sharedFromTeacherEmail}):`, e);
+        }
+      }
+
       // Notify teacher UI that the report is ready
       if (reportDoc?._id) {
         io.to(code).emit("report:ready", {
@@ -5807,381 +4557,6 @@ socket.on(
 );
 
 
-  // ──────────────────────────────────────────────────────────────
-  // Collaboration task: Random pairing + bonus for quality replies
-  // Current team model: room.teams = { [teamId]: { teamName, members, ... } }
-  // Uses teamId socket rooms (socket.join(teamId) already happens on join)
-  // ──────────────────────────────────────────────────────────────
-
-  // In-room pairing store keyed by taskId (or "default")
-  function getOrCreateCollabState(room, taskId = "default") {
-    if (!room._collab) room._collab = {};
-    if (!room._collab[taskId]) {
-      room._collab[taskId] = {
-        // teamId -> partnerTeamId
-        partnerByTeamId: {},
-        // teamId -> mainAnswer
-        mainByTeamId: {},
-        createdAt: Date.now(),
-      };
-    }
-    return room._collab[taskId];
-  }
-
-  function shuffle(arr) {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
-
-  socket.on("start-collaboration-task", ({ roomCode, taskId }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const teamIds = Object.keys(room.teams || {});
-    if (teamIds.length < 2) {
-      socket.emit("error", { message: "Need at least 2 teams for collaboration" });
-      return;
-    }
-
-    const state = getOrCreateCollabState(room, taskId || "default");
-    state.partnerByTeamId = {};
-    state.mainByTeamId = {};
-
-    const shuffled = shuffle(teamIds);
-
-    // Pair adjacent; if odd, last pairs with first
-    for (let i = 0; i < shuffled.length; i += 2) {
-      const a = shuffled[i];
-      const b = shuffled[i + 1] || shuffled[0];
-      state.partnerByTeamId[a] = b;
-      state.partnerByTeamId[b] = a;
-    }
-
-    // Notify each team of partner (emit to teamId room)
-    for (const teamId of teamIds) {
-      const partnerId = state.partnerByTeamId[teamId];
-      const partnerName =
-        room.teams?.[partnerId]?.teamName || `Team-${String(partnerId).slice(-4)}`;
-
-      io.to(teamId).emit("collaboration-paired", {
-        taskId,
-        partnerTeamId: partnerId,
-        partnerTeam: partnerName,
-      });
-    }
-
-    // Refresh teacher state view (optional)
-    const rs = buildRoomState(room);
-    io.to(code).emit("room:state", rs);
-    io.to(code).emit("roomState", rs);
-  });
-
-  socket.on("collaboration-main-submit", ({ roomCode, taskId, teamId, mainAnswer }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const myTeamId = teamId || socket.data?.teamId;
-    if (!myTeamId || !room.teams?.[myTeamId]) return;
-
-    const state = getOrCreateCollabState(room, taskId || "default");
-    const partnerId = state.partnerByTeamId?.[myTeamId] || null;
-
-    state.mainByTeamId[myTeamId] = typeof mainAnswer === "string" ? mainAnswer : "";
-
-    // Send main answer to partner (if paired)
-    if (partnerId && room.teams?.[partnerId]) {
-      const myName = room.teams?.[myTeamId]?.teamName || `Team-${String(myTeamId).slice(-4)}`;
-      io.to(partnerId).emit("collaboration-partner-answer", {
-        taskId,
-        partnerTeamId: myTeamId,
-        partnerName: myName,
-        partnerAnswer: mainAnswer,
-      });
-    }
-
-    // If you later want to store these as submissions, do it here.
-  });
-
-  socket.on("collaboration-reply", async ({ roomCode, taskId, teamId, reply }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const myTeamId = teamId || socket.data?.teamId;
-    if (!myTeamId || !room.teams?.[myTeamId]) return;
-
-    const text = typeof reply === "string" ? reply.trim() : "";
-    if (!text) return;
-
-    // AI score 0–5 for reply quality
-    let bonus = null;
-    try {
-      bonus = await generateAIScore({
-        task: {
-          taskType: "collaboration-bonus",
-          prompt: "Score this peer reply 0-5: thoughtful, specific, kind, and helpful.",
-          points: 5,
-        },
-        rubric: {
-          totalPoints: 5,
-          criteria: [
-            {
-              id: "quality",
-              label: "Reply quality",
-              maxPoints: 5,
-              description: "Reward replies that are thoughtful, specific, kind, and helpful to their partner.",
-            },
-          ],
-        },
-        submission: { answerText: text },
-      });
-    } catch (e) {
-      console.warn("collaboration-reply AI scoring failed:", e);
-    }
-
-    const bonusPoints =
-      (bonus && typeof bonus.score === "number"
-        ? bonus.score
-        : typeof bonus?.totalScore === "number"
-        ? bonus.totalScore
-        : 0) || 0;
-
-    // Award the AI-derived bonus points (0–5)
-    if (bonusPoints > 0) updateTeamScore(room, myTeamId, bonusPoints);
-
-    // Tell the replying team their bonus
-    io.to(myTeamId).emit("collaboration-bonus", {
-      taskId,
-      bonus: bonusPoints,
-    });
-
-    // Optional: refresh room state for teacher dashboards
-    const rs = buildRoomState(room);
-    io.to(code).emit("room:state", rs);
-    io.to(code).emit("roomState", rs);
-  });
-
-  // ─────────────────────────────────────────────
-  // Mystery Clue Cards — Memory Bonus (teamId-based)
-  // ─────────────────────────────────────────────
-  socket.on("mystery-clues-start", ({ roomCode, taskId, teamId }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const tid = teamId || socket.data?.teamId;
-    if (!tid) return;
-
-    if (taskId && !String(taskId).includes("final")) {
-      const clues = ["Apple", "Cat", "Rocket", "Pizza", "Ghost", "Lightning"]
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 2 + Math.floor(Math.random() * 2)); // 2–3 clues
-
-      teamClues.set(tid, clues);
-
-      io.to(tid).emit("mystery-clues-reveal", {
-        taskId,
-        clues,
-        duration: 8000,
-      });
-    }
-  });
-
-  socket.on("start-final-mystery-challenge", ({ roomCode, teamId }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    // If teacher triggers this, broadcast to everyone with per-team clueCount
-    const teamIds = Object.keys(room.teams || {});
-    for (const tid of teamIds) {
-      const clueCount = teamClues.get(tid)?.length || 3;
-      io.to(tid).emit("mystery-clues-final", {
-        type: "mystery-clues",
-        isFinal: true,
-        clueCount,
-      });
-    }
-  });
-
-  socket.on("mystery-clues-submit", ({ roomCode, teamId, selected }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const tid = teamId || socket.data?.teamId;
-    if (!tid) return;
-
-    const correctClues = teamClues.get(tid) || [];
-    const isPerfect = arraysDeepEqual(
-      [...(selected || [])].sort(),
-      [...correctClues].sort()
-    );
-
-    if (isPerfect) {
-      updateTeamScore(room, tid, 10);
-      io.to(tid).emit("bonus-awarded", {
-        points: 10,
-        reason: "Perfect Memory!",
-      });
-    }
-
-    io.to(tid).emit("mystery-clues-result", { correct: isPerfect });
-
-    const rs = buildRoomState(room);
-    io.to(code).emit("room:state", rs);
-    io.to(code).emit("roomState", rs);
-  });
-
-  // ─────────────────────────────────────────────
-  // True/False Tic-Tac-Toe (teamId-based game state)
-  // ─────────────────────────────────────────────
-  function getOrCreateTicTacToe(room, key = "default") {
-    if (!room._tictactoe) room._tictactoe = {};
-    if (!room._tictactoe[key]) {
-      room._tictactoe[key] = {
-        board: Array(9).fill(null),
-        roles: { X: null, O: null }, // role -> teamId
-        createdAt: Date.now(),
-        key,
-      };
-    }
-    return room._tictactoe[key];
-  }
-
-  socket.on("start-true-false-tictactoe", ({ roomCode, task, taskId }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const teamIds = Object.keys(room.teams || {});
-    if (teamIds.length < 2) return;
-
-    const [a, b] = shuffle(teamIds).slice(0, 2);
-    const statements = task?.statements || [];
-
-    const key = taskId || "default";
-    const state = getOrCreateTicTacToe(room, key);
-    state.board = Array(9).fill(null);
-    state.roles = { X: a, O: b };
-
-    const aName = room.teams[a]?.teamName || `Team-${String(a).slice(-4)}`;
-    const bName = room.teams[b]?.teamName || `Team-${String(b).slice(-4)}`;
-
-    io.to(a).emit("tictactoe-start", {
-      type: "true-false-tictactoe",
-      taskId: key,
-      teamRole: "X",
-      opponent: bName,
-      statements,
-      board: state.board,
-    });
-
-    io.to(b).emit("tictactoe-start", {
-      type: "true-false-tictactoe",
-      taskId: key,
-      teamRole: "O",
-      opponent: aName,
-      statements,
-      board: state.board,
-    });
-  });
-
-  socket.on("tictactoe-move", ({ roomCode, taskId, index, teamRole }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const key = taskId || "default";
-    const state = getOrCreateTicTacToe(room, key);
-
-    const idx = typeof index === "number" ? index : -1;
-    if (idx < 0 || idx >= 9) return;
-
-    // Update board server-side (prevents weird overwrites)
-    if (state.board[idx] == null) state.board[idx] = teamRole;
-
-    io.to(code).emit("tictactoe-update", {
-      taskId: key,
-      index: idx,
-      symbol: teamRole,
-      board: state.board,
-    });
-  });
-
-  socket.on("tictactoe-winner", ({ roomCode, taskId, winnerRole }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const key = taskId || "default";
-    const state = getOrCreateTicTacToe(room, key);
-
-    const winnerTeamId = state.roles?.[winnerRole] || null;
-    if (winnerTeamId && room.teams?.[winnerTeamId]) {
-      updateTeamScore(room, winnerTeamId, 10);
-      const winnerName =
-        room.teams[winnerTeamId]?.teamName || `Team-${String(winnerTeamId).slice(-4)}`;
-
-      io.to(code).emit("bonus-awarded", {
-        teamId: winnerTeamId,
-        team: winnerName,
-        points: 10,
-        reason: "Tic-Tac-Toe Win!",
-      });
-
-      const rs = buildRoomState(room);
-      io.to(code).emit("room:state", rs);
-      io.to(code).emit("roomState", rs);
-    }
-  });
-
-  // ─────────────────────────────────────────────
-  // Live debate (teamId-based)
-  // ─────────────────────────────────────────────
-  socket.on("start-live-debate", ({ roomCode, postulate, taskId }) => {
-    const code = (roomCode || "").toUpperCase();
-    const room = rooms[code];
-    if (!room) return;
-
-    const teamIds = Object.keys(room.teams || {});
-    if (teamIds.length === 0) return;
-
-    const half = Math.ceil(teamIds.length / 2);
-    const ordered = shuffle(teamIds);
-
-    ordered.forEach((teamId, i) => {
-      const side = i < half ? "for" : "against";
-      const team = room.teams[teamId];
-      io.to(teamId).emit("debate-start", {
-        type: "live-debate",
-        taskId: taskId || "default",
-        postulate,
-        mySide: side,
-        myTeamId: teamId,
-        myTeamName: team?.teamName || `Team-${String(teamId).slice(-4)}`,
-        teamMembers: Array.isArray(team?.members) && team.members.length > 0
-          ? team.members
-          : ["Member 1", "Member 2", "Member 3"],
-        responses: [],
-      });
-    });
-  });
-
-  socket.on("debate-response", async (data = {}) => {
-    const code = (data.roomCode || "").toUpperCase();
-    if (!code) return;
-
-    // broadcast to whole room; clients can filter by taskId if needed
-    io.to(code).emit("debate-new-response", data);
-    // Future: when all teams have 3 responses → judge via AI
-  });
   // ─────────────────────────────────────────────
   // Disconnect / offline cleanup (team sockets)
   // Add this AFTER debate-response (or near the bottom of connection handler)
@@ -6325,28 +4700,6 @@ app.get("/db-check", async (req, res) => {
     res.status(500).json({ ok: false, error: "DB unreachable" });
   }
 });
-
-async function getOrCreateProfileForUser({ ownerId, email } = {}) {
-  if (!ownerId) throw new Error("Missing ownerId");
-
-  let profile = await TeacherProfile.findOne({ ownerId });
-
-  if (!profile) {
-    profile = new TeacherProfile({
-      ownerId,
-      email: email || "",
-    });
-    await profile.save();
-    return profile;
-  }
-
-  if (email && !profile.email) {
-    profile.email = email;
-    await profile.save();
-  }
-
-  return profile;
-}
 
 // ====================================================================
 //  DEMO TASKSET (persisted in Mongo; regenerated only when asked)
@@ -6695,107 +5048,8 @@ async function evaluateMultiShortItem({
       };
     }
 
-// --------------------------------------------------------------------
-// Per-user Teacher Profile (auth required)
-// --------------------------------------------------------------------
-app.get("/api/profile/me", authRequired, async (req, res) => {
-  try {
-    const ownerId = getOwnerId(req);
-    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
-    const plain = profile.toObject();
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile fetch failed (/api/profile/me):", err);
-    res.status(500).json({ error: "Failed to fetch profile" });
-  }
-});
-
- app.get("/api/profile", authRequired, async (req, res) => {
-   try {
-     const ownerId = getOwnerId(req);
-     if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
-
-     const profile = await getOrCreateProfileForUser({
-       ownerId,
-       email: req.user?.email || "",
-     });
-
-     return res.json({
-       ok: true,
-       userId: ownerId,
-       email: (req.user?.email || profile.email || "").toLowerCase(),
-       name: req.user?.name || profile.presenterName || profile.displayName || "",
-       isAdmin: !!(profile.isAdmin || req.user?.isAdmin),
-       entryCode: profile.entryCode || "",     // IMPORTANT: your schema defaults to ""
-       planTier: null,
-      // ✅ Rooms for multi-room (fix: always return it)
-      locationOptions: Array.isArray(profile.locationOptions)
-        ? profile.locationOptions
-        : ["Classroom"],
-      // Optional passthrough
-      treatsPerSession:
-        typeof profile.treatsPerSession === "number"
-          ? profile.treatsPerSession
-          : undefined,
-     });
-   } catch (e) {
-     console.error("GET /api/profile failed:", e);
-     return res.status(500).json({ ok: false, error: "Server error" });
-   }
- });
-
-app.put("/api/profile/me", authRequired, async (req, res) => {
-  try {
-    const ownerId = getOwnerId(req);
-    const profile = await getOrCreateProfileForUser({ ownerId, email: req.user?.email });
-
-    const body = { ...req.body };
-    if (body.presenterTitle && !body.title) body.title = body.presenterTitle;
-    if (body.title && !body.presenterTitle) body.presenterTitle = body.title;
-
-    Object.assign(profile, body);
-    await profile.save();
-
-    const plain = profile.toObject();
-    plain.presenterTitle = plain.presenterTitle || plain.title || "";
-    plain.title = plain.title || plain.presenterTitle || "";
-    res.json(plain);
-  } catch (err) {
-    console.error("Profile update failed (/api/profile/me):", err);
-    res.status(500).json({ error: "Failed to update profile" });
-  }
-});
-
-app.put("/api/profile", authRequired, async (req, res) => {
-   try {
-     const userId = req.user?.id || req.user?._id || req.user?.userId;
-     if (!userId) return res.status(401).json({ ok: false, error: "Unauthorized" });
-
-     const profile = await TeacherProfile.findOne({ userId });
-     if (!profile) return res.status(404).json({ ok: false, error: "Profile not found" });
-
-    // --- MULTI-ROOM: persist teacher-defined room list ---
-    if ("locationOptions" in (req.body || {})) {
-      const raw = Array.isArray(req.body.locationOptions) ? req.body.locationOptions : [];
-      const cleaned = Array.from(
-        new Set(
-          raw
-            .map((s) => (s || "").toString().trim())
-            .filter(Boolean)
-        )
-      );
-      profile.locationOptions = cleaned.length ? cleaned : ["Classroom"];
-    }
-
-     await profile.save();
-     return res.json(profile);
-   } catch (err) {
-     console.error("PUT /api/profile error:", err);
-     return res.status(500).json({ ok: false, error: "Server error" });
-   }
- });
+// Profile routes (imported from routes/profileInline.js)
+app.use("/api/profile", profileInlineRouter);
 
 app.post("/api/tasksets", async (req, res) => {
   try {
@@ -9414,194 +7668,10 @@ app.get("/api/reports/:id", authRequired, async (req, res) => {
 app.get("/analytics/sessions", authRequired, listSessions);
 app.get("/analytics/sessions/:id", authRequired, getSessionDetails);
 
+// Admin CRUD routes (imported from routes/adminCrud.js)
+app.use("/api/admin", adminCrudRouter);
+
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log("Curriculate backend running on port", PORT);
 })
-
-// --------------------------------------------------------------------
-// Admin: Access Codes (create + list)
-// --------------------------------------------------------------------
-function genAccessCode(len = 8) {
-  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no I/O/1/0 confusion
-  let out = "";
-  for (let i = 0; i < len; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return out;
-}
-
-app.get("/api/admin/access-codes", ...adminRequired, async (req, res) => {
-  try {
-    const rows = await AccessCode.find({})
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const codes = (rows || []).map((c) => ({
-      _id: String(c._id),
-      code: String(c.code || ""),
-      planTier: String(c.planTier || "FREE"),
-      maxSeats: Number(c.maxSeats || 1),
-      disabled: !!c.disabled,
-      expiresAt: c.expiresAt ? new Date(c.expiresAt).toISOString().slice(0, 10) : null,
-      claimantsCount: Array.isArray(c.claimants) ? c.claimants.length : 0,
-      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
-    }));
-
-    return res.json({ ok: true, codes });
-  } catch (err) {
-    console.error("[admin-access-codes] list failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to load access codes." });
-  }
-});
-
-app.post("/api/admin/access-codes", ...adminRequired, async (req, res) => {
-  try {
-    const planTier = String(req.body?.planTier || "FREE").toUpperCase().trim();
-    const maxSeats = Math.max(1, Number(req.body?.maxSeats ?? req.body?.seats ?? 1));
-
-    const expiresRaw = req.body?.expiresAt ?? req.body?.expires ?? null;
-    let expiresAt = null;
-    if (expiresRaw) {
-      const d = new Date(expiresRaw);
-      if (!Number.isNaN(d.getTime())) expiresAt = d;
-    }
-
-    // generate unique code
-    let code = genAccessCode(8);
-    for (let i = 0; i < 5; i += 1) {
-      const exists = await AccessCode.findOne({ code }).lean();
-      if (!exists) break;
-      code = genAccessCode(8);
-    }
-
-    const doc = await AccessCode.create({
-      code,
-      planTier,
-      maxSeats,
-      expiresAt,
-      disabled: false,
-      claimants: [],
-    });
-
-    return res.json({
-      ok: true,
-      accessCode: {
-        _id: String(doc._id),
-        code: doc.code,
-        planTier: doc.planTier,
-        maxSeats: doc.maxSeats,
-        expiresAt: doc.expiresAt ? new Date(doc.expiresAt).toISOString().slice(0, 10) : null,
-      },
-    });
-  } catch (err) {
-    console.error("[admin-access-codes] create failed:", err);
-    return res.status(500).json({ ok: false, error: "Failed to create access code." });
-  }
-});
-
-// --------------------------------------------------------------------
-// Admin: Email templates + metrics (share links)
-// --------------------------------------------------------------------
-app.get("/api/admin/email-templates", ...adminRequired, async (req, res) => {
-  try {
-    const all = await SystemEmailTemplate.find({}).sort({ key: 1 }).lean();
-    res.json({ ok: true, templates: all });
-  } catch (err) {
-    console.error("[admin-email-templates] get failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to load templates." });
-  }
-});
-
-app.put("/api/admin/email-templates/:key", ...adminRequired, async (req, res) => {
-  try {
-    const key = String(req.params.key || "").trim();
-    if (!key) return res.status(400).json({ ok: false, error: "Missing key." });
-
-    const patch = {
-      subject: String(req.body?.subject || ""),
-      html: String(req.body?.html || ""),
-      enabled: req.body?.enabled !== false,
-    };
-
-    if (req.body?.followupDays != null) {
-      patch.followupDays = Number(req.body.followupDays);
-    }
-
-    const updated = await SystemEmailTemplate.findOneAndUpdate(
-      { key },
-      { $set: patch },
-      { new: true, upsert: true }
-    ).lean();
-
-    res.json({ ok: true, template: updated });
-  } catch (err) {
-    console.error("[admin-email-templates] save failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to save template." });
-  }
-});
-
-// --------------------------------------------------------------------
-// Admin: Referral program settings (share incentives)
-// --------------------------------------------------------------------
-app.get("/api/admin/referral-settings", ...adminRequired, async (req, res) => {
-  try {
-    const s = await ReferralProgramSettings.findOne({ key: "default" }).lean();
-    res.json({ ok: true, settings: s || { key: "default", enabled: true, threshold: 5, rewardMonths: 1 } });
-  } catch (err) {
-    console.error("[admin-referral-settings] get failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to load referral settings." });
-  }
-});
-
-app.put("/api/admin/referral-settings", ...adminRequired, async (req, res) => {
-  try {
-    const enabled = req.body?.enabled !== false;
-    const threshold = Math.max(1, Number(req.body?.threshold || 5));
-    const rewardMonths = Math.max(0, Number(req.body?.rewardMonths || 1));
-
-    const updated = await ReferralProgramSettings.findOneAndUpdate(
-      { key: "default" },
-      { $set: { enabled, threshold, rewardMonths } },
-      { new: true, upsert: true }
-    ).lean();
-
-    res.json({ ok: true, settings: updated });
-  } catch (err) {
-    console.error("[admin-referral-settings] save failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to save referral settings." });
-  }
-});
-
-app.get("/api/admin/email-metrics", ...adminRequired, async (req, res) => {
-  try {
-    const shareLinks = await SharedTasksetLink.countDocuments({});
-    const invitesAgg = await SharedTasksetLink.aggregate([
-      { $unwind: { path: "$invites", preserveNullAndEmptyArrays: false } },
-      {
-        $group: {
-          _id: null,
-          invites: { $sum: 1 },
-          followup7: { $sum: { $cond: [{ $ifNull: ["$invites.followup7SentAt", false] }, 1, 0] } },
-          followup30: { $sum: { $cond: [{ $ifNull: ["$invites.followup30SentAt", false] }, 1, 0] } },
-          used: { $sum: { $cond: [{ $ifNull: ["$invites.firstUsedAt", false] }, 1, 0] } },
-          rewardEmails: { $sum: { $cond: [{ $ifNull: ["$invites.rewardSentAt", false] }, 1, 0] } },
-        },
-      },
-    ]);
-
-    const row = invitesAgg?.[0] || {};
-    res.json({
-      ok: true,
-      counts: {
-        shareLinks,
-        invites: row.invites || 0,
-        followup7: row.followup7 || 0,
-        followup30: row.followup30 || 0,
-        invitesUsed: row.used || 0,
-        rewardEmails: row.rewardEmails || 0,
-      },
-    });
-  } catch (err) {
-    console.error("[admin-email-metrics] failed:", err);
-    res.status(500).json({ ok: false, error: "Failed to load metrics." });
-  }
-});

@@ -245,9 +245,39 @@ export async function generateTaskset(req, res) {
       saved = await doc.save();
 
       // Track usage count if subscription doc exists
+      // Bug 4: Reset counter if billing period has changed
       if (sub) {
-        sub.aiGenerationsUsedThisPeriod =
-          (sub.aiGenerationsUsedThisPeriod || 0) + 1;
+        const now = new Date();
+        const periodStart = sub.currentPeriodStart ? new Date(sub.currentPeriodStart) : null;
+
+        // Check if we need to reset the period (if stored period is in the past month)
+        let shouldReset = false;
+        if (periodStart) {
+          const periodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+          // If current time is beyond periodEnd, reset the counter
+          if (periodEnd && now > periodEnd) {
+            shouldReset = true;
+          }
+        } else {
+          // No period set yet, initialize it
+          shouldReset = true;
+        }
+
+        if (shouldReset) {
+          // Reset to new period (assume monthly billing, starting today)
+          const periodStart = new Date(now);
+          const periodEnd = new Date(now);
+          periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+          sub.currentPeriodStart = periodStart;
+          sub.currentPeriodEnd = periodEnd;
+          sub.aiGenerationsUsedThisPeriod = 1;
+        } else {
+          // Same period, just increment
+          sub.aiGenerationsUsedThisPeriod =
+            (sub.aiGenerationsUsedThisPeriod || 0) + 1;
+        }
+
         await sub.save();
       }
     }

@@ -59,24 +59,42 @@ async function openPortal(returnUrl: string) {
   window.location.href = data.url;
 }
 
-const PRICES = {
+// Bug 5: Fetch prices from backend instead of hardcoding
+const DEFAULT_PRICES = {
   TEACHER_PLUS_MONTHLY: "price_1SjgbNLduAaZuYj5Y8h138iq",
   TEACHER_PRO_MONTHLY: "price_1SjganLduAaZuYj5e0YozeDy",
   SCHOOL_PLUS_YEARLY: "price_1SjgbuLduAaZuYj5qy8o6OSR",
   SCHOOL_PRO_YEARLY: "price_1SjgcTLduAaZuYj5LlaHf5M9",
 };
 
+async function fetchPrices() {
+  try {
+    const res = await fetch(`${API_BASE}/api/stripe/prices`);
+    if (!res.ok) throw new Error("Failed to fetch prices");
+    return await res.json();
+  } catch (e) {
+    console.warn("Failed to fetch prices from backend, using defaults:", e);
+    return DEFAULT_PRICES;
+  }
+}
+
 export default function PricingPage() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const [billingEmail, setBillingEmail] = useState("");
+  const [prices, setPrices] = useState(DEFAULT_PRICES);
 
   useEffect(() => {
     const url = new URL(window.location.href);
     const handoff = url.searchParams.get("handoff");
     const rt = url.searchParams.get("returnTo");
     setReturnTo(rt);
+
+    // Bug 5: Fetch prices from backend
+    fetchPrices().then(setPrices).catch(() => {
+      console.warn("Could not fetch prices from backend");
+    });
 
     if (!handoff) return;
 
@@ -102,8 +120,8 @@ export default function PricingPage() {
         title: "Teacher Plus",
         price: "$6.99 CAD / month",
         bullets: ["Student-level reporting", "PDF exports", "Great for small-group or class sessions"],
-        priceId: PRICES.TEACHER_PLUS_MONTHLY,
-        // IMPORTANT: this is what your backend likely expects
+        priceId: prices.TEACHER_PLUS_MONTHLY,
+        // Bug 5: Send plan tier to backend, let backend resolve priceId
         plan: "TEACHER_PLUS",
       },
       {
@@ -112,7 +130,7 @@ export default function PricingPage() {
         price: "$12.99 CAD / month",
         featured: true,
         bullets: ["Higher student limits than Plus", "Expanded AI task generation", "Advanced student and session reports", "Built for full classrooms and multiple classes"],
-        priceId: PRICES.TEACHER_PRO_MONTHLY,
+        priceId: prices.TEACHER_PRO_MONTHLY,
         plan: "TEACHER_PRO",
       },
       {
@@ -120,7 +138,7 @@ export default function PricingPage() {
         title: "School Plus",
         price: "$399 CAD / year",
         bullets: ["School-wide deployment", "Student-level reporting", "PDF exports"],
-        priceId: PRICES.SCHOOL_PLUS_YEARLY,
+        priceId: prices.SCHOOL_PLUS_YEARLY,
         plan: "SCHOOL_PLUS",
       },
       {
@@ -128,11 +146,11 @@ export default function PricingPage() {
         title: "School Pro",
         price: "$599 CAD / year",
         bullets: ["Higher capacity than School Plus", "Expanded AI task generation", "Advanced reporting & analytics"],
-        priceId: PRICES.SCHOOL_PRO_YEARLY,
+        priceId: prices.SCHOOL_PRO_YEARLY,
         plan: "SCHOOL_PRO",
       },
     ],
-    []
+    [prices]
   );
 
   const manageReturnUrl = useMemo(() => {

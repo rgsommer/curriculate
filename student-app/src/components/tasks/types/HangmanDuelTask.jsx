@@ -685,8 +685,6 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
   // "Steal" mode: allow current player to use one letter from another player's row this turn.
   const [stealActive, setStealActive] = useState(false);
 
-  // Selection (tap-to-place optional)
-  const [selectedLetter, setSelectedLetter] = useState(null);
   // Drag state (used for tray highlight)
   const [dragging, setDragging] = useState(false);
 
@@ -1166,30 +1164,9 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
 
     const overId = String(over?.id || "");
 
-    // Dropped into tray => normal letter guess
+    // Dropping anywhere (tray or anywhere else) guesses the letter
     if (overId === "TRAY") {
       await doLetterGuess(L, { precise: false });
-      return;
-    }
-
-    // Dropped onto exact slot => still works, and gives bonus if correct slot.
-    if (overId.startsWith("slot-")) {
-      const slotIndex = Number(overId.slice(5));
-      if (!Number.isInteger(slotIndex)) return;
-      if (!slots?.[slotIndex]?.isLetter) return;
-
-      const correctHere = slots[slotIndex]?.ch === L;
-      const empty = !placed?.[slotIndex] || placed?.[slotIndex] === "_";
-
-      // If wrong slot, treat it like dropping into tray (still okay, not too hard)
-      if (!correctHere || !empty) {
-        await doLetterGuess(L, { precise: false });
-        return;
-      }
-
-      // Correct and precise => bonus
-      // Fill all occurrences anyway, but reward the precision
-      await doLetterGuess(L, { precise: true });
       return;
     }
   };
@@ -1424,33 +1401,35 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
                   );
                 }
 
-                const L = s.ch;
-                const isCorrectGlow = selectedLetter && selectedLetter === L && (!placed[i] || placed[i] === "_");
+                const filled = !!(placed[i] && placed[i] !== "_");
 
                 return (
-                  <DroppableSlot
+                  <div
                     key={`slot-${i}`}
-                    id={`slot-${i}`}
-                    value={placed[i] || "_"}
-                    canAct={canAct}
-                    onClear={() => {
-                      // Optional clear for testing
-                      setPlaced((prev) => {
-                        const next = [...(prev || [])];
-                        next[i] = "_";
-                        return next;
-                      });
+                    style={{
+                      width: TILE_W,
+                      height: TILE_H,
+                      borderRadius: RADIUS,
+                      border: "3px solid #111827",
+                      background: filled ? "rgba(34,197,94,0.18)" : "rgba(255,255,255,0.90)",
+                      color: filled ? "#16a34a" : "#111827",
+                      fontWeight: 900,
+                      fontSize: 28,
+                      userSelect: "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: 6,
+                      boxShadow: "none",
+                      transition: "background 120ms ease, border 120ms ease",
                     }}
-                    isCorrectGlow={isCorrectGlow}
-                  />
+                  >
+                    {filled ? placed[i] : "_"}
+                  </div>
                 );
               })}
             </div>
           </DroppableTray>
-
-          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.75 }}>
-            Tip: Dropping on the exact correct box gives a <b>bonus +1</b>.
-          </div>
         </div>
 
         {/* Cards + Word Guess */}
@@ -1459,16 +1438,21 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
             onClick={() => setWordGuessOpen(true)}
             disabled={!canAct}
             style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "2px solid rgba(0,0,0,0.2)",
-              fontWeight: 900,
-              background: canAct ? "#111827" : "#9ca3af",
+              padding: "12px 20px",
+              borderRadius: 14,
+              border: "3px solid #dc2626",
+              fontWeight: 950,
+              fontSize: 14,
+              background: canAct ? "linear-gradient(135deg, #dc2626, #991b1b)" : "#9ca3af",
               color: "#fff",
               cursor: canAct ? "pointer" : "not-allowed",
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              boxShadow: canAct ? "0 4px 15px rgba(220, 38, 38, 0.3)" : "none",
+              transition: "all 150ms ease",
             }}
           >
-            Guess Full Word
+            WINNER TAKES ALL
           </button>
 
           <button
@@ -1541,7 +1525,7 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
                 <span style={{ marginLeft: 8, opacity: 0.75, fontWeight: 800 }}>(Only {playerNames[currentTurn - 1]} can play right now.)</span>
               </div>
               <div style={{ fontSize: 12, fontWeight: 900, opacity: 0.75 }}>
-                Tip: If you drop a letter in the exact right slot, you get a bonus point.
+                Tap or drag a letter to guess it.
               </div>
             </div>
 
@@ -1587,13 +1571,14 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
                     letter={L}
                     disabled={disabled}
                     status={status}
-                    selected={selectedLetter === L}
+                    selected={false}
                     visual={visual}
                     title={title}
                     onClick={() => {
                       if (!canAct) return;
                       if (disabled) return;
-                      setSelectedLetter(L);
+                      // Tapping a letter immediately guesses it (don't just select)
+                      doLetterGuess(L, { precise: false });
                     }}
                   />
                 );
@@ -1625,9 +1610,9 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
           }}
         >
           <div style={{ width: "min(520px, 96vw)", background: "#fff", borderRadius: 18, padding: 16, textAlign: "left" }}>
-            <div style={{ fontWeight: 950, fontSize: 18 }}>Guess the full word</div>
+            <div style={{ fontWeight: 950, fontSize: 18, color: "#dc2626" }}>WINNER TAKES ALL</div>
             <div style={{ marginTop: 6, fontSize: 13, opacity: 0.8 }}>
-              If you are wrong, you are <b>eliminated</b> (unless you turned on Extra Guess).
+              Guess the entire word. If correct, you win immediately with a big bonus. If wrong, you are <b>eliminated</b> (unless Extra Guess is active).
             </div>
 
             <input
@@ -1658,9 +1643,17 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
               </button>
               <button
                 onClick={submitWordGuess}
-                style={{ padding: "10px 12px", borderRadius: 12, border: "2px solid rgba(0,0,0,0.15)", fontWeight: 900, background: "#111827", color: "#fff" }}
+                style={{
+                  padding: "12px 20px",
+                  borderRadius: 12,
+                  border: "3px solid #dc2626",
+                  fontWeight: 950,
+                  background: "linear-gradient(135deg, #dc2626, #991b1b)",
+                  color: "#fff",
+                  cursor: "pointer",
+                }}
               >
-                Submit Guess
+                GO FOR IT
               </button>
             </div>
           </div>

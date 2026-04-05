@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./StudentApp.jsx";
 import DemoPage from "./pages/DemoPage.jsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import "./index.css";
 
 // Motion permission request — must be inside a component
@@ -30,19 +31,21 @@ function MotionPermissionWrapper({ children }) {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <MotionPermissionWrapper>
-        <Routes>
-          {/* Main student flow */}
-          <Route path="/" element={<App />} />
+    <ErrorBoundary>
+      <BrowserRouter>
+        <MotionPermissionWrapper>
+          <Routes>
+            {/* Main student flow */}
+            <Route path="/" element={<App />} />
 
-          {/* Demo page */}
-          <Route path="/demo" element={<DemoPage />} />
+            {/* Demo page */}
+            <Route path="/demo" element={<DemoPage />} />
 
-          {/* Unknown routes -> main */}
-          <Route path="*" element={<App />} />
-        </Routes>
-      </MotionPermissionWrapper>
-    </BrowserRouter>
+            {/* Unknown routes -> main */}
+            <Route path="*" element={<App />} />
+          </Routes>
+        </MotionPermissionWrapper>
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>
 );

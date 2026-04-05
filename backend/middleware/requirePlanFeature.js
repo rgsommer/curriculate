@@ -76,7 +76,7 @@ export function requireSeats(minSeats) {
 }
 
 export function requireAiQuota(minMonthly) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const user = req.user;
     if (isInGrace(user)) return next();
 

@@ -101,6 +101,9 @@ const TeacherProfileSchema = new Schema(
     // ✅ Multi-room location labels (your UI saves this)
     locationOptions: { type: [String], default: ["Classroom"] },
 
+    // When enabled, text-heavy tasks show a camera for paper-based work instead of on-screen input
+    minimizeOnScreen: { type: Boolean, default: false },
+
     // ✅ Voice settings (your UI has these fields)
     voiceId: { type: String, default: "" },
     voiceSampleUrl: { type: String, default: "" },

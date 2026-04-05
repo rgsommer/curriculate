@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 
 import { createAiTaskset } from "../controllers/mainTasksetController.js";
 import { regenerateSingleTask } from "../controllers/sharedTasksetController.js";
+import { requireAiQuota } from "../middleware/requirePlanFeature.js";
+import User from "../models/User.js";
 
 const router = express.Router();
 
@@ -11,6 +13,7 @@ const router = express.Router();
  * Lightweight auth for these routes.
  * If you already have middleware/authRequired.js and want to use it instead,
  * you can swap this out easily—but this file is fully self-contained.
+ * Bug 2: Now also populates req.user so quota middleware can work
  */
 function auth(req, res, next) {
   const h = req.headers.authorization;
@@ -22,7 +25,13 @@ function auth(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET || "devsecret");
     req.userId = payload.id;
-    next();
+    // Bug 2: Load user document to support quota middleware
+    User.findById(req.userId).then((user) => {
+      if (user) req.user = user;
+      next();
+    }).catch(() => {
+      next(); // Continue even if user load fails, quota check will fail gracefully
+    });
   } catch {
     return res.status(401).json({ ok: false, error: "Invalid token" });
   }
@@ -38,8 +47,10 @@ router.get("/ping", (_req, res) => res.json({ ok: true }));
  * - prompt building (driven by shared/taskTypes.js meta)
  * - validation + fallback
  * - persistence behavior
+ *
+ * Bug 2: Apply AI quota enforcement middleware
  */
-router.post("/", auth, createAiTaskset);
+router.post("/", auth, requireAiQuota(1), createAiTaskset);
 
 /**
  * POST /api/ai/tasksets/regenerate-single

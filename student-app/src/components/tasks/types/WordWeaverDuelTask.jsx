@@ -110,8 +110,10 @@ export default function WordWeaverDuelTask({
   const [activePlayer, setActivePlayer] = useState(0);
   const [scores, setScores] = useState(() => ({})); // {playerIndex: number}
   const [selectedWordIdx, setSelectedWordIdx] = useState(null);
-  const [orientation, setOrientation] = useState("H"); // H | V
+  const [orientation, setOrientation] = useState("H"); // H | V (legacy, kept for compatibility)
+  const [wordOrientations, setWordOrientations] = useState(() => ({})); // {wordIdx: "H" | "V"}
   const [rotatedView, setRotatedView] = useState(false);
+  const [placementError, setPlacementError] = useState(null); // error message for placement feedback
 
   // board is 2D char matrix + ownership of letters (which word placed it)
   const emptyBoard = useMemo(() => {
@@ -137,9 +139,11 @@ export default function WordWeaverDuelTask({
     setScores({});
     setSelectedWordIdx(null);
     setOrientation("H");
+    setWordOrientations({});
     setRotatedView(false);
     setBoard(emptyBoard);
     setPlaced({});
+    setPlacementError(null);
     setTimeLeft(turnkeeper.perTurnSeconds > 0 ? turnkeeper.perTurnSeconds : null);
   }, [taskKey, emptyBoard, turnkeeper.perTurnSeconds]);
 
@@ -180,7 +184,8 @@ export default function WordWeaverDuelTask({
     if (ori === "H" && c + w.length > gridSize) return { ok: false, reason: "Doesn't fit horizontally." };
     if (ori === "V" && r + w.length > gridSize) return { ok: false, reason: "Doesn't fit vertically." };
 
-    // conflicts
+    // Check for conflicts and count intersections with matching letters
+    let hasIntersection = false;
     for (let i = 0; i < w.length; i++) {
       const rr = ori === "V" ? r + i : r;
       const cc = ori === "H" ? c + i : c;
@@ -188,7 +193,14 @@ export default function WordWeaverDuelTask({
       const existing = cell?.ch ? String(cell.ch).toUpperCase() : "";
       const want = w[i];
       if (existing && existing !== want) return { ok: false, reason: `Conflict at ${rr + 1},${cc + 1}.` };
+      if (existing && existing === want) hasIntersection = true;
     }
+
+    // Enforce intersection rule: after first word is placed, all subsequent words must intersect
+    if (placedCount > 0 && !hasIntersection) {
+      return { ok: false, reason: "This word must cross an existing word at a shared letter." };
+    }
+
     return { ok: true };
   };
 
@@ -201,24 +213,32 @@ export default function WordWeaverDuelTask({
     const word = String(wordRaw).trim().toUpperCase();
     if (!word) return;
 
+    // Get the orientation for this specific word (use per-word orientation if set, otherwise use global)
+    const wordOri = wordOrientations[wordIdx] ?? orientation;
+
     setBoard((prev) => {
       const b = prev.map((row) => row.map((cell) => ({ ...cell })));
-      const check = canPlaceWord(r, c, word, orientation, b);
-      if (!check.ok) return prev;
+      const check = canPlaceWord(r, c, word, wordOri, b);
+      if (!check.ok) {
+        setPlacementError(check.reason);
+        return prev;
+      }
 
-      const intersections = computeIntersections(r, c, word, orientation, b);
+      setPlacementError(null);
+
+      const intersections = computeIntersections(r, c, word, wordOri, b);
       const points = word.length + intersections * 2;
 
       for (let i = 0; i < word.length; i++) {
-        const rr = orientation === "V" ? r + i : r;
-        const cc = orientation === "H" ? c + i : c;
+        const rr = wordOri === "V" ? r + i : r;
+        const cc = wordOri === "H" ? c + i : c;
         const cur = b[rr][cc];
         b[rr][cc] = { ch: word[i], wordId: cur?.wordId ?? wordIdx }; // preserve earlier ownership on intersections
       }
 
       setPlaced((p) => ({
         ...(p || {}),
-        [wordIdx]: { r, c, orientation, playerIndex: activePlayer, points, intersections },
+        [wordIdx]: { r, c, orientation: wordOri, playerIndex: activePlayer, points, intersections },
       }));
 
       setScores((s) => ({
@@ -630,12 +650,29 @@ export default function WordWeaverDuelTask({
                 <div key={r} style={styles.boardRow}>
                   {row.map((cell, c) => {
                     const isEmpty = !cell?.ch;
+                    const selectedWord = selectedWordIdx != null ? (scrabbleWords[selectedWordIdx] || "") : "";
+                    const wordOri = wordOrientations[selectedWordIdx] ?? orientation;
+
+                    // Check if this cell would be covered by the selected word preview
+                    let isPreview = false;
+                    if (selectedWord && selectedWordIdx != null && !placedByWord[selectedWordIdx]) {
+                      for (let i = 0; i < selectedWord.length; i++) {
+                        const previewR = wordOri === "V" ? r - i : r;
+                        const previewC = wordOri === "H" ? c - i : c;
+                        if (previewR === r && previewC === c) {
+                          isPreview = true;
+                          break;
+                        }
+                      }
+                    }
+
                     return (
                       <div
                         key={`${r}:${c}`}
                         style={{
                           ...styles.cell,
                           ...(isEmpty ? styles.cellEmpty : styles.cellFilled),
+                          ...(isPreview ? { background: "rgba(14,165,233,0.15)", borderStyle: "dashed", borderColor: "rgba(14,165,233,0.5)" } : {}),
                         }}
                         onDragOver={(ev) => {
                           if (!canInteract) return;
@@ -666,15 +703,36 @@ export default function WordWeaverDuelTask({
               const placedInfo = placedByWord[idx] || null;
               const isSelected = selectedWordIdx === idx;
               const isPlaced = !!placedInfo;
+              const wordOri = wordOrientations[idx] ?? "H";
 
               return (
                 <div key={`${w}-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {/* Tile strip rendering */}
+                  <div
+                    style={{
+                      ...styles.tileStrip,
+                      ...(isPlaced ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                      ...(isSelected ? { border: "2px solid rgba(14,165,233,0.9)", background: "rgba(14,165,233,0.08)" } : {}),
+                    }}
+                  >
+                    {String(w)
+                      .toUpperCase()
+                      .split("")
+                      .map((letter, i) => (
+                        <div key={i} style={styles.tile}>
+                          {letter}
+                        </div>
+                      ))}
+                  </div>
+
+                  {/* Selection/drag button wrapper */}
                   <button
                     type="button"
                     draggable={canInteract && !isPlaced}
                     onDragStart={(ev) => {
                       try {
                         ev.dataTransfer?.setData?.("text/plain", String(idx));
+                        ev.dataTransfer?.setData?.("wordIdx", String(idx));
                       } catch {
                         // no-op
                       }
@@ -686,15 +744,47 @@ export default function WordWeaverDuelTask({
                     }}
                     disabled={!canInteract || isPlaced}
                     style={{
-                      ...styles.wordChip,
-                      ...(isSelected ? styles.wordChipSelected : null),
-                      ...(isPlaced ? styles.wordChipPlaced : null),
+                      padding: "6px 8px",
+                      borderRadius: 6,
+                      border: isSelected ? "2px solid rgba(14,165,233,0.9)" : "1px solid rgba(15,23,42,0.14)",
+                      background: isSelected ? "rgba(14,165,233,0.08)" : "transparent",
+                      cursor: canInteract && !isPlaced ? "pointer" : "not-allowed",
+                      fontSize: 12,
+                      opacity: isPlaced ? 0.5 : 1,
                     }}
                     aria-pressed={isSelected}
                     title={isPlaced ? "Already placed" : "Click to select, or drag to the board"}
                   >
-                    {String(w).toUpperCase()}
+                    {isPlaced ? "Placed" : "Select"}
                   </button>
+
+                  {/* Per-word rotation toggle */}
+                  {!isPlaced && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!canInteract) return;
+                        setWordOrientations((prev) => ({
+                          ...prev,
+                          [idx]: prev[idx] === "V" ? "H" : "V",
+                        }));
+                      }}
+                      disabled={!canInteract}
+                      style={{
+                        padding: "4px 6px",
+                        borderRadius: 4,
+                        border: "1px dashed rgba(15,23,42,0.18)",
+                        background: "transparent",
+                        cursor: canInteract ? "pointer" : "not-allowed",
+                        fontSize: 11,
+                        opacity: 0.75,
+                        fontWeight: 600,
+                      }}
+                      title="Rotate this word 90 degrees"
+                    >
+                      {wordOri === "H" ? "↻ Horizontal" : "↻ Vertical"}
+                    </button>
+                  )}
 
                   {isPlaced && (
                     <div style={styles.placedMeta}>
@@ -705,6 +795,13 @@ export default function WordWeaverDuelTask({
               );
             })}
           </div>
+
+          {/* Error message display */}
+          {placementError && (
+            <div style={styles.placementErrorBox}>
+              ⚠ {placementError}
+            </div>
+          )}
 
           <div style={styles.controls}>
             <button
@@ -726,6 +823,8 @@ export default function WordWeaverDuelTask({
                 setScores({});
                 setSelectedWordIdx(null);
                 setActivePlayer(0);
+                setWordOrientations({});
+                setPlacementError(null);
               }}
               disabled={!canInteract || mode === "review"}
               style={styles.secondaryBtn}
@@ -964,25 +1063,59 @@ const styles = {
   },
   boardRow: { display: "flex" },
   cell: {
-    width: 26,
-    height: 26,
+    width: 30,
+    height: 30,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontWeight: 900,
-    fontSize: 13,
+    fontSize: 14,
     userSelect: "none",
+    cursor: "pointer",
   },
   cellEmpty: {
-    border: "1px dashed rgba(15,23,42,0.18)",
-    background: "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))",
-    boxShadow: "0 16px 40px rgba(2,6,23,0.10)",
+    border: "1px solid rgba(15,23,42,0.14)",
+    background: "#f5f5f0",
     color: "#94a3b8",
   },
   cellFilled: {
     border: "1px solid rgba(15,23,42,0.14)",
-    background: "rgba(14,165,233,0.08)",
+    background: "#d4a574",
     color: "#0f172a",
+    fontWeight: 900,
+  },
+
+  // Tile strip styles
+  tileStrip: {
+    marginTop: 8,
+    display: "inline-flex",
+    gap: 1,
+    padding: 4,
+    borderRadius: 6,
+    border: "1px solid rgba(15,23,42,0.12)",
+    background: "#fef9f3",
+  },
+  tile: {
+    width: 30,
+    height: 30,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#dbb895",
+    border: "1px solid rgba(15,23,42,0.25)",
+    borderRadius: 2,
+    fontWeight: 900,
+    fontSize: 14,
+    color: "#0f172a",
+    userSelect: "none",
+  },
+  tileVertical: {
+    flexDirection: "column",
+  },
+  rotationIcon: {
+    fontSize: 11,
+    opacity: 0.7,
+    marginTop: 2,
   },
 
   wordRack: { marginTop: 8, display: "flex", flexWrap: "wrap", gap: 10 },
@@ -1069,4 +1202,15 @@ const styles = {
   good: { fontWeight: 900, color: "#16a34a" },
   bad: { fontWeight: 900, color: "#dc2626" },
   feedback: { marginTop: 8, color: "#334155" },
+
+  placementErrorBox: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 8,
+    background: "#fee2e2",
+    border: "1px solid #fca5a5",
+    color: "#991b1b",
+    fontSize: 13,
+    fontWeight: 600,
+  },
 };

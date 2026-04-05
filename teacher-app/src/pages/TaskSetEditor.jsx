@@ -56,6 +56,10 @@ export default function TaskSetEditor() {
 
   const [toast, setToast] = useState("");
   const toastTimerRef = useRef(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [shareExpiresAt, setShareExpiresAt] = useState("");
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -138,6 +142,40 @@ export default function TaskSetEditor() {
       setError(e?.message || "Save failed");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleShareClick = async () => {
+    if (!id) {
+      showToast("Save the task set first");
+      return;
+    }
+
+    setShareLoading(true);
+    setError("");
+    try {
+      const data = await apiFetchJson("/api/shared/create-link", {
+        method: "POST",
+        body: { tasksetId: id },
+      });
+
+      if (!data?.ok) throw new Error(data?.error || "Failed to create share link");
+
+      setShareLink(data.link);
+      setShareExpiresAt(data.expiresAt);
+      setShareModalOpen(true);
+    } catch (e) {
+      setError(e?.message || "Failed to create share link");
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (shareLink) {
+      navigator.clipboard.writeText(shareLink).then(() => {
+        showToast("Link copied!");
+      });
     }
   };
 
@@ -267,7 +305,66 @@ export default function TaskSetEditor() {
         <button onClick={save} disabled={saving}>
           {saving ? "Saving…" : "Save"}
         </button>
+        {id && (
+          <button onClick={handleShareClick} disabled={shareLoading} style={{ marginLeft: "auto" }}>
+            {shareLoading ? "Creating link…" : "Share with Substitute"}
+          </button>
+        )}
       </div>
+
+      {/* Share Link Modal */}
+      {shareModalOpen && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: "#fff",
+            borderRadius: 16,
+            padding: 24,
+            maxWidth: 500,
+            boxShadow: "0 10px 40px rgba(0,0,0,0.1)",
+          }}>
+            <h2 style={{ marginTop: 0, marginBottom: 12 }}>Share Task Set</h2>
+            <p style={{ color: "#6b7280", marginBottom: 16 }}>
+              Share this link with a substitute teacher. It expires in 7 days.
+            </p>
+            <div style={{
+              background: "#f3f4f6",
+              padding: 12,
+              borderRadius: 8,
+              marginBottom: 12,
+              fontFamily: "monospace",
+              wordBreak: "break-all",
+              fontSize: "0.9rem",
+            }}>
+              {shareLink}
+            </div>
+            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16 }}>
+              Expires: {shareExpiresAt ? new Date(shareExpiresAt).toLocaleDateString() : ""}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShareModalOpen(false)}
+                style={{ background: "#e5e7eb", color: "#000" }}
+              >
+                Close
+              </button>
+              <button onClick={handleCopyLink}>
+                Copy Link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -738,21 +738,14 @@ function ViewportCard({ children, padded = true }) {
 
 export default function DemoPage() {
 
-  const INTRO_PLAYED_KEY = "curriculate.demoIntroPlayed.v1";
-  const MOOD_PLAYED_KEY = "curriculate.moodCheckPlayed.v1";
+  const INTRO_PLAYED_KEY = “curriculate.demoIntroPlayed.v1”;
 
   // Pick one of the two intro variants once per page load (stable; prevents mid-play “flash”)
   const demoIntroSrc = useMemo(() => {
     const pickAlt = Math.random() >= 0.5;
       return DEMO_INTRO_SOURCES[pickAlt ? 1 : 0] || DEMO_INTRO_SOURCES[0];
     }, []);
-    const [phase, setPhase] = useState(() => {
-      try {
-        return sessionStorage.getItem(MOOD_PLAYED_KEY) === "1" ? "runner" : "mood";
-      } catch {
-        return "mood";
-      }
-  }); // mood | runner | task
+    const [phase, setPhase] = useState(“runner”); // runner | task
   const [demoTaskset, setDemoTaskset] = useState(null);
   const [showInstructions, setShowInstructions] = useState(false);
 
@@ -1117,38 +1110,72 @@ setTaskLocked(false);
   // -------------------------
   // Render
   // -------------------------
-  if (phase === "mood") {
-    return (
-      <div style={{ padding: 24 }}>
-        <h1 style={{ fontSize: 28, margin: 0 }}>Curriculate Demo</h1>
-        <p style={{ marginTop: 10, maxWidth: 760 }}>
-          Quick mood check so the demo flow matches your classroom energy.
-        </p>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
-          <button
-            onClick={() => {
-              try { sessionStorage.setItem(MOOD_PLAYED_KEY, "1"); } catch {}
-              setPhase("runner");
-            }}
-          >
-            Let’s go
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (phase === "task" && currentTask) {
     return (
-      <div style={{ padding: 16 }}>
+      <div style={{
+        padding: 16,
+        minHeight: "100vh",
+        background: "radial-gradient(circle at top, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+        color: "#e2e8f0",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+      }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <button onClick={goBackToRunner}>← Back</button>
+          <button
+            onClick={goBackToRunner}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "rgba(255,255,255,0.08)",
+              color: "#e2e8f0",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            ← Back
+          </button>
           <div style={{ fontWeight: 700 }}>{getTaskTypeMeta(selectedType)?.label || selectedType}</div>
           {taskLocked && (
             <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.8 }}>
               Next task in {postSubmitSecondsLeft}s
             </div>
           )}
+        </div>
+
+        {/* Mini leaderboard */}
+        <div style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 12,
+          padding: "8px 12px",
+          borderRadius: 12,
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.1)",
+        }}>
+          {leaderboard.map((t, i) => (
+            <div key={t.id} style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 13,
+              fontWeight: t.isYou ? 800 : 600,
+              opacity: t.isYou ? 1 : 0.8,
+            }}>
+              <span>{t.emoji}</span>
+              <span>{t.teamName}</span>
+              <span style={{
+                padding: "2px 6px",
+                borderRadius: 999,
+                background: t.isYou ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.1)",
+                fontSize: 11,
+                fontWeight: 800,
+              }}>
+                {t.score}
+              </span>
+            </div>
+          ))}
         </div>
 
         {taskLocked && (
@@ -1347,10 +1374,16 @@ setTaskLocked(false);
 
   // runner
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{
+      padding: 24,
+      minHeight: "100vh",
+      background: "radial-gradient(circle at top, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+      color: "#e2e8f0",
+      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+    }}>
       <h1 style={{ fontSize: 28, margin: 0 }}>Demo Task Runner</h1>
       <p style={{ marginTop: 10, maxWidth: 900 }}>
-        Choose a task type. Templates and labels come from <code>shared/taskTypes.js</code>.
+        Choose a task type below to try the real student experience. Each task runs exactly as it would in a live classroom session.
       </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "14px 0" }}>
@@ -1358,8 +1391,69 @@ setTaskLocked(false);
           disabled={generating}
           progress={progress}
           onClick={() => {
-            // Keep existing UI element but do not start SSE in this minimal drop-in.
-            showToast("Demo generator is handled elsewhere in your app.", false);
+            if (generating) return;
+            setGenerating(true);
+            setDone(0);
+            setTotal(1);
+            setStatus("Starting generation...");
+
+            const es = new EventSource(`${API_BASE}/api/demo/taskset/stream`);
+            esRef.current = es;
+
+            es.addEventListener("init", (e) => {
+              try {
+                const msg = JSON.parse(e.data);
+                if (msg.total) setTotal(msg.total);
+                setStatus("Generating...");
+              } catch {}
+            });
+
+            es.addEventListener("progress", (e) => {
+              try {
+                const msg = JSON.parse(e.data);
+                if (typeof msg.index === "number") setDone(msg.index + 1);
+                if (msg.taskType) setStatus(`Generating ${msg.taskType}...`);
+              } catch {}
+            });
+
+            es.addEventListener("done", (e) => {
+              try {
+                const msg = JSON.parse(e.data);
+                if (msg.ok) {
+                  es.close();
+                  esRef.current = null;
+                  setGenerating(false);
+                  setStatus("Done!");
+                  setTimeout(() => loadDemoTaskset(), 500);
+                } else {
+                  throw new Error(msg.error || "Generation incomplete");
+                }
+              } catch (err) {
+                es.close();
+                esRef.current = null;
+                setGenerating(false);
+                setStatus("Generation failed. Try again.");
+              }
+            });
+
+            es.addEventListener("fatal", (e) => {
+              try {
+                const msg = JSON.parse(e.data);
+                throw new Error(msg.error || "Fatal error");
+              } catch (err) {
+                es.close();
+                esRef.current = null;
+                setGenerating(false);
+                setStatus("Generation failed. Try again.");
+              }
+            });
+
+            es.onerror = () => {
+              es.close();
+              esRef.current = null;
+              setGenerating(false);
+              setStatus("Generation failed. Try again.");
+            };
           }}
         >
           Generate all types
@@ -1379,7 +1473,7 @@ setTaskLocked(false);
         )}
       </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14, alignItems: "start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, alignItems: "start" }}>
         <div
           style={{
             borderRadius: 16,

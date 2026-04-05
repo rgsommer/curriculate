@@ -50,6 +50,8 @@ export default function SharedLaunch() {
         // Optional: store attribution for reports
         localStorage.setItem("curriculateSharedAuthorDisplay", String(data.authorDisplay || ""));
         localStorage.setItem("curriculateSharedExpiresAt", String(data.expiresAt || ""));
+        localStorage.setItem("curriculateSharedFromTeacherId", String(data.sharedFromTeacherId || ""));
+        localStorage.setItem("curriculateSharedFromTeacherEmail", String(data.sharedFromTeacherEmail || ""));
 
         if (!alive) return;
 

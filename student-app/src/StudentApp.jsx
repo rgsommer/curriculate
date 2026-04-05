@@ -13,243 +13,42 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 
+// Utilities
+import {
+  normalizeLocationSlug,
+  normalizeStationId,
+  titleCaseRoom,
+  displayRoomFromSlugOrLabel,
+  getStationBubbleStyles,
+} from "./utils/stationHelpers.js";
+import {
+  LS_KEYS,
+  lsGet,
+  lsSet,
+  lsDel,
+  clearSavedJoin,
+} from "./utils/localStorage.js";
+import {
+  isObjectiveTask,
+  getItemPrompt,
+  tfCorrectToText,
+  buildObjectiveAnswerKey,
+} from "./utils/answerKeyHelpers.js";
+import { buildMatchingReveal } from "./utils/matchingReveal.js";
+import { getThemeShell, formatRemainingMs } from "./utils/themeHelpers.js";
+
+// Hooks
+import { useSocketConnection } from "./hooks/useSocketConnection.js";
+import { useSoundEffects } from "./hooks/useSoundEffects.js";
+
 // Build marker so you can confirm the deployed bundle
 const BUILD_MARKER = import.meta.env.VITE_BUILD_ID;
-console.log("🚀 StudentApp Build:", BUILD_MARKER);
+console.log(“🚀 StudentApp Build:”, BUILD_MARKER);
 
-// ---------------------------------------------------------------------
-// Station colour helpers – numeric ids (station-1, station-2…)
-// ---------------------------------------------------------------------
-const COLOR_NAMES = COLORS;
-
-// For now, LiveSession-launched tasks are assumed to use "Classroom"
-const DEFAULT_LOCATION = "Classroom";
+// For now, LiveSession-launched tasks are assumed to use “Classroom”
+const DEFAULT_LOCATION = “Classroom”;
 
 const DEFAULT_POST_SUBMIT_SECONDS = 15;
-
-// --- MATCHING reveal helper (student review overlay) ---
-function buildMatchingReveal(task, reviewState) {
-  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
-  const correctMatches =
-    (reviewState && typeof reviewState.correctMatches === "object" && reviewState.correctMatches) ||
-    (cfg && typeof cfg.correctMatches === "object" && cfg.correctMatches) ||
-    (task && typeof task.correctMatches === "object" && task.correctMatches) ||
-    null;
-
-  if (!correctMatches) return null;
-
-  // Student submission map (we saved it in reviewState.studentAnswer on submit)
-  const studentRaw = reviewState?.studentAnswer;
-  const studentMatches =
-    (studentRaw && typeof studentRaw.matches === "object" && studentRaw.matches) ||
-    (studentRaw && typeof studentRaw.pairs === "object" && studentRaw.pairs) ||
-    (studentRaw && typeof studentRaw.correctMatches === "object" && studentRaw.correctMatches) ||
-    null;
-
-  const leftItems = Array.isArray(reviewState?.leftItems)
-    ? reviewState.leftItems
-    : Array.isArray(cfg?.leftItems)
-    ? cfg.leftItems
-    : Array.isArray(task?.leftItems)
-    ? task.leftItems
-    : [];
-
-  const rightItems = Array.isArray(reviewState?.rightItems)
-    ? reviewState.rightItems
-    : Array.isArray(cfg?.rightItems)
-    ? cfg.rightItems
-    : Array.isArray(task?.rightItems)
-    ? task.rightItems
-    : [];
-
-  const leftTextById = {};
-  for (const it of leftItems) {
-    const id = String(it?.id ?? "");
-    const text = String(it?.text ?? it?.label ?? it ?? "").trim();
-    if (id && text) leftTextById[id] = text;
-  }
-
-  const rightTextById = {};
-  for (const it of rightItems) {
-    const id = String(it?.id ?? "");
-    const text = String(it?.text ?? it?.label ?? it ?? "").trim();
-    if (id && text) rightTextById[id] = text;
-  }
-
-  let correctCount = 0;
-  const entries = Object.entries(correctMatches);
-
-  const rows = entries.map(([l, r]) => {
-    const leftId = String(l);
-    const rightId = String(r);
-
-    const left = leftTextById[leftId] || leftId;
-    const right = rightTextById[rightId] || rightId;
-
-    const studentRight = studentMatches?.[leftId] != null ? String(studentMatches[leftId]) : null;
-
-    const isAnswered = studentRight != null;
-    const isCorrect = isAnswered && studentRight === rightId;
-
-    if (isCorrect) correctCount += 1;
-
-    const studentRightText =
-      studentRight != null ? (rightTextById[String(studentRight)] || String(studentRight)) : null;
-
-    return {
-      leftId,
-      rightId,
-      left,
-      right,
-      studentRight,
-      studentRightText,
-      isAnswered,
-      isCorrect,
-    };
-  });
-
-  const totalPairs = entries.length || 1;
-  const percent = Math.round((correctCount / totalPairs) * 100);
-
-  return { rows, correctCount, totalPairs, percent };
-}
-
-// Normalize a human-readable location into a slug like "room-12"
-function normalizeLocationSlug(raw) {
-  if (!raw) return "";
-  return String(raw)
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-}
-
-function normalizeStationId(raw) {
-  if (!raw) {
-    return { id: null, color: null, label: "Not assigned yet" };
-  }
-
-  const s = String(raw).trim();
-  let lower = s.toLowerCase();
-
-  // Case 1: full numeric id: "station-1", "station-2", ...
-  let m = /^station-(\d+)$/.exec(lower);
-  if (m) {
-    const idx = parseInt(m[1], 10) - 1;
-    const color = COLOR_NAMES[idx] || null;
-    return {
-      id: `station-${m[1]}`,
-      color,
-      label: color
-        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
-        : `Station-${m[1]}`,
-    };
-  }
-
-  // Case 2: numeric only: "1", "2", ...
-  m = /^(\d+)$/.exec(lower);
-  if (m) {
-    const idx = parseInt(m[1], 10) - 1;
-    const color = COLOR_NAMES[idx] || null;
-    return {
-      id: `station-${m[1]}`,
-      color,
-      label: color
-        ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
-        : `Station-${m[1]}`,
-    };
-  }
-
-  // Case 3: colour name: "red", "blue", ...
-  const colourIdx = COLOR_NAMES.indexOf(lower);
-  if (colourIdx >= 0) {
-    return {
-      id: `station-${colourIdx + 1}`,
-      color: lower,
-      label: `Station-${lower[0].toUpperCase()}${lower.slice(1)}`,
-    };
-  }
-
-  // Case 4: "station-red", "station-blue", ...
-  m = /^station-(\w+)$/.exec(lower);
-  if (m && COLOR_NAMES.includes(m[1])) {
-    const colourIdx2 = COLOR_NAMES.indexOf(m[1]) + 1;
-    return {
-      id: `station-${colourIdx2}`,
-      color: m[1],
-      label: `Station-${m[1][0].toUpperCase()}${m[1].slice(1)}`,
-    };
-  }
-
-  // Case 5: URL that contains a color segment like ".../red"
-  const colorRegex = new RegExp(
-    `(?:^|[\\/\\?#&=])(${COLOR_NAMES.join("|")})(?:$|[\\/\\?#&=])`,
-    "i"
-  );
-  const cm = lower.match(colorRegex);
-  if (cm) {
-    const c = cm[1].toLowerCase();
-    const idx = COLOR_NAMES.indexOf(c);
-    return {
-      id: `station-${idx + 1}`,
-      color: c,
-      label: `Station-${c[0].toUpperCase()}${c.slice(1)}`,
-    };
-  }
-
-  // Default fallback
-  return { id: s, color: null, label: s.toUpperCase() };
-}
-
-function titleCaseRoom(label) {
-  const s = (label || "").toString().trim();
-  if (!s) return "CLASSROOM";
-  return s.toUpperCase();
-}
-
-function displayRoomFromSlugOrLabel(loc, selectedRooms) {
-  // if teacher provided “Upper Hallway”, show that; otherwise fall back to slug-ish text
-  const cleaned = (loc || "").toString().trim();
-  if (!cleaned) return "CLASSROOM";
-
-  const found =
-    (selectedRooms || []).find((r) => r.toLowerCase() === cleaned.toLowerCase()) ||
-    null;
-
-  // if it’s already a nice label, use it; else make slug more readable
-  const label = found || cleaned.replace(/[-_]/g, " ").replace(/\s+/g, " ");
-  return titleCaseRoom(label);
-}
-
-function getStationBubbleStyles(colorName) {
-  // Default pale yellow & dark text when no station colour yet
-  if (!colorName) {
-    return {
-      background: "#fef9c3",
-      color: "#111827",
-    };
-  }
-
-  const COLOR_MAP = {
-    red: "#ef4444",
-    blue: "#3b82f6",
-    green: "#22c55e",
-    yellow: "#eab308",
-    purple: "#a855f7",
-    orange: "#f97316",
-    teal: "#14b8a6",
-    pink: "#ec4899",
-  };
-
-  const bg = COLOR_MAP[colorName] || "#fef9c3";
-
-  // Light-ish colours → dark text; dark colours → white text
-  const lightColours = ["yellow", "orange", "teal", "pink"];
-  const isLight = lightColours.includes(colorName);
-
-  return {
-    background: bg,
-    color: isLight ? "#111827" : "#ffffff",
-  };
-}
 
 // ---------------------------------------------------------------------
 // Shared socket instance – same host as backend
@@ -262,272 +61,11 @@ const socket = io(API_BASE_URL, {
   reconnectionDelay: 1000,
 });
 
-// ---------------------------------------------------------------------
-// Local session persistence (room + team session)
-// - Refresh/reconnect should auto-resume the same room + team.
-// - Only "Join another room" clears these keys.
-// ---------------------------------------------------------------------
-const LS_KEYS = {
-  roomCode: "curriculate.roomCode",
-  teamSessionId: "curriculate.teamSessionId",
-  teamName: "curriculate.teamName",
-  members: "curriculate.members",
-};
+// Local session persistence is now in utils/localStorage.js
 
-function lsGet(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function lsSet(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-}
-function lsDel(key) {
-  try {
-    localStorage.removeItem(key);
-  } catch {}
-}
-function clearSavedJoin() {
-  lsDel(LS_KEYS.roomCode);
-  lsDel(LS_KEYS.teamSessionId);
-  lsDel(LS_KEYS.teamName);
-  lsDel(LS_KEYS.members);
-}
+// Objective answer-key helpers are now in utils/answerKeyHelpers.js
 
-// -----------------------------
-// Objective answer-key helpers
-// -----------------------------
-const isObjectiveTask = (task) => {
-  if (!task) return false;
-
-  // explicit flags
-  if (task.objectiveScoring === true) return true;
-  if (task?.config?.objectiveScoring === true) return true;
-
-  // common "no AI" marker in this project
-  if (task.aiScoringRequired === false) return true;
-
-  // heuristic: objective task types usually ship correct answers/config
-  const t = task.taskType || task.type;
-  const items = Array.isArray(task.items) ? task.items : [];
-  const hasItemCorrect = items.some(
-    (it) => it && (it.correctAnswer !== undefined || it.referenceAnswer)
-  );
-  const hasTopCorrect = task.correctAnswer !== undefined && task.correctAnswer !== null;
-  const cfg = task.config && typeof task.config === "object" ? task.config : {};
-  const hasSortConfig =
-    Array.isArray(cfg.buckets) &&
-    cfg.buckets.length >= 2 &&
-    Array.isArray(cfg.items) &&
-    cfg.items.length >= 2 &&
-    cfg.items.some((it) => typeof it?.bucketIndex === "number");
-  const hasSeqConfig = Array.isArray(cfg.items) && cfg.items.length >= 2;
-
-  const objectiveTypes = new Set([
-    TASK_TYPES.TRUE_FALSE,
-    TASK_TYPES.MULTIPLE_CHOICE,
-    TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE,
-    TASK_TYPES.SHORT_ANSWER,
-    TASK_TYPES.SORT,
-    TASK_TYPES.SEQUENCE,
-    TASK_TYPES.TIMELINE,
-    TASK_TYPES.MATCHING,
-    TASK_TYPES.VENNSORT,
-  ]);
-
-  if (objectiveTypes.has(t) && (hasItemCorrect || hasTopCorrect || hasSortConfig || hasSeqConfig))
-    return true;
-
-  // scoringMode string fallback
-  if (task.scoringMode && String(task.scoringMode).toLowerCase().includes("objective"))
-    return true;
-
-  return false;
-};
-
-const getItemPrompt = (item, idx) => {
-  const raw =
-    item?.prompt ??
-    item?.question ??
-    item?.label ??
-    item?.stem ??
-    item?.text ??
-    item?.title ??
-    item?.description ??
-    "";
-  const s = typeof raw === "string" ? raw.trim() : String(raw || "").trim();
-  return s || `Question ${idx + 1}`;
-};
-
-const tfCorrectToText = (val) => {
-  // supports: boolean, "true"/"false", 0/1, "0"/"1"
-  if (typeof val === "boolean") return val ? "True" : "False";
-  if (typeof val === "number") return val === 1 ? "True" : "False";
-  const s = String(val ?? "").trim().toLowerCase();
-  if (s === "true") return "True";
-  if (s === "false") return "False";
-  if (s === "1") return "True";
-  if (s === "0") return "False";
-  return "";
-};
-
-const buildObjectiveAnswerKey = (task) => {
-  if (!task) return null;
-
-  const taskType = task.taskType || task.type;
-  const items = Array.isArray(task.items) ? task.items : [];
-
-  // --- TRUE/FALSE ---
-  if (taskType === TASK_TYPES.TRUE_FALSE) {
-    if (items.length) {
-      return {
-        title: "Answer key",
-        rows: items.map((it, idx) => ({
-          q: getItemPrompt(it, idx),
-          a: tfCorrectToText(it?.correctAnswer) || "(missing correct answer)",
-        })),
-      };
-    }
-    // single TF fallback
-    const single = tfCorrectToText(task.correctAnswer);
-    if (single) {
-      return {
-        title: "Answer key",
-        rows: [{ q: task.prompt || "True/False", a: single }],
-      };
-    }
-  }
-
-  // --- MULTIPLE CHOICE ---
-  if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
-    if (items.length) {
-      return {
-        title: "Answer key",
-        rows: items.map((it, idx) => {
-          const opts = Array.isArray(it.options) ? it.options : [];
-          const c = it.correctAnswer;
-          let correctText = "";
-          if (typeof c === "number") correctText = opts[c] ?? "";
-          else if (typeof c === "string") correctText = c;
-          return { q: getItemPrompt(it, idx), a: String(correctText || "").trim() || "(missing correct answer)" };
-        }),
-      };
-    }
-
-    // single MC fallback
-    const opts = Array.isArray(task.options) ? task.options : [];
-    const c = task.correctAnswer;
-    const correctText =
-      typeof c === "number" ? opts[c] ?? "" : typeof c === "string" ? c : "";
-    if (correctText) {
-      return {
-        title: "Answer key",
-        rows: [{ q: task.prompt || "Multiple choice", a: String(correctText).trim() }],
-      };
-    }
-  }
-
-  // --- SHORT ANSWER ---
-  if (taskType === TASK_TYPES.SHORT_ANSWER) {
-    if (items.length) {
-      return {
-        title: "Suggested answers",
-        rows: items.map((it, idx) => ({
-          q: getItemPrompt(it, idx),
-          a: String(it.referenceAnswer ?? it.answer ?? it.expected ?? "").trim() || "(no reference answer)",
-        })),
-      };
-    }
-    const ref = String(task.referenceAnswer ?? "").trim();
-    if (ref) {
-      return { title: "Suggested answer", rows: [{ q: task.prompt || "Short answer", a: ref }] };
-    }
-  }
-
-  // --- SORT / CATEGORIZE ---
-  if (taskType === TASK_TYPES.SORT) {
-    const cfg = task.config && typeof task.config === "object" ? task.config : {};
-    const buckets = Array.isArray(cfg.buckets) ? cfg.buckets : [];
-    const sortItems = Array.isArray(cfg.items) ? cfg.items : [];
-
-    if (buckets.length && sortItems.length) {
-      const grouped = buckets.map((b) => ({ bucket: String(b || "").trim(), items: [] }));
-      const unassigned = [];
-
-      sortItems.forEach((it) => {
-        const text = String(it?.text ?? it ?? "").trim();
-        if (!text) return;
-        const bi = it?.bucketIndex;
-        if (typeof bi === "number" && bi >= 0 && bi < grouped.length) grouped[bi].items.push(text);
-        else unassigned.push(text);
-      });
-
-      return {
-        title: "Correct categories",
-        buckets: grouped.filter((g) => g.bucket),
-        unassigned,
-      };
-    }
-  }
-
-  // --- SEQUENCE / TIMELINE ---
-  if (taskType === TASK_TYPES.SEQUENCE || taskType === TASK_TYPES.TIMELINE) {
-    const cfg = task.config && typeof task.config === "object" ? task.config : {};
-    const seq = Array.isArray(cfg.items) ? cfg.items : [];
-    if (seq.length) {
-      return {
-        title: "Correct order",
-        ordered: seq.map((it, idx) => ({
-          n: idx + 1,
-          text: String(it?.text ?? it ?? "").trim() || `Step ${idx + 1}`,
-        })),
-      };
-    }
-  }
-  return null;
-};
-
-// ---------------------------------------------------------------------
-// Utility helpers
-// ---------------------------------------------------------------------
-
-function getThemeShell(uiTheme) {
-  switch (uiTheme) {
-    case "bold":
-      return {
-        pageBg: "radial-gradient(circle at top, #0f172a, #020617)",
-        cardBg: "rgba(15,23,42,0.95)",
-        cardBorder: "1px solid rgba(148,163,184,0.5)",
-        text: "#e5e7eb",
-      };
-    case "minimal":
-      return {
-        pageBg: "#f3f4f6",
-        cardBg: "#ffffff",
-        cardBorder: "1px solid #e5e7eb",
-        text: "#111827",
-      };
-    default: // "modern" / Theme 1
-      return {
-        pageBg: "linear-gradient(135deg, #0ea5e9, #6366f1)",
-        cardBg: "#ffffff",
-        cardBorder: "1px solid rgba(148,163,184,0.6)",
-        text: "#0f172a",
-      };
-  }
-}
-
-function formatRemainingMs(ms) {
-  if (!ms || ms <= 0) return "00:00";
-  const totalSeconds = Math.ceil(ms / 1000);
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-}
+// Theme helpers are now in utils/themeHelpers.js
 
 // ---------------------------------------------------------------------
 // Error boundary to prevent a blank-white-screen if a task component throws
@@ -571,10 +109,11 @@ function StudentApp() {
   const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
   const themeShell = getThemeShell(uiTheme);
 
-  const [connected, setConnected] = useState(false);
+  // Socket connection hook
+  const { connected, setConnected, statusMessage, setStatusMessage } = useSocketConnection(socket);
+
   const [joined, setJoined] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
   const [leaderboard, setLeaderboard] = useState([]); // Update via socket.on('leaderboard-update', setLeaderboard)
   const [tasksetComplete, setTasksetComplete] = useState(false);
   const [postPhase, setPostPhase] = useState("tasks"); // "tasks" | "feedback" | "trophy"
@@ -686,25 +225,27 @@ function StudentApp() {
   const [roomLocation, setRoomLocation] = useState(DEFAULT_LOCATION);
   const roomLocationFromStateRef = useRef(DEFAULT_LOCATION);
 
-  // Audio
-  const [audioContext, setAudioContext] = useState(null);
-  const sndAlert = useRef(null);
-  const sndTreat = useRef(null);
-  const sndEcho = useRef(null);
-  const sndNarration = useRef(null);
-  const sndScriptPlay = useRef(null);
-  const sndRolePlay = useRef(null);
-  const sndFakeOut = useRef(null);
-  const sndWordWeaver = useRef(null);
-  const sndDebate = useRef(null);
-  const sndCorrect = useRef(null);
-  const sndWrong = useRef(null);
+  // Audio effects hook
+  const {
+    tryPlayAlertSound,
+    tryPlayTreatSound,
+    tryPlayEchoSound,
+    tryPlayCorrectSound,
+    tryPlayWrongSound,
+    tryPlayNarrationSound,
+    tryPlayScriptPlaySound,
+    tryPlayReadingSound,
+    tryPlayRolePlaySound,
+    tryPlayFakeOutSound,
+    tryPlayWordWeaverSound,
+    tryPlayDebateSound,
+    tryPlayPhotoSound,
+    tryPlaySketchSound,
+    tryPlayVennSound,
+    tryPlayHuntSound,
+  } = useSoundEffects();
 
-  // Extra task-specific cues
-  const sndPhoto = useRef(null);
-  const sndSketch = useRef(null);
-  const sndVenn = useRef(null);
-  const sndHunt = useRef(null);
+  const [audioContext, setAudioContext] = useState(null);
   const requestedRoomStateRef = useRef(false);
 
   // EchoChain micro-theme pulse (purely visual)
@@ -769,31 +310,6 @@ function StudentApp() {
 
   useEffect(() => {
     console.log("🚀 Curriculate StudentApp mounted. Build:", BUILD_MARKER);
-  }, []);
-
-  useEffect(() => {
-    const handleConnect = () => {
-      setConnected(true);
-      setStatusMessage("");
-    };
-
-    const handleDisconnect = () => {
-      setConnected(false);
-      setStatusMessage("Disconnected from server. Trying to reconnect…");
-    };
-
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", (err) => {
-      console.error("Socket connection error:", err);
-      setStatusMessage("Error connecting. Retrying…");
-    });
-
-    return () => {
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("connect_error");
-    };
   }, []);
 
   // ─────────────────────────────────────────────
@@ -1402,6 +918,27 @@ function StudentApp() {
         timeLimitSeconds: payload?.timeLimitSeconds,
       });
 
+    // Handle pacing hold (waiting for other teams to catch up)
+    const handlePacingHold = (payload) => {
+      console.log("[StudentApp] Pacing hold:", payload);
+      setReviewState((prev) => ({
+        ...prev,
+        pacingHold: true,
+        pacingMessage: payload?.message || "Waiting for other teams to catch up...",
+      }));
+    };
+
+    // Handle pacing release (other teams caught up, can progress)
+    const handlePacingRelease = (payload) => {
+      console.log("[StudentApp] Pacing released:", payload);
+      if (postSubmitTimerRef.current) {
+        clearInterval(postSubmitTimerRef.current);
+      }
+      setReviewState(null);
+      setPostSubmitSecondsLeft(null);
+      endReviewAndReturnToScan();
+    };
+
     socket.on("room:state", handleRoomState);
     socket.on("task:assigned", handleTaskAssigned);
     socket.on("task:launch", handleTaskAssigned);
@@ -1410,6 +947,8 @@ function StudentApp() {
     socket.on("treat:event", handleTreat);
     socket.on("collab:partner-answer", handleCollabPartner);
     socket.on("collab:reply", handleCollabReply);
+    socket.on("team:pacing-hold", handlePacingHold);
+    socket.on("team:pacing-released", handlePacingRelease);
 
     socket.emit("room:request-state", {
       roomCode: roomCode.trim().toUpperCase(),
@@ -1425,6 +964,8 @@ function StudentApp() {
       socket.off("treat:event", handleTreat);
       socket.off("collab:partner-answer", handleCollabPartner);
       socket.off("collab:reply", handleCollabReply);
+      socket.off("team:pacing-hold", handlePacingHold);
+      socket.off("team:pacing-released", handlePacingRelease);
     };
   }, [teamId, roomCode]
   );
@@ -1601,157 +1142,7 @@ function StudentApp() {
     };
   }, []);
 
-  // ─────────────────────────────────────────────
-  // Audio setup (alert + treat sounds)
-  // ─────────────────────────────────────────────
-  useEffect(() => {
-    try {
-      const alertAudio = new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg");
-      alertAudio.volume = 0.15;
-      sndAlert.current = alertAudio;
-
-      const treatAudio = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
-      treatAudio.volume = 0.2;
-      sndTreat.current = treatAudio;
-
-      // EchoChain: subtle "chain" chime (non-blocking; safe to fail)
-      const echoAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
-      );
-      echoAudio.volume = 0.18;
-      sndEcho.current = echoAudio;
-
-      const narrationAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg"
-      );
-      narrationAudio.volume = 0.16;
-      sndNarration.current = narrationAudio;
-
-      // ScriptPlay: page-turn / stage cue (safe to fail)
-      const scriptAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/page_turn.ogg"
-      );
-      scriptAudio.volume = 0.16;
-      sndScriptPlay.current = scriptAudio;
-
-
-      // RolePlayDeck: "card draw" / gentle reveal cue (safe to fail)
-      const rolePlayAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/card_shuffle.ogg"
-      );
-      rolePlayAudio.volume = 0.16;
-      sndRolePlay.current = rolePlayAudio;
-
-      // Universal feedback (correct / incorrect)
-      const correctAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
-      correctAudio.volume = 0.16;
-      sndCorrect.current = correctAudio;
-
-      const wrongAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/boing.ogg"
-      );
-      wrongAudio.volume = 0.14;
-      sndWrong.current = wrongAudio;
-
-      // Photo / PhotoJournal / HideNSeek: camera shutter cue (safe to fail)
-      const photoAudio = new Audio(
-        "https://actions.google.com/sounds/v1/camera/camera_shutter_click_01.ogg"
-      );
-      photoAudio.volume = 0.18;
-      sndPhoto.current = photoAudio;
-
-      // SpeedDraw / DrawMime: marker cue (safe to fail)
-      const sketchAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/marker_write.ogg"
-      );
-      sketchAudio.volume = 0.14;
-      sndSketch.current = sketchAudio;
-
-      // VennSort: soft "drop" cue (safe to fail)
-      const vennAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      vennAudio.volume = 0.12;
-      sndVenn.current = vennAudio;
-
-      // HideNSeek: little "whoosh" cue (safe to fail)
-      const huntAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/slide_whistle_to_drum_hit.ogg"
-      );
-      huntAudio.volume = 0.12;
-      sndHunt.current = huntAudio;
-    } catch (err) {
-      console.warn("Could not preload audio:", err);
-    }
-
-    // FakeOut: playful "gotcha" cue (separate try so one failure doesn't block others)
-    try {
-      const fakeOutAudio = new Audio(
-        "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"
-      );
-      fakeOutAudio.volume = 0.14;
-      sndFakeOut.current = fakeOutAudio;
-
-      // WordWeaver: subtle "tile tap" cue
-      const wordWeaverAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      wordWeaverAudio.volume = 0.14;
-      sndWordWeaver.current = wordWeaverAudio;
-
-      // AI Debate Judge: gavel cue
-      const debateAudio = new Audio(
-        "https://actions.google.com/sounds/v1/foley/wood_tap.ogg"
-      );
-      debateAudio.volume = 0.18;
-      sndDebate.current = debateAudio;
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Handlers
-  function tryPlayAlertSound() {
-    try {
-      sndAlert.current && sndAlert.current.play();
-    } catch (err) {
-      console.warn("Alert sound play blocked:", err);
-    }
-  }
-
-  function tryPlayTreatSound() {
-    try {
-      sndTreat.current && sndTreat.current.play();
-    } catch (err) {
-      console.warn("Treat sound play blocked:", err);
-    }
-  }
-
-  function tryPlayEchoSound() {
-    try {
-      sndEcho.current && sndEcho.current.play();
-    } catch (err) {
-      console.warn("EchoChain sound play blocked:", err);
-    }
-  }
-
-  function tryPlayCorrectSound() {
-    try {
-      sndCorrect.current && sndCorrect.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-  function tryPlayWrongSound() {
-    try {
-      sndWrong.current && sndWrong.current.play();
-    } catch {
-      // ignore
-    }
-  }
+  // Audio setup and handlers are now in hooks/useSoundEffects.js
 
   useEffect(() => {
     window.__curriculatePlayWrongSound = () => {
@@ -1779,96 +1170,7 @@ function StudentApp() {
     };
   }, []);
 
-  function tryPlayNarrationSound() {
-    try {
-      sndNarration.current && sndNarration.current.play();
-    } catch (err) {
-      console.warn("Narration sound play blocked:", err);
-    }
-  }
-
-  function tryPlayScriptPlaySound() {
-    try {
-      sndScriptPlay.current && sndScriptPlay.current.play();
-    } catch (err) {
-      console.warn("ScriptPlay sound play blocked:", err);
-    }
-  }
-
-  // ReadingComp: page-turn cue (reuse ScriptPlay chime)
-  function tryPlayReadingSound() {
-    try {
-      // Prefer dedicated reading sound if later added; for now reuse ScriptPlay
-      sndScriptPlay.current && sndScriptPlay.current.play();
-    } catch (err) {
-      // autoplay may be blocked
-    }
-  }
-
-  function tryPlayRolePlaySound() {
-    try {
-      sndRolePlay.current && sndRolePlay.current.play();
-    } catch (err) {
-      console.warn("RolePlay sound play blocked:", err);
-    }
-  }
-
-  function tryPlayFakeOutSound() {
-    try {
-      sndFakeOut.current && sndFakeOut.current.play();
-    } catch (err) {
-      console.warn("FakeOut sound play blocked:", err);
-    }
-  }
-
-  function tryPlayWordWeaverSound() {
-    try {
-      sndWordWeaver.current && sndWordWeaver.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-  function tryPlayDebateSound() {
-    try {
-      sndDebate.current && sndDebate.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-
-  function tryPlayPhotoSound() {
-    try {
-      sndPhoto.current && sndPhoto.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-  function tryPlaySketchSound() {
-    try {
-      sndSketch.current && sndSketch.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-  function tryPlayVennSound() {
-    try {
-      sndVenn.current && sndVenn.current.play();
-    } catch {
-      // ignore
-    }
-  }
-
-  function tryPlayHuntSound() {
-    try {
-      sndHunt.current && sndHunt.current.play();
-    } catch {
-      // ignore
-    }
-  }
+  // All tryPlay* functions are now in hooks/useSoundEffects.js
 
   function requestTestTaskByIndex(index) {
     const safeIndex = Number(index);
@@ -2551,10 +1853,13 @@ function StudentApp() {
 
           setTaskLocked(true);
 
-          const fallbackSeconds =
-            Number(response?.postSubmitSeconds) > 0
+          // Check if team is catching up for quickened review
+          const isCatchingUp = response?.catchUp === true;
+          const fallbackSeconds = isCatchingUp
+            ? (response?.catchUpReviewSeconds || 4)
+            : (Number(response?.postSubmitSeconds) > 0
               ? Number(response.postSubmitSeconds)
-              : DEFAULT_POST_SUBMIT_SECONDS;
+              : DEFAULT_POST_SUBMIT_SECONDS);
 
           setReviewState({
             ...reviewObj,
@@ -2568,6 +1873,7 @@ function StudentApp() {
             taskId: payload.taskId,
             taskIndex: payload.taskIndex,
             secondsLeft: fallbackSeconds,
+            isCatchingUp: isCatchingUp,
           });
 
           setPostSubmitSecondsLeft(fallbackSeconds);
@@ -4998,6 +4304,9 @@ function StudentApp() {
               ? Math.round((postSubmitSecondsLeft / lockTotal) * 100)
               : 0;
 
+          const isCatchingUp = reviewState?.isCatchingUp === true;
+          const hasPacingHold = reviewState?.pacingHold === true;
+
           return (
             <div style={{ width: "100%", position: "relative", minHeight: 120 }}>
               {/* ✅ pinned top bar */}
@@ -5027,7 +4336,7 @@ function StudentApp() {
                 />
               </div>
             </div>
-            {/* centered message (no shaded background) */}
+            {/* centered message with optional catch-up badge */}
             <div
               style={{
                 marginTop: 18,
@@ -5039,8 +4348,28 @@ function StudentApp() {
                 paddingTop: 18,
               }}
             >
+              {isCatchingUp && (
+                <div
+                  style={{
+                    display: "inline-block",
+                    background: "rgba(59, 130, 246, 0.3)",
+                    border: "1px solid rgba(59, 130, 246, 0.6)",
+                    color: "rgba(255, 255, 255, 0.9)",
+                    padding: "4px 12px",
+                    borderRadius: 999,
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  Catching up...
+                </div>
+              )}
               <div>
-                Review your answer…
+                {hasPacingHold
+                  ? reviewState?.pacingMessage || "Waiting for other teams..."
+                  : "Review your answer…"}
               </div>
               <div
                 style={{

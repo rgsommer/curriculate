@@ -1,5 +1,7 @@
 import express from "express";
 import SubscriptionPlan from "../models/SubscriptionPlan.js";
+import User from "../models/User.js";
+import { authRequired } from "../middleware/authRequired.js";
 
 const router = express.Router();
 
@@ -111,10 +113,49 @@ router.get("/plan", async (req, res) => {
 });
 
 // GET /api/subscription/me (alias)
-router.get("/me", async (req, res) => {
+// Bug 3: Return actual user subscription instead of hardcoded FREE
+router.get("/me", authRequired, async (req, res) => {
   try {
-    const plan = await getCurrentPlan();
-    res.json(plan);
+    // Get userId from JWT auth (req.user should be populated by auth middleware)
+    const userId = req.user?._id || req.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    // Look up user's actual subscription status
+    const user = await User.findById(userId).lean();
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Return actual subscription data from user document
+    const subscriptionData = {
+      userId: String(user._id),
+      planTier: user.subscriptionTier || user.planTier || "FREE",
+      stripeCustomerId: user.stripeCustomerId || null,
+      stripeSubscriptionId: user.stripeSubscriptionId || null,
+      subscriptionStatus: user.subscriptionStatus || user.stripeSubscriptionStatus || null,
+
+      // Plan features/limits
+      seats: user.planSeats || 1,
+      aiMonthly: user.planAiMonthly || 0,
+      studentDetail: !!user.planStudentDetail,
+      exportsPdf: !!user.planExportsPdf,
+      prioritySupport: !!user.planPrioritySupport,
+      multiClass: !!user.planMultiClass,
+
+      // Renewal/downgrade info
+      planRenewsAt: user.planRenewsAt || null,
+      planWillDowngradeAt: user.planWillDowngradeAt || null,
+      cancelAtPeriodEnd: !!user.cancelAtPeriodEnd,
+
+      // Billing status
+      billingPastDue: !!user.billingPastDue,
+      billingPastDueAt: user.billingPastDueAt || null,
+      billingGraceUntil: user.billingGraceUntil || null,
+    };
+
+    res.json(subscriptionData);
   } catch (err) {
     console.error("GET /api/subscription/me error:", err);
     res.status(500).json({ error: "Failed to load subscription info" });

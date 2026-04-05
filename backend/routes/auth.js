@@ -54,13 +54,13 @@ const PasswordResetSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
     tokenHash: { type: String, required: true, index: true },
-    expiresAt: { type: Date, required: true },
+    // TTL index: MongoDB auto-deletes expired tokens. Using `expires` on the
+    // field directly avoids the duplicate-index warning from schema.index().
+    expiresAt: { type: Date, required: true, expires: 0 },
     usedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
-
-PasswordResetSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const PasswordReset =
   mongoose.models.PasswordReset || mongoose.model("PasswordReset", PasswordResetSchema);

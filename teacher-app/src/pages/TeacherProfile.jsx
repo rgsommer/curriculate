@@ -30,8 +30,8 @@ export default function TeacherProfile() {
     locationOptions: [],
 
     // Voice settings
-    voiceId: "",           
-    voiceSampleUrl: "",    
+    voiceId: "",
+    voiceSampleUrl: "",
     voiceClonedAt: null,
     preferredVoice: "alloy",
 
@@ -40,6 +40,9 @@ export default function TeacherProfile() {
     jeopardyDefaultAnswerMode: "buzz-first", // or "all-try"
     jeopardyAllowNegativeScores: true,
     jeopardyAllowRebound: true,
+
+    // Paper mode
+    minimizeOnScreen: false,
   });
 
 
@@ -99,6 +102,12 @@ export default function TeacherProfile() {
             typeof data.jeopardyAllowRebound === "boolean"
               ? data.jeopardyAllowRebound
               : true,
+
+          // Paper mode
+          minimizeOnScreen:
+            typeof data.minimizeOnScreen === "boolean"
+              ? data.minimizeOnScreen
+              : false,
         };
 
         setProfile(merged);
@@ -448,6 +457,45 @@ export default function TeacherProfile() {
                   } per session (after at least 30% of tasks are completed).`}
             </div>
           </div>
+        </section>
+
+        {/* Minimize On-Screen Activities */}
+        <section style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            On-Screen Activities
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+            When enabled, text-heavy tasks (short answer, open text, reading
+            comprehension) will prompt students to complete work on
+            paper and submit a photo instead of typing on screen. Photos are
+            evaluated by AI for scoring.
+          </p>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              padding: "10px 0",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={!!profile.minimizeOnScreen}
+              onChange={(e) =>
+                handleChange("minimizeOnScreen", e.target.checked)
+              }
+              style={{
+                width: 20,
+                height: 20,
+                accentColor: "#6366f1",
+                cursor: "pointer",
+              }}
+            />
+            <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+              Minimize on-screen activities (use paper + camera)
+            </span>
+          </label>
         </section>
 
         {/* Perspectives */}

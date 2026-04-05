@@ -1,158 +1,118 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { CSSProperties } from "react";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ||
-  "https://api.curriculate.net";
+const STUDENT_APP_DEMO_URL =
+  process.env.NEXT_PUBLIC_STUDENT_APP_URL?.replace(/\/$/, "") ||
+  "https://play.curriculate.net";
 
-export default function DemoTaskDescriptionsPage() {
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [items, setItems] = useState([]); // task meta list
-  const [q, setQ] = useState("");
-  const [showOnlyDemoEligible, setShowOnlyDemoEligible] = useState(true);
+export default function DemoPage() {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
+  // Listen for messages from the embedded demo (e.g., task selection, score updates)
   useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      setLoading(true);
-      setErr("");
+    const handler = (e: MessageEvent) => {
+      // Only accept messages from our student app origin
       try {
-        const res = await fetch(`${API_BASE}/api/demo/task-types`, {
-          method: "GET",
-          headers: { "Accept": "application/json" },
-        });
-
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(`HTTP ${res.status}: ${t?.slice(0, 200) || "Failed to load"}`);
-        }
-
-        const data = await res.json();
-        if (cancelled) return;
-
-        const list = Array.isArray(data?.taskTypes) ? data.taskTypes : [];
-        setItems(list);
-      } catch (e) {
-        if (!cancelled) setErr(e?.message || "Failed to load task descriptions.");
-      } finally {
-        if (!cancelled) setLoading(false);
+        const url = new URL(STUDENT_APP_DEMO_URL);
+        if (e.origin !== url.origin) return;
+      } catch {
+        return;
       }
-    }
 
-    run();
-    return () => {
-      cancelled = true;
+      const data = e.data;
+      if (!data || typeof data !== "object") return;
+
+      // Future: handle demo events like task completion, score changes, etc.
+      if (data.type === "demo:taskSelected") {
+        // Could update parent UI with current task info
+      }
     };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, []);
 
-  const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    return items
-      .filter((x) => (showOnlyDemoEligible ? x.demoEligible === true : true))
-      .filter((x) => {
-        if (!qq) return true;
-        return (
-          String(x.type || "").toLowerCase().includes(qq) ||
-          String(x.label || "").toLowerCase().includes(qq) ||
-          String(x.description || "").toLowerCase().includes(qq) ||
-          String(x.category || "").toLowerCase().includes(qq)
-        );
-      })
-      .sort((a, b) => String(a.label || a.type).localeCompare(String(b.label || b.type)));
-  }, [items, q, showOnlyDemoEligible]);
+  const toggleFullscreen = () => setFullscreen((prev) => !prev);
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.h1}>Curriculate Demo</h1>
-        <p style={styles.sub}>
-          Demo mode is currently in <b>Preview</b>. Instead of running interactive tasks, this page shows
-          what each task is designed to do.
-        </p>
-
-        <div style={styles.actions}>
-          <a href="https://www.curriculate.net/grading" style={styles.secondaryBtn}>
-            Go to Grading Scanner
-          </a>
-          <a href="https://play.curriculate.net/demo" style={styles.primaryBtn}>
-            Launch Interactive Demo
-          </a>
-        </div>
-
-        <div style={styles.filters}>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search tasks (name, description, category)…"
-            style={styles.input}
-          />
-          <label style={styles.checkboxRow}>
-            <input
-              type="checkbox"
-              checked={showOnlyDemoEligible}
-              onChange={(e) => setShowOnlyDemoEligible(e.target.checked)}
-            />
-            <span style={{ marginLeft: 8 }}>Show only demo-eligible tasks</span>
-          </label>
-        </div>
-      </div>
-
-      {loading ? (
-        <div style={styles.card}>Loading tasks…</div>
-      ) : err ? (
-        <div style={{ ...styles.card, borderColor: "rgba(255,80,80,0.5)" }}>
-          <div style={{ fontWeight: 800, marginBottom: 6 }}>Couldn’t load task list</div>
-          <div style={{ opacity: 0.9 }}>{err}</div>
-          <div style={{ marginTop: 10, opacity: 0.75, fontSize: 13 }}>
-            Expected endpoint: <code>{API_BASE}/api/demo/task-types</code>
+    <div style={fullscreen ? styles.pageFullscreen : styles.page}>
+      {/* Header (hidden in fullscreen) */}
+      {!fullscreen && (
+        <div style={styles.header}>
+          <div style={styles.headerTop}>
+            <div>
+              <h1 style={styles.h1}>Curriculate Demo</h1>
+              <p style={styles.sub}>
+                Try the actual student experience. Pick a task type, interact with it,
+                and see how scoring works in real time.
+              </p>
+            </div>
+            <div style={styles.actions}>
+              <a href="https://www.curriculate.net" style={styles.secondaryBtn}>
+                Back to Home
+              </a>
+              <button onClick={toggleFullscreen} style={styles.primaryBtn}>
+                Fullscreen
+              </button>
+            </div>
           </div>
         </div>
-      ) : filtered.length === 0 ? (
-        <div style={styles.card}>No tasks match your filters.</div>
-      ) : (
-        <div style={styles.grid}>
-          {filtered.map((t) => (
-            <div key={t.type} style={styles.taskCard}>
-              <div style={styles.taskTop}>
-                <div style={{ fontWeight: 900 }}>
-                  {t.label || t.type}
-                  <div style={styles.typeLine}>{t.type}</div>
-                </div>
+      )}
 
-                <div style={styles.badges}>
-                  {t.category ? <span style={styles.badge}>{t.category}</span> : null}
-                  {t.implemented ? (
-                    <span style={{ ...styles.badge, ...styles.badgeGood }}>implemented</span>
-                  ) : (
-                    <span style={{ ...styles.badge, ...styles.badgeWarn }}>preview</span>
-                  )}
-                  {t.demoEligible ? (
-                    <span style={{ ...styles.badge, ...styles.badgeBlue }}>demo eligible</span>
-                  ) : (
-                    <span style={{ ...styles.badge, opacity: 0.65 }}>not in demo</span>
-                  )}
-                </div>
-              </div>
+      {/* Fullscreen exit button */}
+      {fullscreen && (
+        <button onClick={toggleFullscreen} style={styles.exitFullscreen}>
+          Exit Fullscreen
+        </button>
+      )}
 
-              <div style={styles.desc}>{t.description || "No description provided yet."}</div>
-            </div>
-          ))}
+      {/* Loading indicator */}
+      {!loaded && (
+        <div style={styles.loadingCard}>
+          <div style={styles.spinner} />
+          <div style={{ fontWeight: 700, marginTop: 12 }}>Loading interactive demo...</div>
+          <div style={{ opacity: 0.7, fontSize: 13, marginTop: 4 }}>
+            This loads the actual student app experience
+          </div>
         </div>
       )}
+
+      {/* Iframe embed of the student-app demo */}
+      <div style={fullscreen ? styles.iframeWrapperFullscreen : styles.iframeWrapper}>
+        <iframe
+          ref={iframeRef}
+          src={`${STUDENT_APP_DEMO_URL}/demo`}
+          title="Curriculate Interactive Demo"
+          style={{
+            ...styles.iframe,
+            opacity: loaded ? 1 : 0,
+          }}
+          onLoad={() => setLoaded(true)}
+          allow="camera; microphone; autoplay"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+        />
+      </div>
     </div>
   );
 }
 
 const styles: Record<string, CSSProperties> = {
   page: {
-    maxWidth: 1100,
+    maxWidth: 1200,
     margin: "0 auto",
     padding: 18,
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+    minHeight: "100vh",
+  },
+  pageFullscreen: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 9999,
+    background: "#0f172a",
   },
   header: {
     border: "1px solid rgba(0,0,0,0.12)",
@@ -161,66 +121,86 @@ const styles: Record<string, CSSProperties> = {
     background: "#fff",
     marginBottom: 14,
   },
+  headerTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 16,
+    flexWrap: "wrap" as const,
+  },
   h1: { margin: "2px 0 8px", fontSize: 28, letterSpacing: -0.4 },
-  sub: { margin: 0, opacity: 0.82, lineHeight: 1.5 },
-  actions: { display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" },
+  sub: { margin: 0, opacity: 0.82, lineHeight: 1.5, maxWidth: 600 },
+  actions: { display: "flex", gap: 10, flexWrap: "wrap" as const, alignItems: "center" },
   primaryBtn: {
-    padding: "10px 14px",
+    padding: "10px 16px",
     borderRadius: 12,
     background: "#111",
     color: "#fff",
-    textDecoration: "none",
     fontWeight: 850,
     border: "1px solid rgba(0,0,0,0.2)",
+    cursor: "pointer",
+    fontSize: 14,
   },
   secondaryBtn: {
-    padding: "10px 14px",
+    padding: "10px 16px",
     borderRadius: 12,
     background: "#fff",
     color: "#111",
     textDecoration: "none",
     fontWeight: 850,
     border: "1px solid rgba(0,0,0,0.2)",
-  },
-  filters: { marginTop: 14, display: "grid", gap: 10 },
-  input: {
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid rgba(0,0,0,0.18)",
-    outline: "none",
     fontSize: 14,
   },
-  checkboxRow: { display: "flex", alignItems: "center", fontWeight: 700, opacity: 0.85 },
-  card: {
-    border: "1px solid rgba(0,0,0,0.12)",
-    borderRadius: 16,
-    padding: 16,
-    background: "#fff",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-    gap: 12,
-  },
-  taskCard: {
-    border: "1px solid rgba(0,0,0,0.12)",
-    borderRadius: 16,
-    padding: 14,
-    background: "#fff",
-  },
-  taskTop: { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" },
-  typeLine: { marginTop: 4, fontSize: 12, opacity: 0.65, fontWeight: 700 },
-  desc: { marginTop: 10, opacity: 0.88, lineHeight: 1.45 },
-  badges: { display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" },
-  badge: {
-    fontSize: 12,
+  exitFullscreen: {
+    position: "fixed" as const,
+    top: 12,
+    right: 12,
+    zIndex: 10000,
+    padding: "8px 14px",
+    borderRadius: 10,
+    background: "rgba(255,255,255,0.9)",
+    border: "1px solid rgba(0,0,0,0.2)",
     fontWeight: 800,
-    padding: "5px 9px",
-    borderRadius: 999,
-    border: "1px solid rgba(0,0,0,0.14)",
-    background: "rgba(0,0,0,0.03)",
+    fontSize: 13,
+    cursor: "pointer",
+    boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
   },
-  badgeGood: { background: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.35)" },
-  badgeWarn: { background: "rgba(245,158,11,0.12)", borderColor: "rgba(245,158,11,0.35)" },
-  badgeBlue: { background: "rgba(59,130,246,0.12)", borderColor: "rgba(59,130,246,0.35)" },
+  loadingCard: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 40,
+    border: "1px solid rgba(0,0,0,0.08)",
+    borderRadius: 16,
+    background: "#fff",
+    textAlign: "center" as const,
+  },
+  spinner: {
+    width: 32,
+    height: 32,
+    border: "3px solid rgba(0,0,0,0.1)",
+    borderTopColor: "#3b82f6",
+    borderRadius: "50%",
+    animation: "spin 0.8s linear infinite",
+  },
+  iframeWrapper: {
+    borderRadius: 16,
+    overflow: "hidden",
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: "#0f172a",
+    boxShadow: "0 18px 60px rgba(15, 23, 42, 0.12)",
+  },
+  iframeWrapperFullscreen: {
+    position: "absolute" as const,
+    inset: 0,
+  },
+  iframe: {
+    display: "block",
+    width: "100%",
+    height: "calc(100vh - 180px)",
+    minHeight: 600,
+    border: "none",
+    transition: "opacity 0.3s ease",
+  },
 };

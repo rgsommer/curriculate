@@ -1457,6 +1457,63 @@ async function scoreOpenText({ task, submission, rubric }) {
   };
 }
 
+// --- SPECIAL CASE: PAPER MODE PHOTO (HANDWRITTEN WORK ON PAPER) ---
+
+async function scorePaperModePhoto({ task, submission, rubric, teacherProfile }) {
+  const points = Number(task?.points ?? task?.config?.points ?? 10);
+
+  // Build rubric for paper-mode photo evaluation
+  const effectiveRubric = rubric || {
+    totalPoints: points,
+    criteria: [
+      {
+        id: "work_completeness",
+        label: "Work completeness",
+        maxPoints: Math.round(points * 0.4),
+        description: "Does the photo show completed work that addresses the task prompt? Is the work thorough and substantive?",
+      },
+      {
+        id: "accuracy",
+        label: "Accuracy and correctness",
+        maxPoints: Math.round(points * 0.4),
+        description: "Based on what is visible in the photo, does the work appear accurate and correct for the given task?",
+      },
+      {
+        id: "legibility",
+        label: "Legibility and presentation",
+        maxPoints: points - Math.round(points * 0.4) - Math.round(points * 0.4) + Math.round(points * 0.2),
+        description: "Is the handwritten work legible? Is the photo clear enough to evaluate the work?",
+      },
+    ],
+  };
+
+  // Extract photo info from submission
+  const answerText = typeof submission === "string" ? submission : submission?.answer || "";
+  const hasPhoto = answerText.includes("[PHOTO TAKEN]") || answerText.includes("[S3:");
+
+  if (!hasPhoto) {
+    return {
+      score: 0,
+      maxPoints: points,
+      reason: "No photo evidence was submitted.",
+      method: "paper-mode-no-photo",
+    };
+  }
+
+  // Delegate to the standard AI scoring pipeline
+  return scoreSubmissionWithAI({
+    task: {
+      ...task,
+      // Inject context about paper mode into the task for AI
+      _paperModeContext: "This student completed the task on paper and submitted a photo of their handwritten work. Evaluate the visible work in the photo.",
+    },
+    submission,
+    rubric: effectiveRubric,
+    explicitTotalPoints: points,
+    teacherProfile,
+  });
+}
+
 async function scorePhotoJournal({ task, submission, rubric }) {
   const points = typeof task.points === "number" ? task.points : 10;
 
@@ -2174,6 +2231,10 @@ Return JSON:
 export async function generateAIScore({ task, submission, rubric, teacherProfile }) {
   if (!task) {
     throw new Error("generateAIScore requires a task.");
+  }
+  // Paper mode: if the submission came from paper-mode camera, use dedicated scorer
+  if (submission?.paperMode === true || submission?.meta?.paperMode === true) {
+    return scorePaperModePhoto({ task, submission, rubric, teacherProfile });
   }
   // Specialized path: Echo Chain (rule-based, no rubric / no OpenAI call)
   if (

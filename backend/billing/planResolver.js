@@ -171,9 +171,14 @@ export async function handleStripeEvent(event) {
       const priceId = item0?.price?.id || null;
       const tier = resolveTierFromPriceId(priceId);
 
+      // Bug 6: Verify downgrade status against Stripe cancel_at_period_end flag
       const willDowngradeAt = obj.cancel_at_period_end
         ? toDateFromUnixSeconds(obj.current_period_end)
         : null;
+
+      // If subscription was previously scheduled for downgrade but is now active again,
+      // clear the downgrade flag (subscription was reactivated/uncancelled)
+      const cancelAtPeriodEnd = !!obj.cancel_at_period_end;
 
       await User.updateOne(
         { $or: [{ stripeCustomerId: obj.customer }, { stripeSubscriptionId: obj.id }] },
@@ -192,6 +197,7 @@ export async function handleStripeEvent(event) {
             // Stripe
             stripeSubscriptionId: obj.id,
             stripeSubscriptionStatus: obj.status,
+            cancelAtPeriodEnd: cancelAtPeriodEnd,
             planRenewsAt: toDateFromUnixSeconds(obj.current_period_end),
             planWillDowngradeAt: willDowngradeAt,
 
@@ -208,8 +214,17 @@ export async function handleStripeEvent(event) {
     }
 
     // Subscription deleted (usually fired at period end if cancel_at_period_end was true)
+    // Bug 6: Verify subscription status is actually canceled before downgrading user
     case "customer.subscription.deleted": {
       if (!obj) return;
+
+      // Only downgrade if status is "canceled" — confirm the deletion is real
+      if (obj.status !== "canceled") {
+        console.warn(
+          `[planResolver] subscription.deleted event but status is "${obj.status}", not "canceled". Skipping downgrade.`
+        );
+        return;
+      }
 
       await User.updateOne(
         { $or: [{ stripeCustomerId: obj.customer }, { stripeSubscriptionId: obj.id }] },
@@ -225,6 +240,7 @@ export async function handleStripeEvent(event) {
             planMultiClass: PLAN.FREE.multiClass,
 
             stripeSubscriptionStatus: obj.status,
+            cancelAtPeriodEnd: false,
             planRenewsAt: null,
             planWillDowngradeAt: null,
 
