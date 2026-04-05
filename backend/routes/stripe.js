@@ -6,7 +6,14 @@ import User from "../models/User.js"; // ← adjust path if needed
 import { authAny } from "../middleware/authAny.js";
 
 const router = express.Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+let _stripe = null;
+function getStripe() {
+  if (_stripe) return _stripe;
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("[stripe] STRIPE_SECRET_KEY is not set");
+  return (_stripe = new Stripe(key));
+}
+const stripe = new Proxy({}, { get: (_, prop) => getStripe()[prop] });
 console.log("[stripeRoutes] PATCH LOADED 2025-12-30d");
 
 function successUrl() {

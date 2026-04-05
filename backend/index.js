@@ -9,6 +9,8 @@ import "dotenv/config";
 import express from "express";
 import http from "http";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 
@@ -285,17 +287,66 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
+// ====================================================================
+//  Global process-level error guards (must be before anything else)
+// ====================================================================
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] uncaughtException — process will continue:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] unhandledRejection — promise rejected without catch:", reason);
+});
+
+// ====================================================================
+//  Rate limiters
+// ====================================================================
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,                   // 20 auth attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: "Too many requests — please try again later." },
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,             // 10 AI-generation requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: "AI rate limit exceeded — please slow down." },
+});
+
 const app = express();
 
 const server = http.createServer(app);
 
-// 1) CORS + parsers first
+// 1) Security headers (before CORS so helmet headers are always sent)
+app.use(
+  helmet({
+    // Allow the teacher/student apps to load in iframes from same origin
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+// 2) CORS + parsers first
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
+// 3) Health check (before auth — must be publicly reachable by load balancers)
+app.get("/health", async (_req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    res.status(200).json({ ok: true, mongo: "connected", uptime: process.uptime() });
+  } catch {
+    res.status(503).json({ ok: false, mongo: "disconnected" });
+  }
+});
+
 // 2) Auth + misc routes that don’t depend on tasksets
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authLimiter, authRoutes);
 
 stripeRoutes.use(cors(corsOptions));
 stripeRoutes.options("*", cors(corsOptions));
@@ -308,7 +359,7 @@ app.use("/api/demo", demoTasksetStreamRoutes);
 
 // 4) Taskset routes (your new canonical ones)
 // If your routers already do their own auth, mount directly:
-app.use("/api/ai/tasksets", aiTasksetsRouter);
+app.use("/api/ai/tasksets", aiLimiter, aiTasksetsRouter);
 app.use("/api/tasksets", tasksetsRouter);
 
 // 5) Shared taskset links (public, no auth)
@@ -587,6 +638,11 @@ const io = new Server(server, {
   },
 });
 
+// Log socket.io transport-level errors without crashing the process
+io.engine.on("connection_error", (err) => {
+  console.warn("[Socket.IO] connection_error:", err.req?.url, err.code, err.message);
+});
+
 // --------------------------------------------------------------------
 // MongoDB Connection
 // --------------------------------------------------------------------
@@ -596,8 +652,23 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
+mongoose.connection.on("disconnected", () => {
+  console.warn("[MongoDB] Disconnected — Mongoose will auto-reconnect.");
+});
+mongoose.connection.on("reconnected", () => {
+  console.log("[MongoDB] Reconnected.");
+});
+mongoose.connection.on("error", (err) => {
+  console.error("[MongoDB] Connection error:", err);
+});
+
 mongoose
-  .connect(MONGO_URI)
+  .connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 10_000, // fail fast if no replica found in 10 s
+    socketTimeoutMS: 45_000,          // drop idle sockets after 45 s
+    heartbeatFrequencyMS: 10_000,     // check replica health every 10 s
+    maxPoolSize: 20,                   // max concurrent DB connections
+  })
   .then(async () => {
     console.log("Mongo connected");
     // Seed system templates/settings once (Admin edits are preserved)
@@ -608,7 +679,10 @@ mongoose
       console.warn("[seed] failed:", e?.message || e);
     }
   })
-  .catch((err) => console.error("Mongo connection error:", err));
+  .catch((err) => {
+    console.error("Mongo initial connection error:", err);
+    // Don't exit — Mongoose will keep retrying; health check will report 503
+  });
 
 // ====================================================================
 //  ROOM ENGINE (In-Memory)
@@ -2843,6 +2917,13 @@ socket.on("task:force-advance", ({ roomCode }) => {
       console.log(`Teacher created room ${code}`);
     }
 
+    // Cancel any pending grace-period prune from a previous disconnect
+    if (room._pendingPruneTimeout) {
+      clearTimeout(room._pendingPruneTimeout);
+      room._pendingPruneTimeout = null;
+      console.log(`[ROOM] Teacher ${instId} reconnected — cancelled pending prune for ${code}`);
+    }
+
     // Stamp ownership / keepalive
     room.teacherSocketId = socket.id;
     room.teacherInstanceId = instId;
@@ -2880,6 +2961,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
     // ✅ Safety net: if this instance ever had other rooms, kill them now
     pruneTeacherRoomsByInstance(instId, code);
+
+    // Cancel any pending grace-period prune on keepalive (reconnect heartbeat)
+    if (room._pendingPruneTimeout) {
+      clearTimeout(room._pendingPruneTimeout);
+      room._pendingPruneTimeout = null;
+    }
 
     // keep room alive + reconnect-safe ownership
     room.teacherSocketId = socket.id;
@@ -6101,10 +6188,28 @@ socket.on(
   // ─────────────────────────────────────────────
   socket.on("disconnect", async (reason) => {
     try {
-      // ✅ Teacher disconnect: stop broadcasting rooms from this LiveSession instance
+      // ✅ Teacher disconnect: give a 10-second grace window before pruning.
+      // A browser refresh or brief network blip should not immediately evict
+      // all active student sessions.  The teacher's LiveSession page sends a
+      // stable teacherInstanceId so a rapid reconnect will cancel this timeout.
       if (socket.data?.role === "teacher") {
         const instId = normalizeTeacherInstanceId(socket.data?.teacherInstanceId, socket.id);
-        pruneTeacherRoomsByInstance(instId, null);
+
+        // Store the pending prune timeout on the room objects so an incoming
+        // teacher:join for the same instanceId can cancel it.
+        const pruneTimeout = setTimeout(() => {
+          pruneTeacherRoomsByInstance(instId, null);
+        }, 10_000); // 10-second grace period
+
+        // Tag every room this teacher owns with the pending prune so join can cancel it
+        for (const room of Object.values(rooms)) {
+          if (room?.teacherInstanceId === instId) {
+            if (room._pendingPruneTimeout) clearTimeout(room._pendingPruneTimeout);
+            room._pendingPruneTimeout = pruneTimeout;
+          }
+        }
+
+        console.log(`[ROOM] Teacher ${instId} disconnected — will prune rooms in 10 s if not reconnected`);
         return;
       }
 
@@ -6923,9 +7028,14 @@ app.get("/grading/capture/:submissionId/:file", async (req, res) => {
   }
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let _openaiInstance = null;
+function getOpenAIInstance() {
+  if (_openaiInstance) return _openaiInstance;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("[index] OPENAI_API_KEY is not set");
+  return (_openaiInstance = new OpenAI({ apiKey }));
+}
+const openai = new Proxy({}, { get: (_, prop) => getOpenAIInstance()[prop] });
 
 function parseDataUrlImage(dataUrl) {
   const s = String(dataUrl || "");

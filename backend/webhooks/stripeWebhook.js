@@ -3,7 +3,14 @@ import Stripe from "stripe";
 import ProcessedStripeEvent from "../models/ProcessedStripeEvent.js";
 import { handleStripeEvent } from "../billing/planResolver.js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+let _stripe = null;
+function getStripe() {
+  if (_stripe) return _stripe;
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("[stripeWebhook] STRIPE_SECRET_KEY is not set");
+  return (_stripe = new Stripe(key));
+}
+const stripe = new Proxy({}, { get: (_, prop) => getStripe()[prop] });
 
 export async function stripeWebhookHandler(req, res) {
   const sig = req.headers["stripe-signature"];

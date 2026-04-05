@@ -20,9 +20,14 @@ import { buildTasksetPrompt } from "./sharedTasksetController.js";
 // This controller keeps the higher-level orchestration and taskset persistence.
 // ------------------------------------------------------------------
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let _client = null;
+function getClient() {
+  if (_client) return _client;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("[mainTasksetController] OPENAI_API_KEY is not set");
+  return (_client = new OpenAI({ apiKey }));
+}
+const client = new Proxy({}, { get: (_, prop) => getClient()[prop] });
 
 // Build a list of implemented task types that are safe to GENERATE.
 // Eligibility here is about generation safety, not scoring.

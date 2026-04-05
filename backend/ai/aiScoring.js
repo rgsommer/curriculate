@@ -3,9 +3,20 @@ import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Defer client creation so a missing key logs a warning instead of crashing at boot
+let _openai = null;
+function getOpenAI() {
+  if (_openai) return _openai;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn("[aiScoring] OPENAI_API_KEY not set — AI scoring will be skipped.");
+    return null;
+  }
+  _openai = new OpenAI({ apiKey });
+  return _openai;
+}
+// Keep a top-level alias for any code below that references `openai` directly
+const openai = { chat: { completions: { create: (...args) => getOpenAI()?.chat.completions.create(...args) } } };
 
 // -----------------------------
 // TaskTypes scoring helpers (new switches, with back-compat)

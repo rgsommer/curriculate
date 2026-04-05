@@ -1,6 +1,13 @@
 // backend/ai/debateJudge.js
 import OpenAI from "openai";
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai = null;
+function getOpenAI() {
+  if (_openai) return _openai;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("[debateJudge] OPENAI_API_KEY is not set");
+  return (_openai = new OpenAI({ apiKey }));
+}
+const openai = new Proxy({}, { get: (_, prop) => getOpenAI()[prop] });
 
 export async function generateDebateVerdict(debateData) {
   const { resolution, speeches, teamNames = { affirmative: "Affirmative", negative: "Negative" } } = debateData;
