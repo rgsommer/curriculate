@@ -177,7 +177,7 @@ export default function PhysicalMultipleChoiceTask({
     const selected = shuffled.slice(0, 4);
 
     return Object.fromEntries(letters.map((l, i) => [l, selected[i]]));
-  }, [qIndex, task?.title, stationPalette, effectiveExclusions]);
+  }, [qIndex, task?.title, stationPalette]);
 
   const currentQuestion = items[qIndex] || {};
   const options = Array.isArray(currentQuestion.options) ? currentQuestion.options : [];
