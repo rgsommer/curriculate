@@ -16,12 +16,15 @@ export const isObjectiveTask = (task) => {
 
   // heuristic: objective task types usually ship correct answers/config
   const t = task.taskType || task.type;
-  const items = Array.isArray(task.items) ? task.items : [];
+  const cfg = task.config && typeof task.config === "object" ? task.config : {};
+  // Items can live at task.items OR task.config.items (AI generator uses config.items)
+  const items = Array.isArray(task.items) && task.items.length > 0
+    ? task.items
+    : (Array.isArray(cfg.items) ? cfg.items : []);
   const hasItemCorrect = items.some(
-    (it) => it && (it.correctAnswer !== undefined || it.referenceAnswer)
+    (it) => it && (it.correctAnswer !== undefined || it.correctIndex !== undefined || it.referenceAnswer)
   );
   const hasTopCorrect = task.correctAnswer !== undefined && task.correctAnswer !== null;
-  const cfg = task.config && typeof task.config === "object" ? task.config : {};
   const hasSortConfig =
     Array.isArray(cfg.buckets) &&
     cfg.buckets.length >= 2 &&
@@ -92,7 +95,11 @@ export const buildObjectiveAnswerKey = (task) => {
   if (!task) return null;
 
   const taskType = task.taskType || task.type;
-  const items = Array.isArray(task.items) ? task.items : [];
+  const cfg = task.config && typeof task.config === "object" ? task.config : {};
+  // Items can live at task.items OR task.config.items (AI generator uses config.items)
+  const items = Array.isArray(task.items) && task.items.length > 0
+    ? task.items
+    : (Array.isArray(cfg.items) ? cfg.items : []);
 
   // --- TRUE/FALSE ---
   if (taskType === TASK_TYPES.TRUE_FALSE) {
@@ -122,7 +129,8 @@ export const buildObjectiveAnswerKey = (task) => {
         title: "Answer key",
         rows: items.map((it, idx) => {
           const opts = Array.isArray(it.options) ? it.options : [];
-          const c = it.correctAnswer;
+          // AI generator uses correctIndex; legacy uses correctAnswer
+          const c = it.correctAnswer ?? it.correctIndex;
           let correctText = "";
           if (typeof c === "number") correctText = opts[c] ?? "";
           else if (typeof c === "string") correctText = c;

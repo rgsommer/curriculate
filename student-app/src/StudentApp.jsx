@@ -1698,6 +1698,19 @@ function StudentApp() {
           );
         }
 
+        // Update next station from ack so it's ready when review ends
+        // (prevents race condition with room:state arriving late)
+        if (response?.nextStationId) {
+          const nextNorm = normalizeStationId(response.nextStationId);
+          if (nextNorm?.id) {
+            setAssignedStationId(nextNorm.id);
+            setAssignedColor(nextNorm.color || response.nextStationColor || null);
+            lastStationIdRef.current = nextNorm.id;
+          }
+        } else if (response?.nextStationColor) {
+          setAssignedColor(response.nextStationColor);
+        }
+
         const currentType = currentTask?.taskType || currentTask?.type;
 
         const isPhysical =

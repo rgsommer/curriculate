@@ -2964,8 +2964,11 @@ socket.on("station:scan", handleStationScan);
   // ----------------------------
   // 1) Multi-question packs
   // ----------------------------
-  if (isMultiPack && Array.isArray(task.items) && task.items.length > 0) {
-    const items = task.items;
+  const taskItems = Array.isArray(task.items) && task.items.length > 0
+    ? task.items
+    : (Array.isArray(task.config?.items) ? task.config.items : []);
+  if (isMultiPack && taskItems.length > 0) {
+    const items = taskItems;
     const byId = new Map();
     items.forEach((it, i) => {
       const key = it.id != null ? String(it.id) : String(i);
@@ -3784,6 +3787,10 @@ if (!isMultiPack && task.taskType === "guess-who") {
 
     socket.emit("task:received");
     // ✅ Always acknowledge submissions so StudentApp can show overlays immediately
+    // Include next station info so client can update displayAssignedColor without
+    // waiting for room:state (prevents race condition where scan screen shows old color)
+    const nextStation = room.teams?.[effectiveTeamId]?.currentStationId || null;
+    const nextStationNorm = nextStation ? normalizeStationId(nextStation, room) : null;
     if (typeof ack === "function") {
       ack({
         ok: true,
@@ -3795,6 +3802,8 @@ if (!isMultiPack && task.taskType === "guess-who") {
         maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 10,
         aiScore,
         review,
+        nextStationId: nextStationNorm?.id || nextStation,
+        nextStationColor: nextStationNorm?.color || null,
       });
     }
 
