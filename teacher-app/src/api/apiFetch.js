@@ -3,24 +3,12 @@
 const DEFAULT_API_BASE =
   (import.meta?.env?.VITE_API_BASE || "").trim() || "https://api.curriculate.net";
 
-// EXACT same logic as TeacherApp.jsx
 export function getStoredAuthToken() {
-  const candidates = [
-    "curriculateToken",
-    "curriculate_token",
-    "token",
-    "authToken",
-    "accessToken",
-    "jwt",
-  ];
-
-  for (const k of candidates) {
-    try {
-      const v = localStorage.getItem(k) || sessionStorage.getItem(k);
-      if (typeof v === "string" && v.trim().length > 40) return v.trim();
-    } catch {}
+  try {
+    return localStorage.getItem("token") || "";
+  } catch {
+    return "";
   }
-  return "";
 }
 
 function isAbsoluteUrl(path) {

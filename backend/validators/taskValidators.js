@@ -858,6 +858,19 @@ export function normalizeTaskByType(taskType, rawTask) {
         Array.isArray(task.prompts) ? task.prompts :
         [];
 
+      // Detect placeholder / blank-filler patterns from the AI
+      function _isPlaceholderQuestion(s) {
+        if (!s) return true;
+        const t = String(s).trim().toLowerCase();
+        return (
+          t.includes("_____") ||
+          t.includes("____") ||
+          t.includes("[blank]") ||
+          /^question\s*\d+\s*[:\-]?\s*$/.test(t) ||   // "Question 1:", "Question 2 -", etc.
+          /^question\s*\d+\s*[:\-]\s*_+\s*$/.test(t)  // "Question 1: _____"
+        );
+      }
+
       qs = qs
         .map((q, i) => {
           if (isObject(q)) {
@@ -868,9 +881,10 @@ export function normalizeTaskByType(taskType, rawTask) {
           const prompt = asNonEmptyString(q, "");
           return { id: String(i + 1), prompt, answer: undefined };
         })
-        .filter((x) => asNonEmptyString(x.prompt));
+        // Remove empty OR placeholder questions
+        .filter((x) => asNonEmptyString(x.prompt) && !_isPlaceholderQuestion(x.prompt));
 
-      // ✅ Replace blank-fillers with safe generic questions
+      // ✅ Replace blank-fillers / too-few questions with safe generic fallbacks
       if (qs.length < 3) {
         qs = [
           { id: "1", prompt: "What is the main idea of the passage?", answer: undefined },
@@ -881,9 +895,17 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       cfg.questions = qs;
 
+      // Store passage under two canonical keys only (text + passage).
+      // Older code used generatedParagraph and reading as well — drop them to avoid quadruple bloat.
+      cfg.text    = finalPassage;
+      cfg.passage = finalPassage;
+      delete cfg.generatedParagraph;
+      delete cfg.reading;
+
+      // Keep one root-level alias for renderers that read task.passage directly
       task.passage = finalPassage;
-      task.reading = finalPassage;
-      task.text = finalPassage;
+      delete task.reading;
+      delete task.text;
 
       task.config = cfg;
 

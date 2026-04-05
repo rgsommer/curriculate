@@ -922,7 +922,7 @@ export const retryMustHave = {
   [TASK_TYPES.DRAW_MIME]:
     'DRAW_MIME must include a short concept prompt. Optional: config.mode "DRAW"|"MIME"|"EITHER".',
   [TASK_TYPES.SORT]:
-    "SORT must include config.buckets (>=2) and config.items (>=3). Each item: { text, bucketIndex:number|null }.",
+    'SORT must include config.buckets (array of 2–4 PLAIN STRINGS, e.g. ["Key Figures","Major Events","Important Concepts"]) and config.items (>=3). Each item: { text: string, bucketIndex: number }. IMPORTANT: buckets MUST be plain strings — do NOT return objects like { label: "..." }.',
   [TASK_TYPES.SEQUENCE]:
    "SEQUENCE must include an ordered items array and the correct order, as either correctOrder (array of ids) OR answerKey mapping itemId -> position. Do not omit.",
   [TASK_TYPES.TIMELINE]:

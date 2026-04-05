@@ -78,6 +78,129 @@ function isObjectiveTask(task) {
   return meta.objectiveScoring === true;
 }
 
+// ── Answer-key helpers (ported from StudentApp) ──────────────────────────────
+
+const getItemPrompt = (item, idx) => {
+  const raw =
+    item?.prompt ??
+    item?.question ??
+    item?.label ??
+    item?.stem ??
+    item?.text ??
+    item?.title ??
+    item?.description ??
+    "";
+  const s = typeof raw === "string" ? raw.trim() : String(raw || "").trim();
+  return s || `Question ${idx + 1}`;
+};
+
+const tfCorrectToText = (val) => {
+  if (typeof val === "boolean") return val ? "True" : "False";
+  if (typeof val === "number") return val === 1 ? "True" : "False";
+  const s = String(val ?? "").trim().toLowerCase();
+  if (s === "true") return "True";
+  if (s === "false") return "False";
+  if (s === "1") return "True";
+  if (s === "0") return "False";
+  return "";
+};
+
+const buildObjectiveAnswerKey = (task) => {
+  if (!task) return null;
+  const taskType = task.taskType || task.type;
+  const items = Array.isArray(task.items) ? task.items : [];
+
+  if (taskType === TASK_TYPES.TRUE_FALSE) {
+    if (items.length) {
+      return {
+        title: "Answer key",
+        rows: items.map((it, idx) => ({
+          q: getItemPrompt(it, idx),
+          a: tfCorrectToText(it?.correctAnswer) || "(missing correct answer)",
+          item: it,
+        })),
+      };
+    }
+    const single = tfCorrectToText(task.correctAnswer);
+    if (single) {
+      return { title: "Answer key", rows: [{ q: task.prompt || "True/False", a: single, item: { correctAnswer: task.correctAnswer } }] };
+    }
+  }
+
+  if (taskType === TASK_TYPES.MULTIPLE_CHOICE) {
+    if (items.length) {
+      return {
+        title: "Answer key",
+        rows: items.map((it, idx) => {
+          const opts = Array.isArray(it.options) ? it.options : [];
+          const c = it.correctAnswer;
+          let correctText = "";
+          if (typeof c === "number") correctText = opts[c] ?? "";
+          else if (typeof c === "string") correctText = c;
+          return { q: getItemPrompt(it, idx), a: String(correctText || "").trim() || "(missing correct answer)", item: it };
+        }),
+      };
+    }
+    const opts = Array.isArray(task.options) ? task.options : [];
+    const c = task.correctAnswer;
+    const correctText = typeof c === "number" ? opts[c] ?? "" : typeof c === "string" ? c : "";
+    if (correctText) {
+      return { title: "Answer key", rows: [{ q: task.prompt || "Multiple choice", a: String(correctText).trim(), item: { correctAnswer: c, options: opts } }] };
+    }
+  }
+
+  if (taskType === TASK_TYPES.SHORT_ANSWER) {
+    if (items.length) {
+      return {
+        title: "Suggested answers",
+        rows: items.map((it, idx) => ({
+          q: getItemPrompt(it, idx),
+          a: String(it.referenceAnswer ?? it.answer ?? it.expected ?? "").trim() || "(no reference answer)",
+          item: it,
+        })),
+      };
+    }
+    const ref = String(task.referenceAnswer ?? "").trim();
+    if (ref) {
+      return { title: "Suggested answer", rows: [{ q: task.prompt || "Short answer", a: ref, item: { correctAnswer: ref } }] };
+    }
+  }
+
+  if (taskType === TASK_TYPES.SORT) {
+    const cfg = task.config && typeof task.config === "object" ? task.config : {};
+    const buckets = Array.isArray(cfg.buckets) ? cfg.buckets : [];
+    const sortItems = Array.isArray(cfg.items) ? cfg.items : [];
+    if (buckets.length && sortItems.length) {
+      const grouped = buckets.map((b) => ({ bucket: String(b || "").trim(), items: [] }));
+      const unassigned = [];
+      sortItems.forEach((it) => {
+        const text = String(it?.text ?? it ?? "").trim();
+        if (!text) return;
+        const bi = it?.bucketIndex;
+        if (typeof bi === "number" && bi >= 0 && bi < grouped.length) grouped[bi].items.push(text);
+        else unassigned.push(text);
+      });
+      return { title: "Correct categories", buckets: grouped.filter((g) => g.bucket), unassigned };
+    }
+  }
+
+  if (taskType === TASK_TYPES.SEQUENCE || taskType === TASK_TYPES.TIMELINE) {
+    const cfg = task.config && typeof task.config === "object" ? task.config : {};
+    const seq = Array.isArray(cfg.items) ? cfg.items : [];
+    if (seq.length) {
+      return {
+        title: "Correct order",
+        ordered: seq.map((it, idx) => ({
+          n: idx + 1,
+          text: String(it?.text ?? it ?? "").trim() || `Step ${idx + 1}`,
+        })),
+      };
+    }
+  }
+
+  return null;
+};
+
 /**
  * Local deterministic scoring for objective tasks (fast, demo-safe).
  * Returns { scoreDelta, maxPoints, correct, details }
@@ -638,6 +761,7 @@ export default function DemoPage() {
 
   const [taskLocked, setTaskLocked] = useState(false);
   const [postSubmitSecondsLeft, setPostSubmitSecondsLeft] = useState(null);
+  const [lastSubmission, setLastSubmission] = useState(null);
   const postSubmitTimerRef = useRef(null);
 
   
@@ -908,10 +1032,15 @@ setTaskLocked(false);
 
     setSelectedType(type);
     setCurrentTask(task);
+    setLastSubmission(null); // reset any prior submission overlay
     setPhase("task");
   }
 
-  function onTaskSubmitted() {
+  function onTaskSubmitted(payload) {
+    // Capture the submission payload so we can show the answer overlay
+    if (payload && typeof payload === "object") {
+      setLastSubmission(payload);
+    }
     // Lock review briefly (prevents spam + makes demo feel paced)
     setTaskLocked(true);
     setPostSubmitSecondsLeft(DEFAULT_REVIEW_SECONDS);
@@ -1027,6 +1156,149 @@ setTaskLocked(false);
             <div style={{ height: "100%", width: `${Math.round(lockProgress * 100)}%`, background: "rgba(59,130,246,0.9)" }} />
           </div>
         )}
+
+        {/* ✅ Answer reveal overlay — shown after submission while task is locked */}
+        {taskLocked && isObjectiveTask(currentTask) && (() => {
+          const task = currentTask;
+          const taskType = task?.taskType || task?.type;
+          const submission = lastSubmission;
+          const key = buildObjectiveAnswerKey(task);
+          if (!key) return null;
+
+          const getStudentAnswerText = (item, idx, opts) => {
+            if (!submission) return null;
+            const answers = Array.isArray(submission?.answers) ? submission.answers : null;
+            const raw = answers
+              ? (answers[idx]?.value ?? answers[idx]?.answer ?? answers[idx])
+              : (submission?.answer ?? null);
+            if (raw == null) return null;
+            if (typeof raw === "number" && Array.isArray(opts) && opts[raw] != null) return String(opts[raw]);
+            return String(raw);
+          };
+
+          const isItemCorrect = (item, idx, opts) => {
+            const studentText = getStudentAnswerText(item, idx, opts);
+            if (studentText == null) return null;
+            const c = item?.correctAnswer;
+            if (c == null) return null;
+            if (taskType === TASK_TYPES.TRUE_FALSE) {
+              const sn = String(studentText).trim().toLowerCase();
+              const cn = tfCorrectToText(c).toLowerCase();
+              return sn === cn || sn === String(c).trim().toLowerCase();
+            }
+            if (typeof c === "number" && Array.isArray(opts) && opts[c] != null) {
+              const correctText = String(opts[c]).trim().toLowerCase();
+              const sn = String(studentText).trim().toLowerCase();
+              return sn === correctText || Number(studentText) === c;
+            }
+            return String(studentText).trim().toLowerCase() === String(c).trim().toLowerCase();
+          };
+
+          const panelStyle = {
+            marginBottom: 12,
+            width: "100%",
+            background: "rgba(255,255,255,0.10)",
+            border: "1px solid rgba(255,255,255,0.20)",
+            borderRadius: 12,
+            padding: 12,
+            textAlign: "left",
+          };
+
+          // MC / TF / SA — per-item coloured cards
+          if (key.rows) {
+            const items = Array.isArray(task.items) ? task.items : [];
+            return (
+              <div style={panelStyle}>
+                <div style={{ fontWeight: 800, marginBottom: 8, fontSize: "0.95rem" }}>{key.title || "Answer key"}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {key.rows.map((r, i) => {
+                    const item = items[i] || (r.item || {});
+                    const opts = Array.isArray(item.options)
+                      ? item.options
+                      : Array.isArray(task.options)
+                      ? task.options
+                      : (taskType === TASK_TYPES.TRUE_FALSE ? ["True", "False"] : []);
+                    const studentText = getStudentAnswerText(item, i, opts);
+                    const ok = isItemCorrect(item, i, opts);
+                    const borderColor =
+                      ok === true ? "rgba(34,197,94,0.7)"
+                      : ok === false ? "rgba(239,68,68,0.7)"
+                      : "rgba(255,255,255,0.2)";
+                    const bgColor =
+                      ok === true ? "rgba(34,197,94,0.15)"
+                      : ok === false ? "rgba(239,68,68,0.15)"
+                      : "rgba(0,0,0,0.1)";
+                    const icon = ok === true ? "✅" : ok === false ? "❌" : "⬜";
+                    return (
+                      <div key={i} style={{ padding: 10, borderRadius: 10, background: bgColor, border: `1px solid ${borderColor}`, display: "grid", gap: 4 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontWeight: 700, flex: 1, fontSize: "0.9rem" }}>{r.q}</div>
+                          <div style={{ fontSize: "1.05rem", marginLeft: 8 }}>{icon}</div>
+                        </div>
+                        <div style={{ opacity: 0.9, fontSize: "0.88rem" }}>
+                          <span style={{ opacity: 0.75 }}>Correct: </span>
+                          <strong>{r.a}</strong>
+                        </div>
+                        {studentText != null && ok === false && (
+                          <div style={{ opacity: 0.85, fontSize: "0.85rem" }}>
+                            <span style={{ opacity: 0.75 }}>Your team answered: </span>
+                            <span style={{ fontWeight: 700 }}>{studentText}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
+          // SEQUENCE / TIMELINE — numbered correct order
+          if (key.ordered) {
+            return (
+              <div style={panelStyle}>
+                <div style={{ fontWeight: 800, marginBottom: 8, fontSize: "0.95rem" }}>{key.title || "Correct order"}</div>
+                <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {key.ordered.map((it) => (
+                    <li key={it.n} style={{ marginBottom: 4, lineHeight: 1.4, fontSize: "0.9rem" }}>
+                      {it.text}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            );
+          }
+
+          // SORT — bucket groups
+          if (key.buckets) {
+            return (
+              <div style={panelStyle}>
+                <div style={{ fontWeight: 800, marginBottom: 8, fontSize: "0.95rem" }}>{key.title || "Correct categories"}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {key.buckets.map((b, idx) => (
+                    <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.1)" }}>
+                      <div style={{ fontWeight: 800, marginBottom: 6, fontSize: "0.9rem" }}>{b.bucket}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {(b.items || []).map((txt, j) => (
+                          <span key={j} style={{ padding: "3px 8px", borderRadius: 999, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.2)", fontSize: "0.85rem" }}>
+                            {txt}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
+                    <div style={{ marginTop: 4, opacity: 0.85, fontSize: "0.85rem" }}>
+                      Unassigned: <strong>{key.unassigned.join(", ")}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          return null;
+        })()}
 
         <TaskRunner
           task={currentTask}

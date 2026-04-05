@@ -9,9 +9,7 @@ const API_BASE = API_BASE_URL;
  * --------------------------------------------------------------------- */
 function buildAuthHeaders(base = {}) {
   try {
-    const token =
-      localStorage.getItem("curriculate_token") ||
-      localStorage.getItem("token");
+    const token = localStorage.getItem("token");
 
     if (!token) return base;
 

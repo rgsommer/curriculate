@@ -204,7 +204,8 @@ function flattenSortConfig(task) {
   const buckets = rawBuckets
     .map(bucketLabelFromAny)
     .map((s) => s.trim())
-    .filter(Boolean);
+    // Reject stringified objects — these are lost labels that would show as "[object Object]"
+    .filter((s) => s && s !== "[object Object]" && !s.startsWith("[object "));
 
   const rawItems =
     (Array.isArray(cfg.items) && cfg.items) ||

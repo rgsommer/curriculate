@@ -14,7 +14,7 @@ import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 
 // Build marker so you can confirm the deployed bundle
-const BUILD_MARKER = process.env.NEXT_PUBLIC_BUILD_ID;
+const BUILD_MARKER = import.meta.env.VITE_BUILD_ID;
 console.log("🚀 StudentApp Build:", BUILD_MARKER);
 
 // ---------------------------------------------------------------------
@@ -330,10 +330,13 @@ const isObjectiveTask = (task) => {
   const objectiveTypes = new Set([
     TASK_TYPES.TRUE_FALSE,
     TASK_TYPES.MULTIPLE_CHOICE,
+    TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE,
     TASK_TYPES.SHORT_ANSWER,
     TASK_TYPES.SORT,
     TASK_TYPES.SEQUENCE,
     TASK_TYPES.TIMELINE,
+    TASK_TYPES.MATCHING,
+    TASK_TYPES.VENNSORT,
   ]);
 
   if (objectiveTypes.has(t) && (hasItemCorrect || hasTopCorrect || hasSortConfig || hasSeqConfig))
@@ -564,8 +567,6 @@ class TaskErrorBoundary extends React.Component {
 // ---------------------------------------------------------------------
 
 function StudentApp() {
-  console.log("Curriculate StudentApp");
-
   // Theme selector (must be inside component)
   const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
   const themeShell = getThemeShell(uiTheme);
@@ -765,6 +766,10 @@ function StudentApp() {
   // ─────────────────────────────────────────────
   // Socket connect / disconnect + auto-resume
   // ─────────────────────────────────────────────
+
+  useEffect(() => {
+    console.log("🚀 Curriculate StudentApp mounted. Build:", BUILD_MARKER);
+  }, []);
 
   useEffect(() => {
     const handleConnect = () => {
@@ -2446,6 +2451,22 @@ function StudentApp() {
                   comment: response?.comment,
                 };
 
+          // ── Map AI-scoring fields to display fields if not already set ──
+          // Backend sends aiFeedback / aiSuggestedAnswer; display expects feedback / modelAnswer.
+          if (!reviewObj.feedback && reviewObj.aiFeedback) {
+            reviewObj.feedback = reviewObj.aiFeedback;
+          }
+          if (!reviewObj.modelAnswer && reviewObj.aiSuggestedAnswer) {
+            reviewObj.modelAnswer = reviewObj.aiSuggestedAnswer;
+          }
+          // Also pull aiFeedback off the top-level aiScore if the review didn't carry it
+          if (!reviewObj.feedback && response?.aiScore?.feedback) {
+            reviewObj.feedback = response.aiScore.feedback;
+          }
+          if (!reviewObj.feedback && response?.aiScore?.rationale) {
+            reviewObj.feedback = response.aiScore.rationale;
+          }
+
           const accepted =
             typeof response?.accepted === "boolean"
               ? response.accepted
@@ -2505,12 +2526,16 @@ function StudentApp() {
             reviewObj.feedback ||
             reviewObj.hint ||
             reviewObj.modelAnswer ||
-            reviewObj.comment
+            reviewObj.comment ||
+            reviewObj.aiFeedback
           );
+
+          // Objective tasks always get a review window (to show the answer key overlay)
+          const isObjCurrentTask = isObjectiveTask(currentTask);
 
           const shouldShowReview =
             !isPhysical &&
-            (!accepted || hasMeaningfulFeedback);
+            (isObjCurrentTask || !accepted || hasMeaningfulFeedback);
 
           if (!shouldShowReview) {
             setReviewState(null);
@@ -5143,36 +5168,109 @@ function StudentApp() {
             );
           })()}
 
-          {/* ✅ Objective answer key during lock: revisit later
-          {isObjectiveTask(currentTask) && (() => {
-            const key = buildObjectiveAnswerKey(currentTask);
+          {/* ✅ Objective answer key + per-item correctness overlay */}
+          {isObjectiveTask(currentTask) && currentTask?.taskType !== "matching" && (() => {
+            const task = currentTask;
+            const taskType = task?.taskType || task?.type;
+            const submission = reviewState?.studentAnswer;
+            const key = buildObjectiveAnswerKey(task);
             if (!key) return null;
 
+            // Helper: extract student's answer for item at index idx
+            const getStudentAnswerText = (item, idx, opts) => {
+              if (!submission) return null;
+              const answers = Array.isArray(submission?.answers) ? submission.answers : null;
+              const raw = answers ? (answers[idx]?.value ?? answers[idx]?.answer ?? answers[idx]) : (submission?.answer ?? null);
+              if (raw == null) return null;
+              if (typeof raw === "number" && Array.isArray(opts) && opts[raw] != null) return String(opts[raw]);
+              return String(raw);
+            };
+
+            const isItemCorrect = (item, idx, opts) => {
+              const studentText = getStudentAnswerText(item, idx, opts);
+              if (studentText == null) return null; // not answered
+              const c = item?.correctAnswer;
+              if (c == null) return null;
+              if (taskType === TASK_TYPES.TRUE_FALSE) {
+                const sn = String(studentText).trim().toLowerCase();
+                const cn = tfCorrectToText(c).toLowerCase();
+                return sn === cn || sn === String(c).trim().toLowerCase();
+              }
+              if (typeof c === "number" && Array.isArray(opts) && opts[c] != null) {
+                const correctText = String(opts[c]).trim().toLowerCase();
+                const sn = String(studentText).trim().toLowerCase();
+                return sn === correctText || Number(studentText) === c;
+              }
+              return String(studentText).trim().toLowerCase() === String(c).trim().toLowerCase();
+            };
+
+            const panelStyle = {
+              marginTop: 12,
+              width: "100%",
+              background: "rgba(255,255,255,0.14)",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 12,
+              padding: 12,
+              textAlign: "left",
+            };
+
+            // ── MC / TF / SA: per-item coloured cards ──
             if (key.rows) {
+              const items = Array.isArray(task.items) ? task.items : [];
               return (
-                <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                <div style={panelStyle}>
                   <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Answer key"}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {key.rows.map((r, i) => (
-                      <div key={i} style={{ padding: 8, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                        <div style={{ fontWeight: 700 }}>{r.q}</div>
-                        <div style={{ marginTop: 4, opacity: 0.95 }}>
-                          Correct: <strong>{r.a}</strong>
+                    {key.rows.map((r, i) => {
+                      const item = items[i] || {};
+                      const opts = Array.isArray(item.options)
+                        ? item.options
+                        : Array.isArray(task.options)
+                        ? task.options
+                        : (taskType === TASK_TYPES.TRUE_FALSE ? ["True", "False"] : []);
+                      const studentText = getStudentAnswerText(item, i, opts);
+                      const ok = isItemCorrect(item, i, opts);
+                      const borderColor =
+                        ok === true ? "rgba(34,197,94,0.7)"
+                        : ok === false ? "rgba(239,68,68,0.7)"
+                        : "rgba(255,255,255,0.2)";
+                      const bgColor =
+                        ok === true ? "rgba(34,197,94,0.18)"
+                        : ok === false ? "rgba(239,68,68,0.18)"
+                        : "rgba(0,0,0,0.12)";
+                      const icon = ok === true ? "✅" : ok === false ? "❌" : "⬜";
+                      return (
+                        <div key={i} style={{ padding: 10, borderRadius: 10, background: bgColor, border: `1px solid ${borderColor}`, display: "grid", gap: 4 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div style={{ fontWeight: 700, flex: 1 }}>{r.q}</div>
+                            <div style={{ fontSize: "1.1rem" }}>{icon}</div>
+                          </div>
+                          <div style={{ opacity: 0.92, fontSize: "0.92rem" }}>
+                            <span style={{ opacity: 0.75 }}>Correct: </span>
+                            <strong>{r.a}</strong>
+                          </div>
+                          {studentText != null && ok === false && (
+                            <div style={{ opacity: 0.85, fontSize: "0.88rem" }}>
+                              <span style={{ opacity: 0.75 }}>You answered: </span>
+                              <span style={{ fontWeight: 700 }}>{studentText}</span>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
             }
 
+            // ── SEQUENCE / TIMELINE: numbered list ──
             if (key.ordered) {
               return (
-                <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                <div style={panelStyle}>
                   <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
-                  <ol style={{ margin: 0, paddingLeft: 20 }}>
+                  <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
                     {key.ordered.map((it) => (
-                      <li key={it.n} style={{ marginBottom: 6 }}>
+                      <li key={it.n} style={{ marginBottom: 4, lineHeight: 1.4 }}>
                         {it.text}
                       </li>
                     ))}
@@ -5181,9 +5279,10 @@ function StudentApp() {
               );
             }
 
+            // ── SORT: bucket groups ──
             if (key.buckets) {
               return (
-                <div style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: 12, textAlign: "left" }}>
+                <div style={panelStyle}>
                   <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {key.buckets.map((b, idx) => (
@@ -5199,7 +5298,7 @@ function StudentApp() {
                       </div>
                     ))}
                     {Array.isArray(key.unassigned) && key.unassigned.length > 0 && (
-                      <div style={{ marginTop: 6, opacity: 0.9 }}>
+                      <div style={{ marginTop: 6, opacity: 0.9, fontSize: "0.9rem" }}>
                         Unassigned: <strong>{key.unassigned.join(", ")}</strong>
                       </div>
                     )}
@@ -5209,7 +5308,7 @@ function StudentApp() {
             }
 
             return null;
-          })()} */}
+          })()}
 
           {(currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
             currentTask?.taskType === TASK_TYPES.READING_COMP) && (

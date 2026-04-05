@@ -12,11 +12,9 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || fallbackBase,
 });
 
-// Attach auth token automatically (supports both old and new keys)
+// Attach auth token automatically
 api.interceptors.request.use((config) => {
-  const token =
-    localStorage.getItem("curriculate_token") ||
-    localStorage.getItem("token");
+  const token = localStorage.getItem("token");
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

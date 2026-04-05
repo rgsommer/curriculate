@@ -81,25 +81,51 @@ const SessionReportSchema = new mongoose.Schema(
     startedAt: { type: Date, default: null },
     endedAt: { type: Date, default: null },
 
+    // Shared-run attribution (when a substitute presenter ran the task set)
+    sharedToken: { type: String, default: "" },
+    sharedFromTeacherId: { type: String, default: "" },
+    sharedFromTeacherName: { type: String, default: "" },
+    sharedFromTeacherEmail: { type: String, default: "" },
+    runByPresenterId: { type: String, default: "" },
+    runByPresenterName: { type: String, default: "" },
+    runByPresenterEmail: { type: String, default: "" },
+
+    // Email-ready summaries
+    headline: { type: String, default: "" },
+    overviewEmail: { type: String, default: "" },
+
     // AI summary (shape depends on your generator; store whole object)
     summary: { type: mongoose.Schema.Types.Mixed, default: {} },
 
     // Parent note (print-ready)
     parentNote: { type: String, default: "" },
 
-    // computed class aggregates
+    // Full session transcript
+    transcript: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // Computed class aggregates
     classAverageScore: { type: Number, default: null },
     classAverageEngagement: { type: Number, default: null },
 
     // Noise sensor summary (class-level; not per-student)
     noiseSummary: { type: mongoose.Schema.Types.Mixed, default: null },
+    noiseSamples: { type: Array, default: [] },
 
     // Details
     teams: { type: [TeamSchema], default: [] },
     attachments: { type: [AttachmentSchema], default: [] },
 
+    // Media submissions (photos/recordings submitted during session)
+    mediaSubmissions: { type: Array, default: [] },
+
     // Optional: per-student stats (plan-gated in PDF rendering)
     perParticipant: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // Scoring rubric categories used
+    assessmentCategories: { type: Array, default: [] },
+
+    // Optional: PDF URL if emailer generates one
+    pdfUrl: { type: String, default: "" },
 
     // Plan snapshot
     planTierUsed: { type: String, default: "FREE" },
@@ -110,4 +136,5 @@ const SessionReportSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model("SessionReport", SessionReportSchema);
+export default mongoose.models.SessionReport ||
+  mongoose.model("SessionReport", SessionReportSchema);

@@ -43,22 +43,11 @@ const ENTRY_KEY = "curriculate.teacherApp.entry.ok";
 const IS_PROD = import.meta?.env?.PROD === true;
 
 function getStoredAuthToken() {
-  const candidates = [
-    "curriculateToken",
-    "curriculate_token",
-    "token",
-    "authToken",
-    "accessToken",
-    "jwt",
-  ];
-
-  for (const k of candidates) {
-    try {
-      const v = localStorage.getItem(k) || sessionStorage.getItem(k);
-      if (typeof v === "string" && v.trim().length > 40) return v.trim();
-    } catch {}
+  try {
+    return localStorage.getItem("token") || "";
+  } catch {
+    return "";
   }
-  return "";
 }
 
 function entryKeyForUser(user) {
@@ -1059,10 +1048,7 @@ const runOneStress = () =>
       };
       const qs = new URLSearchParams();
 
-        const token =
-          getStoredAuthToken?.() ||
-          localStorage.getItem("curriculateToken") ||
-          "";
+        const token = getStoredAuthToken();
 
         if (token) qs.set("token", token);
 
@@ -1081,7 +1067,7 @@ const runOneStress = () =>
       const poll = async () => {
         try {
           const qs2 = new URLSearchParams();
-          const token2 = getStoredAuthToken?.() || localStorage.getItem("curriculateToken") || "";
+          const token2 = getStoredAuthToken();
           if (token2) qs2.set("token", token2);
 
                     
@@ -1240,10 +1226,7 @@ if (st?.ok && st.exists) {
 
     const qs = new URLSearchParams();
 
-    const token =
-      getStoredAuthToken?.() ||
-      localStorage.getItem("curriculateToken") ||
-      "";
+    const token = getStoredAuthToken();
     if (token) qs.set("token", token);
 
     // demo key (required by status endpoint)
@@ -1313,8 +1296,7 @@ if (st?.ok && st.exists) {
       const qs = new URLSearchParams();
 
       // token-in-query for SSE auth
-      const token =
-        getStoredAuthToken?.() || localStorage.getItem("curriculateToken") || "";
+      const token = getStoredAuthToken();
       if (token) qs.set("token", token);
 
       // demo key
@@ -1334,10 +1316,7 @@ if (st?.ok && st.exists) {
         try {
           const qs2 = new URLSearchParams();
 
-          const token2 =
-            (typeof getStoredAuthToken === "function" ? getStoredAuthToken() : "") ||
-            localStorage.getItem("curriculateToken") ||
-            "";
+          const token2 = getStoredAuthToken();
           if (token2) qs2.set("token", token2);
 
           // demo key (required by status endpoint)

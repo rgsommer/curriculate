@@ -78,7 +78,7 @@ function scoreSubmissionRuleBased({ task, submission }) {
       details: { reason: "Objective task types should be scored deterministically (not via aiScoring)." },
     };
   }
-  if (!isObjectiveMeta(meta)) return null;
+  // NOTE: non-objective tasks fall through to the rule-based scoring logic below.
 
   const points = typeof task.points === "number" ? task.points : 1;
   let score = 0;

@@ -1,0 +1,551 @@
+{
+  "_id": "6970245f36d2258ace30b32c",
+  "name": "Taskset: History",
+  "tasks": [
+    {
+      "title": "Understanding Key Historical Concepts",
+      "prompt": "Select the correct answer for each question related to important historical concepts.",
+      "taskType": "multiple-choice",
+      "options": [],
+      "points": 10,
+      "config": {
+        "items": [
+          {
+            "id": "1",
+            "prompt": "What term describes the economic theory that emphasizes the importance of accumulating wealth through trade and colonial expansion?",
+            "options": [
+              "Mercantilism",
+              "Capitalism",
+              "Socialism",
+              "Feudalism"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "2",
+            "prompt": "Which document aimed to limit colonial expansion and was issued by the British Crown in 1763?",
+            "options": [
+              "The Royal Proclamation",
+              "The Declaration of Independence",
+              "The Treaty of Paris",
+              "The Magna Carta"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "3",
+            "prompt": "What does it mean for a group to assimilate into a different culture?",
+            "options": [
+              "To resist change",
+              "To adopt the customs and practices of another culture",
+              "To create a new culture",
+              "To rebel against authority"
+            ],
+            "correctAnswer": 1
+          },
+          {
+            "id": "4",
+            "prompt": "What term refers to the feelings of anger and dissatisfaction that arise from perceived injustices?",
+            "options": [
+              "Tensions & Grievances",
+              "Peace & Harmony",
+              "Unity & Cooperation",
+              "Loyalty & Allegiance"
+            ],
+            "correctAnswer": 0
+          }
+        ]
+      },
+      "items": [
+        {
+          "id": "1",
+          "prompt": "What term describes the economic theory that emphasizes the importance of accumulating wealth through trade and colonial expansion?",
+          "options": [
+            "Mercantilism",
+            "Capitalism",
+            "Socialism",
+            "Feudalism"
+          ],
+          "correctAnswer": 0
+        },
+        {
+          "id": "2",
+          "prompt": "Which document aimed to limit colonial expansion and was issued by the British Crown in 1763?",
+          "options": [
+            "The Royal Proclamation",
+            "The Declaration of Independence",
+            "The Treaty of Paris",
+            "The Magna Carta"
+          ],
+          "correctAnswer": 0
+        },
+        {
+          "id": "3",
+          "prompt": "What does it mean for a group to assimilate into a different culture?",
+          "options": [
+            "To resist change",
+            "To adopt the customs and practices of another culture",
+            "To create a new culture",
+            "To rebel against authority"
+          ],
+          "correctAnswer": 1
+        },
+        {
+          "id": "4",
+          "prompt": "What term refers to the feelings of anger and dissatisfaction that arise from perceived injustices?",
+          "options": [
+            "Tensions & Grievances",
+            "Peace & Harmony",
+            "Unity & Cooperation",
+            "Loyalty & Allegiance"
+          ],
+          "correctAnswer": 0
+        }
+      ],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Understanding Key Events of the French and Indian War",
+      "prompt": "As you explore each color station, answer the questions about important events from the French and Indian War. Choose the correct answer and scan the QR code at that station to move on to the next question.",
+      "taskType": "physical-multiple-choice",
+      "options": [],
+      "points": 10,
+      "config": {
+        "items": [
+          {
+            "id": "1",
+            "prompt": "What was a significant result of the Battle of the Monongahela?",
+            "options": [
+              "The British suffered a major defeat",
+              "The French gained control of the region",
+              "The Spanish lost control of the Ohio River Valley",
+              "It led to a negotiation for peace"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "2",
+            "prompt": "What was a key topic during the negotiations after the French and Indian War?",
+            "options": [
+              "Territorial claims in North America",
+              "The establishment of new colonies",
+              "Trade agreements with Native Americans",
+              "The Acadians had all their land restored"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "3",
+            "prompt": "Which treaty officially ended the French and Indian War?",
+            "options": [
+              "The Treaty of Paris",
+              "The Treaty of Versailles",
+              "The Treaty of Utrecht",
+              "The Treaty of Versailles"
+            ],
+            "correctAnswer": 0
+          },
+          {
+            "id": "4",
+            "prompt": "What lesson did the British learn from the Battle of the Monongahela?",
+            "options": [
+              "The need for better military strategies",
+              "The importance of securing alliances",
+              "Both A and B",
+              "The French were better in every way"
+            ],
+            "correctAnswer": 2
+          }
+        ]
+      },
+      "items": [
+        {
+          "id": "1",
+          "prompt": "What was a significant result of the Battle of the Monongahela?",
+          "options": [
+            "The British suffered a major defeat",
+            "The French gained control of the region",
+            "It led to a negotiation for peace",
+            "The British gave up and let France have America"
+          ],
+          "correctAnswer": 0
+        },
+        {
+          "id": "2",
+          "prompt": "What was a key topic during the negotiations after the French and Indian War?",
+          "options": [
+            "Territorial claims in North America",
+            "The establishment of new colonies",
+            "Trade agreements with Native Americans",
+            "Equal rights for First Nations"
+          ],
+          "correctAnswer": 0
+        },
+        {
+          "id": "3",
+          "prompt": "Which treaty officially ended the French and Indian War?",
+          "options": [
+            "The Treaty of Paris",
+            "The Treaty of Versailles",
+            "The Treaty of Utrecht",
+            "The Treaty of York"
+          ],
+          "correctAnswer": 0
+        },
+        {
+          "id": "4",
+          "prompt": "What lesson did the British learn from the Battle of the Monongahela?",
+          "options": [
+            "The need for better military strategies",
+            "The importance of securing alliances",
+            "Both A and B",
+            "Do not allow yourselves to be disarmed"
+          ],
+          "correctAnswer": 2
+        }
+      ],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Understanding Key Concepts in History",
+      "prompt": "Read each statement carefully and determine if it is true or false. Mark your answer accordingly.",
+      "taskType": "true-false",
+      "options": [],
+      "points": 10,
+      "config": {
+        "items": [
+          {
+            "id": "1",
+            "prompt": "The 'oath of allegiance' was a promise made by individuals to remain loyal to their country during the French and Indian War.",
+            "correctAnswer": 0
+          },
+          {
+            "id": "2",
+            "prompt": "The concept of 'cause and consequence' refers to understanding the reasons behind historical events and their outcomes.",
+            "correctAnswer": 0
+          },
+          {
+            "id": "3",
+            "prompt": "The 'oath of allegiance' had no impact on the alliances formed during the French and Indian War.",
+            "correctAnswer": 1
+          },
+          {
+            "id": "4",
+            "prompt": "Understanding 'cause and consequence' is essential for analyzing the effects of the French and Indian War on future conflicts.",
+            "correctAnswer": 0
+          }
+        ]
+      },
+      "items": [
+        {
+          "id": "1",
+          "prompt": "The 'oath of allegiance' was a promise made by individuals to remain loyal to their country during the French and Indian War.",
+          "correctAnswer": 0
+        },
+        {
+          "id": "2",
+          "prompt": "The concept of 'cause and consequence' refers to understanding the reasons behind historical events and their outcomes.",
+          "correctAnswer": 0
+        },
+        {
+          "id": "3",
+          "prompt": "The 'oath of allegiance' had no impact on the alliances formed during the French and Indian War.",
+          "correctAnswer": 1
+        },
+        {
+          "id": "4",
+          "prompt": "Understanding 'cause and consequence' is essential for analyzing the effects of the French and Indian War on future conflicts.",
+          "correctAnswer": 0
+        }
+      ],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Exploring Key Locations in the French and Indian War",
+      "prompt": "Answer the following questions about important locations in the French and Indian War.",
+      "taskType": "short-answer",
+      "options": [],
+      "points": 10,
+      "config": {
+        "items": [
+          {
+            "prompt": "What was the significance of Fort Duquesne during the French and Indian War?",
+            "correctAnswer": "Fort Duquesne was a strategic military outpost that controlled the Ohio Valley and was a focal point of conflict between the British and French."
+          },
+          {
+            "prompt": "How did the Ohio Valley play a role in the French and Indian War?",
+            "correctAnswer": "The Ohio Valley was a contested region that was crucial for trade and expansion, leading to tensions between British settlers and French forces."
+          }
+        ]
+      },
+      "items": [
+        {
+          "prompt": "What was the significance of Fort Duquesne during the French and Indian War?",
+          "correctAnswer": "Fort Duquesne was a strategic military outpost that controlled the Ohio Valley and was a focal point of conflict between the British and French."
+        },
+        {
+          "prompt": "How did the Ohio Valley play a role in the French and Indian War?",
+          "correctAnswer": "The Ohio Valley was a contested region that was crucial for trade and expansion, leading to tensions between British settlers and French forces."
+        }
+      ],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Understanding Fort Michilimackinac and Queen Anne's War",
+      "prompt": "Read the paragraph below and write one sentence that summarizes the main idea.",
+      "taskType": "reading-comp",
+      "options": [],
+      "points": 10,
+      "config": {
+        "text": "Fort Michilimackinac was a crucial military outpost during the early 18th century, particularly during Queen Anne's War, which lasted from 1702 to 1713. This fort, located at the strategic point where Lake Huron meets Lake Michigan, served as a key site for trade and military operations between the French and British forces. The conflict over control of Fort Michilimackinac highlighted the intense rivalry between the two nations, as both sought to expand their influence in North America. Queen Anne's War was marked by various battles and skirmishes, with Fort Michilimackinac playing a significant role in the broader struggle for dominance in the region.",
+        "generatedParagraph": "Fort Michilimackinac was a crucial military outpost during the early 18th century, particularly during Queen Anne's War, which lasted from 1702 to 1713. This fort, located at the strategic point where Lake Huron meets Lake Michigan, served as a key site for trade and military operations between the French and British forces. The conflict over control of Fort Michilimackinac highlighted the intense rivalry between the two nations, as both sought to expand their influence in North America. Queen Anne's War was marked by various battles and skirmishes, with Fort Michilimackinac playing a significant role in the broader struggle for dominance in the region.",
+        "passage": "Fort Michilimackinac was a crucial military outpost during the early 18th century, particularly during Queen Anne's War, which lasted from 1702 to 1713. This fort, located at the strategic point where Lake Huron meets Lake Michigan, served as a key site for trade and military operations between the French and British forces. The conflict over control of Fort Michilimackinac highlighted the intense rivalry between the two nations, as both sought to expand their influence in North America. Queen Anne's War was marked by various battles and skirmishes, with Fort Michilimackinac playing a significant role in the broader struggle for dominance in the region.",
+        "reading": "Fort Michilimackinac was a crucial military outpost during the early 18th century, particularly during Queen Anne's War, which lasted from 1702 to 1713. This fort, located at the strategic point where Lake Huron meets Lake Michigan, served as a key site for trade and military operations between the French and British forces. The conflict over control of Fort Michilimackinac highlighted the intense rivalry between the two nations, as both sought to expand their influence in North America. Queen Anne's War was marked by various battles and skirmishes, with Fort Michilimackinac playing a significant role in the broader struggle for dominance in the region.",
+        "questions": [
+          {
+            "id": "1",
+            "prompt": "Question 1: _____"
+          },
+          {
+            "id": "2",
+            "prompt": "Question 2: _____"
+          },
+          {
+            "id": "3",
+            "prompt": "Question 3: _____"
+          }
+        ]
+      },
+      "items": [],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Understanding Fortress Louisbourg and Restitution",
+      "prompt": "In a well-structured paragraph, explain the significance of Fortress Louisbourg in the context of its role during the conflicts in North America. How did the concept of restitution relate to the events surrounding this fortress? Consider the impact it had on both the French and British sides during the war. Use specific examples to support your explanation. \n\nSettings: { gradeLevel: 7, difficulty: 'MEDIUM' }",
+      "taskType": "open-text",
+      "options": [],
+      "points": 10,
+      "items": [],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Discuss the French and Indian War",
+      "prompt": "In 20-45 seconds, explain how the French and Indian War led to the Seven Years' War. Include key details about the causes and effects of both conflicts. Focus on clarity and accuracy in your explanation. Remember to provide specific examples to support your points.",
+      "taskType": "record-audio",
+      "options": [],
+      "points": 10,
+      "items": [],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Illustrate French Domination and Strongholds",
+      "prompt": "Draw a scene that represents the concept of French domination in North America during the colonial period. Include a stronghold to show how the French fortified their position. Label your drawing with 'French Domination' and 'Stronghold'.",
+      "taskType": "draw",
+      "options": [],
+      "points": 10,
+      "items": [],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Acting Out History: The French Surrender",
+      "prompt": "Without using any props or words, act out the scene of the French surrender during the Seven Years' War. Show the tensions and grievances that led to this moment. Think about how the characters might express their feelings through gestures and facial expressions. Remember to include key elements like the emotions of the French soldiers and the reactions of the British forces.",
+      "taskType": "mime",
+      "options": [],
+      "points": 10,
+      "items": [],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Sorting Key Events and Concepts of the French and Indian War",
+      "prompt": "Sort the following events and concepts related to the French and Indian War into the correct categories. Use the categories: 'Key Figures', 'Major Events', and 'Important Concepts'. Make sure each item is placed in the appropriate category.",
+      "taskType": "sort",
+      "options": [],
+      "points": 10,
+      "config": {
+        "buckets": [
+          "[object Object]",
+          "[object Object]",
+          "[object Object]"
+        ],
+        "items": [
+          {
+            "text": "General Wolfe",
+            "bucketIndex": 0,
+            "id": "item1"
+          },
+          {
+            "text": "The Albany Meeting",
+            "bucketIndex": 1,
+            "id": "item2"
+          },
+          {
+            "text": "The Turning of the War",
+            "bucketIndex": 1,
+            "id": "item3"
+          },
+          {
+            "text": "Thematic Map",
+            "bucketIndex": 2,
+            "id": "item4"
+          },
+          {
+            "text": "Treaty of Niagara",
+            "bucketIndex": 1,
+            "id": "item5"
+          },
+          {
+            "text": "Turning Point",
+            "bucketIndex": 2,
+            "id": "item6"
+          }
+        ],
+        "answerKey": {
+          "item1": 0,
+          "item2": 1,
+          "item3": 2,
+          "item4": 0,
+          "item5": 1,
+          "item6": 2
+        },
+        "categories": [
+          "[object Object]",
+          "[object Object]",
+          "[object Object]"
+        ]
+      },
+      "items": [
+        {
+          "text": "General Wolfe",
+          "bucketIndex": 0,
+          "id": "item1"
+        },
+        {
+          "text": "The Albany Meeting",
+          "bucketIndex": 1,
+          "id": "item2"
+        },
+        {
+          "text": "The Turning of the War",
+          "bucketIndex": 1,
+          "id": "item3"
+        },
+        {
+          "text": "Thematic Map",
+          "bucketIndex": 2,
+          "id": "item4"
+        },
+        {
+          "text": "Treaty of Niagara",
+          "bucketIndex": 1,
+          "id": "item5"
+        },
+        {
+          "text": "Turning Point",
+          "bucketIndex": 2,
+          "id": "item6"
+        }
+      ],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Events Leading to the French and Indian War",
+      "prompt": "Arrange the following events in the correct order leading up to the French and Indian War. Think about how each event contributed to the conflict.",
+      "taskType": "sequence",
+      "options": [],
+      "points": 10,
+      "config": {
+        "items": [
+          "War is declared",
+          "The Quebec Act",
+          "Guerrilla warfare tactics are used",
+          "Wampum is exchanged as a peace offering"
+        ],
+        "sequence": [
+          "War is declared",
+          "The Quebec Act",
+          "Guerrilla warfare tactics are used",
+          "Wampum is exchanged as a peace offering"
+        ]
+      },
+      "items": [
+        {
+          "id": "seq1",
+          "text": "War is declared"
+        },
+        {
+          "id": "seq2",
+          "text": "The Quebec Act"
+        },
+        {
+          "id": "seq3",
+          "text": "Guerrilla warfare tactics are used"
+        },
+        {
+          "id": "seq4",
+          "text": "Wampum is exchanged as a peace offering"
+        }
+      ],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    },
+    {
+      "title": "Historical Vocabulary Match",
+      "prompt": "Match each historical term with its correct description. Draw a line or write the letter of the correct description next to each term.",
+      "taskType": "matching",
+      "options": [],
+      "points": 10,
+      "items": [],
+      "movement": false,
+      "requiresDrawing": false,
+      "isPublic": false,
+      "aiMetadata": null
+    }
+  ],
+  "isPublic": false,
+  "gradeLevel": "7",
+  "subject": "History",
+  "difficulty": "MEDIUM",
+  "learningGoal": "REVIEW",
+  "totalPlays": 0,
+  "totalPlayers": 0,
+  "avgEngagementScore": null,
+  "completionRate": null,
+  "avgScorePercent": null,
+  "displays": [],
+  "createdAt": "2026-01-21T00:57:03.964Z",
+  "updatedAt": "2026-01-26T18:35:40.979Z",
+  "__v": 0,
+  "description": ""
+}

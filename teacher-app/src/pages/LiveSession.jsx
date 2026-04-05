@@ -1478,8 +1478,19 @@ useEffect(() => {
       }
 
       if (lower === String(TASK_TYPES.SORT || "sort")) {
-        taskToSend.categories = Array.isArray(taskConfig.categories) ? taskConfig.categories : [];
-        taskToSend.items = Array.isArray(taskConfig.items) ? taskConfig.items : [];
+        // Prefer top-level categories, but fall back to config.buckets (used by AI generator)
+        taskToSend.categories =
+          Array.isArray(taskConfig.categories) && taskConfig.categories.length > 0
+            ? taskConfig.categories
+            : Array.isArray(taskConfig.config?.buckets) && taskConfig.config.buckets.length > 0
+            ? taskConfig.config.buckets
+            : [];
+        taskToSend.items =
+          Array.isArray(taskConfig.items) && taskConfig.items.length > 0
+            ? taskConfig.items
+            : Array.isArray(taskConfig.config?.items) && taskConfig.config.items.length > 0
+            ? taskConfig.config.items
+            : [];
         taskToSend.correctCategoryByItem =
           taskConfig.correctCategoryByItem && typeof taskConfig.correctCategoryByItem === "object"
             ? taskConfig.correctCategoryByItem
@@ -1905,11 +1916,17 @@ if (isRolePlayRequested) {
 
       // SORT
       if (genTypeLower === String(TASK_TYPES.SORT || "sort")) {
+        const cfg = (baseTask && typeof baseTask.config === "object" && baseTask.config) || {};
         const categories =
-          Array.isArray(baseTask.categories) ? baseTask.categories :
-          Array.isArray(baseTask.buckets) ? baseTask.buckets.map((b) => b?.title ?? b?.name ?? b) :
+          Array.isArray(baseTask.categories) && baseTask.categories.length ? baseTask.categories :
+          Array.isArray(baseTask.buckets) && baseTask.buckets.length ? baseTask.buckets.map((b) => b?.title ?? b?.name ?? String(b)) :
+          Array.isArray(cfg.buckets) && cfg.buckets.length ? cfg.buckets.map((b) => b?.title ?? b?.name ?? String(b)) :
           [];
-        const items = Array.isArray(baseTask.items) ? baseTask.items : (Array.isArray(baseTask.cards) ? baseTask.cards : []);
+        const items =
+          Array.isArray(baseTask.items) && baseTask.items.length ? baseTask.items :
+          Array.isArray(cfg.items) && cfg.items.length ? cfg.items :
+          Array.isArray(baseTask.cards) ? baseTask.cards :
+          [];
         let correctCategoryByItem =
           baseTask.correctCategoryByItem && typeof baseTask.correctCategoryByItem === "object"
             ? baseTask.correctCategoryByItem

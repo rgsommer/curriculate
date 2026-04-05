@@ -515,6 +515,11 @@ config: {
   [TASK_TYPES.VENNSORT]: {
     label: "Venn Sort",
     category: "classification",
+    implemented: true,
+    generatorEligible: true,
+    demoEligible: true,
+    scoringMode: "objective",
+    objectiveKeyed: true,
     intraTeamEnabled: false,
     interTeamEnabled: false,
     description: `

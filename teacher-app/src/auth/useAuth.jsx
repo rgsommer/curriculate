@@ -49,7 +49,7 @@ function lsDel(key) {
 export function AuthProvider({ children }) {
   const API_BASE = getApiBase();
 
-  const [token, setToken] = useState(() => lsGet("token") || lsGet("curriculate_token") || null);
+  const [token, setToken] = useState(() => lsGet("token") || null);
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
   const [authError, setAuthError] = useState("");
@@ -75,7 +75,6 @@ export function AuthProvider({ children }) {
     if (res.status === 401) {
       // token missing/invalid
       lsDel("token");
-      lsDel("curriculate_token");
       setToken(null);
       setUser(null);
       throw new Error("Unauthorized");
@@ -111,7 +110,6 @@ export function AuthProvider({ children }) {
           if (res.status === 401) {
             if (!cancelled) {
               lsDel("token");
-              lsDel("curriculate_token");
               setToken(null);
               setUser(null);
             }
@@ -174,7 +172,6 @@ export function AuthProvider({ children }) {
     }
 
     lsSet("token", data.token);
-    lsSet("curriculate_token", data.token);
     setToken(data.token);
 
     if (data.user) setUser(data.user);
@@ -185,7 +182,6 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     lsDel("token");
-    lsDel("curriculate_token");
     setToken(null);
     setUser(null);
     setAuthError("");

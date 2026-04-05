@@ -9,7 +9,6 @@ import "dotenv/config";
 import express from "express";
 import http from "http";
 import cors from "cors";
-import bodyParser from "body-parser";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 
@@ -57,65 +56,21 @@ import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
 import aiTasksetsRouter from "./routes/aiTasksets.js";
 import tasksetsRouter from "./routes/tasksets.js";
 import sharedRoutes from "./routes/shared.js";
-import { hashShareToken } from "./models/SharedTasksetLink.js"; // adjust path if needed
+import SharedTasksetLink, { hashShareToken } from "./models/SharedTasksetLink.js";
+import SessionReport from "./models/SessionReport.js";
 import resultsRoutes from "./routes/resultsRoutes.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
 import feedbackRouter from "./routes/feedback.js";
 import { listFeedback } from "./controllers/adminFeedbackController.js";
 import { requireAdminJson } from "./middleware/requireAdminJson.js";
-
-// --------------------------------------------------------------------
-// Reports are immutable snapshots (do NOT overload Session with reports)
-// --------------------------------------------------------------------
-// NOTE: We define the model here to keep index.js drop-in friendly.
-// If you later add ./models/SessionReport.js, you can remove this block
-// and import the model instead.
-const SessionReport = mongoose.models.SessionReport || mongoose.model(
-  "SessionReport",
-  new mongoose.Schema(
-    {
-      ownerId: { type: String, index: true, required: true },
-      roomCode: { type: String, index: true, required: true },
-      className: { type: String, default: "" },
-      gradeLevel: { type: String, default: "" },
-      planTierUsed: { type: String, default: "" },
-
-      // Summary / overview for quick listing + email teaser
-      headline: { type: String, default: "" },
-
-
-      // Shared-run attribution (when a different presenter ran the task set)
-      sharedToken: { type: String, default: "" },
-      sharedFromTeacherId: { type: String, default: "" },
-      sharedFromTeacherName: { type: String, default: "" },
-      sharedFromTeacherEmail: { type: String, default: "" },
-      runByPresenterId: { type: String, default: "" },
-      runByPresenterName: { type: String, default: "" },
-      runByPresenterEmail: { type: String, default: "" },
-
-      overviewEmail: { type: String, default: "" }, // brief email-ready overview (plain text)
-      parentNote: { type: String, default: "" }, // "Today in __class..." (plain text)
-
-      // Full report payload (JSON snapshot)
-      summary: { type: mongoose.Schema.Types.Mixed, default: null },
-      transcript: { type: mongoose.Schema.Types.Mixed, default: null },
-      perParticipant: { type: mongoose.Schema.Types.Mixed, default: null },
-
-      // Attachments metadata (photos/recordings that were submitted)
-      mediaSubmissions: { type: Array, default: [] }, // [{teamId, teamName, taskIndex, taskType, label, url, submittedAt}]
-      // Classroom noise telemetry (class-level, not per-student)
-      noiseSummary: { type: mongoose.Schema.Types.Mixed, default: null },
-      noiseSamples: { type: Array, default: [] }, // [{t, level, brightness, threshold}]
-      // Optional: if your emailer generates a PDF and returns a storage url, store it here
-      pdfUrl: { type: String, default: "" },
-
-      // Scoring / rubric categories used for this report
-      assessmentCategories: { type: Array, default: [] },
-      includeIndividualReports: { type: Boolean, default: false },
-    },
-    { timestamps: true }
-  )
-  );
+import adminRouter from "./routes/admin.js";
+import analyticsRouter from "./routes/analytics.js";
+import billingHandoffRouter from "./routes/billingHandoff.js";
+// reportsRouter intentionally deferred — listReports/getReport missing from controller
+import sessionsRouter from "./routes/sessions.js";
+import speechRouter from "./routes/speech.js";
+import teacherProfileRouter from "./routes/teacherProfileRoutes.js";
+import voiceRouter from "./routes/voice.js";
 
 
 function renderEmailTemplate(str, vars) {
@@ -136,6 +91,34 @@ const GradingCapture = mongoose.models.GradingCapture || mongoose.model(
       submissionId: { type: String, unique: true, index: true, required: true },
       keys: { type: [String], default: [] }, // S3 object keys
       createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 }, // 30 days TTL
+    },
+    { timestamps: false }
+  )
+);
+
+// ------------------------------
+// Grading Usage (Analytics)
+// ------------------------------
+const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
+  "GradingUsage",
+  new mongoose.Schema(
+    {
+      timestamp: { type: Date, default: Date.now },
+      sessionId: { type: String, index: true },
+      ip: String,
+      location: {
+        country: String,
+        region: String,
+        city: String,
+      },
+      subject: String,
+      assessmentType: String,
+      gradeLevel: String,
+      imageCount: Number,
+      overrideInputUsed: Boolean,
+      responseTimeMs: Number,
+      refCode: String,
+      userAgent: String,
     },
     { timestamps: false }
   )
@@ -264,59 +247,6 @@ async function ensureDefaultReferralSettings() {
   if (exists) return;
   await ReferralProgramSettings.create({ key, enabled: true, threshold: 5, rewardMonths: 1 });
 }
-// --------------------------------------------------------------------
-// Shared task set links (secure, expiring links for substitute presenters)
-// --------------------------------------------------------------------
-const SharedTasksetLink =
-  mongoose.models.SharedTasksetLink ||
-  mongoose.model(
-    "SharedTasksetLink",
-    new mongoose.Schema(
-      {
-        token: { type: String, index: true, unique: true, required: true },
-        tasksetId: { type: String, index: true, required: true },
-
-        ownerId: { type: String, index: true, required: true },
-        ownerName: { type: String, default: "" },
-        ownerEmail: { type: String, default: "" },
-
-        createdAt: { type: Date, default: () => new Date() },
-        expiresAt: { type: Date, required: true, index: true },
-        revokedAt: { type: Date, default: null },
-
-        // Optional, for cross-compat with access codes / districts
-        entryCode: { type: String, default: "", index: true },
-
-        // Email tracking + follow-ups
-        invites: {
-          type: [
-            new mongoose.Schema(
-              {
-                toEmail: { type: String, default: "" },
-                ccEmail: { type: String, default: "" },
-                senderUserId: { type: String, default: "" },
-                senderName: { type: String, default: "" },
-                sentAt: { type: Date },
-                followup7SentAt: { type: Date },
-                followup30SentAt: { type: Date },
-                firstUsedAt: { type: Date },
-                countedForReward: { type: Boolean, default: false },
-                rewardSentAt: { type: Date },
-              },
-              { _id: false }
-            ),
-          ],
-          default: [],
-        },
-
-        firstUsedAt: { type: Date, default: null },
-        lastUsedAt: { type: Date, default: null },
-        usedCount: { type: Number, default: 0 },
-      },
-      { minimize: false }
-    )
-  );
-
 // ====================================================================
 //  CORS
 // ====================================================================
@@ -361,10 +291,6 @@ const server = http.createServer(app);
 
 // 1) CORS + parsers first
 app.use(cors(corsOptions));
-app.use(bodyParser.json({ limit: "25mb" }));
-app.use(bodyParser.urlencoded({ extended: true, limit: "25mb" }));
-
-// (If you also use express.json elsewhere, don’t double-stack unnecessarily.)
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
@@ -388,13 +314,25 @@ app.use("/api/tasksets", tasksetsRouter);
 // 5) Shared taskset links (public, no auth)
 app.use("/api/shared", sharedRoutes);
 
-// 6) Grading (and other large payload) file limit
+// 6) Previously-unregistered route files
+app.use("/api/sessions", sessionsRouter);
+// NOTE: reportsRouter (routes/reports.js) is intentionally NOT mounted here.
+// Its listReports/getReport exports are missing from sessionReportController.js.
+// The working inline implementations for GET /api/reports and GET /api/reports/:id
+// remain below until that controller is completed.
+app.use("/api", analyticsRouter);
+app.use("/api", billingHandoffRouter);
+app.use("/api/speech", speechRouter);
+app.use("/api/voice", voiceRouter);
+app.use("/api/teacher-profile", teacherProfileRouter);
+app.use("/api/admin", adminRouter);
+
+// 7) Admin + feedback + results
 import adminUsageSummaryRouter from "./routes/adminUsageSummary.js";
 app.use("/admin", adminUsageSummaryRouter);
 app.use("/admin", adminFeedbackRouter);
 
 // Results sharing routes
-app.use(express.json({ limit: "2mb" })); // bump if your payload is bigger
 app.use("/results", resultsRoutes);
 
 app.use("/feedback", feedbackRouter);
@@ -620,13 +558,8 @@ function getRandomTeam(roomCode) {
 }
 
 // ====================================================================
-//  EXPRESS MIDDLEWARE
+//  SOCKET.IO setup (routes already registered above)
 // ====================================================================
-app.use("/api/subscription", subscriptionRoutes);
-app.use("/auth", authRoutes);
-app.use("/api/auth", authRoutes);
-app.use("/api/stripe", stripeRoutes);
-// Register the route for tripe first 
 app.get("/api/me", authRequired, getMeController);
 
 // ====================================================================
@@ -8069,39 +8002,6 @@ function buildRubricInstructions({
 
     return null;
   }
-
-  // ------------------------------
-  // Grading Usage (Analytics)
-  // ------------------------------
-  const GradingUsage = mongoose.models.GradingUsage || mongoose.model(
-    "GradingUsage",
-    new mongoose.Schema(
-      {
-        timestamp: { type: Date, default: Date.now },
-
-        sessionId: { type: String, index: true },
-        ip: String,
-
-        location: {
-          country: String,
-          region: String,
-          city: String,
-        },
-
-        subject: String,
-        assessmentType: String,
-        gradeLevel: String, // store band like "6-8" (or model inference)
-
-        imageCount: Number,
-        overrideInputUsed: Boolean,
-        responseTimeMs: Number,
-
-        refCode: String,
-        userAgent: String,
-      },
-      { timestamps: false }
-    )
-  );
 
   app.post("/grading", async (req, res) => {
     console.log("GRADING BODY keys:", Object.keys(req.body || {}));

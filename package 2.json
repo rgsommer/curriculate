@@ -1,8 +1,0 @@
-{
-  "devDependencies": {
-    "@playwright/test": "^1.56.1"
-  },
-  "dependencies": {
-    "mongoose": "^8.20.0"
-  }
-}

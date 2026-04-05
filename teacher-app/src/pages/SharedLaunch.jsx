@@ -3,20 +3,8 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetchJson } from "../api/apiFetch";
 
-const TOKEN_KEYS = [
-  "curriculateToken",
-  "curriculate_token",
-  "token",
-  "authToken",
-  "accessToken",
-  "jwt",
-];
-
 function setTokenEverywhere(token) {
-  for (const k of TOKEN_KEYS) {
-    try { localStorage.setItem(k, token); } catch {}
-    try { sessionStorage.setItem(k, token); } catch {}
-  }
+  try { localStorage.setItem("token", token); } catch {}
 }
 
 export default function SharedLaunch() {
