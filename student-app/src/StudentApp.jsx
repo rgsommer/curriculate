@@ -1690,6 +1690,7 @@ function StudentApp() {
 
         setSubmitting(false);
         setStatusMessage("");
+        try {
         if (response?.testMode) {
           setStatusMessage(
             response?.localOnly
@@ -1916,6 +1917,19 @@ function StudentApp() {
 
         if (response.alertSound) {
           tryPlayAlertSound();
+        }
+        } catch (err) {
+          console.error("[task:submit callback] Error in post-submit processing:", err);
+          // If something threw after setSubmitting(false), ensure we still progress
+          // by going to scan screen rather than leaving the user stuck
+          try {
+            setTaskLocked(false);
+            setReviewState(null);
+            setPostSubmitSecondsLeft(null);
+            endReviewAndReturnToScan();
+          } catch (e2) {
+            console.error("[task:submit callback] Recovery also failed:", e2);
+          }
         }
       });
     };

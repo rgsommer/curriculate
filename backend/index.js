@@ -2076,33 +2076,47 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
   function buildReviewPayload({ task, answer, correct, aiScore }) {
     const type = task?.taskType;
-      // MC / TF (single-question)
-      if (type === "multiple-choice" || type === "true-false") {
-        const correctAnswer = task?.correctAnswer ?? null;
-        return { correctAnswer };
-      }
+    const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+    // Items can live at task.items OR task.config.items (AI generator uses config.items)
+    const reviewItems = Array.isArray(task?.items) && task.items.length > 0
+      ? task.items
+      : (Array.isArray(cfg.items) ? cfg.items : []);
 
-      // Multi-question objective packs (MC / TF only)
+      // Multi-question objective packs (MC / TF only) — check BEFORE single-question
       if (
-        Array.isArray(task?.items) &&
-        task.items.length > 0 &&
+        reviewItems.length > 0 &&
         (
-          task.taskType === "multiple-choice" ||
-          task.taskType === "true-false" ||
-          task.taskType === "multi-choice" ||
-          task.taskType === "multi-true-false"
+          type === "multiple-choice" ||
+          type === "true-false" ||
+          type === "multi-choice" ||
+          type === "multi-true-false"
         )
       ) {
-        // Only include answers that actually exist
-        const correctAnswers = task.items.map((it) =>
-          it?.correctAnswer ?? null
-        );
+        // Build correct answers from items, supporting both correctAnswer and correctIndex
+        const correctAnswers = reviewItems.map((it) => {
+          if (it?.correctAnswer !== undefined) return it.correctAnswer;
+          if (it?.correctIndex !== undefined) {
+            // Resolve correctIndex to option text if possible
+            const opts = Array.isArray(it.options) ? it.options : [];
+            if (typeof it.correctIndex === "number" && opts[it.correctIndex] != null) {
+              return opts[it.correctIndex];
+            }
+            return it.correctIndex;
+          }
+          return null;
+        });
 
-        // Guard: if none of the items define correctAnswer, bail
+        // Guard: if none of the items define correctAnswer/correctIndex, fall through
         const hasAnyCorrect = correctAnswers.some((v) => v !== null);
-        if (!hasAnyCorrect) return null;
+        if (hasAnyCorrect) {
+          return { correctAnswers };
+        }
+      }
 
-        return { correctAnswers };
+      // MC / TF (single-question fallback)
+      if (type === "multiple-choice" || type === "true-false") {
+        const correctAnswer = task?.correctAnswer ?? cfg?.correctAnswer ?? null;
+        return { correctAnswer };
       }
 
         // VENNSORT
@@ -2997,7 +3011,8 @@ socket.on("station:scan", handleStationScan);
 
       // Multi-choice items: compare index (preferred) or text
       if (answer.type === "multi-choice") {
-        const itemCorrect = item.correctAnswer;
+        // Support both correctAnswer and correctIndex (AI generator uses correctIndex)
+        const itemCorrect = item.correctAnswer ?? item.correctIndex;
         const baseOptions = Array.isArray(item.options)
           ? item.options
           : Array.isArray(item.choices)
@@ -3810,7 +3825,12 @@ if (!isMultiPack && task.taskType === "guess-who") {
   };
 
   socket.on("student:submitAnswer", (payload, ack) => {
-    handleStudentSubmit(payload, ack);
+    handleStudentSubmit(payload, ack).catch((err) => {
+      console.error("[handleStudentSubmit] Unhandled error:", err);
+      if (typeof ack === "function") {
+        try { ack({ ok: false, error: "Server error during submission" }); } catch {}
+      }
+    });
   });
 
   socket.on("task:requestNext", ({ roomCode, teamId } = {}, ack) => {
@@ -3926,7 +3946,12 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
 
 
   socket.on("task:submit", (payload, ack) => {
-    handleStudentSubmit(payload, ack);
+    handleStudentSubmit(payload, ack).catch((err) => {
+      console.error("[handleStudentSubmit via task:submit] Unhandled error:", err);
+      if (typeof ack === "function") {
+        try { ack({ ok: false, error: "Server error during submission" }); } catch {}
+      }
+    });
   });
 
   // Backwards-compatible submit event names
