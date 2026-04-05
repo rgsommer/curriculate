@@ -13,6 +13,8 @@ import { API_BASE_URL } from "./config.js";
 import { COLORS } from "@shared/colors.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 import AnimatedScore from "./components/ui/AnimatedScore.jsx";
+import ThemeBackground from "./components/ui/ThemeBackground.jsx";
+import { THEMES } from "./utils/themeHelpers.js";
 
 // Utilities
 import {
@@ -107,7 +109,7 @@ class TaskErrorBoundary extends React.Component {
 
 function StudentApp() {
   // Theme selector (must be inside component)
-  const [uiTheme, setUiTheme] = useState("modern"); // "modern" | "bold" | "minimal"
+  const [uiTheme, setUiTheme] = useState("eager"); // "eager" | "bold" | "dyno"
   const themeShell = getThemeShell(uiTheme);
 
   // Socket connection hook
@@ -2521,6 +2523,8 @@ function StudentApp() {
   return (
     <div
       style={{
+        position: "relative",
+        zIndex: 1,
         minHeight: "100vh",
         padding: 16,
         display: "flex",
@@ -2534,7 +2538,7 @@ function StudentApp() {
           ? "radial-gradient(circle at top, #b91c1c 0%, #f97316 40%, #facc15 75%, #fee2e2 100%)"
           : isMindMapper
           ? "radial-gradient(circle at top, #0f172a 0%, #0ea5e9 40%, #22c55e 75%, #e0f2fe 100%)"
-          : themeShell.pageBg,
+          : "transparent",
         color: themeShell.text,
         filter: `brightness(${uiBrightness})`,
         transition: "background 0.35s ease, color 0.25s ease, filter 0.18s ease",
@@ -3186,6 +3190,11 @@ function StudentApp() {
       `}
       </style>
 
+      {/* Animated theme background layer */}
+      {!isFlashcardsRace && !isMadDash && !isMindMapper && (
+        <ThemeBackground theme={uiTheme} />
+      )}
+
       {/* HEADER */}
       {joined && (
         <AnimatedLeaderboard
@@ -3291,69 +3300,32 @@ function StudentApp() {
               marginBottom: 4,
             }}
           >
-            <button
-              type="button"
-              onClick={() => setUiTheme("modern")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "modern"
-                    ? "2px solid rgba(59,130,246,0.9)"
-                    : "1px solid rgba(148,163,184,0.7)",
-                background:
-                  uiTheme === "modern"
-                    ? "rgba(191,219,254,0.35)"
-                    : "rgba(15,23,42,0.15)",
-                color: "#e5e7eb",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Theme 1
-            </button>
-            <button
-              type="button"
-              onClick={() => setUiTheme("bold")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "bold"
-                    ? "2px solid rgba(248,250,252,0.9)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "bold"
-                    ? "rgba(15,23,42,0.9)"
-                    : "rgba(15,23,42,0.25)",
-                color: "#e5e7eb",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Theme 2
-            </button>
-            <button
-              type="button"
-              onClick={() => setUiTheme("minimal")}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                border:
-                  uiTheme === "minimal"
-                    ? "2px solid rgba(15,23,42,0.85)"
-                    : "1px solid rgba(148,163,184,0.6)",
-                background:
-                  uiTheme === "minimal"
-                    ? "#e5e7eb"
-                    : "rgba(249,250,251,0.85)",
-                color: "#111827",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              Theme 3
-            </button>
+            {Object.entries(THEMES).map(([key, t]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setUiTheme(key)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border:
+                    uiTheme === key
+                      ? `2px solid ${t.accent}`
+                      : "1px solid rgba(148,163,184,0.5)",
+                  background:
+                    uiTheme === key
+                      ? `${t.accent}33`
+                      : "rgba(15,23,42,0.25)",
+                  color: uiTheme === key ? t.accent : "#e5e7eb",
+                  fontSize: "0.75rem",
+                  fontWeight: uiTheme === key ? 700 : 400,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {t.emoji} {t.label}
+              </button>
+            ))}
           </div>
 
           {joined && (
@@ -4359,39 +4331,39 @@ function StudentApp() {
                   ? postSubmitSecondsLeft
                   : DEFAULT_POST_SUBMIT_SECONDS);
 
-          const percent =
-            lockTotal > 0
-              ? Math.round((postSubmitSecondsLeft / lockTotal) * 100)
-              : 0;
-
           const isCatchingUp = reviewState?.isCatchingUp === true;
           const hasPacingHold = reviewState?.pacingHold === true;
 
           return (
             <div style={{ width: "100%", position: "relative", minHeight: 120 }}>
-              {/* ✅ pinned top bar */}
+              <style>{`
+                @keyframes shrinkBar {
+                  from { width: 100%; }
+                  to   { width: 0%; }
+                }
+              `}</style>
+              {/* ✅ pinned top bar — smooth CSS animation */}
               <div
                 style={{
                   position: "absolute",
-                  top: 0,
+                  top: 12,
                   left: 0,
                   right: 0,
                 }}
               >
                 <div
                   style={{
-                  height: 3,
+                    height: 3,
                     borderRadius: 999,
-                    background: "rgba(255,255,255,0.25)",
+                    background: "rgba(255,255,255,0.18)",
                     overflow: "hidden",
                   }}
                 >
                 <div
                   style={{
                     height: "100%",
-                    width: `${percent}%`,
-                    background: "rgba(255,255,255,0.9)",
-                    transition: "width 200ms linear",
+                    background: "rgba(255,255,255,0.85)",
+                    animation: `shrinkBar ${lockTotal}s linear forwards`,
                   }}
                 />
               </div>
