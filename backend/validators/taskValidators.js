@@ -1286,15 +1286,33 @@ export function normalizeTaskByType(taskType, rawTask) {
     }
 
     case TASK_TYPES.SHORT_ANSWER: {
-      // If AI generated single-prompt format (prompt + correctAnswer at top level)
-      // but no items[], convert to items[] so the playability checker is satisfied.
-      const hasItems = Array.isArray(task.items) && task.items.length > 0;
-      const hasConfigItems = Array.isArray(task.config?.items) && task.config.items.length > 0;
-      if (!hasItems && !hasConfigItems) {
-        const saPrompt = asNonEmptyString(task.prompt);
-        const saAnswer = asNonEmptyString(task.correctAnswer);
-        if (saPrompt && saAnswer) {
-          task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAnswer }];
+      // Normalize correctAnswer from common AI alternate field names
+      const _saAnswer = (obj) =>
+        asNonEmptyString(obj?.correctAnswer) ||
+        asNonEmptyString(obj?.answer) ||
+        asNonEmptyString(obj?.correct) ||
+        asNonEmptyString(obj?.expected) ||
+        asNonEmptyString(obj?.correctResponse) ||
+        asNonEmptyString(obj?.response) ||
+        "";
+
+      // Normalize items[] if present — fix missing correctAnswer from alternate names
+      const rawItems = Array.isArray(task.items) ? task.items
+        : Array.isArray(task.config?.items) ? task.config.items
+        : null;
+
+      if (rawItems && rawItems.length > 0) {
+        task.items = rawItems.map((it, i) => ({
+          id: it.id || `q${i + 1}`,
+          prompt: asNonEmptyString(it.prompt) || asNonEmptyString(it.question) || "",
+          correctAnswer: _saAnswer(it),
+        }));
+      } else {
+        // Single-prompt format → convert to items[]
+        const saPrompt = asNonEmptyString(task.prompt) || asNonEmptyString(task.question) || "";
+        const saAns = _saAnswer(task);
+        if (saPrompt && saAns) {
+          task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAns }];
         }
       }
       break;
