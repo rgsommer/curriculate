@@ -439,6 +439,7 @@ function StudentApp() {
       if (!state || !teamId) return;
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
+      console.log("[ROOM:STATE] taskLockedRef =", taskLockedRef.current, "currentStationId =", myTeam.currentStationId, "currentTaskRef =", !!currentTaskRef.current);
 
       // 🔢 Update running total score from room-wide scores map
       if (state.scores && typeof state.scores[teamId] === "number") {
@@ -1442,10 +1443,7 @@ function StudentApp() {
           } else {
             setRemainingMs(0);
           }
-        } else if (!taskLockedRef.current) {
-          // Only clear task if we're NOT in the post-submit review overlay.
-          // A room:state arriving mid-review would null currentTask and
-          // unmount the overlay — causing the "no overlay" bug.
+        } else {
           setCurrentTask(null);
           setCurrentTaskIndex(null);
           setTasksetTotalTasks(null);
@@ -1553,6 +1551,7 @@ function StudentApp() {
       setScanStatus(null);
       setScanError(null);
       setScannedStationId(null);
+      console.log("[endReview] assignedColorRef =", assignedColorRef.current, "assignedColor(closure) =", assignedColor, "assignedStationIdRef =", assignedStationIdRef.current);
       setDisplayAssignedStationId(assignedStationIdRef.current || assignedStationId);
       setDisplayAssignedColor(assignedColorRef.current || assignedColor);
 
@@ -1701,10 +1700,19 @@ function StudentApp() {
       });
 
       setSubmitting(true);
+      // Pre-lock: set taskLocked BEFORE emitting so that the room:state
+      // broadcast (which arrives before the ack) can't clear currentTask.
+      // If submission fails, the ack error handler will unlock.
+      setTaskLocked(true);
+      taskLockedRef.current = true;
+      console.log("[SUBMIT] pre-lock set, taskLockedRef =", taskLockedRef.current, "currentTask =", currentTask?.taskType);
       socket.emit("task:submit", payload, (response) => {
+        console.log("[SUBMIT ACK] received, response keys:", Object.keys(response || {}), "correct:", response?.correct, "nextStationId:", response?.nextStationId, "nextStationColor:", response?.nextStationColor);
         if (!response || response.error) {
           console.warn("Submit error:", response?.error || "Unknown error");
           setSubmitting(false);
+          setTaskLocked(false);
+          taskLockedRef.current = false;
           setStatusMessage(response?.error || "There was a problem submitting. Try again.");
           return;
         }
@@ -1749,9 +1757,9 @@ function StudentApp() {
           currentType === TASK_TYPES.MAD_DASH ||
           currentType === TASK_TYPES.MAD_DASH_SEQUENCE;
           
+        console.log("[SUBMIT ACK] isPhysical =", isPhysical, "currentType =", currentType, "currentTask?.taskType =", currentTask?.taskType);
         if (!isPhysical) {
           // If there is no scoring overlay to show, do NOT pause for "review".
-          // (Example: objectiveScoring=false AND aiScoring=false)
           // (Example: objectiveScoring=false AND aiScoring=false)
           const objectiveFlag =
             (typeof currentTask?.objectiveScoring === "boolean"
@@ -1880,10 +1888,12 @@ function StudentApp() {
             !isPhysical &&
             (isObjCurrentTask || !accepted || hasMeaningfulFeedback);
 
+          console.log("[SUBMIT ACK] shouldShowReview =", shouldShowReview, "isObjCurrentTask =", isObjCurrentTask, "accepted =", accepted, "hasMeaningfulFeedback =", hasMeaningfulFeedback, "disableReviewPause =", disableReviewPause);
           if (!shouldShowReview) {
             setReviewState(null);
             setPostSubmitSecondsLeft(null);
             setTaskLocked(false);
+            taskLockedRef.current = false;
             if (postSubmitTimerRef.current) {
               clearInterval(postSubmitTimerRef.current);
               postSubmitTimerRef.current = null;
@@ -1893,6 +1903,7 @@ function StudentApp() {
           }
 
           setTaskLocked(true);
+          console.log("[SUBMIT ACK] OVERLAY WILL SHOW — taskLocked set to true");
 
           // Check if team is catching up for quickened review
           const isCatchingUp = response?.catchUp === true;
@@ -1953,6 +1964,7 @@ function StudentApp() {
         } else {
           // ✅ PHYSICAL TASK: no overlay, go straight to scan
           setTaskLocked(false);
+          taskLockedRef.current = false;
           setReviewState(null);
           setPostSubmitSecondsLeft(null);
           endReviewAndReturnToScan();
