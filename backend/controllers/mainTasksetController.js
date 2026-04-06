@@ -399,7 +399,7 @@ async function generateTasksArray({
   );
 
   const request = {
-    model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
+    model: process.env.AI_MODEL || "gpt-4.1-mini",
     temperature,
     max_completion_tokens: 2600,
     messages: [{ role: "user", content: prompt }],

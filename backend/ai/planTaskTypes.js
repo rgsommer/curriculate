@@ -107,7 +107,7 @@ JSON SHAPE:
   };
 
   const completion = await client.chat.completions.create({
-    model: process.env.AI_TASK_MODEL || "gpt-5.1",
+    model: process.env.AI_MODEL || "gpt-4.1-mini",
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: "You are a JSON API. Respond only with valid JSON." },

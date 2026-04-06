@@ -3410,7 +3410,7 @@ if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && co
         `.trim();
 
               const response = await openai.responses.create({
-                model: "gpt-5.4",
+                model: process.env.AI_MODEL || "gpt-4.1-mini",
                 input: [
                   {
                     role: "user",
@@ -3526,7 +3526,7 @@ Rules:
 `.trim();
 
       const response = await openai.responses.create({
-        model: "gpt-5.4",
+        model: process.env.AI_MODEL || "gpt-4.1-mini",
         input: [{ role: "user", content: [{ type: "input_text", text: evalPrompt }] }],
         text: {
           format: {
@@ -5153,7 +5153,7 @@ async function runReadingCompCheck({ paragraph, answer, gradeLevel }) {
       };
 
       const response = await openai.responses.create({
-        model: "gpt-5.4",
+        model: process.env.AI_MODEL || "gpt-4.1-mini",
         input: [
           {
             role: "user",
@@ -5278,7 +5278,7 @@ async function evaluateMultiShortItem({
 
       try {
         const response = await openai.responses.create({
-          model: "gpt-5.4",
+          model: process.env.AI_MODEL || "gpt-4.1-mini",
           input: [
             {
               role: "user",
@@ -5418,7 +5418,7 @@ app.post("/api/evaluate/short-answer", async (req, res) => {
       `.trim();
 
           const response = await openai.chat.completions.create({
-            model: "gpt-5.4-mini",
+            model: process.env.AI_MODEL || "gpt-4.1-mini",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.2,
           });
@@ -6965,7 +6965,7 @@ function buildRubricInstructions({
         ];
 
         const countResp = await openai.responses.create({
-          model: "gpt-5.4",
+          model: process.env.AI_MODEL || "gpt-4.1-mini",
           input: [{ role: "user", content: countingContent }],
           text: { format: { type: "json_schema", name: "count_result", strict: true, schema: countSchema } },
           max_output_tokens: 350,
@@ -7115,7 +7115,7 @@ function buildRubricInstructions({
       }
 
       const response = await openai.responses.create({
-        model: "gpt-5.4",
+        model: process.env.AI_MODEL || "gpt-4.1-mini",
         input: [{ role: "user", content: userContent }],
         text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
         max_output_tokens: 2500
@@ -7384,7 +7384,7 @@ function buildRubricInstructions({
         `.trim();
 
       const response = await openai.responses.create({
-        model: "gpt-5.4",
+        model: process.env.AI_MODEL || "gpt-4.1-mini",
         input: [
           {
             role: "user",

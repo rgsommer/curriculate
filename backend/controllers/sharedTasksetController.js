@@ -1152,7 +1152,7 @@ export async function regenerateSingleTask({
   }
 
   const request = {
-    model: process.env.AI_TASKSET_MODEL || "gpt-4o-mini",
+    model: process.env.AI_MODEL || "gpt-4.1-mini",
     temperature: typeof temperature === "number" ? temperature : 0.4,
     max_completion_tokens: 900,
     messages: [

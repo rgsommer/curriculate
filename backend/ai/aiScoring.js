@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { TASK_TYPES, TASK_TYPE_META } from "../../shared/taskTypes.js";
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const DEFAULT_MODEL = process.env.AI_MODEL || "gpt-4.1-mini";
 
 // Defer client creation so a missing key logs a warning instead of crashing at boot
 let _openai = null;

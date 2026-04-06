@@ -20,7 +20,7 @@ function getClient() {
 const client = new Proxy({}, { get: (_, prop) => getClient()[prop] });
 
 const SUMMARY_MODEL =
-  process.env.AI_SUMMARY_MODEL || "gpt-5.1";
+  process.env.AI_MODEL || "gpt-4.1-mini";
 
 /**
  * Generate AI session summaries:

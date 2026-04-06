@@ -157,7 +157,7 @@ Rules:
   let completion;
   try {
     completion = await client.chat.completions.create({
-      model: process.env.AI_TASK_MODEL || "gpt-5.1",
+      model: process.env.AI_MODEL || "gpt-4.1-mini",
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: "You are a JSON API. Respond only with valid JSON." },
@@ -170,9 +170,9 @@ Rules:
       openaiErr.message?.includes("model does not exist") ||
       openaiErr.message?.includes("insufficient_quota")
     ) {
-      console.warn("Primary model unavailable — falling back to gpt-4o-mini");
+      console.warn("Primary model unavailable — falling back to gpt-4.1-mini");
       completion = await client.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-mini",
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: "You are a JSON API. Respond only with valid JSON." },
