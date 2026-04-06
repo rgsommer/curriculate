@@ -23,7 +23,7 @@ export const THEMES = {
         66% { transform: translate(-20px, 15px) scale(0.95); }
       }
       .theme-bg-eager {
-        position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+        position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
         background: linear-gradient(135deg, #ff6b6b 0%, #ffa502 50%, #ff6348 100%);
       }
       .theme-bg-eager::before {
@@ -71,7 +71,7 @@ export const THEMES = {
         100% { background-position: 60px 60px; }
       }
       .theme-bg-bold {
-        position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+        position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
         background: radial-gradient(ellipse at 30% 20%, #1a0a3e 0%, #0a0a1a 60%);
       }
       .theme-bg-bold::before {
@@ -118,7 +118,7 @@ export const THEMES = {
         50% { transform: translateY(-25px) rotate(3deg); }
       }
       .theme-bg-dyno {
-        position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+        position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
         background: linear-gradient(160deg, #041c32 0%, #064663 40%, #04293a 100%);
       }
       .theme-bg-dyno::before {

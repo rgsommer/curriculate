@@ -1442,7 +1442,10 @@ function StudentApp() {
           } else {
             setRemainingMs(0);
           }
-        } else {
+        } else if (!taskLockedRef.current) {
+          // Only clear task if we're NOT in the post-submit review overlay.
+          // A room:state arriving mid-review would null currentTask and
+          // unmount the overlay — causing the "no overlay" bug.
           setCurrentTask(null);
           setCurrentTaskIndex(null);
           setTasksetTotalTasks(null);
@@ -1719,15 +1722,21 @@ function StudentApp() {
 
         // Update next station from ack so it's ready when review ends
         // (prevents race condition with room:state arriving late)
+        // IMPORTANT: also write refs immediately so endReviewAndReturnToScan
+        // picks up the new color (useEffect sync hasn't fired yet in this tick).
         if (response?.nextStationId) {
           const nextNorm = normalizeStationId(response.nextStationId);
           if (nextNorm?.id) {
+            const nextColor = nextNorm.color || response.nextStationColor || null;
             setAssignedStationId(nextNorm.id);
-            setAssignedColor(nextNorm.color || response.nextStationColor || null);
+            setAssignedColor(nextColor);
+            assignedStationIdRef.current = nextNorm.id;
+            assignedColorRef.current = nextColor;
             lastStationIdRef.current = nextNorm.id;
           }
         } else if (response?.nextStationColor) {
           setAssignedColor(response.nextStationColor);
+          assignedColorRef.current = response.nextStationColor;
         }
 
         const currentType = currentTask?.taskType || currentTask?.type;
@@ -2521,8 +2530,15 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   return (
+    <>
+    {/* Animated theme background — rendered OUTSIDE the content div so z-index layering works */}
+    {!isFlashcardsRace && !isMadDash && !isMindMapper && (
+      <ThemeBackground theme={uiTheme} />
+    )}
     <div
       style={{
+        position: "relative",
+        zIndex: 1,
         minHeight: "100vh",
         padding: 16,
         display: "flex",
@@ -3187,11 +3203,6 @@ function StudentApp() {
         }
       `}
       </style>
-
-      {/* Animated theme background layer */}
-      {!isFlashcardsRace && !isMadDash && !isMindMapper && (
-        <ThemeBackground theme={uiTheme} />
-      )}
 
       {/* HEADER */}
       {joined && (
@@ -4845,6 +4856,7 @@ function StudentApp() {
       }}
     />
   </div>
+  </>
   );
 }
 
