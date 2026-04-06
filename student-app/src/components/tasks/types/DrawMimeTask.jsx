@@ -544,220 +544,224 @@ export default function DrawMimeTask({
           </p>
 
           <div className="mt-5 max-w-5xl mx-auto">
-            <div className="bg-black/35 backdrop-blur-lg rounded-3xl p-5 shadow-2xl border border-white/15">
-              <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
-                <div className="px-5 py-3 rounded-2xl bg-white/15 text-2xl font-black">
-                  ⏱️ Time: {started ? `${timeLeft}s` : `${durationSeconds}s`}
+            {/* Two-column card: left = controls, right = how to play */}
+            <div className="bg-black/35 backdrop-blur-lg rounded-3xl p-5 shadow-2xl border border-white/15 flex flex-col md:flex-row gap-5">
+
+              {/* ── LEFT COLUMN: all the action ── */}
+              <div className="flex-1 min-w-0">
+
+                {/* 1. Mode toggle — FIRST so players pick before hitting GO */}
+                <div className="flex flex-wrap items-center justify-center gap-3 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setMode("draw")}
+                    className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
+                      mode === "draw"
+                        ? "bg-blue-600 text-white ring-4 ring-blue-200 scale-105"
+                        : "bg-white/85 text-black"
+                    }`}
+                  >
+                    🎨 Drawing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode("mime")}
+                    className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
+                      mode === "mime"
+                        ? "bg-purple-600 text-white ring-4 ring-purple-200 scale-105"
+                        : "bg-white/85 text-black"
+                    }`}
+                  >
+                    🤫 Miming
+                  </button>
                 </div>
-                <button
-                  onClick={startRound}
-                  disabled={disabled || !canStart || roundActive || countdown != null || awaitingOutcome}
-                  className={`px-8 py-4 rounded-2xl text-3xl font-black transition ${
-                    roundActive
-                      ? "bg-green-600 text-white"
-                      : "bg-green-500 text-white border-2 border-green-200 hover:scale-105"
-                  } disabled:opacity-40`}
-                >
-                  {!canStart
-                    ? "Intro…"
-                    : roundActive
-                      ? "GO!"
-                      : countdown
-                        ? String(countdown)
-                        : "1-2-3 GO!"}
-                </button>
-              </div>
 
-              {!canStart && (
-                <div className="text-center text-xl font-bold opacity-80 mb-2">
-                  Intro playing… Start will appear in a moment.
+                {/* 2. Timer + GO */}
+                <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
+                  <div className="px-5 py-3 rounded-2xl bg-white/15 text-2xl font-black">
+                    ⏱️ Time: {started ? `${timeLeft}s` : `${durationSeconds}s`}
+                  </div>
+                  <button
+                    onClick={startRound}
+                    disabled={disabled || !canStart || roundActive || countdown != null || awaitingOutcome}
+                    className={`px-8 py-4 rounded-2xl text-3xl font-black transition ${
+                      roundActive
+                        ? "bg-green-600 text-white"
+                        : "bg-green-500 text-white border-2 border-green-200 hover:scale-105"
+                    } disabled:opacity-40`}
+                  >
+                    {!canStart
+                      ? "Intro…"
+                      : roundActive
+                        ? "GO!"
+                        : countdown
+                          ? String(countdown)
+                          : "1-2-3 GO!"}
+                  </button>
                 </div>
-              )}
 
-              {/* Turnkeeper (Grade 7 reading level) */}
-              <div className="mt-2 mb-4">
-
-                {/* ✅ Big "Guessed it!" button — matches the instructions */}
-                {roundActive && (
-                  <div className="flex justify-center mb-4">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        endRound({
-                          guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`,
-                          guessedBySide: guessingSide,
-                          reason: "guessed",
-                        })
-                      }
-                      className="px-8 py-5 rounded-3xl text-3xl font-black bg-green-400 text-black shadow-2xl hover:scale-105 active:scale-95 transition"
-                      style={{ minWidth: 220 }}
-                    >
-                      ✅ Guessed it!
-                    </button>
+                {!canStart && (
+                  <div className="text-center text-xl font-bold opacity-80 mb-2">
+                    Intro playing… Start will appear in a moment.
                   </div>
                 )}
 
-                <div className="text-2xl md:text-2xl font-black text-center mb-3">
-                  {mode === "draw" ? "Drawer" : "Actor"}:{" "}
-                  <span className="underline">{performer?.name || "Player"}</span>
-                  <span className="opacity-90">
-                    {" "}· Guessing team: {guessingSide === "left" ? "Left" : "Right"}
-                  </span>
-                  <span className="opacity-75">
-                    {" "}· Style: {turnStyle === "intra" ? "Intra-team" : "Inter-team"}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Left Team */}
-                  <div
-                    className={`relative rounded-3xl p-4 border border-white/15 shadow-2xl transition ${
-                      performerSide === "left" ? "bg-emerald-500/20" : "bg-white/10"
-                    } ${turnPulse && performerSide === "left" ? "animate-pulse" : ""}`}
-                  >
-                    {performerSide === "left" && (
-                      <div className="absolute -top-3 -left-3 bg-emerald-500 text-black font-black px-4 py-2 rounded-2xl shadow-xl">
-                        YOUR TURN ➜
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-3xl font-black">Left Team</div>
-                      <div className="text-3xl font-black">{scoreLeft}</div>
+                {/* 3. Guessed it! + Turnkeeper */}
+                <div className="mt-2 mb-2">
+                  {roundActive && (
+                    <div className="flex justify-center mb-4">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          endRound({
+                            guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`,
+                            guessedBySide: guessingSide,
+                            reason: "guessed",
+                          })
+                        }
+                        className="px-8 py-5 rounded-3xl text-3xl font-black bg-green-400 text-black shadow-2xl hover:scale-105 active:scale-95 transition"
+                        style={{ minWidth: 220 }}
+                      >
+                        ✅ Guessed it!
+                      </button>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {players
-                        .map((p, idx) => ({ ...p, idx, side: sideForIndex(idx) }))
-                        .filter((p) => p.side === "left")
-                        .map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              // Tap a name to mark that person as the guesser (only when it makes sense).
-                              if (!roundActive) return;
-                              if (p.idx === performerIdx) return;
-                              if (p.side !== guessingSide) return;
-                              markGuessed(p);
-                            }}
-                            disabled={disabled || !roundActive || p.idx === performerIdx || p.side !== guessingSide}
-                            className={`px-4 py-3 rounded-2xl text-2xl font-black transition ${
-                              p.idx === performerIdx
-                                ? "bg-white/15 opacity-70"
-                                : p.side === guessingSide
-                                  ? "bg-white text-black hover:scale-105"
-                                  : "bg-white/10 opacity-50"
-                            }`}
-                            title={
-                              p.idx === performerIdx
-                                ? "Performer"
-                                : p.side === guessingSide
-                                  ? "Tap if this person guessed it!"
-                                  : "Not the guessing team this round"
-                            }
-                          >
-                            {p.name}
-                            {p.idx === performerIdx ? " (performing)" : ""}
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-
-                  {/* Right Team */}
-                  <div
-                    className={`relative rounded-3xl p-4 border border-white/15 shadow-2xl transition ${
-                      performerSide === "right" ? "bg-sky-500/20" : "bg-white/10"
-                    } ${turnPulse && performerSide === "right" ? "animate-pulse" : ""}`}
-                  >
-                    {performerSide === "right" && (
-                      <div className="absolute -top-3 -right-3 bg-sky-500 text-black font-black px-4 py-2 rounded-2xl shadow-xl">
-                        ⬅ YOUR TURN
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-3xl font-black">Right Team</div>
-                      <div className="text-3xl font-black">{scoreRight}</div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {players
-                        .map((p, idx) => ({ ...p, idx, side: sideForIndex(idx) }))
-                        .filter((p) => p.side === "right")
-                        .map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              if (!roundActive) return;
-                              if (p.idx === performerIdx) return;
-                              if (p.side !== guessingSide) return;
-                              markGuessed(p);
-                            }}
-                            disabled={disabled || !roundActive || p.idx === performerIdx || p.side !== guessingSide}
-                            className={`px-4 py-3 rounded-2xl text-2xl font-black transition ${
-                              p.idx === performerIdx
-                                ? "bg-white/15 opacity-70"
-                                : p.side === guessingSide
-                                  ? "bg-white text-black hover:scale-105"
-                                  : "bg-white/10 opacity-50"
-                            }`}
-                          >
-                            {p.name}
-                            {p.idx === performerIdx ? " (performing)" : ""}
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-
-                {lastWinner && (
-                  <div className="mt-3 text-center text-2xl font-black">
-                    {lastWinner?.name
-                      ? `✅ ${lastWinner.name} guessed it! Bonus: +${lastWinner.bonus}`
-                      : "⏱️ Time's up! Next performer."}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-center gap-3 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setMode("draw")}
-                  className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
-                    mode === "draw"
-                      ? "bg-blue-600 text-white ring-4 ring-blue-200 scale-105"
-                      : "bg-white/85 text-black"
-                  }`}
-                >
-                  🎨 Drawing
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setMode("mime")}
-                  className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
-                    mode === "mime"
-                      ? "bg-purple-600 text-white ring-4 ring-purple-200 scale-105"
-                      : "bg-white/85 text-black"
-                  }`}
-                >
-                  🤫 Miming
-                </button>
-              </div>
-                <div className="text-xl leading-relaxed">
-                  {mode === "draw" ? (
-                    <>
-                      <div>How to play:</div>
-                      <div>• Draw the clue on the screen.</div>
-                      <div>• Do not use letters or words.</div>
-                      <div>• Your team taps "Guessed it" as soon as they know it.</div>
-                    </>
-                  ) : (
-                    <>
-                      <div>How to play:</div>
-                      <div>• Act out the clue without speaking.</div>
-                      <div>• Put the device down and mime it.</div>
-                      <div>• Your team taps "Guessed it" as soon as they know it.</div>
-                    </>
                   )}
+
+                  <div className="text-xl font-black text-center mb-3 opacity-90">
+                    {mode === "draw" ? "Drawer" : "Actor"}:{" "}
+                    <span className="underline">{performer?.name || "Player"}</span>
+                    {" "}· Guessing team: {guessingSide === "left" ? "Left" : "Right"}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Left Team */}
+                    <div
+                      className={`relative rounded-3xl p-3 border border-white/15 shadow-xl transition ${
+                        performerSide === "left" ? "bg-emerald-500/20" : "bg-white/10"
+                      } ${turnPulse && performerSide === "left" ? "animate-pulse" : ""}`}
+                    >
+                      {performerSide === "left" && (
+                        <div className="absolute -top-3 -left-3 bg-emerald-500 text-black font-black px-3 py-1 rounded-2xl shadow-xl text-sm">
+                          YOUR TURN ➜
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-2xl font-black">Left</div>
+                        <div className="text-2xl font-black">{scoreLeft}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {players
+                          .map((p, idx) => ({ ...p, idx, side: sideForIndex(idx) }))
+                          .filter((p) => p.side === "left")
+                          .map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                if (!roundActive) return;
+                                if (p.idx === performerIdx) return;
+                                if (p.side !== guessingSide) return;
+                                markGuessed(p);
+                              }}
+                              disabled={disabled || !roundActive || p.idx === performerIdx || p.side !== guessingSide}
+                              className={`px-3 py-2 rounded-xl text-lg font-black transition ${
+                                p.idx === performerIdx
+                                  ? "bg-white/15 opacity-70"
+                                  : p.side === guessingSide
+                                    ? "bg-white text-black hover:scale-105"
+                                    : "bg-white/10 opacity-50"
+                              }`}
+                              title={
+                                p.idx === performerIdx
+                                  ? "Performer"
+                                  : p.side === guessingSide
+                                    ? "Tap if this person guessed it!"
+                                    : "Not the guessing team this round"
+                              }
+                            >
+                              {p.name}
+                              {p.idx === performerIdx ? " (performing)" : ""}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+
+                    {/* Right Team */}
+                    <div
+                      className={`relative rounded-3xl p-3 border border-white/15 shadow-xl transition ${
+                        performerSide === "right" ? "bg-sky-500/20" : "bg-white/10"
+                      } ${turnPulse && performerSide === "right" ? "animate-pulse" : ""}`}
+                    >
+                      {performerSide === "right" && (
+                        <div className="absolute -top-3 -right-3 bg-sky-500 text-black font-black px-3 py-1 rounded-2xl shadow-xl text-sm">
+                          ⬅ YOUR TURN
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-2xl font-black">Right</div>
+                        <div className="text-2xl font-black">{scoreRight}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {players
+                          .map((p, idx) => ({ ...p, idx, side: sideForIndex(idx) }))
+                          .filter((p) => p.side === "right")
+                          .map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                if (!roundActive) return;
+                                if (p.idx === performerIdx) return;
+                                if (p.side !== guessingSide) return;
+                                markGuessed(p);
+                              }}
+                              disabled={disabled || !roundActive || p.idx === performerIdx || p.side !== guessingSide}
+                              className={`px-3 py-2 rounded-xl text-lg font-black transition ${
+                                p.idx === performerIdx
+                                  ? "bg-white/15 opacity-70"
+                                  : p.side === guessingSide
+                                    ? "bg-white text-black hover:scale-105"
+                                    : "bg-white/10 opacity-50"
+                              }`}
+                            >
+                              {p.name}
+                              {p.idx === performerIdx ? " (performing)" : ""}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {lastWinner && (
+                    <div className="mt-3 text-center text-2xl font-black">
+                      {lastWinner?.name
+                        ? `✅ ${lastWinner.name} guessed it! Bonus: +${lastWinner.bonus}`
+                        : "⏱️ Time's up! Next performer."}
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* ── RIGHT COLUMN: How to Play ── */}
+              <div className="md:w-52 shrink-0 bg-white/10 rounded-2xl p-4 text-lg leading-relaxed self-start">
+                <div className="font-black text-xl mb-2">
+                  {mode === "draw" ? "🎨 Drawing" : "🤫 Miming"}
+                </div>
+                {mode === "draw" ? (
+                  <ul className="space-y-2 list-none m-0 p-0">
+                    <li>✏️ Draw the clue on the screen.</li>
+                    <li>🚫 No letters or words.</li>
+                    <li>👆 Your team taps <strong>Guessed it!</strong> as soon as they know.</li>
+                  </ul>
+                ) : (
+                  <ul className="space-y-2 list-none m-0 p-0">
+                    <li>🤫 Act out the clue — no speaking.</li>
+                    <li>📱 Put the device down and mime it.</li>
+                    <li>👆 Your team taps <strong>Guessed it!</strong> as soon as they know.</li>
+                  </ul>
+                )}
+              </div>
+
             </div>
           </div>
         </div>
