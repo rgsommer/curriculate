@@ -1913,8 +1913,14 @@ function StudentApp() {
           // Objective tasks always get a review window (to show the answer key overlay)
           const isObjCurrentTask = isObjectiveTask(currentTask);
 
+          // DrawMime has its own built-in reveal/review phase — no need for the overlay.
+          const isDrawMimeTask =
+            currentTask?.taskType === "draw-mime" ||
+            currentTask?.type === "draw-mime";
+
           const shouldShowReview =
             !isPhysical &&
+            !isDrawMimeTask &&
             (isObjCurrentTask || !accepted || hasMeaningfulFeedback);
 
           if (!shouldShowReview) {
@@ -2205,7 +2211,7 @@ function StudentApp() {
         setScanStatus("error");
         setWaitingForLaunch(false);
         setScannedStationId(null);
-        setScanError(resp?.error || "Scan not accepted.");
+        setScanError(resp?.error || "Not quite — try again!");
         setScannerActive(true);
         return;
       }
@@ -2983,17 +2989,17 @@ function StudentApp() {
         /* PROGRESS LINE */
         .progress-line {
           width: 100%;
-          height: 4px;
+          height: 6px;
           border-radius: 999px;
-          background: rgba(148,163,184,0.4);
+          background: rgba(255,255,255,0.15);
           overflow: hidden;
-          margin-top: 4px;
+          margin-top: 5px;
         }
 
         .progress-line-inner {
           height: 100%;
           border-radius: 999px;
-          background: linear-gradient(90deg, #22c55e, #0ea5e9);
+          background: linear-gradient(90deg, #ef4444, #f87171);
           transition: width 0.25s ease-out;
         }
 
@@ -4453,15 +4459,34 @@ function StudentApp() {
               ? "✅ Recording submitted"
               : currentTask?.taskType === TASK_TYPES.OPEN_TEXT
                 ? (reviewState?.accepted ? "✅ Accepted" : "📝 Reviewed")
-                : (reviewState?.accepted ? "✅ Accepted" : "❌ Not accepted")}
+                : (reviewState?.accepted ? "✅ Accepted" : "💪 Not quite — keep it up!")}
           </div>
-          {reviewState?.feedback && (
-            <div>
-              {currentTask?.taskType === TASK_TYPES.RECORD_AUDIO
-                ? reviewState.feedback
-                : <><span style={{ fontWeight: 700 }}>Feedback: </span>{reviewState.feedback}</>}
-            </div>
-          )}
+          {reviewState?.feedback && (() => {
+            const namedMembers = Array.isArray(members)
+              ? members.map((m) => String(m || "").trim()).filter(Boolean)
+              : [];
+            const reader = namedMembers.length > 0
+              ? namedMembers[Math.abs(taskIndex ?? 0) % namedMembers.length]
+              : null;
+            return (
+              <>
+                {reader && (
+                  <div style={{
+                    fontSize: "0.82rem", fontWeight: 700,
+                    background: "rgba(255,255,255,0.12)", borderRadius: 8,
+                    padding: "4px 10px", marginBottom: 2,
+                  }}>
+                    📢 {reader}, read the feedback below aloud to your team.
+                  </div>
+                )}
+                <div>
+                  {currentTask?.taskType === TASK_TYPES.RECORD_AUDIO
+                    ? reviewState.feedback
+                    : <><span style={{ fontWeight: 700 }}>Feedback: </span>{reviewState.feedback}</>}
+                </div>
+              </>
+            );
+          })()}
           {reviewState?.hint && (
             <div>
               <span style={{ fontWeight: 700 }}>Next step: </span>
@@ -4742,11 +4767,12 @@ function StudentApp() {
             const panelStyle = {
               marginTop: 12,
               width: "100%",
-              background: "rgba(255,255,255,0.14)",
-              border: "1px solid rgba(255,255,255,0.25)",
+              background: "rgba(255,255,255,0.97)",
+              border: "1px solid rgba(0,0,0,0.10)",
               borderRadius: 12,
-              padding: 12,
+              padding: 14,
               textAlign: "left",
+              color: "#0f172a",
             };
 
             // ── MC / TF / SA: per-item coloured cards ──
@@ -4802,10 +4828,10 @@ function StudentApp() {
             if (key.ordered) {
               return (
                 <div style={panelStyle}>
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct order"}</div>
+                  <div style={{ fontWeight: 800, marginBottom: 8, color: "#0f172a" }}>{key.title || "Correct order"}</div>
                   <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
                     {key.ordered.map((it) => (
-                      <li key={it.n} style={{ marginBottom: 4, lineHeight: 1.4 }}>
+                      <li key={it.n} style={{ marginBottom: 4, lineHeight: 1.4, color: "#1e293b" }}>
                         {it.text}
                       </li>
                     ))}
@@ -4818,14 +4844,14 @@ function StudentApp() {
             if (key.buckets) {
               return (
                 <div style={panelStyle}>
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>{key.title || "Correct categories"}</div>
+                  <div style={{ fontWeight: 800, marginBottom: 8, color: "#0f172a" }}>{key.title || "Correct categories"}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {key.buckets.map((b, idx) => (
-                      <div key={idx} style={{ padding: 10, borderRadius: 10, background: "rgba(0,0,0,0.12)" }}>
-                        <div style={{ fontWeight: 800, marginBottom: 6 }}>{b.bucket}</div>
+                      <div key={idx} style={{ padding: 10, borderRadius: 10, background: "#f1f5f9", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontWeight: 800, marginBottom: 6, color: "#0f172a" }}>{b.bucket}</div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                           {(b.items || []).map((txt, j) => (
-                            <span key={j} style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.22)" }}>
+                            <span key={j} style={{ padding: "4px 10px", borderRadius: 999, background: "#ffffff", border: "1px solid #cbd5e1", color: "#1e293b", fontWeight: 600 }}>
                               {txt}
                             </span>
                           ))}

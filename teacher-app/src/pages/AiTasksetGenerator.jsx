@@ -688,16 +688,16 @@ export default function AiTasksetGenerator() {
               </button>
             )}
 
-            {coverage.missingCount > 0 && (
+            {coverage.missingCount >= 10 && (
               <button
                 type="button"
                 onClick={() => {
-                  // Prefill generator with missing terms for a follow-up set
+                  // Prefill generator with missing terms for a Part 2 set
                   navigate("/ai/generate", { state: { prefillWordList: coverage.missing } });
                 }}
                 style={{
                   borderRadius: 999,
-                  padding: "6px 12px",
+                  padding: "6px 14px",
                   fontSize: "0.85rem",
                   border: "1px solid #ea580c",
                   background: "#ea580c",
@@ -706,7 +706,7 @@ export default function AiTasksetGenerator() {
                   fontWeight: 800,
                 }}
               >
-                Start follow-up with missing
+                ➕ Generate Part 2 ({coverage.missingCount} terms)
               </button>
             )}
           </div>
@@ -1463,7 +1463,27 @@ export default function AiTasksetGenerator() {
                   fontWeight: 700,
                 }}
               >
-                {copiedTag === "missing2" ? "Copied!" : "Copy missing concepts"}
+                {copiedTag === "missing2" ? "Copied!" : `Copy ${coverage.missingCount} missing`}
+              </button>
+            )}
+            {coverage?.missingCount >= 10 && (
+              <button
+                type="button"
+                onClick={() => {
+                  navigate("/ai/generate", { state: { prefillWordList: coverage.missing } });
+                }}
+                style={{
+                  borderRadius: 999,
+                  padding: "6px 14px",
+                  fontSize: "0.85rem",
+                  border: "1px solid #ea580c",
+                  background: "#ea580c",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                ➕ Generate Part 2
               </button>
             )}
           </div>

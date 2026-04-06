@@ -182,22 +182,30 @@ export default function SequenceTask({
               </div>
 
               <div className="flex flex-col gap-1 pl-3">
-                <button
-                  className="border rounded px-2 text-xs"
-                  onClick={() => move(idx, -1)}
-                  disabled={disabled || idx === 0}
-                  aria-label="Move up"
-                >
-                  ↑
-                </button>
-                <button
-                  className="border rounded px-2 text-xs"
-                  onClick={() => move(idx, 1)}
-                  disabled={disabled || idx === orderIds.length - 1}
-                  aria-label="Move down"
-                >
-                  ↓
-                </button>
+                {idx > 0 ? (
+                  <button
+                    className="border rounded px-2 text-xs"
+                    onClick={() => move(idx, -1)}
+                    disabled={disabled}
+                    aria-label="Move up"
+                  >
+                    ↑
+                  </button>
+                ) : (
+                  <div className="px-2 text-xs invisible">↑</div>
+                )}
+                {idx < orderIds.length - 1 ? (
+                  <button
+                    className="border rounded px-2 text-xs"
+                    onClick={() => move(idx, 1)}
+                    disabled={disabled}
+                    aria-label="Move down"
+                  >
+                    ↓
+                  </button>
+                ) : (
+                  <div className="px-2 text-xs invisible">↓</div>
+                )}
               </div>
             </div>
           );

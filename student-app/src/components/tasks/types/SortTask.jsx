@@ -62,16 +62,17 @@ function SortableItem({ id, children, disabled, score }) {
       : undefined,
     transition,
     opacity: isDragging ? 0.8 : 1,
-    background: visual.background || "rgba(255,255,255,0.95)",
+    background: visual.background || "#ffffff",
     border: `2px solid ${
-      visual.borderColor || "rgba(203,213,225,0.4)"
+      visual.borderColor || "#cbd5e1"
     }`,
     borderRadius: 12,
     padding: "12px 16px",
     margin: "6px 8px",
+    color: "#1e293b",
     boxShadow: isDragging
       ? "0 12px 30px rgba(0,0,0,0.18)"
-      : "0 3px 10px rgba(0,0,0,0.08)",
+      : "0 3px 10px rgba(0,0,0,0.10)",
     display: "flex",
     alignItems: "center",
     gap: 12,
@@ -484,13 +485,14 @@ export default function SortTask({
         <div
           style={{
             padding: 12,
-            background: "rgba(254,243,199,0.75)",
-            border: "2px solid rgba(245,158,11,0.55)",
+            background: "#fef9c3",
+            border: "2px solid #f59e0b",
             borderRadius: 16,
+            color: "#78350f",
           }}
         >
           <div style={{ fontWeight: 800, marginBottom: 4 }}>How to do this task</div>
-          <div style={{ fontSize: "0.95rem", lineHeight: 1.35, opacity: 0.95 }}>
+          <div style={{ fontSize: "0.95rem", lineHeight: 1.35 }}>
             1) Drag each item into the correct bucket. 2) When the <b>Unsorted items</b> area is empty,
             press <b>Submit answer</b>.
           </div>

@@ -168,6 +168,8 @@ export default function DrawMimeTask({
   }, [task, gradeLevel]);
 
   const [performerIdx, setPerformerIdx] = useState(0);
+  // Track who has already performed so we never repeat until the pool resets.
+  const performedSetRef = useRef(new Set([0])); // player 0 performs first
   const [scoreLeft, setScoreLeft] = useState(0);
   const [scoreRight, setScoreRight] = useState(0);
   const [lastWinner, setLastWinner] = useState(null); // { name, side, bonus }
@@ -181,10 +183,13 @@ export default function DrawMimeTask({
   const guessingSide = turnStyle === "intra" ? performerSide : performerSide === "left" ? "right" : "left";
 
   const guessers = useMemo(() => {
-    return players
+    const allNonPerformers = players
       .map((p, idx) => ({ ...p, idx, side: sideForIndex(idx) }))
-      .filter((p) => p.idx !== performerIdx)
-      .filter((p) => p.side === guessingSide);
+      .filter((p) => p.idx !== performerIdx);
+    // Prefer the opposing-side players; fall back to ALL non-performers so we
+    // always show named buttons (never the generic "Guessed it!" fallback).
+    const sidedGuessers = allNonPerformers.filter((p) => p.side === guessingSide);
+    return sidedGuessers.length > 0 ? sidedGuessers : allNonPerformers;
   }, [players, performerIdx, guessingSide, playerCount]);
 
   // Pulse + "your turn" sound when performer changes.
@@ -206,10 +211,27 @@ export default function DrawMimeTask({
   };
 
   const nextPerformer = () => {
-    setPerformerIdx((idx) => {
-      const cur = Number(idx) || 0;
-      return (cur + 1) % Math.max(1, players.length);
-    });
+    const n = players.length;
+    if (n <= 1) return;
+
+    // Mark current performer as done.
+    performedSetRef.current.add(performerIdx);
+
+    // If everyone has performed, reset the pool (keeping the current as seed
+    // so they won't be picked immediately next cycle).
+    if (performedSetRef.current.size >= n) {
+      performedSetRef.current = new Set([performerIdx]);
+    }
+
+    // Build pool of remaining available players.
+    const available = [];
+    for (let i = 0; i < n; i++) {
+      if (!performedSetRef.current.has(i)) available.push(i);
+    }
+
+    // Pick randomly from the remaining pool.
+    const nextIdx = available[Math.floor(Math.random() * available.length)];
+    setPerformerIdx(nextIdx);
   };
 
   const endRound = ({ guessedBy, guessedBySide, reason }) => {
@@ -277,6 +299,7 @@ export default function DrawMimeTask({
       // Reset round counter for if the task somehow restarts
       setRoundIndex(0);
       setPerformerIdx(0);
+      performedSetRef.current = new Set([0]);
     } else {
       // Advance to the next clue / performer without submitting
       setRoundIndex((r) => r + 1);
@@ -646,13 +669,13 @@ export default function DrawMimeTask({
                   <>
                     <div>✏️ Grab <strong>paper + a pen</strong> — draw your clue on paper</div>
                     <div style={{ marginTop: 10 }}>🚫 No letters, numbers, or words</div>
-                    <div style={{ marginTop: 10 }}>👆 Your team taps <strong>Guessed it!</strong> when they know</div>
+                    <div style={{ marginTop: 10 }}>👆 Tap the name of whoever guesses it first</div>
                   </>
                 ) : (
                   <>
                     <div>🤫 Act it out — <strong>no talking, no sounds</strong></div>
                     <div style={{ marginTop: 10 }}>📱 Put the device down before you start</div>
-                    <div style={{ marginTop: 10 }}>👆 Your team taps <strong>Guessed it!</strong> when they know</div>
+                    <div style={{ marginTop: 10 }}>👆 Tap the name of whoever guesses it first</div>
                   </>
                 )}
               </div>
@@ -727,22 +750,25 @@ export default function DrawMimeTask({
               <div style={{ fontSize: "5rem", fontWeight: 900, color: timerColor, textShadow: "0 4px 20px rgba(0,0,0,0.3)", transition: "color 0.5s" }}>
                 ⏱️ {timeLeft}s
               </div>
-              <motion.button whileTap={{ scale: 0.95 }}
-                style={{ ...bigBtn("#4ade80", "#000"), fontSize: "2rem", padding: "24px 48px", boxShadow: "0 12px 32px rgba(0,0,0,0.3)" }}
-                onClick={() => endRound({ guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`, guessedBySide: guessingSide, reason: "guessed" })}>
-                ✅ Guessed it!
-              </motion.button>
-              {guessers.length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ opacity: 0.6, fontSize: "0.9rem", marginBottom: 8 }}>or tap who guessed it:</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
+              {guessers.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                  <div style={{ opacity: 0.75, fontSize: "1rem", fontWeight: 600 }}>Who guessed it?</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
                     {guessers.map(g => (
-                      <button key={g.id} style={smBtn()} onClick={() => endRound({ guessedBy: g.name, guessedBySide: g.side, reason: "guessed" })}>
-                        {g.name}
-                      </button>
+                      <motion.button whileTap={{ scale: 0.95 }} key={g.id}
+                        style={{ ...bigBtn("#4ade80", "#000"), fontSize: "1.5rem", padding: "18px 32px" }}
+                        onClick={() => endRound({ guessedBy: g.name, guessedBySide: g.side, reason: "guessed" })}>
+                        ✅ {g.name}
+                      </motion.button>
                     ))}
                   </div>
                 </div>
+              ) : (
+                <motion.button whileTap={{ scale: 0.95 }}
+                  style={{ ...bigBtn("#4ade80", "#000"), fontSize: "2rem", padding: "24px 48px", boxShadow: "0 12px 32px rgba(0,0,0,0.3)" }}
+                  onClick={() => endRound({ guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`, guessedBySide: guessingSide, reason: "guessed" })}>
+                  ✅ Guessed it!
+                </motion.button>
               )}
             </motion.div>
           )}
