@@ -1,7 +1,5 @@
 /* teacher-app/src/index.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;    
+/* Tailwind is loaded via CDN script in index.html — @tailwind directives not needed here */
 
 /* Overall editor layout */
 .taskset-editor {
