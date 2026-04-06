@@ -576,6 +576,27 @@ export default function DrawMimeTask({
 
               {/* Turnkeeper (Grade 7 reading level) */}
               <div className="mt-2 mb-4">
+
+                {/* ✅ Big "Guessed it!" button — matches the instructions */}
+                {roundActive && (
+                  <div className="flex justify-center mb-4">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        endRound({
+                          guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`,
+                          guessedBySide: guessingSide,
+                          reason: "guessed",
+                        })
+                      }
+                      className="px-8 py-5 rounded-3xl text-3xl font-black bg-green-400 text-black shadow-2xl hover:scale-105 active:scale-95 transition"
+                      style={{ minWidth: 220 }}
+                    >
+                      ✅ Guessed it!
+                    </button>
+                  </div>
+                )}
+
                 <div className="text-2xl md:text-2xl font-black text-center mb-3">
                   {mode === "draw" ? "Drawer" : "Actor"}:{" "}
                   <span className="underline">{performer?.name || "Player"}</span>
