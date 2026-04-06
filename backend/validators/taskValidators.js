@@ -1201,6 +1201,35 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.DRAW_MIME: {
+      // The clue shown to the performer must be a short word/phrase (≤ 60 chars).
+      // Prevent the AI from accidentally stuffing a full sort/categorize instruction here.
+      const rawPrompt = String(task.prompt || task.config?.prompt || "").trim();
+
+      const looksLikeWrongTaskPrompt =
+        rawPrompt.length > 80 ||                            // way too long for a mime clue
+        /^sort the/i.test(rawPrompt) ||                    // sort-task leakage
+        /categorize|category|categories/i.test(rawPrompt) ||
+        /match the following/i.test(rawPrompt) ||
+        /^arrange|^sequence|^order the/i.test(rawPrompt);
+
+      if (looksLikeWrongTaskPrompt) {
+        // Try to salvage: if the prompt lists quoted words, take the first one
+        const quotedWords = rawPrompt.match(/'([^']+)'/g);
+        if (quotedWords && quotedWords.length) {
+          task.prompt = quotedWords[0].replace(/'/g, "").trim();
+        } else {
+          // Last resort: truncate to 60 chars
+          task.prompt = rawPrompt.slice(0, 60).trim();
+        }
+        console.warn(`[validateDrawMime] Repaired malformed draw-mime prompt: "${rawPrompt}" → "${task.prompt}"`);
+      }
+
+      // Ensure prompt is never empty
+      if (!task.prompt) task.prompt = task.title || "Draw or Mime";
+      break;
+    }
+
     default:
       break;
   }

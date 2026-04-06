@@ -2396,14 +2396,16 @@ IMPORTANT:
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Choose ONE classroom-safe concept/term (a word or short phrase) that can be drawn OR acted out.
-    - Put that concept in task.prompt. Keep it short.
+    - Choose ONE classroom-safe concept/term (a single word or very short phrase, ≤ 5 words) that can be drawn OR acted out without speaking.
+    - Put ONLY that word/phrase in task.prompt. Examples: "gravity", "photosynthesis", "Abraham Lincoln", "forgiveness".
+    - Do NOT put sort instructions, category lists, or multi-step instructions in task.prompt.
+    - task.prompt must NEVER start with "Sort", "Arrange", "Match", "Categorize", or contain quoted lists of items.
     - Optionally set timeLimitSeconds to 60.
-    
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - task.prompt is the SECRET CLUE for the performer — one word or short phrase only.
     `,
 },
 
