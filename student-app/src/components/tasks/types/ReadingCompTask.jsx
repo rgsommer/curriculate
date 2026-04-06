@@ -65,26 +65,19 @@ export default function ReadingCompTask({
   }
 
   // paragraph
-  // Paragraph: in demo/testing we sometimes receive a placeholder task with no paragraph yet.
-  // Never show a scary "Loading paragraph…" string to students.
+  // The validator normalises the passage into cfg.text + cfg.passage + task.passage,
+  // deleting the older generatedParagraph / task.text aliases.
+  // Check every known location so old and new tasks both work.
   const paragraph =
+    task?.passage ||
     task?.generatedParagraph ||
     task?.paragraph ||
     task?.text ||
+    task?.config?.passage ||
+    task?.config?.text ||
     task?.config?.generatedParagraph ||
     task?.config?.paragraph ||
-    (
-      "In science class, we learned that ecosystems are made of living things and nonliving things working together. " +
-      "Plants use sunlight to make food, and animals rely on plants or other animals for energy. " +
-      "Water, temperature, and soil all affect what can live in a place. " +
-      "If one part changes, other parts can change too. " +
-      "For example, if a lake becomes polluted, fish may die and birds may have less to eat. " +
-      "Healthy ecosystems usually have many different kinds of organisms. " +
-      "This variety helps the system handle problems like disease or drought. " +
-      "People can protect ecosystems by reducing waste and keeping habitats clean. " +
-      "Small actions, like recycling, can add up when many people help. " +
-      "Understanding ecosystems helps us make better choices for the environment."
-    );
+    "";
 
   // sentence target (for UI hints only — backend enforces on generation)
   const sentenceTarget =
@@ -497,7 +490,7 @@ export default function ReadingCompTask({
       >
         <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 8 }}>Read:</div>
         <div style={{ lineHeight: 1.5, fontSize: 15 }}>
-          {paragraph}
+          {paragraph || <em style={{ opacity: 0.5 }}>Passage not available for this task.</em>}
         </div>
       </div>
 
