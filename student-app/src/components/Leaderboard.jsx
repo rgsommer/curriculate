@@ -51,7 +51,7 @@ export default function AnimatedLeaderboard({ leaderboard = [], showConfetti = f
               </motion.span>
             )}
 
-            <span className="ml-12">{team.teamName}</span>
+            <span className="ml-12" style={{ marginRight: 12 }}>{team.teamName}</span>
             <span className="text-3xl">{team.score} pts</span>
           </motion.div>
         ))}
