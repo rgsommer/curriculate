@@ -1561,16 +1561,33 @@ export function validateTaskByType(taskType, task) {
     }
 
     case TASK_TYPES.SHORT_ANSWER: {
+      // Helper: resolve correctAnswer from common AI alternate field names
+      const _resolveAns = (o) =>
+        asNonEmptyString(o?.correctAnswer) || asNonEmptyString(o?.answer) ||
+        asNonEmptyString(o?.correct) || asNonEmptyString(o?.expected) ||
+        asNonEmptyString(o?.correctResponse) || asNonEmptyString(o?.response) || "";
+      const _resolvePrompt = (o) =>
+        asNonEmptyString(o?.prompt) || asNonEmptyString(o?.question) || "";
+
       const hasItems = Array.isArray(task.items) && task.items.length;
       if (hasItems) {
         if (task.items.length < 1) errors.push("items[] must have at least 1 item");
         task.items.forEach((it, i) => {
-          if (!asNonEmptyString(it.prompt)) errors.push(`items[${i}].prompt required`);
+          if (!_resolvePrompt(it)) errors.push(`items[${i}].prompt required`);
+          // Normalize alternate answer fields onto correctAnswer for downstream code
+          if (!asNonEmptyString(it.correctAnswer)) it.correctAnswer = _resolveAns(it);
           if (!asNonEmptyString(it.correctAnswer)) errors.push(`items[${i}].correctAnswer required`);
         });
       } else {
-        if (!asNonEmptyString(task.prompt)) errors.push("prompt required");
-        if (!asNonEmptyString(task.correctAnswer)) errors.push("correctAnswer required");
+        // Single-prompt fallback — also check alternate field names
+        const saPrompt = _resolvePrompt(task);
+        const saAns = _resolveAns(task);
+        if (!saPrompt) errors.push("prompt required");
+        if (!saAns) errors.push("correctAnswer required");
+        // Auto-convert to items[] if we found both
+        if (saPrompt && saAns) {
+          task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAns }];
+        }
       }
       break;
     }
