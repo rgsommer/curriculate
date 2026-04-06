@@ -645,7 +645,7 @@ export default function DrawMimeTask({
                 </div>
               )}
               <div style={{ opacity: 0.7, fontSize: "0.95rem", marginTop: 8 }}>
-                {performer?.name}, tap below once you have the phone.
+                {performer?.name}, tap below once you have the device.
               </div>
               <motion.button whileTap={{ scale: 0.95 }} style={bigBtn("#f59e0b", "#000")}
                 onClick={() => { setClueRevealed(false); setPhase("clue"); }}>
