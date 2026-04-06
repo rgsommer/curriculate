@@ -44,9 +44,15 @@ export async function updateMyProfile(req, res) {
         ? req.body.subjectsTaught.filter(Boolean)
         : [],
 
-      curriculumLenses: Array.isArray(req.body.curriculumLenses)
-        ? req.body.curriculumLenses.filter(Boolean)
-        : [],
+      // Frontend sends `perspectives`; older code sent `curriculumLenses` — accept either.
+      perspectives: Array.isArray(req.body.perspectives)
+        ? req.body.perspectives.filter(Boolean)
+        : (Array.isArray(req.body.curriculumLenses) ? req.body.curriculumLenses.filter(Boolean) : []),
+
+      // Keep curriculumLenses in sync as an alias so existing generation code still works.
+      curriculumLenses: Array.isArray(req.body.perspectives)
+        ? req.body.perspectives.filter(Boolean)
+        : (Array.isArray(req.body.curriculumLenses) ? req.body.curriculumLenses.filter(Boolean) : []),
 
       defaultGrade: req.body.defaultGrade ?? "",
       defaultSubject: req.body.defaultSubject ?? "",

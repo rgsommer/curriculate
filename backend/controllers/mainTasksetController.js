@@ -1006,6 +1006,8 @@ export async function createAiTaskset(req, res) {
   try {
     const {
       title,
+      tasksetName,   // user-entered name from the generator form
+      topicTitle,    // alias sent by AiTasksetGenerator
       subject = "General",
       gradeLevel = 7,
       difficulty = "MEDIUM",
@@ -1182,7 +1184,8 @@ export async function createAiTaskset(req, res) {
       errors,
     });
 
-    const displayName = `Taskset: ${topicLabel || subject}`;
+    // Use the user-entered title first, fall back to topic/subject — never prefix with "Taskset:"
+    const displayName = String(tasksetName || topicTitle || title || topicLabel || subject || "Task Set").trim();
 
     const doc = await TaskSet.create({
       name: displayName,
