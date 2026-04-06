@@ -1285,6 +1285,21 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.SHORT_ANSWER: {
+      // If AI generated single-prompt format (prompt + correctAnswer at top level)
+      // but no items[], convert to items[] so the playability checker is satisfied.
+      const hasItems = Array.isArray(task.items) && task.items.length > 0;
+      const hasConfigItems = Array.isArray(task.config?.items) && task.config.items.length > 0;
+      if (!hasItems && !hasConfigItems) {
+        const saPrompt = asNonEmptyString(task.prompt);
+        const saAnswer = asNonEmptyString(task.correctAnswer);
+        if (saPrompt && saAnswer) {
+          task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAnswer }];
+        }
+      }
+      break;
+    }
+
     default:
       break;
   }
