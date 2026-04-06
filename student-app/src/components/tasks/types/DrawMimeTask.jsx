@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/DrawMimeTask.jsx
 import React, { useRef, useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { TaskCardFrame } from "../taskStyles";
 
 export default function DrawMimeTask({
@@ -64,6 +65,13 @@ export default function DrawMimeTask({
   const [started, setStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(durationSeconds);
   const [mode, setMode] = useState("draw"); // "draw" | "mime"
+
+  // ── Wizard phase state ──
+  // mode → howtoplay → pass → clue → active → timeout → reveal → rate → done
+  const [phase, setPhase] = useState("mode");
+  const [clueRevealed, setClueRevealed] = useState(false);
+  const [pendingResult, setPendingResult] = useState(null);
+  const [ratings, setRatings] = useState({}); // { emoji: count }
 
   // BodyBreak-like countdown overlay (fallback). TaskRunner can replace this via startGoSequence.
   const [countdown, setCountdown] = useState(null); // 3..2..1.."GO"
@@ -225,7 +233,7 @@ export default function DrawMimeTask({
       });
     }
 
-    // Submit the round. For drawing: include the image. For mime: no image.
+    // Store result — actual onSubmit fires from the "done" phase Finish button.
     const payload = {
       type: mode === "mime" ? "mime" : "drawing",
       mode,
@@ -239,16 +247,19 @@ export default function DrawMimeTask({
       completed: true,
     };
 
-    if (mode !== "mime") {
-      try {
-        payload.imageData = canvasRef.current?.toDataURL?.() || null;
-      } catch {
-        payload.imageData = null;
-      }
-    }
+    setPendingResult(payload);
+    setPhase("reveal");
+  };
 
+  // Called from the "done" phase — submits and resets for a potential next round.
+  const finishRound = () => {
+    const payload = pendingResult || { type: mode, completed: true };
     onSubmit?.(payload);
     nextPerformer();
+    setPhase("mode");
+    setPendingResult(null);
+    setRatings({});
+    setClueRevealed(false);
   };
 
   const startRound = async () => {
@@ -400,7 +411,7 @@ export default function DrawMimeTask({
     setRoundActive(false);
     setStarted(false);
     setCountdown(null);
-    setAwaitingOutcome(true);
+    setPhase("timeout");
   }, [timeLeft, roundActive, disabled]);
 
   const pushToHistory = () => {
@@ -525,439 +536,286 @@ export default function DrawMimeTask({
     endRound({ guessedBy: null, guessedBySide: null, reason: "manual" });
   };
 
-  const prompt = task?.prompt || "Draw with feeling! Use Apple Pencil or stylus for pressure magic!";
+  const prompt = task?.prompt || "Draw with feeling!";
+
+  // Performer taps GO — start timer and move to active phase.
+  const handleGo = async () => {
+    await startRound();
+    setPhase("active");
+  };
+
+  // Shared phase animation variants.
+  const pv = {
+    initial: { opacity: 0, y: 24 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.28, ease: "easeOut" } },
+    exit:    { opacity: 0, y: -16, transition: { duration: 0.18 } },
+  };
+
+  // Top rating emoji for the "done" screen.
+  const topRatingEmoji = Object.entries(ratings).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  // Timer color shifts as time runs low.
+  const timerColor = timeLeft > 20 ? "#4ade80" : timeLeft > 10 ? "#facc15" : "#f87171";
+
+  // Shared button styles
+  const bigBtn = (bg = "#22c55e", color = "#000") => ({
+    padding: "20px 40px", borderRadius: 24, fontSize: "1.6rem", fontWeight: 900,
+    background: bg, color, border: "none", cursor: "pointer",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.25)", transition: "transform 0.12s",
+  });
+  const smBtn = (bg = "rgba(255,255,255,0.15)", color = "#fff") => ({
+    padding: "12px 22px", borderRadius: 16, fontSize: "1.1rem", fontWeight: 700,
+    background: bg, color, border: "none", cursor: "pointer",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.2)", transition: "transform 0.1s",
+  });
 
   return (
     <TaskCardFrame theme="dark" fullBleed showBackground={false}>
-      <div className="flex flex-col h-full bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500 text-white">
-        {/* Header */}
-        <div className="p-6 text-center">
-          <h2 className="text-5xl md:text-7xl font-black drop-shadow-2xl mb-4">
-            DRAW OR MIME IT!
-          </h2>
-          <p className="text-3xl md:text-4xl font-bold drop-shadow-lg px-4">
-            {roundActive
-              ? prompt
-              : performer
-                ? `${mode === "draw" ? "Drawer" : "Actor"}: ${performer.name} — tap GO to reveal the clue`
-                : "Tap GO to reveal the clue"}
-          </p>
+      <div style={{
+        display: "flex", flexDirection: "column", height: "100%", overflow: "hidden",
+        background: "linear-gradient(135deg, #7c3aed 0%, #db2777 50%, #ea580c 100%)",
+        color: "#fff",
+      }}>
+        <AnimatePresence mode="wait">
 
-          <div className="mt-5 max-w-5xl mx-auto">
-            {/* Two-column card: left = controls, right = how to play */}
-            <div className="bg-black/35 backdrop-blur-lg rounded-3xl p-5 shadow-2xl border border-white/15 flex flex-col md:flex-row gap-5">
-
-              {/* ── LEFT COLUMN: all the action ── */}
-              <div className="flex-1 min-w-0">
-
-                {/* 1. Mode toggle — FIRST so players pick before hitting GO */}
-                <div className="flex flex-wrap items-center justify-center gap-3 mb-4">
-                  <button
-                    type="button"
-                    onClick={() => setMode("draw")}
-                    className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
-                      mode === "draw"
-                        ? "bg-blue-600 text-white ring-4 ring-blue-200 scale-105"
-                        : "bg-white/85 text-black"
-                    }`}
-                  >
-                    🎨 Drawing
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode("mime")}
-                    className={`px-6 py-3 rounded-2xl text-2xl font-black transition ${
-                      mode === "mime"
-                        ? "bg-purple-600 text-white ring-4 ring-purple-200 scale-105"
-                        : "bg-white/85 text-black"
-                    }`}
-                  >
-                    🤫 Miming
-                  </button>
-                </div>
-
-                {/* 2. Timer + GO */}
-                <div className="flex flex-wrap items-center justify-center gap-4 mb-4">
-                  <div className="px-5 py-3 rounded-2xl bg-white/15 text-2xl font-black">
-                    ⏱️ Time: {started ? `${timeLeft}s` : `${durationSeconds}s`}
-                  </div>
-                  <button
-                    onClick={startRound}
-                    disabled={disabled || !canStart || roundActive || countdown != null || awaitingOutcome}
-                    className={`px-8 py-4 rounded-2xl text-3xl font-black transition ${
-                      roundActive
-                        ? "bg-green-600 text-white"
-                        : "bg-green-500 text-white border-2 border-green-200 hover:scale-105"
-                    } disabled:opacity-40`}
-                  >
-                    {!canStart
-                      ? "Intro…"
-                      : roundActive
-                        ? "GO!"
-                        : countdown
-                          ? String(countdown)
-                          : "1-2-3 GO!"}
-                  </button>
-                </div>
-
-                {!canStart && (
-                  <div className="text-center text-xl font-bold opacity-80 mb-2">
-                    Intro playing… Start will appear in a moment.
-                  </div>
-                )}
-
-                {/* 3. Guessed it! + Turnkeeper */}
-                <div className="mt-2 mb-2">
-                  {roundActive && (
-                    <div className="flex justify-center mb-4">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          endRound({
-                            guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`,
-                            guessedBySide: guessingSide,
-                            reason: "guessed",
-                          })
-                        }
-                        className="px-8 py-5 rounded-3xl text-3xl font-black bg-green-400 text-black shadow-2xl hover:scale-105 active:scale-95 transition"
-                        style={{ minWidth: 220 }}
-                      >
-                        ✅ Guessed it!
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="text-xl font-black text-center mb-3 opacity-90">
-                    {mode === "draw" ? "Drawer" : "Actor"}:{" "}
-                    <span className="underline">{performer?.name || "Player"}</span>
-                    {" "}· Guessing team: {guessingSide === "left" ? "Left" : "Right"}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Left Team */}
-                    <div
-                      className={`relative rounded-3xl p-3 border border-white/15 shadow-xl transition ${
-                        performerSide === "left" ? "bg-emerald-500/20" : "bg-white/10"
-                      } ${turnPulse && performerSide === "left" ? "animate-pulse" : ""}`}
-                    >
-                      {performerSide === "left" && (
-                        <div className="absolute -top-3 -left-3 bg-emerald-500 text-black font-black px-3 py-1 rounded-2xl shadow-xl text-sm">
-                          YOUR TURN ➜
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-2xl font-black">Left</div>
-                        <div className="text-2xl font-black">{scoreLeft}</div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {players
-                          .map((p, idx) => ({ ...p, idx, side: sideForIndex(idx) }))
-                          .filter((p) => p.side === "left")
-                          .map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => {
-                                if (!roundActive) return;
-                                if (p.idx === performerIdx) return;
-                                if (p.side !== guessingSide) return;
-                                markGuessed(p);
-                              }}
-                              disabled={disabled || !roundActive || p.idx === performerIdx || p.side !== guessingSide}
-                              className={`px-3 py-2 rounded-xl text-lg font-black transition ${
-                                p.idx === performerIdx
-                                  ? "bg-white/15 opacity-70"
-                                  : p.side === guessingSide
-                                    ? "bg-white text-black hover:scale-105"
-                                    : "bg-white/10 opacity-50"
-                              }`}
-                              title={
-                                p.idx === performerIdx
-                                  ? "Performer"
-                                  : p.side === guessingSide
-                                    ? "Tap if this person guessed it!"
-                                    : "Not the guessing team this round"
-                              }
-                            >
-                              {p.name}
-                              {p.idx === performerIdx ? " (performing)" : ""}
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-
-                    {/* Right Team */}
-                    <div
-                      className={`relative rounded-3xl p-3 border border-white/15 shadow-xl transition ${
-                        performerSide === "right" ? "bg-sky-500/20" : "bg-white/10"
-                      } ${turnPulse && performerSide === "right" ? "animate-pulse" : ""}`}
-                    >
-                      {performerSide === "right" && (
-                        <div className="absolute -top-3 -right-3 bg-sky-500 text-black font-black px-3 py-1 rounded-2xl shadow-xl text-sm">
-                          ⬅ YOUR TURN
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-2xl font-black">Right</div>
-                        <div className="text-2xl font-black">{scoreRight}</div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {players
-                          .map((p, idx) => ({ ...p, idx, side: sideForIndex(idx) }))
-                          .filter((p) => p.side === "right")
-                          .map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => {
-                                if (!roundActive) return;
-                                if (p.idx === performerIdx) return;
-                                if (p.side !== guessingSide) return;
-                                markGuessed(p);
-                              }}
-                              disabled={disabled || !roundActive || p.idx === performerIdx || p.side !== guessingSide}
-                              className={`px-3 py-2 rounded-xl text-lg font-black transition ${
-                                p.idx === performerIdx
-                                  ? "bg-white/15 opacity-70"
-                                  : p.side === guessingSide
-                                    ? "bg-white text-black hover:scale-105"
-                                    : "bg-white/10 opacity-50"
-                              }`}
-                            >
-                              {p.name}
-                              {p.idx === performerIdx ? " (performing)" : ""}
-                            </button>
-                          ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {lastWinner && (
-                    <div className="mt-3 text-center text-2xl font-black">
-                      {lastWinner?.name
-                        ? `✅ ${lastWinner.name} guessed it! Bonus: +${lastWinner.bonus}`
-                        : "⏱️ Time's up! Next performer."}
-                    </div>
-                  )}
-                </div>
+          {/* ── MODE SELECTION ── */}
+          {phase === "mode" && (
+            <motion.div key="mode" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 32, textAlign: "center" }}>
+              <div style={{ fontSize: "3rem", fontWeight: 900, textShadow: "0 4px 16px rgba(0,0,0,0.3)" }}>
+                DRAW OR MIME IT!
               </div>
+              <div style={{ fontSize: "1.3rem", opacity: 0.85 }}>Choose your mode for this round:</div>
+              <div style={{ display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center" }}>
+                <motion.button whileTap={{ scale: 0.94 }} style={{ ...bigBtn("#3b82f6", "#fff"), minWidth: 160, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
+                  onClick={() => { setMode("draw"); setPhase("howtoplay"); }}>
+                  <span style={{ fontSize: "3rem" }}>🎨</span>
+                  Drawing
+                </motion.button>
+                <motion.button whileTap={{ scale: 0.94 }} style={{ ...bigBtn("#a855f7", "#fff"), minWidth: 160, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
+                  onClick={() => { setMode("mime"); setPhase("howtoplay"); }}>
+                  <span style={{ fontSize: "3rem" }}>🤫</span>
+                  Miming
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
 
-              {/* ── RIGHT COLUMN: How to Play ── */}
-              <div className="md:w-52 shrink-0 bg-white/10 rounded-2xl p-4 text-lg leading-relaxed self-start">
-                <div className="font-black text-xl mb-2">
-                  {mode === "draw" ? "🎨 Drawing" : "🤫 Miming"}
-                </div>
+          {/* ── HOW TO PLAY ── */}
+          {phase === "howtoplay" && (
+            <motion.div key="howtoplay" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 24, textAlign: "center" }}>
+              <div style={{ fontSize: "4rem" }}>{mode === "draw" ? "🎨" : "🤫"}</div>
+              <div style={{ fontSize: "2.2rem", fontWeight: 900 }}>{mode === "draw" ? "Drawing Mode" : "Mime Mode"}</div>
+              <div style={{ background: "rgba(0,0,0,0.25)", borderRadius: 20, padding: "20px 28px", maxWidth: 380, width: "100%", textAlign: "left", fontSize: "1.2rem", lineHeight: 1.7 }}>
                 {mode === "draw" ? (
-                  <ul className="space-y-2 list-none m-0 p-0">
-                    <li>✏️ Draw the clue on the screen.</li>
-                    <li>🚫 No letters or words.</li>
-                    <li>👆 Your team taps <strong>Guessed it!</strong> as soon as they know.</li>
-                  </ul>
+                  <>
+                    <div>✏️ Grab <strong>paper + a pen</strong> — draw your clue on paper</div>
+                    <div style={{ marginTop: 10 }}>🚫 No letters, numbers, or words</div>
+                    <div style={{ marginTop: 10 }}>👆 Your team taps <strong>Guessed it!</strong> when they know</div>
+                  </>
                 ) : (
-                  <ul className="space-y-2 list-none m-0 p-0">
-                    <li>🤫 Act out the clue — no speaking.</li>
-                    <li>📱 Put the device down and mime it.</li>
-                    <li>👆 Your team taps <strong>Guessed it!</strong> as soon as they know.</li>
-                  </ul>
+                  <>
+                    <div>🤫 Act it out — <strong>no talking, no sounds</strong></div>
+                    <div style={{ marginTop: 10 }}>📱 Put the phone down before you start</div>
+                    <div style={{ marginTop: 10 }}>👆 Your team taps <strong>Guessed it!</strong> when they know</div>
+                  </>
                 )}
               </div>
+              <motion.button whileTap={{ scale: 0.95 }} style={bigBtn("#22c55e")}
+                onClick={() => setPhase("pass")}>
+                Got it! →
+              </motion.button>
+              <button style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", fontSize: "0.9rem", cursor: "pointer" }}
+                onClick={() => setPhase("mode")}>← Back</button>
+            </motion.div>
+          )}
 
-            </div>
-          </div>
-        </div>
-
-        {/* Canvas */}
-        {mode === "draw" ? (
-          <div className="flex-1 relative mx-4 mb-4 bg-white rounded-3xl shadow-2xl overflow-hidden">
-            <canvas
-              ref={canvasRef}
-              className="w-full h-full touch-none"
-              onPointerDown={startDrawing}
-              style={{ touchAction: "none" }}
-            />
-
-            {!hasDrawn && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <p className="text-6xl font-black text-gray-300 opacity-50">
-                  Press hard for thick lines!
-                </p>
+          {/* ── PASS TO PERFORMER ── */}
+          {phase === "pass" && (
+            <motion.div key="pass" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
+              <div style={{ fontSize: "2rem", opacity: 0.85 }}>📱 Hand the phone to:</div>
+              <div style={{ fontSize: "3.5rem", fontWeight: 900, textShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+                {performer?.name || "the performer"}
               </div>
-            )}
-
-            {countdown != null && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                <div className="text-8xl md:text-9xl font-black text-white drop-shadow-2xl">
-                  {String(countdown)}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex-1 relative mx-4 mb-4 rounded-3xl shadow-2xl overflow-hidden bg-black/25 border border-white/15 flex items-center justify-center">
-            <div className="text-center px-8">
-              <div className="text-6xl mb-4">🤫</div>
-              <div className="text-4xl font-black">Mime Mode</div>
-              <div className="text-2xl mt-3 opacity-90">
-                Put the device down and act it out for your team.
-              </div>
-              {countdown != null && (
-                <div className="mt-8 text-8xl md:text-9xl font-black text-white drop-shadow-2xl">
-                  {String(countdown)}
+              {mode === "draw" && (
+                <div style={{ background: "rgba(255,255,255,0.2)", borderRadius: 16, padding: "14px 24px", fontSize: "1.2rem", fontWeight: 700 }}>
+                  ✏️ Grab some paper and a pen first!
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Bottom controls / actions */}
-        <div className="p-6 bg-black/40 backdrop-blur-lg">
-          {mode === "draw" && (
-            <div className="flex flex-wrap items-center justify-center gap-6 mb-6">
-              {/* Tool Switcher */}
-              <div className="flex bg-white/20 rounded-2xl p-2">
-                <button
-                  onClick={() => setTool("pen")}
-                  disabled={disabled}
-                  className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
-                    tool === "pen" ? "bg-white text-black" : "text-white"
-                  }`}
-                >
-                  Pen
-                </button>
-                <button
-                  onClick={() => setTool("eraser")}
-                  disabled={disabled}
-                  className={`px-8 py-4 rounded-xl text-3xl font-bold transition ${
-                    tool === "eraser" ? "bg-white text-black" : "text-white"
-                  }`}
-                >
-                  Eraser
-                </button>
+              <div style={{ opacity: 0.7, fontSize: "0.95rem", marginTop: 8 }}>
+                {performer?.name}, tap below once you have the phone.
               </div>
-
-              {/* Undo / Redo */}
-              <div className="flex gap-4">
-                <button
-                  onClick={undo}
-                  disabled={!canUndo || disabled}
-                  className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
-                >
-                  Undo
-                </button>
-                <button
-                  onClick={redo}
-                  disabled={!canRedo || disabled}
-                  className="px-8 py-5 bg-white/20 rounded-2xl text-4xl hover:bg-white/30 disabled:opacity-30 transition"
-                >
-                  Redo
-                </button>
-              </div>
-
-              {/* Color Palette */}
-              {["#000000", "#ef4444", "#3b82f6", "#22c55e", "#eab308", "#a855f7"].map((c) => (
-                <button
-                  key={c}
-                  onClick={() => {
-                    setColor(c);
-                    setTool("pen");
-                  }}
-                  disabled={disabled}
-                  className={`w-16 h-16 rounded-full shadow-xl transition transform hover:scale-110 ${
-                    color === c && tool === "pen" ? "ring-8 ring-white scale-125" : ""
-                  }`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-
-              {/* Brush Size */}
-              <div className="flex items-center gap-4 bg-white/20 rounded-2xl px-6 py-3">
-                <span className="text-2xl">Brush</span>
-                {[4, 8, 12, 20].map((w) => (
-                  <button
-                    key={w}
-                    onClick={() => setLineWidth(w)}
-                    disabled={disabled}
-                    className={`rounded-full transition hover:scale-125 ${
-                      lineWidth === w ? "bg-white scale-125" : "bg-gray-400"
-                    }`}
-                    style={{
-                      width: w === 4 ? 40 : w === 8 ? 48 : w === 12 ? 56 : 64,
-                      height: w === 4 ? 40 : w === 8 ? 48 : w === 12 ? 56 : 64,
-                    }}
-                  />
-                ))}
-              </div>
-
-              {/* Clear */}
-              <button
-                onClick={clearCanvas}
-                disabled={disabled}
-                className="px-8 py-4 bg-red-600 text-white text-2xl font-bold rounded-2xl hover:bg-red-700 transition shadow-xl"
-              >
-                Clear All
-              </button>
-            </div>
+              <motion.button whileTap={{ scale: 0.95 }} style={bigBtn("#f59e0b", "#000")}
+                onClick={() => { setClueRevealed(false); setPhase("clue"); }}>
+                I have it — I'm ready! →
+              </motion.button>
+            </motion.div>
           )}
 
-          {awaitingOutcome && (
-            <div className="mb-6 flex flex-col items-center gap-4">
-              <div className="text-3xl font-black text-center">
-                Time's up — did the team guess it?
-              </div>
-
-              <div className="flex flex-wrap justify-center gap-4">
-                {guessers.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => {
-                      setAwaitingOutcome(false);
-                      endRound({
-                        guessedBy: g.name,
-                        guessedBySide: g.side,
-                        reason: "guessed-after-time",
-                      });
-                    }}
-                    className="px-6 py-4 rounded-2xl text-2xl font-black bg-white text-black hover:scale-105 transition"
-                  >
-                    ✅ {g.name} guessed it
-                  </button>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAwaitingOutcome(false);
-                    endRound({ guessedBy: null, guessedBySide: null, reason: "time" });
-                  }}
-                  className="px-6 py-4 rounded-2xl text-2xl font-black bg-red-600 text-white hover:bg-red-700 transition"
-                >
-                  ❌ No guess
-                </button>
-              </div>
-            </div>
+          {/* ── CLUE REVEAL (performer's view) ── */}
+          {phase === "clue" && (
+            <motion.div key="clue" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 24, textAlign: "center" }}>
+              <div style={{ fontSize: "1.4rem", opacity: 0.8 }}>Hi {performer?.name || "performer"}! 👋</div>
+              {!clueRevealed ? (
+                <>
+                  <div style={{ fontSize: "1.1rem", opacity: 0.65 }}>Make sure your team isn't peeking...</div>
+                  <motion.button whileTap={{ scale: 0.95 }} style={{ ...bigBtn("#fff", "#000"), fontSize: "1.8rem" }}
+                    onClick={() => setClueRevealed(true)}>
+                    👁️ Reveal my clue
+                  </motion.button>
+                </>
+              ) : (
+                <>
+                  <div style={{ opacity: 0.7, fontSize: "1rem" }}>Your clue:</div>
+                  <div style={{ fontSize: "2.8rem", fontWeight: 900, background: "rgba(0,0,0,0.3)", borderRadius: 20, padding: "20px 32px", maxWidth: 480, lineHeight: 1.3 }}>
+                    {prompt}
+                  </div>
+                  {mode === "draw" && (
+                    <div style={{ opacity: 0.75, fontSize: "0.95rem" }}>✏️ Draw it on paper — no words or letters!</div>
+                  )}
+                  <motion.button whileTap={{ scale: 0.95 }} style={{ ...bigBtn("#22c55e"), fontSize: "2rem", marginTop: 8 }}
+                    onClick={handleGo}>
+                    1-2-3 GO! 🚀
+                  </motion.button>
+                </>
+              )}
+            </motion.div>
           )}
 
-          {/* Submit */}
-          <button
-            onClick={handleSubmit}
-            disabled={
-              disabled ||
-              awaitingOutcome ||
-              !roundActive ||
-              (mode === "draw" ? !hasDrawn : false)
-            }
-            className="w-full py-8 text-6xl font-black bg-gradient-to-r from-green-500 to-emerald-600 rounded-3xl shadow-2xl hover:scale-105 transition disabled:opacity-50"
-          >
-            {roundActive
-              ? mode === "draw"
-                ? hasDrawn
-                  ? "END ROUND (SUBMIT DRAWING)"
-                  : "DRAW FIRST!"
-                : "END ROUND"
-              : "START WITH 1-2-3 GO"}
-          </button>
-        </div>
+          {/* ── ACTIVE ROUND ── */}
+          {phase === "active" && (
+            <motion.div key="active" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, gap: 20, textAlign: "center" }}>
+              <div style={{ fontSize: "1.2rem", opacity: 0.75 }}>{mode === "draw" ? "🎨 Drawing..." : "🤫 Miming..."}</div>
+              <div style={{ fontSize: "5rem", fontWeight: 900, color: timerColor, textShadow: "0 4px 20px rgba(0,0,0,0.3)", transition: "color 0.5s" }}>
+                ⏱️ {timeLeft}s
+              </div>
+              <motion.button whileTap={{ scale: 0.95 }}
+                style={{ ...bigBtn("#4ade80", "#000"), fontSize: "2rem", padding: "24px 48px", boxShadow: "0 12px 32px rgba(0,0,0,0.3)" }}
+                onClick={() => endRound({ guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`, guessedBySide: guessingSide, reason: "guessed" })}>
+                ✅ Guessed it!
+              </motion.button>
+              {guessers.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ opacity: 0.6, fontSize: "0.9rem", marginBottom: 8 }}>or tap who guessed it:</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
+                    {guessers.map(g => (
+                      <button key={g.id} style={smBtn()} onClick={() => endRound({ guessedBy: g.name, guessedBySide: g.side, reason: "guessed" })}>
+                        {g.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* ── TIMEOUT ── */}
+          {phase === "timeout" && (
+            <motion.div key="timeout" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
+              <div style={{ fontSize: "4rem" }}>⏰</div>
+              <div style={{ fontSize: "2.5rem", fontWeight: 900 }}>Time's Up!</div>
+              <div style={{ fontSize: "1.2rem", opacity: 0.8 }}>Did anyone sneak in a guess?</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "center" }}>
+                {guessers.map(g => (
+                  <motion.button whileTap={{ scale: 0.95 }} key={g.id} style={bigBtn("#22c55e", "#000")}
+                    onClick={() => endRound({ guessedBy: g.name, guessedBySide: g.side, reason: "guessed-after-time" })}>
+                    ✅ {g.name} got it!
+                  </motion.button>
+                ))}
+                <motion.button whileTap={{ scale: 0.95 }} style={bigBtn("rgba(255,255,255,0.2)", "#fff")}
+                  onClick={() => endRound({ guessedBy: null, guessedBySide: null, reason: "time" })}>
+                  🦗 Nope — total blank
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── REVEAL ── */}
+          {phase === "reveal" && (
+            <motion.div key="reveal" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
+              <div style={{ fontSize: "1.2rem", opacity: 0.7, letterSpacing: 2 }}>THE CLUE WAS...</div>
+              <div style={{ fontSize: "3rem", fontWeight: 900, background: "rgba(0,0,0,0.3)", borderRadius: 24, padding: "24px 40px", maxWidth: 480, lineHeight: 1.3 }}>
+                {prompt}
+              </div>
+              {lastWinner?.name ? (
+                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "#4ade80" }}>
+                  ✅ {lastWinner.name} got it! +{1 + (lastWinner.bonus || 0)} pts
+                </div>
+              ) : (
+                <div style={{ fontSize: "1.5rem", fontWeight: 800, opacity: 0.75 }}>
+                  🦗 Nobody got it this time!
+                </div>
+              )}
+              <motion.button whileTap={{ scale: 0.95 }} style={bigBtn("#f59e0b", "#000")}
+                onClick={() => setPhase("rate")}>
+                Rate the performance 👏 →
+              </motion.button>
+            </motion.div>
+          )}
+
+          {/* ── RATE ── */}
+          {phase === "rate" && (
+            <motion.div key="rate" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
+              <div style={{ fontSize: "1.8rem", fontWeight: 900 }}>
+                How was {performer?.name}&apos;s {mode === "draw" ? "drawing" : "performance"}?
+              </div>
+              <div style={{ opacity: 0.75 }}>Everyone tap your reaction — as many times as you like!</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center" }}>
+                {[
+                  { emoji: "🔥", label: "On fire!" },
+                  { emoji: "😂", label: "Hilarious!" },
+                  { emoji: "🤔", label: "Huh??" },
+                  { emoji: "💀", label: "Impossible!" },
+                ].map(({ emoji, label }) => (
+                  <motion.button key={emoji} whileTap={{ scale: 1.2 }}
+                    style={{ background: "rgba(0,0,0,0.25)", border: "none", borderRadius: 20, padding: "16px 24px", cursor: "pointer", color: "#fff", minWidth: 100 }}
+                    onClick={() => setRatings(r => ({ ...r, [emoji]: (r[emoji] || 0) + 1 }))}>
+                    <div style={{ fontSize: "2.5rem" }}>{emoji}</div>
+                    <div style={{ fontSize: "0.9rem", marginTop: 4, opacity: 0.85 }}>{label}</div>
+                    {ratings[emoji] ? <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#facc15", marginTop: 4 }}>{ratings[emoji]}</div> : null}
+                  </motion.button>
+                ))}
+              </div>
+              <motion.button whileTap={{ scale: 0.95 }} style={bigBtn("#6366f1", "#fff")}
+                onClick={() => setPhase("done")}>
+                Done →
+              </motion.button>
+            </motion.div>
+          )}
+
+          {/* ── DONE ── */}
+          {phase === "done" && (
+            <motion.div key="done" variants={pv} initial="initial" animate="animate" exit="exit"
+              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
+              <div style={{ fontSize: "3rem" }}>🎉</div>
+              <div style={{ fontSize: "2rem", fontWeight: 900 }}>Round Complete!</div>
+              {topRatingEmoji && (
+                <div style={{ fontSize: "1.4rem", opacity: 0.85 }}>
+                  The crowd says: {topRatingEmoji} {[
+                    { emoji: "🔥", label: "On fire!" }, { emoji: "😂", label: "Hilarious!" },
+                    { emoji: "🤔", label: "Huh??" }, { emoji: "💀", label: "Impossible!" },
+                  ].find(r => r.emoji === topRatingEmoji)?.label}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 32, fontSize: "1.6rem", fontWeight: 900, background: "rgba(0,0,0,0.25)", borderRadius: 16, padding: "16px 32px" }}>
+                <span>Left: {scoreLeft}</span>
+                <span>Right: {scoreRight}</span>
+              </div>
+              <motion.button whileTap={{ scale: 0.95 }} style={{ ...bigBtn("#22c55e", "#000"), fontSize: "1.8rem" }}
+                onClick={finishRound}>
+                Finish ✓
+              </motion.button>
+            </motion.div>
+          )}
+
+        </AnimatePresence>
       </div>
     </TaskCardFrame>
   );
