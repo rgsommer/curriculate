@@ -3731,11 +3731,23 @@ if (!isMultiPack && task.taskType === "guess-who") {
         // We'll use submittedAt again below, so keep it in scope:
         var submittedAtNonMulti = submittedAt;
       } else {
+        // Load teacher profile once per room (cached on room object) so
+        // perspectives / worldview lenses are applied during AI scoring.
+        if (!room._teacherProfileCache && room.reportOwnerId) {
+          try {
+            room._teacherProfileCache = await TeacherProfile.findOne({
+              ownerId: String(room.reportOwnerId),
+            }).lean();
+          } catch {
+            // Non-blocking — scoring continues without profile
+          }
+        }
         try {
           aiScore = await generateAIScore({
             task,
             rubric: task.aiRubric || null,
             submission: submissionForScoring,
+            teacherProfile: room._teacherProfileCache || null,
           });
         } catch (e) {
           console.error("AI / rule-based scoring failed:", e);
