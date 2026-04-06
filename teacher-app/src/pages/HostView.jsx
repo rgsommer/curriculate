@@ -469,6 +469,13 @@ export default function HostView({ roomCode: roomCodeProp }) {
             play.curriculate.net
           </div>
 
+          {/* Taskset name */}
+          {roomState.tasksetName && (
+            <div className="mt-2 text-base md:text-lg font-semibold opacity-80 tracking-wide">
+              📚 {roomState.tasksetName}
+            </div>
+          )}
+
           {/* Task progress bar */}
           {hasProgress && (
             <div className="mt-4 max-w-xl mx-auto">

@@ -3352,6 +3352,26 @@ function StudentApp() {
         </div>
 
         <div style={{ textAlign: "right", minWidth: 140 }}>
+          {/* Taskset name — top right */}
+          {roomState?.tasksetName && joined && (
+            <div
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                color: "#c4b5fd",
+                marginBottom: 4,
+                opacity: 0.9,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                maxWidth: 180,
+                marginLeft: "auto",
+              }}
+            >
+              📚 {roomState.tasksetName}
+            </div>
+          )}
+
           <div
             style={{
               display: "flex",
