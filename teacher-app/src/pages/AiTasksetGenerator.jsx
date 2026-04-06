@@ -450,8 +450,9 @@ export default function AiTasksetGenerator() {
               throw new Error(evt.error || "Generation failed");
             }
           } catch (parseErr) {
-            if (parseErr.message && parseErr.message !== "Generation failed") {
-              // JSON parse error — skip malformed line
+            // Only skip genuine JSON parse errors; rethrow actual generation errors
+            if (parseErr instanceof SyntaxError) {
+              // malformed SSE line — skip it
             } else {
               throw parseErr;
             }

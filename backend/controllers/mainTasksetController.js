@@ -1017,7 +1017,12 @@ export async function createAiTaskset(req, res) {
       taskTypePool,
       count,
       specialConsiderations = "",
+      topicDescription = "",
     } = req.body || {};
+
+    // Frontend sends topicDescription; merge with specialConsiderations if both present
+    const effectiveSpecialConsiderations =
+      [specialConsiderations, topicDescription].map(s => String(s || "").trim()).filter(Boolean).join("\n\n");
 
     const safeCount = clampInt(count, 1, 30, 12);
 
@@ -1037,7 +1042,7 @@ export async function createAiTaskset(req, res) {
     }
 
     // ✅ Profile-driven "lens" injection (NOT Christian-only; teacher profile determines lens)
-    let mergedSpecialConsiderations = String(specialConsiderations || "").trim();
+    let mergedSpecialConsiderations = String(effectiveSpecialConsiderations || "").trim();
     try {
       const teacherProfile = await loadTeacherProfileForRequest(req);
       const worldviewBlock = worldviewBlockFromProfile(teacherProfile);
