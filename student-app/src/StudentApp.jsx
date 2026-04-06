@@ -190,6 +190,9 @@ function StudentApp() {
   const pmcRescanTimerRef = useRef(null);
     useEffect(() => { currentTaskRef.current = currentTask; }, [currentTask]);
   const taskLockedRef = useRef(false);
+  // Holds a task:assigned payload that arrived while the review overlay was showing.
+  // Applied by endReviewAndReturnToScan once the lock is released.
+  const pendingTaskAssignedRef = useRef(null);
   const postSubmitSecondsLeftRef = useRef(null);
   
   const postPhaseRef = useRef(postPhase);
@@ -498,6 +501,14 @@ function StudentApp() {
 
     const handleTaskAssigned = (payload) => {
       if (!payload) return;
+
+      // If we're in the middle of a post-submit review, queue this assignment
+      // and apply it once the review ends instead of blowing away the overlay.
+      if (taskLockedRef.current) {
+        pendingTaskAssignedRef.current = payload;
+        return;
+      }
+
       const limit = payload.timeLimitSeconds || null;
       lastScanKeyRef.current = { key: null, atMs: 0 };
       setTimeLimitSeconds(limit);
@@ -1562,6 +1573,15 @@ function StudentApp() {
           roomCode: roomCode.trim().toUpperCase(),
           teamId,
         });
+        return;
+      }
+
+      // If a task:assigned arrived while the review was locked, apply it now
+      // so the student goes straight to the task (no extra scan needed for that queued task).
+      const queued = pendingTaskAssignedRef.current;
+      pendingTaskAssignedRef.current = null;
+      if (queued) {
+        handleTaskAssigned(queued);
         return;
       }
 
