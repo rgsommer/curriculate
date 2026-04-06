@@ -2523,8 +2523,6 @@ function StudentApp() {
   return (
     <div
       style={{
-        position: "relative",
-        zIndex: 1,
         minHeight: "100vh",
         padding: 16,
         display: "flex",

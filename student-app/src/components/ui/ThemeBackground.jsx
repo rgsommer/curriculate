@@ -32,7 +32,7 @@ export default function ThemeBackground({ theme = "eager" }) {
             borderRadius: "50%",
             background: `radial-gradient(circle, ${s.color}, transparent 70%)`,
             pointerEvents: "none",
-            zIndex: 0,
+            zIndex: -1,
             animation: `eager-drift ${s.duration}s ease-in-out infinite ${i % 2 === 0 ? "" : "reverse"}`,
             filter: "blur(2px)",
           }}
