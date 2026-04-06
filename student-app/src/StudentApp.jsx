@@ -3930,14 +3930,15 @@ function StudentApp() {
   </section>
 )}
 
-{/* SCANNER PANEL (shows whenever scannerActive is true) */}
+{/* SCANNER PANEL (shows whenever scannerActive is true)
+    Hidden for PMC — the camera is embedded inside the task's own scanner UI */}
 {scannerActive &&
   !tasksetComplete &&
+  !isPhysicalMultipleChoice &&
   postSubmitSecondsLeft == null &&
   !taskLocked &&
   (
     mustScan ||
-    currentTask?.taskType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
     currentTask?.taskType === TASK_TYPES.MAD_DASH ||
     currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE
   ) && (
@@ -4344,6 +4345,14 @@ function StudentApp() {
         }
         task={themedTask}
         taskTypes={TASK_TYPES}
+        scannerSlot={
+          isPhysicalMultipleChoice && scannerActive
+            ? <QrScanner
+                onScan={(d) => { console.log("[QrScanner/PMC] onScan fired", d); return handleScan(d); }}
+                onError={(e) => { console.log("[QrScanner/PMC] error", e); setScanError(e); }}
+              />
+            : null
+        }
         onSubmit={handleSubmitAnswer}
         submitting={submitting}
         onAnswerChange={setCurrentAnswerDraft}

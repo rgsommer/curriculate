@@ -24,6 +24,7 @@ export default function PhysicalMultipleChoiceTask({
   excludedColor = null,
   excludedColors = null,
   onIncorrectScan = null,
+  scannerSlot = null,  // ReactNode: actual <QrScanner> passed from parent
 }) {
   const isReview = mode === "review";
 
@@ -573,39 +574,71 @@ export default function PhysicalMultipleChoiceTask({
         </div>
       )}
       {wantsScan && (
-        <div className="fixed inset-0 z-40 bg-black/75 flex flex-col items-center justify-center">
-          <div className="relative w-[min(90vw,380px)] aspect-square rounded-3xl overflow-hidden border-4 border-cyan-400/60 shadow-2xl shadow-cyan-900/40">
-            <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-black" />
-            <div className="absolute inset-0 flex items-center justify-center px-8 text-center">
+        <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          {/* Decorative scanner frame with embedded camera */}
+          <div
+            style={{
+              position: "relative",
+              width: "min(90vw, 360px)",
+              borderRadius: 24,
+              overflow: "hidden",
+              border: "4px solid rgba(34,211,238,0.6)",
+              boxShadow: "0 0 32px rgba(34,211,238,0.3), 0 8px 32px rgba(0,0,0,0.5)",
+              background: "#0f172a",
+            }}
+          >
+            {/* Camera feed or placeholder */}
+            <div style={{ position: "relative" }}>
+              {scannerSlot || (
+                <div style={{
+                  height: 200,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "rgba(34,211,238,0.6)",
+                  fontSize: "3rem",
+                }}>
+                  📷
+                </div>
+              )}
             </div>
 
+            {/* Animated scan line */}
             <div
-              className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-300 to-transparent pointer-events-none"
               style={{
-                animation: "scanVertical 3.2s cubic-bezier(0.4,0,0.6,1) infinite",
+                position: "absolute",
+                left: 0,
+                right: 0,
+                height: 3,
+                background: "linear-gradient(to right, transparent, #22d3ee, transparent)",
                 boxShadow: "0 0 24px #22d3ee",
+                animation: "pmcScanLine 2.8s cubic-bezier(0.4,0,0.6,1) infinite",
+                pointerEvents: "none",
               }}
             />
 
-            <div className="absolute inset-6 pointer-events-none">
-              <div className="absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 border-cyan-300 rounded-tl-xl" />
-              <div className="absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 border-cyan-300 rounded-tr-xl" />
-              <div className="absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 border-cyan-300 rounded-bl-xl" />
-              <div className="absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 border-cyan-300 rounded-br-xl" />
+            {/* Corner brackets */}
+            <div style={{ position: "absolute", inset: 12, pointerEvents: "none" }}>
+              {[
+                { top: 0, left: 0, borderTop: "4px solid #22d3ee", borderLeft: "4px solid #22d3ee", borderRadius: "12px 0 0 0" },
+                { top: 0, right: 0, borderTop: "4px solid #22d3ee", borderRight: "4px solid #22d3ee", borderRadius: "0 12px 0 0" },
+                { bottom: 0, left: 0, borderBottom: "4px solid #22d3ee", borderLeft: "4px solid #22d3ee", borderRadius: "0 0 0 12px" },
+                { bottom: 0, right: 0, borderBottom: "4px solid #22d3ee", borderRight: "4px solid #22d3ee", borderRadius: "0 0 12px 0" },
+              ].map((s, i) => (
+                <div key={i} style={{ position: "absolute", width: 40, height: 40, ...s }} />
+              ))}
             </div>
           </div>
 
-          <p className="mt-10 text-xl font-semibold text-center px-8 drop-shadow-lg">
+          <p style={{ margin: 0, fontSize: "1rem", fontWeight: 600, textAlign: "center", opacity: 0.85 }}>
             Scan the colored station that matches your answer
           </p>
 
           <style>{`
-            @keyframes scanVertical {
-              0%   { top: -20%; opacity: 0.5; }
-              25%  { opacity: 1; }
-              50%  { top: 120%; opacity: 0.5; }
-              75%  { opacity: 1; }
-              100% { top: -20%; opacity: 0.5; }
+            @keyframes pmcScanLine {
+              0%   { top: 0%; opacity: 0.5; }
+              50%  { top: 100%; opacity: 1; }
+              100% { top: 0%; opacity: 0.5; }
             }
           `}</style>
         </div>

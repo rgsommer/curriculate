@@ -1603,6 +1603,10 @@ export default function TaskRunner({
   partnerAnswer,
   showPartnerReply,
   onPartnerReply,
+
+  // Inline scanner element (e.g. <QrScanner>) to embed inside task UIs
+  // that have their own scanner chrome (e.g. PhysicalMultipleChoiceTask)
+  scannerSlot = null,
 }) {
   if (!task) return null;
 
@@ -2157,6 +2161,7 @@ export default function TaskRunner({
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
           excludedColor={tp?.stationColor || tp?.config?.stationColor || null}
+          scannerSlot={scannerSlot}
           onIncorrectScan={() => {
             try {
               const fn = window.__curriculatePlayWrongSound;
