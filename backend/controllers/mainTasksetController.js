@@ -984,6 +984,25 @@ async function attemptAutoFixCoverage({
  * Body: { title, subject, gradeLevel, difficulty, learningGoal, topicLabel, aiWordBank, taskTypePool?, count? }
  */
 export async function createAiTaskset(req, res) {
+  // SSE streaming mode: send progress events as tasks are finalized.
+  // Activated when client sends Accept: text/event-stream
+  const wantsStream = String(req.headers.accept || "").includes("text/event-stream");
+
+  // Helper: write one SSE event. No-op if not in stream mode.
+  function sendSSE(obj) {
+    if (!wantsStream) return;
+    try {
+      res.write(`data: ${JSON.stringify(obj)}\n\n`);
+    } catch { /* connection closed */ }
+  }
+
+  if (wantsStream) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+  }
+
   try {
     const {
       title,
@@ -1008,6 +1027,10 @@ export async function createAiTaskset(req, res) {
 
     const pool = normalizedPool.filter((t) => eligible.includes(t));
     if (!pool.length) {
+      if (wantsStream) {
+        sendSSE({ type: "error", error: "No eligible task types provided." });
+        return res.end();
+      }
       return res.status(400).json({ ok: false, error: "No eligible task types provided." });
     }
 
@@ -1035,6 +1058,9 @@ export async function createAiTaskset(req, res) {
     const initialVocabularyLines = requestedConcepts.length
       ? buildVocabularyLinesFromConcepts(requestedConcepts.slice(0, 10))
       : "";
+
+    // Announce total so the client can show a progress bar
+    sendSSE({ type: "start", total: safeCount });
 
     let rawTasks = await generateTasksArray({
       typePool: pool,
@@ -1126,6 +1152,9 @@ export async function createAiTaskset(req, res) {
 
       // record how many attempts this slot used (1 = first-pass success)
       attemptsByTask.push(Math.max(1, usedAttempts || 1));
+
+      // 🔴 Progress event: tell the client one more task is done
+      sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
     }
 
     // ✅ Coverage report + auto-fix (still valuable as a final pass)
@@ -1185,8 +1214,16 @@ export async function createAiTaskset(req, res) {
       },
     });
 
+    if (wantsStream) {
+      sendSSE({ type: "complete", ok: true, taskset: doc });
+      return res.end();
+    }
     return res.json({ ok: true, taskset: doc });
   } catch (err) {
+    if (wantsStream) {
+      sendSSE({ type: "error", error: String(err?.message || err) });
+      return res.end();
+    }
     return res.status(500).json({ ok: false, error: String(err?.message || err) });
   }
 }

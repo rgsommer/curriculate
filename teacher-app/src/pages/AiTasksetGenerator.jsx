@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { fetchMyProfile } from "../api/profile";
-import { apiFetchJson } from "../api/apiFetch";
+import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
@@ -143,6 +143,7 @@ export default function AiTasksetGenerator() {
 
   const [displays, setDisplays] = useState([]);
   const [generating, setGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState({ done: 0, total: 0, lastType: "" });
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
@@ -397,18 +398,77 @@ export default function AiTasksetGenerator() {
         multiRoomRooms,
       };
 
-      const data = await apiFetchJson("/api/ai/tasksets", {
+      // Use streaming fetch so we can show per-task progress
+      setGenProgress({ done: 0, total: 0, lastType: "" });
+
+      const res = await apiFetch("/api/ai/tasksets", {
         method: "POST",
-        body: payload,
+        body: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
       });
 
+      if (!res.ok) {
+        // Non-2xx before stream started — read as JSON for error message
+        let errMsg = `Request failed (${res.status})`;
+        try {
+          const errJson = await res.json();
+          errMsg = errJson?.error || errMsg;
+        } catch { /* ignore */ }
+        throw new Error(errMsg);
+      }
+
+      // Parse SSE stream line by line
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let finalData = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        // SSE lines: "data: {...}\n\n"
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? ""; // keep incomplete chunk
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          try {
+            const evt = JSON.parse(line.slice(5).trim());
+            if (evt.type === "start") {
+              setGenProgress({ done: 0, total: evt.total, lastType: "" });
+            } else if (evt.type === "progress") {
+              setGenProgress({ done: evt.done, total: evt.total, lastType: evt.taskType || "" });
+            } else if (evt.type === "complete") {
+              finalData = evt;
+            } else if (evt.type === "error") {
+              throw new Error(evt.error || "Generation failed");
+            }
+          } catch (parseErr) {
+            if (parseErr.message && parseErr.message !== "Generation failed") {
+              // JSON parse error — skip malformed line
+            } else {
+              throw parseErr;
+            }
+          }
+        }
+      }
+
+      if (!finalData) throw new Error("No result received from server.");
+
       setError("");
-      setResult(data);
+      setResult(finalData);
     } catch (err) {
       console.error("AI Taskset generation error:", err);
       setError(err?.message || "Something went wrong while generating the task set.");
     } finally {
       setGenerating(false);
+      setGenProgress({ done: 0, total: 0, lastType: "" });
     }
   };
 
@@ -1314,6 +1374,42 @@ export default function AiTasksetGenerator() {
             {generating ? "Generating…" : "Generate task set"}
           </button>
         </div>
+
+        {/* Generation progress */}
+        {generating && genProgress.total > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#6b7280", marginBottom: 4 }}>
+              <span>
+                {genProgress.done < genProgress.total
+                  ? `Generating task ${genProgress.done + 1} of ${genProgress.total}…`
+                  : `Finishing up…`}
+              </span>
+              <span>{genProgress.done} / {genProgress.total}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: "#e5e7eb", overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  borderRadius: 999,
+                  background: "#2563eb",
+                  width: `${Math.round((genProgress.done / genProgress.total) * 100)}%`,
+                  transition: "width 0.4s ease",
+                }}
+              />
+            </div>
+            {genProgress.lastType && (
+              <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: 3 }}>
+                Last: {genProgress.lastType.replace(/-/g, " ")}
+              </div>
+            )}
+          </div>
+        )}
+
+        {generating && genProgress.total === 0 && (
+          <div style={{ marginTop: 14, fontSize: "0.8rem", color: "#6b7280" }}>
+            Sending request to AI…
+          </div>
+        )}
       </form>
 
       {/* RESULT SUMMARY */}
