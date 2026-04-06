@@ -617,7 +617,7 @@ export default function DrawMimeTask({
                 ) : (
                   <>
                     <div>🤫 Act it out — <strong>no talking, no sounds</strong></div>
-                    <div style={{ marginTop: 10 }}>📱 Put the phone down before you start</div>
+                    <div style={{ marginTop: 10 }}>📱 Put the device down before you start</div>
                     <div style={{ marginTop: 10 }}>👆 Your team taps <strong>Guessed it!</strong> when they know</div>
                   </>
                 )}
