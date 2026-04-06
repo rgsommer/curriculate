@@ -705,6 +705,7 @@ const {
   arraysDeepEqual,
   scoreMatchingTask,
   scoreVennSortTask,
+  getRoomTaskProgress,
   _fcNormalizeAnswer,
   _fcCardMatchesAnswer,
   _fcGetDeckFromTask,
@@ -3739,118 +3740,113 @@ if (!isMultiPack && task.taskType === "guess-who") {
       }
     }
 
+    // ── ACK FIRST ── Send response to student BEFORE side effects
+    // so that the overlay/review always shows even if progression code crashes.
     // After every graded submission, advance THIS team to the next station so they must rescan.
     reassignStationForTeam(room, effectiveTeamId);
 
-    // Maybe award a random treat for this submission
-    const isQuick =
-      !!room.taskset &&
-      room.taskset.name === "Quick task" &&
-      Array.isArray(room.taskset.tasks) &&
-      room.taskset.tasks.length === 1;
+    const nextStation = room.teams?.[effectiveTeamId]?.currentStationId || null;
+    const nextStationNorm = nextStation ? normalizeStationId(nextStation, room) : null;
 
-    if (!isQuick) {
-      maybeAwardTreat(code, room, effectiveTeamId);
+    if (typeof ack === "function") {
+      try {
+        ack({
+          ok: true,
+          roomCode: code,
+          teamId: effectiveTeamId,
+          taskIndex: idx,
+          correct,
+          accepted: correct,
+          points: pointsEarned,
+          speedBonus: speedBonus || 0,
+          maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 100,
+          aiScore,
+          review,
+          nextStationId: nextStationNorm?.id || nextStation,
+          nextStationColor: nextStationNorm?.color || null,
+          postSubmitSeconds: 8,
+        });
+      } catch (ackErr) {
+        console.error("[handleStudentSubmit] ack failed:", ackErr);
+      }
     }
+    socket.emit("task:received");
 
-    const state = buildRoomState(room);
-    io.to(code).emit("room:state", state);
-    io.to(code).emit("roomState", state);
+    // ── SIDE EFFECTS (fire-and-forget, errors logged but don't affect student) ──
+    try {
+      const isQuick =
+        !!room.taskset &&
+        room.taskset.name === "Quick task" &&
+        Array.isArray(room.taskset.tasks) &&
+        room.taskset.tasks.length === 1;
 
-    // Determine if this is a "quick taskset"
-    const isQuickTaskset =
-      !!room.taskset &&
-      room.taskset.name === "Quick task" &&
-      Array.isArray(room.taskset.tasks) &&
-      room.taskset.tasks.length === 1;
+      if (!isQuick) {
+        maybeAwardTreat(code, room, effectiveTeamId);
+      }
 
-    // Per-team progression
-    if (room.taskset && Array.isArray(room.taskset.tasks)) {
-      const currentIndex = idx;
+      const state = buildRoomState(room);
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
 
-      const nextIndex = currentIndex + 1;
+      const isQuickTaskset = isQuick; // same condition
 
-      if (isQuickTaskset) {
-        // One-off quick task: let sendTaskToTeam handle "session complete".
-        sendTaskToTeam(room, effectiveTeamId, nextIndex);
-      } else {
-        // For normal tasksets, remember the next index and let the
-        // next colour scan trigger delivery of the new task.
-        if (!room.teams[effectiveTeamId]) {
-          room.teams[effectiveTeamId] = {};
-        }
+      if (room.taskset && Array.isArray(room.taskset.tasks)) {
+        const currentIndex = idx;
+        const nextIndex = currentIndex + 1;
 
-        // Pacing gate: prevent teams from going more than 1 task ahead of the slowest joined team
-        // UNLESS the team is currently in catch-up mode (taskIndex < maxJoinedTaskIndex)
-        const progress = getRoomTaskProgress(room);
-        const isCatchingUp = currentIndex < progress.maxJoinedTaskIndex;
-        const wouldExceedPace = nextIndex > progress.minJoinedTaskIndex + 1;
-
-        if (wouldExceedPace && !isCatchingUp) {
-          // Hold this team: set nextTaskIndex but flag with pacingHold
-          room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
-          room.teams[effectiveTeamId].pacingHold = true;
-          io.to(effectiveTeamId).emit("team:pacing-hold", {
-            roomCode: code,
-            teamId: effectiveTeamId,
-            message: "Waiting for other teams to catch up...",
-          });
+        if (isQuickTaskset) {
+          sendTaskToTeam(room, effectiveTeamId, nextIndex);
         } else {
-          // Allow progression
-          room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
-          if (room.teams[effectiveTeamId].pacingHold) {
-            delete room.teams[effectiveTeamId].pacingHold;
+          if (!room.teams[effectiveTeamId]) {
+            room.teams[effectiveTeamId] = {};
+          }
+
+          const progress = getRoomTaskProgress(room);
+          const isCatchingUp = currentIndex < progress.maxJoinedTaskIndex;
+          const wouldExceedPace = nextIndex > progress.minJoinedTaskIndex + 1;
+
+          if (wouldExceedPace && !isCatchingUp) {
+            room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
+            room.teams[effectiveTeamId].pacingHold = true;
+            io.to(effectiveTeamId).emit("team:pacing-hold", {
+              roomCode: code,
+              teamId: effectiveTeamId,
+              message: "Waiting for other teams to catch up...",
+            });
+          } else {
+            room.teams[effectiveTeamId].nextTaskIndex = nextIndex;
+            if (room.teams[effectiveTeamId].pacingHold) {
+              delete room.teams[effectiveTeamId].pacingHold;
+            }
           }
         }
       }
-    }
 
-    // Check if any held teams can now be released due to pace progression
-    checkAndReleasePacingHolds(room, code);
+      checkAndReleasePacingHolds(room, code);
 
-    const submissionSummary = {
-      roomCode: code,
-      teamId: effectiveTeamId,
-      teamName,
-      taskIndex: idx,
-      answerText,
-      correct,
-      points: pointsEarned,
-      speedBonus: speedBonus || 0,
-      timeMs: timeMs ?? null,
-      submittedAt,
-      aiScore, // <-- carries multi-pack or AI info, including PhotoJournal feedback
-    };
-    io.to(code).emit("taskSubmission", { ...submissionSummary, review });
-
-    socket.emit("task:received");
-    // ✅ Always acknowledge submissions so StudentApp can show overlays immediately
-    // Include next station info so client can update displayAssignedColor without
-    // waiting for room:state (prevents race condition where scan screen shows old color)
-    const nextStation = room.teams?.[effectiveTeamId]?.currentStationId || null;
-    const nextStationNorm = nextStation ? normalizeStationId(nextStation, room) : null;
-    if (typeof ack === "function") {
-      ack({
-        ok: true,
+      const submissionSummary = {
         roomCode: code,
         teamId: effectiveTeamId,
+        teamName,
         taskIndex: idx,
+        answerText,
         correct,
         points: pointsEarned,
         speedBonus: speedBonus || 0,
-        maxPoints: Number.isFinite(task?.points) ? Number(task.points) : 100,
+        timeMs: timeMs ?? null,
+        submittedAt,
         aiScore,
-        review,
-        nextStationId: nextStationNorm?.id || nextStation,
-        nextStationColor: nextStationNorm?.color || null,
-      });
+      };
+      io.to(code).emit("taskSubmission", { ...submissionSummary, review });
+    } catch (sideEffectErr) {
+      console.error("[handleStudentSubmit] Side-effect error (student already got ack):", sideEffectErr);
     }
 
   };
 
   socket.on("student:submitAnswer", (payload, ack) => {
     handleStudentSubmit(payload, ack).catch((err) => {
-      console.error("[handleStudentSubmit] Unhandled error:", err);
+      console.error("[handleStudentSubmit] Unhandled error:", err?.message || err, err?.stack);
       if (typeof ack === "function") {
         try { ack({ ok: false, error: "Server error during submission" }); } catch {}
       }
@@ -3971,7 +3967,8 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
 
   socket.on("task:submit", (payload, ack) => {
     handleStudentSubmit(payload, ack).catch((err) => {
-      console.error("[handleStudentSubmit via task:submit] Unhandled error:", err);
+      console.error("[handleStudentSubmit via task:submit] Unhandled error:", err?.message || err, err?.stack);
+      // ack may already have been sent (we send it early now); Socket.IO ignores duplicate acks
       if (typeof ack === "function") {
         try { ack({ ok: false, error: "Server error during submission" }); } catch {}
       }

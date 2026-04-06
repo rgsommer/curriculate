@@ -439,8 +439,6 @@ function StudentApp() {
       if (!state || !teamId) return;
       const myTeam = state.teams?.[teamId];
       if (!myTeam) return;
-      console.log("[ROOM:STATE] taskLockedRef =", taskLockedRef.current, "currentStationId =", myTeam.currentStationId, "currentTaskRef =", !!currentTaskRef.current);
-
       // 🔢 Update running total score from room-wide scores map
       if (state.scores && typeof state.scores[teamId] === "number") {
         setScoreTotal(state.scores[teamId]);
@@ -1551,7 +1549,6 @@ function StudentApp() {
       setScanStatus(null);
       setScanError(null);
       setScannedStationId(null);
-      console.log("[endReview] assignedColorRef =", assignedColorRef.current, "assignedColor(closure) =", assignedColor, "assignedStationIdRef =", assignedStationIdRef.current);
       setDisplayAssignedStationId(assignedStationIdRef.current || assignedStationId);
       setDisplayAssignedColor(assignedColorRef.current || assignedColor);
 
@@ -1705,9 +1702,7 @@ function StudentApp() {
       // If submission fails, the ack error handler will unlock.
       setTaskLocked(true);
       taskLockedRef.current = true;
-      console.log("[SUBMIT] pre-lock set, taskLockedRef =", taskLockedRef.current, "currentTask =", currentTask?.taskType);
       socket.emit("task:submit", payload, (response) => {
-        console.log("[SUBMIT ACK] received, response keys:", Object.keys(response || {}), "correct:", response?.correct, "nextStationId:", response?.nextStationId, "nextStationColor:", response?.nextStationColor);
         if (!response || response.error) {
           console.warn("Submit error:", response?.error || "Unknown error");
           setSubmitting(false);
@@ -1757,7 +1752,6 @@ function StudentApp() {
           currentType === TASK_TYPES.MAD_DASH ||
           currentType === TASK_TYPES.MAD_DASH_SEQUENCE;
           
-        console.log("[SUBMIT ACK] isPhysical =", isPhysical, "currentType =", currentType, "currentTask?.taskType =", currentTask?.taskType);
         if (!isPhysical) {
           // If there is no scoring overlay to show, do NOT pause for "review".
           // (Example: objectiveScoring=false AND aiScoring=false)
@@ -1888,7 +1882,6 @@ function StudentApp() {
             !isPhysical &&
             (isObjCurrentTask || !accepted || hasMeaningfulFeedback);
 
-          console.log("[SUBMIT ACK] shouldShowReview =", shouldShowReview, "isObjCurrentTask =", isObjCurrentTask, "accepted =", accepted, "hasMeaningfulFeedback =", hasMeaningfulFeedback, "disableReviewPause =", disableReviewPause);
           if (!shouldShowReview) {
             setReviewState(null);
             setPostSubmitSecondsLeft(null);
@@ -1903,7 +1896,6 @@ function StudentApp() {
           }
 
           setTaskLocked(true);
-          console.log("[SUBMIT ACK] OVERLAY WILL SHOW — taskLocked set to true");
 
           // Check if team is catching up for quickened review
           const isCatchingUp = response?.catchUp === true;
