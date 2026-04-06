@@ -80,7 +80,20 @@ export function requireAiQuota(minMonthly) {
     const user = req.user;
     if (isInGrace(user)) return next();
 
-    const q = Number(user?.planAiMonthly || 0);
+    // planAiMonthly is set by Stripe webhooks. Fall back to the plan-table
+    // default so accounts created before billing was wired up still work.
+    let q = Number(user?.planAiMonthly ?? -1);
+    if (q < 0) {
+      // Field not set → look up from plan table
+      try {
+        const { resolveAccessForUser } = await import("../billing/planResolver.js");
+        const access = await resolveAccessForUser(user);
+        q = Number(access?.aiMonthly || 0);
+      } catch {
+        q = 25; // safe fallback: FREE tier default
+      }
+    }
+
     if (q >= minMonthly) return next();
 
     return res.status(403).json({ error: "Insufficient AI quota for this action", required: minMonthly, aiMonthly: q });
