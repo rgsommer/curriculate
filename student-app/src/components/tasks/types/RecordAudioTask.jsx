@@ -32,29 +32,49 @@ export default function RecordAudioTask({
       throw new Error("Missing roomCode/teamId for S3 upload.");
     }
 
-    const presignResp = await fetch("/api/media/presign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomCode,
-        teamId,
-        taskType: "record-audio",
-        contentType: contentType || blob.type || "application/octet-stream",
-        purpose: purpose || "audio",
-        fileName: `record-audio-${Date.now()}`,
-      }),
-    });
+    // Timeout the presign request after 6 seconds so we don't get stuck
+    const presignController = new AbortController();
+    const presignTimeout = setTimeout(() => presignController.abort(), 6000);
+
+    let presignResp;
+    try {
+      presignResp = await fetch("/api/media/presign", {
+        method: "POST",
+        signal: presignController.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roomCode,
+          teamId,
+          taskType: "record-audio",
+          contentType: contentType || blob.type || "application/octet-stream",
+          purpose: purpose || "audio",
+          fileName: `record-audio-${Date.now()}`,
+        }),
+      });
+    } finally {
+      clearTimeout(presignTimeout);
+    }
 
     const presignJson = await presignResp.json().catch(() => null);
     if (!presignResp.ok || !presignJson?.uploadUrl || !presignJson?.key) {
       throw new Error(presignJson?.error || "Presign failed.");
     }
 
-    const putResp = await fetch(presignJson.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": contentType || blob.type || "application/octet-stream" },
-      body: blob,
-    });
+    // Timeout the S3 PUT after 15 seconds
+    const putController = new AbortController();
+    const putTimeout = setTimeout(() => putController.abort(), 15000);
+
+    let putResp;
+    try {
+      putResp = await fetch(presignJson.uploadUrl, {
+        method: "PUT",
+        signal: putController.signal,
+        headers: { "Content-Type": contentType || blob.type || "application/octet-stream" },
+        body: blob,
+      });
+    } finally {
+      clearTimeout(putTimeout);
+    }
     if (!putResp.ok) throw new Error("Upload to S3 failed.");
 
     return { s3Key: presignJson.key, signedGetUrl: presignJson.signedGetUrl || null };
@@ -239,24 +259,15 @@ export default function RecordAudioTask({
           mimeType: blob.type || "audio/webm",
         };
       } else {
-        const base64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            try {
-              resolve(String(reader.result || "").split(",")[1] || "");
-            } catch (err) {
-              reject(err);
-            }
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-
+        // S3 unavailable: skip base64 (too large for WebSocket) — submit a
+        // participation marker instead. Record-audio uses scoringMode "none"
+        // so the backend only needs to know something was submitted.
         payload = {
           type: "record-audio",
-          base64,
+          recorded: true,
           duration,
           mimeType: blob.type || "audio/webm",
+          note: "audio-not-uploaded",
         };
       }
 

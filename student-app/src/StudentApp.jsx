@@ -1823,12 +1823,15 @@ function StudentApp() {
                 };
 
           // ── Map AI-scoring fields to display fields if not already set ──
-          // Backend sends aiFeedback / aiSuggestedAnswer; display expects feedback / modelAnswer.
+          // Backend sends aiFeedback / aiSuggestedAnswer / aiHint; display expects feedback / modelAnswer / hint.
           if (!reviewObj.feedback && reviewObj.aiFeedback) {
             reviewObj.feedback = reviewObj.aiFeedback;
           }
           if (!reviewObj.modelAnswer && reviewObj.aiSuggestedAnswer) {
             reviewObj.modelAnswer = reviewObj.aiSuggestedAnswer;
+          }
+          if (!reviewObj.hint && reviewObj.aiHint) {
+            reviewObj.hint = reviewObj.aiHint;
           }
           // Also pull aiFeedback off the top-level aiScore if the review didn't carry it
           if (!reviewObj.feedback && response?.aiScore?.feedback) {
@@ -1836,6 +1839,12 @@ function StudentApp() {
           }
           if (!reviewObj.feedback && response?.aiScore?.rationale) {
             reviewObj.feedback = response.aiScore.rationale;
+          }
+          if (!reviewObj.hint && response?.aiScore?.hint) {
+            reviewObj.hint = response.aiScore.hint;
+          }
+          if (!reviewObj.modelAnswer && response?.aiScore?.modelAnswer) {
+            reviewObj.modelAnswer = response.aiScore.modelAnswer;
           }
 
           const accepted =
@@ -2492,7 +2501,9 @@ function StudentApp() {
     currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
     currentTask?.taskType === TASK_TYPES.TRUE_FALSE ||
     currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
-    currentTask?.taskType === TASK_TYPES.READING_COMP;
+    currentTask?.taskType === TASK_TYPES.READING_COMP ||
+    currentTask?.taskType === TASK_TYPES.OPEN_TEXT ||
+    currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
 
   const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
@@ -4362,10 +4373,12 @@ function StudentApp() {
         </div>
     )}
 
-    {/* ── Short-answer / reading-comp inline feedback (no overlay) ── */}
+    {/* ── Short-answer / reading-comp / open-text / record-audio inline feedback (no overlay) ── */}
     {taskLocked && !isPhysicalTask &&
      (currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
-      currentTask?.taskType === TASK_TYPES.READING_COMP) &&
+      currentTask?.taskType === TASK_TYPES.READING_COMP ||
+      currentTask?.taskType === TASK_TYPES.OPEN_TEXT ||
+      currentTask?.taskType === TASK_TYPES.RECORD_AUDIO) &&
      reviewState && (
       <div style={{ marginTop: 12, width: "100%", borderRadius: 14, overflow: "hidden" }}>
         {/* Thin countdown bar at top */}
@@ -4378,17 +4391,23 @@ function StudentApp() {
               <style>{`@keyframes shrinkBarSA { from { width:100%; } to { width:0%; } }`}</style>
               <div style={{
                 height: "100%",
-                background: reviewState?.accepted ? "rgba(74,222,128,0.8)" : "rgba(239,68,68,0.7)",
+                background: (currentTask?.taskType === TASK_TYPES.RECORD_AUDIO || reviewState?.accepted)
+                  ? "rgba(74,222,128,0.8)"
+                  : "rgba(239,68,68,0.7)",
                 animation: `shrinkBarSA ${lockTotal}s linear forwards`,
               }} />
             </div>
           );
         })()}
         {/* Feedback body */}
+        {(() => {
+          const isRecordAudio = currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
+          const showGreen = isRecordAudio || reviewState?.accepted;
+          return (
         <div style={{
           padding: "12px 14px",
-          background: reviewState?.accepted ? "rgba(20,83,45,0.92)" : "rgba(30,15,15,0.88)",
-          border: reviewState?.accepted
+          background: showGreen ? "rgba(20,83,45,0.92)" : "rgba(30,15,15,0.88)",
+          border: showGreen
             ? "1px solid rgba(74,222,128,0.45)"
             : "1px solid rgba(239,68,68,0.45)",
           borderTop: "none",
@@ -4398,14 +4417,19 @@ function StudentApp() {
           display: "grid",
           gap: 6,
         }}>
-          {/* accepted / not-accepted badge */}
+          {/* accepted / not-accepted badge — varies by task type */}
           <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>
-            {reviewState?.accepted ? "✅ Accepted" : "❌ Not accepted"}
+            {currentTask?.taskType === TASK_TYPES.RECORD_AUDIO
+              ? "✅ Recording submitted"
+              : currentTask?.taskType === TASK_TYPES.OPEN_TEXT
+                ? (reviewState?.accepted ? "✅ Accepted" : "📝 Reviewed")
+                : (reviewState?.accepted ? "✅ Accepted" : "❌ Not accepted")}
           </div>
           {reviewState?.feedback && (
             <div>
-              <span style={{ fontWeight: 700 }}>What you did: </span>
-              {reviewState.feedback}
+              {currentTask?.taskType === TASK_TYPES.RECORD_AUDIO
+                ? reviewState.feedback
+                : <><span style={{ fontWeight: 700 }}>Feedback: </span>{reviewState.feedback}</>}
             </div>
           )}
           {reviewState?.hint && (
@@ -4424,6 +4448,8 @@ function StudentApp() {
             <div>{reviewState.comment}</div>
           )}
         </div>
+          );
+        })()}
       </div>
     )}
 

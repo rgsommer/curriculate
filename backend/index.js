@@ -2324,11 +2324,47 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
       // SHORT ANSWER (AI)
       if (type === "short-answer") {
+        // For multi-short packs, feedback lives inside itemResults — aggregate it
+        let aggregateFeedback = aiScore?.feedback || aiScore?.rationale || null;
+        let aggregateHint = aiScore?.hint || null;
+        let aggregateModelAnswer = aiScore?.suggestedAnswer || aiScore?.modelAnswer || null;
+
+        if (!aggregateFeedback && Array.isArray(aiScore?.itemResults) && aiScore.itemResults.length > 0) {
+          const wrong = aiScore.itemResults.filter((r) => !r.correct && r.feedback);
+          const allRight = aiScore.itemResults.every((r) => r.correct);
+          if (allRight) {
+            aggregateFeedback = "All parts correct — great work!";
+          } else if (wrong.length > 0) {
+            aggregateFeedback = wrong.map((r, i) => `${wrong.length > 1 ? `Part ${i + 1}: ` : ""}${r.feedback}`).join(" • ");
+          }
+        }
+
+        return {
+          aiSuggestedAnswer: aggregateModelAnswer,
+          aiFeedback: aggregateFeedback,
+          aiHint: aggregateHint,
+          score: aiScore?.score ?? aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+          itemResults: Array.isArray(aiScore?.itemResults) ? aiScore.itemResults : undefined,
+        };
+      }
+
+      // OPEN TEXT (AI)
+      if (type === "open-text") {
         return {
           aiSuggestedAnswer: aiScore?.suggestedAnswer || aiScore?.modelAnswer || null,
           aiFeedback: aiScore?.feedback || aiScore?.rationale || null,
+          aiHint: aiScore?.hint || null,
           score: aiScore?.score ?? aiScore?.totalScore ?? null,
           maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+        };
+      }
+
+      // RECORD AUDIO (participation)
+      if (type === "record-audio") {
+        return {
+          recorded: true,
+          aiFeedback: "Your recording was submitted successfully. Your teacher will listen to it later.",
         };
       }
 
@@ -3378,6 +3414,116 @@ if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && co
             }
           }
         }
+
+// ── OPEN TEXT fallback AI scoring (when generateAIScore had no rubric) ──
+if (!isMultiPack && task.taskType === "open-text" && pointsEarned === 0 && correct === null && !aiScore) {
+  const prompt = String(task.prompt || task.question || task.title || "").trim();
+  const studentAnswer = String(answerText ?? answer ?? "").trim();
+  const guidingQuestions = Array.isArray(task.guidingQuestions)
+    ? task.guidingQuestions.slice(0, 4).join(" | ")
+    : "";
+
+  if (!studentAnswer || studentAnswer.split(/\s+/).length < 2) {
+    correct = false;
+    pointsEarned = 0;
+    aiScore = {
+      strategy: "open-text-eval",
+      maxPoints: basePoints,
+      totalScore: 0,
+      correct: false,
+      feedback: "No response was submitted.",
+      hint: "Write at least a few sentences to earn credit.",
+    };
+  } else {
+    try {
+      const evalPrompt = `
+You are a teacher evaluating a student's written response.
+
+Grade level: ${task.gradeLevel || task?.config?.gradeLevel || "6-8"}
+
+Writing prompt:
+${prompt || "(open-ended writing task)"}
+
+${guidingQuestions ? `Guiding questions: ${guidingQuestions}\n` : ""}
+Student response:
+${studentAnswer}
+
+Return JSON ONLY in this exact shape:
+{
+  "score": number,
+  "maxPoints": number,
+  "correct": boolean,
+  "feedback": "1-2 sentences about what the student did well and/or what was missing",
+  "hint": "one constructive suggestion to improve the response",
+  "modelAnswer": "one short example of a strong response (2-3 sentences max)"
+}
+
+Rules:
+- score must be between 0 and ${basePoints}
+- Award full credit for responses that address the prompt with clear ideas and evidence.
+- Award partial credit for responses that partially address the prompt.
+- feedback must be specific to this response, not generic.
+- Encourage the student; even partial credit responses deserve acknowledgment of what they did right.
+`.trim();
+
+      const response = await openai.responses.create({
+        model: "gpt-5.4",
+        input: [{ role: "user", content: [{ type: "input_text", text: evalPrompt }] }],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "open_text_eval",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                score: { type: "number" },
+                maxPoints: { type: "number" },
+                correct: { type: "boolean" },
+                feedback: { type: "string" },
+                hint: { type: "string" },
+                modelAnswer: { type: "string" },
+              },
+              required: ["score", "maxPoints", "correct", "feedback", "hint", "modelAnswer"],
+            },
+          },
+        },
+        max_output_tokens: 280,
+      });
+
+      const parsed = safeJsonParse(response.output_text) || {};
+      const rawScore = Number(parsed?.score);
+      const boundedScore = Number.isFinite(rawScore) ? Math.max(0, Math.min(basePoints, rawScore)) : Math.round(basePoints * 0.5);
+
+      pointsEarned = boundedScore;
+      correct = parsed?.correct === true || boundedScore >= basePoints;
+
+      aiScore = {
+        strategy: "open-text-eval",
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+        correct,
+        feedback: String(parsed?.feedback || "").trim() || "Thanks for your response.",
+        hint: String(parsed?.hint || "").trim() || "Try to include more specific details.",
+        modelAnswer: String(parsed?.modelAnswer || "").trim() || "",
+      };
+    } catch (e) {
+      console.error("Open text eval failed:", e);
+      // Participation credit on error
+      correct = null;
+      pointsEarned = Math.round(basePoints * 0.5);
+      aiScore = {
+        strategy: "open-text-eval",
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+        correct: null,
+        feedback: "Your response was submitted. Good effort!",
+        hint: "Include specific details and examples to strengthen your answer.",
+      };
+    }
+  }
+}
 
 // Guess Who (yes/no deduction) – custom scoring: points scale by time + guess count
 if (!isMultiPack && task.taskType === "guess-who") {
