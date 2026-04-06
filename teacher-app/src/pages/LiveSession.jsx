@@ -438,11 +438,12 @@ useEffect(() => {
   const [tasksetLaunchProgress, setTasksetLaunchProgress] = useState(0); // 0..100
   const [tasksetLaunchAnimating, setTasksetLaunchAnimating] = useState(false);
 
-  const activeTasksetName =
+  const activeTasksetName = (
     activeTasksetMeta?.name ||
     activeTasksetMeta?.title ||
     activeTasksetMeta?.tasksetName ||
-    "Untitled set";
+    "Untitled set"
+  ).replace(/^taskset:\s*/i, "").trim();
 
   const totalTasksInActiveSet =
     (Array.isArray(activeTasksetMeta?.tasks) &&
@@ -518,7 +519,7 @@ useEffect(() => {
   const [pendingHideTaskset, setPendingHideTaskset] = useState(null);
   const [launchingTaskset, setLaunchingTaskset] = useState(false);
 
-  const [reviewPauseSeconds, setReviewPauseSeconds] = useState(15);
+  const [reviewPauseSeconds, setReviewPauseSeconds] = useState(30);
 
   const [isNarrow, setIsNarrow] = useState(
     typeof window !== "undefined" ? window.innerWidth < 900 : false
@@ -3506,6 +3507,9 @@ if (
                 <option value={10}>10 seconds</option>
                 <option value={15}>15 seconds</option>
                 <option value={20}>20 seconds</option>
+                <option value={30}>30 seconds</option>
+                <option value={45}>45 seconds</option>
+                <option value={60}>60 seconds</option>
               </select>
             </label>
           </div>

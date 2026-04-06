@@ -51,7 +51,7 @@ console.log("StudentApp Build:", BUILD_MARKER);
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
-const DEFAULT_POST_SUBMIT_SECONDS = 15;
+const DEFAULT_POST_SUBMIT_SECONDS = 30;
 
 // ---------------------------------------------------------------------
 // Shared socket instance – same host as backend

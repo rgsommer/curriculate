@@ -190,10 +190,37 @@ export function createRoomEngine(io) {
 
     const sortedTeams = [...teamIds].sort();
 
+    // Build initial round-robin assignment
+    const assignment = {}; // teamId -> stationId
     sortedTeams.forEach((teamId, index) => {
       const stationIdx = (index + room._stationRound) % stationIds.length;
-      const stationId = stationIds[stationIdx];
+      assignment[teamId] = stationIds[stationIdx];
+    });
 
+    // Guarantee movement: if any team is assigned the station they're already at
+    // (e.g. they were left there after a PMC correct-answer scan), swap them with
+    // the next team in the sorted list so everyone has to walk somewhere new.
+    if (sortedTeams.length > 1) {
+      for (let i = 0; i < sortedTeams.length; i++) {
+        const teamId = sortedTeams[i];
+        const team = room.teams[teamId];
+        if (!team) continue;
+        // "already at" means currentStationId OR the last PMC correct-answer station
+        const stuckAt = team.currentStationId || team.lastScannedStationId || null;
+        if (stuckAt && assignment[teamId] === stuckAt) {
+          // Swap with the next team (wrapping)
+          const swapIdx = (i + 1) % sortedTeams.length;
+          const swapId = sortedTeams[swapIdx];
+          const tmp = assignment[teamId];
+          assignment[teamId] = assignment[swapId];
+          assignment[swapId] = tmp;
+        }
+      }
+    }
+
+    // Apply assignment
+    sortedTeams.forEach((teamId) => {
+      const stationId = assignment[teamId];
       const team = room.teams[teamId];
       if (!team) return;
 
@@ -216,6 +243,15 @@ export function createRoomEngine(io) {
     const current = team.currentStationId || null;
     const lastScanned = team.lastScannedStationId || null;
 
+    // Helper: check if a station ID matches a given station reference (ID or color name)
+    const stationMatches = (stationId, ref) => {
+      if (!ref) return false;
+      if (stationId === ref) return true;
+      // Also compare by color — handles the case where lastScanned was stored as a color name
+      const stationColor = String(room.stations?.[stationId]?.color || "").toLowerCase();
+      return stationColor && stationColor === ref.toLowerCase();
+    };
+
     // Stations occupied by OTHER teams
     const occupiedByOthers = new Set(
       Object.entries(room.stations || {})
@@ -224,13 +260,13 @@ export function createRoomEngine(io) {
     );
 
     // Best candidates:
-    // - not current
-    // - not last scanned
+    // - not current (by ID or color)
+    // - not last scanned (by ID or color — covers PMC correct-answer color fallback)
     // - not occupied by others
     let candidates = stationIds.filter(
       (id) =>
-        id !== current &&
-        id !== lastScanned &&
+        !stationMatches(id, current) &&
+        !stationMatches(id, lastScanned) &&
         !occupiedByOthers.has(id)
     );
 
@@ -238,14 +274,14 @@ export function createRoomEngine(io) {
     if (candidates.length === 0) {
       candidates = stationIds.filter(
         (id) =>
-          id !== current &&
+          !stationMatches(id, current) &&
           !occupiedByOthers.has(id)
       );
     }
 
     // Fallback 2: anything except current
     if (candidates.length === 0) {
-      candidates = stationIds.filter((id) => id !== current);
+      candidates = stationIds.filter((id) => !stationMatches(id, current));
     }
 
     // Final fallback

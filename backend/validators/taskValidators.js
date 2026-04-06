@@ -618,8 +618,20 @@ export function normalizeTaskByType(taskType, rawTask) {
     }
 
     case TASK_TYPES.MATCHING: {
-      if (Array.isArray(task.config?.pairs)) {
-        const pairs = task.config.pairs.filter(isObject);
+      const cfg = isObject(task.config) ? task.config : (task.config = {});
+
+      // Helper: convert a string[] or object[] into our {id, text} format
+      const normItems = (arr, prefix) =>
+        arr.map((x, i) => {
+          if (typeof x === "string") return { id: `${prefix}${i + 1}`, text: x.trim() };
+          const obj = isObject(x) ? x : {};
+          const text = asNonEmptyString(obj.text, asNonEmptyString(obj.label, asNonEmptyString(obj.term, asNonEmptyString(obj.name, ""))));
+          return { id: asNonEmptyString(obj.id, `${prefix}${i + 1}`), text };
+        }).filter((x) => x.text);
+
+      if (Array.isArray(cfg.pairs) && cfg.pairs.length > 0) {
+        // config.pairs: [{left, right}]
+        const pairs = cfg.pairs.filter(isObject);
         const leftItems = pairs
           .map((p, i) => ({ id: `L${i + 1}`, text: asNonEmptyString(p.left, "") }))
           .filter((x) => x.text);
@@ -631,22 +643,44 @@ export function normalizeTaskByType(taskType, rawTask) {
         task.leftItems = leftItems;
         task.rightItems = rightItems;
         task.correctMatches = correctMatches;
+      } else if (Array.isArray(cfg.leftItems) && cfg.leftItems.length > 0) {
+        // config.leftItems / config.rightItems / config.correctMatches
+        task.leftItems = normItems(cfg.leftItems, "L");
+        task.rightItems = normItems(Array.isArray(cfg.rightItems) ? cfg.rightItems : [], "R");
+        const rawCm = isObject(cfg.correctMatches) ? cfg.correctMatches : {};
+        // Re-key: if AI used plain text labels as keys, map them to generated IDs
+        const leftByText = Object.fromEntries(task.leftItems.map((x) => [x.text.toLowerCase(), x.id]));
+        const rightByText = Object.fromEntries(task.rightItems.map((x) => [x.text.toLowerCase(), x.id]));
+        const rightById = new Set(task.rightItems.map((x) => x.id));
+        const leftById = new Set(task.leftItems.map((x) => x.id));
+        const correctMatches = {};
+        for (const [k, v] of Object.entries(rawCm)) {
+          const leftId = leftById.has(k) ? k : (leftByText[k.toLowerCase()] || null);
+          const rightId = rightById.has(v) ? v : (rightByText[String(v).toLowerCase()] || null);
+          if (leftId && rightId) correctMatches[leftId] = rightId;
+        }
+        task.correctMatches = correctMatches;
       } else {
-        task.leftItems = Array.isArray(task.leftItems) ? task.leftItems : [];
-        task.rightItems = Array.isArray(task.rightItems) ? task.rightItems : [];
-        task.correctMatches = isObject(task.correctMatches) ? task.correctMatches : {};
-        task.leftItems = task.leftItems
-          .map((it, i) => {
-            const obj = isObject(it) ? { ...it } : {};
-            return { id: asNonEmptyString(obj.id, `L${i + 1}`), text: asNonEmptyString(obj.text, asNonEmptyString(obj.prompt, "")) };
-          })
-          .filter((x) => x.text);
-        task.rightItems = task.rightItems
-          .map((it, i) => {
-            const obj = isObject(it) ? { ...it } : {};
-            return { id: asNonEmptyString(obj.id, `R${i + 1}`), text: asNonEmptyString(obj.text, asNonEmptyString(obj.prompt, "")) };
-          })
-          .filter((x) => x.text);
+        // Root-level leftItems / rightItems (AI output or direct schema)
+        task.leftItems = normItems(Array.isArray(task.leftItems) ? task.leftItems : [], "L");
+        task.rightItems = normItems(Array.isArray(task.rightItems) ? task.rightItems : [], "R");
+        // correctMatches: accept {L1:R1} or text-keyed maps
+        const rawCm2 = isObject(task.correctMatches) ? task.correctMatches : {};
+        if (Object.keys(rawCm2).length > 0) {
+          const leftByText2 = Object.fromEntries(task.leftItems.map((x) => [x.text.toLowerCase(), x.id]));
+          const rightByText2 = Object.fromEntries(task.rightItems.map((x) => [x.text.toLowerCase(), x.id]));
+          const rightById2 = new Set(task.rightItems.map((x) => x.id));
+          const leftById2 = new Set(task.leftItems.map((x) => x.id));
+          const cm2 = {};
+          for (const [k, v] of Object.entries(rawCm2)) {
+            const leftId = leftById2.has(k) ? k : (leftByText2[k.toLowerCase()] || null);
+            const rightId = rightById2.has(v) ? v : (rightByText2[String(v).toLowerCase()] || null);
+            if (leftId && rightId) cm2[leftId] = rightId;
+          }
+          task.correctMatches = cm2;
+        } else {
+          task.correctMatches = {};
+        }
       }
 
       while (task.leftItems.length < 5) {
@@ -1202,31 +1236,52 @@ export function normalizeTaskByType(taskType, rawTask) {
     }
 
     case TASK_TYPES.DRAW_MIME: {
-      // The clue shown to the performer must be a short word/phrase (≤ 60 chars).
-      // Prevent the AI from accidentally stuffing a full sort/categorize instruction here.
-      const rawPrompt = String(task.prompt || task.config?.prompt || "").trim();
+      // Helper: detect clues that look like they belong to another task type
+      const _isBadClue = (s) => {
+        if (!s || s.length > 80) return true;
+        return /^sort the|^arrange|^sequence|^order the|^match the/i.test(s) ||
+               /categorize|category|categories/i.test(s);
+      };
 
-      const looksLikeWrongTaskPrompt =
-        rawPrompt.length > 80 ||                            // way too long for a mime clue
-        /^sort the/i.test(rawPrompt) ||                    // sort-task leakage
-        /categorize|category|categories/i.test(rawPrompt) ||
-        /match the following/i.test(rawPrompt) ||
-        /^arrange|^sequence|^order the/i.test(rawPrompt);
+      // Helper: try to salvage a bad clue string
+      const _salvageClue = (s) => {
+        const quoted = s.match(/'([^']+)'/g);
+        if (quoted && quoted.length) return quoted[0].replace(/'/g, "").trim();
+        return s.slice(0, 60).trim();
+      };
 
-      if (looksLikeWrongTaskPrompt) {
-        // Try to salvage: if the prompt lists quoted words, take the first one
-        const quotedWords = rawPrompt.match(/'([^']+)'/g);
-        if (quotedWords && quotedWords.length) {
-          task.prompt = quotedWords[0].replace(/'/g, "").trim();
-        } else {
-          // Last resort: truncate to 60 chars
-          task.prompt = rawPrompt.slice(0, 60).trim();
-        }
-        console.warn(`[validateDrawMime] Repaired malformed draw-mime prompt: "${rawPrompt}" → "${task.prompt}"`);
+      // --- Normalise clues array ---
+      let clues = Array.isArray(task.clues)
+        ? task.clues.map((c) => String(c || "").trim()).filter(Boolean)
+        : [];
+
+      // Also check config.clues
+      if (!clues.length && Array.isArray(task.config?.clues)) {
+        clues = task.config.clues.map((c) => String(c || "").trim()).filter(Boolean);
       }
 
-      // Ensure prompt is never empty
-      if (!task.prompt) task.prompt = task.title || "Draw or Mime";
+      // If still empty, seed from task.prompt
+      if (!clues.length) {
+        const p = String(task.prompt || task.config?.prompt || "").trim();
+        clues = p ? [p] : [];
+      }
+
+      // Sanitise each clue
+      clues = clues.map((c) => {
+        if (_isBadClue(c)) {
+          const fixed = _salvageClue(c);
+          console.warn(`[validateDrawMime] Repaired clue: "${c}" → "${fixed}"`);
+          return fixed;
+        }
+        return c;
+      }).filter(Boolean);
+
+      // Ensure between 1 and 4 clues
+      if (!clues.length) clues = [task.title || "Draw or Mime"];
+      task.clues = clues.slice(0, 4);
+
+      // Keep task.prompt in sync with first clue (backward compat)
+      task.prompt = task.clues[0];
       break;
     }
 

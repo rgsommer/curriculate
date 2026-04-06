@@ -66,6 +66,20 @@ export default function DrawMimeTask({
   const [timeLeft, setTimeLeft] = useState(durationSeconds);
   const [mode, setMode] = useState("draw"); // "draw" | "mime"
 
+  // ── Clues for each round (1–4) ──
+  const clues = useMemo(() => {
+    const arr = Array.isArray(task?.clues) && task.clues.length > 0
+      ? task.clues.map((c) => String(c || "").trim()).filter(Boolean)
+      : null;
+    const single = String(task?.prompt || "").trim() || "Draw or Mime";
+    return arr || [single];
+  }, [task]);
+
+  const [roundIndex, setRoundIndex] = useState(0);
+  const totalRounds = clues.length;           // 1–4
+  const currentClue = clues[Math.min(roundIndex, clues.length - 1)];
+  const isLastRound = roundIndex >= totalRounds - 1;
+
   // ── Wizard phase state ──
   // mode → howtoplay → pass → clue → active → timeout → reveal → rate → done
   const [phase, setPhase] = useState("mode");
@@ -251,11 +265,24 @@ export default function DrawMimeTask({
     setPhase("reveal");
   };
 
-  // Called from the "done" phase — submits and resets for a potential next round.
+  // Called from the "done" phase.
+  // If more rounds remain → advance to next round without submitting.
+  // On the final round → submit the task result.
   const finishRound = () => {
     const payload = pendingResult || { type: mode, completed: true };
-    onSubmit?.(payload);
-    nextPerformer();
+
+    if (isLastRound) {
+      // All rounds done — submit once
+      onSubmit?.({ ...payload, roundIndex, totalRounds, allRoundsDone: true });
+      // Reset round counter for if the task somehow restarts
+      setRoundIndex(0);
+      setPerformerIdx(0);
+    } else {
+      // Advance to the next clue / performer without submitting
+      setRoundIndex((r) => r + 1);
+      nextPerformer();
+    }
+
     setPhase("mode");
     setPendingResult(null);
     setRatings({});
@@ -536,7 +563,7 @@ export default function DrawMimeTask({
     endRound({ guessedBy: null, guessedBySide: null, reason: "manual" });
   };
 
-  const prompt = task?.prompt || "Draw with feeling!";
+  const prompt = currentClue;
 
   // Performer taps GO — start timer and move to active phase.
   const handleGo = async () => {
@@ -582,10 +609,17 @@ export default function DrawMimeTask({
           {phase === "mode" && (
             <motion.div key="mode" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 32, textAlign: "center" }}>
+              {totalRounds > 1 && (
+                <div style={{ fontSize: "0.85rem", fontWeight: 700, opacity: 0.65, letterSpacing: 1, textTransform: "uppercase" }}>
+                  Round {roundIndex + 1} of {totalRounds}
+                </div>
+              )}
               <div style={{ fontSize: "3rem", fontWeight: 900, textShadow: "0 4px 16px rgba(0,0,0,0.3)" }}>
                 DRAW OR MIME IT!
               </div>
-              <div style={{ fontSize: "1.3rem", opacity: 0.85 }}>Choose your mode for this round:</div>
+              <div style={{ fontSize: "1.3rem", opacity: 0.85 }}>
+                {performer?.name ? `${performer.name}, choose your mode:` : "Choose your mode for this round:"}
+              </div>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap", justifyContent: "center" }}>
                 <motion.button whileTap={{ scale: 0.94 }} style={{ ...bigBtn("#3b82f6", "#fff"), minWidth: 160, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
                   onClick={() => { setMode("draw"); setPhase("howtoplay"); }}>
@@ -795,7 +829,9 @@ export default function DrawMimeTask({
             <motion.div key="done" variants={pv} initial="initial" animate="animate" exit="exit"
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 20, textAlign: "center" }}>
               <div style={{ fontSize: "3rem" }}>🎉</div>
-              <div style={{ fontSize: "2rem", fontWeight: 900 }}>Round Complete!</div>
+              <div style={{ fontSize: "2rem", fontWeight: 900 }}>
+                {totalRounds > 1 ? `Round ${roundIndex + 1} Complete!` : "Round Complete!"}
+              </div>
               {topRatingEmoji && (
                 <div style={{ fontSize: "1.4rem", opacity: 0.85 }}>
                   The crowd says: {topRatingEmoji} {[
@@ -808,9 +844,15 @@ export default function DrawMimeTask({
                 <span>Left: {scoreLeft}</span>
                 <span>Right: {scoreRight}</span>
               </div>
-              <motion.button whileTap={{ scale: 0.95 }} style={{ ...bigBtn("#22c55e", "#000"), fontSize: "1.8rem" }}
+              {!isLastRound && (
+                <div style={{ fontSize: "1rem", opacity: 0.7, marginTop: -8 }}>
+                  Pass the device to the next player for Round {roundIndex + 2}
+                </div>
+              )}
+              <motion.button whileTap={{ scale: 0.95 }}
+                style={{ ...bigBtn(isLastRound ? "#22c55e" : "#f59e0b", isLastRound ? "#000" : "#000"), fontSize: "1.8rem" }}
                 onClick={finishRound}>
-                Finish ✓
+                {isLastRound ? "Finish ✓" : `Round ${roundIndex + 2} →`}
               </motion.button>
             </motion.div>
           )}

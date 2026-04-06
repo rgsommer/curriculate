@@ -980,7 +980,7 @@ export default function TaskSets() {
             const blooms = listReport ? extractBloomsLabel(listReport) : "";
 
             const secondLineParts = [
-              subject && subject,
+              subject && subject.toLowerCase() !== title.toLowerCase() && subject,
               grade && `Grade ${grade}`,
               `${count} task${count === 1 ? "" : "s"}`,
               blooms ? `Bloom's ${blooms}` : "",

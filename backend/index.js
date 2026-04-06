@@ -3938,8 +3938,11 @@ if (!isMultiPack && task.taskType === "guess-who") {
 
       if (pmcLast && room.teams?.[effectiveTeamId]) {
         const normalized = normalizeStationId(pmcLast, room);
-        if (normalized?.id) {
-          room.teams[effectiveTeamId].lastScannedStationId = normalized.id;
+        // Use the canonical station ID if found; otherwise fall back to the raw
+        // color string so reassignStationForTeam can still exclude it by color.
+        const excludeId = normalized?.id || normalized?.color || pmcLast.toLowerCase().trim() || null;
+        if (excludeId) {
+          room.teams[effectiveTeamId].lastScannedStationId = excludeId;
         }
       }
     }
@@ -3968,7 +3971,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
           review,
           nextStationId: nextStationNorm?.id || nextStation,
           nextStationColor: nextStationNorm?.color || null,
-          postSubmitSeconds: 8,
+          postSubmitSeconds: Number(task?.reviewPauseSeconds) > 0 ? Number(task.reviewPauseSeconds) : 30,
         });
       } catch (ackErr) {
         console.error("[handleStudentSubmit] ack failed:", ackErr);

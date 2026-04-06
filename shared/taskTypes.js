@@ -481,34 +481,52 @@ Undo supported; objective-scored via a left→right map.
 AI generation / schema hints (for aiTaskSetGenerator):
 taskType: "matching"
 title: short (3–7 words)
-prompt: concise (UI explains)
-config: {
-  leftItems: string[],        // 5–7
-  rightItems: string[],       // 5–7 (may be shuffled by client)
-  correctMatches: {           // exact map of left item -> right item
-    [left: string]: right: string
-  }
+prompt: concise student instruction
+leftItems: string[]          // 6 plain strings at ROOT level (not inside config)
+rightItems: string[]         // 6 plain strings at ROOT level
+correctMatches: {            // keys L1–L6, values R1–R6 at ROOT level
+  "L1": "R1", "L2": "R2", ...
 }
+NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
 
 `,
   
     aiPrompt: `
-    Generate ONE Curriculate task object with taskType "matching".
-    
+    Generate ONE Curriculate task object with taskType “matching”.
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create a matching task with at least 6 pairs (leftItems and rightItems). Each left item must match exactly one right item. Keep pairs same “type” (term→definition, person→role, etc.).
-    
+    - Create exactly 6 pairs connecting left items to right items (term→definition, person→role, cause→effect, etc.).
+    - NEVER use fields named “options”, “items”, “pairs”, or “answers”. Use ONLY the exact field names shown below.
+
+    REQUIRED OUTPUT FORMAT (use this exact structure, no deviations):
+    {
+      “taskType”: “matching”,
+      “title”: “short title (3-7 words)”,
+      “prompt”: “Connect each item on the left to its match on the right.”,
+      “leftItems”: [“Term A”, “Term B”, “Term C”, “Term D”, “Term E”, “Term F”],
+      “rightItems”: [“Definition A”, “Definition B”, “Definition C”, “Definition D”, “Definition E”, “Definition F”],
+      “correctMatches”: {
+        “L1”: “R1”,
+        “L2”: “R2”,
+        “L3”: “R3”,
+        “L4”: “R4”,
+        “L5”: “R5”,
+        “L6”: “R6”
+      }
+    }
+
+    Rules for correctMatches: use keys L1–L6 (matching index in leftItems) and values R1–R6 (matching index in rightItems). Each left item matches exactly one right item.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - Do NOT wrap items in objects; leftItems and rightItems must be plain string arrays.
+    - Do NOT use “config” wrapper; all fields at root level.
+    - Ensure all 6 L/R keys appear in correctMatches.
     `,
 },
 
@@ -2387,25 +2405,36 @@ IMPORTANT:
         
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "draw-mime".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
-    - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
+    - Include non-empty root fields: taskType, title, prompt, clues.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Choose ONE classroom-safe concept/term (a single word or very short phrase, ≤ 5 words) that can be drawn OR acted out without speaking.
-    - Put ONLY that word/phrase in task.prompt. Examples: "gravity", "photosynthesis", "Abraham Lincoln", "forgiveness".
-    - Do NOT put sort instructions, category lists, or multi-step instructions in task.prompt.
-    - task.prompt must NEVER start with "Sort", "Arrange", "Match", "Categorize", or contain quoted lists of items.
+    - This task has UP TO 4 ROUNDS — one per player. Each player will secretly choose to either DRAW or MIME their clue.
+    - Generate EXACTLY 4 unique clues, one per round, in the "clues" array.
+    - Each clue must be a single word or very short phrase (≤ 5 words) that can be drawn OR mimed without speaking.
+    - All 4 clues should relate to the subject/topic of the taskset.
+    - Good examples: "gravity", "photosynthesis", "forgiveness", "Abraham Lincoln", "water cycle"
+    - Set task.prompt to clues[0] (the first clue) for backward compatibility.
     - Optionally set timeLimitSeconds to 60.
 
-    Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - task.prompt is the SECRET CLUE for the performer — one word or short phrase only.
+    CRITICAL — clues must NEVER:
+    - Be sort instructions, category lists, or multi-step instructions
+    - Start with "Sort", "Arrange", "Match", "Categorize"
+    - Contain quoted lists of items or definitions
+    - Each clue must stand alone as a drawable/actable concept
+
+    Output format example:
+    {
+      "taskType": "draw-mime",
+      "title": "Draw or Mime: Key Concepts",
+      "prompt": "photosynthesis",
+      "clues": ["photosynthesis", "gravity", "water cycle", "food chain"],
+      "timeLimitSeconds": 60
+    }
     `,
 },
 
