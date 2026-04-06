@@ -4373,10 +4373,11 @@ function StudentApp() {
         </div>
     )}
 
-    {/* ── Short-answer / reading-comp / open-text / record-audio inline feedback (no overlay) ── */}
+    {/* ── Short-answer / open-text / record-audio inline feedback (no overlay) ──
+         NOTE: reading-comp is intentionally excluded here — ReadingCompTask renders
+         its own "What we noticed" feedback box inside the task component. ── */}
     {taskLocked && !isPhysicalTask &&
      (currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
-      currentTask?.taskType === TASK_TYPES.READING_COMP ||
       currentTask?.taskType === TASK_TYPES.OPEN_TEXT ||
       currentTask?.taskType === TASK_TYPES.RECORD_AUDIO) &&
      reviewState && (

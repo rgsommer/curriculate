@@ -3267,6 +3267,65 @@ socket.on("station:scan", handleStationScan);
       }
     }
 
+    // ── READING-COMP: use the pre-checked decision from the frontend ──
+    // ReadingCompTask calls /api/tasks/reading-comp/check BEFORE submitting and
+    // bundles the result in answer.comprehensionCheck.  We trust that result here
+    // so the student's score matches the feedback they already saw on-screen.
+    if (!isMultiPack && task.taskType === "reading-comp") {
+      const cc = answer?.comprehensionCheck || {};
+      const decision = String(cc?.decision || "").toLowerCase();
+      const feedback  = String(cc?.feedback  || "").trim();
+      const reason    = String(cc?.reason    || "").trim();
+
+      if (decision === "accept") {
+        correct       = true;
+        pointsEarned  = basePoints;
+        aiScore = {
+          strategy:   "reading-comp-check",
+          decision:   "accept",
+          reason,
+          totalScore: pointsEarned,
+          maxPoints:  basePoints,
+          feedback:   feedback || "Great — you showed understanding of the main idea.",
+        };
+      } else if (decision === "followup_answered") {
+        // Student answered the follow-up question — full credit
+        correct       = true;
+        pointsEarned  = basePoints;
+        aiScore = {
+          strategy:   "reading-comp-check",
+          decision:   "followup_answered",
+          reason,
+          totalScore: pointsEarned,
+          maxPoints:  basePoints,
+          feedback:   feedback || "Good — you clarified your understanding.",
+        };
+      } else if (decision === "followup") {
+        // Needed a follow-up — partial credit; student engaged but wasn't fully clear
+        correct       = null;   // not wrong, just incomplete
+        pointsEarned  = Math.round(basePoints * 0.5);
+        aiScore = {
+          strategy:   "reading-comp-check",
+          decision:   "followup",
+          reason,
+          totalScore: pointsEarned,
+          maxPoints:  basePoints,
+          feedback:   feedback || "You had the right idea — try to include the main point more clearly.",
+        };
+      } else {
+        // No comprehensionCheck payload (e.g. submitted without the check) — award participation
+        correct       = null;
+        pointsEarned  = Math.round(basePoints * 0.5);
+        aiScore = {
+          strategy:   "reading-comp-check",
+          decision:   "unknown",
+          totalScore: pointsEarned,
+          maxPoints:  basePoints,
+          feedback:   "Response submitted.",
+        };
+      }
+    }
+
     // Non-multi SHORT_ANSWER
 if (!isMultiPack && task.taskType === "short-answer" && pointsEarned === 0 && correct === null) {
   const question = String(

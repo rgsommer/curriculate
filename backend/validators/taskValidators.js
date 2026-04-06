@@ -244,9 +244,20 @@ export function normalizeTaskByType(taskType, rawTask) {
   // Inject taskType if missing
   if (!task.taskType && taskType) task.taskType = taskType;
 
+  // Strip leaked generation-context footers (e.g. "\n\nSettings: { gradeLevel: 7, ... }")
+  // These sometimes appear when the AI echoes its own prompt context back into a field.
+  function stripGenerationFooter(s) {
+    if (typeof s !== "string") return s;
+    return s
+      .replace(/\n+Settings\s*:\s*\{[^}]*\}\s*$/i, "")
+      .replace(/\n+Context\s*:\s*\{[^}]*\}\s*$/i, "")
+      .replace(/\n+Grade\s*level\s*:\s*\d+.*$/i, "")
+      .trim();
+  }
+
   // Normalize common fields
-  task.title = asNonEmptyString(task.title, asNonEmptyString(task.name, ""));
-  task.prompt = asNonEmptyString(task.prompt, asNonEmptyString(task.instructions, ""));
+  task.title = asNonEmptyString(stripGenerationFooter(task.title), asNonEmptyString(stripGenerationFooter(task.name), ""));
+  task.prompt = asNonEmptyString(stripGenerationFooter(task.prompt), asNonEmptyString(stripGenerationFooter(task.instructions), ""));
   if (!isObject(task.config)) task.config = {};
 
   // Guarantee required top-level fields
