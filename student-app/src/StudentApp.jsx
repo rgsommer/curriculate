@@ -2464,11 +2464,15 @@ function StudentApp() {
     !!currentTask?.config?.isPhysical ||
     currentTask?.category === "PHYSICAL";
 
-  // MC & TF review is handled entirely inside TaskRunner (green/red highlights).
-  // Suppress the StudentApp lock overlay for these types so we don't get ghosted double-rendering.
+  // MC, TF, short-answer, and reading-comp review is handled inline — not via the floating overlay.
+  // MC/TF: TaskRunner shows green/red highlights.
+  // Short-answer/reading-comp: feedback shows inline below the answer boxes.
+  // Suppress the StudentApp lock overlay for all these types to avoid ghosted double-rendering.
   const taskRunnerOwnsReview =
     currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
-    currentTask?.taskType === TASK_TYPES.TRUE_FALSE;
+    currentTask?.taskType === TASK_TYPES.TRUE_FALSE ||
+    currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
+    currentTask?.taskType === TASK_TYPES.READING_COMP;
 
   const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
@@ -4338,6 +4342,71 @@ function StudentApp() {
         </div>
     )}
 
+    {/* ── Short-answer / reading-comp inline feedback (no overlay) ── */}
+    {taskLocked && !isPhysicalTask &&
+     (currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
+      currentTask?.taskType === TASK_TYPES.READING_COMP) &&
+     reviewState && (
+      <div style={{ marginTop: 12, width: "100%", borderRadius: 14, overflow: "hidden" }}>
+        {/* Thin countdown bar at top */}
+        {postSubmitSecondsLeft != null && (() => {
+          const lockTotal = typeof reviewState?.secondsLeft === "number"
+            ? reviewState.secondsLeft
+            : DEFAULT_POST_SUBMIT_SECONDS;
+          return (
+            <div style={{ height: 3, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
+              <style>{`@keyframes shrinkBarSA { from { width:100%; } to { width:0%; } }`}</style>
+              <div style={{
+                height: "100%",
+                background: reviewState?.accepted ? "rgba(74,222,128,0.8)" : "rgba(239,68,68,0.7)",
+                animation: `shrinkBarSA ${lockTotal}s linear forwards`,
+              }} />
+            </div>
+          );
+        })()}
+        {/* Feedback body */}
+        <div style={{
+          padding: "12px 14px",
+          background: reviewState?.accepted ? "rgba(20,83,45,0.92)" : "rgba(30,15,15,0.88)",
+          border: reviewState?.accepted
+            ? "1px solid rgba(74,222,128,0.45)"
+            : "1px solid rgba(239,68,68,0.45)",
+          borderTop: "none",
+          color: "#fff",
+          fontSize: "0.9rem",
+          lineHeight: 1.5,
+          display: "grid",
+          gap: 6,
+        }}>
+          {/* accepted / not-accepted badge */}
+          <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>
+            {reviewState?.accepted ? "✅ Accepted" : "❌ Not accepted"}
+          </div>
+          {reviewState?.feedback && (
+            <div>
+              <span style={{ fontWeight: 700 }}>What you did: </span>
+              {reviewState.feedback}
+            </div>
+          )}
+          {reviewState?.hint && (
+            <div>
+              <span style={{ fontWeight: 700 }}>Next step: </span>
+              {reviewState.hint}
+            </div>
+          )}
+          {reviewState?.modelAnswer && (
+            <div style={{ opacity: 0.85, fontStyle: "italic" }}>
+              <span style={{ fontWeight: 700, fontStyle: "normal" }}>Example: </span>
+              {reviewState.modelAnswer}
+            </div>
+          )}
+          {!reviewState?.feedback && !reviewState?.hint && !reviewState?.modelAnswer && reviewState?.comment && (
+            <div>{reviewState.comment}</div>
+          )}
+        </div>
+      </div>
+    )}
+
     {taskLocked && !isPhysicalTask && !taskRunnerOwnsReview && (
       <div className="task-locked-overlay">
         <style>{`
@@ -4700,74 +4769,6 @@ function StudentApp() {
             return null;
           })()}
 
-          {(currentTask?.taskType === TASK_TYPES.SHORT_ANSWER ||
-            currentTask?.taskType === TASK_TYPES.READING_COMP) && (
-            <div
-              style={{
-                marginTop: 12,
-                width: "100%",
-                background: "rgba(255,255,255,0.14)",
-                border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: 12,
-                padding: 12,
-                textAlign: "left",
-              }}
-            >
-              {typeof reviewState?.correct === "boolean" && (
-                <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                  {reviewState?.accepted ? "✅ Accepted" : "❌ Not correct"}
-                </div>
-              )}
-
-              {(reviewState?.feedback ||
-                reviewState?.hint ||
-                reviewState?.modelAnswer ||
-                reviewState?.comment) && (
-                  <div
-                    style={{
-                      background: reviewState?.accepted ? "#14532d" : "#111827",
-                      border: reviewState?.accepted ? "2px solid #4ade80" : "2px solid #ef4444",
-                      color: "#ffffff",
-                      lineHeight: 1.4,
-                      padding: 12,
-                      borderRadius: 12,
-                      marginTop: 10,
-                    }}
-                  >
-                    <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                      Feedback
-                    </div>
-
-                    <div style={{ display: "grid", gap: 6 }}>
-                      {reviewState?.feedback && (
-                        <div>
-                          <strong>What you did:</strong> {reviewState.feedback}
-                        </div>
-                      )}
-
-                      {reviewState?.hint && (
-                        <div>
-                          <strong>Next step:</strong> {reviewState.hint}
-                        </div>
-                      )}
-
-                      {reviewState?.modelAnswer && (
-                        <div>
-                          <strong>Example answer:</strong> {reviewState.modelAnswer}
-                        </div>
-                      )}
-
-                      {!reviewState?.feedback &&
-                      !reviewState?.hint &&
-                      !reviewState?.modelAnswer &&
-                      reviewState?.comment && (
-                        <div>{reviewState.comment}</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-            </div>
-          )}
           </div>
         )}
         </section>
