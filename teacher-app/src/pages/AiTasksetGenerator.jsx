@@ -1127,7 +1127,7 @@ export default function AiTasksetGenerator() {
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
             <input type="checkbox" checked={limitTasks} onChange={(e) => setLimitTasks(e.target.checked)} />
             <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
-              Limit which task types the AI can use
+              Limit which task types to include
             </span>
           </label>
 
