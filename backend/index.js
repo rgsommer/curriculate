@@ -4269,11 +4269,12 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       socket.emit("tasksetLoaded", {
         roomCode: code,
         tasksetId: String(tasksetDoc._id),
-        name:
+        name: (
           tasksetDoc.name ||
           tasksetDoc.title ||
           tasksetDoc.tasksetName ||
-          "Untitled set",
+          "Untitled set"
+        ).replace(/^taskset:\s*/i, "").trim(),
         numTasks: tasks.length,
         subject: tasksetDoc.subject || "",
         gradeLevel: tasksetDoc.gradeLevel || "",

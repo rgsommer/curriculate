@@ -568,7 +568,7 @@ export function createRoomEngine(io) {
       scores,
       taskIndex: overallTaskIndex,
       totalTasks: Array.isArray(room.taskset?.tasks) ? room.taskset.tasks.length : 0,
-      tasksetName: room.taskset?.name || room.taskset?.title || "",
+      tasksetName: (room.taskset?.name || room.taskset?.title || "").replace(/^taskset:\s*/i, "").trim(),
       startedAt: room.startedAt || null,
       isActive: !!room.isActive,
       selectedRooms: Array.isArray(room.selectedRooms) ? room.selectedRooms : [],

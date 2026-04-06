@@ -40,14 +40,19 @@ function safeStr(v) {
   return String(v ?? "").trim();
 }
 
+function stripTasksetPrefix(s) {
+  // Remove legacy "Taskset: " prefix that was hardcoded in older versions
+  return s.replace(/^taskset:\s*/i, "").trim();
+}
+
 function getTitle(ts) {
-  return (
+  const raw =
     safeStr(ts?.title) ||
     safeStr(ts?.name) ||
     safeStr(ts?.tasksetTitle) ||
     safeStr(ts?.tasksetName) ||
-    "Task Set"
-  );
+    "Task Set";
+  return stripTasksetPrefix(raw);
 }
 
 function getSubject(ts) {
