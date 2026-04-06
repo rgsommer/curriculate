@@ -1666,10 +1666,16 @@ function StudentApp() {
         }
       }
 
+      const resolvedTaskId =
+        currentTask?._id ||
+        currentTask?.id ||
+        currentTask?.taskId ||
+        (typeof currentTaskIndex === "number" ? `task-${currentTaskIndex}` : null);
+
       const payload = {
         roomCode: roomCode.trim().toUpperCase(),
         teamId,
-        taskId: currentTask._id || currentTask.id,
+        taskId: resolvedTaskId,
         taskIndex:
           typeof currentTaskIndex === "number" && currentTaskIndex >= 0
             ? currentTaskIndex
@@ -2457,6 +2463,12 @@ function StudentApp() {
     !!currentTask?.isPhysical ||
     !!currentTask?.config?.isPhysical ||
     currentTask?.category === "PHYSICAL";
+
+  // MC & TF review is handled entirely inside TaskRunner (green/red highlights).
+  // Suppress the StudentApp lock overlay for these types so we don't get ghosted double-rendering.
+  const taskRunnerOwnsReview =
+    currentTask?.taskType === TASK_TYPES.MULTIPLE_CHOICE ||
+    currentTask?.taskType === TASK_TYPES.TRUE_FALSE;
 
   const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
@@ -4326,7 +4338,7 @@ function StudentApp() {
         </div>
     )}
 
-    {taskLocked && !isPhysicalTask && (
+    {taskLocked && !isPhysicalTask && !taskRunnerOwnsReview && (
       <div className="task-locked-overlay">
         <style>{`
           @keyframes matchPopIn {
@@ -4542,8 +4554,12 @@ function StudentApp() {
             );
           })()}
 
-          {/* ✅ Objective answer key + per-item correctness overlay */}
-          {isObjectiveTask(currentTask) && currentTask?.taskType !== "matching" && (() => {
+          {/* ✅ Objective answer key + per-item correctness overlay
+               Skip MC & TF — TaskRunner already highlights correct/incorrect in review mode */}
+          {isObjectiveTask(currentTask) &&
+           currentTask?.taskType !== "matching" &&
+           currentTask?.taskType !== "multiple-choice" &&
+           currentTask?.taskType !== "true-false" && (() => {
             const task = currentTask;
             const taskType = task?.taskType || task?.type;
             const submission = reviewState?.studentAnswer;

@@ -2851,18 +2851,6 @@ socket.on("station:scan", handleStationScan);
       }
     }
 
-  console.log("[handleStudentSubmit pre-room-check]", {
-    roomCode,
-    code: (roomCode || "").toUpperCase(),
-    hasRoom: !!rooms[(roomCode || "").toUpperCase()],
-    hasTaskset: !!rooms[(roomCode || "").toUpperCase()]?.taskset,
-    knownRooms: Object.keys(rooms || {}),
-    teamId,
-    taskIndex,
-    answer,
-    answerType: typeof answer,
-  });
-
   const code = (roomCode || "").toUpperCase();
   const room = rooms[code];
   if (!room || !room.taskset) {
@@ -3686,7 +3674,12 @@ if (!isMultiPack && task.taskType === "guess-who") {
         (Array.isArray(answer?.data?.photos) ? answer.data.photos[0] : null) ||
         null;
 
-    const review = buildReviewPayload({ task, answer, correct, aiScore });
+    let review = null;
+    try {
+      review = buildReviewPayload({ task, answer, correct, aiScore });
+    } catch (reviewErr) {
+      console.error("[handleStudentSubmit] buildReviewPayload failed:", reviewErr?.message);
+    }
 
     if (isTestMode) {
       if (typeof ack === "function") {
@@ -3721,12 +3714,6 @@ if (!isMultiPack && task.taskType === "guess-who") {
       aiScore,
       timeMs: timeMs ?? null,
       submittedAt,
-    });
-
-    console.log("[before reassignStationForTeam]", {
-      teamId: effectiveTeamId,
-      currentStationId: room.teams?.[effectiveTeamId]?.currentStationId,
-      lastScannedStationId: room.teams?.[effectiveTeamId]?.lastScannedStationId,
     });
 
     if (task.taskType === "physical-multiple-choice") {
@@ -5068,39 +5055,51 @@ async function evaluateMultiShortItem({
         required: ["score", "maxPoints", "correct", "feedback", "hint", "modelAnswer"],
       };
 
-      const response = await openai.responses.create({
-        model: "gpt-5.4",
-        input: [
-          {
-            role: "user",
-            content: [{ type: "input_text", text: promptText }],
+      try {
+        const response = await openai.responses.create({
+          model: "gpt-5.4",
+          input: [
+            {
+              role: "user",
+              content: [{ type: "input_text", text: promptText }],
+            },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "multi_short_item_eval",
+              strict: true,
+              schema,
+            },
           },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "multi_short_item_eval",
-            strict: true,
-            schema,
-          },
-        },
-        max_output_tokens: 220,
-      });
+          max_output_tokens: 220,
+        });
 
-      const parsed = safeJsonParse(response.output_text) || {};
-      const rawScore = Number(parsed?.score);
-      const boundedScore = Number.isFinite(rawScore)
-        ? Math.max(0, Math.min(maxPoints, rawScore))
-        : 0;
+        const parsed = safeJsonParse(response.output_text) || {};
+        const rawScore = Number(parsed?.score);
+        const boundedScore = Number.isFinite(rawScore)
+          ? Math.max(0, Math.min(maxPoints, rawScore))
+          : 0;
 
-      return {
-        score: boundedScore,
-        maxPoints,
-        correct: parsed?.correct === true || boundedScore >= maxPoints,
-        feedback: String(parsed?.feedback || "").trim() || "Answer needs improvement.",
-        hint: String(parsed?.hint || "").trim() || "Include the key idea more directly.",
-        modelAnswer: String(parsed?.modelAnswer || "").trim() || "",
-      };
+        return {
+          score: boundedScore,
+          maxPoints,
+          correct: parsed?.correct === true || boundedScore >= maxPoints,
+          feedback: String(parsed?.feedback || "").trim() || "Answer needs improvement.",
+          hint: String(parsed?.hint || "").trim() || "Include the key idea more directly.",
+          modelAnswer: String(parsed?.modelAnswer || "").trim() || "",
+        };
+      } catch (evalErr) {
+        console.error("evaluateMultiShortItem AI call failed:", evalErr?.message || evalErr);
+        return {
+          score: 0,
+          maxPoints,
+          correct: false,
+          feedback: "Could not evaluate answer.",
+          hint: "Try again and include the main idea.",
+          modelAnswer: "",
+        };
+      }
     }
 
 // Profile routes (imported from routes/profileInline.js)
