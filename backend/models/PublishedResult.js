@@ -9,7 +9,7 @@ const PublishedResultSchema = new mongoose.Schema(
     teacherId: { type: String },                                        // optional
     sessionId: { type: String },                                        // optional
     createdAt: { type: Date, default: Date.now },
-    expiresAt: { type: Date, required: true, index: true },
+    expiresAt: { type: Date, required: true },
   },
   { minimize: false }
 );

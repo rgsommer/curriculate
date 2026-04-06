@@ -75,7 +75,7 @@ const SharedTasksetLinkSchema = new mongoose.Schema(
     // Optional: keep it compatible with your access-code world
     entryCode: { type: String, default: "", index: true },
 
-    expiresAt: { type: Date, required: true, index: true },
+    expiresAt: { type: Date, required: true },
     revokedAt: { type: Date },
 
     createdByUserId: { type: String, default: "" },
