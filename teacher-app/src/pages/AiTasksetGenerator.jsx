@@ -464,6 +464,19 @@ export default function AiTasksetGenerator() {
 
       setError("");
       setResult(finalData);
+
+      // Store as the active taskset so the Presenter Console shows the correct title
+      const ts = finalData?.taskset || finalData;
+      const tsId = finalData?.tasksetId || ts?._id;
+      if (tsId) {
+        const meta = {
+          _id: tsId,
+          name: ts?.name || ts?.title || form.name || "Task Set",
+          numTasks: Array.isArray(ts?.tasks) ? ts.tasks.length : 0,
+        };
+        localStorage.setItem("curriculateActiveTasksetId", String(tsId));
+        localStorage.setItem("curriculateActiveTasksetMeta", JSON.stringify(meta));
+      }
     } catch (err) {
       console.error("AI Taskset generation error:", err);
       setError(err?.message || "Something went wrong while generating the task set.");
