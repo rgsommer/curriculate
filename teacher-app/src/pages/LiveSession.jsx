@@ -866,6 +866,14 @@ useEffect(() => {
 
     socket.on("mood-checkin:update", handleMoodCheckinUpdate);
 
+    socket.on("taskset:error", (payload) => {
+      console.error("[LiveSession] taskset:error", payload);
+      setStatus(payload?.message || "Failed to load taskset.");
+      setLaunchingTaskset(false);
+      setTasksetLaunchAnimating(false);
+      setTasksetLaunchProgress(0);
+    });
+
     socket.on("transcript:sent", handleTranscriptSent);
     socket.on("transcript:error", handleTranscriptError);
 
@@ -892,6 +900,7 @@ useEffect(() => {
       socket.off("teacher:treatAssigned", handleTreatAssigned);
       socket.off("mood-checkin:update", handleMoodCheckinUpdate);
 
+      socket.off("taskset:error");
       socket.off("transcript:sent", handleTranscriptSent);
       socket.off("transcript:error", handleTranscriptError);
 

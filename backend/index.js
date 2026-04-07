@@ -4207,13 +4207,22 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
 
       if (!code || !tasksetId) {
         console.warn("handleTeacherLoadTaskset: missing roomCode or tasksetId");
+        socket.emit("taskset:error", { message: "Missing room code or taskset ID." });
         return;
       }
 
-      const room = rooms[code];
+      // Auto-create room if it doesn't exist yet (handles race conditions
+      // where the socket reconnected between createRoom and loadTaskset)
+      let room = rooms[code];
       if (!room) {
-        console.warn("handleTeacherLoadTaskset: room not found for", code);
-        return;
+        console.warn("handleTeacherLoadTaskset: room not found for", code, "— auto-creating");
+        room = await createRoom(code, socket.id);
+        rooms[code] = room;
+        room.teacherSocketId = socket.id;
+        room.teacherInstanceId = socket.data?.teacherInstanceId || socket.id;
+        room.lastTeacherSeenAt = Date.now();
+        room.expiresAt = Date.now() + 1000 * 60 * 60;
+        socket.join(code);
       }
 
       // Multi-room scavenger hunt support
