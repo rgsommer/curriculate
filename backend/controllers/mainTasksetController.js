@@ -371,7 +371,23 @@ function finalizeTask(expectedType, rawTask) {
     throw new Error(`AI task not playable for ${expectedType}: ${play.issues.join("; ")}`);
   }
 
-  // timeLimitSeconds: only use if explicitly set on the task (no forced defaults)
+  // Ensure timeLimitSeconds is set (drives the countdown bar on student view)
+  if (typeof normalized.timeLimitSeconds !== "number" || normalized.timeLimitSeconds <= 0) {
+    const t = (expectedType || "").toLowerCase();
+    if (t.includes("choice") || t.includes("true-false") || t.includes("flashcard")) {
+      normalized.timeLimitSeconds = 60;
+    } else if (t.includes("open") || t.includes("text") || t.includes("record")) {
+      normalized.timeLimitSeconds = 150;
+    } else if (t.includes("sequence") || t.includes("sort") || t.includes("matching") || t.includes("timeline")) {
+      normalized.timeLimitSeconds = 120;
+    } else if (t.includes("body") || t.includes("motion") || t.includes("draw-mime")) {
+      normalized.timeLimitSeconds = 75;
+    } else if (t.includes("reading")) {
+      normalized.timeLimitSeconds = 180;
+    } else {
+      normalized.timeLimitSeconds = 90;
+    }
+  }
 
   // Ensure points default
   if (typeof normalized.points !== "number" || normalized.points <= 0) {
