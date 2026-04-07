@@ -421,8 +421,10 @@ async function generateTasksArray({
     specialConsiderations
   );
 
+  // Use the more capable batch model for initial generation (complex multi-task schema).
+  // Falls back to AI_MODEL, then gpt-4.1-mini.
   const request = {
-    model: process.env.AI_MODEL || "gpt-4.1-mini",
+    model: process.env.AI_BATCH_MODEL || process.env.AI_MODEL || "gpt-4.1-mini",
     temperature,
     max_completion_tokens: 2600,
     messages: [{ role: "user", content: prompt }],
