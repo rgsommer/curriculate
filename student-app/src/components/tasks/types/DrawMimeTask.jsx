@@ -68,11 +68,53 @@ export default function DrawMimeTask({
 
   // ── Clues for each round (1–4) ──
   const clues = useMemo(() => {
-    const arr = Array.isArray(task?.clues) && task.clues.length > 0
-      ? task.clues.map((c) => String(c || "").trim()).filter(Boolean)
-      : null;
-    const single = String(task?.prompt || "").trim() || "Draw or Mime";
-    return arr || [single];
+    const MAX_CLUE_WORDS = 5;
+    const MAX_CLUE_CHARS = 40;
+    const isValidClue = (s) => {
+      if (!s) return false;
+      const t = s.trim();
+      if (!t || t.length > MAX_CLUE_CHARS) return false;
+      return t.split(/\s+/).length <= MAX_CLUE_WORDS;
+    };
+    const extractClues = (text) => {
+      if (!text) return [];
+      const instructionRe = /^(draw|mime|act|sort|arrange|include|be sure|make|write|read|explain|describe|list|for each|pictures|illustrate|create|show|depict|sketch)/i;
+      return text
+        .split(/[,;\n•\-\d+\.\)]+/)
+        .map((s) => s.replace(/^[\s:]+|[\s.!?]+$/g, "").trim())
+        .filter((s) => s.length > 0 && s.length <= MAX_CLUE_CHARS)
+        .filter((c) => c.split(/\s+/).length <= MAX_CLUE_WORDS && !instructionRe.test(c))
+        .slice(0, 4);
+    };
+
+    // 1. Try clues array
+    let arr = Array.isArray(task?.clues) && task.clues.length > 0
+      ? task.clues.map((c) => String(c || "").trim()).filter(Boolean).filter(isValidClue)
+      : [];
+
+    // 2. Try prompt as single clue (if short enough)
+    if (!arr.length) {
+      const p = String(task?.prompt || "").trim();
+      if (p && isValidClue(p)) {
+        arr = [p];
+      } else if (p) {
+        // Try to extract short phrases from long prompt
+        arr = extractClues(p);
+      }
+    }
+
+    // 3. Try title
+    if (!arr.length) {
+      const title = String(task?.title || "").trim();
+      if (title && isValidClue(title)) {
+        arr = [title];
+      } else if (title) {
+        arr = extractClues(title);
+      }
+    }
+
+    // 4. Final fallback
+    return arr.length > 0 ? arr : ["Draw or Mime"];
   }, [task]);
 
   const [roundIndex, setRoundIndex] = useState(0);

@@ -814,6 +814,27 @@ export function createRoomEngine(io) {
         nextTask?.stationColor || nextTask?.config?.stationColor || null;
     }
 
+    // Runtime sanitiser: ensure draw-mime clues are short (1-5 words each).
+    // Older tasks in the DB may have long instruction text in prompt/clues.
+    if (task.taskType === "draw-mime") {
+      const MAX_W = 5, MAX_C = 40;
+      const ok = (s) => { const t = (s || "").trim(); return t && t.length <= MAX_C && t.split(/\s+/).length <= MAX_W; };
+      const instrRe = /^(draw|mime|act|sort|arrange|include|be sure|make|write|read|explain|describe|list|for each|pictures|illustrate|create|show|depict|sketch)/i;
+      const extract = (text) => (text || "")
+        .split(/[,;\n•\-\d+\.\)]+/)
+        .map((s) => s.replace(/^[\s:]+|[\s.!?]+$/g, "").trim())
+        .filter((s) => s.length > 0 && s.length <= MAX_C && s.split(/\s+/).length <= MAX_W && !instrRe.test(s))
+        .slice(0, 4);
+
+      let clues = Array.isArray(task.clues) ? task.clues.map(String).map(s => s.trim()).filter(ok) : [];
+      if (!clues.length && task.prompt && ok(task.prompt) && !instrRe.test(task.prompt)) clues = [task.prompt];
+      if (!clues.length && task.prompt) clues = extract(task.prompt);
+      if (!clues.length && task.title) clues = ok(task.title) && !instrRe.test(task.title) ? [task.title] : extract(task.title);
+      if (!clues.length) clues = ["Draw or Mime"];
+      task.clues = clues.slice(0, 4);
+      task.prompt = task.clues[0];
+    }
+
     const payload = {
       taskIndex: index, // preferred
       index,            // legacy

@@ -925,7 +925,7 @@ export const retryMustHave = {
   - notes.summary is REQUIRED and MUST have at least 2 items
   Do NOT omit any of these fields. Do NOT return placeholders.`,
   [TASK_TYPES.DRAW_MIME]:
-    'DRAW_MIME must include a short concept prompt. Optional: config.mode "DRAW"|"MIME"|"EITHER".',
+    'DRAW_MIME MUST include a "clues" array of EXACTLY 4 short drawable/actable concepts (1-3 words each, max 5 words). Pick 4 words from the vocabulary list. Set "prompt" to clues[0]. Do NOT put instructions or sentences in prompt — only the first clue word(s). Example: { "taskType":"draw-mime", "title":"Draw: Key Concepts", "prompt":"gravity", "clues":["gravity","water cycle","photosynthesis","food chain"], "config":{"mode":"EITHER"} }. Optional: config.mode "DRAW"|"MIME"|"EITHER".',
   [TASK_TYPES.SORT]:
     'SORT must include config.buckets (array of 2–4 PLAIN STRINGS, e.g. ["Key Figures","Major Events","Important Concepts"]) and config.items (>=3). Each item: { text: string, bucketIndex: number }. IMPORTANT: buckets MUST be plain strings — do NOT return objects like { label: "..." }.',
   [TASK_TYPES.SEQUENCE]:

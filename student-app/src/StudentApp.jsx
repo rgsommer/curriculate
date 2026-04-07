@@ -3666,13 +3666,12 @@ function StudentApp() {
                   />
                 </div>
               )}
-              {/* Countdown bar: shows task timer during play, review timer during feedback */}
+              {/* Countdown bar: ONLY shows during the answer/review overlay */}
               {(() => {
                 const reviewTotal = typeof reviewState?.secondsLeft === "number"
                   ? reviewState.secondsLeft
                   : DEFAULT_POST_SUBMIT_SECONDS;
                 const inReview = taskLocked && postSubmitSecondsLeft != null && reviewTotal > 0;
-                const inTask = timeLimitSeconds > 0 && remainingMs > 0 && !inReview;
 
                 if (inReview) {
                   const pct = Math.max(0, Math.min(100, (postSubmitSecondsLeft / reviewTotal) * 100));
@@ -3686,18 +3685,6 @@ function StudentApp() {
                             ? "linear-gradient(90deg, #22c55e, #4ade80)"
                             : "linear-gradient(90deg, #f59e0b, #fbbf24)",
                           transition: "width 0.9s linear",
-                        }}
-                      />
-                    </div>
-                  );
-                }
-                if (inTask) {
-                  return (
-                    <div className="countdown-bar-track">
-                      <div
-                        className="countdown-bar-inner"
-                        style={{
-                          width: `${Math.max(0, Math.min(100, (remainingMs / (timeLimitSeconds * 1000)) * 100))}%`,
                         }}
                       />
                     </div>
