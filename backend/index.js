@@ -530,6 +530,81 @@ function safeExtFromContentType(contentType = "") {
   return "bin";
 }
 
+// ────────────────────────────────────────────────────────────
+// Record-audio: transcribe via Whisper + generate AI feedback
+// ────────────────────────────────────────────────────────────
+async function transcribeAndFeedbackRecordAudio(s3Key, task) {
+  const s3 = getS3Client();
+  if (!s3 || !S3_BUCKET || !s3Key) return null;
+
+  try {
+    // 1) Download audio from S3
+    const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key });
+    const s3Resp = await s3.send(getCmd);
+    const chunks = [];
+    for await (const chunk of s3Resp.Body) chunks.push(chunk);
+    const audioBuffer = Buffer.concat(chunks);
+
+    if (audioBuffer.length < 500) {
+      console.warn("[transcribeRecordAudio] audio too small, skipping");
+      return null;
+    }
+
+    // 2) Transcribe with Whisper
+    const ext = s3Key.endsWith(".mp3") ? "mp3" : s3Key.endsWith(".wav") ? "wav" : "webm";
+    const audioFile = new File(
+      [audioBuffer],
+      `recording.${ext}`,
+      { type: ext === "mp3" ? "audio/mpeg" : ext === "wav" ? "audio/wav" : "audio/webm" }
+    );
+
+    const oai = getOpenAIInstance();
+    const whisperResp = await oai.audio.transcriptions.create({
+      model: "whisper-1",
+      file: audioFile,
+      response_format: "text",
+    });
+
+    const transcript = (typeof whisperResp === "string" ? whisperResp : whisperResp?.text || "").trim();
+    if (!transcript) {
+      return { transcript: "", feedback: "We couldn't detect any speech in your recording. Try speaking louder and closer to the mic." };
+    }
+
+    // 3) Generate AI feedback on the transcript
+    const taskPrompt = task?.prompt || task?.title || task?.question || "";
+    const rubric = task?.rubric || task?.criteria || task?.config?.rubric || "";
+    const model = process.env.AI_MODEL || "gpt-4.1-mini";
+
+    const systemMsg = `You are a supportive classroom teacher giving brief feedback on a student's spoken response.
+Be encouraging but honest. Keep feedback to 2-3 sentences max.
+${rubric ? `\nAssessment criteria: ${rubric}` : ""}`;
+
+    const userMsg = `Task prompt: "${taskPrompt}"
+
+Student's spoken response (transcribed):
+"${transcript}"
+
+Give brief, constructive feedback. Start with what was good, then suggest one improvement if needed.`;
+
+    const chatResp = await oai.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: systemMsg },
+        { role: "user", content: userMsg },
+      ],
+      max_tokens: 200,
+      temperature: 0.7,
+    });
+
+    const feedback = chatResp.choices?.[0]?.message?.content?.trim() || "";
+
+    return { transcript, feedback };
+  } catch (err) {
+    console.error("[transcribeRecordAudio] error:", err?.message || err);
+    return null; // graceful fallback — student still gets generic feedback
+  }
+}
+
 function canTeamAccessRoom(roomCode, teamId) {
   try {
     const room = getSessionByRoomCode(roomCode);
@@ -2393,8 +2468,19 @@ socket.on("task:force-advance", ({ roomCode }) => {
         };
       }
 
-      // RECORD AUDIO (participation)
+      // RECORD AUDIO (transcription + AI feedback if available)
       if (type === "record-audio") {
+        const transcript = aiScore?.transcript || answer?.transcript || null;
+        const aiFeedback = aiScore?.feedback || null;
+        if (transcript && aiFeedback) {
+          return {
+            recorded: true,
+            transcript,
+            aiFeedback,
+            score: aiScore?.totalScore ?? null,
+            maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+          };
+        }
         return {
           recorded: true,
           aiFeedback: "Your recording was submitted successfully. Your teacher will listen to it later.",
@@ -3963,6 +4049,50 @@ if (!isMultiPack && task.taskType === "guess-who") {
         (Array.isArray(answer?.photos) ? answer.photos[0] : null) ||
         (Array.isArray(answer?.data?.photos) ? answer.data.photos[0] : null) ||
         null;
+
+    // ── Record-audio: transcribe + AI feedback (before building review) ──
+    let audioTranscript = null;
+    if (task.taskType === "record-audio") {
+      const s3Key = answer?.s3Key || answer?.key || null;
+      if (s3Key) {
+        try {
+          const result = await transcribeAndFeedbackRecordAudio(s3Key, task);
+          if (result) {
+            audioTranscript = result;
+            // Store transcript on the answer so it's in room.submissions
+            answer.transcript = result.transcript || "";
+            // Award points based on whether they spoke substantively
+            const wordCount = (result.transcript || "").split(/\s+/).filter(Boolean).length;
+            if (wordCount >= 5) {
+              correct = true;
+              pointsEarned = task.points || 10;
+              aiScore = {
+                strategy: "record-audio-transcribed",
+                totalScore: pointsEarned,
+                maxPoints: task.points || 10,
+                transcript: result.transcript,
+                feedback: result.feedback,
+                wordCount,
+              };
+            } else {
+              correct = null;
+              pointsEarned = Math.round((task.points || 10) * 0.5);
+              aiScore = {
+                strategy: "record-audio-transcribed",
+                totalScore: pointsEarned,
+                maxPoints: task.points || 10,
+                transcript: result.transcript,
+                feedback: result.feedback || "Try to say a bit more next time!",
+                wordCount,
+              };
+            }
+          }
+        } catch (transcribeErr) {
+          console.error("[handleStudentSubmit] record-audio transcribe error:", transcribeErr?.message);
+          // Graceful fallback — student still gets generic feedback
+        }
+      }
+    }
 
     let review = null;
     try {

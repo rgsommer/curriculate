@@ -4514,11 +4514,27 @@ function StudentApp() {
           {/* accepted / not-accepted badge — varies by task type */}
           <div style={{ fontWeight: 800, fontSize: "0.95rem" }}>
             {currentTask?.taskType === TASK_TYPES.RECORD_AUDIO
-              ? "✅ Recording submitted"
+              ? (reviewState?.transcript ? "🎙️ Recording analysed" : "✅ Recording submitted")
               : currentTask?.taskType === TASK_TYPES.OPEN_TEXT
                 ? (reviewState?.accepted ? "✅ Accepted" : "📝 Reviewed")
                 : (reviewState?.accepted ? "✅ Accepted" : "💪 Not quite — keep it up!")}
           </div>
+          {/* Transcript of spoken response (record-audio only) */}
+          {currentTask?.taskType === TASK_TYPES.RECORD_AUDIO && reviewState?.transcript && (
+            <div style={{
+              fontSize: "0.82rem",
+              background: "rgba(255,255,255,0.08)",
+              borderRadius: 8,
+              padding: "6px 10px",
+              fontStyle: "italic",
+              color: "rgba(255,255,255,0.85)",
+            }}>
+              <span style={{ fontWeight: 700, fontStyle: "normal" }}>What you said: </span>
+              "{reviewState.transcript.length > 200
+                ? reviewState.transcript.slice(0, 197) + "…"
+                : reviewState.transcript}"
+            </div>
+          )}
           {reviewState?.feedback && (() => {
             const namedMembers = Array.isArray(members)
               ? members.map((m) => String(m || "").trim()).filter(Boolean)
