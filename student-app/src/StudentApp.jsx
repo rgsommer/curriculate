@@ -196,6 +196,7 @@ function StudentApp() {
   // Applied by endReviewAndReturnToScan once the lock is released.
   const pendingTaskAssignedRef = useRef(null);
   const postSubmitSecondsLeftRef = useRef(null);
+  const taskStartedAtRef = useRef(null); // timestamp when current task was assigned (for speed bonus)
   
   const postPhaseRef = useRef(postPhase);
     useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
@@ -793,6 +794,7 @@ function StudentApp() {
       }
 
       setCurrentTask(assignedTaskWithMeta);
+      taskStartedAtRef.current = Date.now();
       setPostPhase("tasks"); // Clear mood
       const idx =
         typeof payload.taskIndex === "number"
@@ -1731,6 +1733,10 @@ function StudentApp() {
             ? currentTaskIndex
             : null,
         answer: normalizedAnswer,
+        timeMs:
+          typeof taskStartedAtRef.current === "number"
+            ? Date.now() - taskStartedAtRef.current
+            : null,
       };
 
       

@@ -3859,6 +3859,29 @@ if (!isMultiPack && task.taskType === "guess-who") {
       pointsEarned = scored.pointsEarned;
     }
 
+    // ✅ PHYSICAL MULTIPLE CHOICE — objective scoring from client answers
+    if (
+      !isMultiPack &&
+      task.taskType === "physical-multiple-choice" &&
+      answer &&
+      typeof answer === "object" &&
+      Array.isArray(answer.answers) &&
+      answer.answers.length > 0
+    ) {
+      const totalQ = answer.answers.length;
+      const correctQ = answer.answers.filter((a) => a?.isCorrect === true).length;
+      correct = correctQ === totalQ;
+      pointsEarned = totalQ > 0 ? Math.round((correctQ / totalQ) * basePoints) : 0;
+      aiScore = {
+        strategy: "pmc-objective",
+        correct,
+        correctCount: correctQ,
+        totalCount: totalQ,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
     if (!isMultiPack && !isObjective && !aiScore) {
       // "Evidence tasks" are ones that don't expect text and don't have options,
       // e.g. photo, make-and-snap, body-break, etc.
