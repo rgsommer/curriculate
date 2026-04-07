@@ -140,6 +140,12 @@ Rules:
 - Keep prompts concise and classroom-station friendly.
 - Do NOT include markdown or code fences.
 - No extra wrapper keys besides { "tasks": [...] }.
+
+Task-type-specific rules:
+- draw-mime: MUST include a "clues" array of EXACTLY 4 unique short clues (1-3 words each, max 5 words).
+  Each clue is a single concept to draw or mime (e.g. "gravity", "water cycle", "Abraham Lincoln").
+  Set "prompt" to clues[0]. Do NOT put instructions in prompt — only the first clue word(s).
+  Example: { "taskType":"draw-mime", "title":"Draw or Mime: Key Concepts", "prompt":"gravity", "clues":["gravity","photosynthesis","water cycle","food chain"] }
   `.trim();
 
   const userPrompt = {

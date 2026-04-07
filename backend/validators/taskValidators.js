@@ -1236,18 +1236,38 @@ export function normalizeTaskByType(taskType, rawTask) {
     }
 
     case TASK_TYPES.DRAW_MIME: {
-      // Helper: detect clues that look like they belong to another task type
-      const _isBadClue = (s) => {
-        if (!s || s.length > 80) return true;
-        return /^sort the|^arrange|^sequence|^order the|^match the/i.test(s) ||
-               /categorize|category|categories/i.test(s);
+      // Draw-mime clues must be 1-5 words each (e.g. "gravity", "water cycle").
+      // AI often generates long prompt text instead of short clues — we extract or reject.
+
+      const MAX_CLUE_WORDS = 5;
+      const MAX_CLUE_CHARS = 40;
+
+      // Check if a string is a valid short clue (1-5 words, ≤40 chars)
+      const _isValidClue = (s) => {
+        if (!s) return false;
+        const trimmed = s.trim();
+        if (!trimmed || trimmed.length > MAX_CLUE_CHARS) return false;
+        const words = trimmed.split(/\s+/).length;
+        return words >= 1 && words <= MAX_CLUE_WORDS;
       };
 
-      // Helper: try to salvage a bad clue string
-      const _salvageClue = (s) => {
-        const quoted = s.match(/'([^']+)'/g);
-        if (quoted && quoted.length) return quoted[0].replace(/'/g, "").trim();
-        return s.slice(0, 60).trim();
+      // Try to extract short noun phrases from a long string
+      // (e.g. "Draw pictures for each prompt: photosynthesis, gravity, water cycle" → ["photosynthesis", "gravity", "water cycle"])
+      const _extractCluesFromText = (text) => {
+        if (!text) return [];
+        // Try splitting by common delimiters
+        const candidates = text
+          .split(/[,;\n•\-\d+\.\)]+/)
+          .map((s) => s.replace(/^[\s:]+|[\s.!?]+$/g, "").trim())
+          .filter((s) => s.length > 0 && s.length <= MAX_CLUE_CHARS);
+
+        // Keep only ones that look like short noun phrases (1-5 words, no instruction verbs)
+        const instructionPattern = /^(draw|mime|act|sort|arrange|sequence|order|match|categorize|include|be sure|make|write|read|explain|describe|list|for each|pictures for)/i;
+        const good = candidates.filter((c) => {
+          const words = c.split(/\s+/).length;
+          return words >= 1 && words <= MAX_CLUE_WORDS && !instructionPattern.test(c);
+        });
+        return good.slice(0, 4);
       };
 
       // --- Normalise clues array ---
@@ -1260,26 +1280,39 @@ export function normalizeTaskByType(taskType, rawTask) {
         clues = task.config.clues.map((c) => String(c || "").trim()).filter(Boolean);
       }
 
-      // If still empty, seed from task.prompt
+      // If still empty, try to extract clues from prompt text
       if (!clues.length) {
         const p = String(task.prompt || task.config?.prompt || "").trim();
-        clues = p ? [p] : [];
+        if (p) {
+          // If prompt itself is a valid short clue, use it directly
+          if (_isValidClue(p)) {
+            clues = [p];
+          } else {
+            // Try to extract short phrases from the long prompt
+            clues = _extractCluesFromText(p);
+            if (clues.length) {
+              console.warn(`[normalizeDrawMime] Extracted ${clues.length} clues from long prompt: "${p.slice(0, 80)}…"`);
+            }
+          }
+        }
       }
 
-      // Sanitise each clue
-      clues = clues.map((c) => {
-        if (_isBadClue(c)) {
-          const fixed = _salvageClue(c);
-          console.warn(`[validateDrawMime] Repaired clue: "${c}" → "${fixed}"`);
-          return fixed;
+      // Filter: only keep clues that pass the word/length check
+      clues = clues.filter((c) => _isValidClue(c));
+
+      // Final fallback: use task title if it's short enough, otherwise generic
+      if (!clues.length) {
+        const title = (task.title || "").trim();
+        if (title && _isValidClue(title)) {
+          clues = [title];
+        } else {
+          // Try to extract from title too
+          const fromTitle = _extractCluesFromText(title);
+          clues = fromTitle.length > 0 ? fromTitle : ["Draw or Mime"];
         }
-        return c;
-      }).filter(Boolean);
+      }
 
-      // Ensure between 1 and 4 clues
-      if (!clues.length) clues = [task.title || "Draw or Mime"];
       task.clues = clues.slice(0, 4);
-
       // Keep task.prompt in sync with first clue (backward compat)
       task.prompt = task.clues[0];
       break;
