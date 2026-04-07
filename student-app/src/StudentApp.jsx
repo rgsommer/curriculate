@@ -3392,12 +3392,27 @@ function StudentApp() {
               </span>
             )}
 
-            {timerDisplay && (
-              <span className="countdown-pill">
-                <span className={remainingMs <= 15000 ? "timer-dot critical" : remainingMs <= 30000 ? "timer-dot low-time" : "timer-dot"} />
-                {timerDisplay}
-              </span>
-            )}
+            {(() => {
+              const inReview = taskLocked && postSubmitSecondsLeft != null;
+              if (inReview) {
+                const reviewMs = postSubmitSecondsLeft * 1000;
+                return (
+                  <span className="countdown-pill">
+                    <span className={reviewMs <= 5000 ? "timer-dot critical" : "timer-dot"} />
+                    {formatRemainingMs(reviewMs)}
+                  </span>
+                );
+              }
+              if (timerDisplay) {
+                return (
+                  <span className="countdown-pill">
+                    <span className={remainingMs <= 15000 ? "timer-dot critical" : remainingMs <= 30000 ? "timer-dot low-time" : "timer-dot"} />
+                    {timerDisplay}
+                  </span>
+                );
+              }
+              return null;
+            })()}
 
             <span className="score-pill">
               <span role="img" aria-label="sparkles">
@@ -3619,12 +3634,27 @@ function StudentApp() {
             <section style={{ marginBottom: 2 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                 <div style={{ color: "#e5e7eb", fontWeight: 600, fontSize: "0.8rem" }}>{progressLabel}</div>
-                {timerDisplay && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: remainingMs <= 15000 ? "#fca5a5" : remainingMs <= 30000 ? "#fcd34d" : "#e5e7eb", fontWeight: 700 }}>
-                    <span className={remainingMs <= 15000 ? "timer-dot critical" : remainingMs <= 30000 ? "timer-dot low-time" : "timer-dot"} />
-                    {timerDisplay}
-                  </div>
-                )}
+                {(() => {
+                  const inReview = taskLocked && postSubmitSecondsLeft != null;
+                  if (inReview) {
+                    const reviewMs = postSubmitSecondsLeft * 1000;
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: reviewMs <= 5000 ? "#fca5a5" : "#4ade80", fontWeight: 700 }}>
+                        <span className={reviewMs <= 5000 ? "timer-dot critical" : "timer-dot"} />
+                        {formatRemainingMs(reviewMs)}
+                      </div>
+                    );
+                  }
+                  if (timerDisplay) {
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: remainingMs <= 15000 ? "#fca5a5" : remainingMs <= 30000 ? "#fcd34d" : "#e5e7eb", fontWeight: 700 }}>
+                        <span className={remainingMs <= 15000 ? "timer-dot critical" : remainingMs <= 30000 ? "timer-dot low-time" : "timer-dot"} />
+                        {timerDisplay}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               {effectiveTaskNumber && totalTasks && (
                 <div className="progress-line">
@@ -3636,16 +3666,45 @@ function StudentApp() {
                   />
                 </div>
               )}
-              {timeLimitSeconds > 0 && remainingMs > 0 && (
-                <div className="countdown-bar-track">
-                  <div
-                    className="countdown-bar-inner"
-                    style={{
-                      width: `${Math.max(0, Math.min(100, (remainingMs / (timeLimitSeconds * 1000)) * 100))}%`,
-                    }}
-                  />
-                </div>
-              )}
+              {/* Countdown bar: shows task timer during play, review timer during feedback */}
+              {(() => {
+                const reviewTotal = typeof reviewState?.secondsLeft === "number"
+                  ? reviewState.secondsLeft
+                  : DEFAULT_POST_SUBMIT_SECONDS;
+                const inReview = taskLocked && postSubmitSecondsLeft != null && reviewTotal > 0;
+                const inTask = timeLimitSeconds > 0 && remainingMs > 0 && !inReview;
+
+                if (inReview) {
+                  const pct = Math.max(0, Math.min(100, (postSubmitSecondsLeft / reviewTotal) * 100));
+                  return (
+                    <div className="countdown-bar-track">
+                      <div
+                        className="countdown-bar-inner"
+                        style={{
+                          width: `${pct}%`,
+                          background: reviewState?.accepted
+                            ? "linear-gradient(90deg, #22c55e, #4ade80)"
+                            : "linear-gradient(90deg, #f59e0b, #fbbf24)",
+                          transition: "width 0.9s linear",
+                        }}
+                      />
+                    </div>
+                  );
+                }
+                if (inTask) {
+                  return (
+                    <div className="countdown-bar-track">
+                      <div
+                        className="countdown-bar-inner"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (remainingMs / (timeLimitSeconds * 1000)) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </section>
           )}
 
