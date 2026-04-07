@@ -773,34 +773,29 @@ export function createRoomEngine(io) {
 
     room.teams[teamId].taskIndex = index;
 
-    let timeLimitSeconds =
+    // Use timeLimitSeconds from task if explicitly set; otherwise null (no forced timer)
+    const timeLimitSeconds =
       typeof task.timeLimitSeconds === "number" && task.timeLimitSeconds > 0
         ? task.timeLimitSeconds
         : typeof task.time_limit === "number" && task.time_limit > 0
         ? task.time_limit
         : null;
 
-    // Default timer for tasks that don't have one set
-    if (!timeLimitSeconds) {
-      const t = (task.taskType || task.type || "").toLowerCase();
-      if (t.includes("choice") || t.includes("true-false") || t.includes("flashcard")) {
-        timeLimitSeconds = 60;
-      } else if (t.includes("open") || t.includes("text") || t.includes("record")) {
-        timeLimitSeconds = 150;
-      } else if (t.includes("sequence") || t.includes("sort") || t.includes("matching") || t.includes("timeline")) {
-        timeLimitSeconds = 120;
-      } else if (t.includes("body") || t.includes("motion") || t.includes("draw-mime")) {
-        timeLimitSeconds = 75;
-      } else if (t.includes("reading")) {
-        timeLimitSeconds = 180;
-      } else {
-        timeLimitSeconds = 90;
-      }
-    }
-
     // Determine if team is in catch-up mode
     const progress = getRoomTaskProgress(room);
     const isCatchingUp = index < progress.maxJoinedTaskIndex;
+
+    // For PMC tasks: include the next task's station color so PMC can
+    // exclude it from the last question's correct-answer color mapping
+    let nextStationColor = null;
+    if (
+      (task.taskType === "physical-multiple-choice") &&
+      index + 1 < tasks.length
+    ) {
+      const nextTask = tasks[index + 1];
+      nextStationColor =
+        nextTask?.stationColor || nextTask?.config?.stationColor || null;
+    }
 
     const payload = {
       taskIndex: index, // preferred
@@ -808,6 +803,7 @@ export function createRoomEngine(io) {
       task: {
         ...task,
         minimizeOnScreen: !!room?.minimizeOnScreen || false,
+        ...(nextStationColor ? { nextStationColor } : {}),
       },
       timeLimitSeconds,
       totalTasks: tasks.length,

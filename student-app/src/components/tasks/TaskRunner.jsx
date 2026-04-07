@@ -2161,6 +2161,7 @@ export default function TaskRunner({
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
           excludedColor={tp?.stationColor || tp?.config?.stationColor || null}
+          excludedColors={[tp?.nextStationColor].filter(Boolean)}
           scannerSlot={scannerSlot}
           onIncorrectScan={() => {
             try {

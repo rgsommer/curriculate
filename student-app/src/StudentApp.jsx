@@ -370,6 +370,24 @@ function StudentApp() {
           setJoined(true);
           setStatusMessage("");
 
+          // Restore team name and members from server (most accurate)
+          if (resp.teamName) setTeamName(resp.teamName);
+          if (Array.isArray(resp.members) && resp.members.length > 0) {
+            setMembers(resp.members);
+          } else {
+            // Fallback to localStorage
+            try {
+              const savedMembers = JSON.parse(lsGet(LS_KEYS.members) || "[]");
+              if (Array.isArray(savedMembers) && savedMembers.length > 0) setMembers(savedMembers);
+            } catch {}
+          }
+
+          // Restore team name from localStorage if server didn't send it
+          if (!resp.teamName) {
+            const savedName = lsGet(LS_KEYS.teamName);
+            if (savedName) setTeamName(savedName);
+          }
+
           const stationId = resp.assignedStationId || resp.stationId || null;
           if (stationId) {
             const stationInfo = normalizeStationId(stationId);
@@ -384,6 +402,24 @@ function StudentApp() {
           const effectiveTeam = resp.teamId || savedTeamSessionId;
           if (state?.scores && typeof state.scores[effectiveTeam] === "number") {
             setScoreTotal(state.scores[effectiveTeam]);
+          }
+
+          // If a taskset is active, set up task phase so the auto-pushed task:assigned
+          // will be handled correctly (skip scan gate on resume)
+          if (state?.isActive) {
+            tasksStartedRef.current = true;
+            setWarmupStep("done");
+            setPostPhase("tasks");
+            setWaitingForLaunch(true);
+            setScannerActive(false); // will be re-enabled by task:assigned or scan
+          }
+
+          // If server sent current task info, pre-set progress so UI doesn't flash
+          if (resp.currentTask?.task) {
+            const ct = resp.currentTask;
+            setCurrentTask(ct.task);
+            setCurrentTaskIndex(typeof ct.taskIndex === "number" ? ct.taskIndex : null);
+            setTasksetTotalTasks(typeof ct.totalTasks === "number" ? ct.totalTasks : null);
           }
 
           finish();
@@ -2685,34 +2721,6 @@ function StudentApp() {
           font-size: 0.8rem;
         }
 
-        .countdown-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          background: rgba(15,23,42,0.85);
-          color: #f9fafb;
-          border: 1px solid rgba(148,163,184,0.8);
-        }
-
-        .timer-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: #22c55e;
-        }
-
-        .timer-dot.low-time {
-          background: #f97316;
-        }
-
-        .timer-dot.critical {
-          background: #ef4444;
-        }
-
         .join-card {
           max-width: 480px;
           margin: 0 auto;
@@ -3001,22 +3009,6 @@ function StudentApp() {
           border-radius: 999px;
           background: linear-gradient(90deg, #ef4444, #f87171);
           transition: width 0.25s ease-out;
-        }
-
-        /* COUNTDOWN TIMER BAR */
-        .countdown-bar-track {
-          width: 100%;
-          height: 6px;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.12);
-          overflow: hidden;
-          margin-top: 4px;
-        }
-        .countdown-bar-inner {
-          height: 100%;
-          border-radius: 999px;
-          background: linear-gradient(90deg, #f87171, #ef4444);
-          transition: width 1s linear;
         }
 
         /* JEOPARDY / BRAINSTORM BATTLE STYLING */
@@ -3349,21 +3341,6 @@ function StudentApp() {
               </span>
             )}
 
-            {timerDisplay && (
-              <span className="countdown-pill">
-                <span
-                  className={
-                    remainingMs <= 15000
-                      ? "timer-dot critical"
-                      : remainingMs <= 30000
-                      ? "timer-dot low-time"
-                      : "timer-dot"
-                  }
-                />
-                {timerDisplay}
-              </span>
-            )}
-
             <span className="score-pill">
               <span role="img" aria-label="sparkles">
                 ✨
@@ -3579,25 +3556,11 @@ function StudentApp() {
             gap: 8,
           }}
         >
-          {/* Task progress + countdown timer bar */}
+          {/* Task progress bar */}
           {progressLabel && (
             <section style={{ marginBottom: 2 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                 <div style={{ color: "#e5e7eb", fontWeight: 600, fontSize: "0.8rem" }}>{progressLabel}</div>
-                {timerDisplay && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", color: remainingMs <= 15000 ? "#fca5a5" : remainingMs <= 30000 ? "#fcd34d" : "#e5e7eb", fontWeight: 700 }}>
-                    <span
-                      className={
-                        remainingMs <= 15000
-                          ? "timer-dot critical"
-                          : remainingMs <= 30000
-                          ? "timer-dot low-time"
-                          : "timer-dot"
-                      }
-                    />
-                    {timerDisplay}
-                  </div>
-                )}
               </div>
               {effectiveTaskNumber && totalTasks && (
                 <div className="progress-line">
@@ -3605,16 +3568,6 @@ function StudentApp() {
                     className="progress-line-inner"
                     style={{
                       width: `${Math.round((effectiveTaskNumber / totalTasks) * 100)}%`,
-                    }}
-                  />
-                </div>
-              )}
-              {timeLimitSeconds > 0 && remainingMs > 0 && (
-                <div className="countdown-bar-track">
-                  <div
-                    className="countdown-bar-inner"
-                    style={{
-                      width: `${Math.max(0, Math.min(100, (remainingMs / (timeLimitSeconds * 1000)) * 100))}%`,
                     }}
                   />
                 </div>
@@ -4153,9 +4106,7 @@ function StudentApp() {
         ...(narrationHeaderStyle || {}),
       }}
     >
-      {currentTaskNumber && (
-        <div style={{ marginBottom: 8, fontSize: "0.8rem", color: "#4b5563" }}>{progressLabel}</div>
-      )}
+      {/* Progress label now shown above noise bar; removed duplicate here */}
       {currentTask.title || currentTask.name || "Task"}
     </h2>
     <div

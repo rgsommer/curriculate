@@ -1999,14 +1999,47 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
       const state = buildRoomState(room);
 
+      // Determine if we can auto-push the team's current task on resume
+      let currentTask = null;
+      if (room.taskset && Array.isArray(room.taskset.tasks) && room.taskset.tasks.length > 0 && room.isActive) {
+        const idx =
+          typeof team.taskIndex === "number" && team.taskIndex >= 0
+            ? team.taskIndex
+            : typeof team.nextTaskIndex === "number" && team.nextTaskIndex >= 0
+            ? team.nextTaskIndex
+            : -1;
+
+        if (idx >= 0 && idx < room.taskset.tasks.length) {
+          const task = room.taskset.tasks[idx];
+          currentTask = {
+            task,
+            taskIndex: idx,
+            totalTasks: room.taskset.tasks.length,
+            timeLimitSeconds: task.timeLimitSeconds || null,
+          };
+        }
+      }
+
       if (typeof ack === "function") {
         ack({
           success: true,
           teamId,
+          teamName: team.teamName,
+          members: team.members || [],
           assignedStationId: room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null,
           assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
           roomState: state,
+          currentTask, // null if no active task, otherwise { task, taskIndex, totalTasks }
         });
+      }
+
+      // Auto-push the current task so the student picks up where they left off
+      // (fires task:assigned which the frontend handles)
+      if (currentTask) {
+        // Small delay to let the ack arrive and frontend setState before task:assigned
+        setTimeout(() => {
+          sendTaskToTeam(room, teamId, currentTask.taskIndex);
+        }, 500);
       }
 
       io.to(code).emit("room:state", state);
@@ -2966,6 +2999,46 @@ socket.on("station:scan", handleStationScan);
     if (typeof answer === "string") return answer;
 
     if (answer && typeof answer === "object") {
+      // PMC / physical-multiple-choice: summarize letter answers
+      if (
+        answer.type === "physical-multiple-choice" &&
+        Array.isArray(answer.answers)
+      ) {
+        const parts = answer.answers.map((a, i) => {
+          const lbl = a?.letter || `Q${i + 1}`;
+          const mark = a?.isCorrect ? "✓" : "✗";
+          return `${lbl} ${mark}`;
+        });
+        const total = answer.answers.length;
+        const right = answer.answers.filter((a) => a?.isCorrect).length;
+        return `${parts.join(", ")} (${right}/${total})`;
+      }
+
+      // Generic structured answers with an answers[] array
+      if (Array.isArray(answer.answers) && answer.answers.length > 0) {
+        try {
+          return answer.answers
+            .map((a, i) => {
+              const val =
+                a?.value ?? a?.answer ?? a?.letter ?? a?.selected ?? `Q${i + 1}`;
+              const mark =
+                a?.isCorrect === true ? " ✓" : a?.isCorrect === false ? " ✗" : "";
+              return `${String(val).trim()}${mark}`;
+            })
+            .join("; ");
+        } catch {
+          /* fall through */
+        }
+      }
+
+      // Single value answer (e.g. { answer: "Blue", correct: true })
+      if (typeof answer.answer === "string" && answer.answer.trim()) {
+        return answer.answer.trim();
+      }
+      if (typeof answer.value === "string" && answer.value.trim()) {
+        return answer.value.trim();
+      }
+
       const textLike =
         answer.explanation ??
         answer.caption ??

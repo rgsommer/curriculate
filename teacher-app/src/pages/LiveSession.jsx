@@ -4576,10 +4576,37 @@ Precipitation — rain, snow, hail`}
 
                   const narrationSummary = summarizeNarrationSubmission(s);
 
+                  // Build a display-friendly answer, hiding raw JSON
+                  const rawAns = s.answerText || "";
+                  const isJsonBlob = rawAns.startsWith("{") || rawAns.startsWith("[");
+                  const displayAnswer = isJsonBlob
+                    ? (() => {
+                        try {
+                          const obj = JSON.parse(rawAns);
+                          if (obj.type === "physical-multiple-choice" && Array.isArray(obj.answers)) {
+                            const right = obj.answers.filter((a) => a?.isCorrect).length;
+                            return `PMC: ${right}/${obj.answers.length} correct`;
+                          }
+                          if (Array.isArray(obj.answers)) {
+                            return obj.answers
+                              .map((a, i) => {
+                                const v = a?.value ?? a?.answer ?? a?.letter ?? `Q${i + 1}`;
+                                const m = a?.isCorrect === true ? " ✓" : a?.isCorrect === false ? " ✗" : "";
+                                return `${v}${m}`;
+                              })
+                              .join("; ");
+                          }
+                          if (obj.answer) return String(obj.answer);
+                          return `(${obj.type || "submitted"})`;
+                        } catch {
+                          return "(submitted)";
+                        }
+                      })()
+                    : rawAns;
                   const trimmedAnswer =
-                    s.answerText && s.answerText.length > 120
-                      ? s.answerText.slice(0, 117) + "…"
-                      : s.answerText || "";
+                    displayAnswer.length > 120
+                      ? displayAnswer.slice(0, 117) + "…"
+                      : displayAnswer;
 
                   const narrationLine =
                     narrationSummary
