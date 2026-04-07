@@ -38,7 +38,8 @@ import {
   buildObjectiveAnswerKey,
 } from "./utils/answerKeyHelpers.js";
 import { buildMatchingReveal } from "./utils/matchingReveal.js";
-import { getThemeShell, formatRemainingMs } from "./utils/themeHelpers.js";
+import { getThemeShell, getThemeMode, formatRemainingMs } from "./utils/themeHelpers.js";
+import ThemeModeContext from "./utils/ThemeModeContext.js";
 
 // Hooks
 import { useSocketConnection } from "./hooks/useSocketConnection.js";
@@ -51,7 +52,7 @@ console.log("StudentApp Build:", BUILD_MARKER);
 // For now, LiveSession-launched tasks are assumed to use "Classroom"
 const DEFAULT_LOCATION = "Classroom";
 
-const DEFAULT_POST_SUBMIT_SECONDS = 30;
+const DEFAULT_POST_SUBMIT_SECONDS = 15;
 
 // ---------------------------------------------------------------------
 // Shared socket instance – same host as backend
@@ -111,6 +112,7 @@ function StudentApp() {
   // Theme selector (must be inside component)
   const [uiTheme, setUiTheme] = useState("eager"); // "eager" | "bold" | "dyno"
   const themeShell = getThemeShell(uiTheme);
+  const themeMode = getThemeMode(uiTheme);
 
   // Socket connection hook
   const { connected, setConnected, statusMessage, setStatusMessage } = useSocketConnection(socket);
@@ -2334,6 +2336,10 @@ function StudentApp() {
     if (currentTask) return;
     if (!teamId || !roomCode) return;
 
+    // NEVER overwrite feedback/trophy phase after last task
+    if (tasksetComplete) return;
+    if (postPhase === "feedback" || postPhase === "trophy") return;
+
     // only when scan gate is satisfied
     if (scannedStationId !== assignedStationId) return;
 
@@ -2359,6 +2365,8 @@ function StudentApp() {
     assignedStationId,
     roomIsActive,
     tasksStarted,
+    tasksetComplete,
+    postPhase,
   ]);
 
   // ─────────────────────────────────────────────
@@ -2623,6 +2631,7 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   return (
+    <ThemeModeContext.Provider value={themeMode}>
     <>
     {/* Animated theme background — rendered OUTSIDE the content div so z-index layering works */}
     {!isFlashcardsRace && !isMadDash && !isMindMapper && (
@@ -5054,6 +5063,7 @@ function StudentApp() {
     />
   </div>
   </>
+  </ThemeModeContext.Provider>
   );
 }
 

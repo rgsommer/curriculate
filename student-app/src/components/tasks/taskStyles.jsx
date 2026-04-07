@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/taskStyles.jsx
 import React from "react";
+import { useThemeMode } from "../../utils/ThemeModeContext.js";
 
 /**
  * Curriculate Task UI System
@@ -53,7 +54,7 @@ export const UI = {
 };
 
 export function TaskCardFrame({
-  theme = "light",
+  theme: themeProp,
   title,
   subtitle,
   badge,
@@ -66,6 +67,8 @@ export function TaskCardFrame({
   fullBleed = false,
   contentPadding = 16,
 }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
   const t = UI.theme[theme] || UI.theme.light;
 
   if (fullBleed) {
@@ -229,7 +232,9 @@ export function TaskBodyText({ children, style }) {
   );
 }
 
-export function Pill({ children, subtle = false, theme = "light", style }) {
+export function Pill({ children, subtle = false, theme: themeProp, style }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
   const t = UI.theme[theme] || UI.theme.light;
   return (
     <span
@@ -258,7 +263,9 @@ export function Pill({ children, subtle = false, theme = "light", style }) {
   );
 }
 
-export function Divider({ theme = "light", style }) {
+export function Divider({ theme: themeProp, style }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
   const t = UI.theme[theme] || UI.theme.light;
   return (
     <div
@@ -276,7 +283,9 @@ export function Divider({ theme = "light", style }) {
   );
 }
 
-export function HelpText({ children, theme = "light", style }) {
+export function HelpText({ children, theme: themeProp, style }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
   const t = UI.theme[theme] || UI.theme.light;
   return (
     <div
@@ -318,7 +327,9 @@ export function PrimaryButton({ children, disabled, onClick, style, type = "butt
   );
 }
 
-export function GhostButton({ children, disabled, onClick, theme = "light", style, type = "button" }) {
+export function GhostButton({ children, disabled, onClick, theme: themeProp, style, type = "button" }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
   const t = UI.theme[theme] || UI.theme.light;
   return (
     <button
@@ -342,7 +353,9 @@ export function GhostButton({ children, disabled, onClick, theme = "light", styl
   );
 }
 
-export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, theme = "light", style, ...rest }) {
+export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, theme: themeProp, style, ...rest }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
   const t = UI.theme[theme] || UI.theme.light;
   return (
     <input
@@ -368,7 +381,9 @@ export function TextInput({ value, onChange, onKeyDown, placeholder, disabled, t
   );
 }
 
-export function TextArea({ value, onChange, placeholder, disabled, rows = 6, theme = "light", style, ...rest }) {
+export function TextArea({ value, onChange, placeholder, disabled, rows = 6, theme: themeProp, style, ...rest }) {
+  const contextTheme = useThemeMode();
+  const theme = themeProp || contextTheme || "light";
   const t = UI.theme[theme] || UI.theme.light;
   return (
     <textarea

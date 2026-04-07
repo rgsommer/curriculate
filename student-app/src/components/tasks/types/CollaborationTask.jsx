@@ -33,14 +33,14 @@ export default function CollaborationTask({
   const prompt = task?.prompt || "Work together on this prompt.";
 
   const right = showPartnerReply ? (
-    <Pill theme="light">✨ Bonus reply stage</Pill>
+    <Pill>✨ Bonus reply stage</Pill>
   ) : (
-    <Pill theme="light">📝 Write your response</Pill>
+    <Pill>📝 Write your response</Pill>
   );
 
   return (
     <TaskCardFrame
-      theme="light"
+     
       badge="🤝 Collaboration"
       title="Write • Then Reply for Bonus"
       subtitle={showPartnerReply ? "Step 2: Read the other team's answer and reply." : "Step 1: Write your team's best answer."}
@@ -83,7 +83,7 @@ export default function CollaborationTask({
         <>
           <div style={{ marginTop: 12 }}>
             <TextArea
-              theme="light"
+             
               value={answer}
               onChange={(e) => {
                 setAnswer(e.target.value);
@@ -118,8 +118,8 @@ export default function CollaborationTask({
             }}
           >
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <Pill theme="light">💬 Partner response</Pill>
-              <Pill theme="light" subtle>Read carefully, then reply for bonus points.</Pill>
+              <Pill>💬 Partner response</Pill>
+              <Pill subtle>Read carefully, then reply for bonus points.</Pill>
             </div>
             <div style={{ marginTop: 10, fontStyle: "italic", fontWeight: 900, color: "rgba(15,23,42,0.86)" }}>
               {partnerAnswer || "(No partner answer received.)"}
@@ -128,7 +128,7 @@ export default function CollaborationTask({
 
           <div style={{ marginTop: 12 }}>
             <TextArea
-              theme="light"
+             
               value={reply}
               onChange={(e) => {
                 setReply(e.target.value);
@@ -141,7 +141,7 @@ export default function CollaborationTask({
           </div>
 
           <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-            <Pill theme="light">⭐ +5 bonus points possible</Pill>
+            <Pill>⭐ +5 bonus points possible</Pill>
             <PrimaryButton
               onClick={handleReplySubmit}
               disabled={disabled || !reply.trim()}

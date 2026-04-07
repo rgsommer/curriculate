@@ -141,15 +141,15 @@ export default function DiffDetectiveTask({
   const right = (
     <>
       {isMultiplayer && raceStatus ? (
-        <Pill theme="light">🏁 Race • {raceStatus.timeLeft ?? "–"}s • Leader: {raceStatus.leader || "—"}</Pill>
+        <Pill>🏁 Race • {raceStatus.timeLeft ?? "–"}s • Leader: {raceStatus.leader || "—"}</Pill>
       ) : null}
-      <Pill theme="light">🧠 Attempts {attempts}</Pill>
-      {isSubmitted ? <Pill theme="light">✅ Locked</Pill> : null}
+      <Pill>🧠 Attempts {attempts}</Pill>
+      {isSubmitted ? <Pill>✅ Locked</Pill> : null}
     </>
   );
 
   return (
-    <TaskCardFrame theme="light" badge="🕵️ Diff Detective" title={prompt} subtitle={`Find ${numExpected} change${numExpected === 1 ? "" : "s"} between the passages.`} right={right}>
+    <TaskCardFrame badge="🕵️ Diff Detective" title={prompt} subtitle={`Find ${numExpected} change${numExpected === 1 ? "" : "s"} between the passages.`} right={right}>
       {/* Passages */}
       <div
         style={{
@@ -188,7 +188,7 @@ export default function DiffDetectiveTask({
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
         <div style={{ fontWeight: 950, color: "rgba(15,23,42,0.92)" }}>Your Answer</div>
         <GhostButton
-          theme="light"
+         
           onClick={isDictating ? stopDictation : startDictation}
           disabled={disabled || isSubmitted}
           style={{
@@ -207,7 +207,7 @@ export default function DiffDetectiveTask({
       </div>
 
       <TextArea
-        theme="light"
+       
         value={answer}
         onChange={(e) => setAnswer(e.target.value)}
         disabled={disabled || isSubmitted}
@@ -219,7 +219,7 @@ export default function DiffDetectiveTask({
       {hasHints ? (
         <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <GhostButton
-            theme="light"
+           
             onClick={() => setShowHint(true)}
             disabled={disabled || showHint}
             style={{
@@ -232,7 +232,7 @@ export default function DiffDetectiveTask({
             Hint (-2 pts)
           </GhostButton>
 
-          {showHint ? <Pill theme="light">Hints revealed</Pill> : <Pill theme="light" subtle>Use only if stuck.</Pill>}
+          {showHint ? <Pill>Hints revealed</Pill> : <Pill subtle>Use only if stuck.</Pill>}
         </div>
       ) : null}
 

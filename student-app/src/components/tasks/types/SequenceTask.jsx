@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/SequenceTask.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import { useThemeMode } from "../../../utils/ThemeModeContext.js";
 
 /**
  * Sequence / Timeline task
@@ -35,10 +36,15 @@ export default function SequenceTask({
   disabled,
   onAnswerChange,
 }) {
+  const themeMode = useThemeMode();
+  const isDark = themeMode === "dark";
   const items = useMemo(() => {
     const raw =
-      (Array.isArray(task?.config?.items) && task.config.items) ||
-      (Array.isArray(task?.options) && task.options) ||
+      (Array.isArray(task?.config?.items) && task.config.items.length > 0 && task.config.items) ||
+      (Array.isArray(task?.items) && task.items.length > 0 && task.items) ||
+      (Array.isArray(task?.options) && task.options.length > 0 && task.options) ||
+      (Array.isArray(task?.steps) && task.steps.length > 0 && task.steps) ||
+      (Array.isArray(task?.sequence) && task.sequence.length > 0 && task.sequence) ||
       [];
 
     // Defensive fallback: never allow a dead-end / empty task.
@@ -131,12 +137,18 @@ export default function SequenceTask({
 
   const canSubmit = !disabled && Array.isArray(orderIds) && orderIds.length >= 2;
 
+  const cardBg = isDark ? "rgba(255,255,255,0.06)" : "rgba(248,250,252,1)";
+  const borderColor = isDark ? "rgba(255,255,255,0.15)" : "rgba(15,23,42,0.12)";
+  const textColor = isDark ? "#fff" : "#0f172a";
+  const subtextColor = isDark ? "rgba(226,232,240,0.8)" : "rgba(15,23,42,0.72)";
+  const btnBg = isDark ? "rgba(255,255,255,0.10)" : "#fff";
+
   return (
-    <div className="p-4">
+    <div className="p-4" style={{ color: textColor }}>
       <div className="mb-3">
-        <div className="p-3 rounded-xl border bg-slate-50">
+        <div className="p-3 rounded-xl" style={{ background: cardBg, border: `1px solid ${borderColor}` }}>
           <div className="font-bold mb-1">How to do this task</div>
-          <div className="text-sm opacity-80">
+          <div className="text-sm" style={{ color: subtextColor }}>
             1) Read the items. 2) Use the arrows to move them up or down.
             3) When you are happy with the order, press <b>Submit</b>.
           </div>
@@ -153,14 +165,16 @@ export default function SequenceTask({
           return (
             <div
               key={id}
-              className="flex items-stretch justify-between border rounded px-3 py-2"
+              className="flex items-stretch justify-between rounded px-3 py-2"
+              style={{ border: `1px solid ${borderColor}`, background: cardBg }}
             >
               <div className="flex gap-3 min-w-0">
                 {it.imageUrl ? (
                   <img
                     src={it.imageUrl}
                     alt=""
-                    className="w-10 h-10 rounded object-cover border"
+                    className="w-10 h-10 rounded object-cover"
+                    style={{ border: `1px solid ${borderColor}` }}
                   />
                 ) : null}
 
@@ -168,13 +182,13 @@ export default function SequenceTask({
                   <div className="font-semibold truncate">{it.primary}</div>
 
                   {it.secondary ? (
-                    <div className="text-xs opacity-70 truncate">
+                    <div className="text-xs truncate" style={{ color: subtextColor }}>
                       {it.secondary}
                     </div>
                   ) : null}
 
                   {it.description ? (
-                    <div className="text-xs opacity-80 line-clamp-2">
+                    <div className="text-xs line-clamp-2" style={{ color: subtextColor }}>
                       {it.description}
                     </div>
                   ) : null}
@@ -184,7 +198,8 @@ export default function SequenceTask({
               <div className="flex flex-col gap-1 pl-3">
                 {idx > 0 ? (
                   <button
-                    className="border rounded px-2 text-xs"
+                    className="rounded px-2 text-xs"
+                    style={{ border: `1px solid ${borderColor}`, background: btnBg, color: textColor }}
                     onClick={() => move(idx, -1)}
                     disabled={disabled}
                     aria-label="Move up"
@@ -196,7 +211,8 @@ export default function SequenceTask({
                 )}
                 {idx < orderIds.length - 1 ? (
                   <button
-                    className="border rounded px-2 text-xs"
+                    className="rounded px-2 text-xs"
+                    style={{ border: `1px solid ${borderColor}`, background: btnBg, color: textColor }}
                     onClick={() => move(idx, 1)}
                     disabled={disabled}
                     aria-label="Move down"
@@ -213,7 +229,8 @@ export default function SequenceTask({
       </div>
 
       <button
-        className="w-full border rounded px-3 py-2 font-bold"
+        className="w-full rounded px-3 py-2 font-bold"
+        style={{ border: `1px solid ${borderColor}`, background: isDark ? "rgba(99,102,241,0.3)" : "#fff", color: textColor }}
         onClick={handleSubmit}
         disabled={!canSubmit}
       >

@@ -304,8 +304,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
   const right = (
     <>
-      <Pill theme="light">🧩 Clue {Math.min(clues.length, currentClueIndex + 1)} / {clues.length || 0}</Pill>
-      <Pill theme="light">🏆 Score {score}</Pill>
+      <Pill>🧩 Clue {Math.min(clues.length, currentClueIndex + 1)} / {clues.length || 0}</Pill>
+      <Pill>🏆 Score {score}</Pill>
     </>
   );
 
@@ -349,11 +349,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   if (isReviewMode) {
     return (
       <TaskCardFrame
-        theme="light"
+       
         badge="📝 Review Answers"
         title="BRAIN BLITZ REVIEW"
         subtitle="Questions, guesses, and correct answers"
-        right={<Pill theme="light">⚡ {clues.length} clues</Pill>}
+        right={<Pill>⚡ {clues.length} clues</Pill>}
         style={{
           background:
             "radial-gradient(900px 380px at 20% 0%, rgba(99,102,241,0.18), transparent 60%), radial-gradient(900px 380px at 80% 0%, rgba(236,72,153,0.14), transparent 60%), linear-gradient(135deg, rgba(238,242,255,1), rgba(255,255,255,1))",
@@ -375,11 +375,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <Pill theme="light">Clue {idx + 1}</Pill>
+                  <Pill>Clue {idx + 1}</Pill>
                   {hasAnswer ? (
-                    <Pill theme="light">✅ Answer: {c.answer}</Pill>
+                    <Pill>✅ Answer: {c.answer}</Pill>
                   ) : (
-                    <Pill theme="light">⚠ No answer provided</Pill>
+                    <Pill>⚠ No answer provided</Pill>
                   )}
                 </div>
 
@@ -416,7 +416,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                               {g.spoken || "(inaudible)"}
                             </div>
                           </div>
-                          {g.correct && <Pill theme="light">Correct</Pill>}
+                          {g.correct && <Pill>Correct</Pill>}
                         </div>
                       ))}
                     </div>
@@ -432,7 +432,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
   if (!clues.length) {
     return (
-      <TaskCardFrame theme="light" badge="⚡ Brain Blitz" title="No clues provided" subtitle="This round didn't include any clues.">
+      <TaskCardFrame badge="⚡ Brain Blitz" title="No clues provided" subtitle="This round didn't include any clues.">
         <div style={{ color: "rgba(15,23,42,0.74)", fontWeight: 850 }}>
           Check the task JSON and ensure it includes <b>clues</b>.
         </div>
@@ -443,11 +443,11 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
   if (!currentClue && currentClueIndex >= clues.length) {
     return (
       <TaskCardFrame
-        theme="light"
+       
         badge="🏁 Round Complete"
         title="Brain Blitz Complete!"
         subtitle="Final Score"
-        right={<Pill theme="light">🏆 {score}</Pill>}
+        right={<Pill>🏆 {score}</Pill>}
       >
         {/* Local victory overlay removed — TaskRunner handles victory so it isn't cut short. */}
       </TaskCardFrame>
@@ -456,7 +456,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
 
   return (
     <TaskCardFrame
-      theme="light"
+     
       badge="⚡ Brain Blitz"
       title="SHOUT THE QUESTION!"
       subtitle={statusLabel}
@@ -512,7 +512,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
               <div style={{ fontWeight: 950, fontSize: 18 }}>
                 ✅ Round {(overlayRange.start / ROUND_SIZE) + 1} Answers
               </div>
-              <Pill theme="light">Clues {overlayRange.start + 1}–{overlayRange.end + 1}</Pill>
+              <Pill>Clues {overlayRange.start + 1}–{overlayRange.end + 1}</Pill>
             </div>
 
             <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
@@ -530,8 +530,8 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                      <Pill theme="light">Clue {idx + 1}</Pill>
-                      <Pill theme="light">{ans ? `Answer: ${ans}` : "Answer: (not provided)"}</Pill>
+                      <Pill>Clue {idx + 1}</Pill>
+                      <Pill>{ans ? `Answer: ${ans}` : "Answer: (not provided)"}</Pill>
                     </div>
                     <div style={{ marginTop: 8, fontWeight: 900, fontSize: 16, lineHeight: 1.25 }}>
                       {c?.clue}
@@ -645,7 +645,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <Pill theme="light" subtle>
+          <Pill subtle>
             🎤 {isListening ? "Listening for your shout…" : "Ready for your shout"}
           </Pill>
 
@@ -656,15 +656,15 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
           )}
 
           {!micSupported && (
-            <Pill theme="light">Mic not supported in this browser</Pill>
+            <Pill>Mic not supported in this browser</Pill>
           )}
 
           {micSupported && !recognitionRef.current && (
-            <Pill theme="light">Mic initializing…</Pill>
+            <Pill>Mic initializing…</Pill>
           )}
 
           {micSupported && recognitionRef.current && micError && (
-            <Pill theme="light">Mic blocked or unavailable ({String(micError)}) — tap Start Mic</Pill>
+            <Pill>Mic blocked or unavailable ({String(micError)}) — tap Start Mic</Pill>
           )}
         </div>
 
@@ -715,7 +715,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
                         {g.spoken || "(inaudible)"}
                       </div>
                     </div>
-                    {g.correct && <Pill theme="light">+100</Pill>}
+                    {g.correct && <Pill>+100</Pill>}
                   </div>
                 ))
             )}

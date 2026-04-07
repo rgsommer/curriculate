@@ -146,6 +146,12 @@ Task-type-specific rules:
   Each clue is a single concept to draw or mime (e.g. "gravity", "water cycle", "Abraham Lincoln").
   Set "prompt" to clues[0]. Do NOT put instructions in prompt — only the first clue word(s).
   Example: { "taskType":"draw-mime", "title":"Draw or Mime: Key Concepts", "prompt":"gravity", "clues":["gravity","photosynthesis","water cycle","food chain"] }
+- sequence: MUST include an "items" array of 4-6 strings in the CORRECT order. Each item is a step/event.
+  Set "prompt" to the question asking students to order them (e.g. "Put these events in chronological order.").
+  Also include "correctOrder" as the array of ids ["seq1","seq2","seq3","seq4"] matching the correct order.
+  Example: { "taskType":"sequence", "title":"Journey of a Missionary", "prompt":"Put the following steps in the correct order to show the typical journey of a missionary.", "items":["Feels a calling to serve","Attends missionary training","Travels to assigned location","Builds relationships with locals","Returns home to share experiences"] }
+- sort: MUST include a "categories" array with 2-3 category objects, each having "label" and "items" array.
+  Example: { "taskType":"sort", "title":"Sort by Category", "prompt":"Sort these items into the correct categories.", "categories":[{"label":"Fruits","items":["apple","banana"]},{"label":"Vegetables","items":["carrot","broccoli"]}] }
   `.trim();
 
   const userPrompt = {

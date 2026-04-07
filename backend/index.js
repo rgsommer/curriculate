@@ -4174,7 +4174,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
           review,
           nextStationId: nextStationNorm?.id || nextStation,
           nextStationColor: nextStationNorm?.color || null,
-          postSubmitSeconds: Number(task?.reviewPauseSeconds) > 0 ? Number(task.reviewPauseSeconds) : 30,
+          postSubmitSeconds: Number(task?.reviewPauseSeconds) > 0 ? Number(task.reviewPauseSeconds) : 15,
         });
       } catch (ackErr) {
         console.error("[handleStudentSubmit] ack failed:", ackErr);

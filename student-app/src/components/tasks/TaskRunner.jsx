@@ -2412,6 +2412,7 @@ case "multi_player_feedback":
           playerTeam={playerTeam}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+          memberNames={memberNames}
         />
       );
       break;

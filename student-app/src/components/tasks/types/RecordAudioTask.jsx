@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/types/RecordAudioTask.jsx
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 // ── Parse minimum-seconds from task config or prompt text ─────────────────
 function parseMinSeconds(task) {
@@ -21,6 +21,7 @@ export default function RecordAudioTask({
   disabled,
   onAnswerChange,
   answerDraft,
+  memberNames = [],
 }) {
   const [isRecording, setIsRecording]       = useState(false);
   const [isPlaying, setIsPlaying]           = useState(false);
@@ -37,6 +38,17 @@ export default function RecordAudioTask({
   const countUpRef   = useRef(null);
   const canStop      = minSeconds <= 0 || elapsedSeconds >= minSeconds;
   const remaining    = minSeconds > 0 ? Math.max(0, minSeconds - elapsedSeconds) : 0;
+
+  // ── Designated speaker (randomly chosen, stable per task) ────────────────
+  const designatedSpeaker = useMemo(() => {
+    const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+    if (names.length === 0) return null;
+    // Use task id/prompt as seed for stable random selection
+    const seed = (task?.id || task?._id || task?.prompt || "x").toString();
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+    return names[Math.abs(hash) % names.length];
+  }, [memberNames, task?.id, task?._id, task?.prompt]);
 
   // ── Audio level meter (WebAudio API) ─────────────────────────────────────
   const [audioLevel, setAudioLevel]         = useState(0);   // 0..1
@@ -357,15 +369,33 @@ export default function RecordAudioTask({
         {task.prompt || "Record your voice so your teacher can listen later."}
       </p>
 
+      {/* Designated speaker callout */}
+      {designatedSpeaker && (
+        <div className="w-full max-w-4xl mb-4">
+          <div className="bg-yellow-400/25 backdrop-blur-lg rounded-2xl px-6 py-4 border border-yellow-300/40 shadow-xl flex items-center gap-4">
+            <span className="text-5xl">🎤</span>
+            <div>
+              <div className="text-2xl font-black tracking-tight">
+                Designated Speaker: <span className="text-yellow-200">{designatedSpeaker}</span>
+              </div>
+              <div className="text-base opacity-90">
+                The team discusses together, then <strong>{designatedSpeaker}</strong> records the answer.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Instructions */}
       <div className="w-full max-w-4xl mb-8">
         <div className="bg-black/30 backdrop-blur-lg rounded-3xl p-6 border border-white/20 shadow-2xl">
           <div className="text-2xl font-extrabold mb-3">How to do this task</div>
           <ol className="text-lg leading-relaxed list-decimal pl-6 opacity-95">
-            <li>Tap <strong>START</strong> to begin recording.</li>
-            <li>EVERY team member must add to the recording. Speak clearly.{" "}
+            <li>Discuss the answer together as a team.</li>
+            <li>{designatedSpeaker ? <><strong>{designatedSpeaker}</strong> taps</> : <>Tap</>} <strong>START</strong> to begin recording.</li>
+            <li>Speak clearly.{" "}
               {minSeconds > 0 && <span>Keep going until the timer reaches <strong>{minSeconds}s</strong>. </span>}
-              Tap <strong>STOP</strong> when you are finished.
+              Tap <strong>STOP</strong> when finished.
             </li>
             <li>Tap <strong>Play</strong> to listen. If needed, tap <strong>Re-record</strong>.</li>
             <li>When you are happy with it, tap <strong>Submit Recording</strong>.</li>

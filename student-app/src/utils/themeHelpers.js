@@ -169,6 +169,15 @@ export function getThemeShell(uiTheme) {
 }
 
 /**
+ * Returns "dark" or "light" depending on theme.
+ * Bold and Dyno are dark themes; Eager is light.
+ */
+export function getThemeMode(uiTheme) {
+  if (uiTheme === "bold" || uiTheme === "dyno") return "dark";
+  return "light";
+}
+
+/**
  * Format milliseconds as MM:SS
  */
 export function formatRemainingMs(ms) {
