@@ -1766,17 +1766,18 @@ function StudentApp() {
       taskLockedRef.current = true;
 
       // Safety net: if the socket callback never fires (network drop, server crash),
-      // unlock after 12s so the student isn't permanently stuck.
+      // unlock after 30s so the student isn't permanently stuck.
+      // (AI-scored tasks like short-answer can take 15-20s, so 12s was too aggressive.)
       let submitAcked = false;
       const submitSafetyTimer = setTimeout(() => {
         if (submitAcked) return;
-        console.warn("[task:submit] No ack after 12s — forcing unlock");
+        console.warn("[task:submit] No ack after 30s — forcing unlock");
         setSubmitting(false);
         setTaskLocked(false);
         taskLockedRef.current = false;
         setStatusMessage("Submission timed out — moving on.");
         endReviewAndReturnToScan();
-      }, 12000);
+      }, 30000);
 
       socket.emit("task:submit", payload, (response) => {
         submitAcked = true;
