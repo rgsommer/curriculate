@@ -1132,11 +1132,18 @@ function StudentApp() {
       try { return !!window.__curriculateTaskWantsScan; } catch { return false; }
     })();
 
+    // Compute taskNeedsGlobalScanner locally (defined later in component, can't use as dep)
+    const liveType = currentTask?.taskType || currentTask?.type;
+    const needsGlobalScanner =
+      liveType === TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE ||
+      liveType === TASK_TYPES.MAD_DASH ||
+      liveType === TASK_TYPES.MAD_DASH_SEQUENCE;
+
     // Compute desired scanner state directly — no reading scannerActive here.
     const shouldBeActive = (() => {
       if (taskLocked && !taskWantsScan) return false;
       if (mustScan) return true;
-      if (taskNeedsGlobalScanner) return true;
+      if (needsGlobalScanner) return true;
       if (taskWantsScan) return true;
       return false;
     })();
@@ -1168,7 +1175,6 @@ function StudentApp() {
     roomCode,
     taskLocked,
     postSubmitSecondsLeft,
-    taskNeedsGlobalScanner,
   ]);
 
   useEffect(() => {
