@@ -827,7 +827,7 @@ function planConceptAllocation(aiWordBank, pool, safeCount) {
   return { concepts, plan };
 }
 
-function taskMustIncludeTermsOrThrow(task, terms) {
+function taskMustIncludeTermsOrThrow(task, terms, options) {
   const needed = Array.isArray(terms) ? terms.map(_normalizeConcept).filter(Boolean) : [];
   if (!needed.length) return;
 
@@ -882,8 +882,14 @@ function taskMustIncludeTermsOrThrow(task, terms) {
   }
 
   if (missing.length) {
-    throw new Error(`Task missing required concepts: ${missing.join(", ")}`);
+    const msg = `Task missing required concepts: ${missing.join(", ")}`;
+    if (options?.warnOnly) {
+      console.warn(`[taskMustIncludeTerms] WARNING (non-blocking): ${msg}`);
+      return missing;          // Return missing list for caller to handle
+    }
+    throw new Error(msg);
   }
+  return [];
 }
 
 // "Objective-ish" types that are most likely to cleanly include specific vocabulary terms.
@@ -1144,8 +1150,8 @@ export async function createAiTaskset(req, res) {
 
           const fin = finalizeTask(expectedType, attemptTask);
 
-          // ✅ Enforce assigned concepts per-task (tight prompt, predictable coverage)
-          taskMustIncludeTermsOrThrow(fin, assignedTerms);
+          // ✅ Check assigned concepts per-task — warn but don't block on missing ones
+          const missingTerms = taskMustIncludeTermsOrThrow(fin, assignedTerms, { warnOnly: true });
 
           finalized.push(fin);
           success = true;
