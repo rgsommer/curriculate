@@ -357,8 +357,8 @@ export default function DrawMimeTask({
     const payload = pendingResult || { type: mode, completed: true };
 
     if (isLastRound) {
-      // All rounds done — submit once
-      onSubmit?.({ ...payload, roundIndex, totalRounds, allRoundsDone: true });
+      // All rounds done — submit once (include cumulative team scores for backend)
+      onSubmit?.({ ...payload, roundIndex, totalRounds, allRoundsDone: true, scoreLeft, scoreRight });
       // Reset round counter for if the task somehow restarts
       setRoundIndex(0);
       setPerformerIdx(initialPerformerIdx);

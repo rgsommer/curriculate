@@ -198,6 +198,7 @@ function StudentApp() {
   const pendingTaskAssignedRef = useRef(null);
   const postSubmitSecondsLeftRef = useRef(null);
   const taskStartedAtRef = useRef(null); // timestamp when current task was assigned (for speed bonus)
+  const tasksCompletedCountRef = useRef(0); // increments each submission — used for reader rotation
   
   const postPhaseRef = useRef(postPhase);
     useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
@@ -2111,6 +2112,9 @@ function StudentApp() {
           const earnedPts = typeof response?.points === "number" ? response.points : 0;
           const spdBonus = typeof response?.speedBonus === "number" ? response.speedBonus : 0;
 
+          // Increment task-completion counter for reader rotation
+          tasksCompletedCountRef.current += 1;
+
           setReviewState({
             ...reviewObj,
             correct: typeof response?.correct === "boolean" ? response.correct : undefined,
@@ -2150,7 +2154,7 @@ function StudentApp() {
             setPostSubmitSecondsLeft(t);
             if (t <= 0) {
               clearInterval(timer);
-              endReviewAndReturnToScan();
+              // Don't auto-advance — wait for student to tap "Read it" button
             }
           }, 1000);
 
@@ -4720,7 +4724,7 @@ function StudentApp() {
               ? members.map((m) => String(m || "").trim()).filter(Boolean)
               : [];
             const reader = namedMembers.length > 0
-              ? namedMembers[Math.abs(currentTaskIndex ?? 0) % namedMembers.length]
+              ? namedMembers[tasksCompletedCountRef.current % namedMembers.length]
               : null;
             return (
               <>
@@ -4756,13 +4760,13 @@ function StudentApp() {
           {!reviewState?.feedback && !reviewState?.hint && !reviewState?.modelAnswer && reviewState?.comment && (
             <div>{reviewState.comment}</div>
           )}
-          {/* "Read it" skip button — always visible in feedback panel */}
-          {(() => {
+          {/* "Read it" button — only appears AFTER countdown expires */}
+          {postSubmitSecondsLeft != null && postSubmitSecondsLeft <= 0 && (() => {
             const namedM = Array.isArray(members)
               ? members.map((m) => String(m || "").trim()).filter(Boolean)
               : [];
             const readerName = namedM.length > 0
-              ? namedM[Math.abs(currentTaskIndex ?? 0) % namedM.length]
+              ? namedM[tasksCompletedCountRef.current % namedM.length]
               : null;
             return (
               <button
@@ -4770,16 +4774,17 @@ function StudentApp() {
                 onClick={() => endReviewAndReturnToScan()}
                 style={{
                   marginTop: 6,
-                  padding: "8px 20px",
+                  padding: "10px 24px",
                   borderRadius: 999,
-                  border: "1px solid rgba(255,255,255,0.3)",
-                  background: "rgba(255,255,255,0.15)",
+                  border: "2px solid rgba(255,255,255,0.5)",
+                  background: "rgba(255,255,255,0.25)",
                   color: "#fff",
                   fontWeight: 700,
-                  fontSize: "0.85rem",
+                  fontSize: "0.9rem",
                   cursor: "pointer",
                   backdropFilter: "blur(4px)",
-                  alignSelf: "flex-start",
+                  alignSelf: "center",
+                  animation: "matchPopIn 0.3s ease-out",
                 }}
               >
                 {readerName ? `${readerName} read it` : "I read it"} →

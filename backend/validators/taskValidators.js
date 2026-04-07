@@ -1286,6 +1286,8 @@ export function normalizeTaskByType(taskType, rawTask) {
       };
 
       // --- Normalise clues array ---
+      // Priority: explicit clues > vocabulary/word list > prompt text extraction
+
       let clues = Array.isArray(task.clues)
         ? task.clues.map((c) => String(c || "").trim()).filter(Boolean)
         : [];
@@ -1293,6 +1295,27 @@ export function normalizeTaskByType(taskType, rawTask) {
       // Also check config.clues
       if (!clues.length && Array.isArray(task.config?.clues)) {
         clues = task.config.clues.map((c) => String(c || "").trim()).filter(Boolean);
+      }
+
+      // ✅ Prefer vocabulary / word list from the task (teacher's own words)
+      if (!clues.length) {
+        const wordSources = [
+          task.words, task.config?.words,
+          task.vocabulary, task.config?.vocabulary,
+          task.requiredWords, task.config?.requiredWords,
+          task.wordList, task.config?.wordList,
+          task.concepts, task.config?.concepts,
+          task.terms, task.config?.terms,
+        ];
+        for (const src of wordSources) {
+          if (Array.isArray(src) && src.length > 0) {
+            clues = src.map((w) => String(w || "").trim()).filter(Boolean);
+            if (clues.length) {
+              console.log(`[normalizeDrawMime] Using ${clues.length} words from task word list`);
+              break;
+            }
+          }
+        }
       }
 
       // If still empty, try to extract clues from prompt text

@@ -41,7 +41,7 @@ import { generateAIScore } from "./ai/aiScoring.js";
 import { generateSessionSummaries } from "./ai/sessionSummaries.js";
 import { sendTranscriptEmail } from "./email/transcriptEmailer.js";
 import { sendSystemEmail } from "./email/shareInviteEmailer.js";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 
 // 8) Controllers
 import { getMeController } from "./controllers/meController.js"; // you'll create this
@@ -552,11 +552,9 @@ async function transcribeAndFeedbackRecordAudio(s3Key, task) {
 
     // 2) Transcribe with Whisper
     const ext = s3Key.endsWith(".mp3") ? "mp3" : s3Key.endsWith(".wav") ? "wav" : "webm";
-    const audioFile = new File(
-      [audioBuffer],
-      `recording.${ext}`,
-      { type: ext === "mp3" ? "audio/mpeg" : ext === "wav" ? "audio/wav" : "audio/webm" }
-    );
+    const mimeType = ext === "mp3" ? "audio/mpeg" : ext === "wav" ? "audio/wav" : "audio/webm";
+    // Use OpenAI SDK's toFile() — works across all Node versions (File global only in Node 20+)
+    const audioFile = await toFile(audioBuffer, `recording.${ext}`, { type: mimeType });
 
     const oai = getOpenAIInstance();
     const whisperResp = await oai.audio.transcriptions.create({
@@ -2258,12 +2256,38 @@ socket.on("task:force-advance", ({ roomCode }) => {
       if (type === "sequence") {
         const correctOrder =
           Array.isArray(task?.correctOrder) ? task.correctOrder :
+          Array.isArray(task?.config?.correctOrder) ? task.config.correctOrder :
           Array.isArray(task?.order) ? task.order :
           null;
 
         const studentOrder = answer?.order || answer?.sequence || answer || null;
+        const correctCount = aiScore?.correctCount ?? null;
+        const totalItems = aiScore?.totalItems ?? (correctOrder ? correctOrder.length : null);
+        const fraction = aiScore?.fractionCorrect ?? null;
 
-        return { correctOrder, studentOrder };
+        // Build items lookup for display-friendly names
+        const items = Array.isArray(task?.items) ? task.items :
+                      Array.isArray(task?.config?.items) ? task.config.items : [];
+        const itemById = new Map();
+        for (const it of items) {
+          if (it?.id) itemById.set(String(it.id), it);
+        }
+
+        const feedback = fraction === 1 ? "Perfect order — well done!"
+          : fraction != null && fraction >= 0.5 ? `You got ${correctCount} of ${totalItems} in the right position. Close!`
+          : fraction != null ? `${correctCount} of ${totalItems} correct. Review the order and try again next time.`
+          : null;
+
+        return {
+          correctOrder,
+          studentOrder,
+          correctCount,
+          totalItems,
+          fractionCorrect: fraction,
+          aiFeedback: feedback,
+          score: aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+        };
       }
 
       // DIFF DETECTIVE
@@ -3880,6 +3904,76 @@ if (!isMultiPack && task.taskType === "guess-who") {
         maxPoints: basePoints,
         totalScore: pointsEarned,
       };
+    }
+
+    // ✅ DRAW-MIME — use client-side team scores (participation + bonus)
+    if (!isMultiPack && task.taskType === "draw-mime" && answer && typeof answer === "object") {
+      const clientScore = (Number(answer.scoreLeft) || 0) + (Number(answer.scoreRight) || 0);
+      // Award points proportional to client-side game performance.
+      // Each correct round awards 1+bonus (0-3) to each team, so max per round ~8 (both teams × 4).
+      // Cap at basePoints; award at least participation credit if they played.
+      const played = answer.completed === true || answer.allRoundsDone === true;
+      if (played) {
+        pointsEarned = clientScore > 0 ? Math.min(clientScore, basePoints) : Math.round(basePoints * 0.5);
+        correct = clientScore > 0 ? true : null;
+      } else {
+        pointsEarned = Math.round(basePoints * 0.25);
+        correct = null;
+      }
+      aiScore = {
+        strategy: "draw-mime-client",
+        correct,
+        scoreLeft: Number(answer.scoreLeft) || 0,
+        scoreRight: Number(answer.scoreRight) || 0,
+        combinedScore: clientScore,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ✅ SEQUENCE — compare student order to correct order, award partial credit
+    if (!isMultiPack && task.taskType === "sequence" && !aiScore) {
+      const correctOrder =
+        Array.isArray(task.correctOrder) ? task.correctOrder :
+        Array.isArray(task.config?.correctOrder) ? task.config.correctOrder :
+        Array.isArray(task.order) ? task.order :
+        null;
+
+      const studentOrder = answer?.order || answer?.sequence || null;
+
+      if (correctOrder && Array.isArray(studentOrder) && studentOrder.length > 0) {
+        let correctCount = 0;
+        for (let i = 0; i < correctOrder.length; i++) {
+          if (String(studentOrder[i] ?? "").trim() === String(correctOrder[i] ?? "").trim()) {
+            correctCount++;
+          }
+        }
+        const total = correctOrder.length;
+        const fraction = total > 0 ? correctCount / total : 0;
+
+        correct = fraction === 1;
+        pointsEarned = Math.round(basePoints * fraction);
+        aiScore = {
+          strategy: "sequence-objective",
+          correct,
+          correctCount,
+          totalItems: total,
+          fractionCorrect: fraction,
+          maxPoints: basePoints,
+          totalScore: pointsEarned,
+          correctOrder,
+          studentOrder,
+        };
+      } else {
+        // No correct order to compare — participation credit
+        correct = null;
+        pointsEarned = Math.round(basePoints * 0.5);
+        aiScore = {
+          strategy: "sequence-participation",
+          maxPoints: basePoints,
+          totalScore: pointsEarned,
+        };
+      }
     }
 
     if (!isMultiPack && !isObjective && !aiScore) {
