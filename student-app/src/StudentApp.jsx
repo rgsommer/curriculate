@@ -4508,7 +4508,7 @@ function StudentApp() {
               ? members.map((m) => String(m || "").trim()).filter(Boolean)
               : [];
             const reader = namedMembers.length > 0
-              ? namedMembers[Math.abs(taskIndex ?? 0) % namedMembers.length]
+              ? namedMembers[Math.abs(currentTaskIndex ?? 0) % namedMembers.length]
               : null;
             return (
               <>
