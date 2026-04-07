@@ -882,7 +882,7 @@ function taskMustIncludeTermsOrThrow(task, terms, options) {
   }
 
   if (missing.length) {
-    const msg = `Task missing required concepts: ${missing.join(", ")}`;
+    const msg = `Concepts not included: ${missing.join(", ")}`;
     if (options?.warnOnly) {
       console.warn(`[taskMustIncludeTerms] WARNING (non-blocking): ${msg}`);
       return missing;          // Return missing list for caller to handle
