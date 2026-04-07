@@ -1624,17 +1624,20 @@ export function validateTaskByType(taskType, task) {
           if (!_resolvePrompt(it)) errors.push(`items[${i}].prompt required`);
           // Normalize alternate answer fields onto correctAnswer for downstream code
           if (!asNonEmptyString(it.correctAnswer)) it.correctAnswer = _resolveAns(it);
-          if (!asNonEmptyString(it.correctAnswer)) errors.push(`items[${i}].correctAnswer required`);
+          // Missing correctAnswer is a warning, not a blocker — AI scoring can handle open-ended questions
+          if (!asNonEmptyString(it.correctAnswer)) {
+            console.warn(`[validate] short-answer items[${i}].correctAnswer missing — AI scoring will be used`);
+          }
         });
       } else {
         // Single-prompt fallback — also check alternate field names
         const saPrompt = _resolvePrompt(task);
         const saAns = _resolveAns(task);
         if (!saPrompt) errors.push("prompt required");
-        if (!saAns) errors.push("correctAnswer required");
-        // Auto-convert to items[] if we found both
-        if (saPrompt && saAns) {
-          task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAns }];
+        // Missing correctAnswer is not a blocker — AI scoring can handle it
+        // Auto-convert to items[] if we found a prompt
+        if (saPrompt) {
+          task.items = [{ id: "q1", prompt: saPrompt, correctAnswer: saAns || "" }];
         }
       }
       break;
