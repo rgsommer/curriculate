@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useThemeMode } from "../../../utils/ThemeModeContext.js";
 
 /**
  * WordWeaverDuelTask (WORD_WEAVER_DUEL)
@@ -28,6 +29,9 @@ export default function WordWeaverDuelTask({
   review = null,
 }) {
   const sock = useMemo(() => socket?.current || socket || null, [socket]);
+  const themeMode = useThemeMode();
+  const isDark = themeMode === "dark";
+  const s = useMemo(() => getStyles(isDark), [isDark]);
 
   const canInteract = mode === "play" && !disabled;
 
@@ -520,9 +524,9 @@ export default function WordWeaverDuelTask({
   // ─────────────────────────────────────────────
   if (!task) {
     return (
-      <div style={styles.card}>
-        <div style={styles.title}>Word Weaver Duel</div>
-        <div style={styles.muted}>No task data received.</div>
+      <div style={s.card}>
+        <div style={s.title}>Word Weaver Duel</div>
+        <div style={s.muted}>No task data received.</div>
       </div>
     );
   }
@@ -555,36 +559,36 @@ export default function WordWeaverDuelTask({
     const selectedAlreadyPlaced = selectedWordIdx != null && !!placedByWord[selectedWordIdx];
 
     return (
-      <div style={styles.card}>
-        <div style={styles.headerRow}>
-          <div style={styles.title}>Word Weaver Duel</div>
-          <div style={styles.pillsRow}>
-            <div style={styles.pill}>{placedCount}/{scrabbleWords.length} words</div>
+      <div style={s.card}>
+        <div style={s.headerRow}>
+          <div style={s.title}>Word Weaver Duel</div>
+          <div style={s.pillsRow}>
+            <div style={s.pill}>{placedCount}/{scrabbleWords.length} words</div>
             {turnkeeper.perTurnSeconds > 0 && (
-              <div style={styles.pill}>⏱ {timeLeft ?? turnkeeper.perTurnSeconds}s</div>
+              <div style={s.pill}>⏱ {timeLeft ?? turnkeeper.perTurnSeconds}s</div>
             )}
           </div>
         </div>
 
-        <div style={styles.prompt}>{prompt}</div>
+        <div style={s.prompt}>{prompt}</div>
 
-        <div style={styles.howBox}>
-          <div style={styles.sectionTitle}>How to play</div>
-          <ul style={styles.howList}>
+        <div style={s.howBox}>
+          <div style={s.sectionTitle}>How to play</div>
+          <ul style={s.howList}>
             {howToPlay.map((line, i) => (
-              <li key={i} style={styles.howItem}>
+              <li key={i} style={s.howItem}>
                 {line}
               </li>
             ))}
           </ul>
         </div>
 
-        <div style={styles.scrabbleTop}>
-          <div style={styles.scoreBox}>
-            <div style={styles.sectionTitle}>Turnkeeper</div>
+        <div style={s.scrabbleTop}>
+          <div style={s.scoreBox}>
+            <div style={s.sectionTitle}>Turnkeeper</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {scoreRows.map((r, idx) => (
-                <div key={idx} style={{ ...styles.scoreChip, ...(r.isActive ? styles.scoreChipActive : null) }}>
+                <div key={idx} style={{ ...s.scoreChip, ...(r.isActive ? s.scoreChipActive : null) }}>
                   <div style={{ fontWeight: 900 }}>{r.name}</div>
                   <div style={{ opacity: 0.9 }}>{r.score} pts</div>
                 </div>
@@ -596,7 +600,7 @@ export default function WordWeaverDuelTask({
                 type="button"
                 disabled={!canInteract}
                 onClick={() => setActivePlayer((ap) => (players.length ? (ap + 1) % players.length : ap))}
-                style={styles.secondaryBtn}
+                style={s.secondaryBtn}
                 title="Advance to the next player (manual)"
               >
                 Next turn →
@@ -606,7 +610,7 @@ export default function WordWeaverDuelTask({
                 type="button"
                 disabled={!canInteract}
                 onClick={() => setOrientation((o) => (o === "H" ? "V" : "H"))}
-                style={styles.secondaryBtn}
+                style={s.secondaryBtn}
                 title="Toggle placement orientation"
               >
                 Orientation: {orientation === "H" ? "Horizontal" : "Vertical"}
@@ -616,7 +620,7 @@ export default function WordWeaverDuelTask({
                 type="button"
                 disabled={!canInteract}
                 onClick={() => setRotatedView((v) => !v)}
-                style={styles.secondaryBtn}
+                style={s.secondaryBtn}
                 title="Rotate the board view (visual only)"
               >
                 {rotatedView ? "Un-rotate board" : "Rotate board"}
@@ -638,16 +642,16 @@ export default function WordWeaverDuelTask({
             )}
           </div>
 
-          <div style={styles.boardWrap}>
+          <div style={s.boardWrap}>
             <div
               style={{
-                ...styles.board,
+                ...s.board,
                 transform: rotatedView ? "rotate(90deg)" : "none",
                 transformOrigin: "center",
               }}
             >
               {board.map((row, r) => (
-                <div key={r} style={styles.boardRow}>
+                <div key={r} style={s.boardRow}>
                   {row.map((cell, c) => {
                     const isEmpty = !cell?.ch;
                     const selectedWord = selectedWordIdx != null ? (scrabbleWords[selectedWordIdx] || "") : "";
@@ -670,8 +674,8 @@ export default function WordWeaverDuelTask({
                       <div
                         key={`${r}:${c}`}
                         style={{
-                          ...styles.cell,
-                          ...(isEmpty ? styles.cellEmpty : styles.cellFilled),
+                          ...s.cell,
+                          ...(isEmpty ? s.cellEmpty : s.cellFilled),
                           ...(isPreview ? { background: "rgba(14,165,233,0.15)", borderStyle: "dashed", borderColor: "rgba(14,165,233,0.5)" } : {}),
                         }}
                         onDragOver={(ev) => {
@@ -697,8 +701,8 @@ export default function WordWeaverDuelTask({
         </div>
 
         <div style={{ marginTop: 12 }}>
-          <div style={styles.sectionTitle}>Word Rack</div>
-          <div style={styles.wordRack}>
+          <div style={s.sectionTitle}>Word Rack</div>
+          <div style={s.wordRack}>
             {scrabbleWords.map((w, idx) => {
               const placedInfo = placedByWord[idx] || null;
               const isSelected = selectedWordIdx === idx;
@@ -710,7 +714,7 @@ export default function WordWeaverDuelTask({
                   {/* Tile strip rendering */}
                   <div
                     style={{
-                      ...styles.tileStrip,
+                      ...s.tileStrip,
                       ...(isPlaced ? { opacity: 0.5, cursor: "not-allowed" } : {}),
                       ...(isSelected ? { border: "2px solid rgba(14,165,233,0.9)", background: "rgba(14,165,233,0.08)" } : {}),
                     }}
@@ -719,7 +723,7 @@ export default function WordWeaverDuelTask({
                       .toUpperCase()
                       .split("")
                       .map((letter, i) => (
-                        <div key={i} style={styles.tile}>
+                        <div key={i} style={s.tile}>
                           {letter}
                         </div>
                       ))}
@@ -787,7 +791,7 @@ export default function WordWeaverDuelTask({
                   )}
 
                   {isPlaced && (
-                    <div style={styles.placedMeta}>
+                    <div style={s.placedMeta}>
                       +{placedInfo.points} pts • {players[placedInfo.playerIndex] || `Player ${placedInfo.playerIndex + 1}`} • {placedInfo.orientation}
                     </div>
                   )}
@@ -798,17 +802,17 @@ export default function WordWeaverDuelTask({
 
           {/* Error message display */}
           {placementError && (
-            <div style={styles.placementErrorBox}>
+            <div style={s.placementErrorBox}>
               ⚠ {placementError}
             </div>
           )}
 
-          <div style={styles.controls}>
+          <div style={s.controls}>
             <button
               type="button"
               onClick={submitScrabble}
               disabled={mode === "review" || placedCount === 0}
-              style={styles.submitBtn}
+              style={s.submitBtn}
               title={placedCount === 0 ? "Place at least one word first" : "Submit the final score snapshot"}
             >
               {placedCount === 0 ? "Place a word to enable Submit" : "Submit ✅"}
@@ -827,7 +831,7 @@ export default function WordWeaverDuelTask({
                 setPlacementError(null);
               }}
               disabled={!canInteract || mode === "review"}
-              style={styles.secondaryBtn}
+              style={s.secondaryBtn}
               title="Clear the board and start again"
             >
               Reset
@@ -835,16 +839,16 @@ export default function WordWeaverDuelTask({
           </div>
 
           {mode === "review" && (
-            <div style={styles.reviewBox}>
-              <div style={styles.reviewTitle}>Review</div>
+            <div style={s.reviewBox}>
+              <div style={s.reviewTitle}>Review</div>
               {reviewCorrect === null ? (
-                <div style={styles.muted}>Feedback not available.</div>
+                <div style={s.muted}>Feedback not available.</div>
               ) : reviewCorrect ? (
-                <div style={styles.good}>Correct ✅</div>
+                <div style={s.good}>Correct ✅</div>
               ) : (
-                <div style={styles.bad}>Not quite ❌</div>
+                <div style={s.bad}>Not quite ❌</div>
               )}
-              {review?.feedback && <div style={styles.feedback}>{String(review.feedback)}</div>}
+              {review?.feedback && <div style={s.feedback}>{String(review.feedback)}</div>}
             </div>
           )}
         </div>
@@ -855,12 +859,12 @@ export default function WordWeaverDuelTask({
   // Phrase rebuild mode render (legacy)
   if (!phrase || tokens.length === 0) {
     return (
-      <div style={styles.card}>
-        <div style={styles.title}>Word Weaver Duel</div>
-        <div style={styles.muted}>
+      <div style={s.card}>
+        <div style={s.title}>Word Weaver Duel</div>
+        <div style={s.muted}>
           This round is missing the main text it needs.
         </div>
-        <div style={{ marginTop: 8, ...styles.muted }}>
+        <div style={{ marginTop: 8, ...s.muted }}>
           Fix: provide a phrase (task.phrase / task.targetPhrase) OR provide a word list (task.words) to play the grid mode.
         </div>
       </div>
@@ -868,39 +872,39 @@ export default function WordWeaverDuelTask({
   }
 
   return (
-    <div style={styles.card}>
-      <div style={styles.headerRow}>
-        <div style={styles.title}>Word Weaver Duel</div>
-        <div style={styles.pillsRow}>
-          <div style={styles.pill}>
+    <div style={s.card}>
+      <div style={s.headerRow}>
+        <div style={s.title}>Word Weaver Duel</div>
+        <div style={s.pillsRow}>
+          <div style={s.pill}>
             {phraseProgress.filled}/{phraseProgress.total}
           </div>
         </div>
       </div>
 
-      <div style={styles.prompt}>{phrasePrompt}</div>
+      <div style={s.prompt}>{phrasePrompt}</div>
 
-      <div style={styles.howBox}>
-        <div style={styles.sectionTitle}>How to play</div>
-        <ul style={styles.howList}>
-          <li style={styles.howItem}>Tap a word in the Word Bank to select it.</li>
-          <li style={styles.howItem}>Tap an empty blank slot to place the selected word.</li>
-          <li style={styles.howItem}>Tap a filled slot to remove that word and put it back in the bank.</li>
-          <li style={styles.howItem}>When all blanks are filled, press Submit.</li>
+      <div style={s.howBox}>
+        <div style={s.sectionTitle}>How to play</div>
+        <ul style={s.howList}>
+          <li style={s.howItem}>Tap a word in the Word Bank to select it.</li>
+          <li style={s.howItem}>Tap an empty blank slot to place the selected word.</li>
+          <li style={s.howItem}>Tap a filled slot to remove that word and put it back in the bank.</li>
+          <li style={s.howItem}>When all blanks are filled, press Submit.</li>
         </ul>
       </div>
 
       {(opponent.teamId || opponent.filled > 0 || opponent.submitted) && (
-        <div style={styles.duelBox}>
-          <div style={styles.duelTitle}>Duel status</div>
-          <div style={styles.duelLine}>
-            <span style={styles.duelLabel}>You:</span>
+        <div style={s.duelBox}>
+          <div style={s.duelTitle}>Duel status</div>
+          <div style={s.duelLine}>
+            <span style={s.duelLabel}>You:</span>
             <span>
               {phraseProgress.filled}/{phraseProgress.total} {submittedPhrase ? "• submitted" : ""}
             </span>
           </div>
-          <div style={styles.duelLine}>
-            <span style={styles.duelLabel}>Opponent:</span>
+          <div style={s.duelLine}>
+            <span style={s.duelLabel}>Opponent:</span>
             <span>
               {opponent.filled}/{phraseProgress.total} {opponent.submitted ? "• submitted" : ""}
             </span>
@@ -908,7 +912,7 @@ export default function WordWeaverDuelTask({
         </div>
       )}
 
-      <div style={styles.slotsWrap}>
+      <div style={s.slotsWrap}>
         {tokens.map((_, i) => {
           const filled = !!slots[i];
           return (
@@ -918,8 +922,8 @@ export default function WordWeaverDuelTask({
               onClick={() => handleSlotClick(i)}
               disabled={!canInteractPhrase}
               style={{
-                ...styles.slot,
-                ...(filled ? styles.slotFilled : styles.slotEmpty),
+                ...s.slot,
+                ...(filled ? s.slotFilled : s.slotEmpty),
               }}
               title={
                 canInteractPhrase
@@ -937,10 +941,10 @@ export default function WordWeaverDuelTask({
         })}
       </div>
 
-      <div style={styles.sectionTitle}>Word Bank</div>
-      <div style={styles.bankWrap}>
+      <div style={s.sectionTitle}>Word Bank</div>
+      <div style={s.bankWrap}>
         {bank.length === 0 ? (
-          <div style={styles.muted}>No words left in the bank.</div>
+          <div style={s.muted}>No words left in the bank.</div>
         ) : (
           bank.map((w, idx) => {
             const selected = pickedIndex === idx;
@@ -951,8 +955,8 @@ export default function WordWeaverDuelTask({
                 onClick={() => handlePick(idx)}
                 disabled={!canInteractPhrase}
                 style={{
-                  ...styles.wordChip,
-                  ...(selected ? styles.wordChipSelected : null),
+                  ...s.wordChip,
+                  ...(selected ? s.wordChipSelected : null),
                 }}
                 aria-pressed={selected}
               >
@@ -963,12 +967,12 @@ export default function WordWeaverDuelTask({
         )}
       </div>
 
-      <div style={styles.controls}>
+      <div style={s.controls}>
         <button
           type="button"
           onClick={handleSubmitPhrase}
           disabled={!canInteractPhrase || slots.some((s) => !s)}
-          style={styles.submitBtn}
+          style={s.submitBtn}
         >
           Submit ✅
         </button>
@@ -976,241 +980,263 @@ export default function WordWeaverDuelTask({
           type="button"
           onClick={handleResetPhrase}
           disabled={!canInteractPhrase}
-          style={styles.secondaryBtn}
+          style={s.secondaryBtn}
         >
           Reset
         </button>
       </div>
 
       {mode === "review" && (
-        <div style={styles.reviewBox}>
-          <div style={styles.reviewTitle}>Review</div>
+        <div style={s.reviewBox}>
+          <div style={s.reviewTitle}>Review</div>
           {reviewCorrect === null ? (
-            <div style={styles.muted}>Feedback not available.</div>
+            <div style={s.muted}>Feedback not available.</div>
           ) : reviewCorrect ? (
-            <div style={styles.good}>Correct ✅</div>
+            <div style={s.good}>Correct ✅</div>
           ) : (
-            <div style={styles.bad}>Not quite ❌</div>
+            <div style={s.bad}>Not quite ❌</div>
           )}
-          {review?.feedback && <div style={styles.feedback}>{String(review.feedback)}</div>}
+          {review?.feedback && <div style={s.feedback}>{String(review.feedback)}</div>}
         </div>
       )}
     </div>
   );
 }
 
-const styles = {
-  card: {
-    padding: 12,
-    borderRadius: 16,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))",
-    boxShadow: "0 16px 40px rgba(2,6,23,0.10)",
-    color: "#0f172a",
-  },
+function getStyles(isDark) {
+  const border = isDark ? "1px solid rgba(255,255,255,0.15)" : "1px solid rgba(15,23,42,0.14)";
+  const cardBg = isDark
+    ? "linear-gradient(135deg, rgba(30,30,50,0.95), rgba(20,20,40,0.92))"
+    : "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))";
+  const textPrimary = isDark ? "#e0e7ff" : "#0f172a";
+  const textSecondary = isDark ? "#94a3b8" : "#334155";
+  const surfaceBg = isDark ? "rgba(255,255,255,0.06)" : "#f8fafc";
+  const shadow = isDark ? "0 16px 40px rgba(0,0,0,0.25)" : "0 16px 40px rgba(2,6,23,0.10)";
 
-  headerRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  title: { fontWeight: 950, fontSize: 20, letterSpacing: "-0.01em" },
-  pillsRow: { display: "flex", gap: 8, flexWrap: "wrap" },
-  pill: {
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "#f8fafc",
-    fontWeight: 800,
-  },
+  return {
+    card: {
+      padding: 12,
+      borderRadius: 16,
+      border,
+      background: cardBg,
+      boxShadow: shadow,
+      color: textPrimary,
+    },
 
-  prompt: { marginTop: 8, color: "#334155", fontWeight: 600, lineHeight: 1.25 },
+    headerRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+    title: { fontWeight: 950, fontSize: 20, letterSpacing: "-0.01em" },
+    pillsRow: { display: "flex", gap: 8, flexWrap: "wrap" },
+    pill: {
+      padding: "6px 10px",
+      borderRadius: 999,
+      fontSize: 12,
+      border,
+      background: surfaceBg,
+      fontWeight: 800,
+    },
 
-  sectionTitle: { marginTop: 12, fontWeight: 900, color: "#0f172a" },
+    prompt: { marginTop: 8, color: textSecondary, fontWeight: 600, lineHeight: 1.25 },
 
-  // Scrabble layout
-  scrabbleTop: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr", gap: 12 },
-  scoreBox: {
-    borderRadius: 16,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "#f8fafc",
-    padding: 10,
-  },
-  scoreChip: {
-    padding: "8px 10px",
-    borderRadius: 14,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))",
-    boxShadow: "0 16px 40px rgba(2,6,23,0.10)",
-    minWidth: 120,
-  },
-  scoreChipActive: {
-    border: "2px solid rgba(14,165,233,0.9)",
-    background: "rgba(14,165,233,0.08)",
-  },
+    sectionTitle: { marginTop: 12, fontWeight: 900, color: textPrimary },
 
-  boardWrap: {
-    borderRadius: 16,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "#f8fafc",
-    padding: 10,
-    overflow: "hidden",
-  },
-  board: {
-    display: "inline-block",
-    borderRadius: 12,
-    padding: 6,
-    background: "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))",
-    boxShadow: "0 16px 40px rgba(2,6,23,0.10)",
-    border: "1px solid rgba(15,23,42,0.10)",
-  },
-  boardRow: { display: "flex" },
-  cell: {
-    width: 30,
-    height: 30,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900,
-    fontSize: 14,
-    userSelect: "none",
-    cursor: "pointer",
-  },
-  cellEmpty: {
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "#f5f5f0",
-    color: "#94a3b8",
-  },
-  cellFilled: {
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "#d4a574",
-    color: "#0f172a",
-    fontWeight: 900,
-  },
+    // Scrabble layout
+    scrabbleTop: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr", gap: 12 },
+    scoreBox: {
+      borderRadius: 16,
+      border,
+      background: surfaceBg,
+      padding: 10,
+    },
+    scoreChip: {
+      padding: "8px 10px",
+      borderRadius: 14,
+      border,
+      background: cardBg,
+      boxShadow: shadow,
+      minWidth: 120,
+    },
+    scoreChipActive: {
+      border: "2px solid rgba(14,165,233,0.9)",
+      background: isDark ? "rgba(14,165,233,0.15)" : "rgba(14,165,233,0.08)",
+    },
 
-  // Tile strip styles
-  tileStrip: {
-    marginTop: 8,
-    display: "inline-flex",
-    gap: 1,
-    padding: 4,
-    borderRadius: 6,
-    border: "1px solid rgba(15,23,42,0.12)",
-    background: "#fef9f3",
-  },
-  tile: {
-    width: 30,
-    height: 30,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#dbb895",
-    border: "1px solid rgba(15,23,42,0.25)",
-    borderRadius: 2,
-    fontWeight: 900,
-    fontSize: 14,
-    color: "#0f172a",
-    userSelect: "none",
-  },
-  tileVertical: {
-    flexDirection: "column",
-  },
-  rotationIcon: {
-    fontSize: 11,
-    opacity: 0.7,
-    marginTop: 2,
-  },
+    boardWrap: {
+      borderRadius: 16,
+      border,
+      background: surfaceBg,
+      padding: 10,
+      overflow: "hidden",
+    },
+    board: {
+      display: "inline-block",
+      borderRadius: 12,
+      padding: 6,
+      background: cardBg,
+      boxShadow: shadow,
+      border: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(15,23,42,0.10)",
+    },
+    boardRow: { display: "flex" },
+    cell: {
+      width: 30,
+      height: 30,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontWeight: 900,
+      fontSize: 14,
+      userSelect: "none",
+      cursor: "pointer",
+    },
+    cellEmpty: {
+      border: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(15,23,42,0.14)",
+      background: isDark ? "rgba(255,255,255,0.04)" : "#f5f5f0",
+      color: isDark ? "#64748b" : "#94a3b8",
+    },
+    cellFilled: {
+      border: isDark ? "1px solid rgba(212,165,116,0.5)" : "1px solid rgba(15,23,42,0.14)",
+      background: isDark ? "#9a7045" : "#d4a574",
+      color: isDark ? "#fff" : "#0f172a",
+      fontWeight: 900,
+    },
 
-  wordRack: { marginTop: 8, display: "flex", flexWrap: "wrap", gap: 10 },
-  wordChip: {
-    padding: "10px 12px",
-    borderRadius: 999,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))",
-    boxShadow: "0 1px 0 rgba(15,23,42,0.04), 0 16px 40px rgba(2,6,23,0.10)",
-    cursor: "pointer",
-    fontWeight: 900,
-    fontSize: 13,
-    
-  },
-  wordChipSelected: {
-    border: "2px solid rgba(14,165,233,0.9)",
-    background: "rgba(14,165,233,0.08)",
-  },
-  wordChipPlaced: {
-    opacity: 0.55,
-    cursor: "not-allowed",
-  },
-  placedMeta: { fontSize: 12, color: "#475569", paddingLeft: 4 },
+    // Tile strip styles
+    tileStrip: {
+      marginTop: 8,
+      display: "inline-flex",
+      gap: 1,
+      padding: 4,
+      borderRadius: 6,
+      border: isDark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(15,23,42,0.12)",
+      background: isDark ? "rgba(255,255,255,0.06)" : "#fef9f3",
+    },
+    tile: {
+      width: 30,
+      height: 30,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: isDark ? "#8a6a3a" : "#dbb895",
+      border: isDark ? "1px solid rgba(255,255,255,0.2)" : "1px solid rgba(15,23,42,0.25)",
+      borderRadius: 2,
+      fontWeight: 900,
+      fontSize: 14,
+      color: isDark ? "#fff" : "#0f172a",
+      userSelect: "none",
+    },
+    tileVertical: {
+      flexDirection: "column",
+    },
+    rotationIcon: {
+      fontSize: 11,
+      opacity: 0.7,
+      marginTop: 2,
+    },
 
-  // Phrase mode
-  slotsWrap: { marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10 },
-  slot: {
-    padding: "10px 12px",
-    minWidth: 84,
-    borderRadius: 12,
-    border: "1px dashed rgba(15,23,42,0.18)",
-    cursor: "pointer",
-    fontSize: 14,
-    background: "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))",
-    boxShadow: "0 16px 40px rgba(2,6,23,0.10)",
-  },
-  slotEmpty: { opacity: 0.9 },
-  slotFilled: { borderStyle: "solid", background: "#f8fafc" },
+    wordRack: { marginTop: 8, display: "flex", flexWrap: "wrap", gap: 10 },
+    wordChip: {
+      padding: "10px 12px",
+      borderRadius: 999,
+      border,
+      background: cardBg,
+      boxShadow: shadow,
+      cursor: "pointer",
+      fontWeight: 900,
+      fontSize: 13,
+      color: textPrimary,
+    },
+    wordChipSelected: {
+      border: "2px solid rgba(14,165,233,0.9)",
+      background: isDark ? "rgba(14,165,233,0.15)" : "rgba(14,165,233,0.08)",
+    },
+    wordChipPlaced: {
+      opacity: 0.55,
+      cursor: "not-allowed",
+    },
+    placedMeta: { fontSize: 12, color: textSecondary, paddingLeft: 4 },
 
-  bankWrap: { marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 },
+    // Phrase mode
+    slotsWrap: { marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10 },
+    slot: {
+      padding: "10px 12px",
+      minWidth: 84,
+      borderRadius: 12,
+      border: isDark ? "1px dashed rgba(255,255,255,0.2)" : "1px dashed rgba(15,23,42,0.18)",
+      cursor: "pointer",
+      fontSize: 14,
+      background: cardBg,
+      boxShadow: shadow,
+      color: textPrimary,
+    },
+    slotEmpty: { opacity: 0.9 },
+    slotFilled: { borderStyle: "solid", background: surfaceBg },
 
-  controls: { marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" },
-  submitBtn: {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "none",
-    background: "#16a34a",
-    color: "#ffffff",
-    cursor: "pointer",
-    fontWeight: 900,
-  },
-  secondaryBtn: {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "linear-gradient(135deg, rgba(255,255,255,0.98), rgba(241,245,249,0.96))",
-    boxShadow: "0 16px 40px rgba(2,6,23,0.10)",
-    cursor: "pointer",
-    fontWeight: 800,
-    color: "#0f172a",
-  },
+    bankWrap: { marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 },
 
-  muted: { opacity: 0.75, marginTop: 8, color: "#334155" },
+    controls: { marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" },
+    submitBtn: {
+      padding: "10px 14px",
+      borderRadius: 12,
+      border: "none",
+      background: "#16a34a",
+      color: "#ffffff",
+      cursor: "pointer",
+      fontWeight: 900,
+    },
+    secondaryBtn: {
+      padding: "10px 14px",
+      borderRadius: 12,
+      border,
+      background: cardBg,
+      boxShadow: shadow,
+      cursor: "pointer",
+      fontWeight: 800,
+      color: textPrimary,
+    },
 
-  duelBox: {
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 12,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "#f8fafc",
-  },
-  duelTitle: { fontWeight: 900, marginBottom: 6, color: "#0f172a" },
-  duelLine: { color: "#334155", display: "flex", gap: 6, flexWrap: "wrap" },
-  duelLabel: { opacity: 0.75, minWidth: 72 },
+    muted: { opacity: 0.75, marginTop: 8, color: textSecondary },
 
-  reviewBox: {
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 12,
-    border: "1px solid rgba(15,23,42,0.14)",
-    background: "#f8fafc",
-  },
-  reviewTitle: { fontWeight: 900, marginBottom: 6, color: "#0f172a" },
-  good: { fontWeight: 900, color: "#16a34a" },
-  bad: { fontWeight: 900, color: "#dc2626" },
-  feedback: { marginTop: 8, color: "#334155" },
+    duelBox: {
+      marginTop: 12,
+      padding: 10,
+      borderRadius: 12,
+      border,
+      background: surfaceBg,
+    },
+    duelTitle: { fontWeight: 900, marginBottom: 6, color: textPrimary },
+    duelLine: { color: textSecondary, display: "flex", gap: 6, flexWrap: "wrap" },
+    duelLabel: { opacity: 0.75, minWidth: 72 },
 
-  placementErrorBox: {
-    marginTop: 8,
-    padding: 8,
-    borderRadius: 8,
-    background: "#fee2e2",
-    border: "1px solid #fca5a5",
-    color: "#991b1b",
-    fontSize: 13,
-    fontWeight: 600,
-  },
-};
+    reviewBox: {
+      marginTop: 12,
+      padding: 10,
+      borderRadius: 12,
+      border,
+      background: surfaceBg,
+    },
+    reviewTitle: { fontWeight: 900, marginBottom: 6, color: textPrimary },
+    good: { fontWeight: 900, color: "#16a34a" },
+    bad: { fontWeight: 900, color: "#dc2626" },
+    feedback: { marginTop: 8, color: textSecondary },
+
+    howBox: {
+      marginTop: 10,
+      padding: 10,
+      borderRadius: 12,
+      border,
+      background: surfaceBg,
+    },
+    howList: { margin: 0, paddingLeft: 18, fontSize: 13, color: textSecondary },
+    howItem: { marginTop: 4 },
+
+    placementErrorBox: {
+      marginTop: 8,
+      padding: 8,
+      borderRadius: 8,
+      background: isDark ? "rgba(220,38,38,0.15)" : "#fee2e2",
+      border: isDark ? "1px solid rgba(248,113,113,0.4)" : "1px solid #fca5a5",
+      color: isDark ? "#fca5a5" : "#991b1b",
+      fontSize: 13,
+      fontWeight: 600,
+    },
+  };
+}

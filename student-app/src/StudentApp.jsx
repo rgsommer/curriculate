@@ -1132,30 +1132,16 @@ function StudentApp() {
       try { return !!window.__curriculateTaskWantsScan; } catch { return false; }
     })();
 
-    const liveType = currentTask?.taskType || currentTask?.type;
-    
-    if (taskLocked && !taskWantsScan) {
-      setScannerActive(false);
-      return;
-    }
+    // Compute desired scanner state directly — no reading scannerActive here.
+    const shouldBeActive = (() => {
+      if (taskLocked && !taskWantsScan) return false;
+      if (mustScan) return true;
+      if (taskNeedsGlobalScanner) return true;
+      if (taskWantsScan) return true;
+      return false;
+    })();
 
-    // If we're supposed to scan because of station-gating, open camera.
-    if (mustScan && !scannerActive) {
-      setScannerActive(true);
-      return;
-    }
-
-    // Keep scanner open for tasks that actively use it
-    if (taskNeedsGlobalScanner && !scannerActive) {
-      setScannerActive(true);
-      return;
-    }
-
-    // Only shut scanner down when nobody needs it
-    if (!mustScan && !taskWantsScan && !taskNeedsGlobalScanner && scannerActive) {
-      setScannerActive(false);
-      return;
-    }
+    setScannerActive(shouldBeActive);
 
     const inferredColor =
       assignedColorRef.current || normalizeStationId(assignedStationIdRef.current)?.color;
@@ -1182,7 +1168,7 @@ function StudentApp() {
     roomCode,
     taskLocked,
     postSubmitSecondsLeft,
-    scannerActive,
+    taskNeedsGlobalScanner,
   ]);
 
   useEffect(() => {
@@ -4758,6 +4744,35 @@ function StudentApp() {
               >
                 {postSubmitSecondsLeft}s
               </div>
+              {/* "Read it" skip button */}
+              {(() => {
+                const namedM = Array.isArray(members)
+                  ? members.map((m) => String(m || "").trim()).filter(Boolean)
+                  : [];
+                const readerName = namedM.length > 0
+                  ? namedM[Math.abs(currentTaskIndex ?? 0) % namedM.length]
+                  : null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => endReviewAndReturnToScan()}
+                    style={{
+                      marginTop: 8,
+                      padding: "8px 20px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(255,255,255,0.3)",
+                      background: "rgba(255,255,255,0.15)",
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: "0.85rem",
+                      cursor: "pointer",
+                      backdropFilter: "blur(4px)",
+                    }}
+                  >
+                    {readerName ? `${readerName} read it` : "I read it"} →
+                  </button>
+                );
+              })()}
             </div>
           </div>
           );
