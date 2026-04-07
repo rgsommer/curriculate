@@ -1070,6 +1070,31 @@ export async function createAiTaskset(req, res) {
       return res.status(400).json({ ok: false, error: "No eligible task types provided." });
     }
 
+    // ✅ Ensure at least one physical/movement task is in the pool.
+    // Rule: 1 physical task for ≤10 tasks, or 1 per every 4 tasks for larger sets.
+    const PHYSICAL_TYPES = [
+      TASK_TYPES.BODY_BREAK,
+      TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE,
+      TASK_TYPES.MAD_DASH,
+      TASK_TYPES.MAD_DASH_SEQUENCE,
+    ];
+    const physicalInPool = pool.filter((t) => PHYSICAL_TYPES.includes(t));
+    const neededPhysical = safeCount <= 10 ? 1 : Math.floor(safeCount / 4);
+    if (physicalInPool.length < neededPhysical) {
+      // Pick from eligible physical types to fill the gap
+      const eligiblePhysical = PHYSICAL_TYPES.filter((t) => eligible.includes(t));
+      if (eligiblePhysical.length > 0) {
+        const toAdd = neededPhysical - physicalInPool.length;
+        for (let p = 0; p < toAdd; p++) {
+          const pick = eligiblePhysical[p % eligiblePhysical.length];
+          // Insert at evenly-spaced positions so physical tasks are spread throughout the set
+          const insertAt = Math.round((pool.length / (toAdd + 1)) * (p + 1));
+          pool.splice(Math.min(insertAt, pool.length), 0, pick);
+        }
+        console.log(`[AI] Injected ${toAdd} physical task(s) into pool (${neededPhysical} needed for ${safeCount} tasks)`);
+      }
+    }
+
     // ✅ Profile-driven "lens" injection (NOT Christian-only; teacher profile determines lens)
     let mergedSpecialConsiderations = String(effectiveSpecialConsiderations || "").trim();
     try {
