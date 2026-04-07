@@ -59,10 +59,11 @@ const DEFAULT_POST_SUBMIT_SECONDS = 15;
 // ---------------------------------------------------------------------
 const socket = io(API_BASE_URL, {
   withCredentials: true,
-  transports: ["websocket"],
+  transports: ["websocket", "polling"],
   reconnection: true,
-  reconnectionAttempts: 5,
+  reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
 });
 
 // Local session persistence is now in utils/localStorage.js
@@ -448,18 +449,83 @@ function StudentApp() {
     socket.on("rooms:available", onRooms);
 
     // Timeout safety in case broadcast is slow/offline
+    // Also attempt direct resume in parallel — don't wait for broadcast
+    const directResumeTimer = setTimeout(() => {
+      if (finished) return;
+      doResume();
+    }, 2000);
+
     const t = setTimeout(() => {
       if (finished) return;
       // If we can't confirm broadcast, don't trap the UI.
       // Wipe saved join so user can join cleanly.
       wipeAndReturnToJoin("Could not confirm room. Please join a new room.");
-    }, 6500);
+    }, 10000);
 
     return () => {
       clearTimeout(t);
+      clearTimeout(directResumeTimer);
       socket.off("rooms:available", onRooms);
     };
   }, [connected, joined]);
+
+  // ─────────────────────────────────────────────
+  // Silent re-join on socket reconnect (no full page reload)
+  // After a brief network blip, socket.io reconnects automatically.
+  // We must re-emit resume-team-session so the server re-associates
+  // this socket with the room + team. Without this, the server
+  // doesn't know who we are and stops pushing tasks.
+  // ─────────────────────────────────────────────
+  const hasConnectedOnceRef = useRef(false);
+  useEffect(() => {
+    const handleConnect = () => {
+      if (!hasConnectedOnceRef.current) {
+        // First connect — the auto-resume useEffect above handles this.
+        hasConnectedOnceRef.current = true;
+        return;
+      }
+
+      // This is a RE-connect. Silently re-join.
+      const savedRoom = (lsGet(LS_KEYS.roomCode) || "").trim().toUpperCase();
+      const savedTeamSessionId = (lsGet(LS_KEYS.teamSessionId) || "").trim();
+      if (!savedRoom || !savedTeamSessionId) return;
+
+      console.log("[reconnect] Re-joining room", savedRoom, "team", savedTeamSessionId);
+      socket.emit("resume-team-session", { roomCode: savedRoom, teamSessionId: savedTeamSessionId }, (resp) => {
+        if (!resp || (!resp.success && !resp.ok)) {
+          console.warn("[reconnect] resume-team-session failed:", resp?.error);
+          return;
+        }
+
+        // Restore server-side state quietly
+        if (resp.teamId) {
+          setTeamId(resp.teamId);
+          setTeamSessionId(resp.teamId);
+        }
+        if (resp.teamName) setTeamName(resp.teamName);
+        if (Array.isArray(resp.members) && resp.members.length > 0) setMembers(resp.members);
+
+        const stationId = resp.assignedStationId || resp.stationId || null;
+        if (stationId) {
+          const stationInfo = normalizeStationId(stationId);
+          setAssignedStationId(stationInfo.id);
+          setAssignedColor(stationInfo.color || null);
+          setDisplayAssignedStationId(stationInfo.id);
+          setDisplayAssignedColor(stationInfo.color || null);
+        }
+
+        const state = resp.roomState || null;
+        if (state?.scores && typeof state.scores[resp.teamId || savedTeamSessionId] === "number") {
+          setScoreTotal(state.scores[resp.teamId || savedTeamSessionId]);
+        }
+
+        console.log("[reconnect] Successfully re-joined.");
+      });
+    };
+
+    socket.on("connect", handleConnect);
+    return () => socket.off("connect", handleConnect);
+  }, []); // stable — no deps needed, reads from localStorage + refs
 
   // ─────────────────────────────────────────────
   // Server event listeners – room, tasks, noise, treats, scoring
