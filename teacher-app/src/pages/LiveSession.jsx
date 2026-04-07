@@ -3448,7 +3448,7 @@ if (
                 <span style={{ fontWeight: 600 }}>Taskset</span>
                 {activeTasksetMeta ? (
                   <span style={{ color: "#6b7280" }}>
-                    Active: <strong>{activeTasksetName}</strong>
+                    <strong>{activeTasksetName}</strong>
                   </span>
                 ) : (
                   <span style={{ color: "#9ca3af" }}>
