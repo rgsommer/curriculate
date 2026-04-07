@@ -1122,6 +1122,7 @@ export async function createAiTaskset(req, res) {
 
     // Announce total so the client can show a progress bar
     sendSSE({ type: "start", total: safeCount });
+    sendSSE({ type: "phase", phase: "generating", message: "Generating tasks with AI…" });
 
     let rawTasks = await generateTasksArray({
       typePool: pool,
@@ -1134,6 +1135,8 @@ export async function createAiTaskset(req, res) {
       vocabularyLines: initialVocabularyLines,
       specialConsiderations: mergedSpecialConsiderations,
     });
+
+    sendSSE({ type: "phase", phase: "finalizing", message: "Validating and finalizing tasks…" });
 
     const finalized = [];
     const errors = [];
@@ -1219,6 +1222,7 @@ export async function createAiTaskset(req, res) {
     }
 
     // ✅ Coverage report + auto-fix (still valuable as a final pass)
+    sendSSE({ type: "phase", phase: "coverage", message: "Checking vocabulary coverage…" });
     let coverage = computeCoverageReport(aiWordBank, finalized);
     const { coverage: coverageAfterFix, fixes } = await attemptAutoFixCoverage({
       aiWordBank,

@@ -441,9 +441,11 @@ export default function AiTasksetGenerator() {
           try {
             const evt = JSON.parse(line.slice(5).trim());
             if (evt.type === "start") {
-              setGenProgress({ done: 0, total: evt.total, lastType: "" });
+              setGenProgress({ done: 0, total: evt.total, lastType: "", phase: "generating", phaseMessage: "Generating tasks with AI…" });
+            } else if (evt.type === "phase") {
+              setGenProgress((prev) => ({ ...prev, phase: evt.phase, phaseMessage: evt.message || "" }));
             } else if (evt.type === "progress") {
-              setGenProgress({ done: evt.done, total: evt.total, lastType: evt.taskType || "" });
+              setGenProgress({ done: evt.done, total: evt.total, lastType: evt.taskType || "", phase: "finalizing", phaseMessage: "" });
             } else if (evt.type === "complete") {
               finalData = evt;
             } else if (evt.type === "error") {
@@ -1394,22 +1396,41 @@ export default function AiTasksetGenerator() {
           <div style={{ marginTop: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#6b7280", marginBottom: 4 }}>
               <span>
-                {genProgress.done < genProgress.total
-                  ? `Generating task ${genProgress.done + 1} of ${genProgress.total}…`
+                {genProgress.phase === "generating"
+                  ? (genProgress.phaseMessage || "Generating tasks with AI…")
+                  : genProgress.phase === "coverage"
+                  ? (genProgress.phaseMessage || "Checking vocabulary coverage…")
+                  : genProgress.done < genProgress.total
+                  ? `Validating task ${genProgress.done + 1} of ${genProgress.total}…`
                   : `Finishing up…`}
               </span>
               <span>{genProgress.done} / {genProgress.total}</span>
             </div>
-            <div style={{ height: 6, borderRadius: 999, background: "#e5e7eb", overflow: "hidden" }}>
-              <div
-                style={{
-                  height: "100%",
-                  borderRadius: 999,
-                  background: "#2563eb",
-                  width: `${Math.round((genProgress.done / genProgress.total) * 100)}%`,
-                  transition: "width 0.4s ease",
-                }}
-              />
+            <div style={{ height: 6, borderRadius: 999, background: "#e5e7eb", overflow: "hidden", position: "relative" }}>
+              {genProgress.phase === "generating" || genProgress.phase === "coverage" ? (
+                /* Indeterminate animated bar while waiting for AI */
+                <div
+                  style={{
+                    height: "100%",
+                    borderRadius: 999,
+                    background: "linear-gradient(90deg, #2563eb 0%, #60a5fa 50%, #2563eb 100%)",
+                    backgroundSize: "200% 100%",
+                    width: "40%",
+                    animation: "indeterminate 1.5s ease-in-out infinite",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    height: "100%",
+                    borderRadius: 999,
+                    background: "#2563eb",
+                    width: `${Math.round((genProgress.done / genProgress.total) * 100)}%`,
+                    transition: "width 0.4s ease",
+                  }}
+                />
+              )}
+              <style>{`@keyframes indeterminate { 0% { margin-left: 0%; } 50% { margin-left: 60%; } 100% { margin-left: 0%; } }`}</style>
             </div>
             {genProgress.lastType && (
               <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: 3 }}>
