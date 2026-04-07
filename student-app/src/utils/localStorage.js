@@ -8,6 +8,11 @@ export const LS_KEYS = {
   teamSessionId: "curriculate.teamSessionId",
   teamName: "curriculate.teamName",
   members: "curriculate.members",
+  taskIndex: "curriculate.taskIndex",
+  scoreTotal: "curriculate.scoreTotal",
+  tasksetTotal: "curriculate.tasksetTotal",
+  stationId: "curriculate.stationId",
+  stationColor: "curriculate.stationColor",
 };
 
 /**
@@ -47,4 +52,9 @@ export function clearSavedJoin() {
   lsDel(LS_KEYS.teamSessionId);
   lsDel(LS_KEYS.teamName);
   lsDel(LS_KEYS.members);
+  lsDel(LS_KEYS.taskIndex);
+  lsDel(LS_KEYS.scoreTotal);
+  lsDel(LS_KEYS.tasksetTotal);
+  lsDel(LS_KEYS.stationId);
+  lsDel(LS_KEYS.stationColor);
 }

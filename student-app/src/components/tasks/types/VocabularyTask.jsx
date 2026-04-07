@@ -126,8 +126,8 @@ export default function VocabularyTask({
     });
   };
 
-  const warnColor = isDark ? "text-amber-200" : "text-amber-700";
-  const goodColor = isDark ? "text-emerald-200" : "text-emerald-700";
+  const warnColor = "text-amber-700";
+  const goodColor = "text-emerald-700";
 
   const statusLine = (() => {
     if (!hasSufficientTargetList) {
@@ -164,28 +164,18 @@ export default function VocabularyTask({
     e.preventDefault();
   }, []);
 
-  // Theme-aware colors
-  const pillOk = isDark
-    ? "bg-emerald-500/10 border-emerald-400/30 text-emerald-100"
-    : "bg-emerald-100 border-emerald-400 text-emerald-800";
-  const pillMissing = isDark
-    ? "bg-amber-500/10 border-amber-400/30 text-amber-100"
-    : "bg-amber-100 border-amber-400 text-amber-800";
-
-  const cardBg = isDark ? "border-white/10 bg-white/5" : "border-slate-200 bg-white/80";
-  const textAreaBg = isDark
-    ? "bg-black/20 border-white/10 text-white placeholder-white/40 focus:ring-white/20"
-    : "bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:ring-slate-400/30";
-  const bodyText = isDark ? "" : "text-slate-800";
-  const mutedText = isDark ? "opacity-80" : "text-slate-600";
-  const mutedTextXs = isDark ? "opacity-70" : "text-slate-500";
-  const inputAreaBg = isDark ? "border-white/10 bg-black/10" : "border-slate-200 bg-slate-50";
-  const submitEnabled = isDark
-    ? "bg-white/15 hover:bg-white/20 border-white/20"
-    : "bg-emerald-600 hover:bg-emerald-700 border-emerald-600 text-white";
-  const submitDisabled = isDark
-    ? "bg-white/5 border-white/10 opacity-50 cursor-not-allowed"
-    : "bg-slate-200 border-slate-300 text-slate-400 opacity-60 cursor-not-allowed";
+  // Always use light-card-friendly colors — task cards have a light background
+  // even on dark themes (Bold/Dyno), so pills/text must read on white/cream.
+  const pillOk = "bg-emerald-100 border-emerald-400 text-emerald-800";
+  const pillMissing = "bg-amber-100 border-amber-400 text-amber-800";
+  const cardBg = "border-slate-200 bg-white/80";
+  const textAreaBg = "bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:ring-slate-400/30";
+  const bodyText = "text-slate-800";
+  const mutedText = "text-slate-600";
+  const mutedTextXs = "text-slate-500";
+  const inputAreaBg = "border-slate-200 bg-slate-50";
+  const submitEnabled = "bg-emerald-600 hover:bg-emerald-700 border-emerald-600 text-white";
+  const submitDisabled = "bg-slate-200 border-slate-300 text-slate-400 opacity-60 cursor-not-allowed";
 
   return (
     <div className={`w-full ${bodyText}`}>

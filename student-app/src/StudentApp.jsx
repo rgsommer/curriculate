@@ -408,6 +408,14 @@ function StudentApp() {
             setScoreTotal(state.scores[effectiveTeam]);
           }
 
+          // Restore locally-saved progress (score, station)
+          const savedScore = Number(lsGet(LS_KEYS.scoreTotal));
+          if (savedScore > 0 && !(state?.scores && typeof state.scores[effectiveTeam] === "number")) {
+            setScoreTotal(savedScore);
+          }
+          const savedTotal = Number(lsGet(LS_KEYS.tasksetTotal));
+          if (savedTotal > 0) setTasksetTotalTasks(savedTotal);
+
           // If a taskset is active, set up task phase so the auto-pushed task:assigned
           // will be handled correctly (skip scan gate on resume)
           if (state?.isActive) {
@@ -424,6 +432,10 @@ function StudentApp() {
             setCurrentTask(ct.task);
             setCurrentTaskIndex(typeof ct.taskIndex === "number" ? ct.taskIndex : null);
             setTasksetTotalTasks(typeof ct.totalTasks === "number" ? ct.totalTasks : null);
+          } else {
+            // Restore task index from localStorage as fallback
+            const savedIdx = Number(lsGet(LS_KEYS.taskIndex));
+            if (savedIdx >= 0) setCurrentTaskIndex(savedIdx);
           }
 
           finish();
@@ -538,6 +550,32 @@ function StudentApp() {
   useEffect(() => {
     postSubmitSecondsLeftRef.current = postSubmitSecondsLeft;
   }, [postSubmitSecondsLeft]);
+
+  // ─────────────────────────────────────────────
+  // Persist progress to localStorage so refresh picks up mid-session
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof currentTaskIndex === "number" && currentTaskIndex >= 0) {
+      lsSet(LS_KEYS.taskIndex, String(currentTaskIndex));
+    }
+  }, [currentTaskIndex]);
+
+  useEffect(() => {
+    if (typeof scoreTotal === "number") {
+      lsSet(LS_KEYS.scoreTotal, String(scoreTotal));
+    }
+  }, [scoreTotal]);
+
+  useEffect(() => {
+    if (typeof tasksetTotalTasks === "number" && tasksetTotalTasks > 0) {
+      lsSet(LS_KEYS.tasksetTotal, String(tasksetTotalTasks));
+    }
+  }, [tasksetTotalTasks]);
+
+  useEffect(() => {
+    if (assignedStationId) lsSet(LS_KEYS.stationId, assignedStationId);
+    if (assignedColor) lsSet(LS_KEYS.stationColor, assignedColor);
+  }, [assignedStationId, assignedColor]);
 
   useEffect(() => {
     if (!teamId) return;
@@ -4718,6 +4756,36 @@ function StudentApp() {
           {!reviewState?.feedback && !reviewState?.hint && !reviewState?.modelAnswer && reviewState?.comment && (
             <div>{reviewState.comment}</div>
           )}
+          {/* "Read it" skip button — always visible in feedback panel */}
+          {(() => {
+            const namedM = Array.isArray(members)
+              ? members.map((m) => String(m || "").trim()).filter(Boolean)
+              : [];
+            const readerName = namedM.length > 0
+              ? namedM[Math.abs(currentTaskIndex ?? 0) % namedM.length]
+              : null;
+            return (
+              <button
+                type="button"
+                onClick={() => endReviewAndReturnToScan()}
+                style={{
+                  marginTop: 6,
+                  padding: "8px 20px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(255,255,255,0.3)",
+                  background: "rgba(255,255,255,0.15)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                  backdropFilter: "blur(4px)",
+                  alignSelf: "flex-start",
+                }}
+              >
+                {readerName ? `${readerName} read it` : "I read it"} →
+              </button>
+            );
+          })()}
         </div>
           );
         })()}
@@ -4731,7 +4799,58 @@ function StudentApp() {
             from { transform: translateY(6px) scale(0.98); opacity: 0; }
             to   { transform: translateY(0px) scale(1); opacity: 1; }
           }
+          @keyframes processingPulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+          }
+          @keyframes indeterminateBar {
+            0% { left: -40%; width: 40%; }
+            50% { left: 30%; width: 40%; }
+            100% { left: 100%; width: 40%; }
+          }
         `}</style>
+
+        {/* Processing indicator — shown while waiting for server response */}
+        {submitting && postSubmitSecondsLeft == null && !reviewState && (
+          <div style={{
+            width: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: "24px 16px",
+            minHeight: 120,
+          }}>
+            {/* Indeterminate progress bar */}
+            <div style={{
+              width: "100%",
+              height: 3,
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.18)",
+              overflow: "hidden",
+              position: "relative",
+            }}>
+              <div style={{
+                position: "absolute",
+                height: "100%",
+                background: "rgba(255,255,255,0.85)",
+                borderRadius: 999,
+                animation: "indeterminateBar 1.5s ease-in-out infinite",
+              }} />
+            </div>
+            <div style={{
+              animation: "processingPulse 2s ease-in-out infinite",
+              fontSize: "1rem",
+              fontWeight: 700,
+            }}>
+              Processing your answer…
+            </div>
+            <div style={{ fontSize: "0.8rem", opacity: 0.7 }}>
+              This may take a moment
+            </div>
+          </div>
+        )}
 
         {postSubmitSecondsLeft != null && (() => {
           // Determine total lock duration safely for progress bar
@@ -4823,35 +4942,6 @@ function StudentApp() {
               >
                 {postSubmitSecondsLeft}s
               </div>
-              {/* "Read it" skip button */}
-              {(() => {
-                const namedM = Array.isArray(members)
-                  ? members.map((m) => String(m || "").trim()).filter(Boolean)
-                  : [];
-                const readerName = namedM.length > 0
-                  ? namedM[Math.abs(currentTaskIndex ?? 0) % namedM.length]
-                  : null;
-                return (
-                  <button
-                    type="button"
-                    onClick={() => endReviewAndReturnToScan()}
-                    style={{
-                      marginTop: 8,
-                      padding: "8px 20px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(255,255,255,0.3)",
-                      background: "rgba(255,255,255,0.15)",
-                      color: "#fff",
-                      fontWeight: 700,
-                      fontSize: "0.85rem",
-                      cursor: "pointer",
-                      backdropFilter: "blur(4px)",
-                    }}
-                  >
-                    {readerName ? `${readerName} read it` : "I read it"} →
-                  </button>
-                );
-              })()}
             </div>
           </div>
           );
