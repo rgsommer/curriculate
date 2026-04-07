@@ -814,16 +814,18 @@ export function createRoomEngine(io) {
         nextTask?.stationColor || nextTask?.config?.stationColor || null;
     }
 
-    // Runtime sanitiser: ensure draw-mime clues are short (1-5 words each).
+    // Runtime sanitiser: ensure draw-mime clues are short (1-5 words each, ≥3 chars).
     // Older tasks in the DB may have long instruction text in prompt/clues.
     if (task.taskType === "draw-mime") {
-      const MAX_W = 5, MAX_C = 40;
-      const ok = (s) => { const t = (s || "").trim(); return t && t.length <= MAX_C && t.split(/\s+/).length <= MAX_W; };
-      const instrRe = /^(draw|mime|act|sort|arrange|include|be sure|make|write|read|explain|describe|list|for each|pictures|illustrate|create|show|depict|sketch)/i;
+      const MIN_C = 3, MAX_W = 5, MAX_C = 40;
+      const STOP = new Set(["i","a","an","the","or","and","of","to","in","on","at","is","it","be","do","no","so","if","up","by","my","we","he","she","me"]);
+      const ok = (s) => { const t = (s || "").trim(); return t && t.length >= MIN_C && t.length <= MAX_C && t.split(/\s+/).length <= MAX_W; };
+      const instrRe = /^(draw|mime|act|sort|arrange|include|be sure|make|write|read|explain|describe|list|for each|pictures|illustrate|create|show|depict|sketch|put|the following|each|required|label|annotation)/i;
       const extract = (text) => (text || "")
         .split(/[,;\n•\-\d+\.\)]+/)
         .map((s) => s.replace(/^[\s:]+|[\s.!?]+$/g, "").trim())
-        .filter((s) => s.length > 0 && s.length <= MAX_C && s.split(/\s+/).length <= MAX_W && !instrRe.test(s))
+        .filter((s) => s.length >= MIN_C && s.length <= MAX_C && s.split(/\s+/).length <= MAX_W && !instrRe.test(s))
+        .filter((s) => !s.split(/\s+/).every((w) => STOP.has(w.toLowerCase())))
         .slice(0, 4);
 
       let clues = Array.isArray(task.clues) ? task.clues.map(String).map(s => s.trim()).filter(ok) : [];
@@ -833,6 +835,57 @@ export function createRoomEngine(io) {
       if (!clues.length) clues = ["Draw or Mime"];
       task.clues = clues.slice(0, 4);
       task.prompt = task.clues[0];
+    }
+
+    // Runtime sanitiser: ensure matching tasks have leftItems/rightItems populated.
+    // Older tasks in the DB may have been saved with empty items/options arrays.
+    if (task.taskType === "matching") {
+      const cfg = task.config && typeof task.config === "object" ? task.config : {};
+      const hasLeft = Array.isArray(task.leftItems) && task.leftItems.length > 0;
+      const hasRight = Array.isArray(task.rightItems) && task.rightItems.length > 0;
+
+      if (!hasLeft || !hasRight) {
+        // Try to extract from config.pairs or config.leftItems/rightItems
+        const normItem = (x, prefix, i) => {
+          if (typeof x === "string") return { id: `${prefix}${i + 1}`, text: x.trim() };
+          if (x && typeof x === "object") {
+            const text = String(x.text || x.label || x.term || x.name || x.value || "").trim();
+            return { id: String(x.id || `${prefix}${i + 1}`), text };
+          }
+          return { id: `${prefix}${i + 1}`, text: "" };
+        };
+
+        if (Array.isArray(cfg.pairs) && cfg.pairs.length > 0) {
+          task.leftItems = cfg.pairs.map((p, i) => ({ id: `L${i + 1}`, text: String(p.left || p.leftLabel || p.term || "").trim() })).filter(x => x.text);
+          task.rightItems = cfg.pairs.map((p, i) => ({ id: `R${i + 1}`, text: String(p.right || p.rightLabel || p.definition || "").trim() })).filter(x => x.text);
+          const cm = {};
+          for (let i = 0; i < Math.min(task.leftItems.length, task.rightItems.length); i++) cm[task.leftItems[i].id] = task.rightItems[i].id;
+          task.correctMatches = cm;
+        } else if (Array.isArray(cfg.leftItems) && cfg.leftItems.length > 0) {
+          task.leftItems = cfg.leftItems.map((x, i) => normItem(x, "L", i)).filter(x => x.text);
+          task.rightItems = (Array.isArray(cfg.rightItems) ? cfg.rightItems : []).map((x, i) => normItem(x, "R", i)).filter(x => x.text);
+          if (!task.correctMatches || typeof task.correctMatches !== "object") task.correctMatches = {};
+        }
+
+        // Pad to at least 5 items so the frontend doesn't show an error
+        while (!Array.isArray(task.leftItems)) task.leftItems = [];
+        while (!Array.isArray(task.rightItems)) task.rightItems = [];
+        while (task.leftItems.length < 5) {
+          const i = task.leftItems.length + 1;
+          task.leftItems.push({ id: `L${i}`, text: `Term ${i}` });
+        }
+        while (task.rightItems.length < 5) {
+          const i = task.rightItems.length + 1;
+          task.rightItems.push({ id: `R${i}`, text: `Definition ${i}` });
+        }
+        if (!task.correctMatches || typeof task.correctMatches !== "object") {
+          task.correctMatches = {};
+          for (let i = 0; i < Math.min(task.leftItems.length, task.rightItems.length); i++) {
+            task.correctMatches[task.leftItems[i].id] = task.rightItems[i].id;
+          }
+        }
+        console.warn("[roomEngine] Matching task had empty leftItems/rightItems – patched at runtime", { taskId: task._id || task.id });
+      }
     }
 
     const payload = {

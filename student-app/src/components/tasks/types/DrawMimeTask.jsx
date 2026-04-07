@@ -68,22 +68,33 @@ export default function DrawMimeTask({
 
   // ── Clues for each round (1–4) ──
   const clues = useMemo(() => {
+    const MIN_CLUE_CHARS = 3;   // no single letters or 2-char fragments
     const MAX_CLUE_WORDS = 5;
     const MAX_CLUE_CHARS = 40;
     const isValidClue = (s) => {
       if (!s) return false;
       const t = s.trim();
-      if (!t || t.length > MAX_CLUE_CHARS) return false;
+      if (!t || t.length < MIN_CLUE_CHARS || t.length > MAX_CLUE_CHARS) return false;
       return t.split(/\s+/).length <= MAX_CLUE_WORDS;
     };
+    // Common instruction verbs / filler that should never be a clue
+    const instructionRe = /^(draw|mime|act|sort|arrange|include|be sure|make|write|read|explain|describe|list|for each|pictures|illustrate|create|show|depict|sketch|put|the following|each|required|label|annotation|your|you|they|this|that|with|from|into|about|using)/i;
+    // Common stop-words that are never drawable concepts on their own
+    const stopWords = new Set(["i","a","an","the","or","and","of","to","in","on","at","is","it","be","do","no","so","if","up","by","my","we","he","she","me"]);
     const extractClues = (text) => {
       if (!text) return [];
-      const instructionRe = /^(draw|mime|act|sort|arrange|include|be sure|make|write|read|explain|describe|list|for each|pictures|illustrate|create|show|depict|sketch)/i;
       return text
         .split(/[,;\n•\-\d+\.\)]+/)
         .map((s) => s.replace(/^[\s:]+|[\s.!?]+$/g, "").trim())
-        .filter((s) => s.length > 0 && s.length <= MAX_CLUE_CHARS)
-        .filter((c) => c.split(/\s+/).length <= MAX_CLUE_WORDS && !instructionRe.test(c))
+        .filter((s) => s.length >= MIN_CLUE_CHARS && s.length <= MAX_CLUE_CHARS)
+        .filter((c) => {
+          const words = c.split(/\s+/);
+          if (words.length > MAX_CLUE_WORDS) return false;
+          if (instructionRe.test(c)) return false;
+          // Reject if every word is a stop word
+          if (words.every((w) => stopWords.has(w.toLowerCase()))) return false;
+          return true;
+        })
         .slice(0, 4);
     };
 
@@ -209,9 +220,19 @@ export default function DrawMimeTask({
     return "inter";
   }, [task, gradeLevel]);
 
-  const [performerIdx, setPerformerIdx] = useState(0);
+  // Seed initial performer from the task so different tasks start with different players
+  const initialPerformerIdx = useMemo(() => {
+    const n = players.length;
+    if (n <= 1) return 0;
+    const seed = String(task?.id || task?._id || task?.prompt || "dm");
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+    return Math.abs(h) % n;
+  }, [task?.id, task?._id, task?.prompt, players.length]);
+
+  const [performerIdx, setPerformerIdx] = useState(initialPerformerIdx);
   // Track who has already performed so we never repeat until the pool resets.
-  const performedSetRef = useRef(new Set([0])); // player 0 performs first
+  const performedSetRef = useRef(new Set([initialPerformerIdx]));
   const [scoreLeft, setScoreLeft] = useState(0);
   const [scoreRight, setScoreRight] = useState(0);
   const [lastWinner, setLastWinner] = useState(null); // { name, side, bonus }
@@ -340,8 +361,8 @@ export default function DrawMimeTask({
       onSubmit?.({ ...payload, roundIndex, totalRounds, allRoundsDone: true });
       // Reset round counter for if the task somehow restarts
       setRoundIndex(0);
-      setPerformerIdx(0);
-      performedSetRef.current = new Set([0]);
+      setPerformerIdx(initialPerformerIdx);
+      performedSetRef.current = new Set([initialPerformerIdx]);
     } else {
       // Advance to the next clue / performer without submitting
       setRoundIndex((r) => r + 1);

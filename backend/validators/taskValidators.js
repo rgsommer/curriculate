@@ -520,11 +520,21 @@ export function normalizeTaskByType(taskType, rawTask) {
         [];
 
       items = items
-        .map((it) =>
-          isObject(it)
-            ? asNonEmptyString(it.text, asNonEmptyString(it.prompt, asNonEmptyString(it.label, "")))
-            : asNonEmptyString(it, "")
-        )
+        .map((it) => {
+          if (isObject(it)) {
+            // Check ALL possible property names the AI might use for item text
+            return asNonEmptyString(it.text,
+              asNonEmptyString(it.prompt,
+                asNonEmptyString(it.label,
+                  asNonEmptyString(it.title,
+                    asNonEmptyString(it.name,
+                      asNonEmptyString(it.event,
+                        asNonEmptyString(it.step,
+                          asNonEmptyString(it.description,
+                            asNonEmptyString(it.value, "")))))))));
+          }
+          return asNonEmptyString(it, "");
+        })
         .map((s) => String(s).trim())
         .filter(Boolean);
 
@@ -1243,12 +1253,17 @@ export function normalizeTaskByType(taskType, rawTask) {
       const MAX_CLUE_CHARS = 40;
 
       // Check if a string is a valid short clue (1-5 words, ≤40 chars)
+      const MIN_CLUE_CHARS = 3;
+      const STOP_WORDS = new Set(["i","a","an","the","or","and","of","to","in","on","at","is","it","be","do","no","so","if","up","by","my","we","he","she","me"]);
       const _isValidClue = (s) => {
         if (!s) return false;
         const trimmed = s.trim();
-        if (!trimmed || trimmed.length > MAX_CLUE_CHARS) return false;
-        const words = trimmed.split(/\s+/).length;
-        return words >= 1 && words <= MAX_CLUE_WORDS;
+        if (!trimmed || trimmed.length < MIN_CLUE_CHARS || trimmed.length > MAX_CLUE_CHARS) return false;
+        const words = trimmed.split(/\s+/);
+        if (words.length < 1 || words.length > MAX_CLUE_WORDS) return false;
+        // Reject if every word is a stop word
+        if (words.every((w) => STOP_WORDS.has(w.toLowerCase()))) return false;
+        return true;
       };
 
       // Try to extract short noun phrases from a long string

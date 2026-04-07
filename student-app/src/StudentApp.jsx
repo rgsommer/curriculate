@@ -1952,9 +1952,14 @@ function StudentApp() {
           const isObjCurrentTask = isObjectiveTask(currentTask);
 
           // DrawMime has its own built-in reveal/review phase — no need for the overlay.
+          // Check all possible taskType variants (DB may store draw_mime, draw-or-mime, etc.)
+          const dmType = (currentTask?.taskType || currentTask?.type || "").toLowerCase().replace(/[_\s]/g, "-");
           const isDrawMimeTask =
-            currentTask?.taskType === "draw-mime" ||
-            currentTask?.type === "draw-mime";
+            dmType === "draw-mime" ||
+            dmType === "draw-or-mime" ||
+            dmType === "drawormime" ||
+            dmType === "draw" ||
+            dmType === "mime";
 
           const shouldShowReview =
             !isPhysical &&
@@ -2555,7 +2560,8 @@ function StudentApp() {
     currentTask?.taskType === TASK_TYPES.OPEN_TEXT ||
     currentTask?.taskType === TASK_TYPES.RECORD_AUDIO;
 
-  const isDrawMime = currentTask?.taskType === TASK_TYPES.DRAW_MIME;
+  const _dmT = (currentTask?.taskType || currentTask?.type || "").toLowerCase().replace(/[_\s]/g, "-");
+  const isDrawMime = _dmT === "draw-mime" || _dmT === "draw-or-mime" || _dmT === "drawormime" || _dmT === "draw" || _dmT === "mime";
   const isLiveDebate = currentTask?.taskType === TASK_TYPES.LIVE_DEBATE;
 
   const isOpenText = currentTask?.taskType === TASK_TYPES.OPEN_TEXT;

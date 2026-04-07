@@ -152,6 +152,9 @@ Task-type-specific rules:
   Example: { "taskType":"sequence", "title":"Journey of a Missionary", "prompt":"Put the following steps in the correct order to show the typical journey of a missionary.", "items":["Feels a calling to serve","Attends missionary training","Travels to assigned location","Builds relationships with locals","Returns home to share experiences"] }
 - sort: MUST include a "categories" array with 2-3 category objects, each having "label" and "items" array.
   Example: { "taskType":"sort", "title":"Sort by Category", "prompt":"Sort these items into the correct categories.", "categories":[{"label":"Fruits","items":["apple","banana"]},{"label":"Vegetables","items":["carrot","broccoli"]}] }
+- matching: MUST include "leftItems" array and "rightItems" array (5-7 items each) plus a "correctMatches" object mapping left IDs to right IDs.
+  Each item is an object with "id" and "text". Use L1,L2,... for left IDs and R1,R2,... for right IDs.
+  Example: { "taskType":"matching", "title":"Match Terms to Definitions", "prompt":"Connect each word on the left to its correct meaning on the right.", "leftItems":[{"id":"L1","text":"Obedience"},{"id":"L2","text":"Faith"},{"id":"L3","text":"Grace"},{"id":"L4","text":"Covenant"},{"id":"L5","text":"Repentance"}], "rightItems":[{"id":"R1","text":"Following God's commands"},{"id":"R2","text":"Trust in what is unseen"},{"id":"R3","text":"Unmerited favor from God"},{"id":"R4","text":"A sacred agreement"},{"id":"R5","text":"Turning away from sin"}], "correctMatches":{"L1":"R1","L2":"R2","L3":"R3","L4":"R4","L5":"R5"} }
   `.trim();
 
   const userPrompt = {

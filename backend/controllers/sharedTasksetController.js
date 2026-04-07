@@ -933,7 +933,7 @@ export const retryMustHave = {
   [TASK_TYPES.TIMELINE]:
     "TIMELINE must include an ordered items array and the correct order, as either correctOrder (array of ids) OR answerKey mapping itemId -> position. Do not omit.",
   [TASK_TYPES.MATCHING]:
-    'MATCHING must include leftItems[] and rightItems[] (5–7 each) and correctMatches map {"leftId":"rightId"}.',
+    'MATCHING must include leftItems[] and rightItems[] arrays (5–7 items each) and a correctMatches map {"L1":"R1","L2":"R2",...}. Each item is { "id": "L1", "text": "Term" } for left and { "id": "R1", "text": "Definition" } for right. Do NOT use empty arrays. Do NOT put matching data in "items" or "options" — use leftItems and rightItems.',
   [TASK_TYPES.VENNSORT]:
     'VENNSORT must include config.categories (2–3) and config.items (5–10). Also include correctAnswer map: { "itemId": ["CategoryA"] }.',
   [TASK_TYPES.JEOPARDY]:
