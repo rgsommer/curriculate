@@ -1766,7 +1766,23 @@ function StudentApp() {
       // If submission fails, the ack error handler will unlock.
       setTaskLocked(true);
       taskLockedRef.current = true;
+
+      // Safety net: if the socket callback never fires (network drop, server crash),
+      // unlock after 12s so the student isn't permanently stuck.
+      let submitAcked = false;
+      const submitSafetyTimer = setTimeout(() => {
+        if (submitAcked) return;
+        console.warn("[task:submit] No ack after 12s — forcing unlock");
+        setSubmitting(false);
+        setTaskLocked(false);
+        taskLockedRef.current = false;
+        setStatusMessage("Submission timed out — moving on.");
+        endReviewAndReturnToScan();
+      }, 12000);
+
       socket.emit("task:submit", payload, (response) => {
+        submitAcked = true;
+        clearTimeout(submitSafetyTimer);
         if (!response || response.error) {
           console.warn("Submit error:", response?.error || "Unknown error");
           setSubmitting(false);
