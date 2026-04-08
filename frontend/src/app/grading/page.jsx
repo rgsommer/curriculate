@@ -1452,7 +1452,16 @@ export default function GradingPage() {
       } catch (err) {
         setCopyEnabled(false);
         console.error("Submit error:", err);
-        setSubmitError(err?.message || "Network error submitting for grading.");
+        const msg = err?.message || "";
+        const isFetchFail =
+          msg.toLowerCase().includes("failed to fetch") ||
+          msg.toLowerCase().includes("networkerror") ||
+          msg.toLowerCase().includes("load failed");
+        setSubmitError(
+          isFetchFail
+            ? "Internet hiccup — please wait a moment and try again."
+            : msg || "Something went wrong. Please try again."
+        );
       } finally {
         setSubmitting(false);
       }
