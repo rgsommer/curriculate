@@ -37,13 +37,20 @@ function getGenerationEligibleTypes() {
   for (const t of Object.values(TASK_TYPES)) {
     const meta = TASK_TYPE_META?.[t];
 
-    // only implemented types (or those not explicitly false)
+    // only implemented types that are marked generator-eligible
     if (!meta || meta.implemented === false) continue;
+    if (meta.generatorEligible === false) continue;
 
     // avoid special meta-only types unless you explicitly want them
     if (t === TASK_TYPES.TASK_RUNNER) continue;
 
     eligible.push(t);
+  }
+
+  // Shuffle so each generation gets a different mix of types
+  for (let i = eligible.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [eligible[i], eligible[j]] = [eligible[j], eligible[i]];
   }
 
   return eligible;

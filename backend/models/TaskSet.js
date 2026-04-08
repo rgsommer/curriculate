@@ -106,6 +106,9 @@ const TaskSetSchema = new Schema(
     durationMinutes: Number,
     learningGoal: String, // REVIEW / INTRODUCTION / ENRICHMENT / ASSESSMENT
 
+    // AI generation metadata (report, coverage, concept allocation)
+    meta: { type: Schema.Types.Mixed, default: null },
+
     // Analytics fields (2.1)
     lastPlayedAt: Date,
     totalPlays: { type: Number, default: 0 },
