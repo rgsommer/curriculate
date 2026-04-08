@@ -176,7 +176,7 @@ export async function createShareLinkController(req, res) {
     }
 
     // Construct the shareable URL
-    const teacherAppUrl = (process.env.TEACHER_APP_URL || "https://app.curriculate.net").trim();
+    const teacherAppUrl = (process.env.TEACHER_APP_URL || "https://set.curriculate.net").trim();
     const shareLink = `${teacherAppUrl}/shared/${token}`;
 
     return res.json({
