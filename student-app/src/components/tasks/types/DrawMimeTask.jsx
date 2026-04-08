@@ -66,9 +66,9 @@ export default function DrawMimeTask({
   const [timeLeft, setTimeLeft] = useState(durationSeconds);
   const [mode, setMode] = useState("draw"); // "draw" | "mime"
 
-  // ── Clues for each round (1–4) ──
+  // ── Clues for each round ──
   const clues = useMemo(() => {
-    const MIN_CLUE_CHARS = 3;   // no single letters or 2-char fragments
+    const MIN_CLUE_CHARS = 3;
     const MAX_CLUE_WORDS = 5;
     const MAX_CLUE_CHARS = 40;
     const isValidClue = (s) => {
@@ -77,60 +77,54 @@ export default function DrawMimeTask({
       if (!t || t.length < MIN_CLUE_CHARS || t.length > MAX_CLUE_CHARS) return false;
       return t.split(/\s+/).length <= MAX_CLUE_WORDS;
     };
-    // Common instruction verbs / filler that should never be a clue
-    const instructionRe = /^(draw|mime|act|sort|arrange|include|be sure|make|write|read|explain|describe|list|for each|pictures|illustrate|create|show|depict|sketch|put|the following|each|required|label|annotation|your|you|they|this|that|with|from|into|about|using)/i;
-    // Common stop-words that are never drawable concepts on their own
-    const stopWords = new Set(["i","a","an","the","or","and","of","to","in","on","at","is","it","be","do","no","so","if","up","by","my","we","he","she","me"]);
-    const extractClues = (text) => {
-      if (!text) return [];
-      return text
-        .split(/[,;\n•\-\d+\.\)]+/)
-        .map((s) => s.replace(/^[\s:]+|[\s.!?]+$/g, "").trim())
-        .filter((s) => s.length >= MIN_CLUE_CHARS && s.length <= MAX_CLUE_CHARS)
-        .filter((c) => {
-          const words = c.split(/\s+/);
-          if (words.length > MAX_CLUE_WORDS) return false;
-          if (instructionRe.test(c)) return false;
-          // Reject if every word is a stop word
-          if (words.every((w) => stopWords.has(w.toLowerCase()))) return false;
-          return true;
-        })
-        .slice(0, 4);
-    };
 
-    // 1. Try clues array
+    // 1. Try clues array (backend-normalised — should already be clean vocab words)
     let arr = Array.isArray(task?.clues) && task.clues.length > 0
       ? task.clues.map((c) => String(c || "").trim()).filter(Boolean).filter(isValidClue)
       : [];
 
-    // 2. Try prompt as single clue (if short enough)
+    // 2. Try vocabulary / word list from the task (teacher's own words)
     if (!arr.length) {
-      const p = String(task?.prompt || "").trim();
-      if (p && isValidClue(p)) {
-        arr = [p];
-      } else if (p) {
-        // Try to extract short phrases from long prompt
-        arr = extractClues(p);
+      const wordSources = [
+        task?.words, task?.config?.words,
+        task?.vocabulary, task?.config?.vocabulary,
+        task?.requiredWords, task?.config?.requiredWords,
+        task?.wordList, task?.config?.wordList,
+        task?.concepts, task?.config?.concepts,
+        task?.terms, task?.config?.terms,
+      ];
+      for (const src of wordSources) {
+        if (Array.isArray(src) && src.length > 0) {
+          arr = src.map((w) => String(w || "").trim()).filter(Boolean).filter(isValidClue);
+          if (arr.length) break;
+        }
       }
     }
 
-    // 3. Try title
+    // 3. Try prompt as single clue (if short enough and not a sentence fragment)
+    if (!arr.length) {
+      const p = String(task?.prompt || "").trim();
+      if (p && isValidClue(p) && !p.toLowerCase().startsWith("a ") && !p.toLowerCase().startsWith("the ")) {
+        arr = [p];
+      }
+    }
+
+    // 4. Try title
     if (!arr.length) {
       const title = String(task?.title || "").trim();
       if (title && isValidClue(title)) {
         arr = [title];
-      } else if (title) {
-        arr = extractClues(title);
       }
     }
 
-    // 4. Final fallback
+    // 5. Final fallback
     return arr.length > 0 ? arr : ["Draw or Mime"];
   }, [task]);
 
+  // Number of rounds = number of players (each gets a turn to perform)
   const [roundIndex, setRoundIndex] = useState(0);
-  const totalRounds = clues.length;           // 1–4
-  const currentClue = clues[Math.min(roundIndex, clues.length - 1)];
+  const totalRounds = Math.max(1, (Array.isArray(memberNames) ? memberNames.filter(Boolean).length : 0) || clues.length);
+  const currentClue = clues[roundIndex % clues.length]; // cycle through clues if fewer than rounds
   const isLastRound = roundIndex >= totalRounds - 1;
 
   // ── Wizard phase state ──
@@ -233,9 +227,8 @@ export default function DrawMimeTask({
   const [performerIdx, setPerformerIdx] = useState(initialPerformerIdx);
   // Track who has already performed so we never repeat until the pool resets.
   const performedSetRef = useRef(new Set([initialPerformerIdx]));
-  const [scoreLeft, setScoreLeft] = useState(0);
-  const [scoreRight, setScoreRight] = useState(0);
-  const [lastWinner, setLastWinner] = useState(null); // { name, side, bonus }
+  const [teamScore, setTeamScore] = useState(0);
+  const [lastWinner, setLastWinner] = useState(null); // { name, bonus }
 
   // UI pulse when turn changes
   const [turnPulse, setTurnPulse] = useState(false);
@@ -268,9 +261,8 @@ export default function DrawMimeTask({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [performerIdx]);
 
-  const bumpScore = (side, delta) => {
-    if (side === "left") setScoreLeft((n) => (Number(n) || 0) + (Number(delta) || 0));
-    if (side === "right") setScoreRight((n) => (Number(n) || 0) + (Number(delta) || 0));
+  const bumpScore = (_side, delta) => {
+    setTeamScore((n) => (Number(n) || 0) + (Number(delta) || 0));
   };
 
   const nextPerformer = () => {
@@ -308,12 +300,11 @@ export default function DrawMimeTask({
     const bonus = guessed ? Math.max(0, Math.min(3, Math.floor(timeLeft / 15))) : 0; // 0..3
 
     if (guessed) {
-      // Bonus point to performer + guesser team for guessing before time.
-      bumpScore(performerSide, 1 + bonus);
-      bumpScore(guessedBySide, 1 + bonus);
-      setLastWinner({ name: guessedBy, side: guessedBySide, bonus });
+      // Award team points: base 1 + time bonus (0–3)
+      bumpScore(null, 1 + bonus);
+      setLastWinner({ name: guessedBy, bonus });
     } else {
-      setLastWinner({ name: null, side: null, bonus: 0, reason: reason || "time" });
+      setLastWinner({ name: null, bonus: 0, reason: reason || "time" });
     }
 
     // Mirror BodyBreak: emit start/end events when available.
@@ -358,7 +349,7 @@ export default function DrawMimeTask({
 
     if (isLastRound) {
       // All rounds done — submit once (include cumulative team scores for backend)
-      onSubmit?.({ ...payload, roundIndex, totalRounds, allRoundsDone: true, scoreLeft, scoreRight });
+      onSubmit?.({ ...payload, roundIndex, totalRounds, allRoundsDone: true, teamScore });
       // Reset round counter for if the task somehow restarts
       setRoundIndex(0);
       setPerformerIdx(initialPerformerIdx);
@@ -829,7 +820,7 @@ export default function DrawMimeTask({
               ) : (
                 <motion.button whileTap={{ scale: 0.95 }}
                   style={{ ...bigBtn("#4ade80", "#000"), fontSize: "2rem", padding: "24px 48px", boxShadow: "0 12px 32px rgba(0,0,0,0.3)" }}
-                  onClick={() => endRound({ guessedBy: `${guessingSide === "left" ? "Left" : "Right"} Team`, guessedBySide: guessingSide, reason: "guessed" })}>
+                  onClick={() => endRound({ guessedBy: "Team", guessedBySide: guessingSide, reason: "guessed" })}>
                   ✅ Guessed it!
                 </motion.button>
               )}
@@ -929,9 +920,9 @@ export default function DrawMimeTask({
                   ].find(r => r.emoji === topRatingEmoji)?.label}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 32, fontSize: "1.6rem", fontWeight: 900, background: "rgba(0,0,0,0.25)", borderRadius: 16, padding: "16px 32px" }}>
-                <span>Left: {scoreLeft}</span>
-                <span>Right: {scoreRight}</span>
+              <div style={{ display: "flex", gap: 12, alignItems: "baseline", fontSize: "1.6rem", fontWeight: 900, background: "rgba(0,0,0,0.25)", borderRadius: 16, padding: "16px 32px" }}>
+                <span>Team Score:</span>
+                <span style={{ fontSize: "2rem" }}>{teamScore}</span>
               </div>
               {!isLastRound && (
                 <div style={{ fontSize: "1rem", opacity: 0.7, marginTop: -8 }}>

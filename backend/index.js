@@ -3906,12 +3906,9 @@ if (!isMultiPack && task.taskType === "guess-who") {
       };
     }
 
-    // ✅ DRAW-MIME — use client-side team scores (participation + bonus)
+    // ✅ DRAW-MIME — use client-side team score (participation + bonus)
     if (!isMultiPack && task.taskType === "draw-mime" && answer && typeof answer === "object") {
-      const clientScore = (Number(answer.scoreLeft) || 0) + (Number(answer.scoreRight) || 0);
-      // Award points proportional to client-side game performance.
-      // Each correct round awards 1+bonus (0-3) to each team, so max per round ~8 (both teams × 4).
-      // Cap at basePoints; award at least participation credit if they played.
+      const clientScore = Number(answer.teamScore) || 0;
       const played = answer.completed === true || answer.allRoundsDone === true;
       if (played) {
         pointsEarned = clientScore > 0 ? Math.min(clientScore, basePoints) : Math.round(basePoints * 0.5);
@@ -3923,9 +3920,7 @@ if (!isMultiPack && task.taskType === "guess-who") {
       aiScore = {
         strategy: "draw-mime-client",
         correct,
-        scoreLeft: Number(answer.scoreLeft) || 0,
-        scoreRight: Number(answer.scoreRight) || 0,
-        combinedScore: clientScore,
+        teamScore: clientScore,
         maxPoints: basePoints,
         totalScore: pointsEarned,
       };
