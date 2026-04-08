@@ -428,21 +428,15 @@ export default function TaskSets() {
     const id = taskset?._id || taskset?.id;
     if (!id) return;
     try {
-      const token = getStoredAuthToken();
-      const res = await fetch(`/api/tasksets/${encodeURIComponent(id)}/share`, {
+      const data = await apiFetchJson("/api/shared/create-link", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({}),
+        body: { tasksetId: id },
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok || !data?.shareUrl) {
-        throw new Error(data?.error || `Share failed (HTTP ${res.status})`);
+      if (!data?.ok || !data?.link) {
+        throw new Error(data?.error || "Share failed");
       }
 
-      const url = String(data.shareUrl);
+      const url = String(data.link);
       try {
         await navigator.clipboard.writeText(url);
         showToast("Link copied to clipboard");
