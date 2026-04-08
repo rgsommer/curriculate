@@ -99,6 +99,32 @@ router.post("/access-codes", ...adminRequired, async (req, res) => {
   }
 });
 
+// DELETE /api/admin/access-codes/:id
+router.delete("/access-codes/:id", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ ok: false, error: "Missing code id." });
+
+    const doc = await AccessCode.findById(id).lean();
+    if (!doc) return res.status(404).json({ ok: false, error: "Access code not found." });
+
+    // Prevent deleting codes that have already been claimed
+    const claimants = Array.isArray(doc.claimants) ? doc.claimants : [];
+    if (claimants.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: `Cannot delete: code has been claimed by ${claimants.length} user(s). Revoke/disable it instead.`,
+      });
+    }
+
+    await AccessCode.deleteOne({ _id: id });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin-access-codes] delete failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to delete access code." });
+  }
+});
+
 // ============================================================
 // Admin: Email templates (get + update)
 // ============================================================
