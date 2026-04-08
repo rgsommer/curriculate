@@ -78,7 +78,7 @@ function getTimesPlayed(ts) {
 }
 
 function getLastPlayed(ts) {
-  return ts?.lastPlayedAt || ts?.lastPlayed || ts?.playedAt || ts?.updatedAt || null;
+  return ts?.lastPlayedAt || ts?.lastPlayed || ts?.playedAt || null;
 }
 
 /**
@@ -1175,7 +1175,7 @@ export default function TaskSets() {
               goalLabel,
               blooms ? `Bloom's ${blooms}` : "",
               `Plays ${times}`,
-              last ? `Last played ${last}` : "",
+              last ? `Last played ${last}` : "Never played",
             ].filter(Boolean);
 
             return (
