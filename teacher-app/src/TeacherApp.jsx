@@ -1095,7 +1095,17 @@ if (st?.ok && st.exists) {
         if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; }
       };
 
-      es.addEventListener("done", () => { cleanup(); done({ ok: true, phase: "done" }); });
+      es.addEventListener("done", (ev) => {
+        cleanup();
+        let data = {};
+        try { data = JSON.parse(ev.data || "{}"); } catch {}
+        if (data.ok === false) {
+          const failed = Array.isArray(data.failedTypes) ? data.failedTypes : [];
+          done({ ok: false, phase: "done", error: `${failed.length} type(s) failed: ${failed.join(", ")}`, failedTypes: failed });
+        } else {
+          done({ ok: true, phase: "done" });
+        }
+      });
 
       es.addEventListener("fatal", (ev) => {
         cleanup();
@@ -1359,9 +1369,23 @@ if (st?.ok && st.exists) {
         }
       });
 
-      es.addEventListener("done", async () => {
+      es.addEventListener("done", async (ev) => {
         cleanup();
         stopFakeProgress(1);
+
+        let data = {};
+        try { data = JSON.parse(ev.data || "{}"); } catch {}
+
+        if (data.ok === false) {
+          // Generation incomplete — at least one type failed
+          const failed = Array.isArray(data.failedTypes) ? data.failedTypes : [];
+          const failedLabels = failed.map((t) => formatTaskTypeLabel(t) || t).join(", ");
+          setDemoErr(
+            `Generation incomplete — ${failed.length} task type${failed.length === 1 ? "" : "s"} failed: ${failedLabels || "unknown"}. Nothing was saved.`
+          );
+          setDemoBusy(false);
+          return;
+        }
 
         if (isAdmin) {
           await loadDemoInfo(); // <-- use the shared function
@@ -1370,6 +1394,16 @@ if (st?.ok && st.exists) {
         setDemoOk("Regenerated ✓");
         window.setTimeout(() => setDemoOk(""), 2000);
         setDemoBusy(false);
+      });
+
+      // Listen for per-type failures (sent when a type exhausts all retries)
+      es.addEventListener("fail", (ev) => {
+        try {
+          const data = JSON.parse(ev.data || "{}");
+          const label = formatTaskTypeLabel(data.taskType) || data.taskType || "unknown";
+          console.warn(`[Demo] Type failed: ${label} — ${data.error || "no details"}`);
+          setDemoCurrentTask(`⚠ ${label} failed — retrying others…`);
+        } catch {}
       });
 
       es.addEventListener("task_error", (ev) => {
