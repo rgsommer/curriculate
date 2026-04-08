@@ -978,11 +978,14 @@ export default function TaskSets() {
 
             const listReport = extractGenerationReport(ts);
             const blooms = listReport ? extractBloomsLabel(listReport) : "";
+            const dur = Number(ts?.durationMinutes);
+            const durLabel = Number.isFinite(dur) && dur > 0 ? `~${dur} min` : "";
 
             const secondLineParts = [
               subject && subject.toLowerCase() !== title.toLowerCase() && subject,
               grade && `Grade ${grade}`,
               `${count} task${count === 1 ? "" : "s"}`,
+              durLabel,
               blooms ? `Bloom's ${blooms}` : "",
               `Plays ${times}`,
               last ? `Last played ${last}` : "",

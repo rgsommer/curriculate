@@ -1101,7 +1101,12 @@ export async function createAiTaskset(req, res) {
       count,
       specialConsiderations = "",
       topicDescription = "",
+      totalDurationMinutes,
+      durationMinutes: durationMinutesBody,
     } = req.body || {};
+
+    // Accept either key the frontend might send
+    const durationMinutes = Number(totalDurationMinutes || durationMinutesBody) || null;
 
     // Frontend sends topicDescription; merge with specialConsiderations if both present
     const effectiveSpecialConsiderations =
@@ -1317,6 +1322,7 @@ export async function createAiTaskset(req, res) {
       difficulty,
       learningGoal,
       topicLabel,
+      durationMinutes: durationMinutes || undefined,
       tasks: finalized,
       meta: {
         pool,
