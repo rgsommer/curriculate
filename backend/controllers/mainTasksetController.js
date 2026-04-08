@@ -975,8 +975,9 @@ async function attemptAutoFixCoverage({
   const fixes = [];
 
   // Try a few passes; each pass targets a few missing terms.
-  const maxPasses = 3;
-  const maxTermsPerFix = 6;
+  // Keep passes and retries low — each attempt is a full AI call.
+  const maxPasses = 2;
+  const maxTermsPerFix = 8;
 
   let coverage = computeCoverageReport(aiWordBank, finalized);
   if (!coverage.missingCount) return { coverage, fixes };
@@ -1009,7 +1010,7 @@ async function attemptAutoFixCoverage({
     let lastErr = null;
     let success = false;
 
-    const maxAttempts = allowedType === TASK_TYPES.MUSICAL_CHAIRS ? 15 : 8;
+    const maxAttempts = allowedType === TASK_TYPES.MUSICAL_CHAIRS ? 5 : 3;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -1200,7 +1201,7 @@ export async function createAiTaskset(req, res) {
       const candidate = rawTasks[i] || null;
 
       const mustHave = retryMustHave[expectedType] || "";
-      const maxAttempts = expectedType === TASK_TYPES.MUSICAL_CHAIRS ? 15 : 10;
+      const maxAttempts = expectedType === TASK_TYPES.MUSICAL_CHAIRS ? 6 : 4;
 
       // Concepts this task MUST include
       const assignedTerms = Array.isArray(conceptPlan[i]) ? conceptPlan[i] : [];
@@ -1274,21 +1275,26 @@ export async function createAiTaskset(req, res) {
       sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
     }
 
-    // ✅ Coverage report + auto-fix (still valuable as a final pass)
-    sendSSE({ type: "phase", phase: "coverage", message: "Checking vocabulary coverage…" });
+    // ✅ Coverage report + auto-fix (only when there are vocabulary terms to check)
     let coverage = computeCoverageReport(aiWordBank, finalized);
-    const { coverage: coverageAfterFix, fixes } = await attemptAutoFixCoverage({
-      aiWordBank,
-      finalized,
-      subject,
-      gradeLevel,
-      difficulty,
-      learningGoal,
-      topicLabel,
-      mergedSpecialConsiderations,
-      errors,
-    });
-    coverage = coverageAfterFix || coverage;
+    let fixes = [];
+
+    if (coverage.missingCount > 0) {
+      sendSSE({ type: "phase", phase: "coverage", message: "Checking vocabulary coverage…" });
+      const result = await attemptAutoFixCoverage({
+        aiWordBank,
+        finalized,
+        subject,
+        gradeLevel,
+        difficulty,
+        learningGoal,
+        topicLabel,
+        mergedSpecialConsiderations,
+        errors,
+      });
+      coverage = result.coverage || coverage;
+      fixes = result.fixes || [];
+    }
 
     // ✅ Teacher-facing report (actual coverage + Bloom + efficiency)
     const generationReport = buildGenerationReport({
