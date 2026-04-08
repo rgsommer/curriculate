@@ -978,6 +978,19 @@ export default function TaskSets() {
 
             const listReport = extractGenerationReport(ts);
             const blooms = listReport ? extractBloomsLabel(listReport) : "";
+
+            // Build tooltip listing task types with counts
+            const taskTypeCounts = {};
+            (ts?.tasks || []).forEach((t) => {
+              const raw = t?.taskType || t?.type || "unknown";
+              // "multiple-choice" → "Multiple Choice"
+              const label = raw.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+              taskTypeCounts[label] = (taskTypeCounts[label] || 0) + 1;
+            });
+            const taskTypeTooltip = Object.entries(taskTypeCounts)
+              .map(([label, n]) => `${label}${n > 1 ? ` ×${n}` : ""}`)
+              .join("\n");
+
             const dur = Number(ts?.durationMinutes);
             const durLabel = Number.isFinite(dur) && dur > 0 ? `~${dur} min` : "";
 
@@ -992,7 +1005,7 @@ export default function TaskSets() {
             ].filter(Boolean);
 
             return (
-              <div key={id} style={{ ...card, display: "flex", gap: 12 }}>
+              <div key={id} title={taskTypeTooltip} style={{ ...card, display: "flex", gap: 12 }}>
                 <div style={{ paddingTop: 2 }}>
                   <input
                     type="checkbox"
