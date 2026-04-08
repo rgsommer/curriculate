@@ -2154,7 +2154,16 @@ function StudentApp() {
             setPostSubmitSecondsLeft(t);
             if (t <= 0) {
               clearInterval(timer);
-              // Don't auto-advance — wait for student to tap "Read it" button
+              // For tasks with a feedback panel (short-answer, open-text, record-audio),
+              // wait for student to tap "Read it" button.
+              // For all other tasks, auto-advance since there's no feedback to read.
+              const feedbackTaskTypes = ["short-answer", "open-text", "record-audio"];
+              const ct = currentTaskRef.current?.taskType || "";
+              const hasFeedbackPanel = feedbackTaskTypes.includes(ct);
+              if (!hasFeedbackPanel) {
+                endReviewAndReturnToScan();
+              }
+              // else: "Read it" button will appear in the feedback panel
             }
           }, 1000);
 
