@@ -4619,6 +4619,12 @@ socket.on("guess-who:reveal", (payload = {}, ack) => {
       room.isActive = false;
       room.startedAt = null;
 
+      // Increment play counter (covers both direct launches and shared-link plays)
+      TaskSet.updateOne(
+        { _id: tasksetId },
+        { $inc: { totalPlays: 1 }, $set: { lastPlayedAt: new Date() } }
+      ).catch((e) => console.warn("Failed to increment totalPlays:", e?.message));
+
       // Let LiveSession & others refresh their state if needed
       const state = buildRoomState(room);
       io.to(code).emit("room:state", state);
