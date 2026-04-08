@@ -329,15 +329,47 @@ export default function RecordAudioTask({
     try {
       const blob = await fetch(audioUrl).then((r) => r.blob());
       let payload = null;
+
+      // Try S3 upload first (if configured)
       let s3 = null;
       try {
         s3 = await presignAndUploadToS3({ blob, contentType: blob.type || "audio/webm", purpose: "audio" });
-      } catch (e) { console.warn("S3 upload unavailable, falling back:", e); }
+      } catch (e) { console.warn("S3 upload unavailable, using direct transcription:", e); }
 
       if (s3?.s3Key) {
+        // S3 path — backend will fetch from S3 and transcribe
         payload = { type: "record-audio", s3Key: s3.s3Key, signedGetUrl: s3.signedGetUrl, duration, mimeType: blob.type || "audio/webm" };
       } else {
-        payload = { type: "record-audio", recorded: true, duration, mimeType: blob.type || "audio/webm", note: "audio-not-uploaded" };
+        // Direct path — upload audio to backend for immediate transcription (no S3 needed)
+        try {
+          const formData = new FormData();
+          formData.append("audio", blob, `recording.${blob.type?.includes("mp3") ? "mp3" : "webm"}`);
+          formData.append("taskPrompt", task?.prompt || task?.title || "");
+          formData.append("rubric", task?.rubric || task?.criteria || task?.config?.rubric || "");
+
+          const transcribeResp = await fetch("/api/audio/transcribe", {
+            method: "POST",
+            body: formData,
+          });
+          const transcribeJson = await transcribeResp.json().catch(() => null);
+
+          if (transcribeJson?.ok && transcribeJson.transcript) {
+            payload = {
+              type: "record-audio",
+              recorded: true,
+              duration,
+              mimeType: blob.type || "audio/webm",
+              transcript: transcribeJson.transcript,
+              feedback: transcribeJson.feedback || "",
+            };
+          } else {
+            // Transcription failed but recording was made
+            payload = { type: "record-audio", recorded: true, duration, mimeType: blob.type || "audio/webm", note: "transcription-failed" };
+          }
+        } catch (transcribeErr) {
+          console.warn("Direct transcription failed:", transcribeErr);
+          payload = { type: "record-audio", recorded: true, duration, mimeType: blob.type || "audio/webm", note: "transcription-failed" };
+        }
       }
 
       await Promise.resolve(onSubmit?.(payload));

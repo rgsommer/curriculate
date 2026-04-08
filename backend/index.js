@@ -4165,15 +4165,47 @@ if (!isMultiPack && task.taskType === "guess-who") {
     // ── Record-audio: transcribe + AI feedback (before building review) ──
     let audioTranscript = null;
     if (task.taskType === "record-audio") {
+      // Check if client already sent transcript+feedback (direct upload path, no S3)
+      const preTranscript = typeof answer?.transcript === "string" ? answer.transcript.trim() : "";
+      const preFeedback = typeof answer?.feedback === "string" ? answer.feedback.trim() : "";
+
+      if (preTranscript) {
+        // Use pre-computed transcript from direct /api/audio/transcribe endpoint
+        audioTranscript = { transcript: preTranscript, feedback: preFeedback };
+        const wordCount = preTranscript.split(/\s+/).filter(Boolean).length;
+        if (wordCount >= 5) {
+          correct = true;
+          pointsEarned = task.points || 10;
+          aiScore = {
+            strategy: "record-audio-transcribed",
+            totalScore: pointsEarned,
+            maxPoints: task.points || 10,
+            transcript: preTranscript,
+            feedback: preFeedback,
+            wordCount,
+          };
+        } else {
+          correct = null;
+          pointsEarned = Math.round((task.points || 10) * 0.5);
+          aiScore = {
+            strategy: "record-audio-transcribed",
+            totalScore: pointsEarned,
+            maxPoints: task.points || 10,
+            transcript: preTranscript,
+            feedback: preFeedback || "Try to say a bit more next time!",
+            wordCount,
+          };
+        }
+      }
+
+      // S3 path: fetch audio from S3 and transcribe server-side
       const s3Key = answer?.s3Key || answer?.key || null;
-      if (s3Key) {
+      if (!audioTranscript && s3Key) {
         try {
           const result = await transcribeAndFeedbackRecordAudio(s3Key, task);
           if (result) {
             audioTranscript = result;
-            // Store transcript on the answer so it's in room.submissions
             answer.transcript = result.transcript || "";
-            // Award points based on whether they spoke substantively
             const wordCount = (result.transcript || "").split(/\s+/).filter(Boolean).length;
             if (wordCount >= 5) {
               correct = true;
@@ -7846,6 +7878,78 @@ app.get("/api/tasksets", async (req, res) => {
   } catch (err) {
     console.error("GET /api/tasksets error:", err);
     res.status(500).json({ error: "Failed to load task sets" });
+  }
+});
+
+// ------------------------------
+// Audio: Direct transcription (no S3 needed)
+// Accepts multipart audio upload, runs Whisper + GPT, returns feedback.
+// ------------------------------
+import multer from "multer";
+const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+app.post("/api/audio/transcribe", audioUpload.single("audio"), async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer || req.file.buffer.length < 500) {
+      return res.status(400).json({ ok: false, error: "No audio data or file too small." });
+    }
+
+    const oai = getOpenAIInstance();
+    const ext = (req.file.mimetype || "").includes("mp3") ? "mp3"
+              : (req.file.mimetype || "").includes("wav") ? "wav"
+              : "webm";
+    const mimeType = ext === "mp3" ? "audio/mpeg" : ext === "wav" ? "audio/wav" : "audio/webm";
+
+    const audioFile = await toFile(req.file.buffer, `recording.${ext}`, { type: mimeType });
+
+    // 1) Whisper transcription
+    const whisperResp = await oai.audio.transcriptions.create({
+      model: "whisper-1",
+      file: audioFile,
+      response_format: "text",
+    });
+    const transcript = (typeof whisperResp === "string" ? whisperResp : whisperResp?.text || "").trim();
+
+    if (!transcript) {
+      return res.json({
+        ok: true,
+        transcript: "",
+        feedback: "We couldn't detect any speech in your recording. Try speaking louder and closer to the mic.",
+      });
+    }
+
+    // 2) AI feedback on the transcript
+    const taskPrompt = String(req.body?.taskPrompt || "").trim();
+    const rubric = String(req.body?.rubric || "").trim();
+    const model = process.env.AI_MODEL || "gpt-4.1-mini";
+
+    const systemMsg = `You are a supportive classroom teacher giving brief feedback on a student's spoken response.
+Be encouraging but honest. Keep feedback to 2-3 sentences max.
+${rubric ? `\nAssessment criteria: ${rubric}` : ""}`;
+
+    const userMsg = `Task prompt: "${taskPrompt}"
+
+Student's spoken response (transcribed):
+"${transcript}"
+
+Give brief, constructive feedback. Start with what was good, then suggest one improvement if needed.`;
+
+    const chatResp = await oai.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: systemMsg },
+        { role: "user", content: userMsg },
+      ],
+      max_tokens: 200,
+      temperature: 0.7,
+    });
+
+    const feedback = chatResp.choices?.[0]?.message?.content?.trim() || "";
+
+    return res.json({ ok: true, transcript, feedback });
+  } catch (err) {
+    console.error("[/api/audio/transcribe] error:", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Transcription failed." });
   }
 });
 
