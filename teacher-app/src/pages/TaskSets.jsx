@@ -484,12 +484,22 @@ export default function TaskSets() {
         source?.meta?.conceptAllocation?.requestedConcepts ||
         source?.meta?.coverage?.requested ||
         [];
+
+      // Not-covered: try generation report first, fall back to meta.coverage.missing
+      const notCoveredFromReport = report ? extractNotCovered(report) : [];
+      const notCovered = notCoveredFromReport.length
+        ? notCoveredFromReport
+        : (source?.meta?.coverage?.missing || []).map((x) => String(x || "").trim()).filter(Boolean);
+
+      // Coverage rows: try generation report first, fall back to meta.coverage
+      const rowsFromReport = report ? extractConceptCoverageRows(report) : [];
+
       return {
         raw: report || null,
         blooms: report ? extractBloomsLabel(report) : "",
         cognitiveSkills: report ? extractCognitiveSkills(report) : [],
-        rows: report ? extractConceptCoverageRows(report) : [],
-        notCovered: report ? extractNotCovered(report) : [],
+        rows: rowsFromReport,
+        notCovered,
         objectiveOnly: report ? extractObjectiveOnly(report) : [],
         reinforcement: report ? extractReinforcement(report) : [],
         concepts,
