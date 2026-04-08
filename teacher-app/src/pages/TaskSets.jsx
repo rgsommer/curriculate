@@ -994,11 +994,29 @@ export default function TaskSets() {
             const dur = Number(ts?.durationMinutes);
             const durLabel = Number.isFinite(dur) && dur > 0 ? `~${dur} min` : "";
 
+            // Difficulty flag
+            const rawDiff = (ts?.difficulty || "").toUpperCase();
+            const diffFlag = rawDiff === "EASY" ? "\u{1F7E2}"     // green circle
+              : rawDiff === "MEDIUM" ? "\u{1F7E1}"                 // yellow circle
+              : rawDiff === "HARD" ? "\u{1F534}"                   // red circle
+              : "";
+            const diffTip = rawDiff === "EASY" ? "Difficulty: Easy"
+              : rawDiff === "MEDIUM" ? "Difficulty: Medium"
+              : rawDiff === "HARD" ? "Difficulty: Hard"
+              : "";
+
+            // Learning goal
+            const rawGoal = (ts?.learningGoal || "").trim();
+            const goalLabel = rawGoal
+              ? rawGoal.charAt(0).toUpperCase() + rawGoal.slice(1).toLowerCase()
+              : "";
+
             const secondLineParts = [
               subject && subject.toLowerCase() !== title.toLowerCase() && subject,
               grade && `Grade ${grade}`,
               `${count} task${count === 1 ? "" : "s"}`,
               durLabel,
+              goalLabel,
               blooms ? `Bloom's ${blooms}` : "",
               `Plays ${times}`,
               last ? `Last played ${last}` : "",
@@ -1027,6 +1045,11 @@ export default function TaskSets() {
                         whiteSpace: "nowrap",
                       }}
                     >
+                      {diffFlag && (
+                        <span title={diffTip} style={{ cursor: "default", marginRight: 6 }}>
+                          {diffFlag}
+                        </span>
+                      )}
                       {title}
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -1043,7 +1066,7 @@ export default function TaskSets() {
                   </div>
 
                   <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>
-                    {secondLineParts.join(" · ")}
+                    {secondLineParts.join(" \u00B7 ")}
                   </div>
 
                   <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
