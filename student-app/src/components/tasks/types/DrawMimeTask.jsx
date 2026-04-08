@@ -71,11 +71,16 @@ export default function DrawMimeTask({
     const MIN_CLUE_CHARS = 3;
     const MAX_CLUE_WORDS = 5;
     const MAX_CLUE_CHARS = 40;
+    // Words that indicate a task title / category, not a drawable clue
+    const TITLE_WORDS = /\b(vocabulary|vocab|review|quiz|test|activity|task|exercise|assignment|history|science|math|english|french|chapter|unit|lesson|draw|mime|practice)\b/i;
     const isValidClue = (s) => {
       if (!s) return false;
       const t = s.trim();
       if (!t || t.length < MIN_CLUE_CHARS || t.length > MAX_CLUE_CHARS) return false;
-      return t.split(/\s+/).length <= MAX_CLUE_WORDS;
+      if (t.split(/\s+/).length > MAX_CLUE_WORDS) return false;
+      // Reject generic task titles / category names
+      if (TITLE_WORDS.test(t)) return false;
+      return true;
     };
 
     // 1. Try clues array (backend-normalised — should already be clean vocab words)

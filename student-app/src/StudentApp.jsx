@@ -2125,8 +2125,22 @@ function StudentApp() {
           // Increment task-completion counter for reader rotation
           tasksCompletedCountRef.current += 1;
 
+          // Pick reader ONCE (stable across re-renders)
+          const namedMembers = Array.isArray(members)
+            ? members.map((m) => String(m || "").trim()).filter(Boolean)
+            : [];
+          let pickedReader = null;
+          if (namedMembers.length === 1) {
+            pickedReader = namedMembers[0];
+          } else if (namedMembers.length > 1) {
+            const candidates = namedMembers.filter((n) => n !== lastReaderRef.current);
+            pickedReader = candidates[Math.floor(Math.random() * candidates.length)];
+          }
+          if (pickedReader) lastReaderRef.current = pickedReader;
+
           setReviewState({
             ...reviewObj,
+            reader: pickedReader,
             correct: typeof response?.correct === "boolean" ? response.correct : undefined,
             accepted:
               typeof response?.accepted === "boolean"
@@ -4739,18 +4753,7 @@ function StudentApp() {
             </div>
           )}
           {reviewState?.feedback && (() => {
-            const namedMembers = Array.isArray(members)
-              ? members.map((m) => String(m || "").trim()).filter(Boolean)
-              : [];
-            // Pick a random reader, avoiding the previous one
-            let reader = null;
-            if (namedMembers.length === 1) {
-              reader = namedMembers[0];
-            } else if (namedMembers.length > 1) {
-              const candidates = namedMembers.filter((n) => n !== lastReaderRef.current);
-              reader = candidates[Math.floor(Math.random() * candidates.length)];
-            }
-            if (reader) lastReaderRef.current = reader;
+            const reader = reviewState.reader || null;
             return (
               <>
                 {reader && (
@@ -4787,8 +4790,8 @@ function StudentApp() {
           )}
           {/* "Read it" button — only appears AFTER countdown expires */}
           {postSubmitSecondsLeft != null && postSubmitSecondsLeft <= 0 && (() => {
-            // Re-use the reader already chosen for this feedback panel
-            const readerName = lastReaderRef.current || null;
+            // Re-use the reader already stored in reviewState (stable)
+            const readerName = reviewState?.reader || null;
             return (
               <button
                 type="button"

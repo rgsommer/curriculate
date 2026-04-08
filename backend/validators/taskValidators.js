@@ -1255,6 +1255,8 @@ export function normalizeTaskByType(taskType, rawTask) {
       // Check if a string is a valid short clue (1-5 words, ≤40 chars)
       const MIN_CLUE_CHARS = 3;
       const STOP_WORDS = new Set(["i","a","an","the","or","and","of","to","in","on","at","is","it","be","do","no","so","if","up","by","my","we","he","she","me"]);
+      // Words that indicate a task title / category, not a drawable clue
+      const TITLE_WORDS = /\b(vocabulary|vocab|review|quiz|test|activity|task|exercise|assignment|history|science|math|english|french|chapter|unit|lesson|draw|mime|practice)\b/i;
       const _isValidClue = (s) => {
         if (!s) return false;
         const trimmed = s.trim();
@@ -1263,6 +1265,8 @@ export function normalizeTaskByType(taskType, rawTask) {
         if (words.length < 1 || words.length > MAX_CLUE_WORDS) return false;
         // Reject if every word is a stop word
         if (words.every((w) => STOP_WORDS.has(w.toLowerCase()))) return false;
+        // Reject generic task titles / category names
+        if (TITLE_WORDS.test(trimmed)) return false;
         return true;
       };
 
