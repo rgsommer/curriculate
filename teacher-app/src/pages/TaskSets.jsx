@@ -475,19 +475,29 @@ export default function TaskSets() {
       return;
     }
 
-    const immediateReport = extractGenerationReport(taskset);
-    if (immediateReport) {
-      const normalized = {
-        raw: immediateReport,
-        blooms: extractBloomsLabel(immediateReport),
-        cognitiveSkills: extractCognitiveSkills(immediateReport),
-        rows: extractConceptCoverageRows(immediateReport),
-        notCovered: extractNotCovered(immediateReport),
-        objectiveOnly: extractObjectiveOnly(immediateReport),
-        reinforcement: extractReinforcement(immediateReport),
+    function buildNormalized(source) {
+      const report = extractGenerationReport(source);
+      // Vocabulary: try meta.conceptAllocation.requestedConcepts, then coverage.requested
+      const concepts =
+        source?.meta?.conceptAllocation?.requestedConcepts ||
+        source?.meta?.coverage?.requested ||
+        [];
+      return {
+        raw: report || null,
+        blooms: report ? extractBloomsLabel(report) : "",
+        cognitiveSkills: report ? extractCognitiveSkills(report) : [],
+        rows: report ? extractConceptCoverageRows(report) : [],
+        notCovered: report ? extractNotCovered(report) : [],
+        objectiveOnly: report ? extractObjectiveOnly(report) : [],
+        reinforcement: report ? extractReinforcement(report) : [],
+        concepts,
       };
-      reportCacheRef.current.set(id, normalized);
-      setReportData(normalized);
+    }
+
+    const immediateNorm = buildNormalized(taskset);
+    if (immediateNorm.raw || immediateNorm.concepts.length) {
+      reportCacheRef.current.set(id, immediateNorm);
+      setReportData(immediateNorm);
       return;
     }
 
@@ -495,32 +505,27 @@ export default function TaskSets() {
     setReportData(null);
     try {
       const data = await apiFetchJson(`/api/tasksets/${encodeURIComponent(id)}`);
-
-      // ✅ FIX: unwrap { ok:true, taskset:{...} }
       const fullSet = unwrapTasksetResponse(data);
       if (!fullSet) {
-        throw new Error("Failed to load taskset (unexpected server response).");
+        throw new Error("Failed to load taskset.");
       }
 
-      const report = extractGenerationReport(fullSet);
-      if (!report) {
-        throw new Error("No generation report found on this task set.");
-      }
+      // Update meta with full data from API
+      setReportTasksetMeta((prev) => ({
+        ...prev,
+        subject: getSubject(fullSet) || prev?.subject,
+        grade: getGrade(fullSet) || prev?.grade,
+        difficulty: (fullSet?.difficulty || prev?.difficulty || "").toUpperCase(),
+        learningGoal: (fullSet?.learningGoal || prev?.learningGoal || "").trim(),
+        durationMinutes: Number(fullSet?.durationMinutes) || prev?.durationMinutes || null,
+        tasks: fullSet?.tasks || prev?.tasks || [],
+      }));
 
-      const normalized = {
-        raw: report,
-        blooms: extractBloomsLabel(report),
-        cognitiveSkills: extractCognitiveSkills(report),
-        rows: extractConceptCoverageRows(report),
-        notCovered: extractNotCovered(report),
-        objectiveOnly: extractObjectiveOnly(report),
-        reinforcement: extractReinforcement(report),
-      };
-
+      const normalized = buildNormalized(fullSet);
       reportCacheRef.current.set(id, normalized);
       setReportData(normalized);
     } catch (e) {
-      setReportError(e?.message || "Failed to load generation report");
+      setReportError(e?.message || "Failed to load report data");
     } finally {
       setReportLoading(false);
     }
@@ -826,42 +831,64 @@ export default function TaskSets() {
               <div style={{ marginTop: 12, color: "#6b7280", fontWeight: 800 }}>
                 Loading report…
               </div>
-            ) : reportData?.raw ? (
+            ) : (
               <div style={{ marginTop: 12 }}>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <span
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(15,23,42,0.12)",
-                      background: "rgba(15,23,42,0.04)",
-                      fontWeight: 900,
-                      fontSize: 12,
-                    }}
-                  >
-                    Total tasks:{" "}
-                    <span style={{ color: "#111827" }}>
-                      {Number(reportData?.raw?.totalTasks ?? reportData?.raw?.taskCount ?? reportData?.raw?.summary?.totalTasks ?? 0)}
-                    </span>
-                  </span>
+                {/* ── Vocabulary / Word Bank ── */}
+                {Array.isArray(reportData?.concepts) && reportData.concepts.length > 0 && (
+                  <div style={{ marginTop: 4, marginBottom: 14 }}>
+                    <div style={{ fontWeight: 1000, marginBottom: 8 }}>
+                      Word bank ({reportData.concepts.length})
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {reportData.concepts.map((word) => {
+                        // Check if this word appears in coverage rows (used in the set)
+                        const row = (reportData?.rows || []).find(
+                          (r) => r.concept?.toLowerCase() === word?.toLowerCase()
+                        );
+                        const isUsed = row && (Number(row.objective) > 0 || Number(row.analytical) > 0);
+                        const isMissing = reportData?.notCovered?.some(
+                          (nc) => nc?.toLowerCase() === word?.toLowerCase()
+                        );
+                        const tipParts = [];
+                        if (row) {
+                          if (Number(row.objective)) tipParts.push(`Objective: ${row.objective}`);
+                          if (Number(row.analytical)) tipParts.push(`Analytical: ${row.analytical}`);
+                        }
+                        if (isMissing) tipParts.push("Not covered in any task");
+                        const tip = tipParts.length ? tipParts.join(" \u00B7 ") : "Included in word bank";
+                        return (
+                          <span
+                            key={word}
+                            title={tip}
+                            style={{
+                              display: "inline-block",
+                              padding: "4px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                              fontWeight: 800,
+                              cursor: "default",
+                              border: isMissing
+                                ? "1px solid rgba(220,38,38,0.3)"
+                                : "1px solid rgba(15,23,42,0.12)",
+                              background: isMissing
+                                ? "rgba(220,38,38,0.06)"
+                                : isUsed
+                                  ? "rgba(22,163,74,0.08)"
+                                  : "rgba(15,23,42,0.04)",
+                              color: isMissing ? "#dc2626" : isUsed ? "#15803d" : "#374151",
+                            }}
+                          >
+                            {word}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-                  {reportData?.blooms ? (
-                    <span
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 999,
-                        border: "1px solid rgba(37,99,235,0.25)",
-                        background: "rgba(37,99,235,0.08)",
-                        fontWeight: 1000,
-                        fontSize: 12,
-                        color: "#1d4ed8",
-                      }}
-                    >
-                      Bloom's: {reportData.blooms}
-                    </span>
-                  ) : null}
-
-                  {Array.isArray(reportData?.cognitiveSkills) && reportData.cognitiveSkills.length ? (
+                {/* ── Bloom's & Cognitive Skills ── */}
+                {reportData?.raw && (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <span
                       style={{
                         padding: "6px 10px",
@@ -872,53 +899,78 @@ export default function TaskSets() {
                         fontSize: 12,
                       }}
                     >
-                      Cognitive skills: {reportData.cognitiveSkills.join(", ")}
+                      Total tasks:{" "}
+                      <span style={{ color: "#111827" }}>
+                        {Number(reportData?.raw?.totalTasks ?? reportData?.raw?.taskCount ?? 0)}
+                      </span>
                     </span>
-                  ) : null}
-                </div>
 
-                <div style={{ marginTop: 14, fontWeight: 1000 }}>
-                  Concept coverage (actual)
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  {Array.isArray(reportData?.rows) && reportData.rows.length ? (
-                    <table style={table}>
-                      <thead>
-                        <tr>
-                          <th style={th}>Concept</th>
-                          <th style={{ ...th, width: 130, textAlign: "right" }}>Objective</th>
-                          <th style={{ ...th, width: 130, textAlign: "right" }}>Analytical</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {reportData.rows
-                          .slice()
-                          .sort((a, b) => a.concept.localeCompare(b.concept))
-                          .map((r) => (
-                            <tr key={r.concept}>
-                              <td style={td}>{r.concept}</td>
-                              <td style={{ ...td, textAlign: "right" }}>{Number(r.objective) || 0}</td>
-                              <td style={{ ...td, textAlign: "right" }}>{Number(r.analytical) || 0}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div
-                      style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        border: "1px solid #e5e7eb",
-                        background: "#f9fafb",
-                        color: "#6b7280",
-                        fontWeight: 800,
-                      }}
-                    >
-                      No concept coverage rows found on this report object.
+                    {reportData?.blooms ? (
+                      <span
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: "1px solid rgba(37,99,235,0.25)",
+                          background: "rgba(37,99,235,0.08)",
+                          fontWeight: 1000,
+                          fontSize: 12,
+                          color: "#1d4ed8",
+                        }}
+                      >
+                        Bloom's: {reportData.blooms}
+                      </span>
+                    ) : null}
+
+                    {Array.isArray(reportData?.cognitiveSkills) && reportData.cognitiveSkills.length ? (
+                      <span
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: "1px solid rgba(15,23,42,0.12)",
+                          background: "rgba(15,23,42,0.04)",
+                          fontWeight: 900,
+                          fontSize: 12,
+                        }}
+                      >
+                        Cognitive skills: {reportData.cognitiveSkills.join(", ")}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
+
+                {/* ── Concept coverage table ── */}
+                {Array.isArray(reportData?.rows) && reportData.rows.length > 0 && (
+                  <>
+                    <div style={{ marginTop: 14, fontWeight: 1000 }}>
+                      Concept coverage (actual)
                     </div>
-                  )}
-                </div>
+                    <div style={{ marginTop: 8 }}>
+                      <table style={table}>
+                        <thead>
+                          <tr>
+                            <th style={th}>Concept</th>
+                            <th style={{ ...th, width: 130, textAlign: "right" }}>Objective</th>
+                            <th style={{ ...th, width: 130, textAlign: "right" }}>Analytical</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reportData.rows
+                            .slice()
+                            .sort((a, b) => a.concept.localeCompare(b.concept))
+                            .map((r) => (
+                              <tr key={r.concept}>
+                                <td style={td}>{r.concept}</td>
+                                <td style={{ ...td, textAlign: "right" }}>{Number(r.objective) || 0}</td>
+                                <td style={{ ...td, textAlign: "right" }}>{Number(r.analytical) || 0}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
 
+                {/* ── Not covered ── */}
                 {Array.isArray(reportData?.notCovered) && reportData.notCovered.length > 0 && (
                   <div style={{ marginTop: 14 }}>
                     <div style={{ fontWeight: 1000, color: "#b91c1c" }}>
@@ -929,23 +981,23 @@ export default function TaskSets() {
                     </div>
                   </div>
                 )}
+
+                {/* ── Fallback when truly nothing is available ── */}
+                {!reportData?.raw && !(reportData?.concepts?.length) && !reportError && (
+                  <div
+                    style={{
+                      padding: 12,
+                      borderRadius: 14,
+                      border: "1px solid #e5e7eb",
+                      background: "#f9fafb",
+                      color: "#6b7280",
+                      fontWeight: 800,
+                    }}
+                  >
+                    No generation report available for this task set. Reports are generated automatically for new task sets.
+                  </div>
+                )}
               </div>
-            ) : (
-              !reportError && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: 12,
-                    borderRadius: 14,
-                    border: "1px solid #e5e7eb",
-                    background: "#f9fafb",
-                    color: "#6b7280",
-                    fontWeight: 800,
-                  }}
-                >
-                  No report loaded.
-                </div>
-              )
             )}
           </div>
         </div>
