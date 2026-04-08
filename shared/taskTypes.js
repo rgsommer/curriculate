@@ -569,19 +569,29 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
         
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "vennsort".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
     - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create a Venn sorting task with 10–16 items that fit into left-only, right-only, or both. Provide clear labels for both circles and the correct placement for each item.
-    
+    - Create a Venn sorting task with 10–16 items that fit into left-only, right-only, or both.
+    - config.categories: array of 2–3 category label strings (e.g. ["Mammals","Reptiles"]).
+    - config.items: array of 5–10 objects, each with { "id": "item-0-Dog", "text": "Dog" }.
+    - CRITICAL — you MUST include a top-level "correctAnswer" object mapping every item id to an array of category names it belongs to. Example:
+      "correctAnswer": {
+        "item-0-Dog": ["Mammals"],
+        "item-1-Bat": ["Mammals","Reptiles"],
+        "item-2-Snake": ["Reptiles"]
+      }
+    - Each item in config.items MUST also have a "categories" array matching its correctAnswer entry.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
+    - Do NOT omit the correctAnswer field — the task WILL be rejected without it.
+    - Do not omit required arrays/fields; satisfy minimum item counts (≥5 items, ≥2 categories).
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
     - Ensure prompts are student-facing instructions (what to do).
     `,

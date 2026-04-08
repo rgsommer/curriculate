@@ -218,6 +218,92 @@ function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── VENNSORT: Build correctAnswer from item category data if missing ──
+  if (type === TASK_TYPES.VENNSORT) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : {};
+    const cats = Array.isArray(cfg.categories) ? cfg.categories : [];
+    const items = Array.isArray(cfg.items) ? cfg.items : [];
+    const hasCA = t.correctAnswer && typeof t.correctAnswer === "object" && Object.keys(t.correctAnswer).length > 0;
+
+    // Promote categories / items from top-level if config is empty
+    if (cats.length === 0 && Array.isArray(t.categories) && t.categories.length >= 2) {
+      cfg.categories = t.categories;
+    }
+    if (items.length === 0 && Array.isArray(t.items) && t.items.length >= 5) {
+      cfg.items = t.items;
+    }
+    if (!t.config || typeof t.config !== "object") t.config = {};
+    if (cfg.categories) t.config.categories = cfg.categories;
+    if (cfg.items) t.config.items = cfg.items;
+
+    const finalCats = Array.isArray(t.config.categories) ? t.config.categories : [];
+    const finalItems = Array.isArray(t.config.items) ? t.config.items : [];
+
+    if (!hasCA && finalItems.length > 0 && finalCats.length >= 2) {
+      // AI often puts category data on each item — try to reconstruct correctAnswer
+      const built = {};
+      for (let i = 0; i < finalItems.length; i++) {
+        const it = finalItems[i];
+        if (!it || typeof it !== "object") continue;
+
+        const itemId = it.id || it.itemId || `item-${i}-${(it.text || it.label || it.name || "").replace(/\s+/g, "")}`;
+        // Normalize item ID on the object too
+        if (!it.id) it.id = itemId;
+
+        // Look for category assignments in common AI patterns
+        let assignedCats = null;
+        if (Array.isArray(it.categories) && it.categories.length > 0) {
+          assignedCats = it.categories;
+        } else if (Array.isArray(it.correctCategories) && it.correctCategories.length > 0) {
+          assignedCats = it.correctCategories;
+        } else if (typeof it.category === "string" && it.category) {
+          assignedCats = [it.category];
+        } else if (typeof it.correctCategory === "string" && it.correctCategory) {
+          assignedCats = [it.correctCategory];
+        } else if (typeof it.placement === "string" && it.placement) {
+          // Sometimes AI uses "placement": "Both" or "placement": "CategoryA"
+          if (it.placement.toLowerCase() === "both" && finalCats.length === 2) {
+            assignedCats = [...finalCats];
+          } else {
+            assignedCats = [it.placement];
+          }
+        } else if (typeof it.region === "string" && it.region) {
+          assignedCats = [it.region];
+        } else if (typeof it.zone === "string" && it.zone) {
+          assignedCats = [it.zone];
+        } else if (Array.isArray(it.belongsTo) && it.belongsTo.length > 0) {
+          assignedCats = it.belongsTo;
+        }
+
+        if (assignedCats && assignedCats.length > 0) {
+          // Validate that categories reference actual category names
+          const validCats = assignedCats.filter((c) =>
+            finalCats.some((fc) => {
+              const fcStr = typeof fc === "string" ? fc : fc?.label || fc?.name || "";
+              return fcStr.toLowerCase() === String(c).toLowerCase();
+            })
+          );
+          // Map back to the canonical category name (preserving original casing)
+          const canonicalCats = validCats.map((c) => {
+            const match = finalCats.find((fc) => {
+              const fcStr = typeof fc === "string" ? fc : fc?.label || fc?.name || "";
+              return fcStr.toLowerCase() === String(c).toLowerCase();
+            });
+            return typeof match === "string" ? match : match?.label || match?.name || String(c);
+          });
+          if (canonicalCats.length > 0) {
+            built[itemId] = canonicalCats;
+          }
+        }
+      }
+
+      if (Object.keys(built).length >= 5) {
+        t.correctAnswer = built;
+        console.log(`[sanitize] Built vennsort correctAnswer from item data (${Object.keys(built).length} entries)`);
+      }
+    }
+  }
+
   return t;
 }
 
