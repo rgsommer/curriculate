@@ -709,7 +709,7 @@ export default function AiTasksetGenerator() {
                 type="button"
                 onClick={() => {
                   // Prefill generator with missing terms for a Part 2 set
-                  navigate("/ai/generate", { state: { prefillWordList: coverage.missing } });
+                  navigate("/teacher/ai-tasksets", { state: { prefillWordList: coverage.missing } });
                 }}
                 style={{
                   borderRadius: 999,
@@ -1505,7 +1505,7 @@ export default function AiTasksetGenerator() {
               <button
                 type="button"
                 onClick={() => {
-                  navigate("/ai/generate", { state: { prefillWordList: coverage.missing } });
+                  navigate("/teacher/ai-tasksets", { state: { prefillWordList: coverage.missing } });
                 }}
                 style={{
                   borderRadius: 999,

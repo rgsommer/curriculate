@@ -986,11 +986,35 @@ export default function TaskSets() {
                 {Array.isArray(reportData?.notCovered) && reportData.notCovered.length > 0 && (
                   <div style={{ marginTop: 14 }}>
                     <div style={{ fontWeight: 1000, color: "#b91c1c" }}>
-                      Not covered
+                      Not covered ({reportData.notCovered.length})
                     </div>
                     <div style={{ marginTop: 6, color: "#111827", fontWeight: 800 }}>
                       {reportData.notCovered.join(", ")}
                     </div>
+                    {reportData.notCovered.length >= 10 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeReport();
+                          navigate("/teacher/ai-tasksets", {
+                            state: { prefillWordList: reportData.notCovered },
+                          });
+                        }}
+                        style={{
+                          marginTop: 10,
+                          borderRadius: 999,
+                          padding: "8px 16px",
+                          fontSize: "0.85rem",
+                          border: "1px solid #ea580c",
+                          background: "#ea580c",
+                          color: "#ffffff",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                        }}
+                      >
+                        Generate Part 2 ({reportData.notCovered.length} unused words)
+                      </button>
+                    )}
                   </div>
                 )}
 
