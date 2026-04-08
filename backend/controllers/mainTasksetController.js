@@ -397,6 +397,39 @@ function finalizeTask(expectedType, rawTask) {
   return normalized;
 }
 
+/**
+ * Attempt to recover a valid tasks array from a truncated JSON string.
+ * E.g. the AI returned `{"tasks":[{...},{...},{` — we strip the
+ * incomplete trailing object and close the array/object.
+ */
+function _repairTruncatedJson(raw) {
+  try {
+    // Find the "tasks" array opening
+    const tasksIdx = raw.indexOf('"tasks"');
+    if (tasksIdx === -1) return null;
+    const bracketIdx = raw.indexOf("[", tasksIdx);
+    if (bracketIdx === -1) return null;
+
+    // Walk backwards from end to find the last complete object (ending with })
+    let lastClose = raw.lastIndexOf("}");
+    while (lastClose > bracketIdx) {
+      // Try closing the array and outer object at this point
+      const attempt = raw.slice(0, lastClose + 1) + "]}";
+      try {
+        const parsed = JSON.parse(attempt);
+        if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+          console.log(`[AI] JSON repair succeeded — salvaged ${parsed.tasks.length} task(s).`);
+          return parsed;
+        }
+      } catch { /* keep searching */ }
+      lastClose = raw.lastIndexOf("}", lastClose - 1);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function generateTasksArray({
   typePool,
   count,
@@ -423,10 +456,13 @@ async function generateTasksArray({
 
   // Use the more capable batch model for initial generation (complex multi-task schema).
   // Falls back to AI_MODEL, then gpt-4.1-mini.
+  // Scale token budget with task count so large sets don't truncate.
+  const tokenBudget = Math.min(16384, Math.max(4096, count * 400));
+
   const request = {
     model: process.env.AI_BATCH_MODEL || process.env.AI_MODEL || "gpt-4.1-mini",
     temperature,
-    max_completion_tokens: 2600,
+    max_completion_tokens: tokenBudget,
     messages: [{ role: "user", content: prompt }],
   };
 
@@ -436,9 +472,19 @@ async function generateTasksArray({
   }
 
   const completion = await client.chat.completions.create(request);
+  const finishReason = completion.choices?.[0]?.finish_reason || "unknown";
   const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
 
-  const parsed = extractJsonFromText(raw);
+  if (finishReason === "length") {
+    console.warn(`[AI] Response truncated (finish_reason=length, budget=${tokenBudget}). Attempting JSON repair…`);
+  }
+
+  let parsed = extractJsonFromText(raw);
+
+  // If normal parse failed and response was truncated, try to salvage partial JSON
+  if (!parsed && finishReason === "length") {
+    parsed = _repairTruncatedJson(raw);
+  }
 
   let tasks = null;
 
@@ -474,8 +520,13 @@ async function generateTasksArray({
     }
   }
 
-  if (!Array.isArray(tasks)) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    console.error("[AI] Could not parse tasks. finish_reason:", finishReason, "raw length:", raw.length, "raw (first 500):", raw.slice(0, 500));
     throw new Error('AI did not return a JSON object with a "tasks" array.');
+  }
+
+  if (finishReason === "length" && tasks.length < count) {
+    console.warn(`[AI] Truncation recovered ${tasks.length}/${count} tasks; downstream loop will regenerate the rest.`);
   }
 
   // NOTE: We no longer hard-fail on length mismatch.
