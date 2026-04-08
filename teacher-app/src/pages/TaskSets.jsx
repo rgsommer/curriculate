@@ -458,7 +458,16 @@ export default function TaskSets() {
 
     setReportOpen(true);
     setReportError("");
-    setReportTasksetMeta({ id, title: getTitle(taskset) });
+    setReportTasksetMeta({
+      id,
+      title: getTitle(taskset),
+      subject: getSubject(taskset),
+      grade: getGrade(taskset),
+      difficulty: (taskset?.difficulty || "").toUpperCase(),
+      learningGoal: (taskset?.learningGoal || "").trim(),
+      durationMinutes: Number(taskset?.durationMinutes) || null,
+      tasks: taskset?.tasks || [],
+    });
 
     const cached = reportCacheRef.current.get(id);
     if (cached) {
@@ -753,6 +762,65 @@ export default function TaskSets() {
                 {reportError}
               </div>
             )}
+
+            {/* ── Generation summary chips ── */}
+            {reportTasksetMeta && (() => {
+              const m = reportTasksetMeta;
+              const diffLabel = m.difficulty === "EASY" ? "Easy"
+                : m.difficulty === "MEDIUM" ? "Medium"
+                : m.difficulty === "HARD" ? "Hard" : "";
+              const diffColor = m.difficulty === "EASY" ? "#16a34a"
+                : m.difficulty === "MEDIUM" ? "#ca8a04"
+                : m.difficulty === "HARD" ? "#dc2626" : "#6b7280";
+              const goalLabel = m.learningGoal
+                ? m.learningGoal.charAt(0).toUpperCase() + m.learningGoal.slice(1).toLowerCase()
+                : "";
+
+              // Task type breakdown
+              const typeCounts = {};
+              (m.tasks || []).forEach((t) => {
+                const raw = t?.taskType || t?.type || "unknown";
+                const label = raw.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                typeCounts[label] = (typeCounts[label] || 0) + 1;
+              });
+              const typeEntries = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+
+              const chipStyle = {
+                display: "inline-block",
+                padding: "5px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(15,23,42,0.12)",
+                background: "rgba(15,23,42,0.04)",
+                fontWeight: 900,
+                fontSize: 12,
+              };
+
+              return (
+                <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {m.subject && <span style={chipStyle}>{m.subject}</span>}
+                  {m.grade && <span style={chipStyle}>Grade {m.grade}</span>}
+                  {diffLabel && (
+                    <span style={{ ...chipStyle, color: diffColor, borderColor: diffColor + "40" }}>
+                      {diffLabel}
+                    </span>
+                  )}
+                  {goalLabel && (
+                    <span style={{ ...chipStyle, color: "#7c3aed", borderColor: "rgba(124,58,237,0.25)" }}>
+                      {goalLabel}
+                    </span>
+                  )}
+                  {m.durationMinutes && <span style={chipStyle}>~{m.durationMinutes} min</span>}
+                  {typeEntries.length > 0 && (
+                    <span
+                      style={{ ...chipStyle, cursor: "default" }}
+                      title={typeEntries.map(([l, n]) => `${l}${n > 1 ? ` \u00D7${n}` : ""}`).join("\n")}
+                    >
+                      {typeEntries.length} task type{typeEntries.length !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
 
             {reportLoading ? (
               <div style={{ marginTop: 12, color: "#6b7280", fontWeight: 800 }}>
