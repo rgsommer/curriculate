@@ -199,6 +199,7 @@ function StudentApp() {
   const postSubmitSecondsLeftRef = useRef(null);
   const taskStartedAtRef = useRef(null); // timestamp when current task was assigned (for speed bonus)
   const tasksCompletedCountRef = useRef(0); // increments each submission — used for reader rotation
+  const lastReaderRef = useRef(""); // tracks previous reader to avoid repeats
   
   const postPhaseRef = useRef(postPhase);
     useEffect(() => { postPhaseRef.current = postPhase; }, [postPhase]);
@@ -417,9 +418,15 @@ function StudentApp() {
           const savedTotal = Number(lsGet(LS_KEYS.tasksetTotal));
           if (savedTotal > 0) setTasksetTotalTasks(savedTotal);
 
-          // If a taskset is active, set up task phase so the auto-pushed task:assigned
-          // will be handled correctly (skip scan gate on resume)
-          if (state?.isActive) {
+          // Skip warmup on resume if any evidence that tasks have started:
+          // active taskset, server sent a current task, saved task index, score > 0, or warmup was already done
+          const hasProgress =
+            state?.isActive ||
+            !!resp.currentTask?.task ||
+            (typeof state?.scores?.[effectiveTeam] === "number" && state.scores[effectiveTeam] > 0) ||
+            lsGet(LS_KEYS.warmupDone) === "1";
+
+          if (hasProgress) {
             tasksStartedRef.current = true;
             setWarmupStep("done");
             setPostPhase("tasks");
@@ -685,6 +692,7 @@ function StudentApp() {
 
       tasksStartedRef.current = true;
       setWarmupStep("done");
+      lsSet(LS_KEYS.warmupDone, "1");
       setPostPhase("tasks");
       setWaitingForLaunch(false);
 
@@ -926,6 +934,7 @@ function StudentApp() {
       setTasksetComplete(false);
       setTasksStarted(true);
       setWarmupStep("done");
+      lsSet(LS_KEYS.warmupDone, "1");
       setPostPhase("tasks");
       setTaskRenderError(null);
 
@@ -1769,6 +1778,7 @@ function StudentApp() {
       if (!currentTask && payloadType === TASK_TYPES.TREASURE_RUNNER) {
         setSubmitting(false);
         setWarmupStep("done");
+        lsSet(LS_KEYS.warmupDone, "1");
         setPostPhase("treasure");
         return;
       }
@@ -4732,9 +4742,15 @@ function StudentApp() {
             const namedMembers = Array.isArray(members)
               ? members.map((m) => String(m || "").trim()).filter(Boolean)
               : [];
-            const reader = namedMembers.length > 0
-              ? namedMembers[tasksCompletedCountRef.current % namedMembers.length]
-              : null;
+            // Pick a random reader, avoiding the previous one
+            let reader = null;
+            if (namedMembers.length === 1) {
+              reader = namedMembers[0];
+            } else if (namedMembers.length > 1) {
+              const candidates = namedMembers.filter((n) => n !== lastReaderRef.current);
+              reader = candidates[Math.floor(Math.random() * candidates.length)];
+            }
+            if (reader) lastReaderRef.current = reader;
             return (
               <>
                 {reader && (
@@ -4771,12 +4787,8 @@ function StudentApp() {
           )}
           {/* "Read it" button — only appears AFTER countdown expires */}
           {postSubmitSecondsLeft != null && postSubmitSecondsLeft <= 0 && (() => {
-            const namedM = Array.isArray(members)
-              ? members.map((m) => String(m || "").trim()).filter(Boolean)
-              : [];
-            const readerName = namedM.length > 0
-              ? namedM[tasksCompletedCountRef.current % namedM.length]
-              : null;
+            // Re-use the reader already chosen for this feedback panel
+            const readerName = lastReaderRef.current || null;
             return (
               <button
                 type="button"

@@ -347,7 +347,8 @@ export default function RecordAudioTask({
           formData.append("taskPrompt", task?.prompt || task?.title || "");
           formData.append("rubric", task?.rubric || task?.criteria || task?.config?.rubric || "");
 
-          const transcribeResp = await fetch("/api/audio/transcribe", {
+          const backendBase = process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
+          const transcribeResp = await fetch(`${backendBase}/api/audio/transcribe`, {
             method: "POST",
             body: formData,
           });

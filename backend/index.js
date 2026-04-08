@@ -2495,12 +2495,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
       // RECORD AUDIO (transcription + AI feedback if available)
       if (type === "record-audio") {
         const transcript = aiScore?.transcript || answer?.transcript || null;
-        const aiFeedback = aiScore?.feedback || null;
-        if (transcript && aiFeedback) {
+        const aiFeedback = aiScore?.feedback || answer?.feedback || null;
+        if (transcript || aiFeedback) {
           return {
             recorded: true,
-            transcript,
-            aiFeedback,
+            transcript: transcript || null,
+            aiFeedback: aiFeedback || (transcript ? "Your recording was transcribed successfully." : null),
             score: aiScore?.totalScore ?? null,
             maxScore: aiScore?.maxPoints ?? task?.points ?? null,
           };
@@ -6656,92 +6656,93 @@ function buildRubricInstructions({
     - If neat and legible: do not mention handwriting (unless praising notably neat/consistent presentation).
     - Only comment if readability is clearly impacted.
 
-    ACADEMIC INTEGRITY (strict, evidence-based, high threshold):
+    ACADEMIC INTEGRITY (grade-calibrated, evidence-based):
       Default:
       ai_suspected_cheating = null
       copying_suspected = null
 
-      Do NOT assume AI use, copying, or plagiarism based on quality alone.
-      A suspicion field may ONLY be set if there is clear, visible evidence within the student submission.
+      You are grading a student at the given grade level. Use that grade band to calibrate your expectations for vocabulary, sentence structure, and reasoning sophistication.
 
-      PRIMARY FAIRNESS RULE:
-      Advanced vocabulary, strong organization, or above-grade-level writing is NOT sufficient to flag suspicion.
-      Students may legitimately write above grade level.
-      Quality, polish, or unusually strong performance alone are NOT evidence.
-      Only visible artifacts, structural inconsistencies, or clear copy markers justify suspicion.
-      If no clear visible trigger exists, both fields MUST remain null.
+      GRADE-LEVEL VOCABULARY BASELINE:
+      - Grades 3-5: simple everyday words; "because," "also," "important." Suspect words: "furthermore," "consequently," "juxtaposition," "paradigm," "notwithstanding," "facilitate," "utilize," "comprehensive," "multifaceted."
+      - Grades 6-8: transitional academic words emerging; "however," "significant," "evidence." Suspect words: "nevertheless," "epitomize," "dichotomy," "nuanced," "inherently," "synthesize," "encapsulate," "underscore."
+      - Grades 9-10: stronger academic register expected. Suspect words: "hegemony," "paradigmatic," "dialectical," "ontological," "epistemological," rare SAT-level words used fluently throughout.
+      - Grades 11-12: advanced academic writing expected; only flag if vocabulary is at graduate/professional level AND used with unusual density.
 
-      VISIBLE TRIGGERS (at least ONE required):
-      Direct AI Artifact Language
-      Phrases such as "As an AI language model…"
-      Statements about browsing, generating, or being an AI
-      Meta-output structure clearly not written for the assignment (e.g., "Here are 5 key points:" followed by generic structured output inconsistent with the prompt)
-      Web-Style or Source Formatting Not Requested
-      Hyperlinks
-      "Sources:" lists or bibliographies when not required
-      MLA/APA-style citations not requested
-      Clearly pasted definition blocks that exceed the task scope
-      Significant Internal Inconsistency (clearly observable)
-      A substantial shift in tone, vocabulary, or structural sophistication within the same submission
-      One section written far below grade level while another reads at advanced academic polish
-      Structural polish that sharply contradicts the demonstrated depth of understanding
-      Clear mismatch between handwriting maturity and sudden highly polished academic language
+      A single advanced word is not suspicious. Flag when MULTIPLE words (3+) are clearly above the grade band's typical usage AND are used fluently (not as if the student looked up one word).
 
-      Important:
-      Minor variation is NOT sufficient.
-      High-level vocabulary alone is NOT sufficient.
-      There must be a clear and substantial contrast within the same submission.
+      GRADE-LEVEL STRUCTURE/REASONING BASELINE:
+      - Grades 3-5: simple claim + reason; lists; basic cause-effect. Suspect: nested counterarguments, hedging language ("while it could be argued"), multi-paragraph thesis-evidence-analysis structure.
+      - Grades 6-8: paragraph structure emerging; basic evidence use. Suspect: sophisticated rhetorical framing, seamless integration of multiple sources, nuanced "on one hand / on the other hand" balanced analysis, academic conclusion that synthesizes rather than summarizes.
+      - Grades 9-10: structured arguments expected. Suspect: graduate-level analytical frameworks, discipline-specific methodological language, professional-quality prose flow with no rough edges.
+      - Grades 11-12: strong analytical writing expected; only flag if reasoning resembles published academic work or professional analysis.
 
-      Clear Copy Markers
-      Large blocks of generic textbook-style language
-      Repeated phrasing that appears pasted rather than composed
-      Definition-style wording that does not directly respond to the question
-      Structure inconsistent with how a student would normally answer that prompt
-      Plagiarism Indicators (visible within submission)
-      Insertion of formal academic phrasing inconsistent with the rest of the submission
-      Inclusion of specific quotations, statistics, or formal definitions without attribution when attribution would normally be expected
-      Multiple distinct voice shifts suggesting material pulled from different sources
+      PUNCTUATION & SENTENCE COMPLEXITY (strong AI signal):
+      AI-generated text often uses punctuation and sentence patterns that students rarely produce:
+      - Semicolons joining independent clauses (students almost never use semicolons correctly before grade 10)
+      - Em-dashes for parenthetical asides — like this — (rare in authentic student writing below grade 11)
+      - Colons introducing lists or elaborations within sentences
+      - Complex compound-complex sentences with multiple subordinate clauses, all perfectly punctuated
+      - Consistently varied sentence openings (participial phrases, adverbial clauses, inversions) across the entire response
+      - Smooth parallel structure in lists (AI loves balanced tricolons: "X, Y, and Z")
+      For grades 3-8, any consistent use of semicolons or em-dashes is a strong signal.
+      For grades 9-10, occasional use is normal; flag when it appears throughout the response with perfect execution.
+      For grades 11-12, flag only when punctuation sophistication is unnaturally uniform and flawless.
 
-      FIELD SELECTION RULE:
-      ai_suspected_cheating
-      Use when AI-style artifacts, synthetic structure, or model-generated patterns are visible.
+      TRIGGER CATEGORIES (need at least TWO from any category to flag):
 
-      copying_suspected
-      Use when text appears copied from another human source (peer, notes, textbook, website), even if not clearly AI-generated.
+      Category A — Grade-Level Mismatch:
+      - 3+ vocabulary words clearly above the grade band's typical usage, used fluently
+      - Sentence/argument structure significantly above developmental expectations for the grade
+      - Reasoning sophistication (hedging, counterarguments, synthesis) far beyond grade norms
+      - Suspicious uniformity of polish — every sentence is equally polished with no rough edges, no signs of a student drafting and thinking
+      - Punctuation above grade level: semicolons, em-dashes, colons used correctly and consistently (see PUNCTUATION & SENTENCE COMPLEXITY section above)
+      - Unnaturally perfect sentence variety: every sentence uses a different opening pattern with no repetition or awkwardness
 
-      Do NOT set both fields unless there are clearly separate visible reasons for each.
+      Category B — Direct AI Artifacts:
+      - Phrases such as "As an AI language model…" or statements about being an AI
+      - Meta-output structure not written for the assignment (e.g., "Here are 5 key points:")
+      - Hyperlinks, "Sources:" lists, or citations not requested
+      - Clearly pasted definition blocks that exceed the task scope
 
-      EVIDENCE REQUIREMENT (mandatory if flagging):
-      If either field is set:
-      You MUST quote or describe the exact visible phrase or structural pattern.
-      You MUST identify its location (e.g., "In paragraph 2…", "In Question 4…").
-      Use neutral phrasing:
-      "This may indicate…"
-      "This could suggest…"
-      Never claim certainty.
-      Never assign intent.
-      Never accuse.
-
-      Example:
-      "Possible AI-generated wording: In paragraph 2, the phrase 'As an AI language model...' appears."
-      "Possible copied text: In Question 3, the response includes a formal definition block that appears pasted rather than directly answering the prompt."
-
-      FINAL RULE:
-      If evidence does not meet this threshold:
-      ai_suspected_cheating = null
-      copying_suspected = null
+      Category C — Copy/Paste Markers:
+      - Large blocks of generic textbook-style language
+      - Definition-style wording that does not directly respond to the question
+      - Substantial shift in tone/vocabulary/sophistication within the same submission
+      - Formal academic phrasing inconsistent with the rest of the submission
+      - Multiple distinct voice shifts suggesting material pulled from different sources
 
       TWO-TRIGGER REQUIREMENT (mandatory):
-      - To set ai_suspected_cheating OR copying_suspected, you must have at least TWO independent visible triggers.
-      - At least ONE trigger must be a concrete artifact (e.g., "As an AI…", links, "Sources:", citation block, pasted definition block, clear template structure).
-      - "Tone/vocab shift" alone is never sufficient.
-      - If you do not have 2 triggers including 1 concrete artifact, both fields MUST be null.
+      - To set ai_suspected_cheating OR copying_suspected, you must identify at least TWO independent triggers from the categories above.
+      - Two triggers can come from the same category (e.g., two Category A triggers: advanced vocab + advanced structure).
+      - A single trigger alone is NEVER sufficient — even a Category B artifact alone could be a coincidence.
+      - If you cannot identify 2 triggers, both fields MUST be null.
 
-      EVIDENCE FORMAT (required):
-      If ai_suspected_cheating is set, it MUST include:
-      - a short direct quote (5–20 words) copied from the student page that shows the artifact
-      - and the location (question/paragraph)
-      If you cannot quote an artifact, ai_suspected_cheating MUST be null.
+      FIELD SELECTION RULE:
+      ai_suspected_cheating — use when triggers suggest AI-generated content (Category A + B combination is strongest, but A + A is valid when the mismatch is stark).
+      copying_suspected — use when triggers suggest copying from a human source (Category C triggers, or Category A + C).
+      Do NOT set both fields unless there are clearly separate visible reasons for each.
+
+      FAIRNESS GUARDRAILS:
+      - Some students genuinely write above grade level. A gifted student will show consistent voice and occasional rough edges. AI text tends to be uniformly polished with no personality.
+      - ESL students may use unusual vocabulary from translation; do not flag this.
+      - If the student's answer directly addresses the specific prompt with personal examples or task-specific details, weight this AGAINST suspicion (AI tends to be generic).
+      - Never claim certainty. Never assign intent. Never accuse.
+
+      EVIDENCE REQUIREMENT (mandatory if flagging):
+      If either field is set, you MUST:
+      - Quote or describe 2+ specific visible phrases or patterns
+      - Identify their location (e.g., "In paragraph 2…", "In Question 4…")
+      - Explain why each is above grade-level expectations
+      - Use neutral phrasing: "This may indicate…" / "This could suggest…"
+
+      Example (grade 6 student):
+      "Possible AI-assisted work: The response uses 'furthermore,' 'multifaceted,' 'synthesize,' and 'encapsulate' — vocabulary significantly above typical grade 6 usage. Additionally, the argument follows a claim-evidence-counterargument-rebuttal structure more typical of high school analytical writing."
+
+      FINAL RULE:
+      If evidence does not meet the two-trigger threshold:
+      ai_suspected_cheating = null
+      copying_suspected = null
 
     OUTPUT (JSON only; EXACT fields):
     - response_format_detected ("short-answer"|"paragraph"|"mixed"|"test")

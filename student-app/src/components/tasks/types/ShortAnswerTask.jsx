@@ -18,13 +18,31 @@ export default function ShortAnswerTask({
   const [review, setReview] = React.useState(null);
   const [attemptCount, setAttemptCount] = React.useState(0);
 
-  const singleReady =
-    typeof singleAnswer === "string" && singleAnswer.trim().length >= 3;
+  // ── Minimum word-count gate ──────────────────────────────
+  const wordCount = (s) =>
+    typeof s === "string" ? s.trim().split(/\s+/).filter(Boolean).length : 0;
 
+  // Default 7 words; can be overridden by grade-level (e.g. grade 5 → 5 words)
+  const gradeRaw = task?.gradeLevel || task?.config?.gradeLevel || "";
+  const parsedGrade = typeof gradeRaw === "number"
+    ? gradeRaw
+    : parseInt(String(gradeRaw).replace(/[^0-9]/g, ""), 10);
+  const minWords = (parsedGrade >= 3 && parsedGrade <= 12) ? parsedGrade : 7;
+
+  const singleWC = wordCount(singleAnswer);
+  const singleReady =
+    typeof singleAnswer === "string" && singleWC >= minWords;
+
+  const multiWordCounts = Array.isArray(multiAnswersByDisplayIdx)
+    ? multiAnswersByDisplayIdx.map((a) => wordCount(a))
+    : [];
+  const multiMinWC = multiWordCounts.length > 0
+    ? Math.min(...multiWordCounts)
+    : 0;
   const multiReady =
     Array.isArray(multiAnswersByDisplayIdx) &&
     multiAnswersByDisplayIdx.length > 0 &&
-    multiAnswersByDisplayIdx.every((a) => typeof a === "string" && a.trim().length > 0);
+    multiAnswersByDisplayIdx.every((a) => wordCount(a) >= minWords);
 
   React.useEffect(() => {
     if (!task) return;
@@ -405,8 +423,8 @@ export default function ShortAnswerTask({
     >
       <div style={{ fontWeight: 800, marginBottom: 4 }}>How to do this task</div>
       <div style={{ fontSize: "0.95rem", lineHeight: 1.35, opacity: 0.95 }}>
-        Write a clear answer. Use full sentences if you can. When you are done,
-        press <b>Submit</b>.
+        Write a clear answer in <b>at least {minWords} words</b>. Use full sentences.
+        When you are done, press <b>Submit</b>.
       </div>
     </div>
   );
@@ -507,7 +525,9 @@ export default function ShortAnswerTask({
               ? "Checking..."
               : multiReady
               ? "Submit all answers"
-              : "Answer every question"}
+              : multiMinWC === 0
+              ? "Answer every question"
+              : `Write more (need ${minWords}+ words each)`}
           </button>
         </div>
       </div>
@@ -573,7 +593,13 @@ export default function ShortAnswerTask({
             paddingInline: 20,
           }}
         >
-          {checking ? "Checking..." : singleReady ? "Submit" : "Type your answer"}
+          {checking
+              ? "Checking..."
+              : singleReady
+              ? "Submit"
+              : singleWC === 0
+              ? "Type your answer"
+              : `Write more (${singleWC}/${minWords} words)`}
         </button>
       </div>
     </div>

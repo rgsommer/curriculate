@@ -13,6 +13,7 @@ export const LS_KEYS = {
   tasksetTotal: "curriculate.tasksetTotal",
   stationId: "curriculate.stationId",
   stationColor: "curriculate.stationColor",
+  warmupDone: "curriculate.warmupDone",
 };
 
 /**
@@ -57,4 +58,5 @@ export function clearSavedJoin() {
   lsDel(LS_KEYS.tasksetTotal);
   lsDel(LS_KEYS.stationId);
   lsDel(LS_KEYS.stationColor);
+  lsDel(LS_KEYS.warmupDone);
 }
