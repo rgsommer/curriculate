@@ -149,6 +149,7 @@ function extractConceptCoverageRows(report) {
   if (!report || typeof report !== "object") return [];
 
   const list =
+    report?.coverage?.actual?.matrix ||
     report?.coverage?.concepts ||
     report?.conceptCoverage ||
     report?.concepts ||
@@ -188,7 +189,7 @@ function extractConceptCoverageRows(report) {
       .filter(Boolean);
   }
 
-  const matrix = report?.coverageMatrix || report?.coverage?.matrix || null;
+  const matrix = report?.coverageMatrix || report?.coverage?.matrix || report?.coverage?.actual?.matrix || null;
   if (matrix && typeof matrix === "object") {
     return Object.entries(matrix)
       .map(([concept, v]) => {
@@ -207,6 +208,7 @@ function extractConceptCoverageRows(report) {
 function extractNotCovered(report) {
   if (!report || typeof report !== "object") return [];
   const arr =
+    report?.coverage?.actual?.notCovered ||
     report?.notCovered ||
     report?.coverage?.notCovered ||
     report?.coverage?.missingConcepts ||
