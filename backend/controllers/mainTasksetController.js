@@ -31,6 +31,131 @@ const client = new Proxy({}, { get: (_, prop) => getClient()[prop] });
 
 // Build a list of implemented task types that are safe to GENERATE.
 // Eligibility here is about generation safety, not scoring.
+/**
+ * Build an N-slot task type pool with enforced variety:
+ * - A physical/movement task every 4–5 academic slots
+ * - No more than 2 consecutive tasks from the same category
+ * - Unique types preferred (no repeats until the full set is exhausted)
+ */
+function buildDiversePool(availableTypes, count) {
+  const PHYSICAL_BODY_BREAK_TYPES = new Set([
+    TASK_TYPES.BODY_BREAK,
+    TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE,
+    TASK_TYPES.MAD_DASH,
+    TASK_TYPES.MAD_DASH_SEQUENCE,
+  ]);
+
+  const catOf = (t) => {
+    const meta = TASK_TYPE_META?.[t];
+    return String(meta?.category || "other").toLowerCase();
+  };
+
+  // Split available types into physical and academic
+  const physicalTypes = availableTypes.filter((t) => PHYSICAL_BODY_BREAK_TYPES.has(t));
+  const academicTypes = availableTypes.filter((t) => !PHYSICAL_BODY_BREAK_TYPES.has(t));
+
+  // Group academic types by category for variety
+  const byCat = {};
+  for (const t of academicTypes) {
+    const cat = catOf(t);
+    if (!byCat[cat]) byCat[cat] = [];
+    byCat[cat].push(t);
+  }
+  // Shuffle within each category
+  for (const arr of Object.values(byCat)) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+  // Shuffle physical types too
+  for (let i = physicalTypes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [physicalTypes[i], physicalTypes[j]] = [physicalTypes[j], physicalTypes[i]];
+  }
+
+  // Build interleaved academic list: round-robin across categories for max variety
+  const catKeys = Object.keys(byCat);
+  // Shuffle category order
+  for (let i = catKeys.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [catKeys[i], catKeys[j]] = [catKeys[j], catKeys[i]];
+  }
+  const catIdx = {};
+  for (const k of catKeys) catIdx[k] = 0;
+
+  const academicQueue = [];
+  const usedTypes = new Set();
+  let round = 0;
+  while (academicQueue.length < count * 2 && round < 20) {
+    let added = false;
+    for (const cat of catKeys) {
+      const arr = byCat[cat];
+      if (catIdx[cat] < arr.length) {
+        const t = arr[catIdx[cat]];
+        if (!usedTypes.has(t)) {
+          academicQueue.push(t);
+          usedTypes.add(t);
+          added = true;
+        }
+        catIdx[cat]++;
+      }
+    }
+    if (!added) {
+      // All unique types exhausted; allow repeats
+      for (const cat of catKeys) catIdx[cat] = 0;
+      usedTypes.clear();
+      round++;
+    }
+  }
+
+  // Now build the final pool: insert physical every 4–5 academic tasks
+  const pool = [];
+  let academicSincePhysical = 0;
+  let physIdx = 0;
+  let acaIdx = 0;
+  const physicalInterval = 5; // physical after every 4-5 academic tasks
+
+  for (let i = 0; i < count; i++) {
+    if (
+      academicSincePhysical >= physicalInterval - 1 &&
+      physicalTypes.length > 0 &&
+      i < count - 1 // don't end on a physical
+    ) {
+      pool.push(physicalTypes[physIdx % physicalTypes.length]);
+      physIdx++;
+      academicSincePhysical = 0;
+    } else if (acaIdx < academicQueue.length) {
+      pool.push(academicQueue[acaIdx]);
+      acaIdx++;
+      academicSincePhysical++;
+    } else if (physicalTypes.length > 0) {
+      pool.push(physicalTypes[physIdx % physicalTypes.length]);
+      physIdx++;
+      academicSincePhysical = 0;
+    } else {
+      // Fallback: repeat from available
+      pool.push(availableTypes[i % availableTypes.length]);
+    }
+  }
+
+  // Verify no more than 2 consecutive same-category (swap if needed)
+  for (let i = 2; i < pool.length; i++) {
+    if (catOf(pool[i]) === catOf(pool[i - 1]) && catOf(pool[i]) === catOf(pool[i - 2])) {
+      // Find a later slot with a different category and swap
+      for (let j = i + 1; j < pool.length; j++) {
+        if (catOf(pool[j]) !== catOf(pool[i])) {
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+          break;
+        }
+      }
+    }
+  }
+
+  console.log(`[AI] Built diverse pool (${count} slots):`, pool.map((t) => `${t} [${catOf(t)}]`).join(", "));
+  return pool;
+}
+
 function getGenerationEligibleTypes() {
   const eligible = [];
 
@@ -1122,43 +1247,19 @@ export async function createAiTaskset(req, res) {
     const safeCount = clampInt(count, 1, 30, 12);
 
     const eligible = getGenerationEligibleTypes();
-    const normalizedPool =
+    const userPool =
       Array.isArray(taskTypePool) && taskTypePool.length
-        ? taskTypePool.map(normalizeSelectedType).filter(Boolean)
-        : eligible;
+        ? taskTypePool.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
+        : null;
 
-    const pool = normalizedPool.filter((t) => eligible.includes(t));
+    // Build the actual N-slot pool with enforced variety
+    const pool = buildDiversePool(userPool || eligible, safeCount);
     if (!pool.length) {
       if (wantsStream) {
         sendSSE({ type: "error", error: "No eligible task types provided." });
         return res.end();
       }
       return res.status(400).json({ ok: false, error: "No eligible task types provided." });
-    }
-
-    // ✅ Ensure at least one physical/movement task is in the pool.
-    // Rule: 1 physical task for ≤10 tasks, or 1 per every 4 tasks for larger sets.
-    const PHYSICAL_TYPES = [
-      TASK_TYPES.BODY_BREAK,
-      TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE,
-      TASK_TYPES.MAD_DASH,
-      TASK_TYPES.MAD_DASH_SEQUENCE,
-    ];
-    const physicalInPool = pool.filter((t) => PHYSICAL_TYPES.includes(t));
-    const neededPhysical = safeCount <= 10 ? 1 : Math.floor(safeCount / 4);
-    if (physicalInPool.length < neededPhysical) {
-      // Pick from eligible physical types to fill the gap
-      const eligiblePhysical = PHYSICAL_TYPES.filter((t) => eligible.includes(t));
-      if (eligiblePhysical.length > 0) {
-        const toAdd = neededPhysical - physicalInPool.length;
-        for (let p = 0; p < toAdd; p++) {
-          const pick = eligiblePhysical[p % eligiblePhysical.length];
-          // Insert at evenly-spaced positions so physical tasks are spread throughout the set
-          const insertAt = Math.round((pool.length / (toAdd + 1)) * (p + 1));
-          pool.splice(Math.min(insertAt, pool.length), 0, pick);
-        }
-        console.log(`[AI] Injected ${toAdd} physical task(s) into pool (${neededPhysical} needed for ${safeCount} tasks)`);
-      }
     }
 
     // ✅ Profile-driven "lens" injection (NOT Christian-only; teacher profile determines lens)
