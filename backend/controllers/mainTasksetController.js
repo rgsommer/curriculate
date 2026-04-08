@@ -38,9 +38,9 @@ const client = new Proxy({}, { get: (_, prop) => getClient()[prop] });
  * - Unique types preferred (no repeats until the full set is exhausted)
  */
 function buildDiversePool(availableTypes, count) {
+  // Pure physical/movement break types (NOT PMC — that's academic with movement)
   const PHYSICAL_BODY_BREAK_TYPES = new Set([
     TASK_TYPES.BODY_BREAK,
-    TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE,
     TASK_TYPES.MAD_DASH,
     TASK_TYPES.MAD_DASH_SEQUENCE,
   ]);
