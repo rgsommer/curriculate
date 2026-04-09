@@ -392,22 +392,49 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAISc
   });
 
   // ─────────────────────────────────────────────
-  // Live debate (teamId-based)
+  // Live debate (teamId-based, alternating turns)
   // ─────────────────────────────────────────────
+  // In-memory debate state keyed by "roomCode:taskId"
+  const debates = {};
+
   socket.on("start-live-debate", ({ roomCode, postulate, taskId }) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
     if (!room) return;
 
     const teamIds = Object.keys(room.teams || {});
-    if (teamIds.length === 0) return;
+    if (teamIds.length < 2) return; // need at least 2 teams
 
     const half = Math.ceil(teamIds.length / 2);
     const ordered = shuffle(teamIds);
 
-    ordered.forEach((teamId, i) => {
-      const side = i < half ? "for" : "against";
+    // Pick the first two teams (or first pair) for a head-to-head debate
+    const forTeamId = ordered[0];
+    const againstTeamId = ordered[1];
+    const debateKey = `${code}:${taskId || "default"}`;
+
+    // Track debate state on the server
+    debates[debateKey] = {
+      roomCode: code,
+      taskId: taskId || "default",
+      postulate,
+      teams: {
+        for: { teamId: forTeamId, name: room.teams[forTeamId]?.teamName || `Team-${String(forTeamId).slice(-4)}` },
+        against: { teamId: againstTeamId, name: room.teams[againstTeamId]?.teamName || `Team-${String(againstTeamId).slice(-4)}` },
+      },
+      responses: [],          // { side, teamName, speaker, text, turnNumber }
+      currentTurn: "for",     // "for" team goes first
+      turnsPerTeam: 3,
+      forCount: 0,
+      againstCount: 0,
+    };
+
+    // Notify each team with their side assignment
+    [forTeamId, againstTeamId].forEach((teamId) => {
+      const side = teamId === forTeamId ? "for" : "against";
       const team = room.teams[teamId];
+      const opponentId = side === "for" ? againstTeamId : forTeamId;
+      const opponent = room.teams[opponentId];
       io.to(teamId).emit("debate-start", {
         type: "live-debate",
         taskId: taskId || "default",
@@ -415,10 +442,13 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAISc
         mySide: side,
         myTeamId: teamId,
         myTeamName: team?.teamName || `Team-${String(teamId).slice(-4)}`,
+        opponentName: opponent?.teamName || `Team-${String(opponentId).slice(-4)}`,
         teamMembers: Array.isArray(team?.members) && team.members.length > 0
           ? team.members
           : ["Member 1", "Member 2", "Member 3"],
         responses: [],
+        currentTurn: "for",   // "for" side speaks first
+        turnsPerTeam: 3,
       });
     });
   });
@@ -427,9 +457,49 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAISc
     const code = (data.roomCode || "").toUpperCase();
     if (!code) return;
 
-    // broadcast to whole room; clients can filter by taskId if needed
-    io.to(code).emit("debate-new-response", data);
-    // Future: when all teams have 3 responses → judge via AI
+    const debateKey = `${code}:${data.taskId || "default"}`;
+    const debate = debates[debateKey];
+
+    if (debate) {
+      const { side, text, speaker } = data;
+
+      // Enforce turn order — reject if it's not this team's turn
+      if (side !== debate.currentTurn) {
+        socket.emit("debate-error", { message: "It's not your team's turn yet!" });
+        return;
+      }
+
+      const turnNumber = side === "for" ? debate.forCount : debate.againstCount;
+      const entry = { side, teamName: data.teamName, speaker, text, turnNumber };
+      debate.responses.push(entry);
+
+      if (side === "for") debate.forCount++;
+      else debate.againstCount++;
+
+      // Alternate turns
+      debate.currentTurn = debate.currentTurn === "for" ? "against" : "for";
+
+      // Broadcast the new response + updated turn to the whole room
+      io.to(code).emit("debate-new-response", {
+        ...entry,
+        currentTurn: debate.currentTurn,
+        forCount: debate.forCount,
+        againstCount: debate.againstCount,
+      });
+
+      // Check if debate is over (both teams used all turns)
+      if (debate.forCount >= debate.turnsPerTeam && debate.againstCount >= debate.turnsPerTeam) {
+        io.to(code).emit("debate-complete", {
+          taskId: debate.taskId,
+          responses: debate.responses,
+          postulate: debate.postulate,
+        });
+        delete debates[debateKey];
+      }
+    } else {
+      // No tracked state — just broadcast (fallback for legacy)
+      io.to(code).emit("debate-new-response", data);
+    }
   });
 }
 
