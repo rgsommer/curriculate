@@ -403,62 +403,87 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, generateAISc
     if (!room) return;
 
     const teamIds = Object.keys(room.teams || {});
-    if (teamIds.length < 2) return; // need at least 2 teams
+    if (teamIds.length === 0) return;
 
-    const half = Math.ceil(teamIds.length / 2);
     const ordered = shuffle(teamIds);
+    const tid = taskId || "default";
 
-    // Pick the first two teams (or first pair) for a head-to-head debate
-    const forTeamId = ordered[0];
-    const againstTeamId = ordered[1];
-    const debateKey = `${code}:${taskId || "default"}`;
+    // Pair teams up: [0,1], [2,3], [4,5], ...
+    // Any leftover odd team gets no mySide → client runs intra-team mode
+    for (let i = 0; i + 1 < ordered.length; i += 2) {
+      const forTeamId = ordered[i];
+      const againstTeamId = ordered[i + 1];
+      const pairIndex = Math.floor(i / 2);
+      const debateKey = `${code}:${tid}:${pairIndex}`;
 
-    // Track debate state on the server
-    debates[debateKey] = {
-      roomCode: code,
-      taskId: taskId || "default",
-      postulate,
-      teams: {
-        for: { teamId: forTeamId, name: room.teams[forTeamId]?.teamName || `Team-${String(forTeamId).slice(-4)}` },
-        against: { teamId: againstTeamId, name: room.teams[againstTeamId]?.teamName || `Team-${String(againstTeamId).slice(-4)}` },
-      },
-      responses: [],          // { side, teamName, speaker, text, turnNumber }
-      currentTurn: "for",     // "for" team goes first
-      turnsPerTeam: 3,
-      forCount: 0,
-      againstCount: 0,
-    };
-
-    // Notify each team with their side assignment
-    [forTeamId, againstTeamId].forEach((teamId) => {
-      const side = teamId === forTeamId ? "for" : "against";
-      const team = room.teams[teamId];
-      const opponentId = side === "for" ? againstTeamId : forTeamId;
-      const opponent = room.teams[opponentId];
-      io.to(teamId).emit("debate-start", {
-        type: "live-debate",
-        taskId: taskId || "default",
+      // Track debate state for this pair
+      debates[debateKey] = {
+        roomCode: code,
+        taskId: tid,
         postulate,
-        mySide: side,
-        myTeamId: teamId,
-        myTeamName: team?.teamName || `Team-${String(teamId).slice(-4)}`,
-        opponentName: opponent?.teamName || `Team-${String(opponentId).slice(-4)}`,
+        teams: {
+          for: { teamId: forTeamId, name: room.teams[forTeamId]?.teamName || `Team-${String(forTeamId).slice(-4)}` },
+          against: { teamId: againstTeamId, name: room.teams[againstTeamId]?.teamName || `Team-${String(againstTeamId).slice(-4)}` },
+        },
+        responses: [],
+        currentTurn: "for",
+        turnsPerTeam: 3,
+        forCount: 0,
+        againstCount: 0,
+      };
+
+      // Notify each paired team with their side assignment
+      [forTeamId, againstTeamId].forEach((teamId) => {
+        const side = teamId === forTeamId ? "for" : "against";
+        const team = room.teams[teamId];
+        const opponentId = side === "for" ? againstTeamId : forTeamId;
+        const opponent = room.teams[opponentId];
+        io.to(teamId).emit("debate-start", {
+          type: "live-debate",
+          taskId: tid,
+          debateKey,
+          postulate,
+          mySide: side,
+          myTeamId: teamId,
+          myTeamName: team?.teamName || `Team-${String(teamId).slice(-4)}`,
+          opponentName: opponent?.teamName || `Team-${String(opponentId).slice(-4)}`,
+          teamMembers: Array.isArray(team?.members) && team.members.length > 0
+            ? team.members
+            : ["Member 1", "Member 2", "Member 3"],
+          responses: [],
+          currentTurn: "for",
+          turnsPerTeam: 3,
+        });
+      });
+    }
+
+    // Odd team out: no opponent — emit without mySide so client runs intra-team
+    if (ordered.length % 2 === 1) {
+      const soloTeamId = ordered[ordered.length - 1];
+      const team = room.teams[soloTeamId];
+      io.to(soloTeamId).emit("debate-start", {
+        type: "live-debate",
+        taskId: tid,
+        postulate,
+        // mySide intentionally omitted → client detects solo mode
+        myTeamId: soloTeamId,
+        myTeamName: team?.teamName || `Team-${String(soloTeamId).slice(-4)}`,
         teamMembers: Array.isArray(team?.members) && team.members.length > 0
           ? team.members
           : ["Member 1", "Member 2", "Member 3"],
         responses: [],
-        currentTurn: "for",   // "for" side speaks first
         turnsPerTeam: 3,
       });
-    });
+    }
   });
 
   socket.on("debate-response", async (data = {}) => {
     const code = (data.roomCode || "").toUpperCase();
     if (!code) return;
 
-    const debateKey = `${code}:${data.taskId || "default"}`;
-    const debate = debates[debateKey];
+    // Try the explicit debateKey from the client first, then fall back to legacy format
+    const debateKey = data.debateKey || `${code}:${data.taskId || "default"}:0`;
+    const debate = debates[debateKey] || debates[`${code}:${data.taskId || "default"}`];
 
     if (debate) {
       const { side, text, speaker } = data;
