@@ -1931,7 +1931,7 @@ if (st?.ok && st.exists) {
                   <td style={{ padding: "8px 6px" }}>{c.planTier || c.tier}</td>
                     <td style={{ padding: "8px 6px" }}>{c.maxSeats ?? c.seats ?? 1}</td>
                       <td style={{ padding: "8px 6px" }}>
-                        {c.claimedBy ? "Yes" : "No"}
+                        {(c.claimantsCount || 0) > 0 ? `Yes (${c.claimantsCount})` : "No"}
                       </td>
                     <td style={{ padding: "8px 6px" }}>
                     {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}
