@@ -44,6 +44,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
   const minInterval = 380;
 
   const [done, setDone] = useState(false);
+  const [delayElapsed, setDelayElapsed] = useState(false); // for no-accelerometer fallback
 
   // Load Lottie
   useEffect(() => {
@@ -73,7 +74,19 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
     setCount(0);
     setNoMotionSupport(false);
     setDone(false);
+    setDelayElapsed(false);
   }, [task?.taskType, task?.title, task?.prompt]);
+
+  // When no accelerometer, show DONE after a delay so kids actually do the activity
+  const NO_MOTION_DELAY_MS = 8000;
+  useEffect(() => {
+    if (phase !== "active") return;
+    if (!noMotionSupport) return; // accelerometer available — gate on count instead
+
+    setDelayElapsed(false);
+    const id = setTimeout(() => setDelayElapsed(true), NO_MOTION_DELAY_MS);
+    return () => clearTimeout(id);
+  }, [phase, noMotionSupport]);
 
   // Countdown flow
   useEffect(() => {
@@ -236,49 +249,76 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
       )}
 
       {/* Active */}
-      {phase === "active" && (
-        <div className="w-full max-w-5xl flex flex-col items-center flex-1 justify-center">
-          <div className="text-2xl md:text-3xl font-black mb-3 px-4 text-center leading-tight">{activityName}</div>
+      {phase === "active" && (() => {
+        // With accelerometer: require count >= target to enable DONE
+        // Without accelerometer: require delay to have elapsed
+        const motionComplete = !noMotionSupport && count >= target;
+        const delayComplete = noMotionSupport && delayElapsed;
+        const canFinish = motionComplete || delayComplete;
 
-          {hasConfiguredActivity && (
-            <div className="w-[70vw] max-w-md md:max-w-lg flex items-center justify-center rounded-3xl bg-black/20 border border-white/20 shadow-2xl" style={{ maxHeight: "50vh" }}>
-              {animData ? (
-                <Lottie animationData={animData} loop autoplay style={{ width: "100%", height: "100%", maxHeight: "50vh" }} />
-              ) : (
-                <div className="text-8xl md:text-[7rem] animate-bounce drop-shadow-2xl">{emoji}</div>
-              )}
-            </div>
-          )}
+        return (
+          <div className="w-full max-w-5xl flex flex-col items-center flex-1 justify-center">
+            <div className="text-2xl md:text-3xl font-black mb-3 px-4 text-center leading-tight">{activityName}</div>
 
-          <div className="mt-4 flex items-center gap-4 flex-wrap justify-center">
-            {!noMotionSupport && (
-              <div className="px-5 py-3 rounded-2xl bg-white/10 border border-white/15 shadow text-lg md:text-xl font-extrabold">
-                Motion count: <span className="text-yellow-200">{count}</span> / {target}
+            {hasConfiguredActivity && (
+              <div className="w-[70vw] max-w-md md:max-w-lg flex items-center justify-center rounded-3xl bg-black/20 border border-white/20 shadow-2xl" style={{ maxHeight: "50vh" }}>
+                {animData ? (
+                  <Lottie animationData={animData} loop autoplay style={{ width: "100%", height: "100%", maxHeight: "50vh" }} />
+                ) : (
+                  <div className="text-8xl md:text-[7rem] animate-bounce drop-shadow-2xl">{emoji}</div>
+                )}
               </div>
             )}
 
-            <button
-              type="button"
-              disabled={disabled || done}
-              onClick={submitDone}
-              className={[
-                "px-10 py-4 rounded-3xl text-3xl md:text-4xl font-black shadow-2xl border transition",
-                disabled || done
-                  ? "bg-white/20 border-white/10 opacity-60"
-                  : "bg-green-400 text-black border-green-200 hover:scale-[1.03]",
-              ].join(" ")}
-            >
-              DONE
-            </button>
-          </div>
+            <div className="mt-4 flex items-center gap-4 flex-wrap justify-center">
+              {!noMotionSupport && (
+                <div className={[
+                  "px-5 py-3 rounded-2xl border shadow text-lg md:text-xl font-extrabold transition-colors",
+                  motionComplete
+                    ? "bg-green-400/30 border-green-300/40 text-green-100"
+                    : "bg-white/10 border-white/15",
+                ].join(" ")}>
+                  {motionComplete
+                    ? <span className="text-yellow-200">✓ {target} / {target} — Tap DONE!</span>
+                    : <span>Motion count: <span className="text-yellow-200">{count}</span> / {target}</span>
+                  }
+                </div>
+              )}
 
-          {noMotionSupport && !done && (
-            <div className="mt-3 text-lg md:text-xl font-bold opacity-90">
-              Follow the instructions and tap DONE when finished.
+              {canFinish ? (
+                <button
+                  type="button"
+                  disabled={disabled || done}
+                  onClick={submitDone}
+                  className={[
+                    "px-10 py-4 rounded-3xl text-3xl md:text-4xl font-black shadow-2xl border transition animate-pulse",
+                    disabled || done
+                      ? "bg-white/20 border-white/10 opacity-60"
+                      : "bg-green-400 text-black border-green-200 hover:scale-[1.03]",
+                  ].join(" ")}
+                >
+                  DONE ✓
+                </button>
+              ) : (
+                <div className="px-8 py-4 rounded-3xl text-2xl md:text-3xl font-black bg-white/10 border border-white/10 text-white/50 select-none">
+                  {noMotionSupport ? "Keep going..." : `${count} / ${target}`}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+
+            {noMotionSupport && !done && !delayElapsed && (
+              <div className="mt-3 text-lg md:text-xl font-bold opacity-90 animate-pulse">
+                Do the activity! DONE button appears when you're ready...
+              </div>
+            )}
+            {noMotionSupport && !done && delayElapsed && (
+              <div className="mt-3 text-lg md:text-xl font-bold opacity-90">
+                Finished? Tap DONE above!
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Done */}
       {phase === "done" && (
