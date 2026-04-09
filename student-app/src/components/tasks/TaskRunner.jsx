@@ -2609,7 +2609,9 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled}
           socket={socket}
-          teamMembers={t.teamMembers || ["Alice", "Bob", "Charlie", "Dana"]}
+          roomCode={roomCode}
+          memberNames={memberNames}
+          teamMembers={t.teamMembers}
         />
       );
       break;

@@ -6,25 +6,43 @@ export default function LiveDebateTask({
   onSubmit,
   disabled,
   socket,
-  teamMembers = ["Member 1", "Member 2", "Member 3", "Member 4"],
+  roomCode: roomCodeProp,
+  memberNames = [],
+  teamMembers: teamMembersFallback = [],
 }) {
+  // Build a clean names list: prefer memberNames, fall back to teamMembers prop, then generic
+  const names = (() => {
+    const src = memberNames.length ? memberNames : teamMembersFallback;
+    const cleaned = src.map((n) => String(n ?? "").trim()).filter(Boolean);
+    return cleaned.length ? cleaned : ["Player 1", "Player 2", "Player 3"];
+  })();
+
   const [responses, setResponses] = useState(task.responses || []);
   const [transcript, setTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [selectedSpeaker, setSelectedSpeaker] = useState(teamMembers[0]);
   const [myTeamSide] = useState(task.mySide);
   const [winner, setWinner] = useState(task.winner);
   const [errorMsg, setErrorMsg] = useState("");
 
   const recognitionRef = useRef(null);
 
+  // Auto-assign speaker: rotate through team members
+  const myResponses = responses.filter((r) => r.teamName === task.myTeamName);
+  const turnIndex = myResponses.length; // 0-based turn number
+  const currentSpeaker = names[turnIndex % names.length];
+  const canSpeak = turnIndex < 3;
+
   // Fallback if browser doesn't support speech recognition
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
   const hasSpeechRecognition = !!SpeechRecognition;
 
   // Speech Recognition Setup
   useEffect(() => {
-    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+    if (
+      !("webkitSpeechRecognition" in window) &&
+      !("SpeechRecognition" in window)
+    ) {
       console.warn("Speech recognition not supported");
       return;
     }
@@ -37,7 +55,7 @@ export default function LiveDebateTask({
     recognitionRef.current.onresult = (event) => {
       const last = event.results[event.results.length - 1];
       if (last.isFinal) {
-        setTranscript(prev => prev + " " + last[0].transcript);
+        setTranscript((prev) => prev + " " + last[0].transcript);
         setIsListening(false);
       } else {
         setTranscript(last[0].transcript);
@@ -63,13 +81,15 @@ export default function LiveDebateTask({
     const text = transcript.trim();
     if (!text || disabled) return;
 
-    // Never fail silently in demo/class use
-    const roomCode = task?.roomCode;
+    const code = roomCodeProp || task?.roomCode;
     const canEmit = Boolean(socket && typeof socket.emit === "function");
-    const connected = socket && (socket.connected === undefined ? true : socket.connected);
+    const connected =
+      socket && (socket.connected === undefined ? true : socket.connected);
 
-    if (!roomCode) {
-      setErrorMsg("No room code was provided, so your response could not be sent.");
+    if (!code) {
+      setErrorMsg(
+        "No room code was provided, so your response could not be sent."
+      );
       return;
     }
     if (!canEmit || !connected) {
@@ -79,9 +99,9 @@ export default function LiveDebateTask({
 
     try {
       socket.emit("debate-response", {
-        roomCode,
+        roomCode: code,
         text,
-        speaker: selectedSpeaker,
+        speaker: currentSpeaker,
         side: myTeamSide,
         teamName: task.myTeamName,
       });
@@ -92,35 +112,52 @@ export default function LiveDebateTask({
     }
   };
 
-  const myResponses = responses.filter(r => r.teamName === task.myTeamName);
-  const canSpeak = myResponses.length < 3;
+  const topic =
+    task.postulate ||
+    task.prompt ||
+    task.topic ||
+    task.config?.postulate ||
+    task.config?.topic ||
+    "";
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-center">
         <h2 className="text-2xl font-bold">LIVE DEBATE</h2>
-        <p className="text-lg mt-2">{task.postulate || task.prompt || task.topic || task.config?.postulate || task.config?.topic || ""}</p>
+        {topic ? <p className="text-lg mt-2">{topic}</p> : null}
         <p className="font-bold text-xl mt-2">
-          You are arguing <span className={myTeamSide === "for" ? "text-green-300" : "text-red-300"}>
+          You are arguing{" "}
+          <span
+            className={
+              myTeamSide === "for" ? "text-green-300" : "text-red-300"
+            }
+          >
             {myTeamSide === "for" ? "FOR" : "AGAINST"}
           </span>
         </p>
       </div>
 
+      {/* Response thread */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {responses.map((r, i) => (
           <div
             key={i}
             className={`p-4 rounded-lg max-w-md ${
-              r.side === "for" ? "bg-green-100 border-l-4 border-green-600" : "bg-red-100 border-l-4 border-red-600"
+              r.side === "for"
+                ? "bg-green-100 border-l-4 border-green-600"
+                : "bg-red-100 border-l-4 border-red-600"
             } ${r.teamName === task.myTeamName ? "ml-auto" : ""}`}
           >
-            <div className="font-bold text-sm">{r.teamName} ({r.speaker})</div>
+            <div className="font-bold text-sm">
+              {r.teamName} ({r.speaker})
+            </div>
             <div className="mt-1">{r.text}</div>
           </div>
         ))}
       </div>
 
+      {/* Winner / Input area */}
       {winner ? (
         <div className="p-8 text-center text-5xl font-bold">
           {winner === task.myTeamName ? (
@@ -131,43 +168,58 @@ export default function LiveDebateTask({
         </div>
       ) : (
         <div className="p-4 border-t bg-gray-50">
-          <div className="mb-3 p-3 rounded-xl border border-slate-200 bg-white">
-            <div className="font-extrabold">How this works</div>
-            <div className="text-sm text-slate-700 mt-1">
-              1) Choose who will speak for your team. 2) Speak (or type) one short argument.
-              3) Your team gets <span className="font-bold">3 turns</span> total. 4) Wait while other teams take their turns.
+          {/* Instructions (first turn only) */}
+          {turnIndex === 0 && (
+            <div className="mb-3 p-3 rounded-xl border border-slate-200 bg-white">
+              <div className="font-extrabold">How this works</div>
+              <div className="text-sm text-slate-700 mt-1">
+                Each team member takes a turn — no skipping! Speak (or type) one
+                short argument per turn. Your team gets{" "}
+                <span className="font-bold">3 turns</span> total, then wait
+                while the other team responds.
+              </div>
             </div>
-          </div>
+          )}
 
           {errorMsg ? (
             <div className="mb-3 p-3 rounded-xl border border-red-200 bg-red-50 text-red-800 font-bold">
               {errorMsg}
             </div>
           ) : null}
+
           {canSpeak ? (
             <div className="space-y-4">
-              <select
-                value={selectedSpeaker}
-                onChange={(e) => setSelectedSpeaker(e.target.value)}
-                className="w-full p-3 border rounded-lg text-center font-medium"
-              >
-                {teamMembers.map(m => <option key={m}>{m}</option>)}
-              </select>
+              {/* Assigned speaker banner */}
+              <div className="p-4 rounded-xl bg-indigo-50 border-2 border-indigo-300 text-center">
+                <div className="text-sm font-bold text-indigo-500 uppercase tracking-wide">
+                  Turn {turnIndex + 1} of 3
+                </div>
+                <div className="text-2xl font-black text-indigo-700 mt-1">
+                  {currentSpeaker}, you're up!
+                </div>
+                <div className="text-sm text-indigo-500 mt-1">
+                  Hand the device to {currentSpeaker} — it's their turn to argue
+                </div>
+              </div>
 
               <div className="relative">
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
-                  placeholder="Click the mic and speak your argument..."
+                  placeholder={`${currentSpeaker}, speak your argument...`}
                   className="w-full p-4 pr-16 border-2 rounded-xl resize-none text-lg"
                   rows="4"
                 />
-                                {hasSpeechRecognition ? (
+                {hasSpeechRecognition ? (
                   <button
                     onClick={startListening}
                     disabled={isListening || disabled}
                     className={`absolute bottom-3 right-3 w-12 h-12 rounded-full flex items-center justify-center transition
-                      ${isListening ? "bg-red-600 animate-pulse" : "bg-indigo-600 hover:bg-indigo-700"}`}
+                      ${
+                        isListening
+                          ? "bg-red-600 animate-pulse"
+                          : "bg-indigo-600 hover:bg-indigo-700"
+                      }`}
                   >
                     {isListening ? "Stop" : "Mic"}
                   </button>
@@ -183,12 +235,12 @@ export default function LiveDebateTask({
                 disabled={disabled || !transcript.trim()}
                 className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold text-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50"
               >
-                Submit Response ({myResponses.length + 1}/3)
+                Submit {currentSpeaker}'s Argument ({turnIndex + 1}/3)
               </button>
             </div>
           ) : (
             <p className="text-center text-2xl font-bold text-gray-600">
-              Waiting for other teams... ({myResponses.length}/3)
+              All 3 arguments submitted! Waiting for the other team...
             </p>
           )}
         </div>
