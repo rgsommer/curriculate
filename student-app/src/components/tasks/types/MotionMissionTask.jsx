@@ -100,8 +100,8 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
     if (typeof remainingMs === "number" && remainingMs <= midpoint) {
       switchFiredRef.current = true;
       setShowSwitch(true);
-      // Auto-hide after 3 seconds
-      const id = setTimeout(() => setShowSwitch(false), 3000);
+      // Show for 10 seconds then hide
+      const id = setTimeout(() => setShowSwitch(false), 10000);
       return () => clearTimeout(id);
     }
   }, [phase, remainingMs, hasSwitch]);
