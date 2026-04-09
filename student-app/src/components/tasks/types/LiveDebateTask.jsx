@@ -99,7 +99,7 @@ export default function LiveDebateTask({
     <div className="flex flex-col h-full">
       <div className="p-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-center">
         <h2 className="text-2xl font-bold">LIVE DEBATE</h2>
-        <p className="text-lg mt-2">{task.postulate}</p>
+        <p className="text-lg mt-2">{task.postulate || task.prompt || task.topic || task.config?.postulate || task.config?.topic || ""}</p>
         <p className="font-bold text-xl mt-2">
           You are arguing <span className={myTeamSide === "for" ? "text-green-300" : "text-red-300"}>
             {myTeamSide === "for" ? "FOR" : "AGAINST"}
