@@ -304,6 +304,43 @@ function sanitizeTaskShapeByType(type, task) {
     }
   }
 
+  // ── Script Play: coerce common AI shapes into lines[] ──
+  if (type === TASK_TYPES.SCRIPT_PLAY) {
+    let lines =
+      (Array.isArray(t.lines) && t.lines.length && t.lines) ||
+      (Array.isArray(t.config?.lines) && t.config.lines.length && t.config.lines) ||
+      (Array.isArray(t.dialogue) && t.dialogue.length && t.dialogue) ||
+      (Array.isArray(t.config?.dialogue) && t.config.dialogue.length && t.config.dialogue) ||
+      (Array.isArray(t.scenes) && t.scenes.length && t.scenes) ||
+      (Array.isArray(t.config?.scenes) && t.config.scenes.length && t.config.scenes) ||
+      null;
+
+    // AI sometimes returns a single "script" string block — split on newlines
+    if (!lines) {
+      const blob = String(t.script || t.config?.script || t.text || t.config?.text || "").trim();
+      if (blob) {
+        lines = blob.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      }
+    }
+
+    // Flatten scene objects: { speaker, text/line } → "Speaker: text"
+    if (lines) {
+      lines = lines.map((l) => {
+        if (typeof l === "string") return l.trim();
+        if (l && typeof l === "object") {
+          const speaker = String(l.speaker || l.character || l.name || l.role || "").trim();
+          const text = String(l.text || l.line || l.say || l.dialogue || "").trim();
+          if (!text) return "";
+          return speaker ? `${speaker}: ${text}` : text;
+        }
+        return "";
+      }).filter(Boolean);
+
+      t.lines = lines;
+      if (t.config && typeof t.config === "object") t.config.lines = lines;
+    }
+  }
+
   return t;
 }
 

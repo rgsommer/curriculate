@@ -1107,7 +1107,7 @@ export function normalizeTaskByType(taskType, rawTask) {
         }
       }
 
-      if (lines.length > 0 && lines.length < 4) {
+      if (lines.length < 4) {
         lines = [
           "Narrator: The scene opens with a problem to solve.",
           "Student A: I think we should try a different approach.",
