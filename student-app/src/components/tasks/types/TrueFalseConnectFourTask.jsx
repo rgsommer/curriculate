@@ -20,7 +20,7 @@ function lowestEmptyRow(board, col) {
 }
 
 /**
- * Check for 4-in-a-row. Returns "X", "O", or null.
+ * Check for 4-in-a-row. Returns { winner, line } where line is [i,j,k,l] flat indices.
  */
 function calculateWinner(board) {
   const dirs = [
@@ -34,19 +34,56 @@ function calculateWinner(board) {
       const val = board[idx(r, c)];
       if (!val) continue;
       for (const [dr, dc] of dirs) {
-        let count = 1;
+        const cells = [idx(r, c)];
         for (let step = 1; step < 4; step++) {
           const nr = r + dr * step;
           const nc = c + dc * step;
           if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) break;
           if (board[idx(nr, nc)] !== val) break;
-          count++;
+          cells.push(idx(nr, nc));
         }
-        if (count >= 4) return val;
+        if (cells.length >= 4) return { winner: val, line: cells.slice(0, 4) };
       }
     }
   }
-  return null;
+  return { winner: null, line: null };
+}
+
+/**
+ * SVG overlay for the winning line (works for any grid).
+ */
+function WinLine({ cells, cols, totalRows }) {
+  if (!cells || cells.length < 3) return null;
+
+  const first = cells[0];
+  const last = cells[cells.length - 1];
+  const r1 = Math.floor(first / cols);
+  const c1 = first % cols;
+  const r2 = Math.floor(last / cols);
+  const c2 = last % cols;
+
+  const x1 = ((c1 + 0.5) / cols) * 100;
+  const y1 = ((r1 + 0.5) / totalRows) * 100;
+  const x2 = ((c2 + 0.5) / cols) * 100;
+  const y2 = ((r2 + 0.5) / totalRows) * 100;
+
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      style={{ zIndex: 10, width: "100%", height: "100%" }}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      <line
+        x1={x1} y1={y1}
+        x2={x2} y2={y2}
+        stroke="rgba(250, 204, 21, 0.9)"
+        strokeWidth="3"
+        strokeLinecap="round"
+        style={{ filter: "drop-shadow(0 0 6px rgba(250, 204, 21, 0.6))" }}
+      />
+    </svg>
+  );
 }
 
 export default function TrueFalseConnectFourTask({
@@ -124,10 +161,8 @@ export default function TrueFalseConnectFourTask({
       if (row < 0) return; // column full
 
       const cellIdx = idx(row, col);
-      const isFalse = statement.isFalse;
-      const shouldBeFalse = currentRole === "X";
-      const matchesRole = (shouldBeFalse && isFalse) || (!shouldBeFalse && !isFalse);
-      const placedRole = matchesRole ? currentRole : (currentRole === "X" ? "O" : "X");
+      // Statement truth determines the piece: true → O (Blue), false → X (Red)
+      const placedRole = statement.isFalse ? "X" : "O";
 
       const newBoard = [...board];
       newBoard[cellIdx] = placedRole;
@@ -217,7 +252,7 @@ export default function TrueFalseConnectFourTask({
 
   const allowDrop = (e) => e.preventDefault();
 
-  const winner = calculateWinner(board);
+  const { winner, line: winLine } = calculateWinner(board);
 
   // ─── Statements pool ───
   const statements = useMemo(() => {
@@ -259,8 +294,8 @@ export default function TrueFalseConnectFourTask({
 
   const instructions =
     "Pick a statement below, then tap a column to drop your piece. " +
-    `If the statement matches your role (${roleLabel}), you claim the slot in ${roleColor}! ` +
-    "First to get 4 in a row wins.";
+    "TRUE statements always go Blue (O), FALSE statements always go Red (X). " +
+    `You're playing ${roleLabel} (${roleColor}) — get 4 in a row to win!`;
 
   return (
     <div
@@ -333,6 +368,10 @@ export default function TrueFalseConnectFourTask({
         </div>
 
         {/* Grid cells */}
+        <div className="relative">
+          {winLine && (
+            <WinLine cells={winLine} cols={COLS} totalRows={ROWS} />
+          )}
         <div
           className="grid gap-1 p-2"
           style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)` }}
@@ -376,6 +415,7 @@ export default function TrueFalseConnectFourTask({
             }),
           )}
         </div>
+        </div>{/* close relative wrapper */}
       </div>
 
       {/* ─── STATEMENT CARDS ─── */}

@@ -80,14 +80,14 @@ export default function TrueFalseTicTacToeTask({
     }
   }, [task.winner, currentRole]);
 
-  // Core logic: given a statement + board index, apply the move
+  // Core logic: given a statement + board index, apply the move.
+  // The piece color is determined by the STATEMENT's truth value, not by who plays it.
+  // True statement → Blue O, False statement → Red X — always.
   const applyMove = (statement, index) => {
     if (!statement || disabled || board[index]) return;
 
-    const isFalse = statement.isFalse;
-    const shouldBeFalse = currentRole === "X";
-    const matchesRole = (shouldBeFalse && isFalse) || (!shouldBeFalse && !isFalse);
-    const placedRole = matchesRole ? currentRole : (currentRole === "X" ? "O" : "X");
+    // Statement truth determines the piece: true → O (Blue), false → X (Red)
+    const placedRole = statement.isFalse ? "X" : "O";
 
     const newBoard = [...board];
     newBoard[index] = placedRole;
@@ -188,7 +188,7 @@ export default function TrueFalseTicTacToeTask({
     applyMove(activeStatement, index);
   };
 
-  const winner = calculateWinner(board);
+  const { winner, line: winLine } = calculateWinner(board);
 
   // Defensive: if statements are missing, try common shapes so the game is still playable.
   const statements = useMemo(() => {
@@ -235,8 +235,8 @@ export default function TrueFalseTicTacToeTask({
 
   const instructions =
     "Pick a statement bubble below, then tap an empty square to place it. " +
-    `If the statement matches your role (${roleLabel}), you claim the square in ${roleColor}! ` +
-    "First team to get 3 in a row wins.";
+    "TRUE statements always go Blue (O), FALSE statements always go Red (X). " +
+    `You're playing ${roleLabel} (${roleColor}) — get 3 in a row to win!`;
 
   return (
     <div className="flex flex-col items-center justify-center h-full p-6" style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(14,165,233,0.10))", borderRadius: 18 }}>
@@ -272,12 +272,16 @@ export default function TrueFalseTicTacToeTask({
       {/* TIC-TAC-TOE GRID */}
       <div
         className={[
-          "grid grid-cols-3 gap-4 mb-8 p-6 rounded-2xl border shadow-md transition-all duration-300",
+          "relative grid grid-cols-3 gap-4 mb-8 p-6 rounded-2xl border shadow-md transition-all duration-300",
           activeStatement
             ? "bg-indigo-50 border-indigo-300 shadow-indigo-200"
             : "bg-white/80 border-slate-200",
         ].join(" ")}
       >
+        {/* Winning strike-through line */}
+        {winLine && (
+          <WinLine cells={winLine} cols={3} />
+        )}
         {board.map((cell, i) => {
           const isEmpty = !cell;
           const canPlace = activeStatement && isEmpty && !disabled;
@@ -372,6 +376,55 @@ export default function TrueFalseTicTacToeTask({
   );
 }
 
+/**
+ * SVG overlay that draws a strike-through line across winning cells.
+ * Uses CSS percentage coordinates so it works regardless of cell size.
+ * `cells` is [i, j, k] for TicTacToe or [i, j, k, l] for Connect Four.
+ * `cols` is the number of columns in the grid.
+ */
+function WinLine({ cells, cols = 3, totalRows }) {
+  if (!cells || cells.length < 3) return null;
+
+  const first = cells[0];
+  const last = cells[cells.length - 1];
+  const numRows = totalRows || cols; // default to square grid
+
+  // Convert flat index to (row, col)
+  const r1 = Math.floor(first / cols);
+  const c1 = first % cols;
+  const r2 = Math.floor(last / cols);
+  const c2 = last % cols;
+
+  // Convert to percentage positions (center of each cell)
+  const x1 = ((c1 + 0.5) / cols) * 100;
+  const y1 = ((r1 + 0.5) / numRows) * 100;
+  const x2 = ((c2 + 0.5) / cols) * 100;
+  const y2 = ((r2 + 0.5) / numRows) * 100;
+
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      style={{ zIndex: 10, width: "100%", height: "100%" }}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      <line
+        x1={x1} y1={y1}
+        x2={x2} y2={y2}
+        stroke="rgba(250, 204, 21, 0.9)"
+        strokeWidth="4"
+        strokeLinecap="round"
+        style={{
+          filter: "drop-shadow(0 0 6px rgba(250, 204, 21, 0.6))",
+        }}
+      />
+    </svg>
+  );
+}
+
+/**
+ * Returns { winner: "X"|"O"|null, line: [i,j,k]|null }
+ */
 function calculateWinner(board) {
   const lines = [
     [0, 1, 2],
@@ -383,14 +436,14 @@ function calculateWinner(board) {
     [0, 4, 8],
     [2, 4, 6],
   ];
-  for (let line of lines) {
+  for (const line of lines) {
     if (
       board[line[0]] &&
       board[line[0]] === board[line[1]] &&
       board[line[0]] === board[line[2]]
     ) {
-      return board[line[0]];
+      return { winner: board[line[0]], line };
     }
   }
-  return null;
+  return { winner: null, line: null };
 }
