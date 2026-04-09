@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import VictoryScreen from "../../VictoryScreen";
 
 export default function TrueFalseTicTacToeTask({
@@ -10,8 +10,8 @@ export default function TrueFalseTicTacToeTask({
   memberNames = [],
 }) {
   const [board, setBoard] = useState(task.board || Array(9).fill(null));
-  const [draggedStatement, setDraggedStatement] = useState(null);
   const [activeStatement, setActiveStatement] = useState(null); // tap-to-place
+  const [hintPulse, setHintPulse] = useState(false); // flash grid when statement selected
 
   // Keep local board in sync if parent/task updates it (e.g., from socket events).
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function TrueFalseTicTacToeTask({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.board]);
-  
+
   const roleLabel = teamRole === "X" ? "FALSE" : "TRUE";
   const activePlayerIndex =
     Number.isFinite(Number(task?.activePlayerIndex)) ? Number(task.activePlayerIndex) :
@@ -42,7 +42,7 @@ export default function TrueFalseTicTacToeTask({
   })();
 
   const activeName = names[activePlayerIndex] || `Player ${activePlayerIndex + 1}`;
-const [showVictory, setShowVictory] = useState(false);
+  const [showVictory, setShowVictory] = useState(false);
 
   useEffect(() => {
     if (task.winner) {
@@ -94,24 +94,64 @@ const [showVictory, setShowVictory] = useState(false);
       });
     }
 
-    // You could call onSubmit here if you want to log each move:
-    // onSubmit?.({ board: newBoard });
+    setActiveStatement(null);
+  };
+
+  // ─── Touch-friendly drag support ───
+  // HTML5 draggable doesn't work on mobile/tablets.
+  // We use a ref-based touch tracker: touchStart captures the statement,
+  // touchEnd checks if the finger landed on a grid cell.
+  const touchStatementRef = useRef(null);
+  const gridCellRefs = useRef([]);
+
+  const handleTouchStart = (e, statement) => {
+    if (disabled) return;
+    touchStatementRef.current = statement;
+    setActiveStatement(statement);
+  };
+
+  const handleTouchEnd = (e) => {
+    if (disabled || !touchStatementRef.current) return;
+    const touch = e.changedTouches?.[0];
+    if (!touch) { touchStatementRef.current = null; return; }
+
+    // Find which grid cell the finger ended on
+    for (let i = 0; i < 9; i++) {
+      const el = gridCellRefs.current[i];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (
+        touch.clientX >= rect.left &&
+        touch.clientX <= rect.right &&
+        touch.clientY >= rect.top &&
+        touch.clientY <= rect.bottom
+      ) {
+        applyMove(touchStatementRef.current, i);
+        touchStatementRef.current = null;
+        return;
+      }
+    }
+    // Didn't land on a cell — keep statement selected for tap-to-place
+    touchStatementRef.current = null;
   };
 
   // Desktop drag start
   const handleDragStart = (e, statement) => {
     if (disabled) return;
-    setDraggedStatement(statement);
     setActiveStatement(statement);
+    // Store statement index in dataTransfer for drop handler
+    e.dataTransfer.setData("text/plain", JSON.stringify(statement));
   };
 
   // Desktop drop target
   const handleDrop = (e, index) => {
     e.preventDefault();
     if (disabled) return;
-    applyMove(draggedStatement, index);
-    setDraggedStatement(null);
-    setActiveStatement(null);
+    let stmt = activeStatement;
+    try {
+      stmt = JSON.parse(e.dataTransfer.getData("text/plain"));
+    } catch {}
+    applyMove(stmt, index);
   };
 
   const allowDrop = (e) => e.preventDefault();
@@ -120,12 +160,20 @@ const [showVictory, setShowVictory] = useState(false);
   const handleStatementClick = (statement) => {
     if (disabled) return;
     setActiveStatement(statement);
+    // Flash the grid to show "now tap a square"
+    setHintPulse(true);
+    setTimeout(() => setHintPulse(false), 1200);
   };
 
   const handleCellClick = (index) => {
     if (disabled) return;
+    if (!activeStatement) {
+      // Flash the statement area to hint "pick a statement first"
+      setHintPulse(true);
+      setTimeout(() => setHintPulse(false), 1200);
+      return;
+    }
     applyMove(activeStatement, index);
-    setActiveStatement(null);
   };
 
   const winner = calculateWinner(board);
@@ -145,7 +193,6 @@ const [showVictory, setShowVictory] = useState(false);
           .map((s, idx) => {
             if (!s) return null;
             if (typeof s === "string") {
-              // If all we have is text, default to "true" (isFalse=false) so it doesn't crash.
               return { text: s, isFalse: false, id: `s${idx}` };
             }
             const text = String(s.text || s.prompt || s.statement || "").trim();
@@ -175,8 +222,8 @@ const [showVictory, setShowVictory] = useState(false);
   }, [task?.statements, task?.items, task?.config?.statements, task?.prompt, task?.title]);
 
   const instructions =
-    "How to play: Pick a statement bubble. Drag it to an empty square (or tap the bubble, then tap a square). " +
-    `If the statement matches your role (${roleLabel}), you claim the square. If not, the other team claims it. ` +
+    "Pick a statement bubble below, then tap an empty square to place it. " +
+    `If the statement matches your role (${roleLabel}), you claim the square! ` +
     "First team to get 3 in a row wins.";
 
   return (
@@ -187,8 +234,7 @@ const [showVictory, setShowVictory] = useState(false);
       <div className="w-full max-w-3xl mb-6">
         <div className="rounded-2xl p-4 shadow-sm border border-slate-200 bg-white/80">
           <div className="text-2xl">
-            <span className="font-extrabold">Player {activePlayerIndex + 1}</span>{" "}
-            <span className="text-slate-600">({activeName})</span>{" "}
+            <span className="font-extrabold">{activeName}</span>{" "}
             <span className="text-slate-500">is playing</span>{" "}
             <span className="font-extrabold text-indigo-700">{roleLabel}</span>
           </div>
@@ -199,40 +245,80 @@ const [showVictory, setShowVictory] = useState(false);
         </div>
       </div>
 
+      {/* Active statement indicator */}
+      {activeStatement && (
+        <div className="mb-3 px-4 py-2 bg-indigo-100 border-2 border-indigo-400 rounded-xl text-indigo-800 font-bold text-center text-lg animate-pulse">
+          Now tap an empty square to place it!
+        </div>
+      )}
+      {!activeStatement && hintPulse && (
+        <div className="mb-3 px-4 py-2 bg-yellow-100 border-2 border-yellow-400 rounded-xl text-yellow-800 font-bold text-center text-lg animate-pulse">
+          Pick a statement bubble first!
+        </div>
+      )}
+
       {/* TIC-TAC-TOE GRID */}
-      <div className="grid grid-cols-3 gap-4 mb-8 bg-white/80 p-6 rounded-2xl border border-slate-200 shadow-md">
-        {board.map((cell, i) => (
-          <div
-            key={i}
-            onDrop={(e) => handleDrop(e, i)}
-            onDragOver={allowDrop}
-            onClick={() => handleCellClick(i)} // tap-to-place
-            className="w-24 h-24 bg-white border-4 border-gray-400 rounded-xl flex items-center justify-center text-6xl font-bold cursor-pointer"
-          >
-            {cell}
-          </div>
-        ))}
+      <div
+        className={[
+          "grid grid-cols-3 gap-4 mb-8 p-6 rounded-2xl border shadow-md transition-all duration-300",
+          activeStatement
+            ? "bg-indigo-50 border-indigo-300 shadow-indigo-200"
+            : "bg-white/80 border-slate-200",
+        ].join(" ")}
+      >
+        {board.map((cell, i) => {
+          const isEmpty = !cell;
+          const canPlace = activeStatement && isEmpty && !disabled;
+          return (
+            <div
+              key={i}
+              ref={(el) => { gridCellRefs.current[i] = el; }}
+              onDrop={(e) => handleDrop(e, i)}
+              onDragOver={allowDrop}
+              onClick={() => handleCellClick(i)}
+              className={[
+                "w-24 h-24 rounded-xl flex items-center justify-center text-6xl font-bold transition-all duration-200",
+                cell
+                  ? "bg-white border-4 border-gray-400"
+                  : canPlace
+                    ? "bg-indigo-100 border-4 border-indigo-400 cursor-pointer hover:bg-indigo-200 hover:scale-105 active:scale-95"
+                    : "bg-white border-4 border-gray-300 cursor-pointer",
+                canPlace ? "animate-pulse" : "",
+              ].join(" ")}
+              style={canPlace ? { boxShadow: "0 0 12px rgba(99,102,241,0.4)" } : {}}
+            >
+              {cell === "X" && <span className="text-red-500">X</span>}
+              {cell === "O" && <span className="text-blue-500">O</span>}
+            </div>
+          );
+        })}
       </div>
 
       {/* STATEMENT CARDS */}
       <div className="space-y-4 w-full max-w-md">
-        <p className="text-lg font-semibold text-center text-slate-700">
-          Choose a statement bubble below. Drag it onto the grid (or tap bubble, then tap a square).
+        <p className={[
+          "text-lg font-semibold text-center transition-colors duration-300",
+          !activeStatement && hintPulse ? "text-yellow-600" : "text-slate-700",
+        ].join(" ")}>
+          Tap a statement, then tap a square to place it.
         </p>
         {statements.map((stmt, i) => {
           const isActive =
-            activeStatement && activeStatement.text === stmt.text;
+            activeStatement && activeStatement.id === stmt.id;
           return (
             <div
-              key={i}
+              key={stmt.id || i}
               draggable={!disabled}
               onDragStart={(e) => handleDragStart(e, stmt)}
+              onTouchStart={(e) => handleTouchStart(e, stmt)}
+              onTouchEnd={handleTouchEnd}
               onClick={() => handleStatementClick(stmt)}
-              className={`p-4 rounded-lg text-lg font-medium text-center transition cursor-pointer
-                ${stmt.isFalse ? "bg-red-100 border-2 border-red-400" : "bg-green-100 border-2 border-green-400"}
-                ${disabled ? "opacity-50" : "hover:scale-105"}
-                ${isActive ? "ring-4 ring-indigo-500" : ""}
-              `}
+              className={[
+                "p-4 rounded-lg text-lg font-medium text-center transition-all duration-200 cursor-pointer select-none",
+                stmt.isFalse ? "bg-red-100 border-2 border-red-400" : "bg-green-100 border-2 border-green-400",
+                disabled ? "opacity-50" : "hover:scale-105 active:scale-95",
+                isActive ? "ring-4 ring-indigo-500 scale-105 shadow-lg" : "",
+              ].join(" ")}
             >
               {stmt.text}
             </div>

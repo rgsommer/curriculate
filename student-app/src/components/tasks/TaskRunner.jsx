@@ -2577,6 +2577,7 @@ case TASK_TYPES.COLLABORATION:
           teamRole={t.teamRole}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+          memberNames={memberNames}
         />
       );
       break;
