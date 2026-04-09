@@ -1019,20 +1019,52 @@ function buildVocabularyLinesFromConcepts(concepts) {
  * "Objective-ish" types get more terms; messy/creative types get fewer.
  */
 const CONCEPT_CAPS_BY_TYPE = {
-  [TASK_TYPES.MULTIPLE_CHOICE]: 3,
-  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: 3,
-  [TASK_TYPES.TRUE_FALSE]: 2,
-  [TASK_TYPES.SHORT_ANSWER]: 2,
-  [TASK_TYPES.FLASHCARDS]: 6,
-  [TASK_TYPES.FLASHCARDS_RACE]: 6,
-  [TASK_TYPES.MATCHING]: 6,
+  // High-capacity: these task types naturally incorporate many terms
+  [TASK_TYPES.FLASHCARDS]: 8,
+  [TASK_TYPES.FLASHCARDS_RACE]: 8,
+  [TASK_TYPES.MATCHING]: 8,
   [TASK_TYPES.SORT]: 6,
   [TASK_TYPES.VENNSORT]: 6,
+  [TASK_TYPES.READING_COMP]: 5,
+  [TASK_TYPES.PET_FEEDING]: 5,
+  [TASK_TYPES.BRAIN_BLITZ]: 5,
+  [TASK_TYPES.GUESS_WHO]: 5,
+  [TASK_TYPES.NARRATION_SYNTHESIZE]: 5,
+
+  // Medium-capacity: can work with several terms
+  [TASK_TYPES.MULTIPLE_CHOICE]: 4,
+  [TASK_TYPES.PHYSICAL_MULTIPLE_CHOICE]: 4,
   [TASK_TYPES.SEQUENCE]: 4,
   [TASK_TYPES.TIMELINE]: 4,
+  [TASK_TYPES.SHORT_ANSWER]: 4,
+  [TASK_TYPES.TRUE_FALSE]: 3,
+  [TASK_TYPES.TRUE_FALSE_TICTACTOE]: 4,
+  [TASK_TYPES.FAKE_OUT]: 3,
+  [TASK_TYPES.ECHO_CHAIN]: 4,
+  [TASK_TYPES.COLLABORATION]: 4,
+  [TASK_TYPES.BRAINSTORM_BATTLE]: 4,
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: 4,
+  [TASK_TYPES.WORD_WEAVER_DUEL]: 4,
   [TASK_TYPES.HANGMAN_DUEL]: 4,
-  // Known finicky type: keep it light
-  [TASK_TYPES.MUSICAL_CHAIRS]: 2,
+  [TASK_TYPES.ROLE_PLAY_DECK]: 4,
+  [TASK_TYPES.SCRIPT_PLAY]: 4,
+  [TASK_TYPES.MIND_MAPPER]: 5,
+  [TASK_TYPES.BRAIN_SPARK_NOTES]: 4,
+  [TASK_TYPES.LIVE_DEBATE]: 3,
+  [TASK_TYPES.OPEN_TEXT]: 3,
+  [TASK_TYPES.PRONUNCIATION]: 4,
+  [TASK_TYPES.SPEECH_RECOGNITION]: 4,
+
+  // Low-capacity: keep these light
+  [TASK_TYPES.DRAW]: 2,
+  [TASK_TYPES.DRAW_MIME]: 2,
+  [TASK_TYPES.MIME]: 2,
+  [TASK_TYPES.RECORD_AUDIO]: 3,
+  [TASK_TYPES.PHOTO]: 2,
+  [TASK_TYPES.PHOTO_JOURNAL]: 2,
+  [TASK_TYPES.MAKE_AND_SNAP]: 2,
+  [TASK_TYPES.MUSICAL_CHAIRS]: 2,       // Known finicky type: keep it light
+  [TASK_TYPES.MOTION_MISSION]: 2,
 };
 
 function getConceptCapForType(taskType) {
@@ -1047,51 +1079,52 @@ function planConceptAllocation(aiWordBank, pool, safeCount) {
 
   if (!concepts.length) return { concepts, plan };
 
-  // Round-robin assignment across tasks, respecting per-type caps.
-  let p = 0;
-
-  // First ensure every concept is assigned at least once (if capacity allows).
-  // We loop tasks until we run out of concepts, wrapping tasks as needed.
-  for (let c = 0; c < concepts.length; c++) {
-    const i = c % safeCount;
+  const caps = [];
+  for (let i = 0; i < safeCount; i++) {
     const taskType = pool[i % pool.length];
-    const cap = getConceptCapForType(taskType);
-
-    if (plan[i].length < cap) {
-      plan[i].push(concepts[p]);
-      p++;
-    } else {
-      // Find next task with room
-      let found = false;
-      for (let j = 0; j < safeCount; j++) {
-        const k = (i + j) % safeCount;
-        const tt = pool[k % pool.length];
-        const cap2 = getConceptCapForType(tt);
-        if (plan[k].length < cap2) {
-          plan[k].push(concepts[p]);
-          p++;
-          found = true;
-          break;
-        }
-      }
-      if (!found) break; // no capacity; rare unless concepts are enormous
-    }
-
-    if (p >= concepts.length) break;
+    caps.push({ idx: i, cap: getConceptCapForType(taskType), taskType });
   }
 
-  // If there is still room, we can cycle again to reinforce (optional).
-  // But keep it modest: only add a second pass if there's room.
+  // Sort tasks by capacity descending so high-capacity tasks fill first.
+  const slotsByCapDesc = caps
+    .slice()
+    .sort((a, b) => b.cap - a.cap || a.idx - b.idx);
+
+  // ── Pass 1: Round-robin across ALL tasks, one concept per task ──
+  // Ensures every task gets at least one concept before any task gets two.
+  // Iterate through tasks in capacity-descending order.
+  let cursor = 0;
+  for (const slot of slotsByCapDesc) {
+    if (cursor >= concepts.length) break;
+    plan[slot.idx].push(concepts[cursor++]);
+  }
+
+  // ── Pass 2: Fill high-capacity tasks with remaining concepts ──
+  // After every task has 1, give more concepts to tasks that can handle them.
+  // Keep cycling through tasks (highest-cap first) until all concepts placed.
   let safety = 0;
-  while (p < concepts.length && safety++ < safeCount * 3) {
-    const i = p % safeCount;
-    const taskType = pool[i % pool.length];
-    const cap = getConceptCapForType(taskType);
-    if (plan[i].length < cap) {
-      plan[i].push(concepts[p]);
-      p++;
-    } else {
-      p++;
+  while (cursor < concepts.length && safety++ < concepts.length * 2) {
+    let placed = false;
+    for (const slot of slotsByCapDesc) {
+      if (cursor >= concepts.length) break;
+      if (plan[slot.idx].length < slot.cap) {
+        plan[slot.idx].push(concepts[cursor++]);
+        placed = true;
+      }
+    }
+    if (!placed) break; // all tasks at capacity
+  }
+
+  // ── Pass 3: Reinforce — repeat concepts to fill remaining capacity ──
+  // Tasks with room get additional (duplicate) concepts so more tasks
+  // reference the vocabulary, improving student reinforcement.
+  if (concepts.length > 0) {
+    let rIdx = 0;
+    for (const slot of slotsByCapDesc) {
+      while (plan[slot.idx].length < slot.cap) {
+        plan[slot.idx].push(concepts[rIdx % concepts.length]);
+        rIdx++;
+      }
     }
   }
 
