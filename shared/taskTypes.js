@@ -1600,20 +1600,29 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "hangman-duel".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create 10–16 hangman words/phrases relevant to the topic. Prefer 1–3 word phrases; avoid punctuation; include category hints.
-    
+    - CRITICAL: Include config.wordsByStation with EXACTLY 8 entries.
+    - Each entry MUST have both "word" and "hint" fields (both non-empty strings).
+    - Words should be 4–12 letters, unique, and grade-appropriate.
+    - Example:
+      "config": {
+        "wordsByStation": [
+          { "word": "ELEPHANT", "hint": "Large gray mammal with a trunk" },
+          { "word": "GIRAFFE", "hint": "Tallest land animal" },
+          ... (8 entries total)
+        ]
+      }
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
+    - You MUST include EXACTLY 8 entries in wordsByStation.
+    - Every entry MUST have both "word" AND "hint" — do NOT omit hints.
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },

@@ -1249,11 +1249,17 @@ export function normalizeTaskByType(taskType, rawTask) {
         ? cfg.wordsByStation
             .map((w) => {
               const obj = isObject(w) ? { ...w } : {};
-              return { word: asNonEmptyString(obj.word, asNonEmptyString(obj.answer, "")), hint: asNonEmptyString(obj.hint, asNonEmptyString(obj.clue, "")) };
+              const word = asNonEmptyString(obj.word, asNonEmptyString(obj.answer, asNonEmptyString(obj.text, "")));
+              const hint = asNonEmptyString(obj.hint, asNonEmptyString(obj.clue, asNonEmptyString(obj.category, "")));
+              return { word, hint: hint || (word ? `Think about this ${word.length}-letter word` : "") };
             })
             .filter((x) => x.word)
         : [];
 
+      // Trim to 8 if AI generated more (common: prompt says 10-16)
+      if (cfg.wordsByStation.length > 8) cfg.wordsByStation = cfg.wordsByStation.slice(0, 8);
+
+      // Pad to 8 if fewer (shouldn't happen with AI but defensive)
       while (cfg.wordsByStation.length < 8) {
         const n = cfg.wordsByStation.length + 1;
         cfg.wordsByStation.push({ word: `WORD${n}`, hint: `Hint ${n}` });
