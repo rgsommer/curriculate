@@ -1558,9 +1558,9 @@ if (st?.ok && st.exists) {
     setEmailErr("");
     try {
       const [tRes, mRes, rRes] = await Promise.all([
-        fetchJsonSafe(`/api/admin/email-templates`, { credentials: "include" }),
-        fetchJsonSafe(`/api/admin/email-metrics`, { credentials: "include" }),
-        fetchJsonSafe(`/api/admin/referral-settings`, { credentials: "include" }),
+        apiFetchJson(`/api/admin/email-templates`),
+        apiFetchJson(`/api/admin/email-metrics`),
+        apiFetchJson(`/api/admin/referral-settings`),
       ]);
 
       if (tRes?.ok) {
@@ -1590,11 +1590,9 @@ if (st?.ok && st.exists) {
         rewardMonths: Math.max(0, Number(refRewardMonths || 1)),
       };
 
-      const res = await fetchJsonSafe(`/api/admin/referral-settings`, {
+      const res = await apiFetchJson(`/api/admin/referral-settings`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
+        body: payload,
       });
 
       if (!res?.ok) throw new Error(res?.error || "Save failed");
@@ -1620,13 +1618,11 @@ if (st?.ok && st.exists) {
       };
       if (tplFollowupDays !== "") payload.followupDays = Number(tplFollowupDays);
 
-      const res = await fetchJsonSafe(
+      const res = await apiFetchJson(
         `/api/admin/email-templates/${encodeURIComponent(selectedEmailKey)}`,
         {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(payload),
+          body: payload,
         }
       );
 
