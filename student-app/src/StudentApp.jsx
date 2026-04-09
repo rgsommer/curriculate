@@ -4374,8 +4374,6 @@ function StudentApp() {
         : { background: taskCardBackground }),
     }}
   >
-    {/* Hide title for tasks that render their own full-screen header */}
-    {!isMotionMission && (
     <h2
       style={{
         marginTop: 0,
@@ -4393,7 +4391,6 @@ function StudentApp() {
       {/* Progress label now shown above noise bar; removed duplicate here */}
       {currentTask.title || currentTask.name || "Task"}
     </h2>
-    )}
     <div
       className="task-content-inner"
       style={{
