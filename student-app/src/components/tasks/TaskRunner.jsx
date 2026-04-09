@@ -21,6 +21,7 @@ import MusicalChairsTask from "./types/MusicalChairsTask";
 import MysteryCluesTask from "./types/MysteryCluesTask";
 import FakeOutTask from "./types/FakeOutTask";
 import TrueFalseTicTacToeTask from "./types/TrueFalseTicTacToeTask";
+import TrueFalseConnectFourTask from "./types/TrueFalseConnectFourTask";
 import MadDashTask from "./types/MadDashTask";
 import MadDashSequenceTask from "./types/MadDashSequenceTask";
 import LiveDebateTask from "./types/LiveDebateTask";
@@ -2582,7 +2583,22 @@ case TASK_TYPES.COLLABORATION:
       );
       break;
 
-    
+    case TASK_TYPES.TRUE_FALSE_CONNECT_FOUR:
+      content = (
+        <TrueFalseConnectFourTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          socket={socket}
+          teamRole={t.teamRole}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
+          memberNames={memberNames}
+        />
+      );
+      break;
+
+
 case TASK_TYPES.MAD_DASH:
   content = (
     <MadDashTask
