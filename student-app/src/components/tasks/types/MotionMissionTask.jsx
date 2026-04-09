@@ -45,10 +45,25 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
 
   const [done, setDone] = useState(false);
 
-  // "SWITCH!" popup — fires at the midpoint if the prompt mentions switching
+  // "SWITCH!" popup — fires at evenly spaced intervals if the prompt mentions switching
   const hasSwitch = /switch/i.test(activityName);
   const [showSwitch, setShowSwitch] = useState(false);
-  const switchFiredRef = useRef(false);
+  const [switchNumber, setSwitchNumber] = useState(0); // which switch we're showing (1-based)
+
+  // Parse how many switches: "repeat the cycle twice" = 3 switches, "repeat 3 times" = 4, default = 1
+  const totalSwitches = useMemo(() => {
+    if (!hasSwitch) return 0;
+    const text = activityName.toLowerCase();
+    const twiceMatch = /repeat.*twice|twice.*repeat/i.test(text);
+    if (twiceMatch) return 3; // initial switch + 2 repeats
+    const timesMatch = text.match(/repeat.*?(\d+)\s*time/i);
+    if (timesMatch) return 1 + parseInt(timesMatch[1], 10);
+    const thriceMatch = /repeat.*thrice|three\s*times/i.test(text);
+    if (thriceMatch) return 4;
+    return 1; // just one switch at midpoint
+  }, [activityName, hasSwitch]);
+
+  const switchesFiredRef = useRef(0); // how many have fired so far
   const switchTimerRef = useRef(null);
   const initialRemainingRef = useRef(null);
 
@@ -81,14 +96,16 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
     setNoMotionSupport(false);
     setDone(false);
     setShowSwitch(false);
-    switchFiredRef.current = false;
+    setSwitchNumber(0);
+    switchesFiredRef.current = 0;
     if (switchTimerRef.current) { clearTimeout(switchTimerRef.current); switchTimerRef.current = null; }
     initialRemainingRef.current = null;
   }, [task?.taskType, task?.title, task?.prompt]);
 
-  // Capture timer when active phase starts, fire SWITCH at midpoint
+  // Capture timer when active phase starts, fire SWITCH at evenly spaced points
+  // E.g., 3 switches in 60s → fire at 45s, 30s, 15s remaining (every 15s)
   useEffect(() => {
-    if (phase !== "active" || !hasSwitch) return;
+    if (phase !== "active" || !hasSwitch || totalSwitches === 0) return;
 
     // Capture the starting time on first tick
     if (initialRemainingRef.current === null && typeof remainingMs === "number" && remainingMs > 0) {
@@ -96,21 +113,28 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
     }
 
     const init = initialRemainingRef.current;
-    if (!init || switchFiredRef.current) return;
+    if (!init) return;
 
-    const midpoint = init / 2;
-    if (typeof remainingMs === "number" && remainingMs <= midpoint) {
-      switchFiredRef.current = true;
+    const fired = switchesFiredRef.current;
+    if (fired >= totalSwitches) return; // all switches done
+
+    // Divide the timer into (totalSwitches + 1) equal segments
+    // Switch N fires when remaining <= init - (N * segmentLength)
+    const segment = init / (totalSwitches + 1);
+    const nextThreshold = init - ((fired + 1) * segment);
+
+    if (typeof remainingMs === "number" && remainingMs <= nextThreshold) {
+      switchesFiredRef.current = fired + 1;
+      setSwitchNumber(fired + 1);
       setShowSwitch(true);
-      // Show for 10 seconds then hide — use a ref so the next tick's
-      // effect cleanup doesn't cancel the timeout
+
       if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
       switchTimerRef.current = setTimeout(() => {
         setShowSwitch(false);
         switchTimerRef.current = null;
       }, 10000);
     }
-  }, [phase, remainingMs, hasSwitch]);
+  }, [phase, remainingMs, hasSwitch, totalSwitches]);
 
   // Countdown flow
   useEffect(() => {
@@ -288,6 +312,11 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
                   <div className="mt-3 text-2xl md:text-3xl font-bold text-white drop-shadow-lg">
                     Change activity now!
                   </div>
+                  {totalSwitches > 1 && (
+                    <div className="mt-2 text-lg font-bold text-white/70">
+                      Switch {switchNumber} of {totalSwitches}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
