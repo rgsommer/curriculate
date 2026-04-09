@@ -60,6 +60,10 @@ export default function TaskSetEditor() {
   const [shareLoading, setShareLoading] = useState(false);
   const [shareLink, setShareLink] = useState("");
   const [shareExpiresAt, setShareExpiresAt] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteSent, setInviteSent] = useState(false);
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -176,6 +180,35 @@ export default function TaskSetEditor() {
       navigator.clipboard.writeText(shareLink).then(() => {
         showToast("Link copied!");
       });
+    }
+  };
+
+  const handleSendInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    const token = shareLink.split("/share/")[1];
+    if (!token) {
+      showToast("Invalid share link");
+      return;
+    }
+    setInviteSending(true);
+    setInviteSent(false);
+    try {
+      const data = await apiFetchJson(`/api/shared/${token}/send-invite`, {
+        method: "POST",
+        body: {
+          toEmail: inviteEmail.trim(),
+          message: inviteMessage.trim() || undefined,
+        },
+      });
+      if (!data?.ok) throw new Error(data?.error || "Failed to send invite");
+      setInviteSent(true);
+      setInviteEmail("");
+      setInviteMessage("");
+      showToast("Invite sent!");
+    } catch (e) {
+      showToast(e?.message || "Failed to send invite");
+    } finally {
+      setInviteSending(false);
     }
   };
 
@@ -351,9 +384,62 @@ export default function TaskSetEditor() {
             <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16 }}>
               Expires: {shareExpiresAt ? new Date(shareExpiresAt).toLocaleDateString() : ""}
             </div>
+
+            {/* ---- Send Invite ---- */}
+            <div style={{
+              borderTop: "1px solid #e5e7eb",
+              paddingTop: 16,
+              marginBottom: 16,
+            }}>
+              <label style={{ fontWeight: 600, fontSize: "0.9rem", display: "block", marginBottom: 6 }}>
+                Send Invite by Email
+              </label>
+              <input
+                type="email"
+                placeholder="substitute@school.edu"
+                value={inviteEmail}
+                onChange={(e) => { setInviteEmail(e.target.value); setInviteSent(false); }}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  marginBottom: 8,
+                  boxSizing: "border-box",
+                  fontSize: "0.9rem",
+                }}
+              />
+              <textarea
+                placeholder="Add a personal message (optional)"
+                value={inviteMessage}
+                onChange={(e) => setInviteMessage(e.target.value)}
+                rows={2}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  marginBottom: 8,
+                  boxSizing: "border-box",
+                  fontSize: "0.9rem",
+                  resize: "vertical",
+                }}
+              />
+              <button
+                onClick={handleSendInvite}
+                disabled={inviteSending || !inviteEmail.trim()}
+                style={{
+                  width: "100%",
+                  background: inviteSent ? "#10b981" : undefined,
+                }}
+              >
+                {inviteSending ? "Sending…" : inviteSent ? "Sent!" : "Send Invite"}
+              </button>
+            </div>
+
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button
-                onClick={() => setShareModalOpen(false)}
+                onClick={() => { setShareModalOpen(false); setInviteEmail(""); setInviteMessage(""); setInviteSent(false); }}
                 style={{ background: "#e5e7eb", color: "#000" }}
               >
                 Close
