@@ -22,6 +22,8 @@ export default function TrueFalseTicTacToeTask({
   }, [task?.board]);
 
   const roleLabel = teamRole === "X" ? "FALSE" : "TRUE";
+  const roleColor = teamRole === "X" ? "Red" : "Blue";
+  const roleCls = teamRole === "X" ? "text-red-600" : "text-blue-600";
   const activePlayerIndex =
     Number.isFinite(Number(task?.activePlayerIndex)) ? Number(task.activePlayerIndex) :
     Number.isFinite(Number(task?.turnIndex)) ? Number(task.turnIndex) :
@@ -223,7 +225,7 @@ export default function TrueFalseTicTacToeTask({
 
   const instructions =
     "Pick a statement bubble below, then tap an empty square to place it. " +
-    `If the statement matches your role (${roleLabel}), you claim the square! ` +
+    `If the statement matches your role (${roleLabel}), you claim the square in ${roleColor}! ` +
     "First team to get 3 in a row wins.";
 
   return (
@@ -236,7 +238,7 @@ export default function TrueFalseTicTacToeTask({
           <div className="text-2xl">
             <span className="font-extrabold">{activeName}</span>{" "}
             <span className="text-slate-500">is playing</span>{" "}
-            <span className="font-extrabold text-indigo-700">{roleLabel}</span>
+            <span className={`font-extrabold ${roleCls}`}>{roleLabel} ({roleColor})</span>
           </div>
           <div className="mt-2 text-slate-700 text-base leading-relaxed">
             <div className="font-semibold mb-1">Instructions</div>
@@ -278,17 +280,23 @@ export default function TrueFalseTicTacToeTask({
               onClick={() => handleCellClick(i)}
               className={[
                 "w-24 h-24 rounded-xl flex items-center justify-center text-6xl font-bold transition-all duration-200",
-                cell
-                  ? "bg-white border-4 border-gray-400"
-                  : canPlace
-                    ? "bg-indigo-100 border-4 border-indigo-400 cursor-pointer hover:bg-indigo-200 hover:scale-105 active:scale-95"
-                    : "bg-white border-4 border-gray-300 cursor-pointer",
+                cell === "X"
+                  ? "border-4 border-red-400 bg-red-100"
+                  : cell === "O"
+                    ? "border-4 border-blue-400 bg-blue-100"
+                    : canPlace
+                      ? "bg-indigo-100 border-4 border-indigo-400 cursor-pointer hover:bg-indigo-200 hover:scale-105 active:scale-95"
+                      : "bg-white border-4 border-gray-300 cursor-pointer",
                 canPlace ? "animate-pulse" : "",
               ].join(" ")}
-              style={canPlace ? { boxShadow: "0 0 12px rgba(99,102,241,0.4)" } : {}}
+              style={
+                cell === "X" ? { boxShadow: "0 0 10px rgba(239,68,68,0.35)" } :
+                cell === "O" ? { boxShadow: "0 0 10px rgba(59,130,246,0.35)" } :
+                canPlace ? { boxShadow: "0 0 12px rgba(99,102,241,0.4)" } : {}
+              }
             >
-              {cell === "X" && <span className="text-red-500">X</span>}
-              {cell === "O" && <span className="text-blue-500">O</span>}
+              {cell === "X" && <span className="text-red-600 drop-shadow-sm">X</span>}
+              {cell === "O" && <span className="text-blue-600 drop-shadow-sm">O</span>}
             </div>
           );
         })}
