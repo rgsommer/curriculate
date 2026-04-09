@@ -156,7 +156,10 @@ function buildDiversePool(availableTypes, count) {
   return pool;
 }
 
-function getGenerationEligibleTypes() {
+const LANGUAGE_SUBJECTS = /\b(french|spanish|english|esl|efl|eal|fsl|german|italian|portuguese|mandarin|chinese|japanese|korean|arabic|hindi|language|linguistics|vocabulary|grammar|reading|writing|literacy|phonics|pronunciation|immersion)\b/i;
+
+function getGenerationEligibleTypes(subject) {
+  const isLanguage = subject ? LANGUAGE_SUBJECTS.test(String(subject)) : false;
   const eligible = [];
 
   for (const t of Object.values(TASK_TYPES)) {
@@ -168,6 +171,9 @@ function getGenerationEligibleTypes() {
 
     // avoid special meta-only types unless you explicitly want them
     if (t === TASK_TYPES.TASK_RUNNER) continue;
+
+    // language-only tasks (pronunciation, speech recognition) excluded for non-language subjects
+    if (meta.languageOnly && !isLanguage) continue;
 
     eligible.push(t);
   }
@@ -1461,7 +1467,7 @@ export async function createAiTaskset(req, res) {
 
     const safeCount = clampInt(count, 1, 30, 12);
 
-    const eligible = getGenerationEligibleTypes();
+    const eligible = getGenerationEligibleTypes(subject);
     const userPool =
       Array.isArray(taskTypePool) && taskTypePool.length
         ? taskTypePool.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))

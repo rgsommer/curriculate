@@ -7,7 +7,7 @@ import React, { useMemo, useState } from "react";
  * - Shows current line + optional context before/after + tone/direction cues
  * - Graphically rich, consistent "Curriculate card" feel (no external deps)
  */
-export default function ScriptPlayTask({ task, onSubmit, disabled = false }) {
+export default function ScriptPlayTask({ task, onSubmit, disabled = false, memberNames = [] }) {
   const cfg = task?.config && typeof task.config === "object" ? task.config : {};
   const scenes = Array.isArray(cfg.scenes) ? cfg.scenes : [];
 
@@ -65,11 +65,21 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false }) {
         direction: "",
         before: "",
         after: "",
+        speakerName: p.speaker,
       }));
 
-      // Use AI-generated setting paragraph if available, otherwise generic instructions
+      // Use AI-generated setting paragraph if available
       const setting = String(task?.setting || cfg.setting || "").trim();
-      const contextBefore = setting ||
+
+      // Build role assignment text: "Emma → Narrator, Liam → Ava, ..."
+      const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+      const roleLines = speakers.map((role, i) => {
+        const name = names[i] || `Team member ${i + 1}`;
+        return `${name} → ${role}`;
+      });
+      const roleAssignment = roleLines.length ? roleLines.join("  •  ") : "";
+
+      const contextBefore = [setting, roleAssignment].filter(Boolean).join("\n\n") ||
         "Pass the device to the next speaker after each line. Read clearly and act it out together.";
 
       return [
@@ -78,6 +88,7 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false }) {
           contextBefore,
           contextAfter: "",
           turns,
+          speakers,
         },
       ];
     }
@@ -97,7 +108,7 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false }) {
         ],
       },
     ];
-  }, [scenes, task?.lines, task?.title]);
+  }, [scenes, task?.lines, task?.title, task?.setting, cfg.setting, memberNames]);
 
   const totalTurns = useMemo(
     () => normalizedScenes.reduce((sum, s) => sum + (s?.turns?.length || 0), 0),
@@ -330,9 +341,28 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false }) {
 
         <div style={styles.lineCard}>
           <div style={styles.speakerRow}>
-            <div style={styles.speaker}>Speaker {turn.speakerIndex + 1}</div>
+            <div style={styles.speaker}>
+              {(() => {
+                const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+                const speakers = scene.speakers || [];
+                const charName = turn.speakerName || speakers[turn.speakerIndex] || "";
+                const playerName = names[turn.speakerIndex] || "";
+                if (charName && playerName) return `${playerName} as ${charName}`;
+                if (playerName) return playerName;
+                if (charName) return charName;
+                return `Speaker ${turn.speakerIndex + 1}`;
+              })()}
+            </div>
             <div style={styles.speakerHint}>
-              Pass the device to Speaker {((turn.speakerIndex + 1) % playerCount) + 1} next
+              {(() => {
+                // Find next different speaker
+                const nextTurnIdx = turnIndex + 1;
+                const nextTurn = turns[nextTurnIdx];
+                if (!nextTurn) return "Last line!";
+                const names = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+                const nextName = names[nextTurn.speakerIndex] || `Speaker ${nextTurn.speakerIndex + 1}`;
+                return `Pass to ${nextName} next`;
+              })()}
             </div>
           </div>
 

@@ -2105,6 +2105,7 @@ export default function TaskRunner({
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}
           readOnly={isReview}
+          memberNames={memberNames}
         />
       );
       break;
