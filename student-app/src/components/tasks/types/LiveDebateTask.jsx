@@ -64,15 +64,14 @@ export default function LiveDebateTask({
   const sideExhausted = turnIndex >= turnsPerSide;
   const allDone = forResponses.length >= turnsPerSide && againstResponses.length >= turnsPerSide;
 
-  // Debate topic — avoid pulling in generic task instructions from task.prompt
-  // Prefer explicit debate fields, then config, then title
+  // Debate topic — check all possible field names the AI might use
   const topic =
     task.postulate ||
+    task.resolution ||
     task.topic ||
     task.config?.postulate ||
+    task.config?.resolution ||
     task.config?.topic ||
-    task.config?.prompt ||
-    task.title ||
     "";
 
   // ── Auto-scroll thread ─────────────────────────────────────
