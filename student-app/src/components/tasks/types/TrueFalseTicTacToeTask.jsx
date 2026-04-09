@@ -9,13 +9,18 @@ export default function TrueFalseTicTacToeTask({
   teamRole: teamRoleProp,
   memberNames = [],
 }) {
-  // Default to "O" (TRUE/Blue) if server hasn't assigned a role (intra-team mode)
-  const teamRole = teamRoleProp || "O";
-
   const [board, setBoard] = useState(task.board || Array(9).fill(null));
   const [usedStatementIds, setUsedStatementIds] = useState(new Set());
   const [activeStatement, setActiveStatement] = useState(null); // tap-to-place
   const [hintPulse, setHintPulse] = useState(false); // flash grid when statement selected
+
+  // ─── Local turn management ───
+  // Player 0 = "O" (TRUE / Blue), Player 1 = "X" (FALSE / Red)
+  // If server assigned a teamRole (inter-team), we use it for everyone.
+  // If not (intra-team), we alternate locally.
+  const isIntraTeam = !teamRoleProp;
+  const [currentTurn, setCurrentTurn] = useState(0); // 0 or 1
+  const currentRole = isIntraTeam ? (currentTurn === 0 ? "O" : "X") : (teamRoleProp || "O");
 
   // Keep local board in sync if parent/task updates it (e.g., from socket events).
   useEffect(() => {
@@ -25,14 +30,9 @@ export default function TrueFalseTicTacToeTask({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.board]);
 
-  const roleLabel = teamRole === "X" ? "FALSE" : "TRUE";
-  const roleColor = teamRole === "X" ? "Red" : "Blue";
-  const roleCls = teamRole === "X" ? "text-red-600" : "text-blue-600";
-  const activePlayerIndex =
-    Number.isFinite(Number(task?.activePlayerIndex)) ? Number(task.activePlayerIndex) :
-    Number.isFinite(Number(task?.turnIndex)) ? Number(task.turnIndex) :
-    Number.isFinite(Number(task?.currentPlayerIndex)) ? Number(task.currentPlayerIndex) :
-    0;
+  const roleLabel = currentRole === "X" ? "FALSE" : "TRUE";
+  const roleColor = currentRole === "X" ? "Red" : "Blue";
+  const roleCls = currentRole === "X" ? "text-red-600" : "text-blue-600";
 
   const names = (() => {
     const raw =
@@ -46,6 +46,16 @@ export default function TrueFalseTicTacToeTask({
       : [];
     return base.length ? base : ["Player 1", "Player 2"];
   })();
+
+  // In intra-team mode, alternate between first two names.
+  // In inter-team mode, use server-provided index or default to 0.
+  const activePlayerIndex = isIntraTeam
+    ? (currentTurn % Math.max(names.length, 2))
+    : (
+        Number.isFinite(Number(task?.activePlayerIndex)) ? Number(task.activePlayerIndex) :
+        Number.isFinite(Number(task?.turnIndex)) ? Number(task.turnIndex) :
+        0
+      );
 
   const activeName = names[activePlayerIndex] || `Player ${activePlayerIndex + 1}`;
   const [showVictory, setShowVictory] = useState(false);
@@ -75,34 +85,28 @@ export default function TrueFalseTicTacToeTask({
     if (!statement || disabled || board[index]) return;
 
     const isFalse = statement.isFalse;
-    const shouldBeFalse = teamRole === "X";
+    const shouldBeFalse = currentRole === "X";
+    const matchesRole = (shouldBeFalse && isFalse) || (!shouldBeFalse && !isFalse);
+    const placedRole = matchesRole ? currentRole : (currentRole === "X" ? "O" : "X");
 
     const newBoard = [...board];
+    newBoard[index] = placedRole;
+    setBoard(newBoard);
 
-    // If statement matches your role's truthiness, you place your mark.
-    // Otherwise the other team gets the mark.
-    if ((shouldBeFalse && isFalse) || (!shouldBeFalse && !isFalse)) {
-      newBoard[index] = teamRole;
-      setBoard(newBoard);
-      socket?.emit("tictactoe-move", {
-        roomCode: task.roomCode,
-        index,
-        teamRole,
-      });
-    } else {
-      const otherRole = teamRole === "X" ? "O" : "X";
-      newBoard[index] = otherRole;
-      setBoard(newBoard);
-      socket?.emit("tictactoe-move", {
-        roomCode: task.roomCode,
-        index,
-        teamRole: otherRole,
-      });
-    }
+    socket?.emit("tictactoe-move", {
+      roomCode: task.roomCode,
+      index,
+      teamRole: placedRole,
+    });
 
     // Remove the used statement from the available pool
     setUsedStatementIds((prev) => new Set(prev).add(statement.id));
     setActiveStatement(null);
+
+    // Advance turn in intra-team mode
+    if (isIntraTeam) {
+      setCurrentTurn((prev) => (prev + 1) % Math.max(names.length, 2));
+    }
   };
 
   // ─── Touch-friendly drag support ───
@@ -344,11 +348,18 @@ export default function TrueFalseTicTacToeTask({
 
       {/* WINNER DISPLAY */}
       {winner && (
-        <div className="mt-8 text-6xl font-bold animate-pulse">
-          {winner === teamRole ? (
-            <span className="text-green-600">YOU WIN! +10</span>
-          ) : (
-            <span className="text-red-600">YOU LOSE!</span>
+        <div className="mt-8 text-center animate-pulse">
+          <div className="text-5xl font-bold">
+            {winner === "O" ? (
+              <span className="text-blue-600">TRUE (Blue) WINS!</span>
+            ) : (
+              <span className="text-red-600">FALSE (Red) WINS!</span>
+            )}
+          </div>
+          {isIntraTeam && (
+            <div className="text-2xl mt-2 font-semibold text-slate-700">
+              {winner === "O" ? names[0] : names[1] || "Player 2"} takes the round!
+            </div>
           )}
         </div>
       )}

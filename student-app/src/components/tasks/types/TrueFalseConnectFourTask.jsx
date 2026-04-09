@@ -57,14 +57,17 @@ export default function TrueFalseConnectFourTask({
   teamRole: teamRoleProp,
   memberNames = [],
 }) {
-  const teamRole = teamRoleProp || "O";
-
   const [board, setBoard] = useState(task.board || Array(CELLS).fill(null));
   const [usedStatementIds, setUsedStatementIds] = useState(new Set());
   const [activeStatement, setActiveStatement] = useState(null);
   const [hintPulse, setHintPulse] = useState(false);
-  const [droppingCol, setDroppingCol] = useState(null); // animate column highlight
-  const [lastDrop, setLastDrop] = useState(null); // { index, role } for drop animation
+  const [droppingCol, setDroppingCol] = useState(null);
+  const [lastDrop, setLastDrop] = useState(null);
+
+  // ─── Local turn management ───
+  const isIntraTeam = !teamRoleProp;
+  const [currentTurn, setCurrentTurn] = useState(0);
+  const currentRole = isIntraTeam ? (currentTurn === 0 ? "O" : "X") : (teamRoleProp || "O");
 
   // Keep local board in sync from socket/parent updates
   useEffect(() => {
@@ -73,15 +76,9 @@ export default function TrueFalseConnectFourTask({
     }
   }, [task?.board]);
 
-  const roleLabel = teamRole === "X" ? "FALSE" : "TRUE";
-  const roleColor = teamRole === "X" ? "Red" : "Blue";
-  const roleCls = teamRole === "X" ? "text-red-600" : "text-blue-600";
-
-  const activePlayerIndex =
-    Number.isFinite(Number(task?.activePlayerIndex)) ? Number(task.activePlayerIndex) :
-    Number.isFinite(Number(task?.turnIndex)) ? Number(task.turnIndex) :
-    Number.isFinite(Number(task?.currentPlayerIndex)) ? Number(task.currentPlayerIndex) :
-    0;
+  const roleLabel = currentRole === "X" ? "FALSE" : "TRUE";
+  const roleColor = currentRole === "X" ? "Red" : "Blue";
+  const roleCls = currentRole === "X" ? "text-red-600" : "text-blue-600";
 
   const names = useMemo(() => {
     const raw =
@@ -96,6 +93,14 @@ export default function TrueFalseConnectFourTask({
     return base.length ? base : ["Player 1", "Player 2"];
   }, [task?.playerNames, task?.players, task?.config?.players, memberNames]);
 
+  const activePlayerIndex = isIntraTeam
+    ? (currentTurn % Math.max(names.length, 2))
+    : (
+        Number.isFinite(Number(task?.activePlayerIndex)) ? Number(task.activePlayerIndex) :
+        Number.isFinite(Number(task?.turnIndex)) ? Number(task.turnIndex) :
+        0
+      );
+
   const activeName = names[activePlayerIndex] || `Player ${activePlayerIndex + 1}`;
   const [showVictory, setShowVictory] = useState(false);
 
@@ -109,7 +114,7 @@ export default function TrueFalseConnectFourTask({
         try { new Audio("/sounds/lose.mp3").play(); } catch {}
       }
     }
-  }, [task.winner, teamRole]);
+  }, [task.winner, currentRole]);
 
   // ─── Drop a piece into a column ───
   const dropInColumn = useCallback(
@@ -120,9 +125,9 @@ export default function TrueFalseConnectFourTask({
 
       const cellIdx = idx(row, col);
       const isFalse = statement.isFalse;
-      const shouldBeFalse = teamRole === "X";
+      const shouldBeFalse = currentRole === "X";
       const matchesRole = (shouldBeFalse && isFalse) || (!shouldBeFalse && !isFalse);
-      const placedRole = matchesRole ? teamRole : (teamRole === "X" ? "O" : "X");
+      const placedRole = matchesRole ? currentRole : (currentRole === "X" ? "O" : "X");
 
       const newBoard = [...board];
       newBoard[cellIdx] = placedRole;
@@ -138,8 +143,13 @@ export default function TrueFalseConnectFourTask({
 
       setUsedStatementIds((prev) => new Set(prev).add(statement.id));
       setActiveStatement(null);
+
+      // Advance turn in intra-team mode
+      if (isIntraTeam) {
+        setCurrentTurn((prev) => (prev + 1) % Math.max(names.length, 2));
+      }
     },
-    [board, disabled, teamRole, socket, task.roomCode],
+    [board, disabled, currentRole, isIntraTeam, names.length, socket, task.roomCode],
   );
 
   // ─── Column click (tap-to-place after selecting a statement) ───
@@ -403,11 +413,18 @@ export default function TrueFalseConnectFourTask({
 
       {/* WINNER DISPLAY */}
       {winner && (
-        <div className="mt-6 text-5xl font-bold animate-pulse">
-          {winner === teamRole ? (
-            <span className="text-green-400 drop-shadow-lg">YOU WIN! +10</span>
-          ) : (
-            <span className="text-red-400 drop-shadow-lg">YOU LOSE!</span>
+        <div className="mt-6 text-center animate-pulse">
+          <div className="text-4xl font-bold">
+            {winner === "O" ? (
+              <span className="text-blue-400 drop-shadow-lg">TRUE (Blue) WINS!</span>
+            ) : (
+              <span className="text-red-400 drop-shadow-lg">FALSE (Red) WINS!</span>
+            )}
+          </div>
+          {isIntraTeam && (
+            <div className="text-xl mt-2 font-semibold text-white/80">
+              {winner === "O" ? names[0] : names[1] || "Player 2"} takes the round!
+            </div>
           )}
         </div>
       )}
