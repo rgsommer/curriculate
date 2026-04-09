@@ -306,11 +306,36 @@ function sanitizeTaskShapeByType(type, task) {
 
   // ── Script Play: coerce common AI shapes into lines[] ──
   if (type === TASK_TYPES.SCRIPT_PLAY) {
+    // Helper: flatten a beat/scene object into "Speaker: line" strings
+    const flattenObj = (l) => {
+      if (typeof l === "string") return [l.trim()];
+      if (l && typeof l === "object") {
+        const speaker = String(l.speaker || l.character || l.name || l.role || "").trim();
+
+        // Beat objects may have lines[] (array of strings) inside them
+        const innerLines = Array.isArray(l.lines) ? l.lines : Array.isArray(l.dialogue) ? l.dialogue : null;
+        if (innerLines && innerLines.length) {
+          return innerLines.map((il) => {
+            const txt = String(typeof il === "string" ? il : il?.text || il?.line || il?.say || "").trim();
+            return txt ? (speaker ? `${speaker}: ${txt}` : txt) : "";
+          }).filter(Boolean);
+        }
+
+        const text = String(l.text || l.line || l.say || l.dialogue || "").trim();
+        if (!text) return [];
+        return [speaker ? `${speaker}: ${text}` : text];
+      }
+      return [];
+    };
+
     let lines =
       (Array.isArray(t.lines) && t.lines.length && t.lines) ||
       (Array.isArray(t.config?.lines) && t.config.lines.length && t.config.lines) ||
       (Array.isArray(t.dialogue) && t.dialogue.length && t.dialogue) ||
       (Array.isArray(t.config?.dialogue) && t.config.dialogue.length && t.config.dialogue) ||
+      // beats[] — the schema example format with nested lines per beat
+      (Array.isArray(t.config?.beats) && t.config.beats.length && t.config.beats) ||
+      (Array.isArray(t.beats) && t.beats.length && t.beats) ||
       (Array.isArray(t.scenes) && t.scenes.length && t.scenes) ||
       (Array.isArray(t.config?.scenes) && t.config.scenes.length && t.config.scenes) ||
       null;
@@ -323,19 +348,9 @@ function sanitizeTaskShapeByType(type, task) {
       }
     }
 
-    // Flatten scene objects: { speaker, text/line } → "Speaker: text"
+    // Flatten all entries (handles beats with nested lines[], scene objects, plain strings)
     if (lines) {
-      lines = lines.map((l) => {
-        if (typeof l === "string") return l.trim();
-        if (l && typeof l === "object") {
-          const speaker = String(l.speaker || l.character || l.name || l.role || "").trim();
-          const text = String(l.text || l.line || l.say || l.dialogue || "").trim();
-          if (!text) return "";
-          return speaker ? `${speaker}: ${text}` : text;
-        }
-        return "";
-      }).filter(Boolean);
-
+      lines = lines.flatMap(flattenObj).filter(Boolean);
       t.lines = lines;
       if (t.config && typeof t.config === "object") t.config.lines = lines;
     }
