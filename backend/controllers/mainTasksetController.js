@@ -1225,27 +1225,62 @@ async function attemptAutoFixCoverage({
 }) {
   const fixes = [];
 
-  // Try a few passes; each pass targets a few missing terms.
-  // Keep passes and retries low — each attempt is a full AI call.
-  const maxPasses = 2;
-  const maxTermsPerFix = 8;
+  // Up to 4 passes.  Each pass picks a DIFFERENT high-capacity task and
+  // asks the AI to regenerate it with the missing terms.  We limit each
+  // pass to a manageable number of terms so the AI can actually comply.
+  const maxPasses = 4;
+  const maxTermsPerFix = 6;
 
   let coverage = computeCoverageReport(aiWordBank, finalized);
   if (!coverage.missingCount) return { coverage, fixes };
 
+  // Track which task indices we've already regenerated so each pass
+  // picks a different task, spreading fixes across the taskset.
+  const usedIndices = new Set();
+
   for (let pass = 1; pass <= maxPasses; pass++) {
     if (!coverage.missingCount) break;
 
-    // Pick a task index to regenerate:
-    // Prefer a task type that tends to include explicit vocab naturally.
-    let idx = finalized.findIndex((t) => COVERAGE_FIX_PREFERRED_TYPES.has(t?.taskType));
+    // Pick a task index to regenerate.
+    // Prefer high-capacity preferred types we haven't tried yet.
+    let idx = -1;
+
+    // 1) Try preferred types first (not yet used)
+    for (let i = 0; i < finalized.length; i++) {
+      if (usedIndices.has(i)) continue;
+      if (!finalized[i]) continue;
+      if (COVERAGE_FIX_PREFERRED_TYPES.has(finalized[i].taskType)) {
+        // Prefer tasks with higher concept caps
+        const cap = getConceptCapForType(finalized[i].taskType);
+        if (idx < 0 || cap > getConceptCapForType(finalized[idx]?.taskType)) {
+          idx = i;
+        }
+      }
+    }
+
+    // 2) Fall back to any unused task
+    if (idx < 0) {
+      for (let i = 0; i < finalized.length; i++) {
+        if (!usedIndices.has(i) && finalized[i]) { idx = i; break; }
+      }
+    }
+
+    // 3) Last resort: reuse a preferred-type task
+    if (idx < 0) {
+      idx = finalized.findIndex((t) => COVERAGE_FIX_PREFERRED_TYPES.has(t?.taskType));
+    }
     if (idx < 0) idx = 0;
 
+    usedIndices.add(idx);
+
     const targetTask = finalized[idx];
-    const allowedType = targetTask?.taskType || finalized[0]?.taskType || TASK_TYPES.MULTIPLE_CHOICE;
+    const allowedType = targetTask?.taskType || TASK_TYPES.MULTIPLE_CHOICE;
     const mustHave = retryMustHave[allowedType] || "";
 
-    const targetTerms = coverage.missing.slice(0, maxTermsPerFix);
+    // Take a batch of missing terms sized to what the task type can handle
+    const typeCap = getConceptCapForType(allowedType);
+    const batchSize = Math.min(maxTermsPerFix, typeCap, coverage.missingCount);
+    const targetTerms = coverage.missing.slice(0, batchSize);
     const scopedLines = buildVocabularyLinesFromConcepts(targetTerms);
 
     const fixNote = [
@@ -1273,25 +1308,34 @@ async function attemptAutoFixCoverage({
           difficulty,
           learningGoal,
           topicLabel,
-          // Use ONLY the missing terms to keep the prompt tight.
           vocabularyLines: scopedLines,
           specialConsiderations: fixNote,
           previousTask: attemptTask,
         });
 
         const fin = finalizeTask(allowedType, attemptTask);
-        taskMustIncludeTermsOrThrow(fin, targetTerms);
-        finalized[idx] = fin;
-        success = true;
-        break;
+        // Use warn-only so partial success still counts
+        const stillMissing = taskMustIncludeTermsOrThrow(fin, targetTerms, { warnOnly: true });
+        if (stillMissing.length === 0 || stillMissing.length < targetTerms.length) {
+          // Accept if we covered at least some of the target terms
+          finalized[idx] = fin;
+          success = stillMissing.length === 0;
+          if (stillMissing.length > 0) {
+            errors.push({
+              phase: "coverage-fix",
+              pass, index: idx, taskType: allowedType, attempt,
+              error: `Partial: still missing ${stillMissing.join(", ")}`,
+              targetTerms,
+            });
+          }
+          break;
+        }
+        throw new Error(`Concepts not included: ${stillMissing.join(", ")}`);
       } catch (e) {
         lastErr = e;
         errors.push({
           phase: "coverage-fix",
-          pass,
-          index: idx,
-          taskType: allowedType,
-          attempt,
+          pass, index: idx, taskType: allowedType, attempt,
           error: String(e?.message || e),
           targetTerms,
         });
