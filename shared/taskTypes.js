@@ -60,7 +60,7 @@ export const TASK_TYPES = {
   // Competitive / games
   JEOPARDY: "brain-blitz", // historically “JEOPARDY” in code; UI label is Brain Blitz
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
-  CONNECT_FOUR: "connect-four",
+  TRUE_FALSE_CONNECT_FOUR: "true-false-connect-four",
   FLASHCARDS: "flashcards",
   FLASHCARDS_RACE: "flashcards-race",
   PET_FEEDING: "pet-feeding",
@@ -1421,8 +1421,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     `,
 },
 
-    [TASK_TYPES.CONNECT_FOUR]: {
-    label: "Connect Four",
+    [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]: {
+    label: "True/False Connect Four",
     category: CATEGORY.COMPETITIVE,
     implemented: false,
     demoEligible: false,
@@ -1437,7 +1437,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     intraTeamEnabled: true,
     description:
       [
-        "Connect Four — a 7×6 drop-grid game using true/false statements. Designed as an end-of-session review round that recycles unused terms from earlier tasks.",
+        "True/False Connect Four — a 7×6 drop-grid game using true/false statements. Designed as an end-of-session review round that recycles unused terms from earlier tasks.",
         "",
         "Core loop:",
         "• A 7-column × 6-row grid is displayed. Pieces drop to the lowest open row in a column (gravity).",
@@ -1455,7 +1455,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         "• AI can also generate fresh statements to pad the pool to 20–30 items.",
         "",
         "AI generation / schema hints (for aiTaskSetGenerator):",
-        "taskType: \"connect-four\"",
+        "taskType: \"true-false-connect-four\"",
         "title: short (3–7 words)",
         "prompt: short instructions (optional; UI explains)",
         "timeLimitSeconds: 240–300",
