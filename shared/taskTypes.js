@@ -2076,6 +2076,12 @@ config: {
 
       Vary the position of the correct option across rounds.
 
+      UNIQUE OPTIONS RULE (MANDATORY):
+
+      Every option in a round MUST be unique — no two options may have the same text (case-insensitive).
+      The jokeOption must also be different from all 3 options.
+      If any duplicates exist, replace the duplicate with a new plausible-but-wrong answer.
+
       ANTI-PATTERN CHECK (MANDATORY):
 
       If correctIndex is the same value for all rounds, regenerate the entire task.

@@ -99,7 +99,14 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
         // - 1 obvious-false joke
         // - 1 bluff slot (blank => UI shows "make up and say ____")
 
-        const cleaned = raw.map((o) => normStr(o)).filter(Boolean);
+        // Deduplicate options (case-insensitive) — AI sometimes generates duplicates
+        const seen = new Set();
+        const cleaned = raw.map((o) => normStr(o)).filter(Boolean).filter((o) => {
+          const key = o.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
 
         // Two real options (AI should provide these)
         const realA = cleaned[0] || "Option A";
