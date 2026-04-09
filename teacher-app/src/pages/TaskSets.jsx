@@ -279,6 +279,15 @@ export default function TaskSets() {
   const [reportData, setReportData] = useState(null);
   const reportCacheRef = useRef(new Map());
 
+  // Share modal state
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [shareExpiresAt, setShareExpiresAt] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteSent, setInviteSent] = useState(false);
+
   const loadSets = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -435,16 +444,43 @@ export default function TaskSets() {
       if (!data?.ok || !data?.link) {
         throw new Error(data?.error || "Share failed");
       }
-
-      const url = String(data.link);
-      try {
-        await navigator.clipboard.writeText(url);
-        showToast("Link copied to clipboard");
-      } catch {
-        showToast("Share link created (copy manually)");
-      }
+      setShareLink(String(data.link));
+      setShareExpiresAt(data.expiresAt || "");
+      setInviteEmail("");
+      setInviteMessage("");
+      setInviteSent(false);
+      setShareModalOpen(true);
     } catch (e) {
       setError(e?.message || "Share failed");
+    }
+  };
+
+  const handleCopyShareLink = () => {
+    if (shareLink) {
+      navigator.clipboard.writeText(shareLink).then(() => showToast("Link copied!")).catch(() => {});
+    }
+  };
+
+  const handleSendInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    const token = shareLink.split("/share/")[1];
+    if (!token) { showToast("Invalid share link"); return; }
+    setInviteSending(true);
+    setInviteSent(false);
+    try {
+      const data = await apiFetchJson(`/api/shared/${token}/send-invite`, {
+        method: "POST",
+        body: { toEmail: inviteEmail.trim(), message: inviteMessage.trim() || undefined },
+      });
+      if (!data?.ok) throw new Error(data?.error || "Failed to send invite");
+      setInviteSent(true);
+      setInviteEmail("");
+      setInviteMessage("");
+      showToast("Invite sent!");
+    } catch (e) {
+      showToast(e?.message || "Failed to send invite");
+    } finally {
+      setInviteSending(false);
     }
   };
 
@@ -1231,6 +1267,83 @@ export default function TaskSets() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Share Modal with Send Invite */}
+      {shareModalOpen && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.5)", display: "flex",
+          alignItems: "center", justifyContent: "center", zIndex: 9999,
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: 16, padding: 24,
+            maxWidth: 500, width: "90%", boxShadow: "0 10px 40px rgba(0,0,0,0.1)",
+          }}>
+            <h2 style={{ marginTop: 0, marginBottom: 12 }}>Share Task Set</h2>
+            <p style={{ color: "#6b7280", marginBottom: 16 }}>
+              Share this link with a substitute teacher. It expires in 7 days.
+            </p>
+            <div style={{
+              background: "#f3f4f6", padding: 12, borderRadius: 8,
+              marginBottom: 12, fontFamily: "monospace",
+              wordBreak: "break-all", fontSize: "0.9rem",
+            }}>
+              {shareLink}
+            </div>
+            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16 }}>
+              Expires: {shareExpiresAt ? new Date(shareExpiresAt).toLocaleDateString() : ""}
+            </div>
+
+            {/* Send Invite */}
+            <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 16, marginBottom: 16 }}>
+              <label style={{ fontWeight: 600, fontSize: "0.9rem", display: "block", marginBottom: 6 }}>
+                Send Invite by Email
+              </label>
+              <input
+                type="email"
+                placeholder="substitute@school.edu"
+                value={inviteEmail}
+                onChange={(e) => { setInviteEmail(e.target.value); setInviteSent(false); }}
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: "1px solid #d1d5db", marginBottom: 8,
+                  boxSizing: "border-box", fontSize: "0.9rem",
+                }}
+              />
+              <textarea
+                placeholder="Add a personal message (optional)"
+                value={inviteMessage}
+                onChange={(e) => setInviteMessage(e.target.value)}
+                rows={2}
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: "1px solid #d1d5db", marginBottom: 8,
+                  boxSizing: "border-box", fontSize: "0.9rem", resize: "vertical",
+                }}
+              />
+              <button
+                onClick={handleSendInvite}
+                disabled={inviteSending || !inviteEmail.trim()}
+                style={{ width: "100%", background: inviteSent ? "#10b981" : undefined }}
+              >
+                {inviteSending ? "Sending…" : inviteSent ? "Sent!" : "Send Invite"}
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => { setShareModalOpen(false); setInviteEmail(""); setInviteMessage(""); setInviteSent(false); }}
+                style={{ background: "#e5e7eb", color: "#000" }}
+              >
+                Close
+              </button>
+              <button onClick={handleCopyShareLink}>
+                Copy Link
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
