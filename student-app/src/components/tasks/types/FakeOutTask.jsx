@@ -178,6 +178,10 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
   const pointsPerCorrect = Math.max(1, Math.min(50, Number(cfg.pointsPerCorrect) || 10));
   const readerBonusPoints = Math.max(0, Math.min(50, Number(cfg.readerBonusPoints) || 5));
 
+  // Phase flow: "intro" → "pass" → "game"
+  // "intro" shows what Fake Out is; "pass" gates the reader taking the device; "game" is gameplay
+  const [phase, setPhase] = useState("intro");
+
   const [roundIndex, setRoundIndex] = useState(0);
   const [readerIndex, setReaderIndex] = useState(0); // 0-based
   const [votes, setVotes] = useState(Array(playerCount).fill(null)); // null or 0..3
@@ -190,7 +194,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
   const round = rounds[roundIndex];
 
   useEffect(() => {
-    // reset state on round change
+    // reset state on round change — go to "pass" phase so reader takes device
     setVotes(Array(playerCount).fill(null));
     setRevealed(false);
     setOverlaySeconds(0);
@@ -198,6 +202,8 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
       clearInterval(overlayRef.current);
       overlayRef.current = null;
     }
+    // After the first intro, subsequent rounds go straight to pass
+    if (roundIndex > 0) setPhase("pass");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundIndex, readerIndex, playerCount]);
 
@@ -342,22 +348,106 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
 
   const readerName = playerNames[readerIndex] || `Player ${readerIndex + 1}`;
 
+  // ─── Shared styles ───
+  const bigBtn = (bg = "#22c55e", color = "#fff") => ({
+    padding: "16px 28px",
+    borderRadius: 999,
+    border: "none",
+    background: bg,
+    color,
+    fontWeight: 900,
+    fontSize: "1.3rem",
+    cursor: "pointer",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+  });
+
+  const phaseContainer = {
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    padding: 32,
+    gap: 20,
+  };
+
+  // ─── INTRO PHASE: explain the game ───
+  if (phase === "intro") {
+    return (
+      <div style={phaseContainer}>
+        <div style={{ fontSize: "4rem" }}>🃏</div>
+        <div style={{ fontSize: "2.2rem", fontWeight: 900, color: "#0f172a" }}>Fake Out!</div>
+        <div
+          style={{
+            background: "linear-gradient(135deg, #eef2ff, #f0fdf4)",
+            borderRadius: 20,
+            padding: "20px 28px",
+            maxWidth: 420,
+            width: "100%",
+            textAlign: "left",
+            fontSize: "1.1rem",
+            lineHeight: 1.7,
+            border: "2px solid #e2e8f0",
+          }}
+        >
+          <div>📣 One person is the <strong>Reader</strong> each round</div>
+          <div style={{ marginTop: 10 }}>📱 The Reader takes the device and reads the question + answers aloud</div>
+          <div style={{ marginTop: 10 }}>🤫 Everyone else listens — <strong>no peeking at the screen!</strong></div>
+          <div style={{ marginTop: 10 }}>🗳️ Each player tells the Reader their answer — the Reader taps it in</div>
+          <div style={{ marginTop: 10 }}>🎉 After everyone votes, reveal who got tricked!</div>
+        </div>
+        <div style={{ fontSize: "0.95rem", color: "#64748b", marginTop: 4 }}>
+          {rounds.length} round{rounds.length !== 1 ? "s" : ""} • Reader rotates each round
+        </div>
+        <button
+          type="button"
+          style={bigBtn("#2563eb")}
+          onClick={() => setPhase("pass")}
+        >
+          Let's go! →
+        </button>
+      </div>
+    );
+  }
+
+  // ─── PASS PHASE: hand the device to the reader ───
+  if (phase === "pass") {
+    return (
+      <div style={phaseContainer}>
+        <div style={{ fontSize: "1.3rem", color: "#64748b" }}>
+          Round {roundIndex + 1} of {rounds.length}
+        </div>
+        <div style={{ fontSize: "1.5rem", color: "#334155" }}>📱 Hand the device to:</div>
+        <div style={{ fontSize: "2.8rem", fontWeight: 900, color: "#0f172a", textShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
+          {readerName}
+        </div>
+        <div style={{ fontSize: "1rem", color: "#64748b", maxWidth: 340 }}>
+          {readerName}, you'll read the question and all the answer options out loud.
+          Everyone else — <strong>look away from the screen!</strong>
+        </div>
+        <button
+          type="button"
+          style={bigBtn("#f59e0b", "#000")}
+          onClick={() => setPhase("game")}
+        >
+          I'm {readerName} — I'm ready! →
+        </button>
+      </div>
+    );
+  }
+
+  // ─── GAME PHASE: reading + voting ───
   return (
     <div style={{ padding: 20, height: "100%", display: "flex", flexDirection: "column" }}>
       {/* Header chips */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <div style={{ padding: "6px 10px", borderRadius: 999, border: "2px solid #cbd5e1", fontWeight: 900 }}>
-            🤥 Fake Out
+            🃏 Round {roundIndex + 1} / {rounds.length}
           </div>
           <div style={{ padding: "6px 10px", borderRadius: 999, border: "2px solid #cbd5e1", fontWeight: 900 }}>
-            Round {roundIndex + 1} / {rounds.length}
-          </div>
-          <div style={{ padding: "6px 10px", borderRadius: 999, border: "2px solid #cbd5e1", fontWeight: 900 }}>
-            Reader: {readerName}
-          </div>
-          <div style={{ padding: "6px 10px", borderRadius: 999, border: "2px solid #cbd5e1", fontWeight: 900 }}>
-            🟥 Read the red text aloud
+            📣 Reader: {readerName}
           </div>
         </div>
 
@@ -388,7 +478,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
         </button>
       </div>
 
-      {/* Statement card */}
+      {/* Statement card — Reader reads this aloud */}
       <div
         style={{
           marginTop: 14,
@@ -398,7 +488,9 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
           background: "linear-gradient(135deg, #ffffff, #eef2ff)",
         }}
       >
-        <div style={{ fontWeight: 900, color: "#334155" }}>📣 Reader: read the red parts aloud</div>
+        <div style={{ fontWeight: 900, color: "#334155", fontSize: 14 }}>
+          📣 {readerName}, read the question aloud:
+        </div>
         <div
           style={{
             marginTop: 8,
@@ -410,8 +502,8 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
         >
           {round.statement}
         </div>
-        <div style={{ marginTop: 8, color: "#475569", fontSize: 14 }}>
-          Team listens and discusses briefly. Reader taps each player's vote under the option they chose.
+        <div style={{ marginTop: 8, color: "#475569", fontSize: 13 }}>
+          Now read each option aloud. After everyone picks, tap their name under their choice.
         </div>
       </div>
 
@@ -425,7 +517,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
             const isBlank = Array.isArray(round?.blanks) ? !!round.blanks[i] : !normStr(opt);
 
             const displayText = isBlank
-              ? `${readerName} make up and say: _____`
+              ? `🎭 Make something up! Say it with a straight face...`
               : opt;
 
             return (
@@ -440,7 +532,9 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                  <div style={{ fontWeight: 900 }}>Option {i + 1}</div>
+                  <div style={{ fontWeight: 900, color: "#b91c1c" }}>
+                    Read: "Option {i + 1}{!isBlank ? ":" : ""}"
+                  </div>
                   {isJoke && (
                     <div
                       style={{
@@ -454,7 +548,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
                         whiteSpace: "nowrap",
                       }}
                     >
-                      🤪 Obviously False
+                      🤪 Silly one
                     </div>
                   )}
                   {isBlank && (
@@ -462,20 +556,20 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
                       style={{
                         padding: "4px 10px",
                         borderRadius: 999,
-                        background: "#fee2e2",
-                        border: "2px solid #fecaca",
-                        color: "#991b1b",
+                        background: "#fef3c7",
+                        border: "2px solid #fcd34d",
+                        color: "#92400e",
                         fontWeight: 900,
                         fontSize: 12,
                         whiteSpace: "nowrap",
                       }}
                     >
-                      Reader invents
+                      🎭 You invent this one!
                     </div>
                   )}
                 </div>
 
-                <div style={{ marginTop: 8, fontSize: 16, lineHeight: 1.25, color: "#b91c1c", fontWeight: 900 }}>
+                <div style={{ marginTop: 8, fontSize: 16, lineHeight: 1.25, color: isBlank ? "#92400e" : "#b91c1c", fontWeight: 900, fontStyle: isBlank ? "italic" : "normal" }}>
                   {displayText}
                 </div>
 
