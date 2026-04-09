@@ -1395,8 +1395,20 @@ export async function createAiTaskset(req, res) {
     const errors = [];
     const attemptsByTask = [];
 
+    const deferredHangmanSlots = []; // indices where Hangman will be built from leftover words
+
     for (let i = 0; i < safeCount; i++) {
       const expectedType = pool[i % pool.length];
+
+      // ── Defer Hangman: skip in main loop, build from unused words later ──
+      if (expectedType === TASK_TYPES.HANGMAN_DUEL && aiWordBank) {
+        deferredHangmanSlots.push(i);
+        finalized.push(null); // placeholder
+        attemptsByTask.push(0);
+        sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
+        continue;
+      }
+
       const candidate = rawTasks[i] || null;
 
       const mustHave = retryMustHave[expectedType] || "";
@@ -1493,6 +1505,103 @@ export async function createAiTaskset(req, res) {
       });
       coverage = result.coverage || coverage;
       fixes = result.fixes || [];
+    }
+
+    // ── Deferred Hangman: build from unused words (prioritize uncovered, fill with others) ──
+    if (deferredHangmanSlots.length > 0 && aiWordBank) {
+      sendSSE({ type: "phase", phase: "hangman", message: "Building Hangman from vocabulary…" });
+
+      // Recompute coverage against non-null tasks
+      const liveTasksForCoverage = finalized.filter((t) => t !== null);
+      const hangmanCoverage = computeCoverageReport(aiWordBank, liveTasksForCoverage);
+      const allWords = _parseConceptList(aiWordBank);
+
+      for (const slotIdx of deferredHangmanSlots) {
+        // Prioritize uncovered words, then fill from covered words to reach 8
+        const TARGET = 8;
+        const uncovered = [...(hangmanCoverage.missing || [])];
+        const covered = [...(hangmanCoverage.covered || [])];
+
+        // Shuffle both so we don't always pick the same ones
+        for (let j = uncovered.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [uncovered[j], uncovered[k]] = [uncovered[k], uncovered[j]];
+        }
+        for (let j = covered.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [covered[j], covered[k]] = [covered[k], covered[j]];
+        }
+
+        // Take uncovered first, then fill from covered
+        const picked = uncovered.slice(0, TARGET);
+        if (picked.length < TARGET) {
+          picked.push(...covered.slice(0, TARGET - picked.length));
+        }
+        // Last resort: if still < TARGET, fill from allWords
+        if (picked.length < TARGET) {
+          const used = new Set(picked.map((w) => w.toLowerCase()));
+          for (const w of allWords) {
+            if (picked.length >= TARGET) break;
+            if (!used.has(w.toLowerCase())) {
+              picked.push(w);
+              used.add(w.toLowerCase());
+            }
+          }
+        }
+
+        // Build the Hangman task — NO AI call needed
+        const wordsByStation = picked.slice(0, TARGET).map((word, idx) => ({
+          word: word.toUpperCase(),
+          hint: `Think about this ${word.length}-letter word from your vocabulary`,
+        }));
+
+        try {
+          const hangmanTask = finalizeTask(TASK_TYPES.HANGMAN_DUEL, {
+            taskType: TASK_TYPES.HANGMAN_DUEL,
+            title: `Vocabulary Hangman`,
+            prompt: "Guess the word from the hint! Each station has a different word.",
+            timeLimitSeconds: 120,
+            config: { wordsByStation },
+            wordsByStation,
+          });
+
+          finalized[slotIdx] = hangmanTask;
+          attemptsByTask[slotIdx] = 1;
+          console.log(`[Hangman] Built from ${uncovered.length} unused + ${Math.max(0, picked.length - uncovered.length)} reused words`);
+        } catch (e) {
+          console.warn(`[Hangman] Deferred build failed:`, e?.message);
+          // Fall back to AI generation
+          try {
+            const aiTask = await regenerateSingleTask({
+              allowedType: TASK_TYPES.HANGMAN_DUEL,
+              mustHave: retryMustHave[TASK_TYPES.HANGMAN_DUEL] || "",
+              subject, gradeLevel, difficulty, learningGoal, topicLabel,
+              vocabularyLines: buildVocabularyLinesFromConcepts(picked),
+              specialConsiderations: mergedSpecialConsiderations,
+            });
+            finalized[slotIdx] = finalizeTask(TASK_TYPES.HANGMAN_DUEL, aiTask);
+            attemptsByTask[slotIdx] = 2;
+          } catch (e2) {
+            console.error(`[Hangman] AI fallback also failed:`, e2?.message);
+            // Remove the null placeholder — don't block the whole taskset
+            finalized[slotIdx] = null;
+          }
+        }
+
+        sendSSE({ type: "progress", done: finalized.filter((t) => t !== null).length, total: safeCount, taskType: TASK_TYPES.HANGMAN_DUEL });
+      }
+
+      // Remove any remaining null slots (if Hangman failed completely)
+      const beforeLen = finalized.length;
+      for (let i = finalized.length - 1; i >= 0; i--) {
+        if (finalized[i] === null) finalized.splice(i, 1);
+      }
+      if (finalized.length < beforeLen) {
+        console.warn(`[Hangman] Removed ${beforeLen - finalized.length} failed Hangman slot(s)`);
+      }
+
+      // Recompute final coverage including Hangman words
+      coverage = computeCoverageReport(aiWordBank, finalized);
     }
 
     // ✅ Teacher-facing report (actual coverage + Bloom + efficiency)
