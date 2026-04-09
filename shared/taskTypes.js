@@ -60,6 +60,7 @@ export const TASK_TYPES = {
   // Competitive / games
   JEOPARDY: "brain-blitz", // historically “JEOPARDY” in code; UI label is Brain Blitz
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
+  CONNECT_FOUR: "connect-four",
   FLASHCARDS: "flashcards",
   FLASHCARDS_RACE: "flashcards-race",
   PET_FEEDING: "pet-feeding",
@@ -1419,6 +1420,53 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },
+
+    [TASK_TYPES.CONNECT_FOUR]: {
+    label: "Connect Four",
+    category: CATEGORY.COMPETITIVE,
+    implemented: false,
+    demoEligible: false,
+    generatorEligible: false,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 300,
+    interTeamEnabled: true,
+    intraTeamEnabled: true,
+    description:
+      [
+        "Connect Four — a 7×6 drop-grid game using true/false statements. Designed as an end-of-session review round that recycles unused terms from earlier tasks.",
+        "",
+        "Core loop:",
+        "• A 7-column × 6-row grid is displayed. Pieces drop to the lowest open row in a column (gravity).",
+        "• A large pool of true/false statements is shown as tappable bubbles.",
+        "• Each team/side is assigned TRUE (Blue/O) or FALSE (Red/X).",
+        "• On your turn, pick a statement and tap a column. If the statement matches your role's truthiness, your piece drops in that column; otherwise the opponent's piece drops.",
+        "• First to 4-in-a-row (horizontal, vertical, or diagonal) wins.",
+        "",
+        "Modes:",
+        "• Inter-team: two teams play head-to-head, alternating turns.",
+        "• Intra-team: team splits in half (like Live Debate) for a within-team duel.",
+        "",
+        "Term recycling:",
+        "• The taskset runner collects unused/remaining terms from prior tasks and feeds them into Connect Four's statement pool.",
+        "• AI can also generate fresh statements to pad the pool to 20–30 items.",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: \"connect-four\"",
+        "title: short (3–7 words)",
+        "prompt: short instructions (optional; UI explains)",
+        "timeLimitSeconds: 240–300",
+        "statements: [ { text: string, isFalse: boolean } ]  // 20–30 statements recommended",
+        "",
+        "Pedagogical benefits: high-volume review of terms, strategic thinking, gravity mechanic adds spatial reasoning, end-of-session energy burn with learning reinforcement.",
+      ].join("\n"),
+
+    demoPrompt: "",
+    aiPrompt: "",
+  },
 
   // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
   [TASK_TYPES.FLASHCARDS]: {
