@@ -2383,21 +2383,41 @@ IMPORTANT:
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "script-play".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
-    - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
+    - Include non-empty root fields: taskType, title, prompt, lines.
+    - "lines" MUST be a flat array of 8–16 strings in "Speaker: dialogue" format.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create a short script (8–16 lines) for 2–4 speakers that teaches a concept. Include stage directions lightly and add 3 comprehension/debrief questions.
-    
+    - Write a short script for 2–4 speakers (e.g. Narrator, Student A, Student B) that teaches the assigned vocabulary/concepts through a meaningful story or scenario.
+    - The script should directly incorporate the topic and vocabulary — characters should discuss, explain, or demonstrate the concepts through dialogue.
+    - Include light stage directions in parentheses within lines, e.g. "Ava: (whispering) Look at this old map..."
+    - The script must tell a coherent mini-story with a beginning, middle, and end.
+
+    Example output:
+    {
+      "taskType": "script-play",
+      "title": "The Discovery at the River",
+      "prompt": "Pass the device speaker-to-speaker. Read your lines with expression!",
+      "lines": [
+        "Narrator: The students gathered by the riverbank on a cool morning.",
+        "Ava: (pointing) Look — the water level is much lower than last year.",
+        "Noah: That's because of the drought. Less rainfall means less water flow.",
+        "Ava: But what about the fish? They need deeper water to survive.",
+        "Narrator: Noah knelt down and examined the muddy bank.",
+        "Noah: (serious) See these marks? The river used to come up to here.",
+        "Ava: So the ecosystem is already changing. We should document this.",
+        "Narrator: They took photos and notes, determined to share their findings."
+      ]
+    }
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - "lines" must be a FLAT array of strings — NOT nested objects, NOT beats.
+    - Minimum 8 lines. Each line must be a non-empty string.
+    - Ensure the script is meaningful and relevant to the assigned topic/vocabulary.
     `,
 },
 
