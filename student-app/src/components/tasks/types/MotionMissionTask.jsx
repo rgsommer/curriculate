@@ -25,9 +25,11 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
   const activityPrompt = task?.prompt || task?.activity || "Jump 10 times";
   const activityName = useMemo(() => String(activityPrompt || "").trim() || "Jump 10 times", [activityPrompt]);
 
-  const config = ACTIVITY_CONFIG[activityName] || ACTIVITY_CONFIG["Jump 10 times"];
-  const usedFallback = !ACTIVITY_CONFIG[activityName];
-  const { emoji, target, file } = config;
+  const config = ACTIVITY_CONFIG[activityName] || null;
+  const hasConfiguredActivity = !!ACTIVITY_CONFIG[activityName];
+  const emoji = config?.emoji || "🏃‍♂️";
+  const target = config?.target || 10;
+  const file = config?.file || null;
 
   const [animData, setAnimData] = useState(null);
 
@@ -158,35 +160,32 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center h-full p-6 md:p-8 bg-gradient-to-br from-orange-600 via-red-600 to-pink-700 text-white overflow-hidden">
-      <h1 className="absolute top-6 left-1/2 -translate-x-1/2 text-5xl md:text-7xl font-black drop-shadow-2xl z-10">
+    <div className="relative flex flex-col items-center h-full p-6 md:p-8 bg-gradient-to-br from-orange-600 via-red-600 to-pink-700 text-white overflow-hidden">
+      <h1 className="text-5xl md:text-7xl font-black drop-shadow-2xl z-10 mt-2 mb-4 text-center">
         MOTION MISSION!
       </h1>
 
-      {/* Demo phase: watch + copy */}
+      {/* Demo phase: read prompt + start */}
       {phase === "demo" && (
-        <div className="text-center mt-20 md:mt-24 w-full max-w-4xl">
-          <div className="text-3xl md:text-5xl font-black mb-4 drop-shadow-2xl">
-            Watch and Copy
-          </div>
+        <div className="text-center w-full max-w-4xl flex-1 flex flex-col items-center justify-center">
+          {hasConfiguredActivity && (
+            <>
+              <div className="text-3xl md:text-5xl font-black mb-4 drop-shadow-2xl">
+                Watch and Copy
+              </div>
+              <div className="mx-auto w-[70vw] max-w-md md:max-w-lg flex items-center justify-center rounded-3xl bg-black/20 border border-white/20 shadow-2xl" style={{ maxHeight: "50vh" }}>
+                {animData ? (
+                  <Lottie animationData={animData} loop autoplay style={{ width: "100%", height: "100%", maxHeight: "50vh" }} />
+                ) : (
+                  <div className="text-8xl md:text-[7rem] animate-bounce drop-shadow-2xl">{emoji}</div>
+                )}
+              </div>
+            </>
+          )}
 
-          <div className="mx-auto w-[70vw] max-w-md md:max-w-lg flex items-center justify-center rounded-3xl bg-black/20 border border-white/20 shadow-2xl" style={{ maxHeight: "75vh" }}>
-            {animData ? (
-              <Lottie animationData={animData} loop autoplay style={{ width: "100%", height: "100%", maxHeight: "75vh" }} />
-            ) : (
-              <div className="text-8xl md:text-[7rem] animate-bounce drop-shadow-2xl">{emoji}</div>
-            )}
-          </div>
-
-          <div className="mt-5 text-3xl md:text-5xl font-black text-yellow-200 drop-shadow-2xl">
+          <div className="mt-5 px-4 text-2xl md:text-4xl font-black text-yellow-200 drop-shadow-2xl leading-tight" style={{ maxWidth: "90vw" }}>
             {activityName}
           </div>
-
-          {usedFallback && (
-            <div className="mt-2 text-base md:text-lg font-extrabold text-white/90">
-              Activity not specified — default mission loaded.
-            </div>
-          )}
 
           <div className="mt-6 flex flex-col md:flex-row gap-3 items-center justify-center">
             <button
@@ -217,7 +216,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
               Start
             </button>
             <div className="opacity-85 text-lg md:text-xl font-bold">
-              Copy the motion. Then tap <span className="text-yellow-200">DONE</span>.
+              Follow the instructions, then tap <span className="text-yellow-200">DONE</span>.
             </div>
           </div>
         </div>
@@ -225,7 +224,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
 
       {/* Countdown */}
       {phase === "countdown" && !(presenter?.showCountdown) && (
-        <div className="text-center mt-24">
+        <div className="text-center flex-1 flex flex-col items-center justify-center">
           <div className="text-3xl md:text-4xl font-extrabold opacity-90">Get ready…</div>
           <div className="mt-4 text-7xl md:text-9xl font-black animate-bounce drop-shadow-2xl">
             {countdown}
@@ -238,27 +237,25 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
 
       {/* Active */}
       {phase === "active" && (
-        <div className="mt-24 w-full max-w-5xl flex flex-col items-center">
-          <div className="text-2xl md:text-3xl font-black mb-3">{activityName}</div>
+        <div className="w-full max-w-5xl flex flex-col items-center flex-1 justify-center">
+          <div className="text-2xl md:text-3xl font-black mb-3 px-4 text-center leading-tight">{activityName}</div>
 
-          {usedFallback && (
-            <div className="-mt-1 mb-3 text-base md:text-lg font-extrabold text-white/90">
-              Activity not specified — default mission loaded.
+          {hasConfiguredActivity && (
+            <div className="w-[70vw] max-w-md md:max-w-lg flex items-center justify-center rounded-3xl bg-black/20 border border-white/20 shadow-2xl" style={{ maxHeight: "50vh" }}>
+              {animData ? (
+                <Lottie animationData={animData} loop autoplay style={{ width: "100%", height: "100%", maxHeight: "50vh" }} />
+              ) : (
+                <div className="text-8xl md:text-[7rem] animate-bounce drop-shadow-2xl">{emoji}</div>
+              )}
             </div>
           )}
 
-          <div className="w-[70vw] max-w-md md:max-w-lg flex items-center justify-center rounded-3xl bg-black/20 border border-white/20 shadow-2xl" style={{ maxHeight: "75vh" }}>
-            {animData ? (
-              <Lottie animationData={animData} loop autoplay style={{ width: "100%", height: "100%", maxHeight: "75vh" }} />
-            ) : (
-              <div className="text-8xl md:text-[7rem] animate-bounce drop-shadow-2xl">{emoji}</div>
-            )}
-          </div>
-
           <div className="mt-4 flex items-center gap-4 flex-wrap justify-center">
-            <div className="px-5 py-3 rounded-2xl bg-white/10 border border-white/15 shadow text-lg md:text-xl font-extrabold">
-              Optional motion count: <span className="text-yellow-200">{count}</span> / {target}
-            </div>
+            {!noMotionSupport && (
+              <div className="px-5 py-3 rounded-2xl bg-white/10 border border-white/15 shadow text-lg md:text-xl font-extrabold">
+                Motion count: <span className="text-yellow-200">{count}</span> / {target}
+              </div>
+            )}
 
             <button
               type="button"
@@ -277,7 +274,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
 
           {noMotionSupport && !done && (
             <div className="mt-3 text-lg md:text-xl font-bold opacity-90">
-              Motion sensor not available — that's okay. Just copy the motion and tap DONE.
+              Follow the instructions and tap DONE when finished.
             </div>
           )}
         </div>
@@ -285,7 +282,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
 
       {/* Done */}
       {phase === "done" && (
-        <div className="text-center mt-24">
+        <div className="text-center flex-1 flex flex-col items-center justify-center">
           <div className="text-8xl md:text-9xl font-black text-yellow-200 drop-shadow-2xl">NICE!</div>
           <div className="mt-4 text-3xl md:text-4xl font-extrabold opacity-90">Mission complete.</div>
         </div>

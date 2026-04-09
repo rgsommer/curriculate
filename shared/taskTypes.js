@@ -902,17 +902,21 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
       Generate ONE Curriculate task object with taskType "motion-mission".
-      
+
       Hard requirements:
       - Output ONLY a single JSON object (no markdown, no commentary).
       - Include non-empty root fields: taskType, title, prompt.
       - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
       - Keep language age-appropriate and classroom-safe.
       - Avoid copyrighted passages; write original content.
-      
+
       Task-specific guidance:
-      - Create a quick movement-based challenge tied to content (e.g., act out a concept, move to corners, gestures). Include clear start/stop cues and safety constraints.
-      
+      - Create a quick movement-based challenge tied to the topic (e.g., act out a concept, mime an action, move to corners, gestures).
+      - The "prompt" field is displayed directly to students on screen. Write it as second-person instructions addressed to the student.
+      - IMPORTANT: Do NOT reference a teacher giving verbal cues (no "when the teacher says Start"). The student reads the prompt on screen and clicks a Start button themselves, then taps DONE when finished.
+      - Include safety reminders (e.g., "Remember to move safely and be aware of your space!").
+      - Keep the mission to 2–4 clear steps. Mention how many times to repeat if applicable.
+
       Common failure prevention:
       - Do not omit required arrays/fields; satisfy minimum item counts.
       - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
