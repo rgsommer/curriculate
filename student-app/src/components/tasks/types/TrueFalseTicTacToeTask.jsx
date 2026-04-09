@@ -13,6 +13,7 @@ export default function TrueFalseTicTacToeTask({
   const [usedStatementIds, setUsedStatementIds] = useState(new Set());
   const [activeStatement, setActiveStatement] = useState(null); // tap-to-place
   const [hintPulse, setHintPulse] = useState(false); // flash grid when statement selected
+  const hasSubmittedRef = useRef(false); // prevent double submission
 
   // ─── Local turn management ───
   // Player 0 = "O" (TRUE / Blue), Player 1 = "X" (FALSE / Red)
@@ -189,6 +190,46 @@ export default function TrueFalseTicTacToeTask({
   };
 
   const { winner, line: winLine } = calculateWinner(board);
+  const boardFull = board.every((c) => c !== null);
+
+  // ─── Submit score when game ends (win or draw) ───
+  useEffect(() => {
+    if (hasSubmittedRef.current) return;
+    if (!winner && !boardFull) return;
+
+    hasSubmittedRef.current = true;
+
+    const POINTS_WIN = 100;
+    const POINTS_DRAW = 25;
+
+    // Count pieces for each side
+    const oCount = board.filter((c) => c === "O").length;
+    const xCount = board.filter((c) => c === "X").length;
+
+    // In intra-team: player 0 = O, player 1 = X
+    // Points go to the winning player; draw = participation points
+    const pointsEarned = winner ? POINTS_WIN : POINTS_DRAW;
+
+    onSubmit?.({
+      type: "true-false-tictactoe",
+      taskType: "true-false-tictactoe",
+      gameComplete: true,
+      completed: true,
+      winner: winner || "draw",
+      winnerLabel: winner === "O" ? "TRUE (Blue)" : winner === "X" ? "FALSE (Red)" : "Draw",
+      winnerPlayer: winner
+        ? (winner === "O" ? names[0] : names[1] || "Player 2")
+        : null,
+      winLine: winLine || null,
+      board: [...board],
+      movesPlayed: board.filter((c) => c !== null).length,
+      oCount,
+      xCount,
+      players: names,
+      pointsEarned,
+      submittedAt: new Date().toISOString(),
+    });
+  }, [winner, boardFull]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Defensive: if statements are missing, try common shapes so the game is still playable.
   const statements = useMemo(() => {

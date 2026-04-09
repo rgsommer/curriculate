@@ -100,6 +100,7 @@ export default function TrueFalseConnectFourTask({
   const [hintPulse, setHintPulse] = useState(false);
   const [droppingCol, setDroppingCol] = useState(null);
   const [lastDrop, setLastDrop] = useState(null);
+  const hasSubmittedRef = useRef(false);
 
   // ─── Local turn management ───
   const isIntraTeam = !teamRoleProp;
@@ -253,6 +254,42 @@ export default function TrueFalseConnectFourTask({
   const allowDrop = (e) => e.preventDefault();
 
   const { winner, line: winLine } = calculateWinner(board);
+  const boardFull = board.every((c) => c !== null);
+
+  // ─── Submit score when game ends (win or draw) ───
+  useEffect(() => {
+    if (hasSubmittedRef.current) return;
+    if (!winner && !boardFull) return;
+
+    hasSubmittedRef.current = true;
+
+    const POINTS_WIN = 150; // more points than TicTacToe — bigger game
+    const POINTS_DRAW = 40;
+
+    const oCount = board.filter((c) => c === "O").length;
+    const xCount = board.filter((c) => c === "X").length;
+    const pointsEarned = winner ? POINTS_WIN : POINTS_DRAW;
+
+    onSubmit?.({
+      type: "true-false-connect-four",
+      taskType: "true-false-connect-four",
+      gameComplete: true,
+      completed: true,
+      winner: winner || "draw",
+      winnerLabel: winner === "O" ? "TRUE (Blue)" : winner === "X" ? "FALSE (Red)" : "Draw",
+      winnerPlayer: winner
+        ? (winner === "O" ? names[0] : names[1] || "Player 2")
+        : null,
+      winLine: winLine || null,
+      board: [...board],
+      movesPlayed: board.filter((c) => c !== null).length,
+      oCount,
+      xCount,
+      players: names,
+      pointsEarned,
+      submittedAt: new Date().toISOString(),
+    });
+  }, [winner, boardFull]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Statements pool ───
   const statements = useMemo(() => {
