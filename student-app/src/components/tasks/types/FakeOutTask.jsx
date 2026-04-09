@@ -43,10 +43,12 @@ function seededShuffle(array, seedStr) {
 const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, memberNames = [] }) => {
   const cfg = task?.config && typeof task.config === "object" ? task.config : {};
 
-  const playerCount = Math.max(2, Math.min(8, Number(cfg.playerCount) || 4));
+  // Use real team size when we have real names; fall back to config
+  const realNames = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+  const playerCount = Math.max(2, Math.min(8,
+    realNames.length > 0 ? realNames.length : (Number(cfg.playerCount) || 4)
+  ));
   const playerNames = useMemo(() => {
-    // Prefer real team member names passed from TaskRunner, fall back to config, then generic
-    const realNames = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
     const cfgNames = Array.isArray(cfg.playerNames) ? cfg.playerNames : [];
     const cleaned = [];
     for (let i = 0; i < playerCount; i++) {
