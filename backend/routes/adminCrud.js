@@ -4,6 +4,7 @@ import AccessCode from "../models/AccessCode.js";
 import SystemEmailTemplate from "../models/SystemEmailTemplate.js";
 import ReferralProgramSettings from "../models/ReferralProgramSettings.js";
 import SharedTasksetLink from "../models/SharedTasksetLink.js";
+import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 
 const router = express.Router();
 
@@ -124,6 +125,85 @@ router.delete("/access-codes/:id", ...adminRequired, async (req, res) => {
     return res.status(500).json({ ok: false, error: "Failed to delete access code." });
   }
 });
+
+// POST /api/admin/access-codes/:id/send
+// Send an access code to an email address using the "access-code-invite" template.
+router.post("/access-codes/:id/send", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const toEmail = String(req.body?.toEmail || "").trim();
+    if (!id) return res.status(400).json({ ok: false, error: "Missing code id." });
+    if (!toEmail) return res.status(400).json({ ok: false, error: "Missing toEmail." });
+
+    const doc = await AccessCode.findById(id).lean();
+    if (!doc) return res.status(404).json({ ok: false, error: "Access code not found." });
+
+    const senderName =
+      String(req.user?.name || req.user?.fullName || req.user?.displayName || "").trim() ||
+      "Curriculate Admin";
+
+    // Load the editable template (upsert default if missing)
+    let template = await SystemEmailTemplate.findOne({ key: "access-code-invite" }).lean();
+    if (!template) {
+      template = await SystemEmailTemplate.create({
+        key: "access-code-invite",
+        label: "Access code invite",
+        subject: "Your Curriculate access code from {{SENDER_NAME}}",
+        html: DEFAULT_ACCESS_CODE_HTML,
+        enabled: true,
+      });
+    }
+
+    const signupUrl = process.env.TEACHER_APP_ORIGIN
+      ? `${process.env.TEACHER_APP_ORIGIN}/signup`
+      : "https://set.curriculate.net/signup";
+
+    const vars = {
+      SENDER_NAME: senderName,
+      ACCESS_CODE: doc.code,
+      PLAN_TIER: doc.planTier || "FREE",
+      SIGNUP_URL: signupUrl,
+      CUSTOM_MESSAGE: req.body?.message
+        ? String(req.body.message).replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        : "",
+    };
+
+    const subject = _render(template.subject || "", vars);
+    const html = _render(template.html || "", vars);
+
+    await sendSystemEmail({ to: toEmail, subject, html });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin-access-codes] send failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to send email: " + (err?.message || err) });
+  }
+});
+
+function _render(str, vars) {
+  let out = String(str || "");
+  for (const [k, v] of Object.entries(vars || {})) {
+    out = out.replaceAll(`{{${k}}}`, String(v ?? ""));
+  }
+  return out;
+}
+
+const DEFAULT_ACCESS_CODE_HTML = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="color:#1e293b;margin-bottom:12px;">You've been invited to Curriculate!</h2>
+  <p style="color:#334155;">{{SENDER_NAME}} has given you a <strong>{{PLAN_TIER}}</strong> access code to get started.</p>
+  <div style="background:#f0f9ff;border:2px dashed #0ea5e9;border-radius:12px;padding:16px;text-align:center;margin:20px 0;">
+    <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Your Access Code</div>
+    <div style="font-size:28px;font-weight:900;letter-spacing:3px;color:#0369a1;">{{ACCESS_CODE}}</div>
+  </div>
+  <p style="color:#334155;">Use this code when you sign up:</p>
+  <div style="text-align:center;margin:20px 0;">
+    <a href="{{SIGNUP_URL}}" style="display:inline-block;background:linear-gradient(135deg,#0ea5e9,#6366f1);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">Sign Up Now</a>
+  </div>
+  {{CUSTOM_MESSAGE}}
+  <p style="color:#94a3b8;font-size:13px;margin-top:24px;">Curriculate — AI-Powered Station-Based Learning</p>
+</div>
+`.trim();
 
 // ============================================================
 // Admin: Email templates (get + update)

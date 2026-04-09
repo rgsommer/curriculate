@@ -1457,6 +1457,8 @@ if (st?.ok && st.exists) {
   const [tier, setTier] = useState("PRO");
   const [seats, setSeats] = useState(1);
   const [expiresAt, setExpiresAt] = useState(""); // ISO date (YYYY-MM-DD) or empty
+  const [codeEmail, setCodeEmail] = useState("");  // optional: email to send the code to
+  const [codeSending, setCodeSending] = useState(null); // code _id currently being sent
 
   const load = async () => {
     if (!isAdmin) return;
@@ -1526,10 +1528,8 @@ if (st?.ok && st.exists) {
     setBusy(true);
     try {
       const payload = {
-        // Backend expects planTier/maxSeats (tier/seats are tolerated in UI but may be ignored server-side)
         planTier: tier,
         maxSeats: Math.max(1, Number(seats) || 1),
-        // Keep as ISO string; server can store as Date
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       };
 
@@ -1537,11 +1537,24 @@ if (st?.ok && st.exists) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }); // apiFetch returns JSON
+      });
 
       if (!data?.ok) {
         setErr(data?.error || "Could not create code.");
         return;
+      }
+
+      // If an email was provided, send the code immediately
+      if (codeEmail.trim() && data.accessCode?._id) {
+        try {
+          await apiFetchJson(`/api/admin/access-codes/${data.accessCode._id}/send`, {
+            method: "POST",
+            body: { toEmail: codeEmail.trim() },
+          });
+          setCodeEmail("");
+        } catch (emailErr) {
+          setErr("Code created but email failed: " + (emailErr?.message || emailErr));
+        }
       }
 
       await load();
@@ -1550,6 +1563,25 @@ if (st?.ok && st.exists) {
       setErr(e?.message || "Network error");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const sendCodeEmail = async (codeId, toEmail) => {
+    if (!toEmail) return;
+    setCodeSending(codeId);
+    setErr("");
+    try {
+      const data = await apiFetchJson(`/api/admin/access-codes/${codeId}/send`, {
+        method: "POST",
+        body: { toEmail },
+      });
+      if (!data?.ok) throw new Error(data?.error || "Send failed");
+      setErr(""); // clear any previous error
+      alert("Email sent to " + toEmail);
+    } catch (e) {
+      setErr(e?.message || "Failed to send email");
+    } finally {
+      setCodeSending(null);
     }
   };
 
@@ -1871,12 +1903,23 @@ if (st?.ok && st.exists) {
             />
           </div>
 
+          <div style={{ minWidth: 240 }}>
+            <label style={{ ...ui.labelLight }}>Send to email (optional)</label>
+            <input
+              type="email"
+              placeholder="teacher@school.edu"
+              value={codeEmail}
+              onChange={(e) => setCodeEmail(e.target.value)}
+              style={ui.inputLight}
+            />
+          </div>
+
           <button
             onClick={create}
             disabled={busy}
             style={{ ...ui.buttonPrimary, minWidth: 170 }}
           >
-            {busy ? "Working…" : "Create code"}
+            {busy ? "Working…" : codeEmail.trim() ? "Create & Send" : "Create code"}
           </button>
 
           <button
@@ -1936,7 +1979,27 @@ if (st?.ok && st.exists) {
                     <td style={{ padding: "8px 6px" }}>
                     {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}
                   </td>
-                  <td style={{ padding: "8px 6px" }}>
+                  <td style={{ padding: "8px 6px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      disabled={busy || codeSending === c._id}
+                      onClick={() => {
+                        const email = prompt("Send this code to email address:");
+                        if (email) sendCodeEmail(c._id, email);
+                      }}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(14,165,233,0.35)",
+                        background: "rgba(14,165,233,0.10)",
+                        color: "#0369a1",
+                        fontWeight: 900,
+                        cursor: (busy || codeSending === c._id) ? "not-allowed" : "pointer",
+                      }}
+                      title="Email this code to someone"
+                    >
+                      {codeSending === c._id ? "Sending…" : "Send"}
+                    </button>
                     <button
                       type="button"
                       disabled={busy}
