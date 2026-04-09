@@ -1853,21 +1853,26 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
       Generate ONE Curriculate task object with taskType "live-debate".
-      
+
       Hard requirements:
       - Output ONLY a single JSON object (no markdown, no commentary).
-      - Include non-empty root fields: taskType, title, prompt.
+      - Include non-empty root fields: taskType, title, prompt, postulate.
+      - "postulate" is the debate topic/resolution statement (e.g. "Social media does more harm than good").
+        This MUST be a clear, debatable proposition — NOT a generic instruction.
+      - "prompt" is a brief student-facing instruction (e.g. "Argue for or against the topic below").
+      - "title" is a short label (e.g. "Social Media Debate").
       - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
       - Keep language age-appropriate and classroom-safe.
       - Avoid copyrighted passages; write original content.
-      
+
       Task-specific guidance:
-      - Provide a debate resolution plus 3 pro and 3 con starting points, and 4 judging criteria (evidence, clarity, respect, rebuttal).
-      
+      - Provide a debate resolution in "postulate" plus 3 pro and 3 con starting points in config.proPoints / config.conPoints.
+      - Include 4 judging criteria (evidence, clarity, respect, rebuttal) in config.criteria.
+
       Common failure prevention:
       - Do not omit required arrays/fields; satisfy minimum item counts.
       - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-      - Ensure prompts are student-facing instructions (what to do).
+      - The "postulate" field MUST contain the actual debate topic, not a task instruction.
       `,
 },
 

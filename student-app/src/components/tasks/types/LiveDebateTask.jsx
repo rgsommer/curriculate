@@ -24,8 +24,8 @@ export default function LiveDebateTask({
   const connected = socket && (socket.connected === undefined ? true : socket.connected);
 
   // ── Solo / intra-team detection ────────────────────────────
-  // If no room code or no working socket, run as intra-team debate
-  const isSolo = !roomCode || !canEmit || !connected;
+  // Solo if: no room, no socket, OR server never assigned a side (single team in room)
+  const isSolo = !roomCode || !canEmit || !connected || !task.mySide;
 
   // Split team members into two sides for intra-team mode
   const { forMembers, againstMembers } = useMemo(() => {
@@ -64,12 +64,15 @@ export default function LiveDebateTask({
   const sideExhausted = turnIndex >= turnsPerSide;
   const allDone = forResponses.length >= turnsPerSide && againstResponses.length >= turnsPerSide;
 
+  // Debate topic — avoid pulling in generic task instructions from task.prompt
+  // Prefer explicit debate fields, then config, then title
   const topic =
     task.postulate ||
-    task.prompt ||
     task.topic ||
     task.config?.postulate ||
     task.config?.topic ||
+    task.config?.prompt ||
+    task.title ||
     "";
 
   // ── Auto-scroll thread ─────────────────────────────────────
