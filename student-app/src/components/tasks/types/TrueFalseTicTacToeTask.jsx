@@ -62,7 +62,7 @@ export default function TrueFalseTicTacToeTask({
 
   useEffect(() => {
     if (task.winner) {
-      if (task.winner === teamRole) {
+      if (task.winner === currentRole) {
         try {
           new Audio("/sounds/victory.mp3").play();
         } catch {
@@ -78,7 +78,7 @@ export default function TrueFalseTicTacToeTask({
         }
       }
     }
-  }, [task.winner, teamRole]);
+  }, [task.winner, currentRole]);
 
   // Core logic: given a statement + board index, apply the move
   const applyMove = (statement, index) => {

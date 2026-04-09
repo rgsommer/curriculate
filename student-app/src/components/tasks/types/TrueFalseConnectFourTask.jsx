@@ -106,7 +106,7 @@ export default function TrueFalseConnectFourTask({
 
   useEffect(() => {
     if (task.winner) {
-      if (task.winner === teamRole) {
+      if (task.winner === currentRole) {
         try { new Audio("/sounds/victory.mp3").play(); } catch {}
         setShowVictory(true);
         setTimeout(() => setShowVictory(false), 5000);
@@ -357,7 +357,7 @@ export default function TrueFalseConnectFourTask({
                       : cell === "O"
                         ? "bg-blue-500 border-2 border-blue-300 shadow-inner"
                         : isPreview
-                          ? teamRole === "X"
+                          ? currentRole === "X"
                             ? "bg-red-200/50 border-2 border-red-300/50"
                             : "bg-blue-200/50 border-2 border-blue-300/50"
                           : "bg-white border-2 border-indigo-200",
