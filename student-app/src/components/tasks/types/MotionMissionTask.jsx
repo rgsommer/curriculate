@@ -45,6 +45,12 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
 
   const [done, setDone] = useState(false);
 
+  // "SWITCH!" popup — fires at the midpoint if the prompt mentions switching
+  const hasSwitch = /switch/i.test(activityName);
+  const [showSwitch, setShowSwitch] = useState(false);
+  const switchFiredRef = useRef(false);
+  const initialRemainingRef = useRef(null);
+
   // Load Lottie
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +79,32 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
     setCount(0);
     setNoMotionSupport(false);
     setDone(false);
+    setShowSwitch(false);
+    switchFiredRef.current = false;
+    initialRemainingRef.current = null;
   }, [task?.taskType, task?.title, task?.prompt]);
+
+  // Capture timer when active phase starts, fire SWITCH at midpoint
+  useEffect(() => {
+    if (phase !== "active" || !hasSwitch) return;
+
+    // Capture the starting time on first tick
+    if (initialRemainingRef.current === null && typeof remainingMs === "number" && remainingMs > 0) {
+      initialRemainingRef.current = remainingMs;
+    }
+
+    const init = initialRemainingRef.current;
+    if (!init || switchFiredRef.current) return;
+
+    const midpoint = init / 2;
+    if (typeof remainingMs === "number" && remainingMs <= midpoint) {
+      switchFiredRef.current = true;
+      setShowSwitch(true);
+      // Auto-hide after 3 seconds
+      const id = setTimeout(() => setShowSwitch(false), 3000);
+      return () => clearTimeout(id);
+    }
+  }, [phase, remainingMs, hasSwitch]);
 
   // Countdown flow
   useEffect(() => {
@@ -240,7 +271,21 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
         const timerExpired = typeof remainingMs === "number" && remainingMs <= 0;
 
         return (
-          <div className="w-full max-w-5xl flex flex-col items-center flex-1 justify-center">
+          <div className="w-full max-w-5xl flex flex-col items-center flex-1 justify-center relative">
+            {/* SWITCH! overlay */}
+            {showSwitch && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 rounded-3xl animate-pulse">
+                <div className="text-center">
+                  <div className="text-8xl md:text-9xl font-black text-yellow-300 drop-shadow-2xl">
+                    SWITCH!
+                  </div>
+                  <div className="mt-3 text-2xl md:text-3xl font-bold text-white drop-shadow-lg">
+                    Change activity now!
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="text-2xl md:text-3xl font-black mb-3 px-4 text-center leading-tight">{activityName}</div>
 
             {hasConfiguredActivity && (

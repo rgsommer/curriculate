@@ -243,6 +243,9 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
     return { correctIndex, correctPlayers, fooledPlayers, teamPoints, readerBonus };
   };
 
+  // Accumulate round results internally — only call onSubmit once at the end
+  const roundResultsRef = useRef([]);
+
   const submitAndReveal = () => {
     if (!round) return;
     if (!allNonReaderVoted) return;
@@ -251,35 +254,21 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
     const { correctIndex, correctPlayers, fooledPlayers, teamPoints, readerBonus } = computeOutcome();
     setRevealed(true);
 
-    // ---- REPORTING PAYLOAD (rich) ----
-    const payload = {
-      type: "fake-out",
-      taskType: "fake-out",
-      taskId: task?._id || task?.id || undefined,
-      title: task?.title || "Fake Out",
+    // Store this round's result locally
+    roundResultsRef.current.push({
       roundIndex,
-      totalRounds: rounds.length,
       readerIndex,
       readerName: playerNames[readerIndex],
-      playerNames,
       statement: round.statement,
       options: round.options,
-      correctIndex, // 0..3 (joke option is never correct)
+      correctIndex,
       jokeIndex: round?.jokeIndex ?? -1,
-      votes, // per player index -> option index
+      votes: [...votes],
       correctPlayers,
       fooledPlayers,
-      pointsPerCorrect,
-      readerBonusPoints,
       teamPoints,
       readerBonus,
-      interTeamEnabled: false,
-      intraTeamEnabled: true,
-      submittedAt: new Date().toISOString(),
-      completed: roundIndex >= rounds.length - 1,
-    };
-
-    onSubmit?.(payload);
+    });
 
     // Big reveal overlay timer
     startOverlayTimer();
@@ -295,7 +284,6 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
         if (next <= 0) {
           if (overlayRef.current) clearInterval(overlayRef.current);
           overlayRef.current = null;
-          // advance automatically when the overlay ends
           goNext();
           return 0;
         }
@@ -307,8 +295,12 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
   const goNext = () => {
     if (!rounds.length) return;
 
-    // last round -> mark complete
+    // Last round → submit everything at once
     if (roundIndex >= rounds.length - 1) {
+      const allResults = roundResultsRef.current;
+      const totalTeamPoints = allResults.reduce((s, r) => s + (r.teamPoints || 0), 0);
+      const totalReaderBonus = allResults.reduce((s, r) => s + (r.readerBonus || 0), 0);
+
       onSubmit?.({
         type: "fake-out",
         taskType: "fake-out",
@@ -316,6 +308,13 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
         title: task?.title || "Fake Out",
         gameComplete: true,
         completed: true,
+        playerNames,
+        totalRounds: rounds.length,
+        rounds: allResults,
+        totalTeamPoints,
+        totalReaderBonus,
+        pointsPerCorrect,
+        readerBonusPoints,
         interTeamEnabled: false,
         intraTeamEnabled: true,
         submittedAt: new Date().toISOString(),
@@ -323,6 +322,7 @@ const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, membe
       return;
     }
 
+    // More rounds to go — advance internally (no onSubmit)
     setRoundIndex((r) => r + 1);
     setReaderIndex((ri) => (ri + 1) % playerCount);
   };
