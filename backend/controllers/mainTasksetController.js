@@ -1516,11 +1516,14 @@ export async function createAiTaskset(req, res) {
       const hangmanCoverage = computeCoverageReport(aiWordBank, liveTasksForCoverage);
       const allWords = _parseConceptList(aiWordBank);
 
+      // Prefer single words (no spaces/hyphens) — much better for Hangman
+      const isHangmanFriendly = (w) => !/[\s\-]/.test(w) && w.length >= 3 && w.length <= 14;
+
       for (const slotIdx of deferredHangmanSlots) {
         // Prioritize uncovered words, then fill from covered words to reach 8
         const TARGET = 8;
-        const uncovered = [...(hangmanCoverage.missing || [])];
-        const covered = [...(hangmanCoverage.covered || [])];
+        const uncovered = [...(hangmanCoverage.missing || [])].filter(isHangmanFriendly);
+        const covered = [...(hangmanCoverage.covered || [])].filter(isHangmanFriendly);
 
         // Shuffle both so we don't always pick the same ones
         for (let j = uncovered.length - 1; j > 0; j--) {
@@ -1537,10 +1540,12 @@ export async function createAiTaskset(req, res) {
         if (picked.length < TARGET) {
           picked.push(...covered.slice(0, TARGET - picked.length));
         }
-        // Last resort: if still < TARGET, fill from allWords
+        // Last resort: if still < TARGET, fill from allWords (prefer hangman-friendly, then any)
         if (picked.length < TARGET) {
           const used = new Set(picked.map((w) => w.toLowerCase()));
-          for (const w of allWords) {
+          const friendly = allWords.filter((w) => isHangmanFriendly(w) && !used.has(w.toLowerCase()));
+          const unfriendly = allWords.filter((w) => !isHangmanFriendly(w) && !used.has(w.toLowerCase()));
+          for (const w of [...friendly, ...unfriendly]) {
             if (picked.length >= TARGET) break;
             if (!used.has(w.toLowerCase())) {
               picked.push(w);
