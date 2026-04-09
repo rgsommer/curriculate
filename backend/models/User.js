@@ -15,6 +15,9 @@ const UserSchema = new Schema(
     stripeCustomerId: { type: String, default: null },
     hasUsedTrial: { type: Boolean, default: false },
 
+    // Referral attribution — which agent code was used at checkout
+    referralCode: { type: String, default: null },
+
     // Subscription fields
     subscriptionTier: {
       type: String,

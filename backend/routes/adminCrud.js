@@ -1,6 +1,7 @@
 import express from "express";
 import { authRequired } from "../middleware/authRequired.js";
 import AccessCode from "../models/AccessCode.js";
+import ReferralCode from "../models/ReferralCode.js";
 import SystemEmailTemplate from "../models/SystemEmailTemplate.js";
 import ReferralProgramSettings from "../models/ReferralProgramSettings.js";
 import SharedTasksetLink from "../models/SharedTasksetLink.js";
@@ -321,6 +322,327 @@ router.get("/email-metrics", ...adminRequired, async (req, res) => {
   } catch (err) {
     console.error("[admin-email-metrics] failed:", err);
     res.status(500).json({ ok: false, error: "Failed to load metrics." });
+  }
+});
+
+// ============================================================
+// Admin: Referral Codes (agent commissions)
+// ============================================================
+
+function genReferralCode(prefix = "REF", len = 6) {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < len; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return `${prefix}-${out}`;
+}
+
+// GET /api/admin/referral-codes
+router.get("/referral-codes", ...adminRequired, async (req, res) => {
+  try {
+    const rows = await ReferralCode.find({})
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const codes = (rows || []).map((c) => ({
+      _id: String(c._id),
+      code: c.code,
+      agentName: c.agentName,
+      agentEmail: c.agentEmail,
+      commissionPercent: c.commissionPercent,
+      commissionDurationMonths: c.commissionDurationMonths,
+      customerDiscountPercent: c.customerDiscountPercent,
+      disabled: !!c.disabled,
+      expiresAt: c.expiresAt ? new Date(c.expiresAt).toISOString().slice(0, 10) : null,
+      totalConversions: c.totalConversions || 0,
+      totalRevenueCents: c.totalRevenueCents || 0,
+      totalCommissionCents: c.totalCommissionCents || 0,
+      totalPaidCents: c.totalPaidCents || 0,
+      notes: c.notes || "",
+      createdAt: c.createdAt ? new Date(c.createdAt).toISOString() : null,
+    }));
+
+    return res.json({ ok: true, codes });
+  } catch (err) {
+    console.error("[admin-referral-codes] list failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load referral codes." });
+  }
+});
+
+// POST /api/admin/referral-codes
+router.post("/referral-codes", ...adminRequired, async (req, res) => {
+  try {
+    const agentName = String(req.body?.agentName || "").trim();
+    const agentEmail = String(req.body?.agentEmail || "").trim().toLowerCase();
+    if (!agentName || !agentEmail) {
+      return res.status(400).json({ ok: false, error: "Agent name and email are required." });
+    }
+
+    const commissionPercent = Math.min(100, Math.max(0, Number(req.body?.commissionPercent ?? 15)));
+    const commissionDurationMonths = Math.max(0, Number(req.body?.commissionDurationMonths ?? 0));
+    const customerDiscountPercent = Math.min(100, Math.max(0, Number(req.body?.customerDiscountPercent ?? 0)));
+    const notes = String(req.body?.notes || "").trim();
+
+    const expiresRaw = req.body?.expiresAt ?? null;
+    let expiresAt = null;
+    if (expiresRaw) {
+      const d = new Date(expiresRaw);
+      if (!Number.isNaN(d.getTime())) expiresAt = d;
+    }
+
+    // Allow custom code or auto-generate
+    let code = String(req.body?.code || "").toUpperCase().trim();
+    if (!code) {
+      const prefix = agentName.split(/\s+/)[0].toUpperCase().slice(0, 6);
+      code = genReferralCode(prefix);
+    }
+
+    // Ensure uniqueness
+    for (let i = 0; i < 5; i++) {
+      const exists = await ReferralCode.findOne({ code }).lean();
+      if (!exists) break;
+      code = genReferralCode("REF");
+    }
+
+    const doc = await ReferralCode.create({
+      code,
+      agentName,
+      agentEmail,
+      commissionPercent,
+      commissionDurationMonths,
+      customerDiscountPercent,
+      expiresAt,
+      notes,
+      disabled: false,
+      conversions: [],
+    });
+
+    return res.json({
+      ok: true,
+      referralCode: {
+        _id: String(doc._id),
+        code: doc.code,
+        agentName: doc.agentName,
+        agentEmail: doc.agentEmail,
+        commissionPercent: doc.commissionPercent,
+        customerDiscountPercent: doc.customerDiscountPercent,
+      },
+    });
+  } catch (err) {
+    console.error("[admin-referral-codes] create failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to create referral code." });
+  }
+});
+
+// PUT /api/admin/referral-codes/:id  (update/disable)
+router.put("/referral-codes/:id", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ ok: false, error: "Missing id." });
+
+    const patch = {};
+    if (req.body?.agentName != null) patch.agentName = String(req.body.agentName).trim();
+    if (req.body?.agentEmail != null) patch.agentEmail = String(req.body.agentEmail).trim().toLowerCase();
+    if (req.body?.commissionPercent != null) patch.commissionPercent = Math.min(100, Math.max(0, Number(req.body.commissionPercent)));
+    if (req.body?.commissionDurationMonths != null) patch.commissionDurationMonths = Math.max(0, Number(req.body.commissionDurationMonths));
+    if (req.body?.customerDiscountPercent != null) patch.customerDiscountPercent = Math.min(100, Math.max(0, Number(req.body.customerDiscountPercent)));
+    if (req.body?.disabled != null) patch.disabled = !!req.body.disabled;
+    if (req.body?.notes != null) patch.notes = String(req.body.notes).trim();
+    if (req.body?.expiresAt !== undefined) {
+      patch.expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+    }
+
+    const updated = await ReferralCode.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean();
+    if (!updated) return res.status(404).json({ ok: false, error: "Referral code not found." });
+
+    return res.json({ ok: true, referralCode: updated });
+  } catch (err) {
+    console.error("[admin-referral-codes] update failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to update referral code." });
+  }
+});
+
+// DELETE /api/admin/referral-codes/:id
+router.delete("/referral-codes/:id", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ ok: false, error: "Missing id." });
+
+    const doc = await ReferralCode.findById(id).lean();
+    if (!doc) return res.status(404).json({ ok: false, error: "Referral code not found." });
+
+    if ((doc.totalConversions || 0) > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: `Cannot delete: code has ${doc.totalConversions} conversion(s). Disable it instead.`,
+      });
+    }
+
+    await ReferralCode.deleteOne({ _id: id });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin-referral-codes] delete failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to delete referral code." });
+  }
+});
+
+// GET /api/admin/referral-codes/:id/conversions  (detailed conversion list)
+router.get("/referral-codes/:id/conversions", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const doc = await ReferralCode.findById(id).lean();
+    if (!doc) return res.status(404).json({ ok: false, error: "Referral code not found." });
+
+    return res.json({
+      ok: true,
+      code: doc.code,
+      agentName: doc.agentName,
+      conversions: doc.conversions || [],
+    });
+  } catch (err) {
+    console.error("[admin-referral-codes] conversions failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load conversions." });
+  }
+});
+
+// POST /api/admin/referral-codes/:id/mark-paid  (mark conversions as paid)
+router.post("/referral-codes/:id/mark-paid", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const doc = await ReferralCode.findById(id);
+    if (!doc) return res.status(404).json({ ok: false, error: "Referral code not found." });
+
+    let paidCount = 0;
+    let paidCents = 0;
+    const now = new Date();
+
+    for (const conv of doc.conversions) {
+      if (!conv.paid) {
+        conv.paid = true;
+        conv.paidAt = now;
+        paidCount++;
+        paidCents += conv.commissionCents || 0;
+      }
+    }
+
+    doc.totalPaidCents = (doc.totalPaidCents || 0) + paidCents;
+    await doc.save();
+
+    return res.json({ ok: true, paidCount, paidCents });
+  } catch (err) {
+    console.error("[admin-referral-codes] mark-paid failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to mark as paid." });
+  }
+});
+
+// POST /api/admin/referral-codes/:id/send  (send agent their referral info via email)
+router.post("/referral-codes/:id/send", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const doc = await ReferralCode.findById(id).lean();
+    if (!doc) return res.status(404).json({ ok: false, error: "Referral code not found." });
+
+    const toEmail = String(req.body?.toEmail || doc.agentEmail || "").trim();
+    if (!toEmail) return res.status(400).json({ ok: false, error: "Missing recipient email." });
+
+    const senderName =
+      String(req.user?.name || req.user?.fullName || req.user?.displayName || "").trim() ||
+      "Curriculate Admin";
+
+    // Load/create the referral-agent-invite template
+    let template = await SystemEmailTemplate.findOne({ key: "referral-agent-invite" }).lean();
+    if (!template) {
+      template = await SystemEmailTemplate.create({
+        key: "referral-agent-invite",
+        label: "Referral agent invite",
+        subject: "Your Curriculate referral code is ready!",
+        html: DEFAULT_REFERRAL_AGENT_HTML,
+        enabled: true,
+      });
+    }
+
+    const signupUrl = process.env.TEACHER_APP_ORIGIN
+      ? `${process.env.TEACHER_APP_ORIGIN}/pricing`
+      : "https://set.curriculate.net/pricing";
+
+    const vars = {
+      SENDER_NAME: senderName,
+      AGENT_NAME: doc.agentName,
+      REFERRAL_CODE: doc.code,
+      COMMISSION_PERCENT: String(doc.commissionPercent),
+      CUSTOMER_DISCOUNT: doc.customerDiscountPercent > 0
+        ? `Your referrals get ${doc.customerDiscountPercent}% off their first payment!`
+        : "",
+      SIGNUP_URL: signupUrl,
+      CUSTOM_MESSAGE: req.body?.message
+        ? String(req.body.message).replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        : "",
+    };
+
+    const subject = _render(template.subject || "", vars);
+    const html = _render(template.html || "", vars);
+
+    await sendSystemEmail({ to: toEmail, subject, html });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin-referral-codes] send failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to send email: " + (err?.message || err) });
+  }
+});
+
+const DEFAULT_REFERRAL_AGENT_HTML = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="color:#1e293b;margin-bottom:12px;">Welcome to the Curriculate Referral Program!</h2>
+  <p style="color:#334155;">Hi {{AGENT_NAME}},</p>
+  <p style="color:#334155;">You've been set up as a Curriculate referral partner. Share your personal referral code with teachers and schools to earn <strong>{{COMMISSION_PERCENT}}% commission</strong> on every subscription.</p>
+  <div style="background:#f0fdf4;border:2px dashed #22c55e;border-radius:12px;padding:16px;text-align:center;margin:20px 0;">
+    <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Your Referral Code</div>
+    <div style="font-size:28px;font-weight:900;letter-spacing:3px;color:#16a34a;">{{REFERRAL_CODE}}</div>
+  </div>
+  <p style="color:#334155;">{{CUSTOMER_DISCOUNT}}</p>
+  <p style="color:#334155;">When someone signs up and enters your code during checkout, they're linked to you automatically. You can track your conversions and commissions at any time.</p>
+  <div style="text-align:center;margin:20px 0;">
+    <a href="{{SIGNUP_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">View Pricing Page</a>
+  </div>
+  <p style="color:#334155;font-size:14px;"><strong>How it works:</strong></p>
+  <ol style="color:#334155;font-size:14px;padding-left:20px;">
+    <li>Share your code or pricing link with potential subscribers</li>
+    <li>They enter your code at checkout</li>
+    <li>You earn {{COMMISSION_PERCENT}}% commission on their subscription</li>
+    <li>Commissions are tracked and paid out by the Curriculate team</li>
+  </ol>
+  {{CUSTOM_MESSAGE}}
+  <p style="color:#94a3b8;font-size:13px;margin-top:24px;">Curriculate — AI-Powered Station-Based Learning</p>
+</div>
+`.trim();
+
+// ============================================================
+// Public: Validate referral code (called from checkout flow)
+// ============================================================
+// GET /api/admin/validate-referral-code?code=XYZ
+// (No auth required — used by the pricing/checkout page)
+router.get("/validate-referral-code", async (req, res) => {
+  try {
+    const code = String(req.query?.code || "").toUpperCase().trim();
+    if (!code) return res.json({ ok: false, valid: false });
+
+    const doc = await ReferralCode.findOne({ code, disabled: { $ne: true } }).lean();
+    if (!doc) return res.json({ ok: true, valid: false });
+
+    // Check expiry
+    if (doc.expiresAt && new Date(doc.expiresAt) < new Date()) {
+      return res.json({ ok: true, valid: false, reason: "expired" });
+    }
+
+    return res.json({
+      ok: true,
+      valid: true,
+      agentName: doc.agentName,
+      customerDiscountPercent: doc.customerDiscountPercent || 0,
+    });
+  } catch (err) {
+    console.error("[validate-referral-code] failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to validate code." });
   }
 });
 

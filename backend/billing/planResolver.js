@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import ReferralCode from "../models/ReferralCode.js";
 
 /**
  * Curriculate Stripe → Plan resolver (Teacher + School tiers)
@@ -148,16 +149,58 @@ export async function handleStripeEvent(event) {
       const userId = obj?.client_reference_id || obj?.metadata?.userId;
       if (!userId) return;
 
-      await User.updateOne(
-        { _id: userId },
-        {
-          $set: {
-            stripeCustomerId: obj.customer || null,
-            stripeSubscriptionId: obj.subscription || null,
-            lastBillingEventAt: new Date(),
-          },
+      // Check for referral code in session or subscription metadata
+      const referralCode =
+        obj?.metadata?.referralCode ||
+        obj?.subscription_data?.metadata?.referralCode ||
+        "";
+
+      const updateFields = {
+        stripeCustomerId: obj.customer || null,
+        stripeSubscriptionId: obj.subscription || null,
+        lastBillingEventAt: new Date(),
+      };
+
+      // Store referral code on user for future reference
+      if (referralCode) {
+        updateFields.referralCode = referralCode;
+      }
+
+      await User.updateOne({ _id: userId }, { $set: updateFields });
+
+      // Record conversion on the referral code
+      if (referralCode) {
+        try {
+          const user = await User.findById(userId).lean();
+          const amountTotal = obj.amount_total || 0; // in cents
+          const refDoc = await ReferralCode.findOne({ code: referralCode });
+
+          if (refDoc) {
+            const commissionCents = Math.round(amountTotal * (refDoc.commissionPercent / 100));
+
+            refDoc.conversions.push({
+              userId: String(userId),
+              userEmail: user?.email || obj?.customer_email || "",
+              planTier: obj?.metadata?.plan || "",
+              stripeSubscriptionId: obj.subscription || "",
+              amountCents: amountTotal,
+              commissionCents,
+              convertedAt: new Date(),
+            });
+
+            refDoc.totalConversions = (refDoc.totalConversions || 0) + 1;
+            refDoc.totalRevenueCents = (refDoc.totalRevenueCents || 0) + amountTotal;
+            refDoc.totalCommissionCents = (refDoc.totalCommissionCents || 0) + commissionCents;
+
+            await refDoc.save();
+            console.log(`[planResolver] Referral conversion: ${referralCode} → user ${userId}, commission $${(commissionCents / 100).toFixed(2)}`);
+          }
+        } catch (refErr) {
+          console.error("[planResolver] referral attribution error:", refErr);
+          // Don't fail the webhook for referral tracking issues
         }
-      );
+      }
+
       return;
     }
 

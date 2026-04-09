@@ -3,6 +3,7 @@ import Stripe from "stripe";
 
 import mongoose from "mongoose";
 import User from "../models/User.js"; // ← adjust path if needed
+import ReferralCode from "../models/ReferralCode.js";
 import { authAny } from "../middleware/authAny.js";
 import { getPriceIdForTier, validatePriceId } from "../config/stripePrices.js";
 
@@ -28,7 +29,7 @@ const isHex24 = (s) => typeof s === "string" && /^[a-fA-F0-9]{24}$/.test(s);
 
 router.post("/create-checkout-session", async (req, res) => {
   try {
-    const { priceId: clientPriceId, plan, email: rawEmail } = req.body || {};
+    const { priceId: clientPriceId, plan, email: rawEmail, referralCode: rawReferralCode } = req.body || {};
 
     // Bug 5: Accept plan tier and resolve price ID server-side
     // Support both legacy priceId (for backwards compat) and plan tier name
@@ -111,7 +112,37 @@ router.post("/create-checkout-session", async (req, res) => {
       user.stripeCustomerId = stripeCustomerId;
     }
 
+    // 2.5) Validate referral code if provided
+    let validatedReferralCode = "";
+    let referralDiscount = 0;
+    if (rawReferralCode) {
+      const rc = String(rawReferralCode).toUpperCase().trim();
+      const refDoc = await ReferralCode.findOne({ code: rc, disabled: { $ne: true } }).lean();
+      if (refDoc) {
+        const notExpired = !refDoc.expiresAt || new Date(refDoc.expiresAt) >= new Date();
+        if (notExpired) {
+          validatedReferralCode = rc;
+          referralDiscount = refDoc.customerDiscountPercent || 0;
+        }
+      }
+    }
+
     // 3) Create checkout session
+    // If the referral code offers a customer discount, create a Stripe coupon
+    let discounts = undefined;
+    if (referralDiscount > 0) {
+      try {
+        const coupon = await stripe.coupons.create({
+          percent_off: referralDiscount,
+          duration: "once",
+          name: `Referral: ${validatedReferralCode}`,
+        });
+        discounts = [{ coupon: coupon.id }];
+      } catch (couponErr) {
+        console.warn("[stripe] Failed to create referral coupon:", couponErr.message);
+      }
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: stripeCustomerId || undefined,
@@ -119,15 +150,19 @@ router.post("/create-checkout-session", async (req, res) => {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${successUrl()}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: cancelUrl(),
-      allow_promotion_codes: true,
+      ...(discounts ? { discounts } : { allow_promotion_codes: true }),
       client_reference_id: String(user._id),
       subscription_data: {
         metadata: {
           plan: plan || "",
           userId: String(user._id),
           userEmail: user.email || email || "",
+          referralCode: validatedReferralCode,
         },
         ...(isTrial ? { trial_period_days: trialDays } : {}),
+      },
+      metadata: {
+        referralCode: validatedReferralCode,
       },
     });
 
