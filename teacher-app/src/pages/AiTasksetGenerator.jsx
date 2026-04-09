@@ -150,6 +150,10 @@ export default function AiTasksetGenerator() {
   const [limitTasks, setLimitTasks] = useState(false);
   const [selectedTaskTypes, setSelectedTaskTypes] = useState([]);
 
+  // Guarantee task types (ensures these appear in the generated set)
+  const [guaranteeTypes, setGuaranteeTypes] = useState(false);
+  const [guaranteedTaskTypes, setGuaranteedTaskTypes] = useState([]);
+
   // Task-type filters (UI-only)
   const [taskTypeCategory, setTaskTypeCategory] = useState("all");
   const [onlyIntraTeam, setOnlyIntraTeam] = useState(false);
@@ -203,6 +207,12 @@ export default function AiTasksetGenerator() {
 
   const toggleTaskType = (type) => {
     setSelectedTaskTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  };
+
+  const toggleGuaranteedType = (type) => {
+    setGuaranteedTaskTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
     );
   };
@@ -334,21 +344,8 @@ export default function AiTasksetGenerator() {
       );
 
       let requiredTaskTypes = [];
+      let guaranteedTypes_payload = [];
       const baseSpecialConsiderations = (form.topicDescription || "").trim();
-
-      // Append task-specific constraints so the backend AI prompt reliably returns the required fields.
-      const selectedOrRequiredTypes = Array.from(
-        new Set([...(selectedTaskTypes || []), ...(requiredTaskTypes || [])])
-      );
-
-      const constraintsToAppend = selectedOrRequiredTypes
-        .map((t) => TASK_GEN_CONSTRAINTS[t])
-        .filter(Boolean)
-        .join("\n\n");
-
-      const specialConsiderations = [baseSpecialConsiderations, constraintsToAppend]
-        .filter((s) => (s || "").trim().length)
-        .join("\n\n");
 
       if (limitTasks) {
         if (selectedTaskTypes.length === 0) {
@@ -363,6 +360,26 @@ export default function AiTasksetGenerator() {
         estimatedTaskCount = Math.min(estimatedTaskCount, uniqueTypes.length);
         requiredTaskTypes = uniqueTypes;
       }
+
+      if (guaranteeTypes && guaranteedTaskTypes.length > 0) {
+        guaranteedTypes_payload = Array.from(new Set(guaranteedTaskTypes));
+        // Make sure we have enough slots for guaranteed types
+        estimatedTaskCount = Math.max(estimatedTaskCount, guaranteedTypes_payload.length);
+      }
+
+      // Append task-specific constraints so the backend AI prompt reliably returns the required fields.
+      const selectedOrRequiredTypes = Array.from(
+        new Set([...(selectedTaskTypes || []), ...(requiredTaskTypes || []), ...guaranteedTypes_payload])
+      );
+
+      const constraintsToAppend = selectedOrRequiredTypes
+        .map((t) => TASK_GEN_CONSTRAINTS[t])
+        .filter(Boolean)
+        .join("\n\n");
+
+      const specialConsiderations = [baseSpecialConsiderations, constraintsToAppend]
+        .filter((s) => (s || "").trim().length)
+        .join("\n\n");
 
       const curriculumLenses =
         (profile && (profile.curriculumLenses || profile.perspectives)) || [];
@@ -385,7 +402,10 @@ export default function AiTasksetGenerator() {
 
         totalDurationMinutes,
         numberOfTasks: limitTasks ? estimatedTaskCount : undefined,
+        count: limitTasks ? estimatedTaskCount : undefined,
+        taskTypePool: limitTasks ? requiredTaskTypes : undefined,
         requiredTaskTypes: limitTasks ? requiredTaskTypes : undefined,
+        guaranteedTaskTypes: guaranteedTypes_payload.length ? guaranteedTypes_payload : undefined,
 
         tasksetName: form.name || undefined,
         roomLocation: form.roomLocation || "Classroom",
@@ -1211,6 +1231,111 @@ export default function AiTasksetGenerator() {
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {filteredEligibleTypes.map(renderTaskTypeBadge)}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* GUARANTEE TASK TYPES */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: guaranteeTypes ? "1px solid #d1fae5" : "1px solid #e5e7eb",
+            background: guaranteeTypes ? "#f0fdf4" : "#f9fafb",
+          }}
+        >
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+            <input type="checkbox" checked={guaranteeTypes} onChange={(e) => setGuaranteeTypes(e.target.checked)} />
+            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              Guarantee these task types appear
+            </span>
+          </label>
+          <p style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 8 }}>
+            Selected types will definitely be included. The rest of the set fills with a normal diverse mix.
+          </p>
+
+          {guaranteeTypes && (
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 10,
+                }}
+              >
+                <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                  {guaranteedTaskTypes.length} type{guaranteedTaskTypes.length !== 1 ? "s" : ""} guaranteed
+                </span>
+                {guaranteedTaskTypes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setGuaranteedTaskTypes([])}
+                    style={{
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      fontSize: "0.8rem",
+                      border: "1px solid #d1d5db",
+                      background: "#ffffff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {filteredEligibleTypes.map((type) => {
+                  const meta = TASK_TYPE_META[type] || {};
+                  const label = meta.label || type;
+                  const category = meta.category || "other";
+                  const selected = guaranteedTaskTypes.includes(type);
+                  const desc = String(meta.description || "").trim();
+                  const shortDesc = desc ? desc.split("\n")[0].replace(/^[-•]\s*/, "").trim() : "";
+
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      title={desc || label}
+                      onClick={() => toggleGuaranteedType(type)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 12px",
+                        borderRadius: 14,
+                        border: selected ? "2px solid #059669" : "1px solid #d1d5db",
+                        background: selected ? "#ecfdf5" : "#ffffff",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        minWidth: 260,
+                      }}
+                    >
+                      <span style={{ fontSize: "0.95rem" }}>{typeIcon(type)}</span>
+                      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+                        <span style={{ fontWeight: 700 }}>{label}</span>
+                        {shortDesc && (
+                          <span style={{ fontSize: "0.72rem", color: "#6b7280", maxWidth: 340 }}>
+                            {shortDesc}
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "capitalize", marginLeft: 2, whiteSpace: "nowrap" }}>
+                        · {category}
+                      </span>
+                      {selected && (
+                        <span style={{ fontSize: "0.7rem", fontWeight: 800, padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(5,150,105,0.35)", background: "rgba(5,150,105,0.10)", color: "#065f46", marginLeft: "auto", whiteSpace: "nowrap" }}>
+                          ✓ Guaranteed
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

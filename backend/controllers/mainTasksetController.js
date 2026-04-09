@@ -33,11 +33,12 @@ const client = new Proxy({}, { get: (_, prop) => getClient()[prop] });
 // Eligibility here is about generation safety, not scoring.
 /**
  * Build an N-slot task type pool with enforced variety:
+ * - Guaranteed types are placed first (one slot each, shuffled)
  * - A physical/movement task every 4–5 academic slots
  * - No more than 2 consecutive tasks from the same category
  * - Unique types preferred (no repeats until the full set is exhausted)
  */
-function buildDiversePool(availableTypes, count) {
+function buildDiversePool(availableTypes, count, guaranteedTypes = []) {
   // Pure physical/movement break types (NOT PMC — that's academic with movement)
   const PHYSICAL_BODY_BREAK_TYPES = new Set([
     TASK_TYPES.BODY_BREAK,
@@ -137,6 +138,30 @@ function buildDiversePool(availableTypes, count) {
       // Fallback: repeat from available
       pool.push(availableTypes[i % availableTypes.length]);
     }
+  }
+
+  // Inject guaranteed types: ensure each appears at least once in the pool
+  if (guaranteedTypes.length > 0) {
+    const uniqueGuaranteed = [...new Set(guaranteedTypes)];
+    for (const gType of uniqueGuaranteed) {
+      if (pool.includes(gType)) continue; // already in pool — no action needed
+      // Find a slot to replace: prefer a slot whose type appears more than once
+      let replaced = false;
+      for (let i = pool.length - 1; i >= 0; i--) {
+        const t = pool[i];
+        if (pool.indexOf(t) !== i) {
+          // This type appears earlier in the pool too — safe to replace this duplicate
+          pool[i] = gType;
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) {
+        // No duplicates left — replace the last slot
+        pool[pool.length - 1] = gType;
+      }
+    }
+    console.log(`[AI] Guaranteed types injected: ${uniqueGuaranteed.join(", ")}`);
   }
 
   // Verify no more than 2 consecutive same-category (swap if needed)
@@ -1451,7 +1476,10 @@ export async function createAiTaskset(req, res) {
       topicLabel = "",
       aiWordBank = "",
       taskTypePool,
+      requiredTaskTypes,     // alias sent by AiTasksetGenerator when "Limit" is on
+      guaranteedTaskTypes,   // types that MUST appear in the pool
       count,
+      numberOfTasks,         // alias sent by AiTasksetGenerator
       specialConsiderations = "",
       topicDescription = "",
       totalDurationMinutes,
@@ -1465,16 +1493,26 @@ export async function createAiTaskset(req, res) {
     const effectiveSpecialConsiderations =
       [specialConsiderations, topicDescription].map(s => String(s || "").trim()).filter(Boolean).join("\n\n");
 
-    const safeCount = clampInt(count, 1, 30, 12);
+    // Accept either key the frontend might send for count
+    const safeCount = clampInt(count || numberOfTasks, 1, 30, 12);
 
     const eligible = getGenerationEligibleTypes(subject);
+
+    // Accept either key the frontend might send for the type pool
+    const rawPool = taskTypePool || requiredTaskTypes;
     const userPool =
-      Array.isArray(taskTypePool) && taskTypePool.length
-        ? taskTypePool.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
+      Array.isArray(rawPool) && rawPool.length
+        ? rawPool.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
         : null;
 
-    // Build the actual N-slot pool with enforced variety
-    const pool = buildDiversePool(userPool || eligible, safeCount);
+    // Resolve guaranteed types (must appear in pool regardless of limit setting)
+    const guaranteed =
+      Array.isArray(guaranteedTaskTypes) && guaranteedTaskTypes.length
+        ? guaranteedTaskTypes.map(normalizeSelectedType).filter(Boolean).filter((t) => eligible.includes(t))
+        : [];
+
+    // Build the actual N-slot pool with enforced variety + guaranteed types first
+    const pool = buildDiversePool(userPool || eligible, safeCount, guaranteed);
     if (!pool.length) {
       if (wantsStream) {
         sendSSE({ type: "error", error: "No eligible task types provided." });
