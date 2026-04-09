@@ -21,7 +21,7 @@ const ACTIVITY_CONFIG = {
   "Spin around 5 times": { type: "spin", target: 5, emoji: "🌀", file: "spin.json" },
 };
 
-export default function MotionMissionTask({ task, onSubmit, disabled, presenter }) {
+export default function MotionMissionTask({ task, onSubmit, disabled, presenter, remainingMs }) {
   const activityPrompt = task?.prompt || task?.activity || "Jump 10 times";
   const activityName = useMemo(() => String(activityPrompt || "").trim() || "Jump 10 times", [activityPrompt]);
 
@@ -252,9 +252,11 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
       {phase === "active" && (() => {
         // With accelerometer: require count >= target to enable DONE
         // Without accelerometer: require delay to have elapsed
+        // Timer expired: always allow finishing (don't leave them stuck)
+        const timerExpired = typeof remainingMs === "number" && remainingMs <= 0;
         const motionComplete = !noMotionSupport && count >= target;
         const delayComplete = noMotionSupport && delayElapsed;
-        const canFinish = motionComplete || delayComplete;
+        const canFinish = motionComplete || delayComplete || timerExpired;
 
         return (
           <div className="w-full max-w-5xl flex flex-col items-center flex-1 justify-center">
@@ -297,7 +299,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter 
                       : "bg-green-400 text-black border-green-200 hover:scale-[1.03]",
                   ].join(" ")}
                 >
-                  DONE ✓
+                  {timerExpired && !motionComplete ? "We did it!" : "DONE ✓"}
                 </button>
               ) : (
                 <div className="px-8 py-4 rounded-3xl text-2xl md:text-3xl font-black bg-white/10 border border-white/10 text-white/50 select-none">

@@ -4645,6 +4645,7 @@ function StudentApp() {
         roomCode={roomCode}
         playerTeam={{ id: teamId, teamName }}
         memberNames={members}
+        remainingMs={remainingMs}
         partnerAnswer={partnerAnswer}
         showPartnerReply={showPartnerReply}
         onPartnerReply={(replyText) => {

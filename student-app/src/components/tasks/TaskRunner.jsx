@@ -1600,6 +1600,7 @@ export default function TaskRunner({
   roomCode,
   playerTeam,
   memberNames = [],
+  remainingMs,
   partnerAnswer,
   showPartnerReply,
   onPartnerReply,
@@ -2668,7 +2669,7 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
 
     case TASK_TYPES.MOTION_MISSION:
       content = (
-        <MotionMissionTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} />
+        <MotionMissionTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} remainingMs={remainingMs} />
       );
       break;
 
