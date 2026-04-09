@@ -6,10 +6,14 @@ export default function TrueFalseTicTacToeTask({
   onSubmit,
   disabled,
   socket,
-  teamRole,
+  teamRole: teamRoleProp,
   memberNames = [],
 }) {
+  // Default to "O" (TRUE/Blue) if server hasn't assigned a role (intra-team mode)
+  const teamRole = teamRoleProp || "O";
+
   const [board, setBoard] = useState(task.board || Array(9).fill(null));
+  const [usedStatementIds, setUsedStatementIds] = useState(new Set());
   const [activeStatement, setActiveStatement] = useState(null); // tap-to-place
   const [hintPulse, setHintPulse] = useState(false); // flash grid when statement selected
 
@@ -96,6 +100,8 @@ export default function TrueFalseTicTacToeTask({
       });
     }
 
+    // Remove the used statement from the available pool
+    setUsedStatementIds((prev) => new Set(prev).add(statement.id));
     setActiveStatement(null);
   };
 
@@ -310,7 +316,9 @@ export default function TrueFalseTicTacToeTask({
         ].join(" ")}>
           Tap a statement, then tap a square to place it.
         </p>
-        {statements.map((stmt, i) => {
+        {statements
+          .filter((stmt) => !usedStatementIds.has(stmt.id))
+          .map((stmt, i) => {
           const isActive =
             activeStatement && activeStatement.id === stmt.id;
           return (

@@ -54,10 +54,13 @@ export default function TrueFalseConnectFourTask({
   onSubmit,
   disabled,
   socket,
-  teamRole,
+  teamRole: teamRoleProp,
   memberNames = [],
 }) {
+  const teamRole = teamRoleProp || "O";
+
   const [board, setBoard] = useState(task.board || Array(CELLS).fill(null));
+  const [usedStatementIds, setUsedStatementIds] = useState(new Set());
   const [activeStatement, setActiveStatement] = useState(null);
   const [hintPulse, setHintPulse] = useState(false);
   const [droppingCol, setDroppingCol] = useState(null); // animate column highlight
@@ -133,6 +136,7 @@ export default function TrueFalseConnectFourTask({
         teamRole: placedRole,
       });
 
+      setUsedStatementIds((prev) => new Set(prev).add(statement.id));
       setActiveStatement(null);
     },
     [board, disabled, teamRole, socket, task.roomCode],
@@ -374,7 +378,7 @@ export default function TrueFalseConnectFourTask({
         >
           Tap a statement, then tap a column to drop it.
         </p>
-        {statements.map((stmt, i) => {
+        {statements.filter((stmt) => !usedStatementIds.has(stmt.id)).map((stmt, i) => {
           const isActive = activeStatement && activeStatement.id === stmt.id;
           return (
             <div
