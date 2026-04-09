@@ -347,22 +347,25 @@ export default function AiTasksetGenerator() {
       let guaranteedTypes_payload = [];
       const baseSpecialConsiderations = (form.topicDescription || "").trim();
 
+      if (guaranteeTypes && guaranteedTaskTypes.length > 0) {
+        guaranteedTypes_payload = Array.from(new Set(guaranteedTaskTypes));
+      }
+
       if (limitTasks) {
-        if (selectedTaskTypes.length === 0) {
+        if (selectedTaskTypes.length === 0 && guaranteedTypes_payload.length === 0) {
           setError(
             "Please select at least one task type when limiting task types."
           );
           setGenerating(false);
           return;
         }
-        // If limiting, don't generate more tasks than unique types
-        const uniqueTypes = Array.from(new Set(selectedTaskTypes));
-        estimatedTaskCount = Math.min(estimatedTaskCount, uniqueTypes.length);
-        requiredTaskTypes = uniqueTypes;
+        // Auto-merge guaranteed types into the limit pool so there's no contradiction
+        const mergedTypes = Array.from(new Set([...selectedTaskTypes, ...guaranteedTypes_payload]));
+        estimatedTaskCount = Math.min(estimatedTaskCount, mergedTypes.length);
+        requiredTaskTypes = mergedTypes;
       }
 
-      if (guaranteeTypes && guaranteedTaskTypes.length > 0) {
-        guaranteedTypes_payload = Array.from(new Set(guaranteedTaskTypes));
+      if (guaranteedTypes_payload.length > 0) {
         // Make sure we have enough slots for guaranteed types
         estimatedTaskCount = Math.max(estimatedTaskCount, guaranteedTypes_payload.length);
       }
