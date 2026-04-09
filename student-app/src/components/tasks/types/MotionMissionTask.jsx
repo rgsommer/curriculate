@@ -49,6 +49,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
   const hasSwitch = /switch/i.test(activityName);
   const [showSwitch, setShowSwitch] = useState(false);
   const switchFiredRef = useRef(false);
+  const switchTimerRef = useRef(null);
   const initialRemainingRef = useRef(null);
 
   // Load Lottie
@@ -81,6 +82,7 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
     setDone(false);
     setShowSwitch(false);
     switchFiredRef.current = false;
+    if (switchTimerRef.current) { clearTimeout(switchTimerRef.current); switchTimerRef.current = null; }
     initialRemainingRef.current = null;
   }, [task?.taskType, task?.title, task?.prompt]);
 
@@ -100,9 +102,13 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
     if (typeof remainingMs === "number" && remainingMs <= midpoint) {
       switchFiredRef.current = true;
       setShowSwitch(true);
-      // Show for 10 seconds then hide
-      const id = setTimeout(() => setShowSwitch(false), 10000);
-      return () => clearTimeout(id);
+      // Show for 10 seconds then hide — use a ref so the next tick's
+      // effect cleanup doesn't cancel the timeout
+      if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+      switchTimerRef.current = setTimeout(() => {
+        setShowSwitch(false);
+        switchTimerRef.current = null;
+      }, 10000);
     }
   }, [phase, remainingMs, hasSwitch]);
 
