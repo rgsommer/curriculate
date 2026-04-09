@@ -212,7 +212,8 @@ function validatePlayabilityByType(type, task) {
       const options = Array.isArray(r.options) ? r.options : [];
       const joke = String(r.jokeOption || "").trim();
       if (!prompt) errors.push(`rounds[${i}].prompt is required`);
-      if (options.filter(Boolean).length !== 3) errors.push(`rounds[${i}].options must be exactly 3 items`);
+      const optCount = options.filter(Boolean).length;
+      if (optCount !== 3 && optCount !== 4) errors.push(`rounds[${i}].options must be 3 or 4 items (got ${optCount})`);
       if (!joke) errors.push(`rounds[${i}].jokeOption is required`);
     }
   }
