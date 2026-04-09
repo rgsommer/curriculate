@@ -2561,6 +2561,7 @@ case TASK_TYPES.COLLABORATION:
           onSubmit={handleTaskSubmit}
           disabled={effectiveDisabled || isReview}
           readOnly={isReview}
+          memberNames={memberNames}
         />
       );
       break;

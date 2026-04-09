@@ -40,19 +40,22 @@ function seededShuffle(array, seedStr) {
   return copy;
 }
 
-const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false }) => {
+const FakeOutTask = ({ task, onSubmit, disabled = false, readOnly = false, memberNames = [] }) => {
   const cfg = task?.config && typeof task.config === "object" ? task.config : {};
 
   const playerCount = Math.max(2, Math.min(8, Number(cfg.playerCount) || 4));
   const playerNames = useMemo(() => {
-    const names = Array.isArray(cfg.playerNames) ? cfg.playerNames : [];
+    // Prefer real team member names passed from TaskRunner, fall back to config, then generic
+    const realNames = Array.isArray(memberNames) ? memberNames.filter(Boolean) : [];
+    const cfgNames = Array.isArray(cfg.playerNames) ? cfg.playerNames : [];
     const cleaned = [];
     for (let i = 0; i < playerCount; i++) {
-      const n = String(names[i] ?? "").trim();
-      cleaned.push(n || `Player ${i + 1}`);
+      const real = String(realNames[i] ?? "").trim();
+      const cfg_ = String(cfgNames[i] ?? "").trim();
+      cleaned.push(real || cfg_ || `Player ${i + 1}`);
     }
     return cleaned;
-  }, [cfg.playerNames, playerCount]);
+  }, [memberNames, cfg.playerNames, playerCount]);
 
   const rounds = useMemo(() => {
     // Prefer cfg.rounds (normal shape), but accept several fallback shapes.
