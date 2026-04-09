@@ -1119,6 +1119,35 @@ export function normalizeTaskByType(taskType, rawTask) {
       task.lines = lines;
       cfg.lines = lines;
 
+      // Setting paragraph: introduces scene and assigns roles to team members
+      let setting = String(task.setting || cfg.setting || task.config?.setting || "").trim();
+      // Extract character names from lines if no roles provided
+      let roles = Array.isArray(task.roles) ? task.roles :
+        Array.isArray(cfg.roles) ? cfg.roles :
+        Array.isArray(task.config?.roles) ? task.config.roles : [];
+
+      if (!roles.length) {
+        // Infer roles from "Speaker: ..." lines
+        const seen = new Set();
+        for (const l of lines) {
+          const m = l.match(/^([^:]+):/);
+          if (m) {
+            const name = m[1].trim().replace(/\(.*\)/, "").trim();
+            if (name && !seen.has(name)) { seen.add(name); roles.push(name); }
+          }
+        }
+      }
+
+      if (!setting && roles.length) {
+        const assignments = roles.map((r, i) => `Team member ${i + 1}, you are ${r}`).join(". ") + ".";
+        setting = `This is a short script with ${roles.length} roles: ${roles.join(", ")}. ${assignments} Read your lines with expression and pass the device to the next speaker.`;
+      }
+
+      task.setting = setting;
+      task.roles = roles;
+      cfg.setting = setting;
+      cfg.roles = roles;
+
       task.title = asNonEmptyString(task.title, "Script Play");
       task.prompt = asNonEmptyString(task.prompt, "Act out the script with your group.");
       break;

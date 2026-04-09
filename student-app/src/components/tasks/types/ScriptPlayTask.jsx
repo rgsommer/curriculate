@@ -67,11 +67,15 @@ export default function ScriptPlayTask({ task, onSubmit, disabled = false }) {
         after: "",
       }));
 
+      // Use AI-generated setting paragraph if available, otherwise generic instructions
+      const setting = String(task?.setting || cfg.setting || "").trim();
+      const contextBefore = setting ||
+        "Pass the device to the next speaker after each line. Read clearly and act it out together.";
+
       return [
         {
           title: String(task?.title || "Scene 1").slice(0, 80),
-          contextBefore:
-            "Pass the device to the next speaker after each line. Read clearly and act it out together.",
+          contextBefore,
           contextAfter: "",
           turns,
         },

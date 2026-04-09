@@ -2386,13 +2386,15 @@ IMPORTANT:
 
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
-    - Include non-empty root fields: taskType, title, prompt, lines.
+    - Include non-empty root fields: taskType, title, prompt, setting, roles, lines.
+    - "setting" is a short paragraph (2–3 sentences) that sets the scene and introduces the characters. This is read aloud before the script starts. It should also tell the team which member plays which role (e.g. "Team member 1, you are Ava. Team member 2, you are Noah.").
+    - "roles" is an array of the character names used in the script (e.g. ["Narrator", "Ava", "Noah"]).
     - "lines" MUST be a flat array of 8–16 strings in "Speaker: dialogue" format.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - Write a short script for 2–4 speakers (e.g. Narrator, Student A, Student B) that teaches the assigned vocabulary/concepts through a meaningful story or scenario.
+    - Write a short script for 2–4 speakers that teaches the assigned vocabulary/concepts through a meaningful story or scenario.
     - The script should directly incorporate the topic and vocabulary — characters should discuss, explain, or demonstrate the concepts through dialogue.
     - Include light stage directions in parentheses within lines, e.g. "Ava: (whispering) Look at this old map..."
     - The script must tell a coherent mini-story with a beginning, middle, and end.
@@ -2402,6 +2404,8 @@ IMPORTANT:
       "taskType": "script-play",
       "title": "The Discovery at the River",
       "prompt": "Pass the device speaker-to-speaker. Read your lines with expression!",
+      "setting": "Two young scientists, Ava and Noah, are investigating why their local river looks different this year. A narrator guides the story. Team member 1, you are the Narrator. Team member 2, you are Ava. Team member 3, you are Noah.",
+      "roles": ["Narrator", "Ava", "Noah"],
       "lines": [
         "Narrator: The students gathered by the riverbank on a cool morning.",
         "Ava: (pointing) Look — the water level is much lower than last year.",
@@ -2417,6 +2421,7 @@ IMPORTANT:
     Common failure prevention:
     - "lines" must be a FLAT array of strings — NOT nested objects, NOT beats.
     - Minimum 8 lines. Each line must be a non-empty string.
+    - "setting" must be a non-empty string that introduces characters and assigns roles to team members.
     - Ensure the script is meaningful and relevant to the assigned topic/vocabulary.
     `,
 },
