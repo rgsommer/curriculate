@@ -663,10 +663,8 @@ const SAMPLE_TASKS = {
 };
 
 // Types where the normalizer transforms data in a way the post-normalize
-// validator can't handle (known bugs). We test validate-only for these.
-const SKIP_FULL_PIPELINE = new Set([
-  TASK_TYPES.FAKE_OUT, // normalizer inserts jokeOption into options (4), validator expects 3
-]);
+// validator can't handle. Currently empty after fixing fake-out mismatch.
+const SKIP_FULL_PIPELINE = new Set([]);
 
 // ── Test runner ────────────────────────────────────────────────
 const PASS = "\x1b[32m✓ PASS\x1b[0m";

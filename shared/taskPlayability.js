@@ -344,14 +344,16 @@ export function assessTaskPlayability(rawTask) {
         const r = rounds[i] || {};
         if (!isNonEmptyString(r.prompt)) issues.push(`rounds[${i}].prompt is required`);
 
+        // Accept 3 (pre-normalization) or 4 (post-normalization: joke inserted into options)
         const opts = Array.isArray(r.options) ? r.options.filter(isNonEmptyString) : [];
-        if (opts.length !== 3) issues.push(`rounds[${i}].options must have exactly 3 items (got ${opts.length})`);
+        if (opts.length !== 3 && opts.length !== 4) issues.push(`rounds[${i}].options must have 3 or 4 items (got ${opts.length})`);
 
         if (!Number.isInteger(r.correctIndex)) issues.push(`rounds[${i}].correctIndex must be integer`);
-        else if (r.correctIndex < 0 || r.correctIndex > 2) issues.push(`rounds[${i}].correctIndex must be 0, 1, or 2`);
+        else if (r.correctIndex < 0 || r.correctIndex > 3) issues.push(`rounds[${i}].correctIndex must be 0..3`);
 
         if (!isNonEmptyString(r.jokeOption)) issues.push(`rounds[${i}].jokeOption is required`);
-        else if (opts.includes(r.jokeOption)) issues.push(`rounds[${i}].jokeOption must NOT be in options`);
+        // Only flag jokeOption-in-options for pre-normalization (3 opts); post-normalization (4) expects it there
+        else if (opts.length === 3 && opts.includes(r.jokeOption)) issues.push(`rounds[${i}].jokeOption must NOT be in options`);
 
         if (!Number.isInteger(r.jokeIndex) || ![0, 1, 2, 3].includes(r.jokeIndex)) {
           issues.push(`rounds[${i}].jokeIndex must be 0, 1, 2, or 3`);

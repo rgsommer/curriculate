@@ -1383,20 +1383,35 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "true-false-tictactoe".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
+
     Task-specific guidance:
-    - Create a tic-tac-toe grid of 9 true/false statements. Provide the correct truth value for each square. Mix true and false evenly.
-    
+    - Create EXACTLY 9 true/false statements for a tic-tac-toe grid.
+    - Mix true and false roughly evenly (4-5 true, 4-5 false).
+    - CRITICAL: Use an "items" array with EXACTLY 9 objects, each having:
+      { "statement": "The Earth is round.", "correctAnswer": true }
+    - correctAnswer must be a boolean (true or false), NOT a string.
+
+    Example structure:
+    {
+      "taskType": "true-false-tictactoe",
+      "title": "Science Facts",
+      "prompt": "Claim squares by correctly identifying true and false statements!",
+      "items": [
+        { "statement": "Water boils at 100°C at sea level.", "correctAnswer": true },
+        { "statement": "The Sun revolves around the Earth.", "correctAnswer": false },
+        ... (9 items total)
+      ]
+    }
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
+    - You MUST include EXACTLY 9 items — not 8, not 10.
+    - correctAnswer must be boolean true or false, not a string.
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },

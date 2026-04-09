@@ -576,11 +576,18 @@ export function normalizeTaskByType(taskType, rawTask) {
     case TASK_TYPES.TRUE_FALSE_TICTACTOE: {
       const cfg = isObject(task.config) ? task.config : (task.config = {});
 
+      // AI may send items[], config.items[], statements[], or config.statements[]
       const itemsIn = Array.isArray(task.items)
         ? task.items
         : Array.isArray(cfg.items)
           ? cfg.items
-          : [];
+          : Array.isArray(task.statements)
+            ? task.statements
+            : Array.isArray(cfg.statements)
+              ? cfg.statements
+              : Array.isArray(cfg.statementSets?.[0])
+                ? cfg.statementSets[0]
+                : [];
 
       // Accept common field shapes and coerce answers to boolean.
       const items = itemsIn
@@ -593,6 +600,7 @@ export function normalizeTaskByType(taskType, rawTask) {
                 ? String(it.text).trim()
                 : "";
 
+          // Check isFalse (inverted boolean) in addition to normal answer fields
           const raw =
             it?.correctAnswer ??
             it?.answer ??
@@ -609,6 +617,16 @@ export function normalizeTaskByType(taskType, rawTask) {
             const s = raw.trim().toLowerCase();
             if (s === "true" || s === "t" || s === "yes") correctAnswer = true;
             if (s === "false" || s === "f" || s === "no") correctAnswer = false;
+          }
+
+          // Fallback: isFalse is the inverse (AI description suggests this field name)
+          if (correctAnswer === null && it?.isFalse !== undefined) {
+            if (typeof it.isFalse === "boolean") correctAnswer = !it.isFalse;
+            else if (typeof it.isFalse === "string") {
+              const s = it.isFalse.trim().toLowerCase();
+              if (s === "true" || s === "t" || s === "yes") correctAnswer = false;
+              if (s === "false" || s === "f" || s === "no") correctAnswer = true;
+            }
           }
 
           return { statement, correctAnswer };
@@ -1589,7 +1607,9 @@ export function validateTaskByType(taskType, task) {
         if (!asNonEmptyString(r?.prompt)) errors.push(`rounds[${i}].prompt required`);
         else if (_isBadText(r.prompt)) errors.push(`rounds[${i}].prompt looks like placeholder text`);
 
-        if (!Array.isArray(r?.options) || r.options.length !== 3) errors.push(`rounds[${i}].options must have exactly 3 options`);
+        // Accept 3 options (pre-normalization: joke separate) or 4 (post-normalization: joke inserted)
+        const optLen = Array.isArray(r?.options) ? r.options.length : 0;
+        if (optLen !== 3 && optLen !== 4) errors.push(`rounds[${i}].options must have 3 or 4 options (got ${optLen})`);
         else {
           r.options.forEach((opt, oi) => {
             if (!asNonEmptyString(opt)) errors.push(`rounds[${i}].options[${oi}] required`);
@@ -1598,11 +1618,12 @@ export function validateTaskByType(taskType, task) {
         }
 
         const ci = r?.correctIndex;
-        if (typeof ci !== "number" || !Number.isInteger(ci) || ci < 0 || ci > 2) errors.push(`rounds[${i}].correctIndex must be 0,1,2`);
+        if (typeof ci !== "number" || !Number.isInteger(ci) || ci < 0 || ci > 3) errors.push(`rounds[${i}].correctIndex must be 0..3`);
 
         const jo = typeof r?.jokeOption === "string" ? r.jokeOption.trim() : "";
         if (!jo) errors.push(`rounds[${i}].jokeOption required`);
-        if (jo && Array.isArray(r?.options) && r.options.includes(jo)) errors.push(`rounds[${i}].jokeOption must NOT be in options`);
+        // Only flag jokeOption-in-options for pre-normalization (3 options); post-normalization (4) expects it there
+        if (jo && optLen === 3 && Array.isArray(r?.options) && r.options.includes(jo)) errors.push(`rounds[${i}].jokeOption must NOT be in options`);
 
         const ji = r?.jokeIndex;
         if (typeof ji !== "number" || !Number.isInteger(ji) || ji < 0 || ji > 3) errors.push(`rounds[${i}].jokeIndex must be 0..3`);
