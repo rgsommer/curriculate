@@ -560,10 +560,6 @@ router.post("/referral-codes/:id/send", ...adminRequired, async (req, res) => {
       });
     }
 
-    const signupUrl = process.env.TEACHER_APP_ORIGIN
-      ? `${process.env.TEACHER_APP_ORIGIN}/pricing`
-      : "https://set.curriculate.net/pricing";
-
     const vars = {
       SENDER_NAME: senderName,
       AGENT_NAME: doc.agentName,
@@ -572,7 +568,8 @@ router.post("/referral-codes/:id/send", ...adminRequired, async (req, res) => {
       CUSTOMER_DISCOUNT: doc.customerDiscountPercent > 0
         ? `Your referrals get ${doc.customerDiscountPercent}% off their first payment!`
         : "",
-      SIGNUP_URL: signupUrl,
+      SITE_URL: "https://www.curriculate.net",
+      AI_GRADING_URL: "https://www.curriculate.net/ai-grading",
       CUSTOM_MESSAGE: req.body?.message
         ? String(req.body.message).replace(/</g, "&lt;").replace(/>/g, "&gt;")
         : "",
@@ -601,13 +598,22 @@ const DEFAULT_REFERRAL_AGENT_HTML = `
   </div>
   <p style="color:#334155;">{{CUSTOMER_DISCOUNT}}</p>
   <p style="color:#334155;">When someone signs up and enters your code during checkout, they're linked to you automatically. You can track your conversions and commissions at any time.</p>
-  <div style="text-align:center;margin:20px 0;">
-    <a href="{{SIGNUP_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">View Pricing Page</a>
+
+  <p style="color:#334155;font-size:14px;margin-top:16px;"><strong>Key links to share with prospects:</strong></p>
+  <div style="margin:16px 0;">
+    <div style="text-align:center;margin-bottom:12px;">
+      <a href="{{SITE_URL}}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">Visit Curriculate</a>
+    </div>
+    <div style="text-align:center;">
+      <a href="{{AI_GRADING_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:16px;">AI Grading &mdash; See It In Action</a>
+    </div>
   </div>
+
   <p style="color:#334155;font-size:14px;"><strong>How it works:</strong></p>
   <ol style="color:#334155;font-size:14px;padding-left:20px;">
-    <li>Share your code or pricing link with potential subscribers</li>
-    <li>They enter your code at checkout</li>
+    <li>Share your code along with the links above</li>
+    <li>Direct teachers to <a href="{{AI_GRADING_URL}}" style="color:#16a34a;font-weight:600;">curriculate.net/ai-grading</a> to see AI grading in action</li>
+    <li>They enter your referral code at checkout</li>
     <li>You earn {{COMMISSION_PERCENT}}% commission on their subscription</li>
     <li>Commissions are tracked and paid out by the Curriculate team</li>
   </ol>
