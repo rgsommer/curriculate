@@ -566,13 +566,12 @@ export default function Home() {
           </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-gray-900 mb-5 leading-[1.08] tracking-tight max-w-4xl mx-auto">
-            Station rotation takes{" "}
+            Every teacher wants students moving, thinking, and collaborating.{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-500">
-              hours to prep
+              Few have time to prep all that.
             </span>{" "}
-            and{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-500">
-              minutes to fall apart
+              Fewer have time to assess it.
             </span>
           </h1>
 
