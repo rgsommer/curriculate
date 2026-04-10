@@ -81,6 +81,11 @@ const FEEDBACK_TRIGGER_2 = 30;  // optional: 2nd prompt at 30 uses (set null/0 t
 const FEEDBACK_SNOOZE_DAYS = 14; // if dismissed, don't show again for 14 days
 const FEEDBACK_COOLDOWN_DAYS = 7; // even if eligible, don't show more than once per week
 
+// Referral prompt (localStorage) — shown after sustained use
+const REFERRAL_TRIGGER = 15;  // show referral invite after 15 gradings
+const REFERRAL_DISMISSED_KEY = "curriculate_referral_dismissed_v1";
+const REFERRAL_SUBMITTED_KEY = "curriculate_referral_submitted_v1";
+
 const FEEDBACK_SUBMITTED_AT_KEY = "curriculate_feedback_submitted_at_v1";
 
 function submittedKeyForTrigger(t) {
@@ -882,6 +887,14 @@ export default function GradingPage() {
     const [feedbackName, setFeedbackName] = useState("");
     const [feedbackCity, setFeedbackCity] = useState("");
     const [okToQuote, setOkToQuote] = useState(false);
+
+    // Referral prompt state
+    const [showReferralPrompt, setShowReferralPrompt] = useState(false);
+    const [referralName, setReferralName] = useState("");
+    const [referralEmail, setReferralEmail] = useState("");
+    const [referralSending, setReferralSending] = useState(false);
+    const [referralDone, setReferralDone] = useState(false); // "applied" | "already" | false
+    const [referralError, setReferralError] = useState("");
        
     const gradingUrl = useMemo(() => {
       if (!backendBase) return "";
@@ -1167,6 +1180,56 @@ export default function GradingPage() {
       setShowFeedbackPrompt(true);
     }
 
+    // ─── Referral prompt helpers ───
+    function shouldShowReferralPrompt(nextUses) {
+      if (typeof window === "undefined") return false;
+      if (!REFERRAL_TRIGGER || nextUses < REFERRAL_TRIGGER) return false;
+      if (readStrLS(REFERRAL_SUBMITTED_KEY, "") === "1") return false;
+      if (readStrLS(REFERRAL_DISMISSED_KEY, "") === "1") return false;
+      return true;
+    }
+
+    function dismissReferralPrompt() {
+      writeStrLS(REFERRAL_DISMISSED_KEY, "1");
+      setShowReferralPrompt(false);
+      setReferralName("");
+      setReferralEmail("");
+      setReferralError("");
+    }
+
+    async function submitReferralApplication() {
+      const name = (referralName || "").trim();
+      const email = (referralEmail || "").trim();
+      if (!name || !email) return;
+
+      setReferralSending(true);
+      setReferralError("");
+      try {
+        const res = await fetch("/api/admin/referral-applications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, email, organization: "", message: "Applied via grading tool referral prompt" }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 409) {
+          // already applied
+          writeStrLS(REFERRAL_SUBMITTED_KEY, "1");
+          setReferralDone("already");
+        } else if (res.ok) {
+          writeStrLS(REFERRAL_SUBMITTED_KEY, "1");
+          setReferralDone("applied");
+        } else {
+          setReferralError(data?.error || "Something went wrong. Try again.");
+        }
+      } catch (e) {
+        console.error("Referral submit error:", e);
+        setReferralError("Network error. Try again.");
+      } finally {
+        setReferralSending(false);
+      }
+    }
+
     function shouldShowFeedbackPrompt(nextUses) {
       if (typeof window === "undefined") return false;
 
@@ -1432,6 +1495,14 @@ export default function GradingPage() {
 
               writeStrLS(FEEDBACK_LAST_SHOWN_AT_KEY, String(Date.now()));
               openFeedbackPrompt(pendingTrigger);
+            }
+            // Referral prompt: show after REFERRAL_TRIGGER uses if feedback isn't showing
+            else if (!showFeedbackPrompt && !showReferralPrompt && shouldShowReferralPrompt(nextUses)) {
+              setReferralName("");
+              setReferralEmail("");
+              setReferralDone(false);
+              setReferralError("");
+              setShowReferralPrompt(true);
             }
           } catch {}
         } else {
@@ -2746,6 +2817,97 @@ export default function GradingPage() {
             </div>
           </div>
         )}
+
+        {/* ── Referral prompt modal ── */}
+        {showReferralPrompt && (
+          <div style={referralStyles.overlay} role="dialog" aria-modal="true">
+            <div style={referralStyles.modal}>
+              {referralDone ? (
+                <>
+                  <div style={referralStyles.icon}>&#127881;</div>
+                  <div style={referralStyles.title}>
+                    {referralDone === "already" ? "You're already on the list!" : "You're in!"}
+                  </div>
+                  <div style={referralStyles.subtitle}>
+                    {referralDone === "already"
+                      ? "We have your application. You'll hear from us soon."
+                      : "We'll review your application and email you a personal referral code within a few days."}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowReferralPrompt(false); setReferralDone(false); }}
+                    style={referralStyles.primary}
+                  >
+                    Got it
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={referralStyles.icon}>&#128640;</div>
+                  <div style={referralStyles.title}>Love this tool? Share it.</div>
+                  <div style={referralStyles.subtitle}>
+                    Know teachers at other schools? Become a referral agent — earn commission every time someone you refer subscribes. Just your name and email to get started.
+                  </div>
+
+                  <input
+                    value={referralName}
+                    onChange={(e) => setReferralName(e.target.value)}
+                    placeholder="Your name"
+                    style={referralStyles.input}
+                    autoComplete="name"
+                    autoFocus
+                  />
+                  <input
+                    value={referralEmail}
+                    onChange={(e) => setReferralEmail(e.target.value)}
+                    placeholder="Your email"
+                    style={{ ...referralStyles.input, marginTop: 8 }}
+                    autoComplete="email"
+                    type="email"
+                  />
+
+                  {referralError && (
+                    <div style={referralStyles.error}>{referralError}</div>
+                  )}
+
+                  <div style={referralStyles.row}>
+                    <button
+                      type="button"
+                      onClick={dismissReferralPrompt}
+                      style={referralStyles.secondary}
+                      disabled={referralSending}
+                    >
+                      Not now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitReferralApplication}
+                      style={{
+                        ...referralStyles.primary,
+                        opacity: (referralName || "").trim() && (referralEmail || "").trim() ? 1 : 0.5,
+                        cursor: (referralName || "").trim() && (referralEmail || "").trim() ? "pointer" : "not-allowed",
+                      }}
+                      disabled={referralSending || !(referralName || "").trim() || !(referralEmail || "").trim()}
+                    >
+                      {referralSending ? "Sending..." : "Sign me up"}
+                    </button>
+                  </div>
+
+                  <div style={referralStyles.alreadyAgent}>
+                    Already a referral agent?{" "}
+                    <a href="/referrals" style={referralStyles.agentLink}>
+                      View your referral page
+                    </a>
+                  </div>
+
+                  <div style={referralStyles.finePrint}>
+                    No obligation. We'll email you a personal referral code and details.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3188,4 +3350,66 @@ const feedbackStyles = {
   checkbox: { width: 16, height: 16 },
   checkboxText: { lineHeight: 1.3 },
   finePrint: { marginTop: 10, fontSize: 12, opacity: 0.7, lineHeight: 1.35 },
+};
+
+const referralStyles = {
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(2,6,23,0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 9999,
+  },
+  modal: {
+    width: "100%",
+    maxWidth: 440,
+    borderRadius: 18,
+    background: "white",
+    border: "1px solid rgba(15,23,42,0.14)",
+    boxShadow: "0 18px 40px rgba(2,6,23,0.25)",
+    padding: 24,
+    textAlign: "center",
+  },
+  icon: { fontSize: 36, marginBottom: 8 },
+  title: { fontWeight: 900, fontSize: 20, color: "#0b1220" },
+  subtitle: { marginTop: 8, fontSize: 14, opacity: 0.8, lineHeight: 1.45, textAlign: "center" },
+  input: {
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(15,23,42,0.14)",
+    background: "white",
+    color: "#0b1220",
+    outline: "none",
+    fontSize: 14,
+    marginTop: 14,
+  },
+  row: { display: "flex", justifyContent: "center", gap: 10, marginTop: 16 },
+  primary: {
+    background: "#059669",
+    color: "white",
+    border: "none",
+    borderRadius: 12,
+    padding: "10px 20px",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  secondary: {
+    background: "rgba(15,23,42,0.06)",
+    color: "#0b1220",
+    border: "1px solid rgba(15,23,42,0.12)",
+    borderRadius: 12,
+    padding: "10px 20px",
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  error: { marginTop: 8, fontSize: 13, color: "#dc2626", fontWeight: 600 },
+  alreadyAgent: { marginTop: 14, fontSize: 13, opacity: 0.7, lineHeight: 1.35 },
+  agentLink: { color: "#059669", fontWeight: 700, textDecoration: "underline" },
+  finePrint: { marginTop: 8, fontSize: 12, opacity: 0.6, lineHeight: 1.35 },
 };
