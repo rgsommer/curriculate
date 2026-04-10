@@ -645,6 +645,57 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.TOWER_BUILDER: {
+      const cfg = isObject(task.config) ? task.config : (task.config = {});
+
+      const itemsIn = Array.isArray(task.items)
+        ? task.items
+        : Array.isArray(cfg.items)
+          ? cfg.items
+          : Array.isArray(task.statements)
+            ? task.statements
+            : Array.isArray(cfg.statements)
+              ? cfg.statements
+              : [];
+
+      const _validCats = new Set(["benefit", "harm", "neutral"]);
+
+      const towerItems = itemsIn
+        .map((it) => {
+          const statement = isNonEmptyString(it?.statement)
+            ? String(it.statement).trim()
+            : isNonEmptyString(it?.text)
+              ? String(it.text).trim()
+              : isNonEmptyString(it?.prompt)
+                ? String(it.prompt).trim()
+                : "";
+
+          let category = String(it?.category || "").toLowerCase();
+          if (!_validCats.has(category)) {
+            if (typeof it?.correctAnswer === "boolean") {
+              category = it.correctAnswer ? "benefit" : "harm";
+            } else if (typeof it?.isFalse === "boolean") {
+              category = it.isFalse ? "harm" : "benefit";
+            } else if (typeof it?.answer === "boolean") {
+              category = it.answer ? "benefit" : "harm";
+            } else {
+              category = "benefit";
+            }
+          }
+
+          return { statement, category };
+        })
+        .filter((it) => it.statement);
+
+      task.items = towerItems;
+      task.config = {
+        ...cfg,
+        items: task.items,
+        statements: task.items.map((it) => ({ text: it.statement, category: it.category })),
+      };
+      break;
+    }
+
     case TASK_TYPES.MATCHING: {
       const cfg = isObject(task.config) ? task.config : (task.config = {});
 
@@ -1687,6 +1738,25 @@ export function validateTaskByType(taskType, task) {
       for (const it of task.items) {
         if (!isNonEmptyString(it?.statement)) errors.push("each item.statement must be a non-empty string");
         if (typeof it?.correctAnswer !== "boolean") errors.push("each item.correctAnswer must be boolean");
+      }
+      break;
+    }
+
+    case TASK_TYPES.TOWER_BUILDER: {
+      if (!Array.isArray(task.items) || task.items.length < 5) {
+        errors.push("tower-builder requires items[] with at least 5 statements");
+        break;
+      }
+      const validCats = new Set(["benefit", "harm", "neutral"]);
+      for (const it of task.items) {
+        if (!isNonEmptyString(it?.statement)) errors.push("each item.statement must be a non-empty string");
+        if (!validCats.has(it?.category)) {
+          if (typeof it?.correctAnswer === "boolean") {
+            it.category = it.correctAnswer ? "benefit" : "harm";
+          } else {
+            errors.push("each item.category must be benefit, harm, or neutral");
+          }
+        }
       }
       break;
     }

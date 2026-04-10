@@ -54,6 +54,7 @@ import PhysicalMultipleChoiceTask from "./types/PhysicalMultipleChoiceTask";
 
 import ScriptPlayTask from "./types/ScriptPlayTask";
 import RolePlayDeckTask from "./types/RolePlayDeckTask";
+import TowerBuilderTask from "./types/TowerBuilderTask";
 import PaperModeCamera from "./PaperModeCamera.jsx";
 
 
@@ -2602,6 +2603,19 @@ case TASK_TYPES.COLLABORATION:
       );
       break;
 
+
+case TASK_TYPES.TOWER_BUILDER:
+      content = (
+        <TowerBuilderTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          memberNames={memberNames}
+          remainingMs={remainingMs}
+          timeLimitSeconds={t.timeLimitSeconds || tp.timeLimitSeconds}
+        />
+      );
+      break;
 
 case TASK_TYPES.MAD_DASH:
   content = (

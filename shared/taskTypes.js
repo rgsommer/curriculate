@@ -61,6 +61,7 @@ export const TASK_TYPES = {
   JEOPARDY: "brain-blitz", // historically “JEOPARDY” in code; UI label is Brain Blitz
   TRUE_FALSE_TICTACTOE: "true-false-tictactoe",
   TRUE_FALSE_CONNECT_FOUR: "true-false-connect-four",
+  TOWER_BUILDER: "tower-builder",
   FLASHCARDS: "flashcards",
   FLASHCARDS_RACE: "flashcards-race",
   PET_FEEDING: "pet-feeding",
@@ -1466,6 +1467,99 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
     demoPrompt: "",
     aiPrompt: "",
+  },
+
+  [TASK_TYPES.TOWER_BUILDER]: {
+    label: "Tower Builder",
+    category: CATEGORY.COMPETITIVE,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 180,
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      [
+        "Tower Builder — students build a tower by evaluating statements one at a time.",
+        "",
+        "Binary mode (true/false):",
+        "• TRUE statements become solid blocks — the tower grows.",
+        "• FALSE statements are 'mushy' — the tower partially collapses back to the last solid block.",
+        "",
+        "Tri-state mode (benefit/harm/neutral):",
+        "• BENEFIT statements are solid blocks — full height.",
+        "• NEUTRAL statements are wobbly, smaller blocks — half height, but they hold.",
+        "• HARM statements are mushy — tower collapses back to last non-harm block.",
+        "",
+        "Students see one statement at a time and decide: 'Stack it!' or 'Skip'.",
+        "Skipping is safe but scores nothing. Stacking a good statement earns points; stacking a bad one destroys progress.",
+        "",
+        "AI generation / schema hints (for aiTaskSetGenerator):",
+        "taskType: \"tower-builder\"",
+        "title: short (3–7 words)",
+        "prompt: topic context for students",
+        "items: [ { statement: string, category: \"benefit\"|\"harm\"|\"neutral\" } ]",
+        "  — For binary mode, use only \"benefit\" and \"harm\" (mapped from true/false).",
+        "  — For tri-state mode, include all three categories.",
+        "  — 10–15 items recommended.",
+        "",
+        "Pedagogical benefits: critical evaluation under stakes, consequence-based learning (bad choices cost progress), deeper analysis with tri-state (benefit/harm/neutral requires nuance beyond binary true/false).",
+      ].join("\n"),
+
+    demoPrompt: "Stack only the true statements to build your tower!",
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "tower-builder".
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - Include non-empty root fields: taskType, title, prompt.
+    - Keep language age-appropriate and classroom-safe.
+    - Avoid copyrighted passages; write original content.
+
+    Task-specific guidance:
+    - Create 10–15 statements about the given topic.
+    - Each item has: { "statement": "...", "category": "benefit"|"harm"|"neutral" }
+    - Use tri-state categories when the topic involves evaluating impacts, consequences, or effects.
+    - Use binary (benefit/harm only, no neutral) when the topic is factual true/false.
+    - Mix categories so roughly 40% benefit, 30% harm, 30% neutral (for tri-state) or 50/50 (for binary).
+    - Statements should require genuine thought — avoid obviously true/false items.
+
+    Example structure (tri-state):
+    {
+      "taskType": "tower-builder",
+      "title": "Industrial Revolution Effects",
+      "prompt": "Build your tower with statements that describe BENEFITS of the Industrial Revolution. Avoid harms!",
+      "items": [
+        { "statement": "Factory production made goods cheaper and more available.", "category": "benefit" },
+        { "statement": "Child labor became widespread in factories.", "category": "harm" },
+        { "statement": "Population shifted from rural to urban areas.", "category": "neutral" },
+        ... (10-15 items total)
+      ]
+    }
+
+    Example structure (binary):
+    {
+      "taskType": "tower-builder",
+      "title": "Cell Biology Facts",
+      "prompt": "Stack only the TRUE statements about cells!",
+      "items": [
+        { "statement": "Mitochondria produce ATP.", "category": "benefit" },
+        { "statement": "Plant cells have no cell wall.", "category": "harm" },
+        ... (10-15 items total)
+      ]
+    }
+
+    Common failure prevention:
+    - category must be one of: "benefit", "harm", "neutral" — not true/false.
+    - Include 10–15 items, not fewer.
+    - Ensure prompts are student-facing instructions (what to do).
+    `,
   },
 
   // ✅ Updated to match your stated intent: mastery-oriented, low-stress, intra-team yes, inter-team no
