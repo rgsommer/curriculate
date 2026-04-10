@@ -292,7 +292,7 @@ export default function TaskSets() {
     setLoading(true);
     setError("");
     try {
-      const data = await apiFetchJson("/api/tasksets");
+      const data = await apiFetchJson("/api/tasksets-with-timing");
       const list = Array.isArray(data)
         ? data
         : Array.isArray(data?.tasksets)
@@ -1197,11 +1197,18 @@ export default function TaskSets() {
               ? rawGoal.charAt(0).toUpperCase() + rawGoal.slice(1).toLowerCase()
               : "";
 
+            // Avg actual completion time (from real student data)
+            const avgComp = ts?.avgCompletionMinutes;
+            const avgCompLabel = typeof avgComp === "number" && avgComp > 0
+              ? `Avg ${avgComp} min`
+              : "";
+
             const secondLineParts = [
               subject && subject.toLowerCase() !== title.toLowerCase() && subject,
               grade && `Grade ${grade}`,
               `${count} task${count === 1 ? "" : "s"}`,
               durLabel,
+              avgCompLabel,
               goalLabel,
               blooms ? `Bloom's ${blooms}` : "",
               `Plays ${times}`,

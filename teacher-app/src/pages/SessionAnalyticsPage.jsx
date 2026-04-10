@@ -108,6 +108,10 @@ export default function SessionAnalyticsPage() {
   const { id } = useParams();
   const [session, setSession] = useState(null);
   const [studentAnalytics, setStudentAnalytics] = useState([]);
+  const [studentGrades, setStudentGrades] = useState([]);
+  const [gradingConfig, setGradingConfig] = useState(null);
+  const [classChatBlurb, setClassChatBlurb] = useState("");
+  const [skillsDeveloped, setSkillsDeveloped] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [error, setError] = useState("");
@@ -118,6 +122,10 @@ export default function SessionAnalyticsPage() {
       .then((res) => {
         setSession(res.data.sessionAnalytics);
         setStudentAnalytics(res.data.studentAnalytics || []);
+        setStudentGrades(res.data.studentGrades || []);
+        setGradingConfig(res.data.gradingConfig || null);
+        setClassChatBlurb(res.data.classChatBlurb || "");
+        setSkillsDeveloped(res.data.skillsDeveloped || []);
       })
       .catch((err) => {
         console.error(err);
@@ -201,6 +209,49 @@ export default function SessionAnalyticsPage() {
         </p>
       </div>
 
+      {/* Class Chat Blurb */}
+      {classChatBlurb && (
+        <section className="border rounded-lg overflow-hidden bg-emerald-50 border-emerald-300">
+          <div className="p-3 sm:p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm sm:text-base font-bold text-emerald-900">
+                Class Chat Blurb
+              </h2>
+              <button
+                className="text-[10px] sm:text-xs font-semibold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2 py-1 rounded-full transition-colors"
+                onClick={() => {
+                  navigator.clipboard.writeText(classChatBlurb);
+                }}
+              >
+                Copy
+              </button>
+            </div>
+            <p className="text-xs sm:text-sm text-emerald-900 leading-relaxed">
+              {classChatBlurb}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* Skills Developed */}
+      {skillsDeveloped.length > 0 && (
+        <section>
+          <h2 className="text-base sm:text-xl font-semibold mb-2">
+            Skills Developed
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {skillsDeveloped.map((skill, idx) => (
+              <span
+                key={idx}
+                className="inline-block px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-800 text-[11px] sm:text-xs font-semibold"
+              >
+                {skill}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Task breakdown */}
       <section>
         <h2 className="text-base sm:text-xl font-semibold mb-2">
@@ -242,6 +293,99 @@ export default function SessionAnalyticsPage() {
           </div>
         </div>
       </section>
+
+      {/* Student Grades (Gradebook) */}
+      {studentGrades.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base sm:text-xl font-semibold">
+              Student Grades
+              {gradingConfig?.maxGrade ? (
+                <span className="ml-2 text-xs sm:text-sm font-normal text-gray-500">
+                  (out of {gradingConfig.maxGrade})
+                </span>
+              ) : null}
+            </h2>
+          </div>
+          <div className="border rounded-lg bg-white overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] sm:text-xs">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="p-2 text-left">Student</th>
+                    <th className="p-2 text-left">Team</th>
+                    <th className="p-2 text-right">Points</th>
+                    <th className="p-2 text-right">%</th>
+                    <th className="p-2 text-right">Grade</th>
+                    <th className="p-2 text-center">Letter</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentGrades
+                    .slice()
+                    .sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0))
+                    .map((g, idx) => {
+                      const letterColor =
+                        g.letterGrade === "A"
+                          ? "text-green-700 bg-green-50"
+                          : g.letterGrade === "B"
+                          ? "text-blue-700 bg-blue-50"
+                          : g.letterGrade === "C"
+                          ? "text-yellow-700 bg-yellow-50"
+                          : g.letterGrade === "D"
+                          ? "text-orange-700 bg-orange-50"
+                          : "text-red-700 bg-red-50";
+                      return (
+                        <tr key={idx} className="border-t hover:bg-gray-50">
+                          <td className="p-2 font-medium">{g.studentName}</td>
+                          <td className="p-2 text-gray-600">{g.teamName || "—"}</td>
+                          <td className="p-2 text-right">
+                            {g.pointsEarned}/{g.pointsPossible}
+                          </td>
+                          <td className="p-2 text-right font-medium">{g.percent}%</td>
+                          <td className="p-2 text-right font-medium">
+                            {g.scaledGrade}/{g.maxGrade}
+                          </td>
+                          <td className="p-2 text-center">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${letterColor}`}
+                            >
+                              {g.letterGrade}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+                {studentGrades.length > 1 && (
+                  <tfoot>
+                    <tr className="border-t-2 bg-gray-50 font-semibold">
+                      <td className="p-2" colSpan={3}>
+                        Class Average
+                      </td>
+                      <td className="p-2 text-right">
+                        {Math.round(
+                          studentGrades.reduce((s, g) => s + (g.percent ?? 0), 0) /
+                            studentGrades.length
+                        )}
+                        %
+                      </td>
+                      <td className="p-2 text-right">
+                        {(
+                          studentGrades.reduce((s, g) => s + (g.scaledGrade ?? 0), 0) /
+                          studentGrades.length
+                        ).toFixed(1)}
+                        /{studentGrades[0]?.maxGrade ?? 100}
+                      </td>
+                      <td className="p-2"></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Student summaries */}
       <section>

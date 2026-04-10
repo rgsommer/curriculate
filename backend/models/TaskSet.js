@@ -109,6 +109,22 @@ const TaskSetSchema = new Schema(
     // AI generation metadata (report, coverage, concept allocation)
     meta: { type: Schema.Types.Mixed, default: null },
 
+    // Grading configuration — teacher sets the total for gradebook
+    gradingConfig: {
+      enabled: { type: Boolean, default: false },
+      maxGrade: { type: Number, default: 100 },         // "out of X" (e.g., 50, 25, 100)
+      letterGradeScale: {
+        type: [{ min: Number, letter: String }],         // e.g., [{ min: 90, letter: "A" }, { min: 80, letter: "B" }, ...]
+        default: [
+          { min: 90, letter: "A" },
+          { min: 80, letter: "B" },
+          { min: 70, letter: "C" },
+          { min: 60, letter: "D" },
+          { min: 0, letter: "F" },
+        ],
+      },
+    },
+
     // Analytics fields (2.1)
     lastPlayedAt: Date,
     totalPlays: { type: Number, default: 0 },

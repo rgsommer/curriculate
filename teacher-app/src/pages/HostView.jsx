@@ -200,6 +200,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
   const [roomState, setRoomState] = useState({
     teams: {},
     scores: {},
+    playerScores: [],
     submissions: [],
     taskIndex: -1,
     totalTasks: 0,
@@ -291,6 +292,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
         ...prev,
         teams: safe.teams || {},
         scores: safe.scores || {},
+        playerScores: Array.isArray(safe.playerScores) ? safe.playerScores : prev.playerScores || [],
         submissions: Array.isArray(safe.submissions) ? safe.submissions : prev.submissions || [],
         taskIndex: typeof safe.taskIndex === "number" ? safe.taskIndex : prev.taskIndex,
         totalTasks: typeof safe.totalTasks === "number" ? safe.totalTasks : prev.totalTasks,
@@ -377,6 +379,12 @@ export default function HostView({ roomCode: roomCodeProp }) {
 
   const topThree = useMemo(() => leaderboard.slice(0, 3), [leaderboard]);
   const displayOrder = [1, 0, 2]; // 2nd, 1st, 3rd for podium
+
+  // Top 3 individual players
+  const topPlayers = useMemo(() => {
+    const ps = roomState.playerScores || [];
+    return ps.slice(0, 3); // already sorted desc by backend
+  }, [roomState.playerScores]);
 
   // Task progress
   const taskIndex = roomState.taskIndex;
@@ -513,6 +521,19 @@ export default function HostView({ roomCode: roomCodeProp }) {
             </button>
 
             <button
+              onClick={() => setActiveTab("players")}
+              className={`px-6 py-3 rounded-2xl font-extrabold text-lg md:text-xl shadow-lg backdrop-blur transition ${
+                activeTab === "players"
+                  ? "bg-white/25 border border-white/40"
+                  : "bg-black/20 border border-white/20 hover:bg-white/15"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Sparkles className="w-6 h-6" /> Players
+              </span>
+            </button>
+
+            <button
               onClick={() => setActiveTab("teams")}
               className={`px-6 py-3 rounded-2xl font-extrabold text-lg md:text-xl shadow-lg backdrop-blur transition ${
                 activeTab === "teams"
@@ -586,6 +607,51 @@ export default function HostView({ roomCode: roomCodeProp }) {
                 </motion.div>
               );
             })}
+          </div>
+        )}
+
+        {/* Top 3 Players */}
+        {topPlayers.length > 0 && (
+          <div className="mb-10">
+            <div className="flex items-center justify-center gap-2 mb-5 opacity-95">
+              <Sparkles className="w-5 h-5" />
+              <div className="text-xl md:text-2xl font-extrabold tracking-wide">Top Players</div>
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div className="flex items-end justify-center gap-6 md:gap-10">
+              {[1, 0, 2].map((idx, pos) => {
+                const player = topPlayers[idx];
+                if (!player) return null;
+                const heights = ["h-32 md:h-36", "h-40 md:h-44", "h-24 md:h-28"];
+                const gradients = [
+                  "from-amber-400/90 to-yellow-600/90",
+                  "from-cyan-400/90 to-blue-600/90",
+                  "from-rose-400/90 to-pink-600/90",
+                ];
+                const medals = ["🥈", "🥇", "🥉"];
+                return (
+                  <motion.div
+                    key={player.name}
+                    initial={{ y: 80, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: pos * 0.1, type: "spring", stiffness: 70, damping: 16 }}
+                    className="flex flex-col items-center"
+                  >
+                    <div className="text-4xl md:text-5xl mb-2">{medals[idx]}</div>
+                    <div
+                      className={`${heights[idx]} w-40 md:w-48 bg-gradient-to-b ${gradients[idx]} rounded-t-2xl flex flex-col items-center justify-center px-3 text-center shadow-xl ring-1 ring-white/20`}
+                    >
+                      <div className="text-lg md:text-xl font-black truncate w-full">{player.name}</div>
+                      <div className="text-2xl md:text-3xl font-black mt-1">
+                        <AnimatedPts value={player.pts} />
+                      </div>
+                      <div className="text-xs md:text-sm font-bold opacity-80 mt-1">{player.teamName || "—"}</div>
+                    </div>
+                    <div className={`w-full h-2 bg-gradient-to-b ${gradients[idx]} rounded-b-2xl shadow-lg`} />
+                  </motion.div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -663,6 +729,56 @@ export default function HostView({ roomCode: roomCodeProp }) {
                         <span className="font-black text-2xl md:text-3xl ml-4 relative">
                           <AnimatedPts value={row.pts} /> pts
                         </span>
+                      </motion.li>
+                    ))}
+                  </AnimatePresence>
+                </ol>
+              )}
+            </>
+          ) : activeTab === "players" ? (
+            <>
+              <div className="flex items-center gap-2 mb-5 opacity-95">
+                <Sparkles className="w-6 h-6" />
+                <div className="text-2xl md:text-3xl font-extrabold">All Players</div>
+              </div>
+
+              {(roomState.playerScores || []).length === 0 ? (
+                <div className="text-center text-2xl opacity-90 py-10">
+                  No individual scores yet. Players earn points as they complete tasks.
+                </div>
+              ) : (
+                <ol className="space-y-3 text-xl md:text-2xl">
+                  <AnimatePresence>
+                    {(roomState.playerScores || []).map((p, i) => (
+                      <motion.li
+                        key={p.name}
+                        layout
+                        initial={{ opacity: 0, x: 60 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -60 }}
+                        transition={{ duration: 0.25 }}
+                        className="group relative overflow-hidden bg-white/10 border border-white/20 rounded-2xl px-5 py-3 flex items-center shadow-lg hover:bg-white/15 transition"
+                        style={{ cursor: "default" }}
+                      >
+                        <span className="font-black text-2xl md:text-3xl w-14 text-white/95">
+                          {i < 3 ? trophyEmojis[i] : `${i + 1}.`}
+                        </span>
+
+                        <div className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-gradient-to-br from-purple-400 to-indigo-500 border-2 border-white/40 mr-4 flex items-center justify-center text-lg font-black shadow-lg">
+                          {(p.name || "?").charAt(0).toUpperCase()}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="font-extrabold truncate">{p.name}</div>
+                          <div className="text-sm font-bold opacity-70">{p.teamName || "—"}</div>
+                        </div>
+
+                        <div className="text-right ml-4">
+                          <div className="font-black text-2xl md:text-3xl">
+                            <AnimatedPts value={p.pts} />
+                          </div>
+                          <div className="text-xs font-bold opacity-60">{p.tasks} task{p.tasks !== 1 ? "s" : ""}</div>
+                        </div>
                       </motion.li>
                     ))}
                   </AnimatePresence>

@@ -14,6 +14,7 @@ import {
   regenerateSingleTask,
 } from "./sharedTasksetController.js";
 import { buildTasksetPrompt } from "./sharedTasksetController.js";
+import { getTimingStatsForGenerator } from "../services/taskTypeTimingAggregator.js";
 
 // ---------------- Validators (AI output hardening) ----------------
 // NOTE: strict AI-output hardening and normalizeSelectedType now live in sharedTasksetController.js.
@@ -741,6 +742,7 @@ async function generateTasksArray({
   topicLabel,
   vocabularyLines,
   specialConsiderations,
+  timingContext = "",
   temperature = 0.4,
 }) {
   const prompt = buildTasksetPrompt(
@@ -752,7 +754,8 @@ async function generateTasksArray({
     learningGoal,
     topicLabel,
     vocabularyLines,
-    specialConsiderations
+    specialConsiderations,
+    timingContext
   );
 
   // Use the more capable batch model for initial generation (complex multi-task schema).
@@ -1550,6 +1553,27 @@ export async function createAiTaskset(req, res) {
     sendSSE({ type: "start", total: safeCount });
     sendSSE({ type: "phase", phase: "generating", message: "Generating tasks with AI…" });
 
+    // ── Build timing context from real completion data ──
+    let timingContext = "";
+    try {
+      const teacherOwnerId = getOwnerId(req);
+      const timingStats = await getTimingStatsForGenerator(teacherOwnerId);
+      if (Object.keys(timingStats).length > 0) {
+        const lines = Object.entries(timingStats)
+          .filter(([, s]) => s.sampleCount >= 5) // only include reliable data
+          .map(([type, s]) => `  - ${type}: ~${s.avgMinutes} min avg (${s.sampleCount} samples, source: ${s.source})`)
+          .join("\n");
+        if (lines) {
+          timingContext = lines;
+          if (durationMinutes) {
+            timingContext += `\n  Target session duration: ${durationMinutes} minutes. Choose task count and complexity so total ≈ ${durationMinutes} min.`;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[AI] Timing stats lookup failed (non-blocking):", e?.message || e);
+    }
+
     let rawTasks = await generateTasksArray({
       typePool: pool,
       count: safeCount,
@@ -1560,6 +1584,7 @@ export async function createAiTaskset(req, res) {
       topicLabel,
       vocabularyLines: initialVocabularyLines,
       specialConsiderations: mergedSpecialConsiderations,
+      timingContext,
     });
 
     sendSSE({ type: "phase", phase: "finalizing", message: "Validating and finalizing tasks…" });

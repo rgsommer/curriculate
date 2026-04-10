@@ -1055,7 +1055,8 @@ export function buildTasksetPrompt(
   learningGoal,
   topicLabel,
   vocabularyLines,
-  specialConsiderations
+  specialConsiderations,
+  timingContext = ""
 ) {
   const perType = (typePool || [])
     .map((t) => `### ${t}\n${_getAiPromptForType(t) || "(MISSING aiPrompt)"}`)
@@ -1085,7 +1086,13 @@ export function buildTasksetPrompt(
 
     Special considerations:
     ${specialConsiderations || "none"}
-
+${timingContext ? `
+    TASK TIMING GUIDANCE (based on real student completion data)
+    Use these average completion times to plan task complexity and quantity.
+    If the teacher requested a specific session duration, choose task count and
+    complexity so that total estimated time ≈ requested duration.
+    ${timingContext}
+` : ""}
     PER-TYPE AI PROMPTS (from shared/taskTypes.js)
     ${perType}
 

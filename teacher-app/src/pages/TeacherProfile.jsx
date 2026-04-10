@@ -633,6 +633,59 @@ export default function TeacherProfile() {
           </button>
         </section>
 
+        {/* Individual Student Reports */}
+        <section style={{ marginBottom: 24 }}>
+          <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>
+            Individual Student Reports
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 8 }}>
+            When enabled, a one-page report is generated for each student after every session.
+            Reports include skills practiced, strengths, areas for growth, and category scores.
+          </p>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              cursor: "pointer",
+              padding: "10px 0",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={!!profile.includeIndividualReports}
+              onChange={(e) =>
+                handleChange("includeIndividualReports", e.target.checked)
+              }
+              style={{
+                width: 20,
+                height: 20,
+                accentColor: "#6366f1",
+                cursor: "pointer",
+              }}
+            />
+            <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+              Generate individual student reports
+            </span>
+            <span
+              style={{
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                color: "#7c3aed",
+                background: "#ede9fe",
+                padding: "2px 8px",
+                borderRadius: 999,
+                letterSpacing: "0.5px",
+              }}
+            >
+              PRO
+            </span>
+          </label>
+          <p style={{ fontSize: "0.8rem", color: "#9ca3af", marginTop: 2 }}>
+            One-page printable reports per student are included in the session PDF when this is enabled and your plan supports it.
+          </p>
+        </section>
+
         {/* Jeopardy defaults */}
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: "1.1rem", marginBottom: 8 }}>

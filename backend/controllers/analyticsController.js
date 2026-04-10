@@ -2,6 +2,7 @@
 import SessionAnalytics from "../models/SessionAnalytics.js";
 import StudentSessionAnalytics from "../models/StudentSessionAnalytics.js";
 import Session from "../models/Session.js";
+import SessionReport from "../models/SessionReport.js";
 
 /**
  * GET /analytics/sessions
@@ -82,6 +83,28 @@ export async function getSessionDetails(req, res) {
       teacherId,
     }).lean();
 
+    // Fetch matching SessionReport for gradebook grades + AI summary extras
+    let studentGrades = [];
+    let gradingConfig = null;
+    let classChatBlurb = "";
+    let skillsDeveloped = [];
+    let activityHighlights = [];
+    if (session?.code) {
+      const report = await SessionReport.findOne({
+        roomCode: session.code,
+        ownerId: teacherId,
+      })
+        .select("studentGrades gradingConfig summary.classChatBlurb summary.skillsDeveloped summary.activityHighlights summary.engagementLevel summary.overallProficiency")
+        .lean();
+      if (report) {
+        studentGrades = report.studentGrades || [];
+        gradingConfig = report.gradingConfig || null;
+        classChatBlurb = report.summary?.classChatBlurb || "";
+        skillsDeveloped = report.summary?.skillsDeveloped || [];
+        activityHighlights = report.summary?.activityHighlights || [];
+      }
+    }
+
     const response = {
       sessionAnalytics: {
         _id: sa._id,
@@ -109,6 +132,11 @@ export async function getSessionDetails(req, res) {
         avgLatencyMs: s.avgLatencyMs,
         perTask: s.perTask || [],
       })),
+      studentGrades,
+      gradingConfig,
+      classChatBlurb,
+      skillsDeveloped,
+      activityHighlights,
     };
 
     return res.json(response);

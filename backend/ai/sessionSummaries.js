@@ -37,6 +37,8 @@ export async function generateSessionSummaries({
   perParticipantStats,
   assessmentCategories,
   perspectives,
+  topTeams,
+  topPlayers,
 }) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Missing OPENAI_API_KEY");
@@ -77,7 +79,38 @@ Your tasks:
 2. "keyConcepts"
    List 5–10 key terms or ideas relevant to the activity.
 
-3. "perParticipant"
+3. "classChatBlurb"
+   Write a fun, upbeat, 3–5 sentence paragraph that a teacher can paste directly
+   into their Google Classroom, class chat, or parent newsletter. Requirements:
+     - Use an enthusiastic but professional teacher voice
+     - Name the activity / taskset by title if available
+     - Mention 2–3 concepts or skills practiced (keep it brief, not an exhaustive list)
+     - Name the top 3 teams (in 1st/2nd/3rd order) and top 3 individual players if available
+     - End with an encouraging line about what comes next or how well the class did
+     - Gently weave in any provided perspectives without being heavy-handed
+   Example tone: "What a session! We had a blast reviewing [concepts] through [activities].
+   Congrats to [Team A] for taking first place, with [Team B] and [Team C] close behind!
+   Shout-out to [Player1], [Player2], and [Player3] for top individual scores. Keep it up!"
+
+4. "skillsDeveloped"
+   List 5–8 academic/soft skills that students practiced during this session.
+   Be specific to the actual tasks and content — NOT generic filler.
+   Examples: "close reading comprehension", "collaborative persuasive writing",
+   "mental math under time pressure", "evidence-based argumentation",
+   "vocabulary recall", "team communication", "creative problem-solving".
+
+5. "activityHighlights"
+   For each distinct task/activity in the session, return an object:
+     { "taskType": string, "title": string, "description": string }
+   where "description" is one sentence explaining what students did.
+
+6. "engagementLevel"
+   A single word or short phrase: "Exceptional", "High", "Moderate", "Low", or a custom phrase.
+
+7. "overallProficiency"
+   A single word or short phrase like "Strong", "Developing", "Emerging", etc.
+
+8. "perParticipant"
    For each participant entry:
      - Use participant.studentName and participant.teamName.
      - Write a 3-sentence summary:
@@ -105,6 +138,8 @@ No Markdown. No explanation outside the JSON.
     perParticipantStats,
     assessmentCategories,
     perspectives,
+    topTeams: topTeams || [],
+    topPlayers: topPlayers || [],
   };
 
   const userPrompt = `
@@ -117,6 +152,11 @@ Return ONLY this JSON structure:
 {
   "groupSummary": string,
   "keyConcepts": string[],
+  "classChatBlurb": string,
+  "skillsDeveloped": string[],
+  "activityHighlights": [ { "taskType": string, "title": string, "description": string } ],
+  "engagementLevel": string,
+  "overallProficiency": string,
   "perParticipant": [
     {
       "teamName": string,

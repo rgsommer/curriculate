@@ -198,7 +198,17 @@ function extractMediaSubmissions(transcript, aiSummary) {
 
 function shouldIncludeIndividualReports(planName, includeIndividualReports) {
   if (!includeIndividualReports) return false;
-  return planTier(planName) === "PRO";
+  // Match sessionReportController.planAllowsStudentDetail — PLUS and above
+  const t = String(planName || "FREE").toUpperCase();
+  if (["FREE", "BASIC", "TRIAL", "DEMO", "NONE"].includes(t)) return false;
+  return (
+    t.startsWith("PLUS") ||
+    t.startsWith("PRO") ||
+    t.startsWith("SCHOOL") ||
+    t.startsWith("DISTRICT") ||
+    t.startsWith("ENTERPRISE") ||
+    t.startsWith("PREMIUM")
+  );
 }
 
 // --------------------------------------------------------------------
@@ -214,6 +224,8 @@ function buildEmailHtml({
   gradeLevel,
   assessmentCategories,
   includeIndividualReports,
+  studentGrades,
+  gradingConfig,
 }) {
   const tier = planTier(planName);
   const overview = extractOverview({ transcript, aiSummary });
@@ -307,7 +319,7 @@ function buildEmailHtml({
   const indivNote = shouldIncludeIndividualReports(planName, includeIndividualReports)
     ? `<div style="margin-top:10px; font-size:13px; opacity:.9;">Individual one-page student reports are included in the PDF attachment (print-ready).</div>`
     : (tier !== "PRO" && includeIndividualReports
-        ? `<div style="margin-top:10px; font-size:13px; opacity:.9;">Individual student printouts are available on the PRO plan.</div>`
+        ? `<div style="margin-top:10px; font-size:13px; opacity:.9;">Individual student printouts are available on PLUS plans and above.</div>`
         : "");
 
   return `
@@ -336,6 +348,33 @@ function buildEmailHtml({
           </div>
         </div>
 
+        ${(() => {
+          const blurb = aiSummary?.classChatBlurb || "";
+          if (!blurb) return "";
+          return `
+            <div style="margin-top:16px; padding:14px 16px; border-radius:14px; background:#ecfdf5; border:1px solid #6ee7b7;">
+              <div style="font-weight:900; margin-bottom:6px;">
+                📋 Class Chat Blurb
+                <span style="font-weight:400; font-size:12px; color:#6b7280; margin-left:6px;">(copy &amp; paste into your class chat or newsletter)</span>
+              </div>
+              <div style="line-height:1.55; font-size:14px; color:#064e3b;">${escHtml(blurb)}</div>
+            </div>
+          `;
+        })()}
+
+        ${(() => {
+          const skills = asList(aiSummary?.skillsDeveloped).filter(Boolean);
+          if (!skills.length) return "";
+          return `
+            <div style="margin-top:14px;">
+              <div style="font-weight:900; margin-bottom:4px;">Skills Developed</div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                ${skills.map((s) => `<span style="display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid #c7d2fe; background:#eef2ff; font-size:12px; color:#3730a3; font-weight:600;">${escHtml(s)}</span>`).join("")}
+              </div>
+            </div>
+          `;
+        })()}
+
         <div style="margin-top:14px;">
           <div style="font-weight:900;">Concepts Covered</div>
           ${conceptsHtml}
@@ -352,6 +391,67 @@ function buildEmailHtml({
           <div style="font-weight:900; margin-bottom:6px;">Note to Parents</div>
           <div style="line-height:1.45;">${noteToParents}</div>
         </div>
+
+        ${(() => {
+          const grades = asList(studentGrades).filter(Boolean);
+          if (!grades.length) return "";
+          const gc = gradingConfig && typeof gradingConfig === "object" ? gradingConfig : {};
+          const maxGradeLabel = gc.maxGrade ? ` (out of ${gc.maxGrade})` : "";
+          const sorted = [...grades].sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0));
+          const gradeRows = sorted.map((g) => `
+            <tr>
+              <td style="padding:6px 8px; border-top:1px solid #e5e7eb;">${escHtml(g.studentName || "—")}</td>
+              <td style="padding:6px 8px; border-top:1px solid #e5e7eb;">${escHtml(g.teamName || "—")}</td>
+              <td style="padding:6px 8px; border-top:1px solid #e5e7eb; text-align:right;">${g.pointsEarned ?? 0}/${g.pointsPossible ?? 0}</td>
+              <td style="padding:6px 8px; border-top:1px solid #e5e7eb; text-align:right; font-weight:700;">${g.percent ?? 0}%</td>
+              <td style="padding:6px 8px; border-top:1px solid #e5e7eb; text-align:right;">${g.scaledGrade ?? 0}/${g.maxGrade ?? 100}</td>
+              <td style="padding:6px 8px; border-top:1px solid #e5e7eb; text-align:center;">
+                <span style="display:inline-block; padding:2px 8px; border-radius:999px; font-weight:800; font-size:11px; background:${
+                  g.letterGrade === "A" ? "#dcfce7" : g.letterGrade === "B" ? "#dbeafe" : g.letterGrade === "C" ? "#fef9c3" : g.letterGrade === "D" ? "#ffedd5" : "#fecaca"
+                }; color:${
+                  g.letterGrade === "A" ? "#15803d" : g.letterGrade === "B" ? "#1d4ed8" : g.letterGrade === "C" ? "#a16207" : g.letterGrade === "D" ? "#c2410c" : "#dc2626"
+                };">${escHtml(g.letterGrade || "—")}</span>
+              </td>
+            </tr>
+          `).join("");
+
+          const avgPct = sorted.length > 1
+            ? Math.round(sorted.reduce((s, g) => s + (g.percent ?? 0), 0) / sorted.length)
+            : null;
+
+          const avgRow = avgPct != null ? `
+            <tr style="background:#e0e7ff;">
+              <td style="padding:6px 8px; border-top:2px solid #6366f1; font-weight:700;" colspan="3">Class Average</td>
+              <td style="padding:6px 8px; border-top:2px solid #6366f1; text-align:right; font-weight:700;">${avgPct}%</td>
+              <td style="padding:6px 8px; border-top:2px solid #6366f1; text-align:right; font-weight:700;">${(sorted.reduce((s, g) => s + (g.scaledGrade ?? 0), 0) / sorted.length).toFixed(1)}/${sorted[0]?.maxGrade ?? 100}</td>
+              <td style="padding:6px 8px; border-top:2px solid #6366f1;"></td>
+            </tr>
+          ` : "";
+
+          return `
+            <div style="margin-top:18px;">
+              <div style="font-weight:900; margin-bottom:6px;">Student Grades${escHtml(maxGradeLabel)}</div>
+              <div style="overflow:auto; border:1px solid #e5e7eb; border-radius:14px;">
+                <table cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%; min-width:600px; font-size:13px;">
+                  <thead style="background:#3b82f6; color:#ffffff;">
+                    <tr>
+                      <th style="text-align:left; padding:8px;">Student</th>
+                      <th style="text-align:left; padding:8px;">Team</th>
+                      <th style="text-align:right; padding:8px;">Points</th>
+                      <th style="text-align:right; padding:8px;">%</th>
+                      <th style="text-align:right; padding:8px;">Grade</th>
+                      <th style="text-align:center; padding:8px;">Letter</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${gradeRows}
+                    ${avgRow}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        })()}
 
         <div style="margin-top:18px;">
           <div style="font-weight:900; margin-bottom:6px;">Teams</div>
@@ -409,6 +509,8 @@ async function buildReportPdfBuffer({
   className,
   gradeLevel,
   assessmentCategories,
+  studentGrades,
+  gradingConfig,
 }) {
   const overview = extractOverview({ transcript, aiSummary });
   const teams = extractTeams(transcript, aiSummary);
@@ -518,6 +620,23 @@ async function buildReportPdfBuffer({
     doc.moveDown(0.4);
     pill(`Engagement: ${eng}   •   Overall proficiency: ${prof}`);
 
+    // Class Chat Blurb (copy-pasteable box)
+    const chatBlurb = aiSummary?.classChatBlurb || "";
+    if (chatBlurb) {
+      ensureSpace(100);
+      drawNoteBox("Class Chat Blurb  (copy & paste)", chatBlurb, "#ecfdf5", "#6ee7b7");
+    }
+
+    // Skills Developed
+    const skills = asList(aiSummary?.skillsDeveloped).filter(Boolean);
+    if (skills.length) {
+      ensureSpace(60);
+      sectionTitle("Skills Developed");
+      doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
+      skills.forEach((s) => doc.text(`• ${s}`, { lineGap: 1 }));
+      doc.moveDown(0.4);
+    }
+
     sectionTitle("Concepts Covered");
     if (overview.concepts.length) {
       doc.font("Helvetica").fontSize(10).fillColor("#0f172a");
@@ -554,6 +673,84 @@ async function buildReportPdfBuffer({
 
     ensureSpace(120);
     drawNoteBox("Note to Parents", noteToParents);
+
+    // Student Grades table (gradebook)
+    const gradesList = asList(studentGrades).filter(Boolean);
+    if (gradesList.length) {
+      ensureSpace(180);
+      sectionTitle("Student Grades");
+
+      const gc = gradingConfig && typeof gradingConfig === "object" ? gradingConfig : {};
+      if (gc.maxGrade) {
+        doc.font("Helvetica").fontSize(9).fillColor("#475569").text(`Out of ${gc.maxGrade}`);
+        doc.moveDown(0.2);
+      }
+
+      const gColW = [0.22, 0.16, 0.16, 0.12, 0.18, 0.16];
+      const gColLabels = ["Student", "Team", "Points", "%", "Grade", "Letter"];
+      const gTableX = doc.page.margins.left;
+      const gTableW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+      // Header
+      doc.save();
+      doc.rect(gTableX, doc.y, gTableW, 20).fill("#3b82f6");
+      doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(8);
+      let gxCur = gTableX;
+      gColLabels.forEach((label, i) => {
+        doc.text(label, gxCur + 4, doc.y + 6, { width: gTableW * gColW[i] - 8 });
+        gxCur += gTableW * gColW[i];
+      });
+      doc.restore();
+      doc.y += 22;
+
+      const sortedG = [...gradesList].sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0));
+      doc.font("Helvetica").fontSize(8).fillColor("#0f172a");
+
+      for (let ri = 0; ri < sortedG.length; ri++) {
+        const g = sortedG[ri];
+        ensureSpace(18);
+
+        if (ri % 2 === 1) {
+          doc.save();
+          doc.rect(gTableX, doc.y - 2, gTableW, 16).fill("#f8fafc");
+          doc.restore();
+          doc.fillColor("#0f172a");
+        }
+
+        const vals = [
+          g.studentName || "—",
+          g.teamName || "—",
+          `${g.pointsEarned ?? 0}/${g.pointsPossible ?? 0}`,
+          `${g.percent ?? 0}%`,
+          `${g.scaledGrade ?? 0}/${g.maxGrade ?? 100}`,
+          g.letterGrade || "—",
+        ];
+
+        gxCur = gTableX;
+        const rowY = doc.y;
+        vals.forEach((v, i) => {
+          doc.text(v, gxCur + 4, rowY, { width: gTableW * gColW[i] - 8 });
+          gxCur += gTableW * gColW[i];
+        });
+        doc.y = rowY + 14;
+      }
+
+      // Class average
+      if (sortedG.length > 1) {
+        const avgPct = Math.round(sortedG.reduce((s, g) => s + (g.percent ?? 0), 0) / sortedG.length);
+        const avgScaled = (sortedG.reduce((s, g) => s + (g.scaledGrade ?? 0), 0) / sortedG.length).toFixed(1);
+        doc.save();
+        doc.rect(gTableX, doc.y - 2, gTableW, 18).fill("#e0e7ff");
+        doc.restore();
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#0f172a");
+        doc.text(`Class Average`, gTableX + 4, doc.y, { width: gTableW * 0.54 - 8 });
+        doc.text(`${avgPct}%`, gTableX + gTableW * 0.54 + 4, doc.y - 10, { width: gTableW * 0.12 - 8 });
+        doc.text(`${avgScaled}/${sortedG[0]?.maxGrade ?? 100}`, gTableX + gTableW * 0.66 + 4, doc.y - 10, { width: gTableW * 0.18 - 8 });
+        doc.y += 10;
+      }
+
+      doc.moveDown(0.6);
+    }
 
     ensureSpace(220);
     sectionTitle("Teams");
@@ -719,6 +916,8 @@ export async function sendTranscriptEmail({
   className,
   gradeLevel,
   assessmentCategories,
+  studentGrades,
+  gradingConfig,
 }) {
   if (!to) throw new Error("Missing destination email.");
   if (!transcript) throw new Error("Missing transcript payload.");
@@ -733,6 +932,8 @@ export async function sendTranscriptEmail({
     gradeLevel,
     assessmentCategories,
     includeIndividualReports,
+    studentGrades,
+    gradingConfig,
   });
 
   const pdfBuffer = await buildReportPdfBuffer({
@@ -745,6 +946,8 @@ export async function sendTranscriptEmail({
     className,
     gradeLevel,
     assessmentCategories,
+    studentGrades,
+    gradingConfig,
   });
 
   const roomCode = transcript?.roomCode || transcript?.code || "";

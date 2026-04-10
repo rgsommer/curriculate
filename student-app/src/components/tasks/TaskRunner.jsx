@@ -2579,6 +2579,8 @@ case TASK_TYPES.COLLABORATION:
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
           memberNames={memberNames}
+          remainingMs={remainingMs}
+          timeLimitSeconds={t.timeLimitSeconds || tp.timeLimitSeconds}
         />
       );
       break;
@@ -2594,6 +2596,8 @@ case TASK_TYPES.COLLABORATION:
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
           memberNames={memberNames}
+          remainingMs={remainingMs}
+          timeLimitSeconds={t.timeLimitSeconds || tp.timeLimitSeconds}
         />
       );
       break;

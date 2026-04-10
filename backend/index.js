@@ -60,6 +60,7 @@ import tasksetsRouter from "./routes/tasksets.js";
 import sharedRoutes from "./routes/shared.js";
 import SharedTasksetLink, { hashShareToken } from "./models/SharedTasksetLink.js";
 import SessionReport from "./models/SessionReport.js";
+import { aggregateTimingStats } from "./services/taskTypeTimingAggregator.js";
 import resultsRoutes from "./routes/resultsRoutes.js";
 import adminFeedbackRouter from "./routes/adminFeedback.js";
 import feedbackRouter from "./routes/feedback.js";
@@ -2311,10 +2312,25 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
       // TRUE/FALSE TIC-TAC-TOE
       if (type === "true-false-tictactoe") {
-        // only if your task carries correct answers for each cell/statement
         return {
           correctAnswers: task?.correctAnswers || null,
           studentAnswers: answer?.answers || null,
+          winner: answer?.winner || null,
+          winnerPlayer: answer?.winnerPlayer || null,
+          playerScores: answer?.playerScores || null,
+          board: answer?.board || null,
+        };
+      }
+
+      // TRUE/FALSE CONNECT FOUR
+      if (type === "true-false-connect-four") {
+        return {
+          correctAnswers: task?.correctAnswers || null,
+          studentAnswers: answer?.answers || null,
+          winner: answer?.winner || null,
+          winnerPlayer: answer?.winnerPlayer || null,
+          playerScores: answer?.playerScores || null,
+          board: answer?.board || null,
         };
       }
 
@@ -2508,6 +2524,62 @@ socket.on("task:force-advance", ({ roomCode }) => {
         return {
           recorded: true,
           aiFeedback: "Your recording was submitted successfully. Your teacher will listen to it later.",
+        };
+      }
+
+      // BRAIN BLITZ
+      if (type === "brain-blitz") {
+        return {
+          clues: task?.clues || task?.config?.clues || null,
+          correctAnswer: task?.correctAnswer || task?.config?.correctAnswer || null,
+          clientScore: answer?.finalScore ?? null,
+          score: aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+        };
+      }
+
+      // FLASHCARDS (participation)
+      if (type === "flashcards") {
+        const ans = answer && typeof answer === "object" ? (answer.answer || answer) : {};
+        return {
+          viewed: ans.viewed ?? null,
+          totalCards: (task?.cards || task?.config?.cards || []).length || null,
+          score: aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+        };
+      }
+
+      // FLASHCARDS RACE
+      if (type === "flashcards-race") {
+        const ans = answer?.answer || answer || {};
+        return {
+          winner: ans.winner || null,
+          scores: ans.scores || null,
+          totalCards: ans.totalCards ?? null,
+          score: aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+        };
+      }
+
+      // HANGMAN DUEL
+      if (type === "hangman-duel" || type === "hangman") {
+        return {
+          solved: aiScore?.solved ?? null,
+          wrongGuesses: aiScore?.wrongGuesses ?? null,
+          score: aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
+        };
+      }
+
+      // WORD WEAVER DUEL
+      if (type === "word-weaver-duel") {
+        const ans = answer?.answer || answer || {};
+        return {
+          mode: ans.mode || null,
+          clientScores: aiScore?.clientScores || ans.scores || null,
+          placed: Array.isArray(ans.placed) ? ans.placed.filter(Boolean).length : null,
+          score: aiScore?.totalScore ?? null,
+          maxScore: aiScore?.maxPoints ?? task?.points ?? null,
         };
       }
 
@@ -3926,6 +3998,202 @@ if (!isMultiPack && task.taskType === "guess-who") {
       };
     }
 
+    // ✅ TRUE-FALSE TIC-TAC-TOE — trust client scoring (per-player + team)
+    if (!isMultiPack && task.taskType === "true-false-tictactoe" && answer && typeof answer === "object") {
+      const clientTeamPts = Number(answer.teamPointsEarned || answer.pointsEarned) || 0;
+      const played = answer.completed === true || answer.gameComplete === true;
+      if (played && clientTeamPts > 0) {
+        pointsEarned = Math.min(clientTeamPts, basePoints * 3); // cap at 3× base to prevent exploits
+        correct = answer.winner && answer.winner !== "draw" ? true : null;
+      } else if (played) {
+        pointsEarned = Math.round(basePoints * 0.25); // participated but no client score
+        correct = null;
+      } else {
+        pointsEarned = 0;
+        correct = null;
+      }
+      aiScore = {
+        strategy: "tictactoe-client",
+        correct,
+        winner: answer.winner || null,
+        playerScores: answer.playerScores || null,
+        teamPointsEarned: clientTeamPts,
+        speedBonus: Number(answer.speedBonus) || 0,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ✅ TRUE-FALSE CONNECT FOUR — trust client scoring (per-player + team)
+    if (!isMultiPack && task.taskType === "true-false-connect-four" && answer && typeof answer === "object") {
+      const clientTeamPts = Number(answer.teamPointsEarned || answer.pointsEarned) || 0;
+      const played = answer.completed === true || answer.gameComplete === true;
+      if (played && clientTeamPts > 0) {
+        pointsEarned = Math.min(clientTeamPts, basePoints * 3);
+        correct = answer.winner && answer.winner !== "draw" ? true : null;
+      } else if (played) {
+        pointsEarned = Math.round(basePoints * 0.25);
+        correct = null;
+      } else {
+        pointsEarned = 0;
+        correct = null;
+      }
+      aiScore = {
+        strategy: "connect-four-client",
+        correct,
+        winner: answer.winner || null,
+        playerScores: answer.playerScores || null,
+        teamPointsEarned: clientTeamPts,
+        speedBonus: Number(answer.speedBonus) || 0,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ✅ BRAIN BLITZ — client sends { finalScore } (count of correct clue guesses)
+    if (!isMultiPack && task.taskType === "brain-blitz" && answer && typeof answer === "object") {
+      const clientScore = Number(answer.finalScore) || 0;
+      const clues = Array.isArray(task.clues) ? task.clues
+        : Array.isArray(task.config?.clues) ? task.config.clues : [];
+      const totalClues = clues.length || 1;
+      const fraction = Math.min(1, clientScore / totalClues);
+      pointsEarned = Math.max(Math.round(basePoints * fraction), clientScore > 0 ? 1 : 0);
+      correct = fraction >= 0.5;
+      aiScore = {
+        strategy: "brain-blitz-client",
+        correct,
+        clientScore,
+        totalClues,
+        fractionCorrect: fraction,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ✅ FLASHCARDS — participation/mastery (scoringMode: "none"); award for completing the review
+    if (!isMultiPack && task.taskType === "flashcards" && !aiScore) {
+      const ans = answer && typeof answer === "object" ? (answer.answer || answer) : {};
+      const viewed = Number(ans.viewed) || 0;
+      const completed = answer?.completed === true || ans.mode === "flashcards";
+      if (completed || viewed > 0) {
+        pointsEarned = basePoints; // full credit for completing flashcard review
+        correct = null; // not a right/wrong task
+      } else {
+        pointsEarned = Math.round(basePoints * 0.25); // opened but didn't finish
+        correct = null;
+      }
+      aiScore = {
+        strategy: "flashcards-participation",
+        correct,
+        viewed,
+        completed,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ✅ FLASHCARDS RACE — client sends { answer: { winner, scores, totalCards } }
+    if (!isMultiPack && task.taskType === "flashcards-race" && answer && typeof answer === "object") {
+      const ans = answer.answer || answer;
+      const scores = ans.scores && typeof ans.scores === "object" ? ans.scores : {};
+      const teamScore = Number(scores[effectiveTeamId]) || 0;
+      const totalCards = Number(ans.totalCards) || 1;
+      const played = Object.keys(scores).length > 0 || ans.winner != null;
+      if (played && teamScore > 0) {
+        pointsEarned = Math.min(teamScore, basePoints * 2); // cap at 2× base
+        correct = true;
+      } else if (played) {
+        pointsEarned = Math.round(basePoints * 0.25); // participated but scored 0
+        correct = null;
+      } else {
+        pointsEarned = 0;
+        correct = null;
+      }
+      aiScore = {
+        strategy: "flashcards-race-client",
+        correct,
+        teamScore,
+        allScores: scores,
+        totalCards,
+        winner: ans.winner || null,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ✅ HANGMAN DUEL — check server-side game state for whether team solved the word
+    if (!isMultiPack && (task.taskType === "hangman-duel" || task.taskType === "hangman") && !aiScore) {
+      let solved = false;
+      let wrongGuesses = 0;
+      try {
+        const hd = room?.hangmanDuel?.byTeam?.[effectiveTeamId];
+        if (hd) {
+          const blanks = Array.isArray(hd.blanks) ? hd.blanks : [];
+          const word = String(hd.word || "").toUpperCase();
+          solved = word.length > 0 && blanks.join("").toUpperCase() === word;
+          wrongGuesses = Array.isArray(hd.wrongGuesses) ? hd.wrongGuesses.length : 0;
+        }
+      } catch { /* non-blocking */ }
+
+      if (solved) {
+        // Fewer wrong guesses → more points (at least 50% for solving)
+        const penaltyFraction = Math.min(1, wrongGuesses * 0.1);
+        pointsEarned = Math.max(Math.round(basePoints * 0.5), Math.round(basePoints * (1 - penaltyFraction)));
+        correct = true;
+      } else {
+        // Didn't solve but participated
+        pointsEarned = Math.round(basePoints * 0.15);
+        correct = false;
+      }
+      aiScore = {
+        strategy: "hangman-duel-server-state",
+        correct,
+        solved,
+        wrongGuesses,
+        maxPoints: basePoints,
+        totalScore: pointsEarned,
+      };
+    }
+
+    // ✅ WORD WEAVER DUEL — client sends { mode, scores, placed, ... }
+    if (!isMultiPack && task.taskType === "word-weaver-duel" && answer && typeof answer === "object") {
+      const ans = answer.answer || answer;
+      const mode = ans.mode || "unknown";
+      if (mode === "scrabble") {
+        const clientScores = ans.scores && typeof ans.scores === "object" ? ans.scores : {};
+        const totalPts = Object.values(clientScores).reduce((s, v) => s + (Number(v) || 0), 0);
+        const placed = Array.isArray(ans.placed) ? ans.placed.filter(Boolean).length : 0;
+        if (totalPts > 0 || placed > 0) {
+          pointsEarned = Math.min(totalPts > 0 ? totalPts : basePoints, basePoints * 2);
+          correct = null; // creative/collaborative — no right/wrong
+        } else {
+          pointsEarned = Math.round(basePoints * 0.25);
+          correct = null;
+        }
+        aiScore = {
+          strategy: "word-weaver-scrabble-client",
+          correct,
+          clientScores,
+          totalClientPoints: totalPts,
+          placed,
+          maxPoints: basePoints,
+          totalScore: pointsEarned,
+        };
+      } else {
+        // phrase mode — the student assembled words into a phrase
+        const hasAnswer = typeof ans.answer === "string" && ans.answer.trim().length > 0;
+        pointsEarned = hasAnswer ? basePoints : Math.round(basePoints * 0.25);
+        correct = null;
+        aiScore = {
+          strategy: "word-weaver-phrase-client",
+          correct,
+          hasAnswer,
+          maxPoints: basePoints,
+          totalScore: pointsEarned,
+        };
+      }
+    }
+
     // ✅ SEQUENCE — compare student order to correct order, award partial credit
     if (!isMultiPack && task.taskType === "sequence" && !aiScore) {
       const correctOrder =
@@ -4070,6 +4338,29 @@ if (!isMultiPack && task.taskType === "guess-who") {
       }
     }
 
+    // ── GUARANTEED FALLBACK ──────────────────────────────────────────
+    // If a student submitted *something* but all scoring paths resulted in 0
+    // (e.g. AI scoring failed, no explicit handler matched), award participation
+    // credit so no task type silently scores 0 when a student engaged.
+    if (pointsEarned === 0 && !isMultiPack && answer != null) {
+      const hasSubmission =
+        typeof answer === "string"
+          ? answer.trim().length > 0
+          : typeof answer === "object"
+          ? Object.keys(answer).length > 0
+          : !!answer;
+      if (hasSubmission && !aiScore) {
+        pointsEarned = Math.round(basePoints * 0.15); // 15% participation credit
+        aiScore = {
+          strategy: "guaranteed-participation-fallback",
+          reason: "No explicit handler or AI score — participation credit awarded",
+          maxPoints: basePoints,
+          totalScore: pointsEarned,
+        };
+        console.warn(`[scoring-fallback] Task type "${task.taskType}" fell through all scoring paths — awarding ${pointsEarned} participation pts.`);
+      }
+    }
+
     // If we're in the multi-pack path, we still need a timestamp
     const submittedAt =
       typeof submittedAtNonMulti === "number" ? submittedAtNonMulti : Date.now();
@@ -4078,9 +4369,37 @@ if (!isMultiPack && task.taskType === "guess-who") {
     // Reward fast answers: up to +50% of basePoints for answering quickly.
     // Full bonus if answered in ≤ 5 s, scales to zero at 60 s, nothing after.
     // Only applies when the answer earned points (correct or partial credit).
+    //
+    // WHITELIST approach: speed bonus only for quick-recall / objective tasks
+    // where faster = better. Thoughtful tasks (essays, debates, creative work,
+    // reading comprehension, audio, etc.) should NOT penalise students who
+    // take their time to produce quality work.
+    const speedBonusEligible = new Set([
+      "multiple-choice",
+      "physical-multiple-choice",
+      "true-false",
+      "matching",
+      "sequence",
+      "sort",
+      "flashcards",
+      "flashcards-race",
+      "diff-detective",
+      "brain-blitz",
+    ]);
+    // These handle their own client-side speed bonus (already baked into pointsEarned)
+    const clientSpeedBonusTypes = new Set([
+      "true-false-tictactoe",
+      "true-false-connect-four",
+    ]);
+
     let speedBonus = 0;
     const elapsedMs = typeof timeMs === "number" && timeMs > 0 ? timeMs : null;
-    if (pointsEarned > 0 && elapsedMs != null) {
+    if (
+      pointsEarned > 0 &&
+      elapsedMs != null &&
+      speedBonusEligible.has(task.taskType) &&
+      !clientSpeedBonusTypes.has(task.taskType)
+    ) {
       const elapsedSec = elapsedMs / 1000;
       const FAST_THRESHOLD  = 5;   // seconds — full bonus at or below
       const SLOW_THRESHOLD  = 60;  // seconds — no bonus at or above
@@ -4984,6 +5303,7 @@ socket.on(
     className,
     gradeLevel,
     planTierUsed,
+    gradingConfig, // { enabled, maxGrade, letterGradeScale }
   } = {}) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
@@ -4998,6 +5318,22 @@ socket.on(
     // NOTE: This is intentionally conservative to avoid mismatching owners.
     if (!safeOwnerId) {
       console.warn("teacher:endSessionAndEmail missing ownerId (Option A expects it).");
+    }
+
+    // 0.5) Fallback: load assessmentCategories from TeacherProfile if not sent by frontend
+    let safeAssessmentCategories = Array.isArray(assessmentCategories) && assessmentCategories.length > 0
+      ? assessmentCategories
+      : [];
+    if (safeAssessmentCategories.length === 0 && safeOwnerId) {
+      try {
+        const tp = await TeacherProfile.findOne({ ownerId: safeOwnerId }).select("assessmentCategories").lean();
+        if (tp && Array.isArray(tp.assessmentCategories) && tp.assessmentCategories.length > 0) {
+          safeAssessmentCategories = tp.assessmentCategories;
+          console.log(`[report] Loaded ${safeAssessmentCategories.length} assessment categories from TeacherProfile for owner ${safeOwnerId}`);
+        }
+      } catch (e) {
+        console.warn("[report] Failed to load assessmentCategories from TeacherProfile:", e.message);
+      }
     }
 
     // 1) Build transcript + stats
@@ -5029,17 +5365,57 @@ socket.on(
         };
       });
 
+    // 2.5) Compute top teams and top players for AI blurb
+    const topTeams = Object.values(room.teams || {})
+      .map((t) => ({ name: t.teamName || t.name || "Team", score: t.score ?? 0 }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    const topPlayers = [...perParticipant]
+      .sort((a, b) => (b.pointsEarned ?? 0) - (a.pointsEarned ?? 0))
+      .slice(0, 3)
+      .map((p) => ({ name: p.studentName || "Player", team: p.teamName || "", points: p.pointsEarned ?? 0 }));
+
     // 3) Generate AI summary (overview + engagement)
     const summary = await generateSessionSummaries({
       roomCode: code,
       transcript,
-      perParticipant,
-      assessmentCategories,
+      perParticipantStats: perParticipant,
+      assessmentCategories: safeAssessmentCategories,
       perspectives,
       className,
       gradeLevel,
       planTierUsed,
+      topTeams,
+      topPlayers,
     });
+
+    // 3.5) Merge AI per-participant summaries into raw stats for enriched reports
+    const aiPerParticipant = Array.isArray(summary?.perParticipant) ? summary.perParticipant : [];
+    if (aiPerParticipant.length > 0) {
+      for (const p of perParticipant) {
+        const match = aiPerParticipant.find(
+          (ai) =>
+            (ai.studentName || "").toLowerCase() === (p.studentName || "").toLowerCase() &&
+            (ai.teamName || "").toLowerCase() === (p.teamName || "").toLowerCase()
+        );
+        if (match) {
+          p.summary = match.summary || "";
+          p.categories = Array.isArray(match.categories) ? match.categories : [];
+          if (match.engagementPercent != null) p.engagementPercent = match.engagementPercent;
+          if (match.finalPercent != null) p.finalPercent = match.finalPercent;
+        }
+      }
+    }
+
+    // Also map fields expected by the PDF renderer
+    for (const p of perParticipant) {
+      p.name = p.name || p.studentName;
+      p.tasksAttempted = p.tasksAttempted ?? p.attempts ?? 0;
+      p.accuracyPercent = p.accuracyPercent ?? (p.attempts > 0 ? Math.round((p.correctCount / p.attempts) * 100) : 0);
+      p.engagementScore = p.engagementScore ?? p.engagementPercent ?? 0;
+      p.notes = p.notes || p.summary || "";
+    }
 
     // 4) Compose parent note (safe, plain text; AI summary may also include one)
     const safeClass = (className || room?.taskset?.name || "class").toString().trim() || "class";
@@ -5067,7 +5443,45 @@ socket.on(
       `The level of engagement was ${engagementText}. ` +
       `Overall, students achieved ${proficiencyText}.`;
 
-    // 5) Persist immutable report snapshot
+    // 5) Compute per-student gradebook grades
+    // Resolve grading config: prefer session-level override, fall back to taskset config
+    const gc = gradingConfig || room.taskset?.gradingConfig || null;
+    const gradingEnabled = gc && gc.enabled === true;
+    const maxGrade = gradingEnabled && Number(gc.maxGrade) > 0 ? Number(gc.maxGrade) : 100;
+    const defaultScale = [
+      { min: 90, letter: "A" },
+      { min: 80, letter: "B" },
+      { min: 70, letter: "C" },
+      { min: 60, letter: "D" },
+      { min: 0, letter: "F" },
+    ];
+    const letterScale = Array.isArray(gc?.letterGradeScale) && gc.letterGradeScale.length > 0
+      ? gc.letterGradeScale.slice().sort((a, b) => b.min - a.min)
+      : defaultScale;
+
+    function computeLetterGrade(pct) {
+      for (const tier of letterScale) {
+        if (pct >= tier.min) return tier.letter;
+      }
+      return "F";
+    }
+
+    const studentGrades = (perParticipant || []).map((p) => {
+      const pct = p.finalPercent ?? (p.pointsPossible > 0 ? Math.round((p.pointsEarned / p.pointsPossible) * 100) : 0);
+      const scaled = Math.round((pct / 100) * maxGrade * 10) / 10; // one decimal
+      return {
+        studentName: p.studentName || "Unknown",
+        teamName: p.teamName || "",
+        pointsEarned: p.pointsEarned || 0,
+        pointsPossible: p.pointsPossible || 0,
+        percent: pct,
+        scaledGrade: scaled,
+        maxGrade,
+        letterGrade: computeLetterGrade(pct),
+      };
+    });
+
+    // 6) Persist immutable report snapshot
     let reportDoc = null;
     try {
       if (safeOwnerId) {
@@ -5093,12 +5507,25 @@ socket.on(
           noiseSamples: Array.isArray(room?.noiseSamples) ? room.noiseSamples : [],
           perParticipant,
           mediaSubmissions,
-          assessmentCategories: Array.isArray(assessmentCategories) ? assessmentCategories : [],
+          gradingConfig: gradingEnabled ? { enabled: true, maxGrade, letterGradeScale: letterScale } : null,
+          studentGrades,
+          assessmentCategories: safeAssessmentCategories,
           includeIndividualReports: !!includeIndividualReports,
         });
       }
     } catch (e) {
       console.error("Failed to persist SessionReport:", e);
+    }
+
+    // 5b) Aggregate per-task-type timing stats (fire-and-forget, non-blocking)
+    try {
+      const sessionTasks = room?.taskset?.tasks || [];
+      const sessionSubs = Array.isArray(room.submissions) ? room.submissions : [];
+      aggregateTimingStats(sessionSubs, sessionTasks, safeOwnerId).catch((err) =>
+        console.warn("[TaskTypeTimingAggregator] background error:", err?.message || err)
+      );
+    } catch (e) {
+      console.warn("[TaskTypeTimingAggregator] setup error:", e?.message || e);
     }
 
     // 6) Determine teacher email (override -> profile -> payload)
@@ -5118,17 +5545,20 @@ socket.on(
         to: toEmail,
         roomCode: code,
         schoolName,
-        summary,
+        aiSummary: summary,
         transcript,
         perParticipant,
-        assessmentCategories,
+        assessmentCategories: safeAssessmentCategories,
         includeIndividualReports,
         // New: include parent note + media list for the email template if supported
         parentNote,
         mediaSubmissions,
         // New: include reportId so email can point teacher to Reports page
         reportId: reportDoc?._id ? String(reportDoc._id) : null,
-        planTierUsed,
+        planName: planTierUsed,
+        // Gradebook data for email + PDF
+        studentGrades,
+        gradingConfig: gc,
       });
 
       // 8) If this was a shared run, also email the original teacher
@@ -5142,16 +5572,18 @@ socket.on(
             to: sharedFromTeacherEmail,
             roomCode: code,
             schoolName,
-            summary,
+            aiSummary: summary,
             transcript,
             perParticipant,
-            assessmentCategories,
+            assessmentCategories: safeAssessmentCategories,
             includeIndividualReports,
             parentNote,
             mediaSubmissions,
             reportId: reportDoc?._id ? String(reportDoc._id) : null,
-            planTierUsed,
+            planName: planTierUsed,
             isSharedRunCopy: true, // Optional flag for the emailer to customize the email
+            studentGrades,
+            gradingConfig: gc,
           });
           console.log(`[shared] Sent report email to original teacher: ${sharedFromTeacherEmail}`);
         } catch (e) {
@@ -7889,6 +8321,61 @@ app.get("/api/tasksets", async (req, res) => {
 });
 
 // ------------------------------
+// Task type timing stats — used by AI generator + taskset listing
+// Returns per-task-type avg completion times (teacher-specific when available, global fallback)
+// ------------------------------
+import { getTimingStatsForGenerator } from "./services/taskTypeTimingAggregator.js";
+
+app.get("/api/task-type-timing-stats", async (req, res) => {
+  try {
+    const ownerId = req.query.ownerId || null;
+    const stats = await getTimingStatsForGenerator(ownerId);
+    res.json({ ok: true, stats });
+  } catch (err) {
+    console.error("GET /api/task-type-timing-stats error:", err);
+    res.status(500).json({ ok: false, error: "Failed to load timing stats" });
+  }
+});
+
+// Also add avgCompletionMinutes to taskset listing
+// (computed from the stats of the task types in each set)
+app.get("/api/tasksets-with-timing", async (req, res) => {
+  try {
+    const ownerId = req.query.ownerId || null;
+    const [sets, stats] = await Promise.all([
+      TaskSet.find().sort({ createdAt: -1 }).lean(),
+      getTimingStatsForGenerator(ownerId),
+    ]);
+
+    const enriched = sets.map((ts) => {
+      const tasks = ts.tasks || [];
+      let totalAvgMs = 0;
+      let tasksWithStats = 0;
+      for (const t of tasks) {
+        const taskType = t?.taskType || t?.type;
+        const s = stats[taskType];
+        if (s) {
+          totalAvgMs += s.avgMs;
+          tasksWithStats++;
+        }
+      }
+      return {
+        ...ts,
+        avgCompletionMinutes: tasksWithStats > 0
+          ? +(totalAvgMs / 60000).toFixed(1)
+          : null,
+        tasksWithTimingData: tasksWithStats,
+      };
+    });
+
+    res.json(enriched);
+  } catch (err) {
+    console.error("GET /api/tasksets-with-timing error:", err);
+    res.status(500).json({ error: "Failed to load task sets with timing" });
+  }
+});
+
+// ------------------------------
 // Audio: Direct transcription (no S3 needed)
 // Accepts multipart audio upload, runs Whisper + GPT, returns feedback.
 // ------------------------------
@@ -8370,6 +8857,155 @@ app.get("/api/reports/:id", authRequired, async (req, res) => {
     return res.json({ ok: true, report: doc });
   } catch (err) {
     console.error("GET /api/reports/:id failed:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ── Grading config: update on a taskset ────────────────────────────
+app.patch("/api/tasksets/:id/grading-config", authRequired, async (req, res) => {
+  try {
+    const ownerId = getOwnerId(req);
+    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+
+    const ts = await TaskSet.findOne({ _id: req.params.id, ownerId });
+    if (!ts) return res.status(404).json({ ok: false, error: "Taskset not found" });
+
+    const { enabled, maxGrade, letterGradeScale } = req.body || {};
+    ts.gradingConfig = {
+      enabled: enabled === true,
+      maxGrade: Number(maxGrade) > 0 ? Number(maxGrade) : 100,
+      letterGradeScale: Array.isArray(letterGradeScale) && letterGradeScale.length > 0
+        ? letterGradeScale
+        : ts.gradingConfig?.letterGradeScale || [
+            { min: 90, letter: "A" },
+            { min: 80, letter: "B" },
+            { min: 70, letter: "C" },
+            { min: 60, letter: "D" },
+            { min: 0, letter: "F" },
+          ],
+    };
+    await ts.save();
+    return res.json({ ok: true, gradingConfig: ts.gradingConfig });
+  } catch (err) {
+    console.error("PATCH grading-config failed:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ── XLSX Gradebook Export ────────────────────────────────────────
+app.get("/api/reports/:id/gradebook.xlsx", authRequired, async (req, res) => {
+  try {
+    const ownerId = getOwnerId(req);
+    if (!ownerId) return res.status(401).json({ ok: false, error: "Unauthorized" });
+
+    const doc = await SessionReport.findOne({ _id: req.params.id, ownerId }).lean();
+    if (!doc) return res.status(404).json({ ok: false, error: "Report not found" });
+
+    let ExcelJS;
+    try {
+      ExcelJS = (await import("exceljs")).default;
+    } catch {
+      return res.status(500).json({ ok: false, error: "ExcelJS not installed. Run: npm i exceljs" });
+    }
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Curriculate";
+    wb.created = new Date();
+
+    const ws = wb.addWorksheet("Gradebook");
+
+    // Header info
+    ws.mergeCells("A1:G1");
+    const titleCell = ws.getCell("A1");
+    titleCell.value = `Gradebook — ${doc.className || "Class"} — ${doc.roomCode || ""}`;
+    titleCell.font = { size: 14, bold: true };
+    titleCell.alignment = { horizontal: "left" };
+
+    ws.mergeCells("A2:G2");
+    const dateCell = ws.getCell("A2");
+    dateCell.value = `Generated: ${new Date(doc.createdAt || Date.now()).toLocaleDateString()} | Grade Level: ${doc.gradeLevel || "—"}`;
+    dateCell.font = { size: 10, italic: true, color: { argb: "FF666666" } };
+
+    const gc = doc.gradingConfig || {};
+    const maxGrade = gc.maxGrade || 100;
+
+    ws.mergeCells("A3:G3");
+    const scaleCell = ws.getCell("A3");
+    scaleCell.value = `Grading Scale: Out of ${maxGrade}`;
+    scaleCell.font = { size: 10, bold: true };
+
+    // Column headers (row 5)
+    const headers = ["Student", "Team", "Points Earned", "Points Possible", "Percentage", `Grade (/${maxGrade})`, "Letter Grade"];
+    const headerRow = ws.getRow(5);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } };
+      cell.alignment = { horizontal: "center" };
+      cell.border = {
+        bottom: { style: "thin", color: { argb: "FF000000" } },
+      };
+    });
+
+    // Column widths
+    ws.getColumn(1).width = 24;
+    ws.getColumn(2).width = 20;
+    ws.getColumn(3).width = 14;
+    ws.getColumn(4).width = 14;
+    ws.getColumn(5).width = 12;
+    ws.getColumn(6).width = 14;
+    ws.getColumn(7).width = 12;
+
+    // Data rows
+    const grades = doc.studentGrades || [];
+    grades.forEach((g, i) => {
+      const row = ws.getRow(6 + i);
+      row.getCell(1).value = g.studentName || "Unknown";
+      row.getCell(2).value = g.teamName || "";
+      row.getCell(3).value = g.pointsEarned || 0;
+      row.getCell(4).value = g.pointsPossible || 0;
+      row.getCell(5).value = g.percent != null ? g.percent / 100 : 0;
+      row.getCell(5).numFmt = "0.0%";
+      row.getCell(6).value = g.scaledGrade ?? 0;
+      row.getCell(7).value = g.letterGrade || "—";
+      row.getCell(7).alignment = { horizontal: "center" };
+      row.getCell(7).font = { bold: true };
+
+      // Alternate row shading
+      if (i % 2 === 1) {
+        for (let c = 1; c <= 7; c++) {
+          row.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F7FB" } };
+        }
+      }
+    });
+
+    // Summary row
+    if (grades.length > 0) {
+      const sumRow = ws.getRow(6 + grades.length + 1);
+      sumRow.getCell(1).value = "Class Average";
+      sumRow.getCell(1).font = { bold: true };
+      const avgPct = grades.reduce((s, g) => s + (g.percent || 0), 0) / grades.length;
+      const avgScaled = grades.reduce((s, g) => s + (g.scaledGrade || 0), 0) / grades.length;
+      sumRow.getCell(5).value = avgPct / 100;
+      sumRow.getCell(5).numFmt = "0.0%";
+      sumRow.getCell(5).font = { bold: true };
+      sumRow.getCell(6).value = Math.round(avgScaled * 10) / 10;
+      sumRow.getCell(6).font = { bold: true };
+
+      // Border above summary
+      for (let c = 1; c <= 7; c++) {
+        sumRow.getCell(c).border = { top: { style: "medium", color: { argb: "FF000000" } } };
+      }
+    }
+
+    // Send as download
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="gradebook-${doc.roomCode || "report"}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error("GET /api/reports/:id/gradebook.xlsx failed:", err);
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });

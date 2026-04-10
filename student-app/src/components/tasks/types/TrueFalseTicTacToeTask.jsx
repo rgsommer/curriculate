@@ -8,6 +8,8 @@ export default function TrueFalseTicTacToeTask({
   socket,
   teamRole: teamRoleProp,
   memberNames = [],
+  remainingMs = 0,
+  timeLimitSeconds = 0,
 }) {
   const [board, setBoard] = useState(task.board || Array(9).fill(null));
   const [usedStatementIds, setUsedStatementIds] = useState(new Set());
@@ -199,16 +201,42 @@ export default function TrueFalseTicTacToeTask({
 
     hasSubmittedRef.current = true;
 
-    const POINTS_WIN = 100;
-    const POINTS_DRAW = 25;
+    // ── Scoring constants ──
+    const BASE_WIN = 100;        // each winning-side player gets this
+    const PARTICIPATION = 15;    // everyone gets this for playing
+    const SPEED_BONUS_MAX = 50;  // max bonus for finishing quickly
+
+    // Speed bonus: proportion of time remaining × max bonus
+    const speedBonus =
+      timeLimitSeconds > 0 && remainingMs > 0
+        ? Math.round((remainingMs / (timeLimitSeconds * 1000)) * SPEED_BONUS_MAX)
+        : 0;
 
     // Count pieces for each side
     const oCount = board.filter((c) => c === "O").length;
     const xCount = board.filter((c) => c === "X").length;
 
-    // In intra-team: player 0 = O, player 1 = X
-    // Points go to the winning player; draw = participation points
-    const pointsEarned = winner ? POINTS_WIN : POINTS_DRAW;
+    // Player 0 = O (TRUE/Blue), Player 1 = X (FALSE/Red)
+    // Build per-player score breakdown
+    const playerScores = names.map((name, i) => {
+      const role = i === 0 ? "O" : "X";
+      const isWinner = winner && winner === role;
+      const isDraw = !winner;
+      const winPts = isWinner ? BASE_WIN : 0;
+      const drawPts = isDraw ? Math.round(BASE_WIN * 0.25) : 0;
+      const total = winPts + drawPts + PARTICIPATION + speedBonus;
+      return {
+        name,
+        role,
+        roleLabel: role === "O" ? "TRUE (Blue)" : "FALSE (Red)",
+        isWinner: !!isWinner,
+        breakdown: { win: winPts, draw: drawPts, participation: PARTICIPATION, speedBonus },
+        points: total,
+      };
+    });
+
+    // Team score = sum of all individual player points
+    const teamPointsEarned = playerScores.reduce((sum, p) => sum + p.points, 0);
 
     onSubmit?.({
       type: "true-false-tictactoe",
@@ -226,7 +254,10 @@ export default function TrueFalseTicTacToeTask({
       oCount,
       xCount,
       players: names,
-      pointsEarned,
+      playerScores,
+      pointsEarned: teamPointsEarned,
+      teamPointsEarned,
+      speedBonus,
       submittedAt: new Date().toISOString(),
     });
   }, [winner, boardFull]); // eslint-disable-line react-hooks/exhaustive-deps

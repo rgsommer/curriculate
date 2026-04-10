@@ -459,6 +459,7 @@ export function createRoomEngine(io) {
         teams: {},
         stations: [],
         scores: {},
+        playerScores: [],
         taskIndex: -1,
         startedAt: null,
         isActive: false,
@@ -497,6 +498,53 @@ export function createRoomEngine(io) {
       if (!scores[sub.teamId]) scores[sub.teamId] = 0;
       scores[sub.teamId] += sub.points ?? 0;
     }
+
+    // Build per-player scores from submissions (for individual leaderboard)
+    const playerScoreMap = {};
+    for (const sub of room.submissions || []) {
+      // 1) If the submission carries per-player breakdown (game tasks), use it
+      const ps = sub.aiScore?.playerScores || sub.answer?.playerScores;
+      if (Array.isArray(ps) && ps.length > 0) {
+        for (const p of ps) {
+          const pName = String(p.name || "").trim();
+          if (!pName) continue;
+          if (!playerScoreMap[pName]) {
+            playerScoreMap[pName] = { name: pName, teamId: sub.teamId, teamName: sub.teamName, pts: 0, tasks: 0 };
+          }
+          playerScoreMap[pName].pts += Number(p.points) || 0;
+          playerScoreMap[pName].tasks += 1;
+        }
+        continue; // skip the generic path — we already attributed per-player
+      }
+
+      // 2) If the submission has a playerId, attribute points to that player
+      const playerId = sub.playerId || null;
+      if (playerId) {
+        if (!playerScoreMap[playerId]) {
+          playerScoreMap[playerId] = { name: playerId, teamId: sub.teamId, teamName: sub.teamName, pts: 0, tasks: 0 };
+        }
+        playerScoreMap[playerId].pts += sub.points ?? 0;
+        playerScoreMap[playerId].tasks += 1;
+        continue;
+      }
+
+      // 3) Fallback: split points evenly among team members
+      const team = (room.teams || {})[sub.teamId];
+      const members = Array.isArray(team?.members) ? team.members.filter(Boolean) : [];
+      if (members.length > 0) {
+        const share = Math.round((sub.points ?? 0) / members.length);
+        for (const m of members) {
+          const mName = typeof m === "string" ? m : m?.name || m?.playerName || "";
+          if (!mName) continue;
+          if (!playerScoreMap[mName]) {
+            playerScoreMap[mName] = { name: mName, teamId: sub.teamId, teamName: sub.teamName, pts: 0, tasks: 0 };
+          }
+          playerScoreMap[mName].pts += share;
+          playerScoreMap[mName].tasks += 1;
+        }
+      }
+    }
+    const playerScores = Object.values(playerScoreMap).sort((a, b) => b.pts - a.pts);
 
     // Detect a one-off Quick Task "taskset" so it doesn't turn on the
     // full task-flow UI in LiveSession
@@ -602,6 +650,7 @@ export function createRoomEngine(io) {
 
       stations: stationsArray,
       scores,
+      playerScores,
       taskIndex: overallTaskIndex,
       totalTasks: Array.isArray(room.taskset?.tasks) ? room.taskset.tasks.length : 0,
       tasksetName: (room.taskset?.name || room.taskset?.title || "").replace(/^taskset:\s*/i, "").trim(),

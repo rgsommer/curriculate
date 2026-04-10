@@ -121,6 +121,29 @@ const SessionReportSchema = new mongoose.Schema(
     // Optional: per-student stats (plan-gated in PDF rendering)
     perParticipant: { type: mongoose.Schema.Types.Mixed, default: null },
 
+    // Grading config snapshot (from taskset at time of session)
+    gradingConfig: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+
+    // Per-student gradebook grades (computed at report time)
+    studentGrades: {
+      type: [
+        {
+          studentName: String,
+          teamName: String,
+          pointsEarned: Number,
+          pointsPossible: Number,
+          percent: Number,           // 0–100
+          scaledGrade: Number,       // out of maxGrade (e.g., 42/50)
+          maxGrade: Number,          // the "out of X"
+          letterGrade: String,       // A/B/C/D/F
+        },
+      ],
+      default: [],
+    },
+
     // Scoring rubric categories used
     assessmentCategories: { type: Array, default: [] },
 

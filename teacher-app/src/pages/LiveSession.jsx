@@ -490,6 +490,7 @@ useEffect(() => {
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [endSessionMessage, setEndSessionMessage] = useState("");
   const [includeIndividualReports, setIncludeIndividualReports] = useState(false);
+  const [teacherAssessmentCategories, setTeacherAssessmentCategories] = useState([]);
 
   // Join & treat sounds
   const joinSoundRef = useRef(null);
@@ -552,6 +553,7 @@ useEffect(() => {
           : !!profile?.includeStudentReports;
 
       setIncludeIndividualReports(include);
+      setTeacherAssessmentCategories(profile.assessmentCategories || []);
 
       setTeacherRooms(profile.locationOptions || []);
       setLocationOptions(profile.locationOptions || []);
@@ -2795,6 +2797,7 @@ if (
       ownerId: reportOwnerId || user?.id || user?._id,
       teacherEmail: reportOwnerEmail || user?.email, // optional but helpful
       includeIndividualReports,
+      assessmentCategories: teacherAssessmentCategories,
     });
   };
 

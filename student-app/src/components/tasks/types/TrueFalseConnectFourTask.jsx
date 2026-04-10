@@ -93,6 +93,8 @@ export default function TrueFalseConnectFourTask({
   socket,
   teamRole: teamRoleProp,
   memberNames = [],
+  remainingMs = 0,
+  timeLimitSeconds = 0,
 }) {
   const [board, setBoard] = useState(task.board || Array(CELLS).fill(null));
   const [usedStatementIds, setUsedStatementIds] = useState(new Set());
@@ -101,6 +103,15 @@ export default function TrueFalseConnectFourTask({
   const [droppingCol, setDroppingCol] = useState(null);
   const [lastDrop, setLastDrop] = useState(null);
   const hasSubmittedRef = useRef(false);
+
+  // ─── Multi-win tracking ───
+  // Connect Four keeps playing after a 4-in-a-row to maximize exposure to T/F clues.
+  // Each win is scored, the winning line is highlighted briefly, then play continues.
+  const [wins, setWins] = useState({ O: 0, X: 0 });  // win tally per side
+  const [currentWinLine, setCurrentWinLine] = useState(null); // active strike-through
+  const [winCelebrating, setWinCelebrating] = useState(null); // "O" or "X" during celebration
+  const [clearedCells, setClearedCells] = useState(new Set()); // cells belonging to scored lines (greyed out)
+  const prevWinnerRef = useRef(null); // track last detected winner to avoid re-counting
 
   // ─── Local turn management ───
   const isIntraTeam = !teamRoleProp;
@@ -140,19 +151,6 @@ export default function TrueFalseConnectFourTask({
       );
 
   const activeName = names[activePlayerIndex] || `Player ${activePlayerIndex + 1}`;
-  const [showVictory, setShowVictory] = useState(false);
-
-  useEffect(() => {
-    if (task.winner) {
-      if (task.winner === currentRole) {
-        try { new Audio("/sounds/victory.mp3").play(); } catch {}
-        setShowVictory(true);
-        setTimeout(() => setShowVictory(false), 5000);
-      } else {
-        try { new Audio("/sounds/lose.mp3").play(); } catch {}
-      }
-    }
-  }, [task.winner, currentRole]);
 
   // ─── Drop a piece into a column ───
   const dropInColumn = useCallback(
@@ -188,9 +186,26 @@ export default function TrueFalseConnectFourTask({
     [board, disabled, currentRole, isIntraTeam, names.length, socket, task.roomCode],
   );
 
+  // ─── Detect new 4-in-a-row wins (multi-win: game keeps going) ───
+  const { winner: latestWinner, line: latestWinLine } = calculateWinner(board);
+  const boardFull = board.every((c) => c !== null);
+  const statementsRemaining = useMemo(() => {
+    const raw = Array.isArray(task?.statements)
+      ? task.statements
+      : Array.isArray(task?.items)
+        ? task.items
+        : Array.isArray(task?.config?.statements)
+          ? task.config.statements
+          : [];
+    return raw.filter((s) => s && !usedStatementIds.has(String(s.id || s._id || ""))).length;
+  }, [task?.statements, task?.items, task?.config?.statements, usedStatementIds]);
+
+  const gameOver = boardFull || (statementsRemaining === 0 && !activeStatement);
+  const inputDisabled = disabled || !!winCelebrating || gameOver;
+
   // ─── Column click (tap-to-place after selecting a statement) ───
   const handleColumnClick = (col) => {
-    if (disabled) return;
+    if (inputDisabled) return;
     if (!activeStatement) {
       setHintPulse(true);
       setTimeout(() => setHintPulse(false), 1200);
@@ -201,7 +216,7 @@ export default function TrueFalseConnectFourTask({
 
   // ─── Statement selection ───
   const handleStatementClick = (statement) => {
-    if (disabled) return;
+    if (inputDisabled) return;
     setActiveStatement(statement);
     setHintPulse(true);
     setTimeout(() => setHintPulse(false), 1200);
@@ -212,13 +227,13 @@ export default function TrueFalseConnectFourTask({
   const colHeaderRefs = useRef([]);
 
   const handleTouchStart = (e, statement) => {
-    if (disabled) return;
+    if (inputDisabled) return;
     touchStatementRef.current = statement;
     setActiveStatement(statement);
   };
 
   const handleTouchEnd = (e) => {
-    if (disabled || !touchStatementRef.current) return;
+    if (inputDisabled || !touchStatementRef.current) return;
     const touch = e.changedTouches?.[0];
     if (!touch) { touchStatementRef.current = null; return; }
 
@@ -238,14 +253,14 @@ export default function TrueFalseConnectFourTask({
 
   // ─── Desktop drag ───
   const handleDragStart = (e, statement) => {
-    if (disabled) return;
+    if (inputDisabled) return;
     setActiveStatement(statement);
     e.dataTransfer.setData("text/plain", JSON.stringify(statement));
   };
 
   const handleDrop = (e, col) => {
     e.preventDefault();
-    if (disabled) return;
+    if (inputDisabled) return;
     let stmt = activeStatement;
     try { stmt = JSON.parse(e.dataTransfer.getData("text/plain")); } catch {}
     dropInColumn(stmt, col);
@@ -253,43 +268,106 @@ export default function TrueFalseConnectFourTask({
 
   const allowDrop = (e) => e.preventDefault();
 
-  const { winner, line: winLine } = calculateWinner(board);
-  const boardFull = board.every((c) => c !== null);
+  // When a new win is detected, celebrate briefly, tally it, then mark cells as scored
+  useEffect(() => {
+    if (!latestWinner || !latestWinLine) return;
+    // Deduplicate: don't re-celebrate the same line
+    const lineKey = latestWinLine.join(",");
+    if (prevWinnerRef.current === lineKey) return;
+    prevWinnerRef.current = lineKey;
 
-  // ─── Submit score when game ends (win or draw) ───
+    // Show celebration
+    setCurrentWinLine(latestWinLine);
+    setWinCelebrating(latestWinner);
+    setWins((prev) => ({ ...prev, [latestWinner]: (prev[latestWinner] || 0) + 1 }));
+
+    try { new Audio("/sounds/victory.mp3").play(); } catch {}
+
+    // After 2s, grey out the winning cells and continue play
+    const timer = setTimeout(() => {
+      setClearedCells((prev) => {
+        const next = new Set(prev);
+        latestWinLine.forEach((i) => next.add(i));
+        return next;
+      });
+      // Clear the winning cells from the board so calculateWinner won't re-detect them
+      setBoard((prev) => {
+        const next = [...prev];
+        latestWinLine.forEach((i) => { next[i] = null; });
+        return next;
+      });
+      setCurrentWinLine(null);
+      setWinCelebrating(null);
+      prevWinnerRef.current = null;
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [latestWinner, latestWinLine]);
+
+  // ─── Submit final score when game ends ───
   useEffect(() => {
     if (hasSubmittedRef.current) return;
-    if (!winner && !boardFull) return;
+    if (!gameOver) return;
 
     hasSubmittedRef.current = true;
 
-    const POINTS_WIN = 150; // more points than TicTacToe — bigger game
-    const POINTS_DRAW = 40;
+    // ── Scoring constants ──
+    const POINTS_PER_WIN = 75;   // per win earned by that side's players
+    const PARTICIPATION = 20;    // everyone gets this
+    const SPEED_BONUS_MAX = 75;
+
+    const speedBonus =
+      timeLimitSeconds > 0 && remainingMs > 0
+        ? Math.round((remainingMs / (timeLimitSeconds * 1000)) * SPEED_BONUS_MAX)
+        : 0;
 
     const oCount = board.filter((c) => c === "O").length;
     const xCount = board.filter((c) => c === "X").length;
-    const pointsEarned = winner ? POINTS_WIN : POINTS_DRAW;
+    const totalWins = wins.O + wins.X;
+    const overallWinner = wins.O > wins.X ? "O" : wins.X > wins.O ? "X" : null;
+
+    // Per-player: each player earns POINTS_PER_WIN × their side's win count + participation + speed
+    const playerScores = names.map((name, i) => {
+      const role = i === 0 ? "O" : "X";
+      const myWins = wins[role] || 0;
+      const winPts = myWins * POINTS_PER_WIN;
+      const total = winPts + PARTICIPATION + speedBonus;
+      return {
+        name,
+        role,
+        roleLabel: role === "O" ? "TRUE (Blue)" : "FALSE (Red)",
+        wins: myWins,
+        isOverallWinner: overallWinner === role,
+        breakdown: { wins: myWins, winPoints: winPts, participation: PARTICIPATION, speedBonus },
+        points: total,
+      };
+    });
+
+    const teamPointsEarned = playerScores.reduce((sum, p) => sum + p.points, 0);
 
     onSubmit?.({
       type: "true-false-connect-four",
       taskType: "true-false-connect-four",
       gameComplete: true,
       completed: true,
-      winner: winner || "draw",
-      winnerLabel: winner === "O" ? "TRUE (Blue)" : winner === "X" ? "FALSE (Red)" : "Draw",
-      winnerPlayer: winner
-        ? (winner === "O" ? names[0] : names[1] || "Player 2")
+      winner: overallWinner || "draw",
+      winnerLabel: overallWinner === "O" ? "TRUE (Blue)" : overallWinner === "X" ? "FALSE (Red)" : "Draw",
+      winnerPlayer: overallWinner
+        ? (overallWinner === "O" ? names[0] : names[1] || "Player 2")
         : null,
-      winLine: winLine || null,
+      winTally: { O: wins.O, X: wins.X },
+      totalWins,
       board: [...board],
-      movesPlayed: board.filter((c) => c !== null).length,
+      movesPlayed: board.filter((c) => c !== null).length + clearedCells.size,
       oCount,
       xCount,
       players: names,
-      pointsEarned,
+      playerScores,
+      pointsEarned: teamPointsEarned,
+      teamPointsEarned,
+      speedBonus,
       submittedAt: new Date().toISOString(),
     });
-  }, [winner, boardFull]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameOver]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Statements pool ───
   const statements = useMemo(() => {
@@ -329,10 +407,11 @@ export default function TrueFalseConnectFourTask({
     ];
   }, [task?.statements, task?.items, task?.config?.statements, task?.prompt, task?.title]);
 
-  const instructions =
-    "Pick a statement below, then tap a column to drop your piece. " +
-    "TRUE statements always go Blue (O), FALSE statements always go Red (X). " +
-    `You're playing ${roleLabel} (${roleColor}) — get 4 in a row to win!`;
+  const instructions = gameOver
+    ? "Game over! All statements used."
+    : "Pick a statement below, then tap a column to drop your piece. " +
+      "TRUE statements always go Blue (O), FALSE statements always go Red (X). " +
+      "Each 4-in-a-row scores points — keep playing until statements run out!";
 
   return (
     <div
@@ -379,7 +458,7 @@ export default function TrueFalseConnectFourTask({
         <div className="grid gap-1 px-2 pt-2" style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)` }}>
           {Array.from({ length: COLS }).map((_, c) => {
             const isFull = lowestEmptyRow(board, c) < 0;
-            const canDrop = activeStatement && !isFull && !disabled;
+            const canDrop = activeStatement && !isFull && !inputDisabled;
             return (
               <div
                 key={`header-${c}`}
@@ -387,7 +466,7 @@ export default function TrueFalseConnectFourTask({
                 onClick={() => handleColumnClick(c)}
                 onDrop={(e) => handleDrop(e, c)}
                 onDragOver={allowDrop}
-                onMouseEnter={() => !disabled && setDroppingCol(c)}
+                onMouseEnter={() => !inputDisabled && setDroppingCol(c)}
                 onMouseLeave={() => setDroppingCol(null)}
                 className={[
                   "flex items-center justify-center h-10 rounded-t-lg text-2xl font-bold transition-all duration-200 select-none",
@@ -406,8 +485,8 @@ export default function TrueFalseConnectFourTask({
 
         {/* Grid cells */}
         <div className="relative">
-          {winLine && (
-            <WinLine cells={winLine} cols={COLS} totalRows={ROWS} />
+          {currentWinLine && (
+            <WinLine cells={currentWinLine} cols={COLS} totalRows={ROWS} />
           )}
         <div
           className="grid gap-1 p-2"
@@ -470,7 +549,7 @@ export default function TrueFalseConnectFourTask({
           return (
             <div
               key={stmt.id || i}
-              draggable={!disabled}
+              draggable={!inputDisabled}
               onDragStart={(e) => handleDragStart(e, stmt)}
               onTouchStart={(e) => handleTouchStart(e, stmt)}
               onTouchEnd={handleTouchEnd}
@@ -478,7 +557,7 @@ export default function TrueFalseConnectFourTask({
               className={[
                 "p-3 rounded-lg text-base font-medium text-center transition-all duration-200 cursor-pointer select-none",
                 stmt.isFalse ? "bg-red-100 border-2 border-red-400" : "bg-green-100 border-2 border-green-400",
-                disabled ? "opacity-50" : "hover:scale-105 active:scale-95",
+                inputDisabled ? "opacity-50" : "hover:scale-105 active:scale-95",
                 isActive ? "ring-4 ring-indigo-500 scale-105 shadow-lg" : "",
               ].join(" ")}
             >
@@ -488,25 +567,51 @@ export default function TrueFalseConnectFourTask({
         })}
       </div>
 
-      {/* WINNER DISPLAY */}
-      {winner && (
-        <div className="mt-6 text-center animate-pulse">
-          <div className="text-4xl font-bold">
-            {winner === "O" ? (
-              <span className="text-blue-400 drop-shadow-lg">TRUE (Blue) WINS!</span>
+      {/* WIN TALLY (always visible once any win has occurred) */}
+      {(wins.O > 0 || wins.X > 0) && (
+        <div className="mt-3 flex items-center justify-center gap-6 text-lg font-bold">
+          <span className="text-blue-600">Blue (TRUE): {wins.O}</span>
+          <span className="text-slate-400">—</span>
+          <span className="text-red-600">Red (FALSE): {wins.X}</span>
+        </div>
+      )}
+
+      {/* MID-GAME WIN CELEBRATION (brief flash, then play continues) */}
+      {winCelebrating && !gameOver && (
+        <div className="mt-4 text-center animate-bounce">
+          <div className="text-3xl font-bold">
+            {winCelebrating === "O" ? (
+              <span className="text-blue-400 drop-shadow-lg">4 in a row! TRUE scores!</span>
             ) : (
-              <span className="text-red-400 drop-shadow-lg">FALSE (Red) WINS!</span>
+              <span className="text-red-400 drop-shadow-lg">4 in a row! FALSE scores!</span>
             )}
           </div>
-          {isIntraTeam && (
-            <div className="text-xl mt-2 font-semibold text-white/80">
-              {winner === "O" ? names[0] : names[1] || "Player 2"} takes the round!
+          <div className="text-base mt-1 text-slate-600 font-medium">Keep playing for more points!</div>
+        </div>
+      )}
+
+      {/* GAME OVER DISPLAY */}
+      {gameOver && (
+        <div className="mt-6 text-center">
+          <div className="text-4xl font-bold animate-pulse">
+            {wins.O > wins.X ? (
+              <span className="text-blue-400 drop-shadow-lg">TRUE (Blue) wins overall!</span>
+            ) : wins.X > wins.O ? (
+              <span className="text-red-400 drop-shadow-lg">FALSE (Red) wins overall!</span>
+            ) : (
+              <span className="text-purple-400 drop-shadow-lg">It&apos;s a tie!</span>
+            )}
+          </div>
+          <div className="text-lg mt-2 text-slate-600 font-semibold">
+            Final: Blue {wins.O} — Red {wins.X}
+          </div>
+          {isIntraTeam && wins.O !== wins.X && (
+            <div className="text-xl mt-2 font-semibold text-slate-700">
+              {wins.O > wins.X ? names[0] : names[1] || "Player 2"} takes the game!
             </div>
           )}
         </div>
       )}
-
-      {showVictory && <VictoryScreen onClose={() => setShowVictory(false)} />}
     </div>
   );
 }

@@ -553,8 +553,40 @@ function formatDate(d) {
 
   doc.moveDown(0.6);
 
+  // Class Chat Blurb (copy-pasteable block)
+  const chatBlurb = report.summary?.classChatBlurb || "";
+  if (chatBlurb) {
+    ensureSpace(120);
+    sectionTitle("Class Chat Blurb");
+    doc.font("Helvetica").fontSize(9).fillColor("#444444").text("(Copy and paste into your class chat, Google Classroom, or parent newsletter.)");
+    doc.moveDown(0.2);
+
+    const blurbX = doc.page.margins.left;
+    const blurbW = pageWidth - doc.page.margins.left - doc.page.margins.right;
+    const blurbStartY = doc.y;
+    const blurbTextH = doc.heightOfString(chatBlurb, { width: blurbW - 24 });
+    const blurbBoxH = blurbTextH + 24;
+
+    doc.save();
+    doc.roundedRect(blurbX, blurbStartY, blurbW, blurbBoxH, 10).fill("#ecfdf5").stroke("#6ee7b7");
+    doc.fillColor("#064e3b").font("Helvetica").fontSize(10).text(chatBlurb, blurbX + 12, blurbStartY + 12, { width: blurbW - 24, lineGap: 2 });
+    doc.restore();
+    doc.y = blurbStartY + blurbBoxH + 8;
+    doc.fillColor("#111111");
+  }
+
+  // Skills Developed
+  const skillsList = Array.isArray(report.summary?.skillsDeveloped)
+    ? report.summary.skillsDeveloped.filter(Boolean)
+    : [];
+  if (skillsList.length > 0) {
+    ensureSpace(80);
+    sectionTitle("Skills Developed");
+    bullets(skillsList);
+  }
+
   sectionTitle("Concepts Covered");
-  bullets(report.summary?.conceptsCovered || report.summary?.concepts || []);
+  bullets(report.summary?.conceptsCovered || report.summary?.concepts || report.summary?.keyConcepts || []);
 
   sectionTitle("Activities Completed");
   const activitiesList = report.summary?.activities || report.summary?.activityHighlights || [];
@@ -588,6 +620,93 @@ function formatDate(d) {
     .text(report.parentNote || "—");
 
   ensureSpace(620);
+
+  // ---------- Student Grades (Gradebook) ----------
+  const studentGrades = Array.isArray(report.studentGrades) ? report.studentGrades.filter(Boolean) : [];
+  if (studentGrades.length > 0) {
+    doc.addPage();
+    sectionTitle("Student Grades");
+
+    const gc = report.gradingConfig || {};
+    const maxGradeLabel = gc.maxGrade ? `Out of ${gc.maxGrade}` : "";
+    if (maxGradeLabel) {
+      doc.font("Helvetica").fontSize(10).fillColor("#444444").text(maxGradeLabel);
+      doc.moveDown(0.3);
+    }
+
+    // Table header
+    const gColW = [0.22, 0.16, 0.16, 0.12, 0.18, 0.16];
+    const gColLabels = ["Student", "Team", "Points", "%", "Grade", "Letter"];
+    const gTableX = doc.page.margins.left;
+    const gTableW = pageWidth - doc.page.margins.left - doc.page.margins.right;
+
+    doc.save();
+    doc.rect(gTableX, doc.y, gTableW, 20).fill("#3b82f6");
+    doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(9);
+    let gxCur = gTableX;
+    gColLabels.forEach((label, i) => {
+      doc.text(label, gxCur + 4, doc.y + 5, { width: gTableW * gColW[i] - 8 });
+      gxCur += gTableW * gColW[i];
+    });
+    doc.restore();
+    doc.y += 22;
+
+    // Data rows
+    const sortedGrades = [...studentGrades].sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0));
+    doc.font("Helvetica").fontSize(9).fillColor("#111111");
+
+    for (let ri = 0; ri < sortedGrades.length; ri++) {
+      const g = sortedGrades[ri];
+      ensureSpace(20);
+
+      if (ri % 2 === 1) {
+        doc.save();
+        doc.rect(gTableX, doc.y - 2, gTableW, 18).fill("#f8fafc");
+        doc.restore();
+        doc.fillColor("#111111");
+      }
+
+      const vals = [
+        g.studentName || "—",
+        g.teamName || "—",
+        `${g.pointsEarned ?? 0}/${g.pointsPossible ?? 0}`,
+        `${g.percent ?? 0}%`,
+        `${g.scaledGrade ?? 0}/${g.maxGrade ?? 100}`,
+        g.letterGrade || "—",
+      ];
+
+      gxCur = gTableX;
+      const rowY = doc.y;
+      vals.forEach((v, i) => {
+        doc.text(v, gxCur + 4, rowY, { width: gTableW * gColW[i] - 8 });
+        gxCur += gTableW * gColW[i];
+      });
+      doc.y = rowY + 16;
+    }
+
+    // Class average row
+    if (sortedGrades.length > 1) {
+      const avgPct = Math.round(sortedGrades.reduce((s, g) => s + (g.percent ?? 0), 0) / sortedGrades.length);
+      const avgScaled = (sortedGrades.reduce((s, g) => s + (g.scaledGrade ?? 0), 0) / sortedGrades.length).toFixed(1);
+      const maxG = sortedGrades[0]?.maxGrade ?? 100;
+
+      doc.save();
+      doc.rect(gTableX, doc.y - 2, gTableW, 20).fill("#e0e7ff");
+      doc.restore();
+
+      doc.font("Helvetica-Bold").fontSize(9).fillColor("#111111");
+      gxCur = gTableX;
+      const avgVals = ["Class Average", "", "", `${avgPct}%`, `${avgScaled}/${maxG}`, ""];
+      const avgRowY = doc.y;
+      avgVals.forEach((v, i) => {
+        doc.text(v, gxCur + 4, avgRowY, { width: gTableW * gColW[i] - 8 });
+        gxCur += gTableW * gColW[i];
+      });
+      doc.y = avgRowY + 20;
+    }
+
+    doc.moveDown(0.5);
+  }
 
   // ---------- Teams table ----------
   sectionTitle("Team Breakdown");
@@ -700,6 +819,19 @@ function formatDate(d) {
         if (p.readingComp && p.readingComp.sampleFeedback) {
           doc.moveDown(0.2);
           doc.font("Helvetica-Oblique").text(p.readingComp.sampleFeedback);
+        }
+      }
+
+      // Assessment categories (from AI summary)
+      const cats = Array.isArray(p.categories) ? p.categories.filter(Boolean) : [];
+      if (cats.length > 0) {
+        doc.moveDown(0.8);
+        sectionTitle("Assessment Categories");
+        doc.font("Helvetica").fontSize(10).fillColor("#111111");
+        for (const c of cats) {
+          const pctLabel = typeof c.percent === "number" ? `${c.percent}%` : "—";
+          const comment = c.comment ? ` — ${c.comment}` : "";
+          doc.text(`${c.label || c.key || "Category"}: ${pctLabel}${comment}`);
         }
       }
 
