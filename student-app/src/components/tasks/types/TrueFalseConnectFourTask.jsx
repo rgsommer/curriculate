@@ -116,7 +116,8 @@ export default function TrueFalseConnectFourTask({
   // ─── Local turn management ───
   const isIntraTeam = !teamRoleProp;
   const [currentTurn, setCurrentTurn] = useState(0);
-  const currentRole = isIntraTeam ? (currentTurn === 0 ? "O" : "X") : (teamRoleProp || "O");
+  // Role alternates every turn: O, X, O, X, … so odd-numbered groups play both sides fairly
+  const currentRole = isIntraTeam ? (currentTurn % 2 === 0 ? "O" : "X") : (teamRoleProp || "O");
 
   // Keep local board in sync from socket/parent updates
   useEffect(() => {

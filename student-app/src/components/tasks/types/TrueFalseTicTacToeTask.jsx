@@ -18,12 +18,13 @@ export default function TrueFalseTicTacToeTask({
   const hasSubmittedRef = useRef(false); // prevent double submission
 
   // ─── Local turn management ───
-  // Player 0 = "O" (TRUE / Blue), Player 1 = "X" (FALSE / Red)
+  // Role alternates every turn: O, X, O, X, … regardless of player count.
+  // With 3+ players the "odd" player naturally plays both sides across turns.
   // If server assigned a teamRole (inter-team), we use it for everyone.
   // If not (intra-team), we alternate locally.
   const isIntraTeam = !teamRoleProp;
-  const [currentTurn, setCurrentTurn] = useState(0); // 0 or 1
-  const currentRole = isIntraTeam ? (currentTurn === 0 ? "O" : "X") : (teamRoleProp || "O");
+  const [currentTurn, setCurrentTurn] = useState(0); // increments each move
+  const currentRole = isIntraTeam ? (currentTurn % 2 === 0 ? "O" : "X") : (teamRoleProp || "O");
 
   // Keep local board in sync if parent/task updates it (e.g., from socket events).
   useEffect(() => {
