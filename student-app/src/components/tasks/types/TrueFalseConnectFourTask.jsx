@@ -389,6 +389,8 @@ export default function TrueFalseConnectFourTask({
             const isFalse =
               typeof s.isFalse === "boolean" ? s.isFalse :
               typeof s.correct === "boolean" ? !s.correct :
+              typeof s.correctAnswer === "boolean" ? !s.correctAnswer :
+              typeof s.answer === "boolean" ? !s.answer :
               typeof s.answer === "string" ? String(s.answer).toLowerCase() === "false" :
               false;
             return { text, isFalse, id: String(s.id || s._id || `s${i}`) };
