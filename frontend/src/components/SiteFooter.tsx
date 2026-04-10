@@ -61,6 +61,9 @@ export default function SiteFooter() {
               <Link className="hover:text-gray-900" href="/signup">
                 Sign Up
               </Link>
+              <Link className="hover:text-gray-900" href="/referrals">
+                Referral Program
+              </Link>
             </FooterCol>
 
             <FooterCol title="Company & Legal">

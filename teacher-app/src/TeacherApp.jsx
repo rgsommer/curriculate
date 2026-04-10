@@ -1220,6 +1220,118 @@ if (st?.ok && st.exists) {
   const [refThreshold, setRefThreshold] = useState("5");
   const [refRewardMonths, setRefRewardMonths] = useState("1");
 
+  // Agent referral codes (commission-based)
+  const [agentCodes, setAgentCodes] = useState([]);
+  const [agentCodesBusy, setAgentCodesBusy] = useState(false);
+  const [agentCodesErr, setAgentCodesErr] = useState("");
+  const [newAgentName, setNewAgentName] = useState("");
+  const [newAgentEmail, setNewAgentEmail] = useState("");
+  const [newAgentCommission, setNewAgentCommission] = useState("15");
+  const [newAgentDiscount, setNewAgentDiscount] = useState("10");
+
+  // Referral applications (from /referrals page)
+  const [refApps, setRefApps] = useState([]);
+  const [refAppsBusy, setRefAppsBusy] = useState(false);
+  const [refAppsErr, setRefAppsErr] = useState("");
+
+  const loadAgentCodes = async () => {
+    try {
+      const data = await apiFetchJson("/api/admin/referral-codes");
+      setAgentCodes(data?.codes || []);
+    } catch (e) {
+      setAgentCodesErr(e?.message || "Failed to load referral codes.");
+    }
+  };
+
+  const createAgentCode = async () => {
+    if (!newAgentName.trim() || !newAgentEmail.trim()) return;
+    setAgentCodesBusy(true);
+    setAgentCodesErr("");
+    try {
+      await apiFetchJson("/api/admin/referral-codes", {
+        method: "POST",
+        body: {
+          agentName: newAgentName.trim(),
+          agentEmail: newAgentEmail.trim(),
+          commissionPercent: Number(newAgentCommission) || 15,
+          customerDiscountPercent: Number(newAgentDiscount) || 0,
+        },
+      });
+      setNewAgentName("");
+      setNewAgentEmail("");
+      await loadAgentCodes();
+    } catch (e) {
+      setAgentCodesErr(e?.message || "Failed to create referral code.");
+    } finally {
+      setAgentCodesBusy(false);
+    }
+  };
+
+  const sendAgentCode = async (id, toEmail) => {
+    setAgentCodesBusy(true);
+    try {
+      await apiFetchJson(`/api/admin/referral-codes/${id}/send`, {
+        method: "POST",
+        body: { toEmail },
+      });
+      alert("Referral code email sent!");
+    } catch (e) {
+      alert("Send failed: " + (e?.message || e));
+    } finally {
+      setAgentCodesBusy(false);
+    }
+  };
+
+  const toggleAgentCode = async (id, disabled) => {
+    try {
+      await apiFetchJson(`/api/admin/referral-codes/${id}`, {
+        method: "PUT",
+        body: { disabled: !disabled },
+      });
+      await loadAgentCodes();
+    } catch (e) {
+      alert("Update failed: " + (e?.message || e));
+    }
+  };
+
+  const loadRefApps = async () => {
+    try {
+      const data = await apiFetchJson("/api/admin/referral-applications");
+      setRefApps(data?.applications || []);
+    } catch (e) {
+      setRefAppsErr(e?.message || "Failed to load applications.");
+    }
+  };
+
+  const approveRefApp = async (id) => {
+    setRefAppsBusy(true);
+    try {
+      const data = await apiFetchJson(`/api/admin/referral-applications/${id}/approve`, {
+        method: "PUT",
+        body: { commissionPercent: 15, customerDiscountPercent: 10 },
+      });
+      alert("Approved! Code: " + (data?.referralCode?.code || "created"));
+      await loadRefApps();
+      await loadAgentCodes();
+    } catch (e) {
+      alert("Approve failed: " + (e?.message || e));
+    } finally {
+      setRefAppsBusy(false);
+    }
+  };
+
+  const declineRefApp = async (id) => {
+    setRefAppsBusy(true);
+    try {
+      await apiFetchJson(`/api/admin/referral-applications/${id}/decline`, { method: "PUT" });
+      await loadRefApps();
+    } catch (e) {
+      alert("Decline failed: " + (e?.message || e));
+    } finally {
+      setRefAppsBusy(false);
+    }
+  };
+
   const selectedEmail = useMemo(
     () => emailTemplates.find((t) => t.key === selectedEmailKey) || null,
     [emailTemplates, selectedEmailKey]
@@ -1481,6 +1593,8 @@ if (st?.ok && st.exists) {
   useEffect(() => {
     if (!isAdmin) return;
     load();
+    loadAgentCodes();
+    loadRefApps();
   }, []);
 
   useEffect(() => {
@@ -2287,6 +2401,151 @@ if (st?.ok && st.exists) {
 
         <div style={{ marginTop: 10, opacity: 0.8, fontSize: 12 }}>
           Reward emails use the <b>referral-reward</b> template above. Billing credits can be wired into your subscription system later.
+        </div>
+      </div>
+
+      {/* ===== Referral Applications (from /referrals page) ===== */}
+      <h3 style={{ margin: "20px 0 6px", maxWidth: 980 }}>Referral Applications</h3>
+
+      <div style={{ background: "#ffffff", borderRadius: 12, padding: 14, boxShadow: "0 2px 10px rgba(0,0,0,0.08)", border: "1px solid rgba(15,23,42,0.08)", maxWidth: 980 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+          <div style={{ fontWeight: 800 }}>Pending Applications</div>
+          <button onClick={loadRefApps} disabled={refAppsBusy} style={{ ...ui.buttonGhostDark, fontSize: 12, padding: "6px 12px" }}>Refresh</button>
+        </div>
+
+        {refAppsErr && <div style={{ color: "#b91c1c", fontWeight: 700, marginBottom: 8 }}>{refAppsErr}</div>}
+
+        {refApps.filter((a) => a.status === "pending").length === 0 ? (
+          <div style={{ opacity: 0.6, fontSize: 13 }}>No pending applications.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+              <thead>
+                <tr style={{ textAlign: "left", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+                  <th style={{ padding: "8px 6px" }}>Name</th>
+                  <th style={{ padding: "8px 6px" }}>Email</th>
+                  <th style={{ padding: "8px 6px" }}>Organization</th>
+                  <th style={{ padding: "8px 6px" }}>Message</th>
+                  <th style={{ padding: "8px 6px" }}>Applied</th>
+                  <th style={{ padding: "8px 6px" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {refApps.filter((a) => a.status === "pending").map((a) => (
+                  <tr key={a._id} style={{ borderBottom: "1px solid rgba(15,23,42,0.05)" }}>
+                    <td style={{ padding: "8px 6px", fontWeight: 700 }}>{a.name}</td>
+                    <td style={{ padding: "8px 6px" }}>{a.email}</td>
+                    <td style={{ padding: "8px 6px" }}>{a.organization || "—"}</td>
+                    <td style={{ padding: "8px 6px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.message || "—"}</td>
+                    <td style={{ padding: "8px 6px", fontSize: 11, opacity: 0.7 }}>{a.createdAt ? new Date(a.createdAt).toLocaleDateString() : "—"}</td>
+                    <td style={{ padding: "8px 6px", display: "flex", gap: 6 }}>
+                      <button onClick={() => approveRefApp(a._id)} disabled={refAppsBusy} style={{ ...ui.buttonPrimary, fontSize: 11, padding: "4px 10px" }}>Approve</button>
+                      <button onClick={() => declineRefApp(a._id)} disabled={refAppsBusy} style={{ ...ui.buttonGhostDark, fontSize: 11, padding: "4px 10px" }}>Decline</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {refApps.filter((a) => a.status !== "pending").length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 12, opacity: 0.6, marginBottom: 6 }}>Previously reviewed ({refApps.filter((a) => a.status !== "pending").length})</div>
+            {refApps.filter((a) => a.status !== "pending").slice(0, 10).map((a) => (
+              <div key={a._id} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12, padding: "4px 0", opacity: 0.7 }}>
+                <span style={{ fontWeight: 700, minWidth: 70, color: a.status === "approved" ? "#16a34a" : "#dc2626" }}>{a.status}</span>
+                <span>{a.name}</span>
+                <span style={{ opacity: 0.6 }}>{a.email}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ===== Agent Referral Codes ===== */}
+      <h3 style={{ margin: "20px 0 6px", maxWidth: 980 }}>Agent Referral Codes</h3>
+
+      <div style={{ background: "#ffffff", borderRadius: 12, padding: 14, boxShadow: "0 2px 10px rgba(0,0,0,0.08)", border: "1px solid rgba(15,23,42,0.08)", marginBottom: 14, maxWidth: 980 }}>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Create new referral code</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
+          <div style={{ minWidth: 160 }}>
+            <label style={{ ...ui.labelLight }}>Agent name</label>
+            <input value={newAgentName} onChange={(e) => setNewAgentName(e.target.value)} placeholder="Jane Smith" style={ui.inputLight} />
+          </div>
+          <div style={{ minWidth: 200 }}>
+            <label style={{ ...ui.labelLight }}>Agent email</label>
+            <input type="email" value={newAgentEmail} onChange={(e) => setNewAgentEmail(e.target.value)} placeholder="jane@example.com" style={ui.inputLight} />
+          </div>
+          <div style={{ minWidth: 100 }}>
+            <label style={{ ...ui.labelLight }}>Commission %</label>
+            <input type="number" min={0} max={100} value={newAgentCommission} onChange={(e) => setNewAgentCommission(e.target.value)} style={ui.inputLight} />
+          </div>
+          <div style={{ minWidth: 120 }}>
+            <label style={{ ...ui.labelLight }}>Customer discount %</label>
+            <input type="number" min={0} max={100} value={newAgentDiscount} onChange={(e) => setNewAgentDiscount(e.target.value)} style={ui.inputLight} />
+          </div>
+          <button onClick={createAgentCode} disabled={agentCodesBusy || !newAgentName.trim() || !newAgentEmail.trim()} style={{ ...ui.buttonPrimary, minWidth: 160 }}>
+            {agentCodesBusy ? "Creating…" : "Create & email code"}
+          </button>
+        </div>
+        {agentCodesErr && <div style={{ color: "#b91c1c", marginTop: 8, fontWeight: 700 }}>{agentCodesErr}</div>}
+      </div>
+
+      <div style={{ background: "#ffffff", borderRadius: 12, padding: 14, boxShadow: "0 2px 10px rgba(0,0,0,0.08)", border: "1px solid rgba(15,23,42,0.08)", maxWidth: 980 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+          <div style={{ fontWeight: 800 }}>Active codes</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <span style={{ opacity: 0.7 }}>{agentCodes.length} total</span>
+            <button onClick={loadAgentCodes} style={{ ...ui.buttonGhostDark, fontSize: 11, padding: "4px 10px" }}>Refresh</button>
+          </div>
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+            <thead>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+                <th style={{ padding: "8px 6px" }}>Code</th>
+                <th style={{ padding: "8px 6px" }}>Agent</th>
+                <th style={{ padding: "8px 6px" }}>Commission</th>
+                <th style={{ padding: "8px 6px" }}>Discount</th>
+                <th style={{ padding: "8px 6px" }}>Conversions</th>
+                <th style={{ padding: "8px 6px" }}>Revenue</th>
+                <th style={{ padding: "8px 6px" }}>Commission Owed</th>
+                <th style={{ padding: "8px 6px" }}>Status</th>
+                <th style={{ padding: "8px 6px" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {agentCodes.map((c) => (
+                <tr key={c._id} style={{ borderBottom: "1px solid rgba(15,23,42,0.05)", opacity: c.disabled ? 0.5 : 1 }}>
+                  <td style={{ padding: "8px 6px", fontWeight: 900, fontFamily: "monospace", letterSpacing: 1 }}>{c.code}</td>
+                  <td style={{ padding: "8px 6px" }}>
+                    <div style={{ fontWeight: 700 }}>{c.agentName}</div>
+                    <div style={{ fontSize: 11, opacity: 0.6 }}>{c.agentEmail}</div>
+                  </td>
+                  <td style={{ padding: "8px 6px" }}>{c.commissionPercent}%</td>
+                  <td style={{ padding: "8px 6px" }}>{c.customerDiscountPercent || 0}%</td>
+                  <td style={{ padding: "8px 6px", fontWeight: 700 }}>{c.totalConversions || 0}</td>
+                  <td style={{ padding: "8px 6px" }}>${((c.totalRevenueCents || 0) / 100).toFixed(2)}</td>
+                  <td style={{ padding: "8px 6px", fontWeight: 700, color: (c.totalCommissionCents - (c.totalPaidCents || 0)) > 0 ? "#dc2626" : "#16a34a" }}>
+                    ${(((c.totalCommissionCents || 0) - (c.totalPaidCents || 0)) / 100).toFixed(2)}
+                  </td>
+                  <td style={{ padding: "8px 6px" }}>
+                    <span style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 800, background: c.disabled ? "#fecaca" : "#dcfce7", color: c.disabled ? "#991b1b" : "#166534" }}>
+                      {c.disabled ? "Disabled" : "Active"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "8px 6px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button onClick={() => sendAgentCode(c._id, c.agentEmail)} disabled={agentCodesBusy} style={{ ...ui.buttonGhostDark, fontSize: 10, padding: "3px 8px" }}>Email</button>
+                    <button onClick={() => toggleAgentCode(c._id, c.disabled)} style={{ ...ui.buttonGhostDark, fontSize: 10, padding: "3px 8px" }}>
+                      {c.disabled ? "Enable" : "Disable"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 

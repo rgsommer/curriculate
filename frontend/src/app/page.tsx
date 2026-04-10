@@ -418,6 +418,7 @@ function MobileNav() {
     { href: "/station-posters", label: "Station Posters" },
     { href: "/faq", label: "FAQ" },
     { href: "/contact", label: "Contact" },
+    { href: "/referrals", label: "Referral Program" },
     { href: "/signup", label: "Sign up" },
     { href: "/dashboard", label: "Login" },
   ];

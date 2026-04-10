@@ -17,8 +17,8 @@ async function consumeHandoff(handoffCode: string) {
   return data;
 }
 
-async function startCheckout(args: { plan: string; priceId?: string | null; returnTo: string | null; email?: string | null }) {
-  const { plan, priceId, returnTo, email } = args;
+async function startCheckout(args: { plan: string; priceId?: string | null; returnTo: string | null; email?: string | null; referralCode?: string | null }) {
+  const { plan, priceId, returnTo, email, referralCode } = args;
   
   // Persist returnTo across the Stripe redirect
   if (typeof window !== "undefined") {
@@ -33,7 +33,8 @@ async function startCheckout(args: { plan: string; priceId?: string | null; retu
     body: JSON.stringify({
       plan,
       priceId: priceId || undefined,
-      email: email || undefined, // ✅ add
+      email: email || undefined,
+      referralCode: referralCode || undefined,
       successUrl: `${window.location.origin}/billing/success`,
       cancelUrl: `${window.location.origin}/pricing`,
     }),
@@ -83,6 +84,10 @@ export default function PricingPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const [billingEmail, setBillingEmail] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [referralValid, setReferralValid] = useState<null | boolean>(null);
+  const [referralAgent, setReferralAgent] = useState("");
+  const [referralDiscount, setReferralDiscount] = useState(0);
   const [prices, setPrices] = useState(DEFAULT_PRICES);
 
   useEffect(() => {
@@ -225,6 +230,79 @@ export default function PricingPage() {
         />
       </div>
 
+      <div style={{ marginTop: 14, border: "1px solid #e5e7eb", background: "#fff", borderRadius: 16, padding: 12 }}>
+        <div style={{ fontWeight: 900, marginBottom: 6 }}>Referral code</div>
+        <div style={{ opacity: 0.75, fontSize: 13, marginBottom: 10 }}>
+          Have a referral code? Enter it below for a discount on your first payment.
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            value={referralCode}
+            onChange={(e) => {
+              setReferralCode(e.target.value.toUpperCase());
+              setReferralValid(null);
+              setReferralAgent("");
+              setReferralDiscount(0);
+            }}
+            placeholder="e.g. TEACH-A7K3M"
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: referralValid === true ? "1px solid #22c55e" : referralValid === false ? "1px solid #ef4444" : "1px solid #e5e7eb",
+              outline: "none",
+              fontSize: 14,
+              textTransform: "uppercase",
+              letterSpacing: 1,
+              fontWeight: 700,
+            }}
+          />
+          <button
+            type="button"
+            disabled={loading || !referralCode.trim()}
+            onClick={async () => {
+              try {
+                const res = await fetch(`${API_BASE}/api/admin/validate-referral-code?code=${encodeURIComponent(referralCode.trim())}`);
+                const data = await res.json().catch(() => null);
+                if (data?.valid) {
+                  setReferralValid(true);
+                  setReferralAgent(data.agentName || "");
+                  setReferralDiscount(data.customerDiscountPercent || 0);
+                } else {
+                  setReferralValid(false);
+                  setReferralAgent("");
+                  setReferralDiscount(0);
+                }
+              } catch {
+                setReferralValid(false);
+              }
+            }}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 999,
+              border: "1px solid #e5e7eb",
+              background: "#fff",
+              cursor: "pointer",
+              fontWeight: 900,
+              fontSize: 13,
+              opacity: !referralCode.trim() ? 0.5 : 1,
+            }}
+          >
+            Apply
+          </button>
+        </div>
+        {referralValid === true && (
+          <div style={{ marginTop: 8, fontSize: 13, color: "#16a34a", fontWeight: 700 }}>
+            Code applied{referralAgent ? ` (referred by ${referralAgent})` : ""}{referralDiscount > 0 ? ` — ${referralDiscount}% off your first payment!` : ""}
+          </div>
+        )}
+        {referralValid === false && (
+          <div style={{ marginTop: 8, fontSize: 13, color: "#dc2626", fontWeight: 700 }}>
+            Invalid or expired referral code.
+          </div>
+        )}
+      </div>
+
       <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: 12 }}>
         {plans.map((p) => (
           <div
@@ -263,7 +341,7 @@ export default function PricingPage() {
                 try {
                   setLoading(true);
                   setNotice(null);
-                  await startCheckout({ plan: p.plan, priceId: p.priceId, returnTo, email: billingEmail.trim() || null });
+                  await startCheckout({ plan: p.plan, priceId: p.priceId, returnTo, email: billingEmail.trim() || null, referralCode: referralValid ? referralCode.trim() : null });
                 } catch (e: any) {
                   setNotice(e?.message || "Checkout failed.");
                 } finally {

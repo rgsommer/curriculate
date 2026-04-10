@@ -4,6 +4,7 @@ import AccessCode from "../models/AccessCode.js";
 import ReferralCode from "../models/ReferralCode.js";
 import SystemEmailTemplate from "../models/SystemEmailTemplate.js";
 import ReferralProgramSettings from "../models/ReferralProgramSettings.js";
+import ReferralApplication from "../models/ReferralApplication.js";
 import SharedTasksetLink from "../models/SharedTasksetLink.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 
@@ -649,6 +650,212 @@ router.get("/validate-referral-code", async (req, res) => {
   } catch (err) {
     console.error("[validate-referral-code] failed:", err);
     return res.status(500).json({ ok: false, error: "Failed to validate code." });
+  }
+});
+
+// ============================================================
+// Public: Referral agent application (no auth required)
+// ============================================================
+
+// POST /api/admin/referral-applications
+router.post("/referral-applications", async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!name || !email) {
+      return res.status(400).json({ ok: false, error: "Name and email are required." });
+    }
+
+    // Prevent duplicate applications from same email
+    const existing = await ReferralApplication.findOne({ email }).lean();
+    if (existing) {
+      return res.json({
+        ok: true,
+        alreadyApplied: true,
+        status: existing.status,
+        message: "You've already applied! We'll be in touch soon.",
+      });
+    }
+
+    const organization = String(req.body?.organization || "").trim();
+    const message = String(req.body?.message || "").trim();
+
+    await ReferralApplication.create({ name, email, organization, message, status: "pending" });
+
+    // Send confirmation email to applicant
+    let template = await SystemEmailTemplate.findOne({ key: "referral-application-received" }).lean();
+    if (!template) {
+      template = await SystemEmailTemplate.create({
+        key: "referral-application-received",
+        label: "Referral application received",
+        subject: "We received your Curriculate referral application!",
+        html: DEFAULT_REFERRAL_APPLICATION_HTML,
+        enabled: true,
+      });
+    }
+
+    if (template.enabled !== false) {
+      const vars = {
+        NAME: name,
+        EMAIL: email,
+        SITE_URL: "https://www.curriculate.net",
+        AI_GRADING_URL: "https://www.curriculate.net/ai-grading",
+      };
+      const subject = _render(template.subject || "", vars);
+      const html = _render(template.html || "", vars);
+      await sendSystemEmail({ to: email, subject, html }).catch((err) => {
+        console.warn("[referral-application] confirmation email failed:", err.message);
+      });
+    }
+
+    return res.json({ ok: true, message: "Application received! We'll be in touch." });
+  } catch (err) {
+    console.error("[referral-application] create failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to submit application." });
+  }
+});
+
+const DEFAULT_REFERRAL_APPLICATION_HTML = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="color:#1e293b;margin-bottom:12px;">Thanks for applying, {{NAME}}!</h2>
+  <p style="color:#334155;">We received your application to join the Curriculate referral program. Our team will review it and get back to you shortly with your personal referral code and commission details.</p>
+
+  <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin:20px 0;">
+    <p style="color:#166534;font-weight:700;margin:0 0 8px 0;">What happens next?</p>
+    <ol style="color:#334155;font-size:14px;padding-left:20px;margin:0;">
+      <li style="margin-bottom:6px;">We review your application (usually within 24 hours)</li>
+      <li style="margin-bottom:6px;">You receive your personal referral code via email</li>
+      <li style="margin-bottom:6px;">Share the code with teachers and schools</li>
+      <li>Earn commission on every subscription</li>
+    </ol>
+  </div>
+
+  <p style="color:#334155;">In the meantime, get familiar with what you'll be sharing:</p>
+  <div style="margin:16px 0;">
+    <div style="text-align:center;margin-bottom:12px;">
+      <a href="{{SITE_URL}}" style="display:inline-block;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:15px;">Explore Curriculate</a>
+    </div>
+    <div style="text-align:center;">
+      <a href="{{AI_GRADING_URL}}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:700;font-size:15px;">Try Free AI Grading</a>
+    </div>
+  </div>
+
+  <p style="color:#94a3b8;font-size:13px;margin-top:24px;">Curriculate &mdash; AI-Powered Station-Based Learning</p>
+</div>
+`.trim();
+
+// GET /api/admin/referral-applications (admin only)
+router.get("/referral-applications", ...adminRequired, async (req, res) => {
+  try {
+    const status = req.query?.status || null;
+    const filter = status ? { status } : {};
+    const rows = await ReferralApplication.find(filter).sort({ createdAt: -1 }).lean();
+    return res.json({ ok: true, applications: rows });
+  } catch (err) {
+    console.error("[admin-referral-applications] list failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to load applications." });
+  }
+});
+
+// PUT /api/admin/referral-applications/:id/approve  (admin approves + creates referral code)
+router.put("/referral-applications/:id/approve", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const app = await ReferralApplication.findById(id);
+    if (!app) return res.status(404).json({ ok: false, error: "Application not found." });
+    if (app.status === "approved") {
+      return res.json({ ok: true, message: "Already approved.", referralCodeId: app.referralCodeId });
+    }
+
+    const commissionPercent = Math.min(100, Math.max(0, Number(req.body?.commissionPercent ?? 15)));
+    const customerDiscountPercent = Math.min(100, Math.max(0, Number(req.body?.customerDiscountPercent ?? 0)));
+
+    // Auto-generate referral code
+    const prefix = app.name.split(/\s+/)[0].toUpperCase().slice(0, 6);
+    let code = genReferralCode(prefix);
+    for (let i = 0; i < 5; i++) {
+      const exists = await ReferralCode.findOne({ code }).lean();
+      if (!exists) break;
+      code = genReferralCode("REF");
+    }
+
+    const refDoc = await ReferralCode.create({
+      code,
+      agentName: app.name,
+      agentEmail: app.email,
+      commissionPercent,
+      customerDiscountPercent,
+      disabled: false,
+      conversions: [],
+      notes: `Auto-created from application ${id}`,
+    });
+
+    app.status = "approved";
+    app.referralCodeId = refDoc._id;
+    app.approvedAt = new Date();
+    app.adminNotes = String(req.body?.adminNotes || "").trim();
+    await app.save();
+
+    // Send the agent their code via the existing referral-agent-invite template
+    try {
+      let template = await SystemEmailTemplate.findOne({ key: "referral-agent-invite" }).lean();
+      if (!template) {
+        template = await SystemEmailTemplate.create({
+          key: "referral-agent-invite",
+          label: "Referral agent invite",
+          subject: "Your Curriculate referral code is ready!",
+          html: DEFAULT_REFERRAL_AGENT_HTML,
+          enabled: true,
+        });
+      }
+
+      const senderName =
+        String(req.user?.name || req.user?.fullName || req.user?.displayName || "").trim() ||
+        "Curriculate Admin";
+
+      const vars = {
+        SENDER_NAME: senderName,
+        AGENT_NAME: app.name,
+        REFERRAL_CODE: refDoc.code,
+        COMMISSION_PERCENT: String(commissionPercent),
+        CUSTOMER_DISCOUNT: customerDiscountPercent > 0
+          ? `Your referrals get ${customerDiscountPercent}% off their first payment!`
+          : "",
+        SITE_URL: "https://www.curriculate.net",
+        AI_GRADING_URL: "https://www.curriculate.net/ai-grading",
+        CUSTOM_MESSAGE: "",
+      };
+
+      const subject = _render(template.subject || "", vars);
+      const html = _render(template.html || "", vars);
+      await sendSystemEmail({ to: app.email, subject, html });
+    } catch (emailErr) {
+      console.warn("[admin-referral-applications] approval email failed:", emailErr.message);
+    }
+
+    return res.json({ ok: true, referralCode: { _id: String(refDoc._id), code: refDoc.code } });
+  } catch (err) {
+    console.error("[admin-referral-applications] approve failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to approve application." });
+  }
+});
+
+// PUT /api/admin/referral-applications/:id/decline
+router.put("/referral-applications/:id/decline", ...adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const app = await ReferralApplication.findById(id);
+    if (!app) return res.status(404).json({ ok: false, error: "Application not found." });
+
+    app.status = "declined";
+    app.declinedAt = new Date();
+    app.adminNotes = String(req.body?.adminNotes || "").trim();
+    await app.save();
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin-referral-applications] decline failed:", err);
+    return res.status(500).json({ ok: false, error: "Failed to decline application." });
   }
 });
 
