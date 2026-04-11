@@ -1576,6 +1576,111 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    // ─── Simple types: only need title + prompt (already normalized globally) ───
+    case TASK_TYPES.OPEN_TEXT:
+    case TASK_TYPES.RECORD_AUDIO:
+    case TASK_TYPES.DRAW:
+    case TASK_TYPES.MIME:
+    case TASK_TYPES.PHOTO:
+    case TASK_TYPES.MAKE_AND_SNAP:
+    case TASK_TYPES.PHOTO_JOURNAL:
+    case TASK_TYPES.BODY_BREAK:
+    case TASK_TYPES.MOTION_MISSION:
+      break;
+
+    case TASK_TYPES.VENNSORT: {
+      const vCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize categories from various field names
+      if (!Array.isArray(vCfg.categories) || !vCfg.categories.length) {
+        vCfg.categories = Array.isArray(task.categories) ? task.categories : [];
+      }
+      // Normalize items
+      if (!Array.isArray(vCfg.items) || !vCfg.items.length) {
+        vCfg.items = Array.isArray(task.items) ? task.items : [];
+      }
+      // Normalize correctAnswer / answerKey
+      if (!vCfg.correctAnswer && !vCfg.answerKey) {
+        vCfg.correctAnswer = task.correctAnswer || task.answerKey || null;
+      }
+      break;
+    }
+
+    case TASK_TYPES.JEOPARDY: {
+      // Normalize clues from various field names
+      if (!Array.isArray(task.clues) || !task.clues.length) {
+        task.clues = Array.isArray(task.items) ? task.items
+          : Array.isArray(task.config?.clues) ? task.config.clues
+          : Array.isArray(task.config?.items) ? task.config.items
+          : [];
+      }
+      break;
+    }
+
+    case TASK_TYPES.GUESS_WHO: {
+      const gwCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize characters from various field names
+      if (!Array.isArray(gwCfg.characters) || !gwCfg.characters.length) {
+        gwCfg.characters =
+          Array.isArray(task.characters) ? task.characters :
+          Array.isArray(task.items) ? task.items :
+          Array.isArray(gwCfg.items) ? gwCfg.items : [];
+      }
+      break;
+    }
+
+    case TASK_TYPES.PET_FEEDING: {
+      const pfCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize questions from various field names
+      if (!Array.isArray(pfCfg.questions) || !pfCfg.questions.length) {
+        pfCfg.questions =
+          Array.isArray(task.questions) ? task.questions :
+          Array.isArray(task.items) ? task.items :
+          Array.isArray(pfCfg.items) ? pfCfg.items : [];
+      }
+      break;
+    }
+
+    case TASK_TYPES.LIVE_DEBATE: {
+      const ldCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize postulate
+      if (!task.postulate && ldCfg.postulate) task.postulate = ldCfg.postulate;
+      if (!ldCfg.postulate && task.postulate) ldCfg.postulate = task.postulate;
+      // Normalize proPoints / conPoints
+      if (!Array.isArray(ldCfg.proPoints)) ldCfg.proPoints = Array.isArray(task.proPoints) ? task.proPoints : [];
+      if (!Array.isArray(ldCfg.conPoints)) ldCfg.conPoints = Array.isArray(task.conPoints) ? task.conPoints : [];
+      break;
+    }
+
+    case TASK_TYPES.BRAINSTORM_BATTLE: {
+      const bbCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize rounds
+      if (!Array.isArray(bbCfg.rounds) || !bbCfg.rounds.length) {
+        bbCfg.rounds = Array.isArray(task.rounds) ? task.rounds : [];
+      }
+      break;
+    }
+
+    case TASK_TYPES.COLLABORATION: {
+      const colCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize roles
+      if (!Array.isArray(colCfg.roles) || !colCfg.roles.length) {
+        colCfg.roles = Array.isArray(task.roles) ? task.roles : [];
+      }
+      break;
+    }
+
+    case TASK_TYPES.SPEECH_RECOGNITION: {
+      const srCfg = isObject(task.config) ? task.config : (task.config = {});
+      // Normalize target phrases from various field names
+      if (!Array.isArray(srCfg.targetPhrases) || !srCfg.targetPhrases.length) {
+        srCfg.targetPhrases =
+          Array.isArray(task.targetPhrases) ? task.targetPhrases :
+          Array.isArray(task.items) ? task.items :
+          Array.isArray(srCfg.items) ? srCfg.items : [];
+      }
+      break;
+    }
+
     default:
       break;
   }
@@ -2032,6 +2137,101 @@ export function validateTaskByType(taskType, task) {
       if (genericCount === dmClues.length) {
         errors.push("draw-mime clues are all generic placeholders — real subject-matter clues required");
       }
+      break;
+    }
+
+    // ─── Simple types: only need title + prompt (global checks cover these) ───
+    case TASK_TYPES.OPEN_TEXT:
+    case TASK_TYPES.RECORD_AUDIO:
+    case TASK_TYPES.DRAW:
+    case TASK_TYPES.MIME:
+    case TASK_TYPES.PHOTO:
+    case TASK_TYPES.MAKE_AND_SNAP:
+    case TASK_TYPES.PHOTO_JOURNAL:
+    case TASK_TYPES.BODY_BREAK:
+    case TASK_TYPES.MOTION_MISSION:
+      // Title + prompt already validated above; no additional structured data required
+      break;
+
+    case TASK_TYPES.VENNSORT: {
+      const vCfg = task.config || {};
+      if (!Array.isArray(vCfg.categories) || vCfg.categories.length < 2) errors.push("config.categories must have at least 2 categories");
+      if (!Array.isArray(vCfg.items) || vCfg.items.length < 5) errors.push("config.items must have at least 5 items");
+      const vAk = vCfg.correctAnswer || vCfg.answerKey;
+      if (!isObject(vAk) || Object.keys(vAk).length < 3) errors.push("correctAnswer/answerKey mapping is required (at least 3 entries)");
+      break;
+    }
+
+    case TASK_TYPES.JEOPARDY: {
+      const jClues = Array.isArray(task.clues) ? task.clues : [];
+      if (jClues.length < 3) errors.push("jeopardy requires at least 3 clues");
+      break;
+    }
+
+    case TASK_TYPES.GUESS_WHO: {
+      const gwChars = task.config?.characters || [];
+      if (!Array.isArray(gwChars) || gwChars.length < 8) errors.push("guess-who requires config.characters[] with at least 8 characters");
+      break;
+    }
+
+    case TASK_TYPES.PET_FEEDING: {
+      const pfQs = task.config?.questions || [];
+      if (!Array.isArray(pfQs) || pfQs.length < 5) errors.push("pet-feeding requires config.questions[] with at least 5 questions");
+      break;
+    }
+
+    case TASK_TYPES.LIVE_DEBATE: {
+      const ldCfg = task.config || {};
+      const postulate = task.postulate || ldCfg.postulate || "";
+      if (!postulate) errors.push("live-debate requires a postulate (debate topic)");
+      if (!Array.isArray(ldCfg.proPoints) || ldCfg.proPoints.length < 2) errors.push("live-debate requires config.proPoints[] with at least 2 points");
+      if (!Array.isArray(ldCfg.conPoints) || ldCfg.conPoints.length < 2) errors.push("live-debate requires config.conPoints[] with at least 2 points");
+      break;
+    }
+
+    case TASK_TYPES.BRAINSTORM_BATTLE: {
+      const bbRounds = task.config?.rounds || [];
+      if (!Array.isArray(bbRounds) || bbRounds.length < 1) errors.push("brainstorm-battle requires config.rounds[] with at least 1 round");
+      break;
+    }
+
+    case TASK_TYPES.COLLABORATION: {
+      const colRoles = task.config?.roles || [];
+      if (!Array.isArray(colRoles) || colRoles.length < 2) errors.push("collaboration requires config.roles[] with at least 2 roles");
+      break;
+    }
+
+    case TASK_TYPES.SPEECH_RECOGNITION: {
+      const srPhrases = task.config?.targetPhrases || task.items || [];
+      if (!Array.isArray(srPhrases) || srPhrases.length < 1) {
+        // speech-recognition can work with just a prompt (freeform speech), so only warn
+        // errors.push("speech-recognition should have targetPhrases or items");
+      }
+      break;
+    }
+
+    case TASK_TYPES.ECHO_CHAIN: {
+      const ecCfg = task.config || {};
+      if (!ecCfg.startWord && !task.startWord) errors.push("echo-chain requires startWord");
+      break;
+    }
+
+    case TASK_TYPES.NARRATION_SYNTHESIZE: {
+      const nsCfg = task.config || {};
+      if (!Array.isArray(nsCfg.prompts) || nsCfg.prompts.length < 2) errors.push("narration-synthesize requires config.prompts[] with at least 2 prompts");
+      break;
+    }
+
+    case TASK_TYPES.PRONUNCIATION: {
+      const prItems = Array.isArray(task.items) ? task.items : [];
+      if (prItems.length < 3) errors.push("pronunciation requires at least 3 items");
+      break;
+    }
+
+    case TASK_TYPES.SCRIPT_PLAY: {
+      const spCfg = task.config || {};
+      if (!Array.isArray(spCfg.roles) || spCfg.roles.length < 2) errors.push("script-play requires config.roles[] with at least 2 roles");
+      if (!Array.isArray(spCfg.lines) || spCfg.lines.length < 4) errors.push("script-play requires config.lines[] with at least 4 lines");
       break;
     }
 
